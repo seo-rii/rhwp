@@ -99,19 +99,33 @@ async function renderScenario(page, backend, caseInfo) {
   const activeBackend = await page.evaluate(() => window.__renderBackend ?? window.__canvasView?.getRenderBackend?.());
   assert(activeBackend === backend || (backend === 'canvas2d' && activeBackend === 'canvas'), `${caseInfo.name} backend=${backend}`);
 
+  const layerSummary = await page.evaluate(() => {
+    const tree = window.__wasm?.getPageLayerTree?.(0);
+    if (!tree) return null;
+    let opCount = 0;
+    const walk = (node) => {
+      if (!node) return;
+      if (node.kind === 'leaf') {
+        opCount += node.ops.length;
+        return;
+      }
+      if (node.kind === 'clipRect') {
+        walk(node.child);
+        return;
+      }
+      if (node.kind === 'group') {
+        for (const child of node.children) walk(child);
+      }
+    };
+    walk(tree.root);
+    return {
+      kind: tree.root.kind,
+      opCount,
+      mode: window.__canvaskitRenderMode,
+    };
+  });
+  assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
   if (backend === 'canvaskit') {
-    const layerSummary = await page.evaluate(() => {
-      const tree = window.__wasm?.getPageLayerTree?.(0);
-      if (!tree) return null;
-      const root = tree.root;
-      const opCount = root.kind === 'leaf' ? root.ops.length : root.kind === 'group' ? root.children.length : 1;
-      return {
-        kind: root.kind,
-        opCount,
-        mode: window.__canvaskitRenderMode,
-      };
-    });
-    assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
     assert(layerSummary?.mode === CANVASKIT_MODE, `${caseInfo.name} canvaskitMode=${CANVASKIT_MODE}`);
   }
 
@@ -123,6 +137,48 @@ async function renderScenario(page, backend, caseInfo) {
 
 runTest('CanvasKit 렌더 비교', async ({ page }) => {
   console.log(`[scope=${SAMPLE_SCOPE}] full-page cases=${FULL_PAGE_CASES.length}, feature cases=${FILTERED_FEATURE_CASES.length}, mode=${CANVASKIT_MODE}, filter=${SAMPLE_FILTER_PATTERN || 'none'}`);
+
+  setTestCase('canvas2d-layer-path');
+  await loadApp(page, '?renderer=canvas2d');
+  const pathProbeInstall = await page.evaluate(() => {
+    const wasm = window.__wasm;
+    if (!wasm?.getPageLayerTree) {
+      return { error: 'layer tree bridge unavailable' };
+    }
+    const probe = { legacyCalls: 0, layerCalls: 0 };
+    const originalLayer = wasm.getPageLayerTree.bind(wasm);
+    const originalLegacy = wasm.renderPageToCanvas?.bind(wasm);
+    wasm.getPageLayerTree = (...args) => {
+      probe.layerCalls += 1;
+      return originalLayer(...args);
+    };
+    wasm.renderPageToCanvas = (..._args) => {
+      probe.legacyCalls += 1;
+      if (originalLegacy) {
+        throw new Error('legacy canvas render path should stay unused');
+      }
+    };
+    window.__layerPathProbe = probe;
+    return { ok: true };
+  });
+  assert(!pathProbeInstall.error, pathProbeInstall.error || 'canvas2d layer probe installed');
+  await loadHwpFile(page, 'lseg-01-basic.hwp');
+  const layerPathProbe = await page.evaluate(() => {
+    const probe = window.__layerPathProbe;
+    const canvas = document.querySelector('#scroll-container canvas');
+    return {
+      legacyCalls: probe?.legacyCalls ?? -1,
+      layerCalls: probe?.layerCalls ?? -1,
+      canvasWidth: canvas?.width ?? 0,
+      canvasHeight: canvas?.height ?? 0,
+    };
+  });
+  assert(layerPathProbe.legacyCalls === 0, `canvas2d legacy canvas path calls=${layerPathProbe.legacyCalls}`);
+  assert(layerPathProbe.layerCalls > 0, `canvas2d layer tree calls=${layerPathProbe.layerCalls}`);
+  assert(
+    layerPathProbe.canvasWidth > 0 && layerPathProbe.canvasHeight > 0,
+    `canvas2d layered render canvas=${layerPathProbe.canvasWidth}x${layerPathProbe.canvasHeight}`,
+  );
 
   for (const caseInfo of FULL_PAGE_CASES) {
     setTestCase(caseInfo.name);

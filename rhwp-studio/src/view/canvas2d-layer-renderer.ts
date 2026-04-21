@@ -1,0 +1,1379 @@
+import type { CanvasKitRenderMode } from './render-backend';
+import type {
+  LayerBounds,
+  LayerClipNode,
+  LayerEllipseOp,
+  LayerFootnoteMarkerOp,
+  LayerFormObjectOp,
+  LayerGradient,
+  LayerImageOp,
+  LayerLeafNode,
+  LayerLineOp,
+  LayerLineStyle,
+  LayerNode,
+  LayerPageBackgroundOp,
+  LayerPaintOp,
+  LayerPathCommand,
+  LayerPathOp,
+  LayerPatternFill,
+  LayerRectangleOp,
+  LayerShapeShadow,
+  LayerTabLeader,
+  LayerTextRunOp,
+  PageLayerTree,
+} from '@/core/types';
+import {
+  angleToCanvasCoords,
+  buildCanvasTextFont,
+  calculateArrowDimensions,
+  computePathPaintBounds,
+  createPatternTileCanvas,
+  decodeBase64,
+  inferImageMime,
+  isHalfwidthScaledCluster,
+  renderEquationLayoutBox,
+  splitIntoClusters,
+  startsWithInvalidControl,
+} from './layer-canvas-utils';
+
+type OverlayClip = {
+  bounds: LayerBounds;
+  kind: LayerClipNode['clipKind'];
+};
+
+export class Canvas2DLayerRenderer {
+  private readonly currentClipStack: OverlayClip[] = [];
+  private readonly domImageCache = new Map<string, HTMLImageElement>();
+  private readonly patternCache = new Map<string, CanvasPattern | null>();
+  private lastRenderedTree: PageLayerTree | null = null;
+  private lastTargetCanvas: HTMLCanvasElement | null = null;
+  private lastScale = 1;
+  private rerenderScheduled = false;
+
+  constructor(private readonly renderMode: CanvasKitRenderMode = 'compat') {}
+
+  renderPage(
+    tree: PageLayerTree,
+    targetCanvas: HTMLCanvasElement,
+    scale: number,
+  ): void {
+    const ctx = targetCanvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Canvas2D context 생성 실패');
+    }
+
+    this.lastRenderedTree = tree;
+    this.lastTargetCanvas = targetCanvas;
+    this.lastScale = scale;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+    ctx.restore();
+
+    ctx.save();
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.textBaseline = 'alphabetic';
+    this.renderNode(ctx, tree.root);
+    ctx.restore();
+  }
+
+  private renderNode(ctx: CanvasRenderingContext2D, node: LayerNode): void {
+    switch (node.kind) {
+      case 'group':
+        for (const child of node.children) {
+          this.renderNode(ctx, child);
+        }
+        return;
+      case 'clipRect':
+        this.renderClipNode(ctx, node);
+        return;
+      case 'leaf':
+        this.renderLeafNode(ctx, node);
+        return;
+    }
+  }
+
+  private renderClipNode(ctx: CanvasRenderingContext2D, node: LayerClipNode): void {
+    this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
+    this.renderNode(ctx, node.child);
+    this.currentClipStack.pop();
+  }
+
+  private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {
+    for (const op of node.ops) {
+      this.renderOp(ctx, op);
+    }
+  }
+
+  private renderOp(ctx: CanvasRenderingContext2D, op: LayerPaintOp): void {
+    switch (op.type) {
+      case 'pageBackground':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderPageBackground(ctx, op);
+        }, op.bbox);
+        return;
+      case 'textRun':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderTextRun(ctx, op);
+        }, op.bbox);
+        return;
+      case 'footnoteMarker':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderFootnoteMarker(ctx, op);
+        }, op.bbox);
+        return;
+      case 'line':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderLine(ctx, op);
+        }, op.bbox);
+        return;
+      case 'rectangle':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderRectangle(ctx, op);
+        }, op.bbox);
+        return;
+      case 'ellipse':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderEllipse(ctx, op);
+        }, op.bbox);
+        return;
+      case 'path':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderPath(ctx, op);
+        }, computePathPaintBounds(op.commands, op.bbox));
+        return;
+      case 'image':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderImage(ctx, op);
+        }, op.bbox);
+        return;
+      case 'equation':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          renderEquationLayoutBox(
+            ctx,
+            op.layoutBox,
+            op.bbox.x,
+            op.bbox.y,
+            op.color,
+            op.fontSize,
+            false,
+            false,
+          );
+        }, op.bbox);
+        return;
+      case 'formObject':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderFormObject(ctx, op);
+        }, op.bbox);
+        return;
+    }
+  }
+
+  private renderPageBackground(ctx: CanvasRenderingContext2D, op: LayerPageBackgroundOp): void {
+    const fill = this.makeShapeFillStyle(
+      ctx,
+      op.bbox,
+      op.backgroundColor ?? null,
+      1,
+      op.gradient,
+      undefined,
+    );
+    if (fill) {
+      ctx.save();
+      ctx.fillStyle = fill;
+      ctx.fillRect(op.bbox.x, op.bbox.y, op.bbox.width, op.bbox.height);
+      ctx.restore();
+    }
+
+    if (op.image?.base64) {
+      const image = this.getDomImage(op.image.base64);
+      if (image) {
+        this.drawDomImage(ctx, image, op.bbox, op.image.fillMode);
+      }
+    }
+
+    if (op.borderColor && op.borderWidth > 0) {
+      ctx.save();
+      ctx.strokeStyle = op.borderColor;
+      ctx.lineWidth = Math.max(op.borderWidth, 0.5);
+      ctx.strokeRect(op.bbox.x, op.bbox.y, op.bbox.width, op.bbox.height);
+      ctx.restore();
+    }
+  }
+
+  private renderTextRun(ctx: CanvasRenderingContext2D, op: LayerTextRunOp): void {
+    const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
+    const hasRatio = Math.abs(ratio - 1) > 0.01;
+    const outlineType = op.style.outlineType ?? 0;
+    const shadowType = op.style.shadowType ?? 0;
+    const shadowColor = typeof op.style.shadowColor === 'string' ? op.style.shadowColor : op.style.color;
+    const shadowOffsetX = typeof op.style.shadowOffsetX === 'number' ? op.style.shadowOffsetX : 0;
+    const shadowOffsetY = typeof op.style.shadowOffsetY === 'number' ? op.style.shadowOffsetY : 0;
+    const emboss = !!op.style.emboss;
+    const engrave = !!op.style.engrave;
+    const emphasisDot = op.style.emphasisDot ?? 0;
+    const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
+    const fontSize = op.style.fontSize || 12;
+    const clusters = splitIntoClusters(op.text);
+    const baseFont = buildCanvasTextFont(op.style.fontFamily, fontSize, op.style.bold, op.style.italic);
+    const currencyFallbackFont =
+      `${op.style.italic ? 'italic ' : ''}${op.style.bold ? 'bold ' : ''}${fontSize.toFixed(3)}px 'Malgun Gothic','맑은 고딕',sans-serif`;
+    const symbolFallbackFont =
+      `${op.style.italic ? 'italic ' : ''}${op.style.bold ? 'bold ' : ''}${fontSize.toFixed(3)}px 'GulimChe','굴림체','D2Coding','NanumGothicCoding','나눔고딕코딩','Noto Sans Mono',monospace`;
+    const clusterFonts = clusters.map((cluster) => {
+      const ch = cluster.text.codePointAt(0) ?? 0;
+      const needsCurrencyFallback =
+        ch === 0x20A9 || ch === 0x20AC || ch === 0x00A3 || ch === 0x00A5;
+      if (needsCurrencyFallback) {
+        return currencyFallbackFont;
+      }
+      const needsSymbolFallback =
+        (ch >= 0x2460 && ch <= 0x24FF)
+        || (ch >= 0x25A0 && ch <= 0x25FF)
+        || (ch >= 0x2600 && ch <= 0x27BF);
+      return needsSymbolFallback ? symbolFallbackFont : baseFont;
+    });
+
+    const drawClusters = (originX: number, originY: number) => {
+      const textWidth = op.positions.at(-1) ?? 0;
+      if (textWidth > 0 && shadeColor !== '#ffffff') {
+        ctx.save();
+        ctx.fillStyle = shadeColor;
+        ctx.fillRect(originX, originY - fontSize, textWidth, fontSize * 1.2);
+        ctx.restore();
+      }
+
+      const drawPass = (
+        dx: number,
+        dy: number,
+        fillColor: string,
+        strokeColor?: string,
+        lineWidth = 0,
+      ) => {
+        ctx.save();
+        ctx.fillStyle = fillColor;
+        if (strokeColor) {
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWidth;
+          ctx.lineJoin = 'round';
+        }
+        for (const [index, cluster] of clusters.entries()) {
+          if (cluster.text === ' ' || cluster.text === '\t' || cluster.text === '\u2007') {
+            continue;
+          }
+          if (startsWithInvalidControl(cluster.text)) {
+            continue;
+          }
+          const clusterFont = clusterFonts[index];
+          if (ctx.font !== clusterFont) {
+            ctx.font = clusterFont;
+          }
+          const x = originX + op.positions[cluster.start] + dx;
+          const y = originY + dy;
+          if (isHalfwidthScaledCluster(cluster.text) && !hasRatio) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(0.5, 1);
+            ctx.fillText(cluster.text, 0, 0);
+            if (strokeColor) {
+              ctx.strokeText(cluster.text, 0, 0);
+            }
+            ctx.restore();
+            continue;
+          }
+          if (hasRatio) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(ratio, 1);
+            ctx.fillText(cluster.text, 0, 0);
+            if (strokeColor) {
+              ctx.strokeText(cluster.text, 0, 0);
+            }
+            ctx.restore();
+            continue;
+          }
+          ctx.fillText(cluster.text, x, y);
+          if (strokeColor) {
+            ctx.strokeText(cluster.text, x, y);
+          }
+        }
+        ctx.restore();
+      };
+
+      if (emboss || engrave) {
+        const offset = Math.max(fontSize / 20, 1);
+        drawPass(-offset, -offset, emboss ? '#ffffff' : '#808080');
+        drawPass(offset, offset, emboss ? '#808080' : '#ffffff');
+        drawPass(0, 0, op.style.color);
+      } else {
+        if (shadowType > 0) {
+          drawPass(shadowOffsetX, shadowOffsetY, shadowColor);
+        }
+        if (outlineType > 0) {
+          drawPass(0, 0, '#ffffff', op.style.color, Math.max(fontSize / 25, 0.5));
+        } else {
+          drawPass(0, 0, op.style.color);
+        }
+      }
+
+      if (emphasisDot > 0) {
+        const dotChar =
+          emphasisDot === 1 ? '●'
+            : emphasisDot === 2 ? '○'
+              : emphasisDot === 3 ? 'ˇ'
+                : emphasisDot === 4 ? '˜'
+                  : emphasisDot === 5 ? '･'
+                    : emphasisDot === 6 ? '˸'
+                      : '';
+        if (dotChar) {
+          ctx.save();
+          this.setCanvasTextFont(ctx, 'Noto Sans KR', fontSize * 0.3, false, false);
+          ctx.fillStyle = op.style.color;
+          const dotY = originY - fontSize * 1.05;
+          for (const position of op.positions.slice(0, -1)) {
+            const dotX = originX + position + (fontSize * ratio * 0.5);
+            ctx.fillText(dotChar, dotX, dotY);
+          }
+          ctx.restore();
+        }
+      }
+
+      if (op.tabLeaders?.length) {
+        this.drawTabLeaders(ctx, op.tabLeaders, originX, originY, op.style.color);
+      }
+
+      if (op.style.underline !== 'none') {
+        ctx.save();
+        ctx.strokeStyle = op.style.underlineColor || op.style.color;
+        ctx.lineWidth = 1;
+        const y = op.style.underline === 'top' ? originY - fontSize + 1 : originY + 2;
+        ctx.beginPath();
+        ctx.moveTo(originX, y);
+        ctx.lineTo(originX + textWidth, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (op.style.strikethrough) {
+        ctx.save();
+        ctx.strokeStyle = op.style.strikeColor || op.style.color;
+        ctx.lineWidth = 1;
+        const y = originY - fontSize * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(originX, y);
+        ctx.lineTo(originX + textWidth, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+
+    ctx.save();
+    ctx.font = baseFont;
+    ctx.textBaseline = 'alphabetic';
+    if (op.rotation !== 0) {
+      const cx = op.bbox.x + op.bbox.width / 2;
+      const cy = op.bbox.y + op.bbox.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((op.rotation * Math.PI) / 180);
+      drawClusters(-op.bbox.width / 2, -op.bbox.height / 2 + op.baseline);
+    } else {
+      drawClusters(op.bbox.x, op.bbox.y + op.baseline);
+    }
+    ctx.restore();
+  }
+
+  private renderFootnoteMarker(ctx: CanvasRenderingContext2D, op: LayerFootnoteMarkerOp): void {
+    ctx.save();
+    this.setCanvasTextFont(ctx, op.fontFamily, op.fontSize, false, false);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = op.color;
+    ctx.fillText(op.text, op.bbox.x, op.bbox.y + op.bbox.height * 0.4);
+    ctx.restore();
+  }
+
+  private renderLine(ctx: CanvasRenderingContext2D, op: LayerLineOp): void {
+    this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
+      const width = Math.max(op.style.width, 0.5);
+      const dx = op.x2 - op.x1;
+      const dy = op.y2 - op.y1;
+      const lineLength = Math.hypot(dx, dy);
+      let lineX1 = op.x1;
+      let lineY1 = op.y1;
+      let lineX2 = op.x2;
+      let lineY2 = op.y2;
+
+      if (lineLength > 0) {
+        const unitX = dx / lineLength;
+        const unitY = dy / lineLength;
+        if (op.style.startArrow !== 'none') {
+          const [arrowWidth, arrowHeight] = calculateArrowDimensions(width, lineLength, op.style.startArrowSize);
+          drawCanvasArrowHead(
+            ctx,
+            op.x1,
+            op.y1,
+            -unitX,
+            -unitY,
+            arrowWidth,
+            arrowHeight,
+            op.style.startArrow,
+            op.style.color,
+            width,
+          );
+          lineX1 += unitX * arrowWidth;
+          lineY1 += unitY * arrowWidth;
+        }
+        if (op.style.endArrow !== 'none') {
+          const [arrowWidth, arrowHeight] = calculateArrowDimensions(width, lineLength, op.style.endArrowSize);
+          drawCanvasArrowHead(
+            ctx,
+            op.x2,
+            op.y2,
+            unitX,
+            unitY,
+            arrowWidth,
+            arrowHeight,
+            op.style.endArrow,
+            op.style.color,
+            width,
+          );
+          lineX2 -= unitX * arrowWidth;
+          lineY2 -= unitY * arrowWidth;
+        }
+      }
+
+      const drawSegment = (strokeWidth: number, offsetRatio: number) => {
+        let offsetX = 0;
+        let offsetY = 0;
+        if (lineLength > 0 && offsetRatio !== 0) {
+          const normalX = -dy / lineLength;
+          const normalY = dx / lineLength;
+          offsetX = normalX * width * offsetRatio;
+          offsetY = normalY * width * offsetRatio;
+        }
+        ctx.save();
+        this.applyCanvasShadow(ctx, op.style.shadow);
+        ctx.strokeStyle = op.style.color;
+        ctx.lineWidth = Math.max(strokeWidth, 0.5);
+        ctx.setLineDash(strokeDashPattern(op.style.dash, strokeWidth));
+        ctx.beginPath();
+        ctx.moveTo(lineX1 + offsetX, lineY1 + offsetY);
+        ctx.lineTo(lineX2 + offsetX, lineY2 + offsetY);
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      switch (op.style.lineType) {
+        case 'double':
+          drawSegment(width * 0.3, -0.35);
+          drawSegment(width * 0.3, 0.35);
+          break;
+        case 'thickThinDouble':
+          drawSegment(width * 0.4, -0.30);
+          drawSegment(width * 0.2, 0.40);
+          break;
+        case 'thinThickDouble':
+          drawSegment(width * 0.2, -0.40);
+          drawSegment(width * 0.4, 0.30);
+          break;
+        case 'thinThickThinTriple':
+          drawSegment(width * 0.15, -0.425);
+          drawSegment(width * 0.30, 0);
+          drawSegment(width * 0.15, 0.425);
+          break;
+        default:
+          drawSegment(width, 0);
+      }
+    });
+  }
+
+  private renderRectangle(ctx: CanvasRenderingContext2D, op: LayerRectangleOp): void {
+    this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
+      const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
+      const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
+
+      const draw = () => {
+        this.beginRectanglePath(ctx, op.bbox, op.cornerRadius);
+        if (fill) {
+          ctx.save();
+          ctx.globalAlpha *= op.style.opacity;
+          ctx.fillStyle = fill;
+          ctx.fill();
+          ctx.restore();
+          this.beginRectanglePath(ctx, op.bbox, op.cornerRadius);
+        }
+        if (op.style.strokeColor) {
+          ctx.strokeStyle = op.style.strokeColor;
+          ctx.lineWidth = strokeWidth;
+          ctx.setLineDash(strokeDashPattern(op.style.strokeDash, strokeWidth));
+          ctx.stroke();
+        }
+      };
+
+      if (op.style.shadow) {
+        ctx.save();
+        this.applyCanvasShadow(ctx, op.style.shadow);
+        draw();
+        ctx.restore();
+      }
+      draw();
+    });
+  }
+
+  private renderEllipse(ctx: CanvasRenderingContext2D, op: LayerEllipseOp): void {
+    this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
+      const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
+      const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
+
+      const draw = () => {
+        ctx.beginPath();
+        ctx.ellipse(
+          op.bbox.x + op.bbox.width / 2,
+          op.bbox.y + op.bbox.height / 2,
+          op.bbox.width / 2,
+          op.bbox.height / 2,
+          0,
+          0,
+          Math.PI * 2,
+        );
+        if (fill) {
+          ctx.save();
+          ctx.globalAlpha *= op.style.opacity;
+          ctx.fillStyle = fill;
+          ctx.fill();
+          ctx.restore();
+          ctx.beginPath();
+          ctx.ellipse(
+            op.bbox.x + op.bbox.width / 2,
+            op.bbox.y + op.bbox.height / 2,
+            op.bbox.width / 2,
+            op.bbox.height / 2,
+            0,
+            0,
+            Math.PI * 2,
+          );
+        }
+        if (op.style.strokeColor) {
+          ctx.strokeStyle = op.style.strokeColor;
+          ctx.lineWidth = strokeWidth;
+          ctx.setLineDash(strokeDashPattern(op.style.strokeDash, strokeWidth));
+          ctx.stroke();
+        }
+      };
+
+      if (op.style.shadow) {
+        ctx.save();
+        this.applyCanvasShadow(ctx, op.style.shadow);
+        draw();
+        ctx.restore();
+      }
+      draw();
+    });
+  }
+
+  private renderPath(ctx: CanvasRenderingContext2D, op: LayerPathOp): void {
+    this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
+      const pathBounds = computePathPaintBounds(op.commands, op.bbox);
+      const fill = this.makeShapeFillStyle(ctx, pathBounds, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
+      const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
+
+      const draw = () => {
+        ctx.beginPath();
+        appendPathCommands(ctx, op.commands);
+        if (fill) {
+          ctx.save();
+          ctx.globalAlpha *= op.style.opacity;
+          ctx.fillStyle = fill;
+          ctx.fill();
+          ctx.restore();
+          ctx.beginPath();
+          appendPathCommands(ctx, op.commands);
+        }
+        if (op.style.strokeColor) {
+          ctx.strokeStyle = op.style.strokeColor;
+          ctx.lineWidth = strokeWidth;
+          ctx.setLineDash(strokeDashPattern(op.style.strokeDash, strokeWidth));
+          ctx.stroke();
+        }
+      };
+
+      if (op.style.shadow) {
+        ctx.save();
+        this.applyCanvasShadow(ctx, op.style.shadow);
+        draw();
+        ctx.restore();
+      }
+      draw();
+
+      if (op.lineStyle && op.connectorEndpoints) {
+        const { x1, y1, x2, y2 } = op.connectorEndpoints;
+        const connectorLength = Math.max(Math.hypot(x2 - x1, y2 - y1), 1);
+
+        if (op.lineStyle.startArrow !== 'none') {
+          let directionX = x1 - x2;
+          let directionY = y1 - y2;
+          for (const command of op.commands.slice(1)) {
+            if (command.type === 'lineTo') {
+              if (Math.abs(x1 - command.x) > 0.5 || Math.abs(y1 - command.y) > 0.5) {
+                directionX = x1 - command.x;
+                directionY = y1 - command.y;
+                break;
+              }
+              continue;
+            }
+            if (command.type === 'curveTo') {
+              if (Math.abs(x1 - command.x1) > 0.5 || Math.abs(y1 - command.y1) > 0.5) {
+                directionX = x1 - command.x1;
+                directionY = y1 - command.y1;
+                break;
+              }
+            }
+          }
+          const directionLength = Math.max(Math.hypot(directionX, directionY), 0.001);
+          const [arrowWidth, arrowHeight] = calculateArrowDimensions(op.lineStyle.width, connectorLength, op.lineStyle.startArrowSize);
+          drawCanvasArrowHead(
+            ctx,
+            x1,
+            y1,
+            directionX / directionLength,
+            directionY / directionLength,
+            arrowWidth,
+            arrowHeight,
+            op.lineStyle.startArrow,
+            op.lineStyle.color,
+            op.lineStyle.width,
+          );
+        }
+
+        if (op.lineStyle.endArrow !== 'none') {
+          const points: Array<[number, number]> = [];
+          for (const command of op.commands) {
+            if (command.type === 'moveTo' || command.type === 'lineTo') {
+              points.push([command.x, command.y]);
+              continue;
+            }
+            if (command.type === 'curveTo') {
+              points.push([command.x2, command.y2]);
+              points.push([command.x3, command.y3]);
+            }
+          }
+          let directionX = x2 - x1;
+          let directionY = y2 - y1;
+          for (let index = points.length - 1; index >= 0; index -= 1) {
+            const [pointX, pointY] = points[index];
+            const candidateX = x2 - pointX;
+            const candidateY = y2 - pointY;
+            if (Math.abs(candidateX) > 0.5 || Math.abs(candidateY) > 0.5) {
+              directionX = candidateX;
+              directionY = candidateY;
+              break;
+            }
+          }
+          const directionLength = Math.max(Math.hypot(directionX, directionY), 0.001);
+          const [arrowWidth, arrowHeight] = calculateArrowDimensions(op.lineStyle.width, connectorLength, op.lineStyle.endArrowSize);
+          drawCanvasArrowHead(
+            ctx,
+            x2,
+            y2,
+            directionX / directionLength,
+            directionY / directionLength,
+            arrowWidth,
+            arrowHeight,
+            op.lineStyle.endArrow,
+            op.lineStyle.color,
+            op.lineStyle.width,
+          );
+        }
+      }
+    });
+  }
+
+  private renderImage(ctx: CanvasRenderingContext2D, op: LayerImageOp): void {
+    if (!op.base64) {
+      return;
+    }
+    const image = this.getDomImage(op.base64);
+    if (!image) {
+      return;
+    }
+
+    this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
+      this.drawDomImage(ctx, image, op.bbox, op.fillMode, op.originalSize, op.crop);
+    });
+  }
+
+  private renderFormObject(ctx: CanvasRenderingContext2D, op: LayerFormObjectOp): void {
+    const { x, y, width: w, height: h } = op.bbox;
+    ctx.save();
+
+    switch (op.formType) {
+      case 'pushButton': {
+        ctx.fillStyle = '#d0d0d0';
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = '#a0a0a0';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(x, y, w, h);
+        if (op.caption) {
+          const fontSize = Math.min(Math.max(h * 0.5, 8), 12);
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.fillStyle = '#808080';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(op.caption, x + w / 2, y + h / 2);
+        }
+        break;
+      }
+      case 'checkBox': {
+        const boxSize = Math.min(h, 14);
+        const boxY = y + (h - boxSize) / 2;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x, boxY, boxSize, boxSize);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, boxY, boxSize, boxSize);
+        if (op.value !== 0) {
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + 2, boxY + boxSize / 2);
+          ctx.lineTo(x + boxSize / 3, boxY + boxSize - 3);
+          ctx.lineTo(x + boxSize - 2, boxY + 2);
+          ctx.stroke();
+        }
+        if (op.caption) {
+          const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.fillStyle = op.foreColor;
+          ctx.textBaseline = 'middle';
+          ctx.fillText(op.caption, x + boxSize + 4, y + h / 2);
+        }
+        break;
+      }
+      case 'radioButton': {
+        const radius = Math.min(h, 14) / 2;
+        const cx = x + radius;
+        const cy = y + h / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        if (op.value !== 0) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#000000';
+          ctx.fill();
+        }
+        if (op.caption) {
+          const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.fillStyle = op.foreColor;
+          ctx.textBaseline = 'middle';
+          ctx.fillText(op.caption, x + radius * 2 + 4, y + h / 2);
+        }
+        break;
+      }
+      case 'comboBox': {
+        const btnW = Math.min(h, 20);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x, y, w - btnW, h);
+        ctx.strokeStyle = '#808080';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, w - btnW, h);
+        if (op.text) {
+          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.fillStyle = op.foreColor;
+          ctx.textBaseline = 'middle';
+          ctx.fillText(op.text, x + 2, y + h / 2);
+        }
+        const buttonX = x + w - btnW;
+        ctx.fillStyle = '#c0c0c0';
+        ctx.fillRect(buttonX, y, btnW, h);
+        ctx.strokeStyle = '#808080';
+        ctx.strokeRect(buttonX, y, btnW, h);
+        ctx.beginPath();
+        const triCx = buttonX + btnW / 2;
+        const triCy = y + h / 2;
+        const triSize = btnW * 0.3;
+        ctx.moveTo(triCx - triSize, triCy - triSize / 2);
+        ctx.lineTo(triCx + triSize, triCy - triSize / 2);
+        ctx.lineTo(triCx, triCy + triSize / 2);
+        ctx.closePath();
+        ctx.fillStyle = '#000000';
+        ctx.fill();
+        break;
+      }
+      case 'edit': {
+        ctx.fillStyle = op.backColor;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = '#808080';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, w, h);
+        if (op.text) {
+          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.fillStyle = op.foreColor;
+          ctx.textBaseline = 'middle';
+          ctx.fillText(op.text, x + 2, y + h / 2);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+
+    ctx.restore();
+  }
+
+  private drawTabLeaders(
+    ctx: CanvasRenderingContext2D,
+    leaders: LayerTabLeader[],
+    originX: number,
+    baselineY: number,
+    color: string,
+  ): void {
+    for (const leader of leaders) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash(
+        leader.fillType === 2 ? [4, 2]
+          : leader.fillType === 3 ? [1.5, 2.5]
+            : [],
+      );
+      const y = baselineY + 1;
+      ctx.beginPath();
+      ctx.moveTo(originX + leader.startX, y);
+      ctx.lineTo(originX + leader.endX, y);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  private setCanvasTextFont(
+    ctx: CanvasRenderingContext2D,
+    fontFamily: string,
+    fontSize: number,
+    bold: boolean,
+    italic: boolean,
+  ): void {
+    ctx.font = buildCanvasTextFont(fontFamily, fontSize, bold, italic);
+  }
+
+  private drawDomImage(
+    ctx: CanvasRenderingContext2D,
+    image: HTMLImageElement,
+    bbox: LayerBounds,
+    fillMode = 'fitToSize',
+    originalSize?: { width: number; height: number },
+    crop?: { left: number; top: number; right: number; bottom: number },
+  ): void {
+    const imageWidth = image.naturalWidth || image.width;
+    const imageHeight = image.naturalHeight || image.height;
+    if (!imageWidth || !imageHeight) {
+      return;
+    }
+
+    if (fillMode === 'fitToSize' || fillMode === 'none') {
+      if (crop) {
+        const scaleX = crop.right / imageWidth;
+        const srcX = crop.left / scaleX;
+        const srcY = crop.top / scaleX;
+        const srcW = (crop.right - crop.left) / scaleX;
+        const srcH = (crop.bottom - crop.top) / scaleX;
+        const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imageWidth) > 1 || Math.abs(srcH - imageHeight) > 1;
+        if (isCropped) {
+          ctx.drawImage(image, srcX, srcY, srcW, srcH, bbox.x, bbox.y, bbox.width, bbox.height);
+          return;
+        }
+      }
+      ctx.drawImage(image, bbox.x, bbox.y, bbox.width, bbox.height);
+      return;
+    }
+
+    const placedWidth = originalSize?.width ?? imageWidth;
+    const placedHeight = originalSize?.height ?? imageHeight;
+    const { x, y } = this.resolveImagePlacement(fillMode, bbox, placedWidth, placedHeight);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bbox.x, bbox.y, bbox.width, bbox.height);
+    ctx.clip();
+
+    if (fillMode === 'tileAll') {
+      for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
+        for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
+          ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+        }
+      }
+    } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
+      const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - placedHeight;
+      for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
+        ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+      }
+    } else if (fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
+      const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - placedWidth;
+      for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
+        ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+      }
+    } else {
+      ctx.drawImage(image, x, y, placedWidth, placedHeight);
+    }
+
+    ctx.restore();
+  }
+
+  private getDomImage(base64: string): HTMLImageElement | null {
+    const cached = this.domImageCache.get(base64);
+    if (cached) {
+      return cached.complete && cached.naturalWidth > 0 ? cached : null;
+    }
+
+    const image = new Image();
+    const bytes = decodeBase64(base64);
+    const mimeType = inferImageMime(bytes);
+    image.decoding = 'sync';
+    image.onload = () => {
+      if (this.rerenderScheduled || !this.lastRenderedTree || !this.lastTargetCanvas) {
+        return;
+      }
+      this.rerenderScheduled = true;
+      requestAnimationFrame(() => {
+        this.rerenderScheduled = false;
+        if (!this.lastRenderedTree || !this.lastTargetCanvas) {
+          return;
+        }
+        this.renderPage(this.lastRenderedTree, this.lastTargetCanvas, this.lastScale);
+      });
+    };
+    image.src = `data:${mimeType};base64,${base64}`;
+    this.domImageCache.set(base64, image);
+    return image.complete && image.naturalWidth > 0 ? image : null;
+  }
+
+  private withCanvasTransform(
+    ctx: CanvasRenderingContext2D,
+    bbox: LayerBounds,
+    transform: { rotation: number; horzFlip: boolean; vertFlip: boolean },
+    draw: () => void,
+  ): void {
+    ctx.save();
+    const { rotation, horzFlip, vertFlip } = transform;
+    if (rotation || horzFlip || vertFlip) {
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+      if (horzFlip) {
+        ctx.translate(cx * 2, 0);
+        ctx.scale(-1, 1);
+      }
+      if (vertFlip) {
+        ctx.translate(0, cy * 2);
+        ctx.scale(1, -1);
+      }
+      if (rotation) {
+        ctx.translate(cx, cy);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
+      }
+    }
+    draw();
+    ctx.restore();
+  }
+
+  private withCurrentOverlayClip(
+    ctx: CanvasRenderingContext2D,
+    padding: number,
+    draw: () => void,
+    bounds?: LayerBounds,
+  ): void {
+    if (this.currentClipStack.length === 0) {
+      draw();
+      return;
+    }
+    ctx.save();
+    for (const clip of this.currentClipStack) {
+      const clipBounds = clip.bounds;
+      let leftPad = padding;
+      let topPad = padding;
+      let rightPad = padding;
+      let bottomPad = padding;
+
+      if (clip.kind === 'body' || clip.kind === 'tableCell') {
+        rightPad = Math.max(rightPad, 4);
+      }
+
+      if (bounds) {
+        if (bounds.x < clipBounds.x) {
+          leftPad = Math.max(leftPad, 1);
+        }
+        if (bounds.y < clipBounds.y) {
+          topPad = Math.max(topPad, 1);
+        }
+        if (bounds.x + bounds.width > clipBounds.x + clipBounds.width + rightPad) {
+          rightPad = Math.max(
+            rightPad,
+            Math.ceil(bounds.x + bounds.width - (clipBounds.x + clipBounds.width)) + 1,
+          );
+        }
+        if (bounds.y + bounds.height > clipBounds.y + clipBounds.height) {
+          bottomPad = Math.max(bottomPad, 1);
+        }
+      }
+
+      ctx.beginPath();
+      ctx.rect(
+        clipBounds.x - leftPad,
+        clipBounds.y - topPad,
+        clipBounds.width + leftPad + rightPad,
+        clipBounds.height + topPad + bottomPad,
+      );
+      ctx.clip();
+    }
+    draw();
+    ctx.restore();
+  }
+
+  private resolveImagePlacement(
+    fillMode: string,
+    bbox: LayerBounds,
+    imageWidth: number,
+    imageHeight: number,
+  ): { x: number; y: number } {
+    switch (fillMode) {
+      case 'leftTop':
+        return { x: bbox.x, y: bbox.y };
+      case 'centerTop':
+        return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y };
+      case 'rightTop':
+        return { x: bbox.x + bbox.width - imageWidth, y: bbox.y };
+      case 'leftCenter':
+        return { x: bbox.x, y: bbox.y + (bbox.height - imageHeight) / 2 };
+      case 'center':
+        return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y + (bbox.height - imageHeight) / 2 };
+      case 'rightCenter':
+        return { x: bbox.x + bbox.width - imageWidth, y: bbox.y + (bbox.height - imageHeight) / 2 };
+      case 'leftBottom':
+        return { x: bbox.x, y: bbox.y + bbox.height - imageHeight };
+      case 'centerBottom':
+        return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y + bbox.height - imageHeight };
+      case 'rightBottom':
+        return { x: bbox.x + bbox.width - imageWidth, y: bbox.y + bbox.height - imageHeight };
+      default:
+        return { x: bbox.x, y: bbox.y };
+    }
+  }
+
+  private makeShapeFillStyle(
+    ctx: CanvasRenderingContext2D,
+    bounds: LayerBounds,
+    fillColor: string | null | undefined,
+    opacity: number,
+    gradient?: LayerGradient,
+    pattern?: LayerPatternFill,
+  ): string | CanvasGradient | CanvasPattern | null {
+    if (gradient) {
+      const gradientStyle = this.makeGradientStyle(ctx, gradient, bounds);
+      if (gradientStyle) {
+        return gradientStyle;
+      }
+    }
+    if (pattern) {
+      const patternStyle = this.getPatternStyle(ctx, pattern);
+      if (patternStyle) {
+        return patternStyle;
+      }
+    }
+    if (!fillColor) {
+      return null;
+    }
+    return opacity < 1 ? applyCssAlpha(fillColor, opacity) : fillColor;
+  }
+
+  private makeGradientStyle(
+    ctx: CanvasRenderingContext2D,
+    gradient: LayerGradient,
+    bounds: LayerBounds,
+  ): CanvasGradient | null {
+    if (gradient.colors.length < 2) {
+      return null;
+    }
+
+    let canvasGradient: CanvasGradient;
+    if (gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4) {
+      const cx = bounds.x + bounds.width * (gradient.centerX / 100);
+      const cy = bounds.y + bounds.height * (gradient.centerY / 100);
+      const radius = Math.max(bounds.width, bounds.height) / 2;
+      canvasGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    } else {
+      const [x0, y0, x1, y1] = angleToCanvasCoords(
+        gradient.angle,
+        bounds.x,
+        bounds.y,
+        bounds.width,
+        bounds.height,
+      );
+      canvasGradient = ctx.createLinearGradient(x0, y0, x1, y1);
+    }
+
+    const positions = gradient.positions.length > 0
+      ? gradient.positions
+      : gradient.colors.map((_, index) => index / (gradient.colors.length - 1));
+    for (const [index, color] of gradient.colors.entries()) {
+      canvasGradient.addColorStop(positions[index] ?? 0, color);
+    }
+    return canvasGradient;
+  }
+
+  private getPatternStyle(
+    ctx: CanvasRenderingContext2D,
+    pattern: LayerPatternFill,
+  ): CanvasPattern | null {
+    const cacheKey = `${pattern.patternType}:${pattern.patternColor}:${pattern.backgroundColor}`;
+    if (this.patternCache.has(cacheKey)) {
+      return this.patternCache.get(cacheKey) ?? null;
+    }
+
+    const tile = createPatternTileCanvas(pattern);
+    const canvasPattern = ctx.createPattern(tile, 'repeat');
+    this.patternCache.set(cacheKey, canvasPattern);
+    return canvasPattern;
+  }
+
+  private applyCanvasShadow(
+    ctx: CanvasRenderingContext2D,
+    shadow: LayerShapeShadow | undefined,
+  ): void {
+    if (!shadow) {
+      return;
+    }
+    ctx.shadowColor = applyCssAlpha(shadow.color, shadow.alpha > 0 ? 1 - (shadow.alpha / 255) : 1);
+    ctx.shadowBlur = 1;
+    ctx.shadowOffsetX = shadow.offsetX;
+    ctx.shadowOffsetY = shadow.offsetY;
+  }
+
+  private beginRectanglePath(
+    ctx: CanvasRenderingContext2D,
+    bounds: LayerBounds,
+    cornerRadius: number,
+  ): void {
+    ctx.beginPath();
+    if (cornerRadius <= 0) {
+      ctx.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+      return;
+    }
+    const radius = Math.min(cornerRadius, bounds.width / 2, bounds.height / 2);
+    ctx.moveTo(bounds.x + radius, bounds.y);
+    ctx.lineTo(bounds.x + bounds.width - radius, bounds.y);
+    ctx.quadraticCurveTo(bounds.x + bounds.width, bounds.y, bounds.x + bounds.width, bounds.y + radius);
+    ctx.lineTo(bounds.x + bounds.width, bounds.y + bounds.height - radius);
+    ctx.quadraticCurveTo(bounds.x + bounds.width, bounds.y + bounds.height, bounds.x + bounds.width - radius, bounds.y + bounds.height);
+    ctx.lineTo(bounds.x + radius, bounds.y + bounds.height);
+    ctx.quadraticCurveTo(bounds.x, bounds.y + bounds.height, bounds.x, bounds.y + bounds.height - radius);
+    ctx.lineTo(bounds.x, bounds.y + radius);
+    ctx.quadraticCurveTo(bounds.x, bounds.y, bounds.x + radius, bounds.y);
+    ctx.closePath();
+  }
+}
+
+function appendPathCommands(
+  ctx: CanvasRenderingContext2D,
+  commands: LayerPathCommand[],
+): void {
+  for (const command of commands) {
+    switch (command.type) {
+      case 'moveTo':
+        ctx.moveTo(command.x, command.y);
+        break;
+      case 'lineTo':
+        ctx.lineTo(command.x, command.y);
+        break;
+      case 'curveTo':
+        ctx.bezierCurveTo(
+          command.x1,
+          command.y1,
+          command.x2,
+          command.y2,
+          command.x3,
+          command.y3,
+        );
+        break;
+      case 'arcTo':
+        ctx.ellipse(
+          command.x,
+          command.y,
+          Math.max(command.rx, 0.01),
+          Math.max(command.ry, 0.01),
+          (command.rotation * Math.PI) / 180,
+          0,
+          Math.PI * 2,
+          !command.sweep,
+        );
+        break;
+      case 'closePath':
+        ctx.closePath();
+        break;
+    }
+  }
+}
+
+function strokeDashPattern(dash: string, width: number): number[] {
+  const stroke = Math.max(width, 0.5);
+  switch (dash) {
+    case 'dash':
+      return [stroke * 4, stroke * 2];
+    case 'dot':
+      return [stroke * 1.5, stroke * 2.5];
+    case 'dashDot':
+      return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2];
+    case 'dashDotDot':
+      return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2, stroke * 1.5, stroke * 2];
+    default:
+      return [];
+  }
+}
+
+function drawCanvasArrowHead(
+  ctx: CanvasRenderingContext2D,
+  tipX: number,
+  tipY: number,
+  directionX: number,
+  directionY: number,
+  arrowWidth: number,
+  arrowHeight: number,
+  arrowStyle: string,
+  color: string,
+  strokeWidth: number,
+): void {
+  if (arrowStyle === 'none') {
+    return;
+  }
+
+  const alongX = -directionX;
+  const alongY = -directionY;
+  const perpX = directionY;
+  const perpY = -directionX;
+  const halfHeight = arrowHeight / 2;
+  const toWorld = (along: number, perp: number): [number, number] => [
+    tipX + along * alongX + perp * perpX,
+    tipY + along * alongY + perp * perpY,
+  ];
+
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(strokeWidth * 0.3, 0.5);
+
+  if (arrowStyle === 'arrow' || arrowStyle === 'concaveArrow') {
+    const [baseX1, baseY1] = toWorld(arrowWidth, -halfHeight);
+    const [baseX2, baseY2] = toWorld(arrowWidth, halfHeight);
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(baseX1, baseY1);
+    if (arrowStyle === 'concaveArrow') {
+      const [centerX, centerY] = toWorld(arrowWidth - arrowWidth * 0.3, 0);
+      ctx.lineTo(centerX, centerY);
+    }
+    ctx.lineTo(baseX2, baseY2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (arrowStyle === 'diamond' || arrowStyle === 'openDiamond') {
+    const halfWidth = arrowWidth / 2;
+    const [point1X, point1Y] = toWorld(0, 0);
+    const [point2X, point2Y] = toWorld(halfWidth, -halfHeight);
+    const [point3X, point3Y] = toWorld(arrowWidth, 0);
+    const [point4X, point4Y] = toWorld(halfWidth, halfHeight);
+    ctx.beginPath();
+    ctx.moveTo(point1X, point1Y);
+    ctx.lineTo(point2X, point2Y);
+    ctx.lineTo(point3X, point3Y);
+    ctx.lineTo(point4X, point4Y);
+    ctx.closePath();
+    if (arrowStyle === 'diamond') {
+      ctx.fill();
+    } else {
+      ctx.save();
+      ctx.fillStyle = 'white';
+      ctx.fill();
+      ctx.restore();
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (arrowStyle === 'circle' || arrowStyle === 'openCircle') {
+    const halfWidth = arrowWidth / 2;
+    const [centerX, centerY] = toWorld(halfWidth, 0);
+    const radiusX = halfWidth * 0.8;
+    const radiusY = halfHeight * 0.8;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+    if (arrowStyle === 'circle') {
+      ctx.fill();
+    } else {
+      ctx.save();
+      ctx.fillStyle = 'white';
+      ctx.fill();
+      ctx.restore();
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (arrowStyle === 'square' || arrowStyle === 'openSquare') {
+    const [point1X, point1Y] = toWorld(0, -halfHeight);
+    const [point2X, point2Y] = toWorld(arrowWidth, -halfHeight);
+    const [point3X, point3Y] = toWorld(arrowWidth, halfHeight);
+    const [point4X, point4Y] = toWorld(0, halfHeight);
+    ctx.beginPath();
+    ctx.moveTo(point1X, point1Y);
+    ctx.lineTo(point2X, point2Y);
+    ctx.lineTo(point3X, point3Y);
+    ctx.lineTo(point4X, point4Y);
+    ctx.closePath();
+    if (arrowStyle === 'square') {
+      ctx.fill();
+    } else {
+      ctx.save();
+      ctx.fillStyle = 'white';
+      ctx.fill();
+      ctx.restore();
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+function applyCssAlpha(color: string, opacity: number): string {
+  if (opacity >= 1) {
+    return color;
+  }
+  const hex = color.trim();
+  if (hex.startsWith('#')) {
+    const normalized = hex.length === 4
+      ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+      : hex;
+    if (normalized.length === 7) {
+      const r = Number.parseInt(normalized.slice(1, 3), 16);
+      const g = Number.parseInt(normalized.slice(3, 5), 16);
+      const b = Number.parseInt(normalized.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+    }
+  }
+  if (hex.startsWith('rgb(')) {
+    return hex.replace(/^rgb\((.+)\)$/, `rgba($1, ${opacity})`);
+  }
+  if (hex.startsWith('rgba(')) {
+    return hex.replace(/^rgba\((.+),\s*[^,]+\)$/, `rgba($1, ${opacity})`);
+  }
+  return color;
+}

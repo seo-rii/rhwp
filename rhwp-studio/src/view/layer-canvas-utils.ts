@@ -1,0 +1,772 @@
+import type {
+  LayerBounds,
+  LayerEquationLayoutBox,
+  LayerPathCommand,
+  LayerPatternFill,
+} from '@/core/types';
+
+const EQUATION_SCRIPT_SCALE = 0.7;
+const EQUATION_BIG_OP_SCALE = 1.5;
+
+export function decodeBase64(base64: string): Uint8Array {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let idx = 0; idx < binary.length; idx += 1) {
+    bytes[idx] = binary.charCodeAt(idx);
+  }
+  return bytes;
+}
+
+export function inferImageMime(bytes: Uint8Array): string {
+  if (bytes.length >= 8
+    && bytes[0] === 0x89
+    && bytes[1] === 0x50
+    && bytes[2] === 0x4E
+    && bytes[3] === 0x47) {
+    return 'image/png';
+  }
+  if (bytes.length >= 3
+    && bytes[0] === 0xFF
+    && bytes[1] === 0xD8
+    && bytes[2] === 0xFF) {
+    return 'image/jpeg';
+  }
+  if (bytes.length >= 6
+    && bytes[0] === 0x47
+    && bytes[1] === 0x49
+    && bytes[2] === 0x46) {
+    return 'image/gif';
+  }
+  if (bytes.length >= 2
+    && bytes[0] === 0x42
+    && bytes[1] === 0x4D) {
+    return 'image/bmp';
+  }
+  if (bytes.length >= 12
+    && bytes[0] === 0x52
+    && bytes[1] === 0x49
+    && bytes[2] === 0x46
+    && bytes[8] === 0x57
+    && bytes[9] === 0x45
+    && bytes[10] === 0x42
+    && bytes[11] === 0x50) {
+    return 'image/webp';
+  }
+  return 'image/png';
+}
+
+export function buildCanvasTextFont(
+  fontFamily: string,
+  fontSize: number,
+  bold: boolean,
+  italic: boolean,
+): string {
+  const baseFamily = fontFamily?.trim() ?? '';
+  const lower = baseFamily.toLowerCase();
+  const fallback = !baseFamily
+    ? `'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans CJK KR','NanumGothic','나눔고딕','Noto Sans KR','Pretendard',sans-serif`
+    : /굴림체|바탕체|gulimche|batangche|coding|courier/i.test(baseFamily)
+      ? `'GulimChe','굴림체','D2Coding','NanumGothicCoding','나눔고딕코딩','Noto Sans Mono',monospace`
+      : /바탕|명조|궁서/.test(baseFamily) || /times|hymjre|palatino|georgia|batang|gungsuh/i.test(lower)
+        ? `'Batang','바탕','AppleMyungjo','Noto Serif CJK KR','NanumMyeongjo','나눔명조','Noto Serif KR',serif`
+        : `'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans CJK KR','NanumGothic','나눔고딕','Noto Sans KR','Pretendard',sans-serif`;
+  const family = baseFamily ? `"${baseFamily}", ${fallback}` : fallback;
+  return `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${(fontSize || 12).toFixed(3)}px ${family}`;
+}
+
+export function startsWithInvalidControl(text: string): boolean {
+  if (!text) {
+    return false;
+  }
+  const code = text.codePointAt(0) ?? 0;
+  return code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d;
+}
+
+export function isHalfwidthScaledCluster(text: string): boolean {
+  const code = text.codePointAt(0) ?? 0;
+  return (code >= 0x2018 && code <= 0x2027) || code === 0x00b7;
+}
+
+export function angleToCanvasCoords(
+  angle: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): [number, number, number, number] {
+  const normalized = ((angle % 360) + 360) % 360;
+  switch (normalized) {
+    case 0:
+      return [x, y, x, y + height];
+    case 45:
+      return [x, y, x + width, y + height];
+    case 90:
+      return [x, y, x + width, y];
+    case 135:
+      return [x, y + height, x + width, y];
+    case 180:
+      return [x, y + height, x, y];
+    case 225:
+      return [x + width, y + height, x, y];
+    case 270:
+      return [x + width, y, x, y];
+    case 315:
+      return [x + width, y, x, y + height];
+    default: {
+      const radians = normalized * (Math.PI / 180);
+      const sin = Math.sin(radians);
+      const cos = Math.cos(radians);
+      const centerX = x + width / 2;
+      const centerY = y + height / 2;
+      return [
+        centerX - sin * width / 2,
+        centerY - cos * height / 2,
+        centerX + sin * width / 2,
+        centerY + cos * height / 2,
+      ];
+    }
+  }
+}
+
+export function createPatternTileCanvas(pattern: LayerPatternFill): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = 6;
+  canvas.height = 6;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return canvas;
+  }
+
+  ctx.fillStyle = pattern.backgroundColor;
+  ctx.fillRect(0, 0, 6, 6);
+  ctx.strokeStyle = pattern.patternColor;
+  ctx.lineWidth = 1;
+
+  switch (pattern.patternType) {
+    case 0:
+      ctx.beginPath();
+      ctx.moveTo(0, 3);
+      ctx.lineTo(6, 3);
+      ctx.stroke();
+      break;
+    case 1:
+      ctx.beginPath();
+      ctx.moveTo(3, 0);
+      ctx.lineTo(3, 6);
+      ctx.stroke();
+      break;
+    case 2:
+      ctx.beginPath();
+      ctx.moveTo(6, 0);
+      ctx.lineTo(0, 6);
+      ctx.stroke();
+      break;
+    case 3:
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(6, 6);
+      ctx.stroke();
+      break;
+    case 4:
+      ctx.beginPath();
+      ctx.moveTo(3, 0);
+      ctx.lineTo(3, 6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, 3);
+      ctx.lineTo(6, 3);
+      ctx.stroke();
+      break;
+    case 5:
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(6, 6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(6, 0);
+      ctx.lineTo(0, 6);
+      ctx.stroke();
+      break;
+    default:
+      break;
+  }
+
+  return canvas;
+}
+
+export function rasterizePatternTileToPngBytes(pattern: LayerPatternFill): Uint8Array | null {
+  const canvas = createPatternTileCanvas(pattern);
+  const dataUrl = canvas.toDataURL('image/png');
+  const [, encoded = ''] = dataUrl.split(',');
+  return decodeBase64(encoded);
+}
+
+export function computePathPaintBounds(
+  commands: LayerPathCommand[],
+  fallback: LayerBounds,
+): LayerBounds {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  const record = (x: number, y: number) => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
+
+  for (const command of commands) {
+    switch (command.type) {
+      case 'moveTo':
+      case 'lineTo':
+        record(command.x, command.y);
+        break;
+      case 'curveTo':
+        record(command.x1, command.y1);
+        record(command.x2, command.y2);
+        record(command.x3, command.y3);
+        break;
+      case 'arcTo':
+        record(command.x, command.y);
+        break;
+      case 'closePath':
+        break;
+    }
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return fallback;
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(maxX - minX, 1),
+    height: Math.max(maxY - minY, 1),
+  };
+}
+
+export function calculateArrowDimensions(
+  strokeWidth: number,
+  lineLength: number,
+  arrowSize: number,
+): [number, number] {
+  const widthLevel = Math.floor(arrowSize / 3);
+  const lengthLevel = arrowSize % 3;
+  const widthMultiplier = widthLevel === 0 ? 1.5 : widthLevel === 1 ? 2.5 : 3.5;
+  const lengthMultiplier = lengthLevel === 0 ? 1 : lengthLevel === 1 ? 1.5 : 2;
+  const arrowHeight = Math.max(strokeWidth * widthMultiplier, 3);
+  const arrowWidth = Math.min(arrowHeight * lengthMultiplier, lineLength * 0.3);
+  return [arrowWidth, arrowHeight];
+}
+
+export function renderEquationLayoutBox(
+  ctx: CanvasRenderingContext2D,
+  layout: LayerEquationLayoutBox,
+  parentX: number,
+  parentY: number,
+  color: string,
+  fontSize: number,
+  italic: boolean,
+  bold: boolean,
+): void {
+  const x = parentX + layout.x;
+  const y = parentY + layout.y;
+
+  switch (layout.kind.type) {
+    case 'row':
+      for (const child of layout.kind.children) {
+        renderEquationLayoutBox(ctx, child, x, y, color, fontSize, italic, bold);
+      }
+      return;
+    case 'text': {
+      const size = equationFontSizeFromBox(layout, fontSize);
+      setEquationFont(ctx, size, true, bold);
+      ctx.fillStyle = color;
+      ctx.fillText(layout.kind.text, x, y + layout.baseline);
+      return;
+    }
+    case 'number': {
+      const size = equationFontSizeFromBox(layout, fontSize);
+      setEquationFont(ctx, size, false, bold);
+      ctx.fillStyle = color;
+      ctx.fillText(layout.kind.text, x, y + layout.baseline);
+      return;
+    }
+    case 'symbol': {
+      const size = equationFontSizeFromBox(layout, fontSize);
+      setEquationFont(ctx, size, false, false);
+      ctx.fillStyle = color;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.fillText(layout.kind.text, x + layout.width / 2, y + layout.baseline);
+      ctx.restore();
+      return;
+    }
+    case 'mathSymbol': {
+      const size = equationFontSizeFromBox(layout, fontSize);
+      setEquationFont(ctx, size, false, false);
+      ctx.fillStyle = color;
+      ctx.fillText(layout.kind.text, x, y + layout.baseline);
+      return;
+    }
+    case 'function': {
+      const size = equationFontSizeFromBox(layout, fontSize);
+      setEquationFont(ctx, size, false, false);
+      ctx.fillStyle = color;
+      ctx.fillText(layout.kind.name, x, y + layout.baseline);
+      return;
+    }
+    case 'fraction':
+      renderEquationLayoutBox(ctx, layout.kind.numer, x, y, color, fontSize, italic, bold);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = fontSize * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(x + fontSize * 0.05, y + layout.baseline);
+      ctx.lineTo(x + layout.width - fontSize * 0.05, y + layout.baseline);
+      ctx.stroke();
+      renderEquationLayoutBox(ctx, layout.kind.denom, x, y, color, fontSize, italic, bold);
+      return;
+    case 'sqrt': {
+      const bodyLeft = x + layout.kind.body.x - fontSize * 0.1;
+      const signHeight = layout.height;
+      const midX = bodyLeft - fontSize * 0.15;
+      const midY = y + signHeight;
+      const startX = midX - fontSize * 0.3;
+      const startY = y + signHeight * 0.6;
+      const tickX = startX - fontSize * 0.1;
+      const tickY = startY - fontSize * 0.05;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = fontSize * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(tickX, tickY);
+      ctx.lineTo(startX, startY);
+      ctx.lineTo(midX, midY);
+      ctx.lineTo(bodyLeft, y);
+      ctx.lineTo(x + layout.width, y);
+      ctx.stroke();
+
+      if (layout.kind.index) {
+        renderEquationLayoutBox(
+          ctx,
+          layout.kind.index,
+          x,
+          y,
+          color,
+          fontSize * EQUATION_SCRIPT_SCALE,
+          false,
+          false,
+        );
+      }
+      renderEquationLayoutBox(ctx, layout.kind.body, x, y, color, fontSize, italic, bold);
+      return;
+    }
+    case 'superscript':
+      renderEquationLayoutBox(ctx, layout.kind.base, x, y, color, fontSize, italic, bold);
+      renderEquationLayoutBox(
+        ctx,
+        layout.kind.sup,
+        x,
+        y,
+        color,
+        fontSize * EQUATION_SCRIPT_SCALE,
+        italic,
+        bold,
+      );
+      return;
+    case 'subscript':
+      renderEquationLayoutBox(ctx, layout.kind.base, x, y, color, fontSize, italic, bold);
+      renderEquationLayoutBox(
+        ctx,
+        layout.kind.sub,
+        x,
+        y,
+        color,
+        fontSize * EQUATION_SCRIPT_SCALE,
+        italic,
+        bold,
+      );
+      return;
+    case 'subSup':
+      renderEquationLayoutBox(ctx, layout.kind.base, x, y, color, fontSize, italic, bold);
+      renderEquationLayoutBox(
+        ctx,
+        layout.kind.sub,
+        x,
+        y,
+        color,
+        fontSize * EQUATION_SCRIPT_SCALE,
+        italic,
+        bold,
+      );
+      renderEquationLayoutBox(
+        ctx,
+        layout.kind.sup,
+        x,
+        y,
+        color,
+        fontSize * EQUATION_SCRIPT_SCALE,
+        italic,
+        bold,
+      );
+      return;
+    case 'bigOp': {
+      const opFontSize = fontSize * EQUATION_BIG_OP_SCALE;
+      const supHeight = layout.kind.sup ? layout.kind.sup.height + fontSize * 0.05 : 0;
+      const opX = x + (layout.width - estimateEquationOperatorWidth(layout.kind.symbol, opFontSize)) / 2;
+      const opY = y + supHeight + opFontSize * 0.8;
+      setEquationFont(ctx, opFontSize, false, false);
+      ctx.fillStyle = color;
+      ctx.fillText(layout.kind.symbol, opX, opY);
+      if (layout.kind.sup) {
+        renderEquationLayoutBox(
+          ctx,
+          layout.kind.sup,
+          x,
+          y,
+          color,
+          fontSize * EQUATION_SCRIPT_SCALE,
+          false,
+          false,
+        );
+      }
+      if (layout.kind.sub) {
+        renderEquationLayoutBox(
+          ctx,
+          layout.kind.sub,
+          x,
+          y,
+          color,
+          fontSize * EQUATION_SCRIPT_SCALE,
+          false,
+          false,
+        );
+      }
+      return;
+    }
+    case 'limit': {
+      const name = layout.kind.isUpper ? 'Lim' : 'lim';
+      const size = equationFontSizeFromBox(layout, fontSize);
+      setEquationFont(ctx, size, false, false);
+      ctx.fillStyle = color;
+      ctx.fillText(name, x, y + size * 0.8);
+      if (layout.kind.sub) {
+        renderEquationLayoutBox(
+          ctx,
+          layout.kind.sub,
+          x,
+          y,
+          color,
+          fontSize * EQUATION_SCRIPT_SCALE,
+          false,
+          false,
+        );
+      }
+      return;
+    }
+    case 'matrix': {
+      const brackets = layout.kind.style === 'paren' ? ['(', ')']
+        : layout.kind.style === 'bracket' ? ['[', ']']
+          : layout.kind.style === 'vert' ? ['|', '|']
+            : ['', ''];
+      if (brackets[0]) {
+        drawEquationStretchBracket(ctx, brackets[0], x, y, fontSize * 0.3, layout.height, color, fontSize);
+        drawEquationStretchBracket(ctx, brackets[1], x + layout.width - fontSize * 0.3, y, fontSize * 0.3, layout.height, color, fontSize);
+      }
+      for (const row of layout.kind.cells) {
+        for (const cell of row) {
+          renderEquationLayoutBox(ctx, cell, x, y, color, fontSize, italic, bold);
+        }
+      }
+      return;
+    }
+    case 'rel':
+      renderEquationLayoutBox(ctx, layout.kind.over, x, y, color, fontSize, italic, bold);
+      renderEquationLayoutBox(ctx, layout.kind.arrow, x, y, color, fontSize, italic, bold);
+      if (layout.kind.under) {
+        renderEquationLayoutBox(ctx, layout.kind.under, x, y, color, fontSize, italic, bold);
+      }
+      return;
+    case 'eqAlign':
+      for (const row of layout.kind.rows) {
+        renderEquationLayoutBox(ctx, row.left, x, y, color, fontSize, italic, bold);
+        renderEquationLayoutBox(ctx, row.right, x, y, color, fontSize, italic, bold);
+      }
+      return;
+    case 'paren':
+      if (layout.kind.left) {
+        drawEquationStretchBracket(ctx, layout.kind.left, x, y, fontSize * 0.3, layout.height, color, fontSize);
+      }
+      renderEquationLayoutBox(ctx, layout.kind.body, x, y, color, fontSize, italic, bold);
+      if (layout.kind.right) {
+        drawEquationStretchBracket(
+          ctx,
+          layout.kind.right,
+          x + layout.width - fontSize * 0.3,
+          y,
+          fontSize * 0.3,
+          layout.height,
+          color,
+          fontSize,
+        );
+      }
+      return;
+    case 'decoration':
+      renderEquationLayoutBox(ctx, layout.kind.body, x, y, color, fontSize, italic, bold);
+      drawEquationDecoration(
+        ctx,
+        layout.kind.decoration,
+        x + layout.kind.body.x + layout.kind.body.width / 2,
+        y + fontSize * 0.05,
+        layout.kind.body.width,
+        color,
+        fontSize,
+      );
+      return;
+    case 'fontStyle': {
+      const nextItalic = layout.kind.fontStyle === 'roman' ? false : layout.kind.fontStyle === 'italic' ? true : italic;
+      const nextBold = layout.kind.fontStyle === 'roman' ? false : layout.kind.fontStyle === 'bold' ? true : bold;
+      renderEquationLayoutBox(ctx, layout.kind.body, x, y, color, fontSize, nextItalic, nextBold);
+      return;
+    }
+    case 'space':
+    case 'newline':
+    case 'empty':
+      return;
+  }
+}
+
+export function splitIntoClusters(text: string): Array<{ start: number; text: string }> {
+  const chars = Array.from(text);
+  const clusters: Array<{ start: number; text: string }> = [];
+
+  let idx = 0;
+  while (idx < chars.length) {
+    if (isHangulChoseong(chars[idx])) {
+      const start = idx;
+      let cluster = chars[idx];
+      idx += 1;
+      if (idx < chars.length && isHangulJungseong(chars[idx])) {
+        cluster += chars[idx];
+        idx += 1;
+        if (idx < chars.length && isHangulJongseong(chars[idx])) {
+          cluster += chars[idx];
+          idx += 1;
+        }
+      }
+      clusters.push({ start, text: cluster });
+      continue;
+    }
+
+    clusters.push({ start: idx, text: chars[idx] });
+    idx += 1;
+  }
+
+  return clusters;
+}
+
+function equationFontSizeFromBox(
+  layout: LayerEquationLayoutBox,
+  baseFontSize: number,
+): number {
+  return layout.height > 0 ? layout.height : baseFontSize;
+}
+
+function estimateEquationOperatorWidth(text: string, fontSize: number): number {
+  return Array.from(text).length * fontSize * 0.6;
+}
+
+function setEquationFont(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  italic: boolean,
+  bold: boolean,
+): void {
+  const style = italic ? 'italic ' : '';
+  const weight = bold ? 'bold ' : '';
+  ctx.font = `${style}${weight}${size.toFixed(1)}px 'Latin Modern Math', 'STIX Two Math', 'Cambria Math', 'Pretendard', serif`;
+}
+
+function drawEquationStretchBracket(
+  ctx: CanvasRenderingContext2D,
+  bracket: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: string,
+  fontSize: number,
+): void {
+  const midX = x + width / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = fontSize * 0.04;
+
+  switch (bracket) {
+    case '(':
+      ctx.beginPath();
+      ctx.moveTo(midX + width * 0.2, y);
+      ctx.quadraticCurveTo(x, y + height / 2, midX + width * 0.2, y + height);
+      ctx.stroke();
+      return;
+    case ')':
+      ctx.beginPath();
+      ctx.moveTo(midX - width * 0.2, y);
+      ctx.quadraticCurveTo(x + width, y + height / 2, midX - width * 0.2, y + height);
+      ctx.stroke();
+      return;
+    case '[':
+      ctx.beginPath();
+      ctx.moveTo(midX + width * 0.2, y);
+      ctx.lineTo(midX - width * 0.2, y);
+      ctx.lineTo(midX - width * 0.2, y + height);
+      ctx.lineTo(midX + width * 0.2, y + height);
+      ctx.stroke();
+      return;
+    case ']':
+      ctx.beginPath();
+      ctx.moveTo(midX - width * 0.2, y);
+      ctx.lineTo(midX + width * 0.2, y);
+      ctx.lineTo(midX + width * 0.2, y + height);
+      ctx.lineTo(midX - width * 0.2, y + height);
+      ctx.stroke();
+      return;
+    case '{': {
+      const quarterHeight = height / 4;
+      ctx.beginPath();
+      ctx.moveTo(midX + width * 0.2, y);
+      ctx.quadraticCurveTo(midX - width * 0.1, y, midX - width * 0.1, y + quarterHeight);
+      ctx.quadraticCurveTo(midX - width * 0.1, y + quarterHeight * 2, midX - width * 0.3, y + quarterHeight * 2);
+      ctx.quadraticCurveTo(midX - width * 0.1, y + quarterHeight * 2, midX - width * 0.1, y + quarterHeight * 3);
+      ctx.quadraticCurveTo(midX - width * 0.1, y + height, midX + width * 0.2, y + height);
+      ctx.stroke();
+      return;
+    }
+    case '}': {
+      const quarterHeight = height / 4;
+      ctx.beginPath();
+      ctx.moveTo(midX - width * 0.2, y);
+      ctx.quadraticCurveTo(midX + width * 0.1, y, midX + width * 0.1, y + quarterHeight);
+      ctx.quadraticCurveTo(midX + width * 0.1, y + quarterHeight * 2, midX + width * 0.3, y + quarterHeight * 2);
+      ctx.quadraticCurveTo(midX + width * 0.1, y + quarterHeight * 2, midX + width * 0.1, y + quarterHeight * 3);
+      ctx.quadraticCurveTo(midX + width * 0.1, y + height, midX - width * 0.2, y + height);
+      ctx.stroke();
+      return;
+    }
+    case '|':
+      ctx.beginPath();
+      ctx.moveTo(midX, y);
+      ctx.lineTo(midX, y + height);
+      ctx.stroke();
+      return;
+    default:
+      setEquationFont(ctx, height, false, false);
+      ctx.fillStyle = color;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.fillText(bracket, midX, y + height * 0.7);
+      ctx.restore();
+  }
+}
+
+function drawEquationDecoration(
+  ctx: CanvasRenderingContext2D,
+  decoration: string,
+  midX: number,
+  y: number,
+  width: number,
+  color: string,
+  fontSize: number,
+): void {
+  const strokeWidth = fontSize * 0.03;
+  const halfWidth = width / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = strokeWidth;
+
+  switch (decoration) {
+    case 'hat':
+      ctx.beginPath();
+      ctx.moveTo(midX - halfWidth * 0.6, y + fontSize * 0.15);
+      ctx.lineTo(midX, y);
+      ctx.lineTo(midX + halfWidth * 0.6, y + fontSize * 0.15);
+      ctx.stroke();
+      return;
+    case 'bar':
+    case 'overline':
+      ctx.beginPath();
+      ctx.moveTo(midX - halfWidth, y + fontSize * 0.05);
+      ctx.lineTo(midX + halfWidth, y + fontSize * 0.05);
+      ctx.stroke();
+      return;
+    case 'vec': {
+      const arrowY = y + fontSize * 0.05;
+      ctx.beginPath();
+      ctx.moveTo(midX - halfWidth, arrowY);
+      ctx.lineTo(midX + halfWidth, arrowY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(midX + halfWidth - fontSize * 0.1, arrowY - fontSize * 0.06);
+      ctx.lineTo(midX + halfWidth, arrowY);
+      ctx.lineTo(midX + halfWidth - fontSize * 0.1, arrowY + fontSize * 0.06);
+      ctx.stroke();
+      return;
+    }
+    case 'tilde': {
+      const tildeY = y + fontSize * 0.08;
+      ctx.beginPath();
+      ctx.moveTo(midX - halfWidth * 0.6, tildeY);
+      ctx.quadraticCurveTo(midX - halfWidth * 0.2, tildeY - fontSize * 0.08, midX, tildeY);
+      ctx.quadraticCurveTo(midX + halfWidth * 0.2, tildeY + fontSize * 0.08, midX + halfWidth * 0.6, tildeY);
+      ctx.stroke();
+      return;
+    }
+    case 'dot':
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(midX, y + fontSize * 0.06, fontSize * 0.03, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    case 'dDot': {
+      const gap = fontSize * 0.1;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(midX - gap, y + fontSize * 0.06, fontSize * 0.03, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(midX + gap, y + fontSize * 0.06, fontSize * 0.03, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    case 'underline':
+    case 'under': {
+      const underlineY = y + fontSize * 1.1;
+      ctx.beginPath();
+      ctx.moveTo(midX - halfWidth, underlineY);
+      ctx.lineTo(midX + halfWidth, underlineY);
+      ctx.stroke();
+      return;
+    }
+    default:
+      ctx.beginPath();
+      ctx.moveTo(midX - halfWidth * 0.5, y + fontSize * 0.1);
+      ctx.lineTo(midX + halfWidth * 0.5, y + fontSize * 0.1);
+      ctx.stroke();
+  }
+}
+
+function isHangulChoseong(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0;
+  return (code >= 0x1100 && code <= 0x115F) || (code >= 0xA960 && code <= 0xA97F);
+}
+
+function isHangulJungseong(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0;
+  return (code >= 0x1160 && code <= 0x11A7) || (code >= 0xD7B0 && code <= 0xD7C6);
+}
+
+function isHangulJongseong(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0;
+  return (code >= 0x11A8 && code <= 0x11FF) || (code >= 0xD7CB && code <= 0xD7FB);
+}

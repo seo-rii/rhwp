@@ -1,11 +1,13 @@
 import { WasmBridge } from '@/core/wasm-bridge';
 import type { PageInfo, PageLayerTree } from '@/core/types';
 import { CanvasKitLayerRenderer } from './canvaskit-renderer';
+import { Canvas2DLayerRenderer } from './canvas2d-layer-renderer';
 import { clampRenderScale, type RenderBackend } from './render-backend';
 
 export class PageRenderer {
   private reRenderTimers = new Map<number, ReturnType<typeof setTimeout>[]>();
   private layerTreeCache = new Map<number, PageLayerTree>();
+  private canvas2dRenderer = new Canvas2DLayerRenderer('compat');
 
   constructor(
     private wasm: WasmBridge,
@@ -30,15 +32,6 @@ export class PageRenderer {
     canvas: HTMLCanvasElement,
     scale: number,
   ): number {
-    if (this.backend !== 'canvaskit') {
-      this.wasm.renderPageToCanvas(pageIdx, canvas, scale);
-      return scale;
-    }
-
-    if (!this.canvaskitRenderer) {
-      throw new Error('CanvasKit renderer가 초기화되지 않았습니다');
-    }
-
     const appliedScale = clampRenderScale(pageInfo, scale);
 
     canvas.width = Math.max(1, Math.floor(pageInfo.width * appliedScale));
@@ -48,7 +41,16 @@ export class PageRenderer {
       layerTree = this.wasm.getPageLayerTree(pageIdx);
       this.layerTreeCache.set(pageIdx, layerTree);
     }
-    this.canvaskitRenderer.renderPage(layerTree, canvas, appliedScale);
+
+    if (this.backend === 'canvaskit') {
+      if (!this.canvaskitRenderer) {
+        throw new Error('CanvasKit renderer가 초기화되지 않았습니다');
+      }
+      this.canvaskitRenderer.renderPage(layerTree, canvas, appliedScale);
+      return appliedScale;
+    }
+
+    this.canvas2dRenderer.renderPage(layerTree, canvas, appliedScale);
     return appliedScale;
   }
 
