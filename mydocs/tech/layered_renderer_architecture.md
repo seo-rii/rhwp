@@ -196,6 +196,10 @@ native Skia는 non-wasm 타깃에서 layered raster backend 역할을 한다.
 현재 `FastPreview`는 page background 쪽 cache hint만 다르게 적용하며,
 더 적극적인 preview simplification을 위한 예약 성격이 강하다.
 
+이 cache hint는 이제 `PageLayerTree` JSON에도 함께 직렬화된다.
+즉 browser backend도 Rust가 계산한 `cacheHint`를 관찰할 수 있다.
+현재 CanvasKit이 이를 적극적으로 소비하는 단계는 아니지만, JSON 경계에서 정보가 사라지지는 않게 정리한 상태다.
+
 ## 7. CanvasKit render mode
 
 CanvasKit에는 현재 두 가지 모드가 있다.

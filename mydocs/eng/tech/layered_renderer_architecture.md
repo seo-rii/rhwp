@@ -197,6 +197,10 @@ These defaults can be overridden with `RHWP_RENDER_PROFILE`, using one of:
 At the moment `FastPreview` only changes page-background cache hints.
 It is mostly a reserved staging point for more aggressive preview simplification later.
 
+These cache hints are now also serialized through the `PageLayerTree` JSON boundary.
+That means browser backends can at least observe the Rust-computed `cacheHint` values.
+CanvasKit does not heavily consume them yet, but the information is no longer dropped before the web boundary.
+
 ## 7. CanvasKit render modes
 
 CanvasKit currently exposes two modes.

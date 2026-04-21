@@ -73,25 +73,46 @@ HWP 파일이 한컴과 다르게 렌더링되면 알려주세요:
    git push origin fix/issue-123
 
 5. PR 생성 (GitHub UI)                   ──→ devel 브랜치로 PR
-                                              CI 자동 실행 (빌드+테스트+Clippy)
+                                              CI 자동 실행 (빌드+테스트+all-features Clippy+studio E2E)
                                               메인테이너 코드 리뷰
                                               승인 후 merge
 ```
 
 **중요:**
 - PR 대상 브랜치는 **`devel`** 입니다 (`main` 아님)
-- PR을 생성하면 CI가 자동으로 빌드 + 테스트 + Clippy를 실행합니다
+- PR을 생성하면 CI가 기본 빌드/테스트, `all-features` Clippy/native-skia 경로, studio headless E2E를 자동으로 실행합니다
 - CI가 통과하지 않으면 merge할 수 없습니다
 - 메인테이너의 코드 리뷰 승인 후 merge됩니다
 
 ### PR 전 체크리스트
+
+먼저 작업 브랜치를 최신 `devel` 기준으로 맞추세요.
+
+```bash
+git fetch upstream devel
+git rebase upstream/devel
+```
 
 ```bash
 cargo test                                       # 793+ 테스트 통과
 cargo clippy --all-targets --all-features        # native-skia까지 확인하려면 fontconfig/freetype 개발 패키지가 필요할 수 있음
 ```
 
-두 명령이 모두 통과하는지 확인한 후 PR을 생성해주세요.
+렌더러/시각 회귀를 건드린 PR이면 아래도 같이 확인해 주세요.
+
+```bash
+cargo test --all-targets --features native-skia
+
+cd rhwp-studio
+npm run e2e:ci
+```
+
+또한 렌더러 PR은 Ready for Review로 바꾸기 전에 아래 정보를 본문에 남기는 편이 좋습니다.
+
+- 비교 스크린샷 또는 diff artifact 경로
+- 아직 남아 있는 known diff 목록
+- 직접 실행한 테스트 명령과 결과
+- `compat` / `default` 같은 렌더 모드 차이가 있으면 어떤 기준으로 검증했는지
 
 ### HWP 샘플 파일 제공
 
