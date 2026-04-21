@@ -341,6 +341,9 @@ export class CanvasKitLayerRenderer {
         this.renderPath(canvas, op);
         return;
       case 'image':
+        if (this.shouldOverlayImage(op)) {
+          return;
+        }
         this.renderImage(canvas, op);
         return;
       case 'equation':
@@ -363,16 +366,14 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayLine(op: LayerLineOp): boolean {
-    return this.renderMode === 'compat'
-      && op.style.lineType === 'single'
+    return op.style.lineType === 'single'
       && op.style.startArrow === 'none'
       && op.style.endArrow === 'none'
       && !op.style.shadow;
   }
 
   private shouldOverlayRectangle(op: LayerRectangleOp): boolean {
-    return this.renderMode === 'compat'
-      && op.cornerRadius === 0
+    return op.cornerRadius === 0
       && !op.gradient
       && !op.style.pattern
       && !op.style.shadow
@@ -396,6 +397,10 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayFormObject(_op: LayerFormObjectOp): boolean {
+    return true;
+  }
+
+  private shouldOverlayImage(_op: LayerImageOp): boolean {
     return true;
   }
 
@@ -1078,32 +1083,22 @@ export class CanvasKitLayerRenderer {
       return;
     }
     if (node.kind === 'clipRect') {
-      const clipRightPad = node.clipKind === 'body' || node.clipKind === 'tableCell' ? 4 : 0;
-      if (this.renderMode === 'compat') {
-        this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
-        this.renderFallbackOverlayNode(ctx, node.child);
-        this.currentClipStack.pop();
-        return;
-      }
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(node.clip.x, node.clip.y, node.clip.width + clipRightPad, node.clip.height);
-      ctx.clip();
+      this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
       this.renderFallbackOverlayNode(ctx, node.child);
-      ctx.restore();
+      this.currentClipStack.pop();
       return;
     }
     for (const op of node.ops) {
       if (this.renderMode === 'compat' && op.type === 'pageBackground' && op.image?.base64) {
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderPageBackgroundImageOverlay(ctx, op);
-        });
+        }, op.bbox);
         continue;
       }
-      if (this.renderMode === 'compat' && op.type === 'image' && op.base64) {
+      if (op.type === 'image' && op.base64 && this.shouldOverlayImage(op)) {
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderImageOverlay(ctx, op);
-        });
+        }, op.bbox);
         continue;
       }
       if (op.type === 'line' && this.shouldOverlayLine(op)) {
@@ -1121,31 +1116,31 @@ export class CanvasKitLayerRenderer {
       if (op.type === 'rectangle' && this.shouldOverlayRectangle(op)) {
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderRectangleOverlay(ctx, op);
-        });
+        }, op.bbox);
         continue;
       }
       if (op.type === 'formObject' && this.shouldOverlayFormObject(op)) {
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderFormObjectOverlay(ctx, op);
-        });
+        }, op.bbox);
         continue;
       }
       if (op.type === 'equation') {
         this.withCurrentOverlayClip(ctx, 0, () => {
           renderEquationLayoutBox(ctx, op.layoutBox, op.bbox.x, op.bbox.y, op.color, op.fontSize, false, false);
-        });
+        }, op.bbox);
         continue;
       }
       if (op.type === 'textRun' && this.shouldOverlayTextRun(op)) {
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderTextRunOverlay(ctx, op);
-        });
+        }, op.bbox);
         continue;
       }
       if (op.type === 'footnoteMarker' && this.shouldOverlayFootnoteMarker(op)) {
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderFootnoteMarkerOverlay(ctx, op);
-        });
+        }, op.bbox);
       }
     }
   }
@@ -1184,13 +1179,7 @@ export class CanvasKitLayerRenderer {
       ctx.lineTo(op.x2, op.y2);
       ctx.strokeStyle = op.style.color;
       ctx.lineWidth = strokeWidth;
-      ctx.setLineDash(
-        op.style.dash === 'dash' ? [6, 3]
-          : op.style.dash === 'dot' ? [2, 2]
-            : op.style.dash === 'dashDot' ? [6, 3, 2, 3]
-              : op.style.dash === 'dashDotDot' ? [6, 3, 2, 3, 2, 3]
-                : [],
-      );
+      ctx.setLineDash(this.strokeDashPattern(op.style.dash, strokeWidth));
       ctx.stroke();
       ctx.restore();
     });
@@ -1209,13 +1198,7 @@ export class CanvasKitLayerRenderer {
       if (op.style.strokeColor) {
         ctx.strokeStyle = op.style.strokeColor;
         ctx.lineWidth = Math.max(op.style.strokeWidth, 0.5);
-        ctx.setLineDash(
-          op.style.strokeDash === 'dash' ? [6, 3]
-            : op.style.strokeDash === 'dot' ? [2, 2]
-              : op.style.strokeDash === 'dashDot' ? [6, 3, 2, 3]
-                : op.style.strokeDash === 'dashDotDot' ? [6, 3, 2, 3, 2, 3]
-                  : [],
-        );
+        ctx.setLineDash(this.strokeDashPattern(op.style.strokeDash, op.style.strokeWidth));
         ctx.strokeRect(op.bbox.x, op.bbox.y, op.bbox.width, op.bbox.height);
       }
       ctx.restore();
@@ -1717,6 +1700,22 @@ export class CanvasKitLayerRenderer {
       ctx.lineTo(originX + leader.endX, y);
       ctx.stroke();
       ctx.restore();
+    }
+  }
+
+  private strokeDashPattern(dash: string, width: number): number[] {
+    const stroke = Math.max(width, 0.5);
+    switch (dash) {
+      case 'dash':
+        return [stroke * 4, stroke * 2];
+      case 'dot':
+        return [stroke * 1.5, stroke * 2.5];
+      case 'dashDot':
+        return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2];
+      case 'dashDotDot':
+        return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2, stroke * 1.5, stroke * 2];
+      default:
+        return [];
     }
   }
 

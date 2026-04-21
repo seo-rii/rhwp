@@ -26,6 +26,9 @@ const FULL_SWEEP_SKIP_FILES = new Set(['loading-fail-01.hwp']);
 const REPRESENTATIVE_FULL_PAGE_CASES = [
   { name: 'blank-new-document', setup: (page) => createNewDocument(page) },
   { name: 'lseg-01-basic', setup: (page) => loadHwpFile(page, 'lseg-01-basic.hwp') },
+  { name: 'lseg-05-tab', setup: (page) => loadHwpFile(page, 'lseg-05-tab.hwp') },
+  { name: '2010-01-06', setup: (page) => loadHwpFile(page, '2010-01-06.hwp') },
+  { name: '20250130-hongbo_saved', setup: (page) => loadHwpFile(page, '20250130-hongbo_saved.hwp') },
   { name: 'eq-01', setup: (page) => loadHwpFile(page, 'eq-01.hwp') },
   {
     name: 'hwp-table-test',
