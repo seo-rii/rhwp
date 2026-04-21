@@ -147,4 +147,11 @@ export class PageRenderer {
   clearLayerTreeCache(): void {
     this.layerTreeCache.clear();
   }
+
+  dispose(): void {
+    this.cancelAll();
+    this.clearLayerTreeCache();
+    this.canvaskitRenderer?.dispose();
+    this.canvaskitRenderer = null;
+  }
 }

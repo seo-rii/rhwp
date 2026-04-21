@@ -542,6 +542,29 @@ async function loadFromUrlParam(): Promise<void> {
 
 initialize();
 
+window.addEventListener('pagehide', () => {
+  try {
+    canvasView?.dispose();
+  } catch (error) {
+    console.error('[main] CanvasView dispose 실패:', error);
+  }
+  try {
+    ruler?.dispose();
+  } catch (error) {
+    console.error('[main] Ruler dispose 실패:', error);
+  }
+  try {
+    inputHandler?.dispose();
+  } catch (error) {
+    console.error('[main] InputHandler dispose 실패:', error);
+  }
+  try {
+    wasm.dispose();
+  } catch (error) {
+    console.error('[main] WASM dispose 실패:', error);
+  }
+}, { once: true });
+
 // ── iframe 연동 API (postMessage) ──
 // 부모 페이지에서 postMessage로 에디터를 제어할 수 있다.
 // 요청: { type: 'rhwp-request', id, method, params }

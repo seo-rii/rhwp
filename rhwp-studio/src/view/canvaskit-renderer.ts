@@ -130,6 +130,7 @@ export class CanvasKitLayerRenderer {
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
   private rerenderScheduled = false;
+  private disposed = false;
 
   private constructor(
     private readonly canvasKit: CanvasKit,
@@ -152,6 +153,10 @@ export class CanvasKitLayerRenderer {
     targetCanvas: HTMLCanvasElement,
     scale: number,
   ): void {
+    if (this.disposed) {
+      throw new Error('CanvasKit renderer가 이미 dispose되었습니다');
+    }
+
     this.lastRenderedTree = tree;
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
@@ -2115,6 +2120,43 @@ export class CanvasKitLayerRenderer {
     if (!image) return null;
     this.imageCache.set(base64, image);
     return image;
+  }
+
+  dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+
+    this.disposed = true;
+    this.lastRenderedTree = null;
+    this.lastTargetCanvas = null;
+    this.lastScale = 1;
+    this.rerenderScheduled = false;
+    this.currentClipStack.length = 0;
+
+    for (const image of this.patternImageCache.values()) {
+      image?.delete();
+    }
+    this.patternImageCache.clear();
+
+    for (const image of this.mipmappedImageCache.values()) {
+      image.delete();
+    }
+    this.mipmappedImageCache.clear();
+
+    for (const image of this.imageCache.values()) {
+      image.delete();
+    }
+    this.imageCache.clear();
+
+    for (const image of this.domImageCache.values()) {
+      image.onload = null;
+      image.onerror = null;
+      image.src = '';
+    }
+    this.domImageCache.clear();
+    this.fontAliases.clear();
+    this.fontProvider.delete();
   }
 
   private toRect(bounds: LayerBounds) {

@@ -274,6 +274,7 @@ export class CanvasView {
   /** 전체 정리 */
   dispose(): void {
     this.reset();
+    this.pageRenderer.dispose();
     this.viewportManager.detach();
     for (const unsub of this.unsubscribers) {
       unsub();
