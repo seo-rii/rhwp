@@ -1,7 +1,9 @@
 //! 렌더링 엔진 모듈
 //!
 //! IR(Document Model) → 렌더 트리 → 백엔드 렌더링 파이프라인을 구현한다.
-//! Renderer Trait으로 추상화하여 Canvas/SVG/HTML 백엔드를 선택할 수 있다.
+//! legacy `PageRenderTree` 백엔드와 layered `PageLayerTree` 백엔드를 함께 포함한다.
+//! `RenderBackend` enum은 기존 Canvas/SVG/HTML 출력 선택용이며, layered SVG/native Skia/
+//! browser CanvasKit/Canvas2D 같은 새 경로는 별도 entrypoint와 layer renderer contract를 쓴다.
 
 use crate::model::style::{LineSpacingType, UnderlineType};
 
@@ -30,7 +32,10 @@ pub mod web_canvas;
 
 use crate::model::ColorRef;
 
-/// 렌더링 백엔드 종류
+/// legacy `PageRenderTree` 렌더링 백엔드 종류
+///
+/// layered backend 선택을 표현하는 enum이 아니라, 기존 Canvas/SVG/HTML 경로의
+/// 직렬화/출력 선택에만 쓰인다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderBackend {
     /// Canvas 2D API (1차)

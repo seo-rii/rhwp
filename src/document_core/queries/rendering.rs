@@ -12,7 +12,7 @@ use crate::renderer::canvas::CanvasRenderer;
 use crate::renderer::composer::{compose_paragraph, compose_section, ComposedParagraph};
 use crate::renderer::height_measurer::{HeightMeasurer, MeasuredSection, MeasuredTable};
 use crate::renderer::html::HtmlRenderer;
-use crate::renderer::layer_renderer::LayerRenderer;
+use crate::renderer::layer_renderer::{LayerRasterRenderer, LayerRenderer};
 use crate::renderer::layout::LayoutEngine;
 use crate::renderer::page_layout::PageLayoutInfo;
 use crate::renderer::pagination::{PaginationResult, Paginator};
@@ -101,9 +101,8 @@ impl DocumentCore {
     pub fn render_page_png_native(&self, page_num: u32) -> Result<Vec<u8>, HwpError> {
         let layer_tree =
             self.build_page_layer_tree_for_output(page_num, RenderProfile::HighQuality)?;
-        SkiaLayerRenderer::new()
-            .render_png(&layer_tree)
-            .map_err(HwpError::RenderError)
+        let renderer = SkiaLayerRenderer::new();
+        LayerRasterRenderer::render_png(&renderer, &layer_tree).map_err(HwpError::RenderError)
     }
 
     /// SVG 렌더링 (폰트 임베딩 옵션 포함)

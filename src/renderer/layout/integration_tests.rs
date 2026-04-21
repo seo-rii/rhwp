@@ -622,15 +622,15 @@ mod tests {
         case_name: &str,
         layer_tree: &crate::paint::PageLayerTree,
     ) {
-        use crate::renderer::layer_renderer::LayerRenderer;
+        use crate::renderer::layer_renderer::{LayerRasterRenderer, LayerRenderer};
         use crate::renderer::skia::SkiaLayerRenderer;
         use crate::renderer::svg_layer::SvgLayerRenderer;
 
         let mut svg_renderer = SvgLayerRenderer::new();
         svg_renderer.render_page(layer_tree);
         let expected = rasterize_svg(svg_renderer.output()).expect("synthetic SVG rasterize 실패");
-        let actual_png = SkiaLayerRenderer::new()
-            .render_png(layer_tree)
+        let renderer = SkiaLayerRenderer::new();
+        let actual_png = LayerRasterRenderer::render_png(&renderer, layer_tree)
             .expect("synthetic Skia PNG 렌더 실패");
         let actual = decode_png(&actual_png).expect("synthetic Skia PNG decode 실패");
         let tolerant_diff = diff_pixmaps(&expected, &actual, SKIA_TOLERANT_CHANNEL_DELTA);

@@ -3,6 +3,7 @@ use skia_safe::{
 };
 
 use crate::paint::{LayerNode, LayerNodeKind, PageLayerTree, PaintOp};
+use crate::renderer::layer_renderer::LayerRasterRenderer;
 use crate::renderer::layout::{compute_char_positions, split_into_clusters};
 use crate::renderer::render_tree::{BoundingBox, TextRunNode};
 use crate::renderer::{LineRenderType, UnderlineType};
@@ -897,6 +898,12 @@ impl SkiaLayerRenderer {
         }
         draw(canvas);
         canvas.restore();
+    }
+}
+
+impl LayerRasterRenderer for SkiaLayerRenderer {
+    fn render_png(&self, tree: &PageLayerTree) -> Result<Vec<u8>, String> {
+        SkiaLayerRenderer::render_png(self, tree)
     }
 }
 
