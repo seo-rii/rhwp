@@ -45,10 +45,13 @@ export interface PageLayerTree {
 
 export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;
 
+export type LayerCacheHint = 'none' | 'staticSubtree' | 'preferRaster' | 'preferVectorRecording';
+
 export interface LayerGroupNode {
   bounds: LayerBounds;
   kind: 'group';
   sourceNodeId?: number;
+  cacheHint: LayerCacheHint;
   children: LayerNode[];
 }
 
@@ -65,6 +68,7 @@ export interface LayerLeafNode {
   bounds: LayerBounds;
   kind: 'leaf';
   sourceNodeId?: number;
+  cacheHint: LayerCacheHint;
   ops: LayerPaintOp[];
 }
 

@@ -5,6 +5,10 @@ use crate::renderer::render_tree::{
 };
 
 /// 한 페이지의 visual layer tree.
+///
+/// 최종 lean visual IR이라기보다는 semantic render tree에서 backend replay용으로
+/// 내려가는 1차 전환 표현이다. backend가 다시 레이아웃을 해석하지 않도록 clip/group/
+/// leaf 순서와 paint payload를 고정하되, 일부 semantic 메타데이터는 아직 유지한다.
 #[derive(Debug, Clone)]
 pub struct PageLayerTree {
     pub page_width: f64,
@@ -85,10 +89,19 @@ impl LayerNode {
     }
 
     pub fn leaf(bounds: BoundingBox, source_node_id: Option<NodeId>, ops: Vec<PaintOp>) -> Self {
+        Self::leaf_with_hint(bounds, source_node_id, ops, CacheHint::None)
+    }
+
+    pub fn leaf_with_hint(
+        bounds: BoundingBox,
+        source_node_id: Option<NodeId>,
+        ops: Vec<PaintOp>,
+        cache_hint: CacheHint,
+    ) -> Self {
         Self {
             bounds,
             source_node_id,
-            kind: LayerNodeKind::Leaf { ops },
+            kind: LayerNodeKind::Leaf { ops, cache_hint },
         }
     }
 }
@@ -107,6 +120,7 @@ pub enum LayerNodeKind {
     },
     Leaf {
         ops: Vec<PaintOp>,
+        cache_hint: CacheHint,
     },
 }
 

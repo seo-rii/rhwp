@@ -5,7 +5,7 @@ use base64::Engine;
 use crate::document_core::helpers::{color_ref_to_css, json_escape as raw_json_escape};
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
-use crate::paint::{ClipKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp};
+use crate::paint::{CacheHint, ClipKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp};
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
@@ -41,8 +41,16 @@ impl LayerNode {
         }
 
         match &self.kind {
-            LayerNodeKind::Group { children, .. } => {
-                buf.push_str(",\"kind\":\"group\",\"children\":[");
+            LayerNodeKind::Group {
+                children,
+                cache_hint,
+                ..
+            } => {
+                let _ = write!(
+                    buf,
+                    ",\"kind\":\"group\",\"cacheHint\":{},\"children\":[",
+                    json_escape(cache_hint_str(*cache_hint))
+                );
                 for (idx, child) in children.iter().enumerate() {
                     if idx > 0 {
                         buf.push(',');
@@ -66,8 +74,12 @@ impl LayerNode {
                 buf.push_str(",\"child\":");
                 child.write_json(buf);
             }
-            LayerNodeKind::Leaf { ops } => {
-                buf.push_str(",\"kind\":\"leaf\",\"ops\":[");
+            LayerNodeKind::Leaf { ops, cache_hint } => {
+                let _ = write!(
+                    buf,
+                    ",\"kind\":\"leaf\",\"cacheHint\":{},\"ops\":[",
+                    json_escape(cache_hint_str(*cache_hint))
+                );
                 for (idx, op) in ops.iter().enumerate() {
                     if idx > 0 {
                         buf.push(',');
@@ -822,11 +834,20 @@ fn clip_kind_str(value: ClipKind) -> &'static str {
     }
 }
 
+fn cache_hint_str(value: CacheHint) -> &'static str {
+    match value {
+        CacheHint::None => "none",
+        CacheHint::StaticSubtree => "staticSubtree",
+        CacheHint::PreferRaster => "preferRaster",
+        CacheHint::PreferVectorRecording => "preferVectorRecording",
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::paint::{ClipKind, LayerNode, PageLayerTree};
+    use crate::paint::{CacheHint, ClipKind, LayerNode, PageLayerTree};
     use crate::renderer::render_tree::{EquationNode, TextRunNode};
 
     #[test]
@@ -923,6 +944,7 @@ mod tests {
         );
 
         assert!(json.contains("\"kind\":\"leaf\""));
+        assert!(json.contains("\"cacheHint\":\"none\""));
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"fontFamily\":\"Noto Sans KR\""));
@@ -1028,6 +1050,29 @@ mod tests {
         let json = tree.to_json();
         assert!(json.contains("\"kind\":\"clipRect\""));
         assert!(json.contains("\"clipKind\":\"body\""));
+    }
+
+    #[test]
+    fn serializes_group_cache_hint_for_browser_replay() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::group(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![LayerNode::leaf(
+                    BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                    None,
+                    vec![],
+                )],
+                CacheHint::PreferVectorRecording,
+                crate::paint::GroupKind::Generic,
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"kind\":\"group\""));
+        assert!(json.contains("\"cacheHint\":\"preferVectorRecording\""));
     }
 }
 

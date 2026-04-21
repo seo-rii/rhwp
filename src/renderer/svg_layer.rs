@@ -115,7 +115,7 @@ impl SvgLayerRenderer {
                 render_node.children = self.expand_children(child);
                 vec![render_node]
             }
-            LayerNodeKind::Leaf { ops } => ops
+            LayerNodeKind::Leaf { ops, .. } => ops
                 .iter()
                 .map(|op| self.paint_op_to_render_node(op, node.source_node_id))
                 .collect(),

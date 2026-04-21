@@ -161,11 +161,21 @@ impl LayerBuilder {
 
     fn build_paint_node(&mut self, node: &RenderNode, op: PaintOp) -> LayerNode {
         if node.children.is_empty() {
-            return LayerNode::leaf(node.bbox, Some(node.id), vec![op]);
+            return LayerNode::leaf_with_hint(
+                node.bbox,
+                Some(node.id),
+                vec![op],
+                self.cache_hint_for(&node.node_type),
+            );
         }
 
         let mut children = Vec::with_capacity(node.children.len() + 1);
-        children.push(LayerNode::leaf(node.bbox, Some(node.id), vec![op]));
+        children.push(LayerNode::leaf_with_hint(
+            node.bbox,
+            Some(node.id),
+            vec![op],
+            self.cache_hint_for(&node.node_type),
+        ));
         children.extend(self.build_children(node));
 
         LayerNode::group(
@@ -291,7 +301,7 @@ mod tests {
             LayerNodeKind::Group { children, .. } => {
                 assert_eq!(children.len(), 2);
                 match &children[0].kind {
-                    LayerNodeKind::Leaf { ops } => {
+                    LayerNodeKind::Leaf { ops, .. } => {
                         assert!(matches!(ops[0], PaintOp::PageBackground { .. }));
                     }
                     other => panic!("expected leaf, got {other:?}"),
@@ -301,6 +311,49 @@ mod tests {
                         assert_eq!(*clip_kind, ClipKind::TableCell);
                     }
                     other => panic!("expected clip rect, got {other:?}"),
+                }
+            }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn applies_cache_hints_for_static_subtrees_and_fast_preview() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::Header,
+            BoundingBox::new(0.0, 0.0, 800.0, 48.0),
+        ));
+        tree.root.children.push(RenderNode::new(
+            2,
+            RenderNodeType::PageBackground(PageBackgroundNode {
+                background_color: Some(0x00FFFFFF),
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: None,
+            }),
+            BoundingBox::new(0.0, 0.0, 800.0, 600.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::FastPreview);
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => {
+                assert_eq!(children.len(), 2);
+                match &children[0].kind {
+                    LayerNodeKind::Group { cache_hint, .. } => {
+                        assert_eq!(*cache_hint, CacheHint::StaticSubtree);
+                    }
+                    other => panic!("expected header group, got {other:?}"),
+                }
+                match &children[1].kind {
+                    LayerNodeKind::Leaf { cache_hint, .. } => {
+                        assert_eq!(*cache_hint, CacheHint::PreferRaster);
+                    }
+                    other => panic!("expected page background leaf, got {other:?}"),
                 }
             }
             other => panic!("expected root group, got {other:?}"),
@@ -352,13 +405,13 @@ mod tests {
                     LayerNodeKind::Group { children, .. } => {
                         assert_eq!(children.len(), 2);
                         match &children[0].kind {
-                            LayerNodeKind::Leaf { ops } => {
+                            LayerNodeKind::Leaf { ops, .. } => {
                                 assert!(matches!(ops[0], PaintOp::Rectangle { .. }));
                             }
                             other => panic!("expected rectangle leaf, got {other:?}"),
                         }
                         match &children[1].kind {
-                            LayerNodeKind::Leaf { ops } => {
+                            LayerNodeKind::Leaf { ops, .. } => {
                                 assert!(matches!(ops[0], PaintOp::TextRun { .. }));
                             }
                             other => panic!("expected text leaf, got {other:?}"),

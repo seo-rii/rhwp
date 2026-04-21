@@ -43,7 +43,10 @@ mod tests {
             RenderProfile::parse_name("SCREEN"),
             Some(RenderProfile::Screen)
         );
-        assert_eq!(RenderProfile::parse_name("print"), Some(RenderProfile::Print));
+        assert_eq!(
+            RenderProfile::parse_name("print"),
+            Some(RenderProfile::Print)
+        );
         assert_eq!(
             RenderProfile::parse_name("highquality"),
             Some(RenderProfile::HighQuality)

@@ -67,7 +67,7 @@ impl SkiaLayerRenderer {
                 self.render_node(canvas, child);
                 canvas.restore();
             }
-            LayerNodeKind::Leaf { ops } => {
+            LayerNodeKind::Leaf { ops, .. } => {
                 for op in ops {
                     self.render_op(canvas, op);
                 }

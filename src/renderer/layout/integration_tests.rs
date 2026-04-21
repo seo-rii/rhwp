@@ -1561,6 +1561,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_get_page_layer_tree_native_respects_render_profile_override() {
+        let Some(core) = load_document("samples/lseg-01-basic.hwp") else {
+            return;
+        };
+
+        let _guard = render_path_env_lock()
+            .lock()
+            .expect("render path env lock 획득 실패");
+        std::env::remove_var("RHWP_RENDER_PROFILE");
+        let screen = core
+            .get_page_layer_tree_native(0)
+            .expect("기본 profile 레이어 트리 직렬화 실패");
+        std::env::set_var("RHWP_RENDER_PROFILE", "fast-preview");
+        let fast_preview = core
+            .get_page_layer_tree_native(0)
+            .expect("fast-preview 레이어 트리 직렬화 실패");
+        std::env::remove_var("RHWP_RENDER_PROFILE");
+
+        assert!(
+            !screen.contains("\"cacheHint\":\"preferRaster\""),
+            "screen 기본 profile은 page background를 raster 선호로 내리지 않아야 함"
+        );
+        assert!(
+            fast_preview.contains("\"cacheHint\":\"preferRaster\""),
+            "fast-preview override는 cache hint를 JSON 경계까지 노출해야 함"
+        );
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_render_page_svg_with_fonts_respects_layer_svg_path() {
