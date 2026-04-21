@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const serverUrl = process.env.VITE_URL || 'http://127.0.0.1:7700';
+const preferredPort = Number(process.env.VITE_PORT || '7700');
 
 function spawnCommand(args, extraEnv = {}) {
   return spawn(npmCmd, args, {
@@ -59,8 +60,24 @@ async function waitForServer(url, timeoutMs = 30000) {
   throw lastError ?? new Error(`timed out waiting for ${url}`);
 }
 
-async function runSuite() {
-  const child = spawnCommand(['run', 'e2e:headless']);
+async function findAvailablePort(startPort, attempts = 20) {
+  for (let port = startPort; port < startPort + attempts; port += 1) {
+    const available = await new Promise((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => resolve(false));
+      server.listen(port, '127.0.0.1', () => {
+        server.close(() => resolve(true));
+      });
+    });
+    if (available) {
+      return port;
+    }
+  }
+  throw new Error(`failed to find an available port starting at ${startPort}`);
+}
+
+async function runSuite(serverUrl) {
+  const child = spawnCommand(['run', 'e2e:headless'], { VITE_URL: serverUrl });
   const exitCode = await new Promise((resolve, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => {
@@ -76,14 +93,16 @@ async function runSuite() {
   }
 }
 
+const serverPort = await findAvailablePort(preferredPort);
+const serverUrl = process.env.VITE_URL || `http://127.0.0.1:${serverPort}`;
 const devServer = spawnCommand(
-  ['run', 'dev', '--', '--host', '0.0.0.0', '--port', '7700'],
+  ['run', 'dev', '--', '--host', '0.0.0.0', '--port', String(serverPort), '--strictPort'],
   { BROWSER: 'none' },
 );
 
 try {
   await waitForServer(serverUrl);
-  await runSuite();
+  await runSuite(serverUrl);
 } finally {
   await stopServer(devServer);
 }
