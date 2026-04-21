@@ -75,7 +75,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
   native-skia:
-    name: Native Skia
+    name: All Features / Native Skia
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -100,11 +100,11 @@ jobs:
             ${{ runner.os }}-native-skia-cargo-
             ${{ runner.os }}-cargo-
 
-      - name: Run tests (native-skia)
-        run: cargo test --all-targets --features native-skia --verbose
+      - name: Run tests (all-features)
+        run: cargo test --all-targets --all-features --verbose
 
-      - name: Clippy (native-skia)
-        run: cargo clippy --all-targets --features native-skia -- -D warnings
+      - name: Clippy (all-features)
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   studio-e2e:
     name: Studio E2E
