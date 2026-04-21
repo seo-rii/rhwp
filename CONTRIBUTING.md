@@ -174,11 +174,13 @@ RHWP_RENDER_PATH=layer-svg cargo run --bin rhwp -- export-svg sample.hwp -o outp
 ```bash
 cargo test layer_svg --lib
 RUSTFLAGS='-L native=target/native-libs' cargo test skia --lib --features native-skia
+cargo test-skia-full-sweep              # native Skia vs layer SVG 전체 sample corpus
 
 cd rhwp-studio
 npm run e2e                           # 기본: host Chrome CDP 모드, CanvasKit compat/default 둘 다 실행
 npm run e2e:headless                  # headless Chrome 모드
 npm run e2e:ci                        # Vite 서버 자동 기동 + headless Chrome 전체 묶음
+npm run e2e:ci:full                   # Vite 서버 자동 기동 + browser full sample corpus
 ```
 
 WSL/CI처럼 호스트 Chrome CDP가 없는 환경에서는 `npm run e2e` 대신 `npm run e2e:headless` 또는 `npm run e2e:ci`를 사용하세요.

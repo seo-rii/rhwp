@@ -132,7 +132,11 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 ### Renderer Regression Tests
 - `cargo test layer_svg --lib`
 - `cargo test --features native-skia skia --lib`
+- `cargo test-skia-full-sweep`
 - `cd rhwp-studio && npm run e2e`
+- `cd rhwp-studio && npm run e2e:headless`
+- `cd rhwp-studio && npm run e2e:ci`
+- `cd rhwp-studio && npm run e2e:ci:full`
 - diff artifacts are written to `output/layer-svg-diff`, `output/skia-diff`, and `rhwp-studio/output/e2e`.
 
 ### Web Editor

@@ -1,0 +1,10 @@
+[alias]
+test-skia-full-sweep = [
+  "test",
+  "--all-targets",
+  "--all-features",
+  "test_skia_screenshot_matches_layer_svg_for_full_sample_corpus",
+  "--",
+  "--ignored",
+  "--nocapture",
+]

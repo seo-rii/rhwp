@@ -140,9 +140,11 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 ### Renderer Regression Tests (렌더러 회귀 테스트)
 - `cargo test layer_svg --lib`
 - `cargo test --features native-skia skia --lib`
+- `cargo test-skia-full-sweep`
 - `cd rhwp-studio && npm run e2e`
 - `cd rhwp-studio && npm run e2e:headless`
 - `cd rhwp-studio && npm run e2e:ci`
+- `cd rhwp-studio && npm run e2e:ci:full`
 - diff artifact는 `output/layer-svg-diff`, `output/skia-diff`, `rhwp-studio/output/e2e`에 남습니다.
 
 ### Web Editor (웹 에디터)

@@ -218,7 +218,7 @@ jobs:
         run: npx @puppeteer/browsers install chrome@stable
 
       - name: Run native Skia full screenshot sweep
-        run: cargo test --all-targets --all-features test_skia_screenshot_matches_layer_svg_for_full_sample_corpus -- --ignored --exact --nocapture
+        run: cargo test-skia-full-sweep
 
       - name: Build WASM package
         run: wasm-pack build --target web --release
