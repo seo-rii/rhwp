@@ -33,25 +33,27 @@ The concrete paths are currently split as follows.
 |---|---|---|---|
 | Legacy SVG | `PageRenderTree` | `src/document_core/queries/rendering.rs`, `src/renderer/svg.rs` | Existing reference path, structural baseline |
 | Layered SVG | `PageLayerTree` | `src/paint/*`, `src/renderer/svg_layer.rs` | Layered replay validation path |
-| Browser Canvas2D | `PageRenderTree` | `src/wasm_api.rs`, `src/renderer/web_canvas.rs`, `rhwp-studio/src/view/page-renderer.ts` | Current web baseline renderer |
+| Browser Canvas2D | `PageLayerTree` | `src/wasm_api.rs`, `rhwp-studio/src/view/page-renderer.ts`, `rhwp-studio/src/view/canvas2d-layer-renderer.ts` | Layered web baseline renderer |
 | Browser CanvasKit | `PageLayerTree` | `src/wasm_api.rs`, `rhwp-studio/src/view/canvaskit-renderer.ts` | Layered browser backend |
 | Native Skia | `PageLayerTree` | `src/renderer/skia/renderer.rs` | Layered raster backend |
 
-Two points matter here.
+Three points matter here.
 
-1. The web baseline, Canvas2D, still uses the established WASM Canvas rendering path.
-2. New backends, namely layered SVG, CanvasKit, and native Skia, all consume `PageLayerTree`.
+1. Browser Canvas2D and CanvasKit now both consume `PageLayerTree`.
+2. The legacy `renderPageToCanvas()` and `web_canvas.rs` path remains only as a compatibility API.
+3. Layered SVG and native Skia also consume the same `PageLayerTree`.
 
-So the current structure is not “all backends already use the same path”.
-It is closer to “keep the proven baseline path, while converging new backends on the layered path”.
+So the current structure is not “every output already uses one implementation”.
+However, the new multi-backend path has converged on a shared `PageLayerTree` input across
+browser Canvas2D, CanvasKit, layered SVG, and native Skia.
 
 Another important point is that the output-side contract is not fully unified yet.
 
-- The `LayerRenderer` trait is a narrow transitional contract for stateful backends that accumulate output, such as the layered SVG bridge.
-- Native Skia still keeps an explicit raster API, namely `render_png()`, because its natural output is encoded bytes rather than an internal scene buffer.
+- The `LayerRenderer` trait is the scene-renderer contract for stateful backends that accumulate output, such as the layered SVG bridge.
+- The `LayerRasterRenderer` trait is the raster-export contract for backends such as native Skia that directly emit PNG bytes.
 
 So the accurate statement today is not “every layered backend already shares one Rust trait”.
-It is “the shared input IR is now `PageLayerTree`, while the output contract is still in transition depending on backend shape”.
+It is “the shared input IR is now `PageLayerTree`, while the output contract is explicitly split between scene renderers and raster exporters”.
 
 ## 3. Why `PageLayerTree` exists
 
@@ -143,16 +145,19 @@ In other words, the input is layered, but the mature SVG output logic is still i
 
 ### 6.3 Browser Canvas2D
 
-- Entry: `PageRenderer.renderPage()` calling `this.wasm.renderPageToCanvas(...)`
-- Implementation: `src/renderer/web_canvas.rs`
-- Input: `PageRenderTree`
+- Entry: `PageRenderer.renderPage()` calling `this.wasm.getPageLayerTree(...)`
+- Implementation: `rhwp-studio/src/view/canvas2d-layer-renderer.ts`
+- Input: `PageLayerTree`
 
 This is currently the browser baseline.
 CanvasKit parity tests compare screenshots against this path.
 
-The important point is that Canvas2D has not yet moved to the layered path.
-So CanvasKit parity is not a pure sibling test where two backends replay the same tree.
-It is a validation that the new layered backend looks sufficiently close to the established baseline.
+The important point is that Canvas2D has now moved to the layered path as well.
+So current CanvasKit parity is much closer to a sibling test where two browser backends replay the same tree.
+
+The legacy `renderPageToCanvas()` and `src/renderer/web_canvas.rs` path has not been deleted,
+but studio page rendering no longer uses it by default.
+Browser E2E now installs a probe and fails if the default Canvas2D path falls back to that legacy API.
 
 ### 6.4 Browser CanvasKit
 
@@ -214,7 +219,7 @@ CanvasKit currently exposes two modes.
 
 `compat` is the default for several reasons.
 
-- The current browser baseline is still Canvas2D.
+- The current browser baseline is layered Canvas2D.
 - Text rasterization, font fallback, and glyph positioning can differ significantly between CanvasKit and Canvas2D.
 - Switching the renderer should not immediately make the document look obviously different to end users.
 
@@ -311,11 +316,12 @@ If any one of these is omitted, asymmetric failures such as “visible in one ba
 
 ## 12. Important caveats when reading the current architecture
 
-### 12.1 Canvas2D and CanvasKit are not fully symmetric yet
+### 12.1 Canvas2D and CanvasKit share input, but not implementation
 
-Canvas2D is still the legacy browser path.
-CanvasKit is the layered browser path.
-They are not two implementations of the exact same replay contract yet.
+Canvas2D and CanvasKit are now both layered browser paths and consume the same `PageLayerTree`.
+However, they are still different replay implementations:
+Canvas2D uses DOM Canvas 2D APIs, while CanvasKit uses Skia APIs.
+So anti-aliasing, glyph rasterization, and stroke behavior can still differ.
 
 ### 12.2 The layered path has not completely replaced the semantic tree
 
@@ -335,7 +341,7 @@ The current layered renderer architecture in rhwp can be summarized as follows.
 
 - Layout produces `PageRenderTree`.
 - The visual replay IR is `PageLayerTree`.
-- Layered SVG, native Skia, and CanvasKit all share `PageLayerTree`.
-- Browser Canvas2D is still kept as the baseline path.
-- Therefore parity tests currently validate how closely the new layered backends match the established baseline.
+- Layered SVG, native Skia, browser Canvas2D, and browser CanvasKit all share `PageLayerTree`.
+- The browser baseline is now layered Canvas2D.
+- Browser parity tests validate how consistently the two browser backends replay the same layer tree.
 - The most important rule when adding a new backend is: do not re-layout, replay the layer tree.

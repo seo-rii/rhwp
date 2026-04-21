@@ -192,8 +192,8 @@ WSL/CI처럼 호스트 Chrome CDP가 없는 환경에서는 `npm run e2e` 대신
 - `layer-svg` 비교는 현재 exact match 기준입니다. 한 픽셀이라도 diff가 생기면 테스트가 실패합니다.
 - `native-skia` / `CanvasKit` 비교는 exact diff를 계속 저장하고, 별도로 채널 차이가 `8` 이하인 픽셀을 무시한 tolerant diff를 계산합니다.
 - `native-skia`는 추가로 `1px neighborhood`를 고려한 `raster-tolerant diff`와, 거의 흰색인 안티앨리어싱 커버리지를 접고 실제 잉크 모양만 비교하는 `ink-mask diff`도 계산합니다.
-- `CanvasKit`도 추가로 `ink-mask diff`를 계산합니다. exact/raw tolerant diff 아티팩트는 계속 저장하고, 최종 통과 여부는 `ink-mask diff ratio 0.01%` 기준으로 판단합니다.
-- 테스트 통과 여부는 tolerant 계열 기준으로 판단합니다. 현재 기준은 `native-skia`는 `ink-mask diff ratio 0.30%` 이하, `CanvasKit`은 `ink-mask diff ratio 0.01%` 이하입니다.
+- `CanvasKit`도 추가로 `ink-mask diff`를 계산합니다. exact/raw tolerant diff 아티팩트는 계속 저장하고, 최종 통과 여부는 `tolerant budget`과 `ink-mask budget`을 동시에 만족하는지로 판단합니다.
+- 현재 기준은 `native-skia`는 `ink-mask diff ratio 0.30%` 이하이며, `CanvasKit`은 기본 `tolerant diff ratio 0.25%` 이하 + `ink-mask diff ratio 0.01%` 이하입니다. 일부 샘플은 이미지/그룹 드로잉의 알려진 래스터 특성에 맞춰 더 좁은 per-case budget을 별도로 둡니다.
 - `native-skia`의 `ink-mask diff`는 `white delta 25`, `alpha threshold 8`, `neighborhood radius 1px` 기준입니다. exact/raw tolerant/raster-tolerant 아티팩트는 계속 저장하고, 최종 실패 여부만 실제 잉크 모양 차이 기준으로 판정합니다.
 - `CanvasKit`의 `ink-mask diff`도 동일하게 `white delta 25`, `alpha threshold 8`, `neighborhood radius 1px` 기준을 사용합니다.
 - `CanvasKit` e2e는 기본적으로 전체 페이지를 비교합니다. `eq-01`도 다시 전체 페이지 회귀에 포함됩니다.
