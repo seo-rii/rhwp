@@ -415,6 +415,7 @@ export async function comparePngBuffers(expectedBuffer, actualBuffer, {
   const hasRatioBudget = maxDiffRatio != null;
   const hasInkMaskPixelBudget = inkMaskMaxDiffPixels != null;
   const hasInkMaskRatioBudget = inkMaskMaxDiffRatio != null;
+  const usesTolerantBudget = hasPixelBudget || hasRatioBudget;
   const usesInkMaskBudget = hasInkMaskPixelBudget || hasInkMaskRatioBudget;
 
   for (let y = 0; y < height; y++) {
@@ -490,23 +491,33 @@ export async function comparePngBuffers(expectedBuffer, actualBuffer, {
   }
 
   const rawInkMaskDiffRatio = totalPixels > 0 ? inkMaskDiffPixels / totalPixels : 0;
-  const passed = usesInkMaskBudget
+  const tolerantBudgetPassed = usesTolerantBudget
+    ? (!hasPixelBudget || tolerantDiffPixels <= maxDiffPixels)
+      && (!hasRatioBudget || rawTolerantDiffRatio <= maxDiffRatio)
+    : tolerantDiffPixels === 0;
+  const inkMaskBudgetPassed = usesInkMaskBudget
     ? (!hasInkMaskPixelBudget || inkMaskDiffPixels <= inkMaskMaxDiffPixels)
       && (!hasInkMaskRatioBudget || rawInkMaskDiffRatio <= inkMaskMaxDiffRatio)
-    : hasPixelBudget || hasRatioBudget
-      ? (!hasPixelBudget || tolerantDiffPixels <= maxDiffPixels)
-        && (!hasRatioBudget || rawTolerantDiffRatio <= maxDiffRatio)
-      : tolerantDiffPixels === 0;
+    : inkMaskDiffPixels === 0;
+  const passed = usesTolerantBudget && usesInkMaskBudget
+    ? tolerantBudgetPassed && inkMaskBudgetPassed
+    : usesInkMaskBudget
+      ? inkMaskBudgetPassed
+      : tolerantBudgetPassed;
   const selectedDiffPixels = passed
     ? 0
-    : usesInkMaskBudget
-      ? inkMaskDiffPixels
-      : tolerantDiffPixels;
+    : usesTolerantBudget && usesInkMaskBudget
+      ? Math.max(tolerantDiffPixels, inkMaskDiffPixels)
+      : usesInkMaskBudget
+        ? inkMaskDiffPixels
+        : tolerantDiffPixels;
   const selectedDiffRatio = passed
     ? 0
-    : usesInkMaskBudget
-      ? rawInkMaskDiffRatio
-      : rawTolerantDiffRatio;
+    : usesTolerantBudget && usesInkMaskBudget
+      ? Math.max(rawTolerantDiffRatio, rawInkMaskDiffRatio)
+      : usesInkMaskBudget
+        ? rawInkMaskDiffRatio
+        : rawTolerantDiffRatio;
 
   let exactDiffPath = null;
   let tolerantDiffPath = null;
@@ -533,7 +544,11 @@ export async function comparePngBuffers(expectedBuffer, actualBuffer, {
   }
 
   return {
-    passMetric: usesInkMaskBudget ? 'inkMask' : 'tolerant',
+    passMetric: usesTolerantBudget && usesInkMaskBudget
+      ? 'combined'
+      : usesInkMaskBudget
+        ? 'inkMask'
+        : 'tolerant',
     passed,
     diffPixels: selectedDiffPixels,
     diffRatio: selectedDiffRatio,
@@ -547,6 +562,8 @@ export async function comparePngBuffers(expectedBuffer, actualBuffer, {
     inkMaskDiffRatio: rawInkMaskDiffRatio,
     rawInkMaskDiffPixels: inkMaskDiffPixels,
     rawInkMaskDiffRatio,
+    tolerantBudgetPassed,
+    inkMaskBudgetPassed,
     width: expected.width,
     height: expected.height,
     ignoreChannelDelta,

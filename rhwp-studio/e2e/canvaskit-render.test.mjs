@@ -32,13 +32,23 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
     setup: (page) => loadHwpFile(page, 'hwp_table_test.hwp'),
     maxDiffRatio: 0.0002,
   },
-  { name: 'pic-crop-01', setup: (page) => loadHwpFile(page, 'pic-crop-01.hwp') },
+  {
+    name: 'pic-crop-01',
+    setup: (page) => loadHwpFile(page, 'pic-crop-01.hwp'),
+    maxDiffRatio: 0.0065,
+  },
   { name: 'field-01', setup: (page) => loadHwpFile(page, 'field-01.hwp') },
   { name: 'shape-group-02', setup: (page) => loadHwpFile(page, 'shape-group-02.hwp') },
-  { name: 'group-drawing-02', setup: (page) => loadHwpFile(page, 'group-drawing-02.hwp') },
+  {
+    name: 'group-drawing-02',
+    setup: (page) => loadHwpFile(page, 'group-drawing-02.hwp'),
+    maxDiffRatio: 0.0085,
+  },
 ];
 const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['hwp_table_test.hwp', { maxDiffRatio: 0.0002 }],
+  ['pic-crop-01.hwp', { maxDiffRatio: 0.0065 }],
+  ['group-drawing-02.hwp', { maxDiffRatio: 0.0085 }],
 ]);
 const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'default' ? 'default' : 'compat';
 const TOLERANT_DIFF = {
@@ -201,7 +211,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
 
       assert(
         diff.passed,
-        `${caseInfo.name} screenshot exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
+        `${caseInfo.name} screenshot exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
       );
     } catch (error) {
       await screenshot(page, `${caseInfo.name}-${CANVASKIT_MODE}-error`).catch(() => {});
@@ -244,7 +254,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         );
         assert(
           diff.passed,
-          `${caseInfo.name} ${caseInfo.opType}[${index}] exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
+          `${caseInfo.name} ${caseInfo.opType}[${index}] exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
         );
       }
     } catch (error) {

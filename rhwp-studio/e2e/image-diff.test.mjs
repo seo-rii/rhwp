@@ -55,14 +55,31 @@ async function main() {
   assert.equal(shiftedByOneDiff.rawInkMaskDiffPixels, 0);
   console.log('PASS: 1px neighborhood shift is tolerated by ink-mask diff');
 
+  const shiftedByOneCombinedBudget = await comparePngBuffers(PNG.sync.write(base), PNG.sync.write(shiftedByOne), {
+    ignoreChannelDelta: 8,
+    maxDiffPixels: 0,
+    inkMaskWhiteDelta: 25,
+    inkMaskAlphaThreshold: 8,
+    inkMaskNeighborhoodRadius: 1,
+    inkMaskMaxDiffPixels: 0,
+  });
+  assert.equal(shiftedByOneCombinedBudget.passed, false);
+  assert.equal(shiftedByOneCombinedBudget.tolerantBudgetPassed, false);
+  assert.equal(shiftedByOneCombinedBudget.inkMaskBudgetPassed, true);
+  assert.equal(shiftedByOneCombinedBudget.passMetric, 'combined');
+  console.log('PASS: combined diff budget rejects shifts that only ink-mask would ignore');
+
   const shiftedByTwoDiff = await comparePngBuffers(PNG.sync.write(base), PNG.sync.write(shiftedByTwo), {
     ignoreChannelDelta: 8,
+    maxDiffPixels: 0,
     inkMaskWhiteDelta: 25,
     inkMaskAlphaThreshold: 8,
     inkMaskNeighborhoodRadius: 1,
     inkMaskMaxDiffPixels: 0,
   });
   assert.equal(shiftedByTwoDiff.passed, false);
+  assert.equal(shiftedByTwoDiff.tolerantBudgetPassed, false);
+  assert.equal(shiftedByTwoDiff.inkMaskBudgetPassed, false);
   assert.ok(shiftedByTwoDiff.rawInkMaskDiffPixels > 0);
   console.log('PASS: 2px shift still fails ink-mask diff');
 }
