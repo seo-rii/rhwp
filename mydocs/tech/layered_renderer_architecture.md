@@ -33,24 +33,27 @@ Document / Section / Paragraph / Control
 |---|---|---|---|
 | Legacy SVG | `PageRenderTree` | `src/document_core/queries/rendering.rs`, `src/renderer/svg.rs` | 기존 기준 경로, 구조 비교 baseline |
 | Layer SVG | `PageLayerTree` | `src/paint/*`, `src/renderer/svg_layer.rs` | layered replay 검증 경로 |
-| Browser Canvas2D | `PageRenderTree` | `src/wasm_api.rs`, `src/renderer/web_canvas.rs`, `rhwp-studio/src/view/page-renderer.ts` | 현재 웹 baseline 렌더러 |
+| Browser Canvas2D | `PageLayerTree` | `src/wasm_api.rs`, `rhwp-studio/src/view/page-renderer.ts`, `rhwp-studio/src/view/canvas2d-layer-renderer.ts` | layered 웹 baseline 렌더러 |
 | Browser CanvasKit | `PageLayerTree` | `src/wasm_api.rs`, `rhwp-studio/src/view/canvaskit-renderer.ts` | layered browser backend |
 | Native Skia | `PageLayerTree` | `src/renderer/skia/renderer.rs` | layered raster backend |
 
-핵심 포인트는 다음 두 가지다.
+핵심 포인트는 다음 세 가지다.
 
-1. 웹 baseline인 Canvas2D는 아직 기존 WASM Canvas 렌더링 경로를 사용한다.
-2. 새 backend인 layer SVG, CanvasKit, native Skia는 모두 `PageLayerTree`를 소비한다.
+1. browser Canvas2D와 CanvasKit은 이제 둘 다 `PageLayerTree`를 소비한다.
+2. legacy `renderPageToCanvas()` / `web_canvas.rs` 경로는 studio의 기본 렌더러가 아니라, 하위 호환성 API로 남아 있다.
+3. layer SVG와 native Skia도 같은 `PageLayerTree`를 소비한다.
 
-즉 현재 구조는 “모든 백엔드가 같은 path를 쓴다”가 아니라, “기존 baseline은 유지하고 새 backend는 layered path로 수렴한다”에 가깝다.
+즉 현재 구조는 “모든 출력이 하나의 구현체를 쓴다”는 뜻은 아니지만,
+적어도 새 멀티 백엔드 경로는 browser Canvas2D / CanvasKit / layer SVG / native Skia가
+같은 `PageLayerTree` 입력으로 수렴한 상태다.
 
 또 하나 중요한 점은, 현재 공통 계약이 완전히 하나로 닫혀 있지는 않다는 것이다.
 
-- `LayerRenderer` trait는 layered SVG처럼 stateful output을 누적하는 backend에 맞춘 좁은 전환기 계약이다.
-- native Skia는 아직 `render_png()`처럼 바이트를 직접 돌려주는 명시적 API를 유지한다.
+- `LayerRenderer` trait는 layered SVG처럼 stateful output을 누적하는 scene renderer 계약이다.
+- `LayerRasterRenderer` trait는 native Skia처럼 PNG 바이트를 직접 내보내는 raster exporter 계약이다.
 
-즉 “모든 layered backend가 동일한 Rust trait를 이미 공유한다”기보다는,
-“공통 입력 IR은 `PageLayerTree`로 정리했고, 출력 계약은 backend 특성에 맞춰 아직 전환 중”이라고 보는 편이 정확하다.
+즉 “모든 layered backend가 하나의 단일 trait로 닫혔다”기보다는,
+“공통 입력 IR은 `PageLayerTree`로 정리했고, 출력 계약은 scene renderer / raster exporter로 나눠 명시했다”라고 보는 편이 정확하다.
 
 ## 3. 왜 `PageLayerTree`가 필요했는가
 
@@ -143,16 +146,19 @@ layer tree에서 사라지면 안 된다.
 
 ### 6.3 Browser Canvas2D
 
-- 진입점: `PageRenderer.renderPage()`에서 `this.wasm.renderPageToCanvas(...)`
-- 구현: `src/renderer/web_canvas.rs`
-- 입력: `PageRenderTree`
+- 진입점: `PageRenderer.renderPage()`에서 `this.wasm.getPageLayerTree(...)`
+- 구현: `rhwp-studio/src/view/canvas2d-layer-renderer.ts`
+- 입력: `PageLayerTree`
 
 현재 브라우저에서의 baseline이다.
 CanvasKit parity 테스트도 이 경로의 스크린샷을 기준으로 비교한다.
 
-중요한 점은 Canvas2D가 아직 layered path로 전환되지 않았다는 것이다.
-즉 CanvasKit parity는 “같은 tree를 두 backend가 replay하는 exact sibling test”가 아니라,
-“새 layered backend가 기존 baseline과 얼마나 가깝게 보이는가”를 검증하는 테스트다.
+중요한 점은 Canvas2D도 이제 layered path로 전환되었다는 것이다.
+즉 현재 CanvasKit parity는 “같은 `PageLayerTree`를 두 browser backend가 replay하는 sibling test”에 가깝다.
+
+기존 `renderPageToCanvas()` / `src/renderer/web_canvas.rs` 경로는 완전히 삭제하지 않았지만,
+studio의 기본 페이지 렌더링에서는 더 이상 사용하지 않는다.
+browser E2E는 이 경로가 다시 호출되면 실패하도록 probe를 걸고 있다.
 
 ### 6.4 Browser CanvasKit
 
@@ -258,6 +264,9 @@ backend 특성상 anti-aliasing, subpixel coverage, font rasterization 차이가
 - 하지만 통과 기준은 renderer 엔진 차이만 허용하는 tolerant 값으로 잡는다.
 - 즉 “눈에 띄는 구조 차이”와 “작은 raster 차이”를 구분한다.
 
+현재 이 비교는 “legacy Canvas vs layered CanvasKit”이 아니라,
+“layered Canvas2D vs layered CanvasKit” 비교라는 점이 중요하다.
+
 ## 9. 테스트가 보호해야 하는 것
 
 현재 parity 테스트는 단순 픽셀 비교가 아니라 layered architecture의 invariant를 지키는 장치다.
@@ -270,7 +279,7 @@ backend 특성상 anti-aliasing, subpixel coverage, font rasterization 차이가
 - equation, crop, field, group drawing처럼 backend 차이가 잘 드러나는 샘플 회귀
 
 즉 스크린샷 테스트는 “예쁘게 보이는지” 이상의 의미를 가진다.
-현재 layered path가 기존 baseline을 어느 정도 유지하는지 보여주는 계약 테스트다.
+현재 layered path가 backend별로 같은 `PageLayerTree`를 얼마나 일관되게 replay하는지 보여주는 계약 테스트다.
 
 ## 10. 새 backend를 추가할 때의 작업 순서
 
@@ -310,10 +319,14 @@ backend 특성상 anti-aliasing, subpixel coverage, font rasterization 차이가
 
 ## 12. 현재 구조를 해석할 때 주의할 점
 
-### 12.1 Canvas2D와 CanvasKit은 아직 완전히 대칭이 아니다
+### 12.1 Canvas2D와 CanvasKit은 입력은 대칭이지만 구현은 다르다
 
-Canvas2D는 legacy browser path이고, CanvasKit은 layered browser path다.
-둘은 같은 renderer 구현체가 아니다.
+Canvas2D와 CanvasKit은 이제 둘 다 layered browser path이고,
+같은 `PageLayerTree`를 입력으로 받는다.
+
+다만 둘은 같은 renderer 구현체가 아니라,
+Canvas2D는 DOM Canvas 2D replay이고 CanvasKit은 Skia API replay다.
+따라서 anti-aliasing, glyph rasterization, stroke join 같은 세부 동작은 여전히 다를 수 있다.
 
 ### 12.2 Layered path가 semantic tree를 완전히 대체한 것은 아니다
 
@@ -334,7 +347,22 @@ Rust layout core로 역류하면 안 된다.
 
 - layout 결과는 `PageRenderTree`로 만들어진다.
 - backend replay용 시각 IR은 `PageLayerTree`다.
-- layer SVG, native Skia, CanvasKit은 `PageLayerTree`를 공유한다.
-- browser Canvas2D는 아직 baseline으로 유지된다.
-- 따라서 현재 parity 테스트는 “새 layered backend가 기존 baseline과 얼마나 가까운가”를 검증한다.
+- layer SVG, native Skia, browser Canvas2D, browser CanvasKit은 `PageLayerTree`를 공유한다.
+- studio의 브라우저 baseline도 이제 layered Canvas2D다.
+- browser parity 테스트는 같은 layer tree를 두 browser backend가 얼마나 비슷하게 replay하는지를 검증한다.
 - 새 backend를 추가할 때 가장 중요한 원칙은 “layout을 다시 하지 말고 layer tree를 replay하라”이다.
+
+## 14. 아키텍처를 완성하려면 남은 작업
+
+현재 구조는 “새 backend가 공통 `PageLayerTree`를 replay한다”는 목표까지는 도달했지만,
+아래 작업이 남아 있다.
+
+1. `svg_layer.rs`의 transition bridge를 더 줄여서 `PageRenderTree` 재조립 의존을 단계적으로 걷어내기
+2. `ResourceArena`를 실제 shared image/font/pattern resource cache로 채워 backend replay 중복을 줄이기
+3. `RenderProfile`과 `CacheHint`를 SVG/Skia/browser backend가 실제 품질 분기와 캐시 정책에 쓰도록 관통시키기
+4. native raster export와 browser replay 경로의 공통 계약을 더 정리해 새 backend 추가 시 진입점이 흔들리지 않게 만들기
+5. CanvasKit 쪽 page-layer cache, JSON 경계 축소, GPU surface 선택 같은 성능 후속 작업 마무리하기
+6. CI에서 native Skia, layered browser parity, representative screenshot sweep를 항상 자동 검증하도록 유지하기
+
+즉 현재 단계는 “layered 멀티 백엔드의 골격은 완성”된 상태이고,
+남은 일은 bridge 축소, 공용 resource/runtime 정리, 성능/검증 자동화 강화라고 보는 편이 정확하다.

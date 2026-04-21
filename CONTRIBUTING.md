@@ -152,8 +152,9 @@ cargo run --bin rhwp -- dump sample.hwp -s 0 -p 45
 - **Legacy SVG**: 기본 `cargo run --bin rhwp -- export-svg sample.hwp`
 - **Layer SVG**: `RHWP_RENDER_PATH=layer-svg cargo run --bin rhwp -- export-svg sample.hwp`
 - **Native Skia PNG**: 테스트 경로에서 `render_page_png_native()`로 검증되며, 현재 별도 `export-png` CLI는 없습니다
-- **Browser Canvas2D / CanvasKit**: `rhwp-studio`에서 기본은 Canvas2D, `http://localhost:7700/?renderer=canvaskit`로 CanvasKit 비교
+- **Browser Canvas2D / CanvasKit**: `rhwp-studio`에서 기본은 layered Canvas2D, `http://localhost:7700/?renderer=canvaskit`로 CanvasKit 비교
   - CanvasKit 래스터 모드: `?canvaskitMode=compat`(기본, Canvas2D 유사도 우선) 또는 `?canvaskitMode=default`(CanvasKit 기본 동작)
+  - 두 browser backend는 모두 `getPageLayerTree()`를 통해 같은 `PageLayerTree`를 replay합니다. 예전 `renderPageToCanvas()` 경로는 하위 호환용으로만 남아 있습니다.
 
 레이어 기반 출력은 `RHWP_RENDER_PROFILE`로 기본 프로파일을 덮어쓸 수 있습니다.
 
@@ -197,6 +198,7 @@ WSL/CI처럼 호스트 Chrome CDP가 없는 환경에서는 `npm run e2e` 대신
 - `CanvasKit`의 `ink-mask diff`도 동일하게 `white delta 25`, `alpha threshold 8`, `neighborhood radius 1px` 기준을 사용합니다.
 - `CanvasKit` e2e는 기본적으로 전체 페이지를 비교합니다. `eq-01`도 다시 전체 페이지 회귀에 포함됩니다.
 - 추가로 `equation`처럼 특정 op 자체를 분리해서 추적하고 싶은 기능 회귀는 해당 `layer op` bbox만 잘라서 비교합니다.
+- browser E2E는 `canvas2d`가 다시 legacy `renderPageToCanvas()` 경로를 타면 실패하도록 probe를 둡니다.
 
 디버그 오버레이는 문단/표에 라벨을 표시합니다:
 - 문단: `s{섹션}:pi={인덱스} y={좌표}`
