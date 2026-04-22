@@ -65,12 +65,27 @@ const TOLERANT_DIFF = {
   nonInkMaxDiffPixels: 0,
   solidInkMaxDiffRatio: 0.005,
 };
+const NATIVE_TEXT_RASTER_DIFF = {
+  inkMaskNeighborhoodRadius: 3,
+  inkMaskMaxDiffRatio: 0.002,
+  nonInkMaxDiffPixels: 0,
+  solidInkMaxDiffRatio: 0.005,
+};
 const FEATURE_CASES = [
   {
     name: 'eq-01',
     setup: (page) => loadHwpFile(page, 'eq-01.hwp'),
     opType: 'equation',
     margin: 4,
+    inkMaskNeighborhoodRadius: 3,
+    inkMaskMaxDiffRatio: 0.02,
+  },
+  {
+    name: 'pic-crop-01',
+    setup: (page) => loadHwpFile(page, 'pic-crop-01.hwp'),
+    opType: 'image',
+    margin: 4,
+    maxDiffRatio: 0.07,
   },
 ];
 const FULL_PAGE_CASES = SAMPLE_SCOPE === 'full'
@@ -122,6 +137,9 @@ async function renderScenario(page, backend, caseInfo) {
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     let opCount = 0;
     let nativeTextRunCount = 0;
+    let nativeImageCount = 0;
+    let nativeEquationCount = 0;
+    let nativeFormObjectCount = 0;
     const walk = (node) => {
       if (!node) return;
       if (node.kind === 'leaf') {
@@ -130,6 +148,15 @@ async function renderScenario(page, backend, caseInfo) {
           for (const op of node.ops) {
             if (op.type === 'textRun' && !renderer.shouldOverlayTextRun(op)) {
               nativeTextRunCount += 1;
+            }
+            if (op.type === 'image' && !renderer.shouldOverlayImage(op)) {
+              nativeImageCount += 1;
+            }
+            if (op.type === 'equation' && !renderer.shouldOverlayEquation(op)) {
+              nativeEquationCount += 1;
+            }
+            if (op.type === 'formObject' && !renderer.shouldOverlayFormObject(op)) {
+              nativeFormObjectCount += 1;
             }
           }
         }
@@ -150,6 +177,9 @@ async function renderScenario(page, backend, caseInfo) {
       mode: window.__canvaskitRenderMode,
       profile: tree.profile,
       nativeTextRunCount,
+      nativeImageCount,
+      nativeEquationCount,
+      nativeFormObjectCount,
     };
   });
   assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
@@ -229,10 +259,10 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         maxDiffRatio: nativeTextActive ? null : (caseInfo.maxDiffRatio ?? TOLERANT_DIFF.maxDiffRatio),
         inkMaskWhiteDelta: TOLERANT_DIFF.inkMaskWhiteDelta,
         inkMaskAlphaThreshold: TOLERANT_DIFF.inkMaskAlphaThreshold,
-        inkMaskNeighborhoodRadius: TOLERANT_DIFF.inkMaskNeighborhoodRadius,
-        inkMaskMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.inkMaskMaxDiffRatio : null,
-        nonInkMaxDiffPixels: nativeTextActive ? TOLERANT_DIFF.nonInkMaxDiffPixels : null,
-        solidInkMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.solidInkMaxDiffRatio : null,
+        inkMaskNeighborhoodRadius: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.inkMaskNeighborhoodRadius : TOLERANT_DIFF.inkMaskNeighborhoodRadius,
+        inkMaskMaxDiffRatio: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.inkMaskMaxDiffRatio : null,
+        nonInkMaxDiffPixels: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.nonInkMaxDiffPixels : null,
+        solidInkMaxDiffRatio: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.solidInkMaxDiffRatio : null,
       });
 
       assert(
@@ -272,13 +302,13 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           {
             diffName: `${caseInfo.name}-${caseInfo.opType}-${index}-${CANVASKIT_MODE}`,
             ignoreChannelDelta: TOLERANT_DIFF.ignoreChannelDelta,
-            maxDiffRatio: nativeTextActive ? null : TOLERANT_DIFF.maxDiffRatio,
+            maxDiffRatio: nativeTextActive ? null : (caseInfo.maxDiffRatio ?? TOLERANT_DIFF.maxDiffRatio),
             inkMaskWhiteDelta: TOLERANT_DIFF.inkMaskWhiteDelta,
             inkMaskAlphaThreshold: TOLERANT_DIFF.inkMaskAlphaThreshold,
-            inkMaskNeighborhoodRadius: TOLERANT_DIFF.inkMaskNeighborhoodRadius,
-            inkMaskMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.inkMaskMaxDiffRatio : null,
-            nonInkMaxDiffPixels: nativeTextActive ? TOLERANT_DIFF.nonInkMaxDiffPixels : null,
-            solidInkMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.solidInkMaxDiffRatio : null,
+            inkMaskNeighborhoodRadius: nativeTextActive ? (caseInfo.inkMaskNeighborhoodRadius ?? NATIVE_TEXT_RASTER_DIFF.inkMaskNeighborhoodRadius) : TOLERANT_DIFF.inkMaskNeighborhoodRadius,
+            inkMaskMaxDiffRatio: nativeTextActive ? (caseInfo.inkMaskMaxDiffRatio ?? NATIVE_TEXT_RASTER_DIFF.inkMaskMaxDiffRatio) : null,
+            nonInkMaxDiffPixels: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.nonInkMaxDiffPixels : null,
+            solidInkMaxDiffRatio: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.solidInkMaxDiffRatio : null,
           },
         );
         assert(
@@ -494,12 +524,71 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       selectedProfileOnTree: window.__wasm?.getPageLayerTree?.(0, window.__renderProfile ?? 'screen')?.profile,
       highQualityProfileOnTree: window.__wasm?.getPageLayerTree?.(0, 'high-quality')?.profile,
       fastPreviewHasPreferRasterHint: JSON.stringify(window.__wasm?.getPageLayerTree?.(0, 'fast-preview') ?? {}).includes('"cacheHint":"preferRaster"'),
+      batangcheFamily: renderer.resolveCanvasKitFontFamily?.('바탕체'),
       simpleTextUsesOverlay: renderer.shouldOverlayTextRun(simpleTextRun),
+      shadowTextUsesOverlay: renderer.shouldOverlayTextRun({
+        ...simpleTextRun,
+        style: {
+          ...simpleTextRun.style,
+          shadowType: 1,
+          shadowColor: '#333333',
+          shadowOffsetX: 1,
+          shadowOffsetY: 1,
+        },
+      }),
+      ratioTextUsesOverlay: renderer.shouldOverlayTextRun({
+        ...simpleTextRun,
+        style: {
+          ...simpleTextRun.style,
+          ratio: 0.9,
+        },
+      }),
+      rotatedTextUsesOverlay: renderer.shouldOverlayTextRun({
+        ...simpleTextRun,
+        rotation: 15,
+      }),
+      verticalTextUsesOverlay: renderer.shouldOverlayTextRun({
+        ...simpleTextRun,
+        isVertical: true,
+      }),
       underlinedTextUsesOverlay: renderer.shouldOverlayTextRun({
         ...simpleTextRun,
         style: {
           ...simpleTextRun.style,
           underline: 'bottom',
+        },
+      }),
+      imageUsesOverlay: renderer.shouldOverlayImage({
+        type: 'image',
+        bbox: { x: 0, y: 0, width: 32, height: 32 },
+        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7s8AAAAASUVORK5CYII=',
+        fillMode: 'fitToSize',
+        transform: { rotation: 0, horzFlip: false, vertFlip: false },
+      }),
+      formUsesOverlay: renderer.shouldOverlayFormObject({
+        type: 'formObject',
+        bbox: { x: 0, y: 0, width: 48, height: 16 },
+        formType: 'checkBox',
+        caption: '동의',
+        text: '',
+        foreColor: '#111111',
+        backColor: '#ffffff',
+        value: 1,
+        enabled: true,
+      }),
+      equationUsesOverlay: renderer.shouldOverlayEquation({
+        type: 'equation',
+        bbox: { x: 0, y: 0, width: 40, height: 16 },
+        color: '#111111',
+        fontSize: 14,
+        svgContent: '<text x="0" y="12">x</text>',
+        layoutBox: {
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 12,
+          baseline: 9,
+          kind: { type: 'text', text: 'x' },
         },
       }),
       footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
@@ -520,7 +609,18 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.selectedProfileOnTree === RENDER_PROFILE, `selected tree profile=${nativeRouting.selectedProfileOnTree}`);
   assert(nativeRouting.highQualityProfileOnTree === 'high-quality', `high-quality tree profile=${nativeRouting.highQualityProfileOnTree}`);
   assert(nativeRouting.fastPreviewHasPreferRasterHint === true, `fast-preview preferRaster=${nativeRouting.fastPreviewHasPreferRasterHint}`);
+  assert(
+    nativeRouting.batangcheFamily === '바탕체' || nativeRouting.batangcheFamily === 'Noto Serif KR',
+    `바탕체 family=${nativeRouting.batangcheFamily}`,
+  );
   assert(nativeRouting.simpleTextUsesOverlay === false, `simple text overlay=${nativeRouting.simpleTextUsesOverlay}`);
-  assert(nativeRouting.underlinedTextUsesOverlay === true, `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
+  assert(nativeRouting.shadowTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `shadow text overlay=${nativeRouting.shadowTextUsesOverlay}`);
+  assert(nativeRouting.ratioTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `ratio text overlay=${nativeRouting.ratioTextUsesOverlay}`);
+  assert(nativeRouting.rotatedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `rotated text overlay=${nativeRouting.rotatedTextUsesOverlay}`);
+  assert(nativeRouting.verticalTextUsesOverlay === true, `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
+  assert(nativeRouting.underlinedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
+  assert(nativeRouting.imageUsesOverlay === (CANVASKIT_MODE === 'compat'), `image overlay=${nativeRouting.imageUsesOverlay}`);
+  assert(nativeRouting.formUsesOverlay === (CANVASKIT_MODE === 'compat'), `form overlay=${nativeRouting.formUsesOverlay}`);
+  assert(nativeRouting.equationUsesOverlay === (CANVASKIT_MODE === 'compat'), `equation overlay=${nativeRouting.equationUsesOverlay}`);
   assert(nativeRouting.footnoteUsesOverlay === false, `footnote overlay=${nativeRouting.footnoteUsesOverlay}`);
 }, { skipLoadApp: true });
