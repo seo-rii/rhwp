@@ -270,6 +270,18 @@ impl LayerBuilder {
             {
                 CacheHint::PreferRaster
             }
+            RenderNodeType::Line(_)
+            | RenderNodeType::Rectangle(_)
+            | RenderNodeType::Ellipse(_)
+            | RenderNodeType::Path(_)
+            | RenderNodeType::Equation(_)
+                if matches!(
+                    self.profile,
+                    RenderProfile::Print | RenderProfile::HighQuality
+                ) =>
+            {
+                CacheHint::PreferVectorRecording
+            }
             _ => CacheHint::None,
         }
     }
@@ -432,6 +444,42 @@ mod tests {
             }
             other => panic!("expected root group, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn applies_vector_recording_hints_for_vector_leafs_in_print_profiles() {
+        use crate::renderer::render_tree::RectangleNode;
+        use crate::renderer::ShapeStyle;
+
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.children.push(RenderNode::new(
+            10,
+            RenderNodeType::Rectangle(RectangleNode::new(0.0, ShapeStyle::default(), None)),
+            BoundingBox::new(40.0, 50.0, 120.0, 80.0),
+        ));
+
+        let mut print_builder = LayerBuilder::new(RenderProfile::Print);
+        let print_tree = print_builder.build(&tree);
+        let mut screen_builder = LayerBuilder::new(RenderProfile::Screen);
+        let screen_tree = screen_builder.build(&tree);
+
+        let print_hint = match &print_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => match &children[0].kind {
+                LayerNodeKind::Leaf { cache_hint, .. } => *cache_hint,
+                other => panic!("expected print rectangle leaf, got {other:?}"),
+            },
+            other => panic!("expected print root group, got {other:?}"),
+        };
+        let screen_hint = match &screen_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => match &children[0].kind {
+                LayerNodeKind::Leaf { cache_hint, .. } => *cache_hint,
+                other => panic!("expected screen rectangle leaf, got {other:?}"),
+            },
+            other => panic!("expected screen root group, got {other:?}"),
+        };
+
+        assert_eq!(print_hint, CacheHint::PreferVectorRecording);
+        assert_eq!(screen_hint, CacheHint::None);
     }
 
     #[test]
