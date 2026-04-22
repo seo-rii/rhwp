@@ -132,7 +132,7 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - `PageLayerTree` 페인트 IR를 공유하고, 백엔드별로 replay만 다르게 수행합니다.
 - **Legacy SVG**: 기본 `rhwp export-svg sample.hwp`
 - **Layered SVG**: `RHWP_RENDER_PATH=layer-svg rhwp export-svg sample.hwp`
-- **Native Skia**: non-wasm 타깃에서 `native-skia` feature로 PNG 렌더링
+- **Native Skia**: `rhwp export-png sample.hwp` (`native-skia` feature 필요)
 - **Browser Canvas2D / CanvasKit**: `rhwp-studio` 기본값은 Canvas2D, `?renderer=canvaskit`로 CanvasKit 선택
 - `RHWP_RENDER_PROFILE=screen|print|high-quality|fast-preview`로 layered 출력 프로파일을 덮어쓸 수 있습니다.
   기본값은 browser layer tree=`screen`, layer SVG export=`print`, native Skia PNG=`high-quality`입니다.
@@ -145,6 +145,7 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - `cd rhwp-studio && npm run e2e:headless`
 - `cd rhwp-studio && npm run e2e:ci`
 - `cd rhwp-studio && npm run e2e:ci:full`
+- `python3 scripts/renderer_baseline.py`
 - diff artifact는 `output/layer-svg-diff`, `output/skia-diff`, `rhwp-studio/output/e2e`에 남습니다.
 
 ### Web Editor (웹 에디터)
@@ -256,6 +257,14 @@ rhwp export-svg sample.hwp                         # Export to output/
 rhwp export-svg sample.hwp -o my_dir/              # Export to custom directory
 rhwp export-svg sample.hwp -p 0                    # Export specific page (0-indexed)
 rhwp export-svg sample.hwp --debug-overlay         # Debug overlay (paragraph/table boundaries)
+```
+
+### Native Skia PNG Export
+
+```bash
+cargo run --features native-skia --bin rhwp -- export-png sample.hwp
+cargo run --features native-skia --bin rhwp -- export-png sample.hwp -o my_dir/
+cargo run --features native-skia --bin rhwp -- export-png sample.hwp -p 0
 ```
 
 ### Document Inspection

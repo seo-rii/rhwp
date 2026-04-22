@@ -126,7 +126,7 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 - rhwp now shares a `PageLayerTree` paint IR and replays it through different backends.
 - **Legacy SVG**: default `rhwp export-svg sample.hwp`
 - **Layered SVG**: `RHWP_RENDER_PATH=layer-svg rhwp export-svg sample.hwp`
-- **Native Skia**: PNG rendering on non-wasm targets behind the `native-skia` feature
+- **Native Skia**: `rhwp export-png sample.hwp` (requires the `native-skia` feature)
 - **Browser Canvas2D / CanvasKit**: `rhwp-studio` defaults to Canvas2D, and `?renderer=canvaskit` switches to CanvasKit
 
 ### Renderer Regression Tests
@@ -137,6 +137,7 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 - `cd rhwp-studio && npm run e2e:headless`
 - `cd rhwp-studio && npm run e2e:ci`
 - `cd rhwp-studio && npm run e2e:ci:full`
+- `python3 scripts/renderer_baseline.py`
 - diff artifacts are written to `output/layer-svg-diff`, `output/skia-diff`, and `rhwp-studio/output/e2e`.
 
 ### Web Editor
@@ -197,6 +198,14 @@ rhwp export-svg sample.hwp                         # Export to output/
 rhwp export-svg sample.hwp -o my_dir/              # Custom output directory
 rhwp export-svg sample.hwp -p 0                    # Specific page (0-indexed)
 rhwp export-svg sample.hwp --debug-overlay         # Debug overlay
+```
+
+### Native Skia PNG Export
+
+```bash
+cargo run --features native-skia --bin rhwp -- export-png sample.hwp
+cargo run --features native-skia --bin rhwp -- export-png sample.hwp -o my_dir/
+cargo run --features native-skia --bin rhwp -- export-png sample.hwp -p 0
 ```
 
 ### Document Inspection

@@ -151,7 +151,7 @@ cargo run --bin rhwp -- dump sample.hwp -s 0 -p 45
 
 - **Legacy SVG**: 기본 `cargo run --bin rhwp -- export-svg sample.hwp`
 - **Layer SVG**: `RHWP_RENDER_PATH=layer-svg cargo run --bin rhwp -- export-svg sample.hwp`
-- **Native Skia PNG**: 테스트 경로에서 `render_page_png_native()`로 검증되며, 현재 별도 `export-png` CLI는 없습니다
+- **Native Skia PNG**: `cargo run --features native-skia --bin rhwp -- export-png sample.hwp`
 - **Browser Canvas2D / CanvasKit**: `rhwp-studio`에서 기본은 layered Canvas2D, `http://localhost:7700/?renderer=canvaskit`로 CanvasKit 비교
   - CanvasKit 래스터 모드: `?canvaskitMode=compat`(기본, Canvas2D 유사도 우선) 또는 `?canvaskitMode=default`(CanvasKit 기본 동작)
   - 두 browser backend는 모두 `getPageLayerTree()`를 통해 같은 `PageLayerTree`를 replay합니다. 예전 `renderPageToCanvas()` 경로는 하위 호환용으로만 남아 있습니다.
@@ -167,6 +167,7 @@ SVG를 직접 비교하려면 보통 아래처럼 두 번 내보냅니다.
 ```bash
 cargo run --bin rhwp -- export-svg sample.hwp -o output/legacy
 RHWP_RENDER_PATH=layer-svg cargo run --bin rhwp -- export-svg sample.hwp -o output/layer
+cargo run --features native-skia --bin rhwp -- export-png sample.hwp -o output/skia
 ```
 
 자동 회귀 테스트는 다음 명령을 사용합니다.
@@ -181,9 +182,14 @@ npm run e2e                           # 기본: host Chrome CDP 모드, CanvasKi
 npm run e2e:headless                  # headless Chrome 모드
 npm run e2e:ci                        # Vite 서버 자동 기동 + headless Chrome 전체 묶음
 npm run e2e:ci:full                   # Vite 서버 자동 기동 + browser full sample corpus
+
+cd ..
+python3 scripts/renderer_baseline.py  # manifest 기준 legacy/layer/skia/canvas2d/canvaskit baseline 고정
 ```
 
 WSL/CI처럼 호스트 Chrome CDP가 없는 환경에서는 `npm run e2e` 대신 `npm run e2e:headless` 또는 `npm run e2e:ci`를 사용하세요.
+
+기준선 manifest는 `scripts/renderer_baseline_manifest.json`에 있습니다. 기본 출력은 `output/renderer-baseline/latest/`이며, filtered manifest / backend별 산출물 / markdown+json 보고서를 함께 남깁니다.
 
 비교 아티팩트는 아래 위치에 남습니다.
 

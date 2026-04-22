@@ -291,16 +291,23 @@ export async function screenshot(page, name) {
   return path;
 }
 
-/** 편집 영역의 첫 번째 페이지 캔버스만 캡처한다 */
-export async function screenshotCanvas(page, name) {
-  const dir = 'e2e/screenshots';
+/** 편집 영역의 첫 번째 페이지 캔버스를 지정 경로로 캡처한다 */
+export async function captureCanvasScreenshot(page, outputPath, logLabel = 'Canvas Screenshot') {
   const { mkdirSync, existsSync } = await import('fs');
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const path = `${dir}/${name}.png`;
+  const outputDir = path.dirname(outputPath);
+  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
   const canvas = await page.$(CANVAS_SELECTOR);
   if (!canvas) throw new Error('편집 영역 캔버스를 찾을 수 없습니다');
-  const buffer = await canvas.screenshot({ path });
-  console.log(`  Canvas Screenshot: ${path}`);
+  const buffer = await canvas.screenshot({ path: outputPath });
+  console.log(`  ${logLabel}: ${outputPath}`);
+  _lastScreenshot = path.basename(outputPath);
+  return { path: outputPath, buffer };
+}
+
+/** 편집 영역의 첫 번째 페이지 캔버스만 캡처한다 */
+export async function screenshotCanvas(page, name) {
+  const path = `e2e/screenshots/${name}.png`;
+  const { buffer } = await captureCanvasScreenshot(page, path);
   _lastScreenshot = `${name}.png`;
   if (_reporter) {
     const results = _reporter.results;

@@ -1,0 +1,87 @@
+# Renderer Baseline Workflow
+
+이 문서는 layered renderer 전환 작업에서 비교 기준을 고정하기 위한 baseline 캡처 절차를 정리한다.
+
+## 목적
+
+전환기 구조를 정리하는 동안 "렌더링 결과가 개선된 것인지, 단순히 변형된 것인지"를 구분하려면
+같은 샘플 집합을 여러 backend로 고정된 방식으로 반복 캡처할 수 있어야 한다.
+
+현재 baseline은 아래 6개 경로를 한 번에 묶는다.
+
+- legacy SVG
+- layer SVG
+- native Skia PNG
+- browser Canvas2D
+- browser CanvasKit compat
+- browser CanvasKit default
+
+## Manifest
+
+기본 manifest는 `scripts/renderer_baseline_manifest.json`에 있다.
+
+manifest는 "대표 샘플을 어떤 범주로 보고 추적할지"를 고정하는 용도다.
+현재 기본 분류는 다음과 같다.
+
+- `paragraph`
+- `table`
+- `image`
+- `equation`
+- `header-footer`
+- `footnote`
+- `group-drawing`
+- `form`
+
+샘플은 `id`, `file`, `category`, `page`, `notes`를 가진다.
+
+## 실행
+
+전체 baseline을 기본 manifest로 캡처:
+
+```bash
+python3 scripts/renderer_baseline.py
+```
+
+특정 샘플만 필터링:
+
+```bash
+python3 scripts/renderer_baseline.py --filter eq-01
+python3 scripts/renderer_baseline.py --filter table --skip-browser
+```
+
+브라우저 캡처 모드는 `host` 또는 `headless`를 지원한다.
+
+```bash
+python3 scripts/renderer_baseline.py --browser-mode headless
+```
+
+## 출력 구조
+
+기본 출력 위치는 `output/renderer-baseline/latest/`이다.
+
+예시:
+
+```text
+output/renderer-baseline/latest/
+  baseline-manifest.filtered.json
+  baseline-report.json
+  baseline-report.md
+  paragraph-basic/
+    legacy-svg/
+    layer-svg/
+    native-skia/
+  browser/
+    paragraph-basic/
+      canvas2d.png
+      canvaskit-compat.png
+      canvaskit-default.png
+```
+
+## 사용 원칙
+
+1. 큰 layered refactor 전에 baseline을 먼저 저장한다.
+2. 구조 변경 후 동일 manifest를 다시 돌린다.
+3. diff나 시각적 어긋남이 생기면, baseline 보고서와 artifact 경로를 기준으로 원인을 좁힌다.
+
+이 baseline은 "최종 품질 판정"이 아니라, transition hardening을 위한 공통 기준선이다.
+정식 pass/fail 판정은 기존 regression test와 full sweep이 계속 담당한다.

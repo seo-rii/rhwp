@@ -1,0 +1,62 @@
+{
+  "label": "transition-core-baseline",
+  "description": "Representative renderer baseline corpus for transition hardening.",
+  "samples": [
+    {
+      "id": "paragraph-basic",
+      "file": "lseg-05-tab.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "General paragraph flow, tab stops, and inline text spacing."
+    },
+    {
+      "id": "table-core",
+      "file": "hwp_table_test.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Baseline table layout, borders, and cell clipping."
+    },
+    {
+      "id": "image-crop",
+      "file": "pic-crop-01.hwp",
+      "category": "image",
+      "page": 0,
+      "notes": "Image crop and fill semantics."
+    },
+    {
+      "id": "equation-inline",
+      "file": "eq-01.hwp",
+      "category": "equation",
+      "page": 0,
+      "notes": "Equation layout and symbol fallback."
+    },
+    {
+      "id": "header-image",
+      "file": "pic-in-head-01.hwp",
+      "category": "header-footer",
+      "page": 0,
+      "notes": "Header region rendering with floating image content."
+    },
+    {
+      "id": "footnote",
+      "file": "footnote-01.hwp",
+      "category": "footnote",
+      "page": 0,
+      "notes": "Footnote marker and footnote area layout."
+    },
+    {
+      "id": "shape-group",
+      "file": "group-drawing-02.hwp",
+      "category": "group-drawing",
+      "page": 0,
+      "notes": "Nested group drawing replay and transform composition."
+    },
+    {
+      "id": "form-controls",
+      "file": "form-01.hwp",
+      "category": "form",
+      "page": 0,
+      "notes": "Form object overlays and control-state painting."
+    }
+  ]
+}
