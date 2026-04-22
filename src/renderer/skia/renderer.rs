@@ -2,7 +2,7 @@ use skia_safe::{
     surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, Point, Rect,
 };
 
-use crate::paint::{LayerNode, LayerNodeKind, PageLayerTree, PaintOp};
+use crate::paint::{LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
 use crate::renderer::layer_renderer::LayerRasterRenderer;
 use crate::renderer::layout::{compute_char_positions, split_into_clusters};
 use crate::renderer::render_tree::{BoundingBox, TextRunNode};
@@ -38,7 +38,7 @@ impl SkiaLayerRenderer {
             .ok_or_else(|| "Skia raster surface 생성 실패".to_string())?;
         let canvas = surface.canvas();
         canvas.clear(Color::from_argb(0, 0, 0, 0));
-        self.render_node(canvas, &tree.root);
+        self.render_node(canvas, &tree.root, &tree.resources);
         let image = surface.image_snapshot();
         let data = image
             .encode(None, EncodedImageFormat::PNG, None)
@@ -46,11 +46,11 @@ impl SkiaLayerRenderer {
         Ok(data.as_bytes().to_vec())
     }
 
-    fn render_node(&self, canvas: &Canvas, node: &LayerNode) {
+    fn render_node(&self, canvas: &Canvas, node: &LayerNode, resources: &ResourceArena) {
         match &node.kind {
             LayerNodeKind::Group { children, .. } => {
                 for child in children {
-                    self.render_node(canvas, child);
+                    self.render_node(canvas, child, resources);
                 }
             }
             LayerNodeKind::ClipRect { clip, child, .. } => {
@@ -65,32 +65,34 @@ impl SkiaLayerRenderer {
                     None,
                     Some(true),
                 );
-                self.render_node(canvas, child);
+                self.render_node(canvas, child, resources);
                 canvas.restore();
             }
             LayerNodeKind::Leaf { ops, .. } => {
                 for op in ops {
-                    self.render_op(canvas, op);
+                    self.render_op(canvas, op, resources);
                 }
             }
         }
     }
 
-    fn render_op(&self, canvas: &Canvas, op: &PaintOp) {
+    fn render_op(&self, canvas: &Canvas, op: &PaintOp, resources: &ResourceArena) {
         match op {
             PaintOp::PageBackground { bbox, background } => {
                 if let Some(image) = &background.image {
-                    draw_image_bytes(
-                        canvas,
-                        &image.data,
-                        bbox.x as f32,
-                        bbox.y as f32,
-                        bbox.width as f32,
-                        bbox.height as f32,
-                        Some(image.fill_mode),
-                        None,
-                        None,
-                    );
+                    if let Some(bytes) = resources.image_bytes(image.resource_id) {
+                        draw_image_bytes(
+                            canvas,
+                            bytes,
+                            bbox.x as f32,
+                            bbox.y as f32,
+                            bbox.width as f32,
+                            bbox.height as f32,
+                            Some(image.fill_mode),
+                            None,
+                            None,
+                        );
+                    }
                 } else {
                     let background_rect = Rect::from_xywh(
                         bbox.x as f32,
@@ -242,18 +244,20 @@ impl SkiaLayerRenderer {
             }
             PaintOp::Image { bbox, image } => {
                 self.with_shape_transform(canvas, image.transform, Some(*bbox), |canvas| {
-                    if let Some(data) = &image.data {
-                        draw_image_bytes(
-                            canvas,
-                            data,
-                            bbox.x as f32,
-                            bbox.y as f32,
-                            bbox.width as f32,
-                            bbox.height as f32,
-                            image.fill_mode,
-                            image.original_size,
-                            image.crop,
-                        );
+                    if let Some(resource_id) = image.resource_id {
+                        if let Some(data) = resources.image_bytes(resource_id) {
+                            draw_image_bytes(
+                                canvas,
+                                data,
+                                bbox.x as f32,
+                                bbox.y as f32,
+                                bbox.width as f32,
+                                bbox.height as f32,
+                                image.fill_mode,
+                                image.original_size,
+                                image.crop,
+                            );
+                        }
                     }
                 });
             }

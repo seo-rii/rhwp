@@ -5,7 +5,9 @@ use base64::Engine;
 use crate::document_core::helpers::{color_ref_to_css, json_escape as raw_json_escape};
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
-use crate::paint::{CacheHint, ClipKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp};
+use crate::paint::{
+    CacheHint, ClipKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
+};
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
@@ -25,14 +27,14 @@ impl PageLayerTree {
             "\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"root\":",
             self.page_width, self.page_height
         );
-        self.root.write_json(&mut buf);
+        self.root.write_json(&mut buf, &self.resources);
         buf.push('}');
         buf
     }
 }
 
 impl LayerNode {
-    fn write_json(&self, buf: &mut String) {
+    fn write_json(&self, buf: &mut String, resources: &ResourceArena) {
         buf.push('{');
         buf.push_str("\"bounds\":");
         write_bbox(buf, self.bounds);
@@ -55,7 +57,7 @@ impl LayerNode {
                     if idx > 0 {
                         buf.push(',');
                     }
-                    child.write_json(buf);
+                    child.write_json(buf, resources);
                 }
                 buf.push(']');
             }
@@ -72,7 +74,7 @@ impl LayerNode {
                     json_escape(clip_kind_str(*clip_kind))
                 );
                 buf.push_str(",\"child\":");
-                child.write_json(buf);
+                child.write_json(buf, resources);
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
                 let _ = write!(
@@ -84,7 +86,7 @@ impl LayerNode {
                     if idx > 0 {
                         buf.push(',');
                     }
-                    op.write_json(buf);
+                    op.write_json(buf, resources);
                 }
                 buf.push(']');
             }
@@ -94,7 +96,7 @@ impl LayerNode {
 }
 
 impl PaintOp {
-    fn write_json(&self, buf: &mut String) {
+    fn write_json(&self, buf: &mut String, resources: &ResourceArena) {
         match self {
             PaintOp::PageBackground { bbox, background } => {
                 buf.push('{');
@@ -120,13 +122,17 @@ impl PaintOp {
                     write_gradient(buf, gradient);
                 }
                 if let Some(image) = &background.image {
-                    let base64_data = base64::engine::general_purpose::STANDARD.encode(&image.data);
-                    let _ = write!(
+                    buf.push_str(",\"image\":{");
+                    write_layer_image_fields(
                         buf,
-                        ",\"image\":{{\"fillMode\":{},\"base64\":{}}}",
-                        json_escape(image_fill_mode_str(image.fill_mode)),
-                        json_escape(&base64_data),
+                        resources,
+                        Some(image.resource_id),
+                        Some(image.fill_mode),
+                        None,
+                        None,
+                        false,
                     );
+                    buf.push('}');
                 }
                 buf.push('}');
             }
@@ -243,31 +249,15 @@ impl PaintOp {
                 buf.push('{');
                 buf.push_str("\"type\":\"image\",\"bbox\":");
                 write_bbox(buf, *bbox);
-                if let Some(data) = &image.data {
-                    let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
-                    let _ = write!(buf, ",\"base64\":{}", json_escape(&base64_data));
-                }
-                if let Some(fill_mode) = image.fill_mode {
-                    let _ = write!(
-                        buf,
-                        ",\"fillMode\":{}",
-                        json_escape(image_fill_mode_str(fill_mode))
-                    );
-                }
-                if let Some((width, height)) = image.original_size {
-                    let _ = write!(
-                        buf,
-                        ",\"originalSize\":{{\"width\":{:.6},\"height\":{:.6}}}",
-                        width, height
-                    );
-                }
-                if let Some((left, top, right, bottom)) = image.crop {
-                    let _ = write!(
-                        buf,
-                        ",\"crop\":{{\"left\":{},\"top\":{},\"right\":{},\"bottom\":{}}}",
-                        left, top, right, bottom
-                    );
-                }
+                write_layer_image_fields(
+                    buf,
+                    resources,
+                    image.resource_id,
+                    image.fill_mode,
+                    image.original_size,
+                    image.crop,
+                    true,
+                );
                 buf.push_str(",\"transform\":");
                 write_transform(buf, image.transform);
                 buf.push('}');
@@ -281,7 +271,11 @@ impl PaintOp {
                     ",\"color\":{},\"fontSize\":{:.6},\"svgContent\":{},\"layoutBox\":",
                     json_escape(&equation.color_str),
                     equation.font_size,
-                    json_escape(&equation.svg_content),
+                    json_escape(
+                        resources
+                            .svg_fragment(equation.svg_resource_id)
+                            .unwrap_or("")
+                    ),
                 );
                 write_equation_layout_box(buf, &equation.layout_box);
                 buf.push('}');
@@ -304,6 +298,56 @@ impl PaintOp {
                 buf.push('}');
             }
         }
+    }
+}
+
+fn write_layer_image_fields(
+    buf: &mut String,
+    resources: &ResourceArena,
+    resource_id: Option<crate::paint::ImageResourceId>,
+    fill_mode: Option<ImageFillMode>,
+    original_size: Option<(f64, f64)>,
+    crop: Option<(i32, i32, i32, i32)>,
+    leading_comma: bool,
+) {
+    let mut wrote_any = false;
+    let mut push_prefix = |buf: &mut String| {
+        if leading_comma || wrote_any {
+            buf.push(',');
+        }
+        wrote_any = true;
+    };
+
+    if let Some(resource_id) = resource_id {
+        if let Some(data) = resources.image_bytes(resource_id) {
+            push_prefix(buf);
+            let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
+            let _ = write!(buf, "\"base64\":{}", json_escape(&base64_data));
+        }
+    }
+    if let Some(fill_mode) = fill_mode {
+        push_prefix(buf);
+        let _ = write!(
+            buf,
+            "\"fillMode\":{}",
+            json_escape(image_fill_mode_str(fill_mode))
+        );
+    }
+    if let Some((width, height)) = original_size {
+        push_prefix(buf);
+        let _ = write!(
+            buf,
+            "\"originalSize\":{{\"width\":{:.6},\"height\":{:.6}}}",
+            width, height
+        );
+    }
+    if let Some((left, top, right, bottom)) = crop {
+        push_prefix(buf);
+        let _ = write!(
+            buf,
+            "\"crop\":{{\"left\":{},\"top\":{},\"right\":{},\"bottom\":{}}}",
+            left, top, right, bottom
+        );
     }
 }
 
@@ -847,11 +891,14 @@ fn cache_hint_str(value: CacheHint) -> &'static str {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::paint::{CacheHint, ClipKind, LayerNode, PageLayerTree};
-    use crate::renderer::render_tree::{EquationNode, TextRunNode};
+    use crate::paint::{
+        CacheHint, ClipKind, LayerEquationPaint, LayerNode, PageLayerTree, ResourceArena,
+    };
+    use crate::renderer::render_tree::TextRunNode;
 
     #[test]
     fn serializes_text_and_shape_ops_for_browser_replay() {
+        let mut resources = ResourceArena::default();
         let text = PaintOp::TextRun {
             bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
             run: TextRunNode {
@@ -895,8 +942,8 @@ mod tests {
         };
         let equation = PaintOp::Equation {
             bbox: BoundingBox::new(12.0, 44.0, 40.0, 16.0),
-            equation: EquationNode {
-                svg_content: "<text x=\"0\" y=\"12\">x</text>".to_string(),
+            equation: LayerEquationPaint {
+                svg_resource_id: resources.intern_svg_fragment("<text x=\"0\" y=\"12\">x</text>"),
                 layout_box: crate::renderer::equation::layout::LayoutBox {
                     x: 0.0,
                     y: 0.0,
@@ -908,15 +955,10 @@ mod tests {
                 color_str: "#112233".to_string(),
                 color: 0x00332211,
                 font_size: 14.0,
-                section_index: None,
-                para_index: None,
-                control_index: None,
-                cell_index: None,
-                cell_para_index: None,
             },
         };
 
-        let tree = PageLayerTree::new(
+        let tree = PageLayerTree::with_resources(
             120.0,
             80.0,
             LayerNode::leaf(
@@ -924,6 +966,7 @@ mod tests {
                 None,
                 vec![text, rect, equation],
             ),
+            resources,
         );
 
         let json = tree.to_json();

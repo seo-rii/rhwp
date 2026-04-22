@@ -19,11 +19,20 @@ pub struct PageLayerTree {
 
 impl PageLayerTree {
     pub fn new(page_width: f64, page_height: f64, root: LayerNode) -> Self {
+        Self::with_resources(page_width, page_height, root, ResourceArena::default())
+    }
+
+    pub fn with_resources(
+        page_width: f64,
+        page_height: f64,
+        root: LayerNode,
+        resources: ResourceArena,
+    ) -> Self {
         Self {
             page_width,
             page_height,
             root,
-            resources: ResourceArena,
+            resources,
         }
     }
 }

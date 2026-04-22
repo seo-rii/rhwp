@@ -11,6 +11,9 @@ pub mod resources;
 
 pub use builder::LayerBuilder;
 pub use layer_tree::{CacheHint, ClipKind, GroupKind, LayerNode, LayerNodeKind, PageLayerTree};
-pub use paint_op::PaintOp;
+pub use paint_op::{
+    LayerEquationPaint, LayerImagePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
+    PaintOp,
+};
 pub use profile::RenderProfile;
-pub use resources::ResourceArena;
+pub use resources::{ImageResourceId, ResourceArena, SvgResourceId};

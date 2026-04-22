@@ -1,17 +1,23 @@
+use crate::model::image::ImageEffect;
+use crate::model::style::ImageFillMode;
+use crate::model::ColorRef;
+use crate::paint::resources::{ImageResourceId, SvgResourceId};
+use crate::renderer::equation::layout::LayoutBox;
 use crate::renderer::render_tree::{
-    BoundingBox, EllipseNode, EquationNode, FootnoteMarkerNode, FormObjectNode, ImageNode,
-    LineNode, PageBackgroundNode, PathNode, RectangleNode, TextRunNode,
+    BoundingBox, EllipseNode, FootnoteMarkerNode, FormObjectNode, LineNode, PathNode,
+    RectangleNode, ShapeTransform, TextRunNode,
 };
+use crate::renderer::GradientFillInfo;
 
 /// backend가 재생하는 leaf paint operation.
 ///
-/// 1차 전환에서는 기존 leaf payload를 최대한 그대로 유지해
-/// semantic container 해석과 leaf draw payload 분리부터 달성한다.
+/// 전환기 IR에서는 leaf draw payload만 유지하고, 큰 바이너리/문자열 자원은
+/// `ResourceArena` handle로 분리한다.
 #[derive(Debug, Clone)]
 pub enum PaintOp {
     PageBackground {
         bbox: BoundingBox,
-        background: PageBackgroundNode,
+        background: LayerPageBackgroundPaint,
     },
     TextRun {
         bbox: BoundingBox,
@@ -39,16 +45,50 @@ pub enum PaintOp {
     },
     Image {
         bbox: BoundingBox,
-        image: ImageNode,
+        image: LayerImagePaint,
     },
     Equation {
         bbox: BoundingBox,
-        equation: EquationNode,
+        equation: LayerEquationPaint,
     },
     FormObject {
         bbox: BoundingBox,
         form: FormObjectNode,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerPageBackgroundPaint {
+    pub background_color: Option<ColorRef>,
+    pub border_color: Option<ColorRef>,
+    pub border_width: f64,
+    pub gradient: Option<Box<GradientFillInfo>>,
+    pub image: Option<LayerPageBackgroundImagePaint>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerPageBackgroundImagePaint {
+    pub resource_id: ImageResourceId,
+    pub fill_mode: ImageFillMode,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerImagePaint {
+    pub resource_id: Option<ImageResourceId>,
+    pub fill_mode: Option<ImageFillMode>,
+    pub original_size: Option<(f64, f64)>,
+    pub crop: Option<(i32, i32, i32, i32)>,
+    pub effect: ImageEffect,
+    pub transform: ShapeTransform,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerEquationPaint {
+    pub svg_resource_id: SvgResourceId,
+    pub layout_box: LayoutBox,
+    pub color_str: String,
+    pub color: u32,
+    pub font_size: f64,
 }
 
 impl PaintOp {

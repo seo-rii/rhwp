@@ -1,4 +1,6 @@
-use crate::paint::{ClipKind, GroupKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp};
+use crate::paint::{
+    ClipKind, GroupKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
+};
 
 use super::layer_renderer::LayerRenderer;
 use super::render_tree::{
@@ -41,21 +43,23 @@ impl SvgLayerRenderer {
     fn build_render_tree(&mut self, tree: &PageLayerTree) -> PageRenderTree {
         let mut render_tree = PageRenderTree::new(0, tree.page_width, tree.page_height);
         render_tree.root.bbox = tree.root.bounds;
-        render_tree.root.children = self.expand_children(&tree.root);
+        render_tree.root.children = self.expand_children(&tree.root, &tree.resources);
         render_tree
     }
 
-    fn expand_children(&mut self, node: &LayerNode) -> Vec<RenderNode> {
+    fn expand_children(&mut self, node: &LayerNode, resources: &ResourceArena) -> Vec<RenderNode> {
         match &node.kind {
             LayerNodeKind::Group { children, .. } => children
                 .iter()
-                .flat_map(|child| self.expand_node(child))
+                .flat_map(|child| self.expand_node(child, resources))
                 .collect(),
-            LayerNodeKind::ClipRect { .. } | LayerNodeKind::Leaf { .. } => self.expand_node(node),
+            LayerNodeKind::ClipRect { .. } | LayerNodeKind::Leaf { .. } => {
+                self.expand_node(node, resources)
+            }
         }
     }
 
-    fn expand_node(&mut self, node: &LayerNode) -> Vec<RenderNode> {
+    fn expand_node(&mut self, node: &LayerNode, resources: &ResourceArena) -> Vec<RenderNode> {
         match &node.kind {
             LayerNodeKind::Group {
                 children,
@@ -69,7 +73,7 @@ impl SvgLayerRenderer {
                 );
                 render_node.children = children
                     .iter()
-                    .flat_map(|child| self.expand_node(child))
+                    .flat_map(|child| self.expand_node(child, resources))
                     .collect();
                 vec![render_node]
             }
@@ -112,21 +116,39 @@ impl SvgLayerRenderer {
                     node_type,
                     node.bounds,
                 );
-                render_node.children = self.expand_children(child);
+                render_node.children = self.expand_children(child, resources);
                 vec![render_node]
             }
             LayerNodeKind::Leaf { ops, .. } => ops
                 .iter()
-                .map(|op| self.paint_op_to_render_node(op, node.source_node_id))
+                .map(|op| self.paint_op_to_render_node(op, node.source_node_id, resources))
                 .collect(),
         }
     }
 
-    fn paint_op_to_render_node(&mut self, op: &PaintOp, source_node_id: Option<u32>) -> RenderNode {
+    fn paint_op_to_render_node(
+        &mut self,
+        op: &PaintOp,
+        source_node_id: Option<u32>,
+        resources: &ResourceArena,
+    ) -> RenderNode {
         match op {
             PaintOp::PageBackground { bbox, background } => RenderNode::new(
                 self.take_node_id(source_node_id),
-                RenderNodeType::PageBackground(background.clone()),
+                RenderNodeType::PageBackground(crate::renderer::render_tree::PageBackgroundNode {
+                    background_color: background.background_color,
+                    border_color: background.border_color,
+                    border_width: background.border_width,
+                    gradient: background.gradient.clone(),
+                    image: background.image.as_ref().and_then(|image| {
+                        resources.image_bytes(image.resource_id).map(|bytes| {
+                            crate::renderer::render_tree::PageBackgroundImage {
+                                data: bytes.to_vec(),
+                                fill_mode: image.fill_mode,
+                            }
+                        })
+                    }),
+                }),
                 *bbox,
             ),
             PaintOp::TextRun { bbox, run } => RenderNode::new(
@@ -161,12 +183,39 @@ impl SvgLayerRenderer {
             ),
             PaintOp::Image { bbox, image } => RenderNode::new(
                 self.take_node_id(source_node_id),
-                RenderNodeType::Image(image.clone()),
+                RenderNodeType::Image({
+                    let mut node = crate::renderer::render_tree::ImageNode::new(
+                        0,
+                        image.resource_id.and_then(|resource_id| {
+                            resources.image_bytes(resource_id).map(<[u8]>::to_vec)
+                        }),
+                    );
+                    node.fill_mode = image.fill_mode;
+                    node.original_size = image.original_size;
+                    node.transform = image.transform;
+                    node.crop = image.crop;
+                    node.effect = image.effect;
+                    node
+                }),
                 *bbox,
             ),
             PaintOp::Equation { bbox, equation } => RenderNode::new(
                 self.take_node_id(source_node_id),
-                RenderNodeType::Equation(equation.clone()),
+                RenderNodeType::Equation(crate::renderer::render_tree::EquationNode {
+                    svg_content: resources
+                        .svg_fragment(equation.svg_resource_id)
+                        .unwrap_or("")
+                        .to_string(),
+                    layout_box: equation.layout_box.clone(),
+                    color_str: equation.color_str.clone(),
+                    color: equation.color,
+                    font_size: equation.font_size,
+                    section_index: None,
+                    para_index: None,
+                    control_index: None,
+                    cell_index: None,
+                    cell_para_index: None,
+                }),
                 *bbox,
             ),
             PaintOp::FormObject { bbox, form } => RenderNode::new(

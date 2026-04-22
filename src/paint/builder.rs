@@ -1,21 +1,30 @@
 use crate::paint::layer_tree::{
     CacheHint, ClipKind, GroupKind, LayerNode, LayerNodeKind, PageLayerTree,
 };
-use crate::paint::paint_op::PaintOp;
+use crate::paint::paint_op::{
+    LayerEquationPaint, LayerImagePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
+    PaintOp,
+};
 use crate::paint::profile::RenderProfile;
+use crate::paint::resources::ResourceArena;
 use crate::renderer::render_tree::{PageRenderTree, RenderNode, RenderNodeType};
 
 /// semantic render tree를 visual layer tree로 내린다.
 pub struct LayerBuilder {
     profile: RenderProfile,
+    resources: ResourceArena,
 }
 
 impl LayerBuilder {
     pub fn new(profile: RenderProfile) -> Self {
-        Self { profile }
+        Self {
+            profile,
+            resources: ResourceArena::default(),
+        }
     }
 
     pub fn build(&mut self, tree: &PageRenderTree) -> PageLayerTree {
+        self.resources = ResourceArena::default();
         let (page_width, page_height) = match &tree.root.node_type {
             RenderNodeType::Page(page) => (page.width, page.height),
             _ => (tree.root.bbox.width, tree.root.bbox.height),
@@ -29,7 +38,12 @@ impl LayerBuilder {
             GroupKind::Generic,
         );
 
-        PageLayerTree::new(page_width, page_height, root)
+        PageLayerTree::with_resources(
+            page_width,
+            page_height,
+            root,
+            std::mem::take(&mut self.resources),
+        )
     }
 
     fn build_children(&mut self, node: &RenderNode) -> Vec<LayerNode> {
@@ -45,13 +59,16 @@ impl LayerBuilder {
         }
 
         match &node.node_type {
-            RenderNodeType::PageBackground(background) => Some(self.build_paint_node(
-                node,
-                PaintOp::PageBackground {
-                    bbox: node.bbox,
-                    background: background.clone(),
-                },
-            )),
+            RenderNodeType::PageBackground(background) => {
+                let background = self.build_page_background_paint(background);
+                Some(self.build_paint_node(
+                    node,
+                    PaintOp::PageBackground {
+                        bbox: node.bbox,
+                        background,
+                    },
+                ))
+            }
             RenderNodeType::TextRun(run) => Some(self.build_paint_node(
                 node,
                 PaintOp::TextRun {
@@ -94,20 +111,26 @@ impl LayerBuilder {
                     path: path.clone(),
                 },
             )),
-            RenderNodeType::Image(image) => Some(self.build_paint_node(
-                node,
-                PaintOp::Image {
-                    bbox: node.bbox,
-                    image: image.clone(),
-                },
-            )),
-            RenderNodeType::Equation(equation) => Some(self.build_paint_node(
-                node,
-                PaintOp::Equation {
-                    bbox: node.bbox,
-                    equation: equation.clone(),
-                },
-            )),
+            RenderNodeType::Image(image) => {
+                let image = self.build_image_paint(image);
+                Some(self.build_paint_node(
+                    node,
+                    PaintOp::Image {
+                        bbox: node.bbox,
+                        image,
+                    },
+                ))
+            }
+            RenderNodeType::Equation(equation) => {
+                let equation = self.build_equation_paint(equation);
+                Some(self.build_paint_node(
+                    node,
+                    PaintOp::Equation {
+                        bbox: node.bbox,
+                        equation,
+                    },
+                ))
+            }
             RenderNodeType::FormObject(form) => Some(self.build_paint_node(
                 node,
                 PaintOp::FormObject {
@@ -187,6 +210,55 @@ impl LayerBuilder {
         )
     }
 
+    fn build_page_background_paint(
+        &mut self,
+        background: &crate::renderer::render_tree::PageBackgroundNode,
+    ) -> LayerPageBackgroundPaint {
+        LayerPageBackgroundPaint {
+            background_color: background.background_color,
+            border_color: background.border_color,
+            border_width: background.border_width,
+            gradient: background.gradient.clone(),
+            image: background
+                .image
+                .as_ref()
+                .map(|image| LayerPageBackgroundImagePaint {
+                    resource_id: self.resources.intern_image_bytes(&image.data),
+                    fill_mode: image.fill_mode,
+                }),
+        }
+    }
+
+    fn build_image_paint(
+        &mut self,
+        image: &crate::renderer::render_tree::ImageNode,
+    ) -> LayerImagePaint {
+        LayerImagePaint {
+            resource_id: image
+                .data
+                .as_deref()
+                .map(|bytes| self.resources.intern_image_bytes(bytes)),
+            fill_mode: image.fill_mode,
+            original_size: image.original_size,
+            crop: image.crop,
+            effect: image.effect,
+            transform: image.transform,
+        }
+    }
+
+    fn build_equation_paint(
+        &mut self,
+        equation: &crate::renderer::render_tree::EquationNode,
+    ) -> LayerEquationPaint {
+        LayerEquationPaint {
+            svg_resource_id: self.resources.intern_svg_fragment(&equation.svg_content),
+            layout_box: equation.layout_box.clone(),
+            color_str: equation.color_str.clone(),
+            color: equation.color,
+            font_size: equation.font_size,
+        }
+    }
+
     fn cache_hint_for(&self, node_type: &RenderNodeType) -> CacheHint {
         match node_type {
             RenderNodeType::Header | RenderNodeType::Footer | RenderNodeType::MasterPage => {
@@ -225,6 +297,7 @@ mod tests {
     use crate::renderer::render_tree::{
         BoundingBox, PageBackgroundNode, PageNode, RenderNode, RenderNodeType, TableCellNode,
     };
+    use crate::renderer::render_tree::{EquationNode, ImageNode};
 
     #[test]
     fn builds_body_clip_layer() {
@@ -440,7 +513,10 @@ mod tests {
 
         match &layer_tree.root.kind {
             LayerNodeKind::Group { children, .. } => {
-                assert!(children.is_empty(), "invisible nodes should not survive lowering");
+                assert!(
+                    children.is_empty(),
+                    "invisible nodes should not survive lowering"
+                );
             }
             other => panic!("expected root group, got {other:?}"),
         }
@@ -486,5 +562,66 @@ mod tests {
             }
             other => panic!("expected root group, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn interns_duplicate_image_and_equation_payloads_once_per_page() {
+        let image_bytes = vec![0x89, b'P', b'N', b'G'];
+        let equation_svg = "<text x=\"0\" y=\"10\">x</text>".to_string();
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.children.push(RenderNode::new(
+            30,
+            RenderNodeType::PageBackground(PageBackgroundNode {
+                background_color: None,
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: Some(crate::renderer::render_tree::PageBackgroundImage {
+                    data: image_bytes.clone(),
+                    fill_mode: crate::model::style::ImageFillMode::FitToSize,
+                }),
+            }),
+            BoundingBox::new(0.0, 0.0, 800.0, 600.0),
+        ));
+        for node_id in [31, 32] {
+            let mut image = ImageNode::new(0, None);
+            image.data = Some(image_bytes.clone());
+            tree.root.children.push(RenderNode::new(
+                node_id,
+                RenderNodeType::Image(image),
+                BoundingBox::new(10.0 * node_id as f64, 10.0, 40.0, 20.0),
+            ));
+        }
+        for node_id in [33, 34] {
+            tree.root.children.push(RenderNode::new(
+                node_id,
+                RenderNodeType::Equation(EquationNode {
+                    svg_content: equation_svg.clone(),
+                    layout_box: crate::renderer::equation::layout::LayoutBox {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 10.0,
+                        height: 12.0,
+                        baseline: 9.0,
+                        kind: crate::renderer::equation::layout::LayoutKind::Text("x".to_string()),
+                    },
+                    color_str: "#112233".to_string(),
+                    color: 0x00332211,
+                    font_size: 14.0,
+                    section_index: None,
+                    para_index: None,
+                    control_index: None,
+                    cell_index: None,
+                    cell_para_index: None,
+                }),
+                BoundingBox::new(20.0 * node_id as f64, 40.0, 20.0, 16.0),
+            ));
+        }
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        assert_eq!(layer_tree.resources.image_count(), 1);
+        assert_eq!(layer_tree.resources.svg_count(), 1);
     }
 }
