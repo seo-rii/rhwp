@@ -39,6 +39,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  DEBIAN_FRONTEND: noninteractive
 
 jobs:
   build-and-test:
@@ -58,10 +59,10 @@ jobs:
       - name: Install native Skia system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev libfreetype6-dev
+          sudo apt-get install -y --no-install-recommends libfontconfig1-dev libfreetype6-dev
 
       - name: Cache cargo registry & build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -97,7 +98,7 @@ jobs:
       - name: Install native Skia system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             fonts-noto-cjk \
             fonts-noto-core \
             fonts-noto-mono \
@@ -107,7 +108,7 @@ jobs:
           fc-cache -f
 
       - name: Cache cargo registry & build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -142,7 +143,7 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Cache cargo registry & build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -154,7 +155,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -163,7 +164,8 @@ jobs:
       - name: Install font packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk fonts-noto-core fonts-noto-mono fonts-nanum
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-core fonts-noto-mono fonts-nanum
+          fc-cache -f
 
       - name: Install studio dependencies
         working-directory: rhwp-studio
@@ -194,7 +196,7 @@ jobs:
 
       - name: Upload studio E2E artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: studio-e2e-artifacts
           path: |
