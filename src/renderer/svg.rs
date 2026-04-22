@@ -15,6 +15,10 @@ use super::{
 };
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
+use crate::paint::{
+    ClipKind, GroupKind, LayerEquationPaint, LayerImagePaint, LayerNode, LayerNodeKind,
+    LayerPageBackgroundPaint, PageLayerTree, PaintOp, ResourceArena,
+};
 use base64::Engine;
 
 /// SVG 폰트 임베딩 모드
@@ -132,6 +136,293 @@ impl SvgRenderer {
     /// 렌더 트리를 SVG로 렌더링
     pub fn render_tree(&mut self, tree: &PageRenderTree) {
         self.render_node(&tree.root);
+    }
+
+    /// 레이어 트리를 SVG로 직접 재생한다.
+    pub fn render_layer_tree(&mut self, tree: &PageLayerTree) {
+        self.begin_page(tree.page_width, tree.page_height);
+        self.render_layer_node(&tree.root, &tree.resources);
+        self.end_page();
+    }
+
+    fn render_layer_node(&mut self, node: &LayerNode, resources: &ResourceArena) {
+        match &node.kind {
+            LayerNodeKind::Group {
+                children,
+                group_kind,
+                ..
+            } => {
+                self.enter_layer_group(node.bounds, group_kind);
+                for child in children {
+                    self.render_layer_node(child, resources);
+                }
+                self.leave_layer_group(node.bounds, group_kind);
+            }
+            LayerNodeKind::ClipRect {
+                clip,
+                child,
+                clip_kind,
+            } => {
+                let clip_id = match clip_kind {
+                    ClipKind::Body => format!(
+                        "body-clip-{}",
+                        node.source_node_id
+                            .map_or_else(|| self.next_clip_id(), |id| id)
+                    ),
+                    ClipKind::TableCell => format!(
+                        "cell-clip-{}",
+                        node.source_node_id
+                            .map_or_else(|| self.next_clip_id(), |id| id)
+                    ),
+                    ClipKind::Generic => format!("layer-clip-{}", self.next_clip_id()),
+                };
+                self.defs.push(format!(
+                    "<clipPath id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/></clipPath>\n",
+                    clip_id, clip.x, clip.y, clip.width, clip.height,
+                ));
+                self.output
+                    .push_str(&format!("<g clip-path=\"url(#{})\">", clip_id));
+                self.render_layer_node(child, resources);
+                self.output.push_str("</g>\n");
+            }
+            LayerNodeKind::Leaf { ops, .. } => {
+                for op in ops {
+                    self.render_layer_op(op, resources);
+                }
+            }
+        }
+    }
+
+    fn render_layer_op(&mut self, op: &PaintOp, resources: &ResourceArena) {
+        match op {
+            PaintOp::PageBackground { bbox, background } => {
+                self.render_layer_page_background(*bbox, background, resources);
+            }
+            PaintOp::TextRun { bbox, run } => {
+                self.render_layer_text_run(*bbox, run);
+            }
+            PaintOp::FootnoteMarker { bbox, marker } => {
+                let sup_size = (marker.base_font_size * 0.55).max(7.0);
+                let color = color_to_svg(marker.color);
+                let font_family = Self::font_family_with_svg_fallbacks(&marker.font_family);
+                let y = bbox.y + bbox.height * 0.4;
+                self.output.push_str(&format!(
+                    "<text x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>\n",
+                    bbox.x,
+                    y,
+                    escape_xml(&font_family),
+                    sup_size,
+                    color,
+                    escape_xml(&marker.text),
+                ));
+            }
+            PaintOp::Line { bbox, line } => {
+                self.open_shape_transform(&line.transform, bbox);
+                self.draw_line(line.x1, line.y1, line.x2, line.y2, &line.style);
+                self.close_layer_op_transform(op);
+            }
+            PaintOp::Rectangle { bbox, rect } => {
+                self.open_shape_transform(&rect.transform, bbox);
+                self.draw_rect_with_gradient(
+                    bbox.x,
+                    bbox.y,
+                    bbox.width,
+                    bbox.height,
+                    rect.corner_radius,
+                    &rect.style,
+                    rect.gradient.as_deref(),
+                );
+                self.close_layer_op_transform(op);
+            }
+            PaintOp::Ellipse { bbox, ellipse } => {
+                self.open_shape_transform(&ellipse.transform, bbox);
+                let cx = bbox.x + bbox.width / 2.0;
+                let cy = bbox.y + bbox.height / 2.0;
+                self.draw_ellipse_with_gradient(
+                    cx,
+                    cy,
+                    bbox.width / 2.0,
+                    bbox.height / 2.0,
+                    &ellipse.style,
+                    ellipse.gradient.as_deref(),
+                );
+                self.close_layer_op_transform(op);
+            }
+            PaintOp::Path { bbox, path } => {
+                self.open_shape_transform(&path.transform, bbox);
+                self.draw_path_with_gradient(&path.commands, &path.style, path.gradient.as_deref());
+                self.close_layer_op_transform(op);
+            }
+            PaintOp::Image { bbox, image } => {
+                self.render_layer_image(*bbox, image, resources);
+                if self.show_control_codes {
+                    self.emit_control_code_marker("[그림]", *bbox);
+                }
+            }
+            PaintOp::Equation { bbox, equation } => {
+                self.render_layer_equation(*bbox, equation, resources);
+                if self.show_control_codes {
+                    self.emit_control_code_marker("[수식]", *bbox);
+                }
+            }
+            PaintOp::FormObject { bbox, form } => {
+                self.render_form_object(form, bbox);
+            }
+        }
+    }
+
+    fn enter_layer_group(&mut self, bounds: BoundingBox, group_kind: &GroupKind) {
+        if self.debug_overlay {
+            match group_kind {
+                GroupKind::TextLine(line) => {
+                    if self.overlay_skip_depth == 0 {
+                        if let (Some(pi), Some(si)) = (line.para_index, line.section_index) {
+                            if self.overlay_page_section == -1 {
+                                self.overlay_page_section = si as i32;
+                            }
+                            if si as i32 == self.overlay_page_section {
+                                let key = si * 100000 + pi;
+                                let entry =
+                                    self.overlay_para_bounds
+                                        .entry(key)
+                                        .or_insert(OverlayBounds {
+                                            section_index: si,
+                                            x: bounds.x,
+                                            y: bounds.y,
+                                            width: bounds.width,
+                                            height: bounds.height,
+                                        });
+                                let min_x = entry.x.min(bounds.x);
+                                let min_y = entry.y.min(bounds.y);
+                                let max_x = (entry.x + entry.width).max(bounds.x + bounds.width);
+                                let max_y = (entry.y + entry.height).max(bounds.y + bounds.height);
+                                entry.x = min_x;
+                                entry.y = min_y;
+                                entry.width = max_x - min_x;
+                                entry.height = max_y - min_y;
+                            }
+                        }
+                    }
+                }
+                GroupKind::Table(table) => {
+                    if let (Some(pi), Some(ci)) = (table.para_index, table.control_index) {
+                        if self.overlay_skip_depth == 0 {
+                            let table_section = table.section_index.unwrap_or(0);
+                            if self.overlay_page_section == -1 {
+                                self.overlay_page_section = table_section as i32;
+                            }
+                            if table_section as i32 == self.overlay_page_section {
+                                self.overlay_table_bounds.push(OverlayTableInfo {
+                                    section_index: table_section,
+                                    para_index: pi,
+                                    control_index: ci,
+                                    x: bounds.x,
+                                    y: bounds.y,
+                                    width: bounds.width,
+                                    height: bounds.height,
+                                    row_count: table.row_count,
+                                    col_count: table.col_count,
+                                });
+                                let key = table_section * 100000 + pi;
+                                let entry =
+                                    self.overlay_para_bounds
+                                        .entry(key)
+                                        .or_insert(OverlayBounds {
+                                            section_index: table_section,
+                                            x: bounds.x,
+                                            y: bounds.y,
+                                            width: bounds.width,
+                                            height: bounds.height,
+                                        });
+                                let min_x = entry.x.min(bounds.x);
+                                let min_y = entry.y.min(bounds.y);
+                                let max_x = (entry.x + entry.width).max(bounds.x + bounds.width);
+                                let max_y = (entry.y + entry.height).max(bounds.y + bounds.height);
+                                entry.x = min_x;
+                                entry.y = min_y;
+                                entry.width = max_x - min_x;
+                                entry.height = max_y - min_y;
+                            }
+                        }
+                    }
+                    self.overlay_skip_depth += 1;
+                }
+                GroupKind::Header
+                | GroupKind::Footer
+                | GroupKind::MasterPage
+                | GroupKind::FootnoteArea
+                | GroupKind::TextBox
+                | GroupKind::Group(_) => {
+                    self.overlay_skip_depth += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn leave_layer_group(&mut self, bounds: BoundingBox, group_kind: &GroupKind) {
+        if self.debug_overlay {
+            match group_kind {
+                GroupKind::Table(_)
+                | GroupKind::Header
+                | GroupKind::Footer
+                | GroupKind::MasterPage
+                | GroupKind::FootnoteArea
+                | GroupKind::TextBox
+                | GroupKind::Group(_) => {
+                    self.overlay_skip_depth = self.overlay_skip_depth.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+
+        if !self.show_control_codes {
+            return;
+        }
+
+        let label = match group_kind {
+            GroupKind::Table(_) => Some("[표]"),
+            GroupKind::TextBox => Some("[글상자]"),
+            GroupKind::Header => Some("[머리말]"),
+            GroupKind::Footer => Some("[꼬리말]"),
+            GroupKind::FootnoteArea => Some("[각주]"),
+            _ => None,
+        };
+        if let Some(label) = label {
+            self.emit_control_code_marker(label, bounds);
+        }
+    }
+
+    fn emit_control_code_marker(&mut self, label: &str, bbox: BoundingBox) {
+        let fs = 10.0;
+        self.output.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#CC3333\">{}</text>\n",
+            bbox.x,
+            bbox.y + fs,
+            fs,
+            label,
+        ));
+    }
+
+    fn close_layer_op_transform(&mut self, op: &PaintOp) {
+        match op {
+            PaintOp::Rectangle { rect, .. } if rect.transform.has_transform() => {
+                self.output.push_str("</g>\n");
+            }
+            PaintOp::Line { line, .. } if line.transform.has_transform() => {
+                self.output.push_str("</g>\n");
+            }
+            PaintOp::Ellipse { ellipse, .. } if ellipse.transform.has_transform() => {
+                self.output.push_str("</g>\n");
+            }
+            PaintOp::Image { image, .. } if image.transform.has_transform() => {
+                self.output.push_str("</g>\n");
+            }
+            PaintOp::Path { path, .. } if path.transform.has_transform() => {
+                self.output.push_str("</g>\n");
+            }
+            _ => {}
+        }
     }
 
     /// 개별 노드를 SVG로 렌더링
@@ -561,6 +852,233 @@ impl SvgRenderer {
         // 페이지 종료 태그
         if matches!(node.node_type, RenderNodeType::Page(_)) {
             self.end_page();
+        }
+    }
+
+    fn render_layer_page_background(
+        &mut self,
+        bbox: BoundingBox,
+        background: &LayerPageBackgroundPaint,
+        resources: &ResourceArena,
+    ) {
+        if let Some(color) = background.background_color {
+            let color_str = color_to_svg(color);
+            self.output.push_str(&format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
+                bbox.x, bbox.y, bbox.width, bbox.height, color_str,
+            ));
+        }
+        if let Some(grad) = &background.gradient {
+            let grad_id = self.create_gradient_def(grad);
+            self.output.push_str(&format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#{})\"/>\n",
+                bbox.x, bbox.y, bbox.width, bbox.height, grad_id,
+            ));
+        }
+        if let Some(image) = &background.image {
+            if let Some(bytes) = resources.image_bytes(image.resource_id) {
+                let base64_data = base64::engine::general_purpose::STANDARD.encode(bytes);
+                let mime_type = detect_image_mime_type(bytes);
+                let data_uri = format!("data:{};base64,{}", mime_type, base64_data);
+                self.output.push_str(&format!(
+                    "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
+                    bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
+                ));
+            }
+        }
+        if let Some(color) = background.border_color {
+            self.output.push_str(&format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>\n",
+                bbox.x,
+                bbox.y,
+                bbox.width,
+                bbox.height,
+                color_to_svg(color),
+                background.border_width.max(1.0),
+            ));
+        }
+    }
+
+    fn render_layer_text_run(
+        &mut self,
+        bbox: BoundingBox,
+        run: &crate::renderer::render_tree::TextRunNode,
+    ) {
+        if self.font_embed_mode != FontEmbedMode::None && !run.style.font_family.is_empty() {
+            let codepoints = self
+                .font_codepoints
+                .entry(run.style.font_family.clone())
+                .or_default();
+            for ch in run.text.chars() {
+                if !ch.is_control() {
+                    codepoints.insert(ch);
+                }
+            }
+        }
+        if let Some(ref overlap) = run.char_overlap {
+            self.draw_char_overlap(
+                &run.text,
+                &run.style,
+                overlap,
+                bbox.x,
+                bbox.y,
+                bbox.width,
+                bbox.height,
+            );
+        } else if run.rotation != 0.0 {
+            let cx = bbox.x + bbox.width / 2.0;
+            let cy = bbox.y + bbox.height / 2.0;
+            let color = color_to_svg(run.style.color);
+            let font_size = if run.style.font_size > 0.0 {
+                run.style.font_size
+            } else {
+                12.0
+            };
+            let font_family = Self::font_family_with_svg_fallbacks(&run.style.font_family);
+            let mut attrs = format!(
+                "font-family=\"{}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
+                escape_xml(&font_family),
+                font_size,
+                color
+            );
+            if run.style.bold {
+                attrs.push_str(" font-weight=\"bold\"");
+            }
+            if run.style.italic {
+                attrs.push_str(" font-style=\"italic\"");
+            }
+            for c in run.text.chars() {
+                if c == ' ' {
+                    continue;
+                }
+                self.output.push_str(&format!(
+                    "<text x=\"{}\" y=\"{}\" {} transform=\"rotate({},{},{})\">{}</text>\n",
+                    cx,
+                    cy,
+                    attrs,
+                    run.rotation,
+                    cx,
+                    cy,
+                    escape_xml(&c.to_string()),
+                ));
+            }
+        } else {
+            self.draw_text(&run.text, bbox.x, bbox.y + run.baseline, &run.style);
+        }
+        if self.show_paragraph_marks || self.show_control_codes {
+            let is_marker = !matches!(
+                run.field_marker,
+                crate::renderer::render_tree::FieldMarkerType::None
+            );
+            let font_size = if run.style.font_size > 0.0 {
+                run.style.font_size
+            } else {
+                12.0
+            };
+            if !run.text.is_empty() && !is_marker {
+                let char_positions = compute_char_positions(&run.text, &run.style);
+                let mark_font_size = font_size * 0.5;
+                for (i, c) in run.text.chars().enumerate() {
+                    if c == ' ' {
+                        let cx = bbox.x + char_positions[i];
+                        let next_x = if i + 1 < char_positions.len() {
+                            bbox.x + char_positions[i + 1]
+                        } else {
+                            bbox.x + bbox.width
+                        };
+                        let mid_x = (cx + next_x) / 2.0 - mark_font_size * 0.25;
+                        self.output.push_str(&format!(
+                            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">\u{2228}</text>\n",
+                            mid_x,
+                            bbox.y + run.baseline,
+                            mark_font_size,
+                        ));
+                    } else if c == '\t' {
+                        let cx = bbox.x + char_positions[i];
+                        self.output.push_str(&format!(
+                            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">\u{2192}</text>\n",
+                            cx,
+                            bbox.y + run.baseline,
+                            mark_font_size,
+                        ));
+                    }
+                }
+            }
+            if run.is_para_end || run.is_line_break_end {
+                let mark_x = if run.text.is_empty() {
+                    bbox.x
+                } else {
+                    bbox.x + bbox.width
+                };
+                let mark = if run.is_line_break_end {
+                    "\u{2193}"
+                } else {
+                    "\u{21B5}"
+                };
+                self.output.push_str(&format!(
+                    "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">{}</text>\n",
+                    mark_x,
+                    bbox.y + run.baseline,
+                    font_size,
+                    mark,
+                ));
+            }
+        }
+    }
+
+    fn render_layer_image(
+        &mut self,
+        bbox: BoundingBox,
+        image: &LayerImagePaint,
+        resources: &ResourceArena,
+    ) {
+        let mut temp = ImageNode::new(
+            0,
+            image.resource_id.and_then(|resource_id| {
+                resources
+                    .image_bytes(resource_id)
+                    .map(|bytes| bytes.to_vec())
+            }),
+        );
+        temp.fill_mode = image.fill_mode;
+        temp.original_size = image.original_size;
+        temp.transform = image.transform;
+        temp.crop = image.crop;
+        temp.effect = image.effect;
+        self.open_shape_transform(&temp.transform, &bbox);
+        self.render_image_node(&temp, &bbox);
+        if temp.transform.has_transform() {
+            self.output.push_str("</g>\n");
+        }
+    }
+
+    fn render_layer_equation(
+        &mut self,
+        bbox: BoundingBox,
+        equation: &LayerEquationPaint,
+        resources: &ResourceArena,
+    ) {
+        self.output.push_str(&format!(
+            "<g transform=\"translate({},{})\">\n",
+            bbox.x, bbox.y,
+        ));
+        let svg_content = resources
+            .svg_fragment(equation.svg_resource_id)
+            .unwrap_or("");
+        self.output.push_str(svg_content);
+        self.output.push_str("</g>\n");
+        if self.font_embed_mode != FontEmbedMode::None {
+            let codepoints = self
+                .font_codepoints
+                .entry("Latin Modern Math".to_string())
+                .or_default();
+            for segment in svg_content.split("</text>") {
+                if let Some(start) = segment.rfind('>') {
+                    for ch in segment[start + 1..].chars() {
+                        codepoints.insert(ch);
+                    }
+                }
+            }
         }
     }
 

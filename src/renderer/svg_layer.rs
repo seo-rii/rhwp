@@ -1,27 +1,18 @@
-use crate::paint::{
-    ClipKind, GroupKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
-};
+use crate::paint::PageLayerTree;
 
 use super::layer_renderer::LayerRenderer;
-use super::render_tree::{
-    BoundingBox, GroupNode, PageRenderTree, RenderNode, RenderNodeType, TableCellNode,
-};
+use super::render_tree::{BoundingBox, PageRenderTree, RenderNode, RenderNodeType};
 use super::svg::SvgRenderer;
 
-/// PageLayerTree를 SVG로 재생하는 transition renderer.
-///
-/// 1차 전환에서는 layer tree를 temporary render node tree로 다시 조립해
-/// 기존 SVG leaf/backend 로직을 그대로 재사용한다.
+/// PageLayerTree를 SVG로 직접 재생한다.
 pub struct SvgLayerRenderer {
     renderer: SvgRenderer,
-    next_generated_id: u32,
 }
 
 impl SvgLayerRenderer {
     pub fn new() -> Self {
         Self {
             renderer: SvgRenderer::new(),
-            next_generated_id: 1_000_000,
         }
     }
 
@@ -39,228 +30,11 @@ impl SvgLayerRenderer {
         self.renderer.show_control_codes = show_control_codes;
         self.renderer.debug_overlay = debug_overlay;
     }
-
-    fn build_render_tree(&mut self, tree: &PageLayerTree) -> PageRenderTree {
-        let mut render_tree = PageRenderTree::new(0, tree.page_width, tree.page_height);
-        render_tree.root.bbox = tree.root.bounds;
-        render_tree.root.children = self.expand_children(&tree.root, &tree.resources);
-        render_tree
-    }
-
-    fn expand_children(&mut self, node: &LayerNode, resources: &ResourceArena) -> Vec<RenderNode> {
-        match &node.kind {
-            LayerNodeKind::Group { children, .. } => children
-                .iter()
-                .flat_map(|child| self.expand_node(child, resources))
-                .collect(),
-            LayerNodeKind::ClipRect { .. } | LayerNodeKind::Leaf { .. } => {
-                self.expand_node(node, resources)
-            }
-        }
-    }
-
-    fn expand_node(&mut self, node: &LayerNode, resources: &ResourceArena) -> Vec<RenderNode> {
-        match &node.kind {
-            LayerNodeKind::Group {
-                children,
-                group_kind,
-                ..
-            } => {
-                let mut render_node = RenderNode::new(
-                    self.take_node_id(node.source_node_id),
-                    self.group_kind_to_render_node_type(group_kind),
-                    node.bounds,
-                );
-                render_node.children = children
-                    .iter()
-                    .flat_map(|child| self.expand_node(child, resources))
-                    .collect();
-                vec![render_node]
-            }
-            LayerNodeKind::ClipRect {
-                clip,
-                child,
-                clip_kind,
-            } => {
-                let node_type = match clip_kind {
-                    ClipKind::Body => RenderNodeType::Body {
-                        clip_rect: Some(*clip),
-                    },
-                    ClipKind::TableCell => match &child.kind {
-                        LayerNodeKind::Group {
-                            group_kind: GroupKind::TableCell(cell),
-                            ..
-                        } => {
-                            let mut cell = cell.clone();
-                            cell.clip = true;
-                            RenderNodeType::TableCell(cell)
-                        }
-                        _ => RenderNodeType::TableCell(TableCellNode {
-                            col: 0,
-                            row: 0,
-                            col_span: 1,
-                            row_span: 1,
-                            border_fill_id: 0,
-                            text_direction: 0,
-                            clip: true,
-                            model_cell_index: None,
-                        }),
-                    },
-                    ClipKind::Generic => RenderNodeType::Body {
-                        clip_rect: Some(*clip),
-                    },
-                };
-
-                let mut render_node = RenderNode::new(
-                    self.take_node_id(node.source_node_id),
-                    node_type,
-                    node.bounds,
-                );
-                render_node.children = self.expand_children(child, resources);
-                vec![render_node]
-            }
-            LayerNodeKind::Leaf { ops, .. } => ops
-                .iter()
-                .map(|op| self.paint_op_to_render_node(op, node.source_node_id, resources))
-                .collect(),
-        }
-    }
-
-    fn paint_op_to_render_node(
-        &mut self,
-        op: &PaintOp,
-        source_node_id: Option<u32>,
-        resources: &ResourceArena,
-    ) -> RenderNode {
-        match op {
-            PaintOp::PageBackground { bbox, background } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::PageBackground(crate::renderer::render_tree::PageBackgroundNode {
-                    background_color: background.background_color,
-                    border_color: background.border_color,
-                    border_width: background.border_width,
-                    gradient: background.gradient.clone(),
-                    image: background.image.as_ref().and_then(|image| {
-                        resources.image_bytes(image.resource_id).map(|bytes| {
-                            crate::renderer::render_tree::PageBackgroundImage {
-                                data: bytes.to_vec(),
-                                fill_mode: image.fill_mode,
-                            }
-                        })
-                    }),
-                }),
-                *bbox,
-            ),
-            PaintOp::TextRun { bbox, run } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::TextRun(run.clone()),
-                *bbox,
-            ),
-            PaintOp::FootnoteMarker { bbox, marker } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::FootnoteMarker(marker.clone()),
-                *bbox,
-            ),
-            PaintOp::Line { bbox, line } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::Line(line.clone()),
-                *bbox,
-            ),
-            PaintOp::Rectangle { bbox, rect } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::Rectangle(rect.clone()),
-                *bbox,
-            ),
-            PaintOp::Ellipse { bbox, ellipse } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::Ellipse(ellipse.clone()),
-                *bbox,
-            ),
-            PaintOp::Path { bbox, path } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::Path(path.clone()),
-                *bbox,
-            ),
-            PaintOp::Image { bbox, image } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::Image({
-                    let mut node = crate::renderer::render_tree::ImageNode::new(
-                        0,
-                        image.resource_id.and_then(|resource_id| {
-                            resources.image_bytes(resource_id).map(<[u8]>::to_vec)
-                        }),
-                    );
-                    node.fill_mode = image.fill_mode;
-                    node.original_size = image.original_size;
-                    node.transform = image.transform;
-                    node.crop = image.crop;
-                    node.effect = image.effect;
-                    node
-                }),
-                *bbox,
-            ),
-            PaintOp::Equation { bbox, equation } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::Equation(crate::renderer::render_tree::EquationNode {
-                    svg_content: resources
-                        .svg_fragment(equation.svg_resource_id)
-                        .unwrap_or("")
-                        .to_string(),
-                    layout_box: equation.layout_box.clone(),
-                    color_str: equation.color_str.clone(),
-                    color: equation.color,
-                    font_size: equation.font_size,
-                    section_index: None,
-                    para_index: None,
-                    control_index: None,
-                    cell_index: None,
-                    cell_para_index: None,
-                }),
-                *bbox,
-            ),
-            PaintOp::FormObject { bbox, form } => RenderNode::new(
-                self.take_node_id(source_node_id),
-                RenderNodeType::FormObject(form.clone()),
-                *bbox,
-            ),
-        }
-    }
-
-    fn group_kind_to_render_node_type(&self, group_kind: &GroupKind) -> RenderNodeType {
-        match group_kind {
-            GroupKind::Generic => RenderNodeType::Group(GroupNode {
-                section_index: None,
-                para_index: None,
-                control_index: None,
-            }),
-            GroupKind::MasterPage => RenderNodeType::MasterPage,
-            GroupKind::Header => RenderNodeType::Header,
-            GroupKind::Footer => RenderNodeType::Footer,
-            GroupKind::Body => RenderNodeType::Body { clip_rect: None },
-            GroupKind::Column(index) => RenderNodeType::Column(*index),
-            GroupKind::FootnoteArea => RenderNodeType::FootnoteArea,
-            GroupKind::TextLine(line) => RenderNodeType::TextLine(line.clone()),
-            GroupKind::Table(table) => RenderNodeType::Table(table.clone()),
-            GroupKind::TableCell(cell) => RenderNodeType::TableCell(cell.clone()),
-            GroupKind::TextBox => RenderNodeType::TextBox,
-            GroupKind::Group(group) => RenderNodeType::Group(group.clone()),
-        }
-    }
-
-    fn take_node_id(&mut self, source_node_id: Option<u32>) -> u32 {
-        if let Some(id) = source_node_id {
-            return id;
-        }
-        let id = self.next_generated_id;
-        self.next_generated_id += 1;
-        id
-    }
 }
 
 impl LayerRenderer for SvgLayerRenderer {
     fn render_page(&mut self, tree: &PageLayerTree) {
-        let render_tree = self.build_render_tree(tree);
-        self.renderer.render_tree(&render_tree);
+        self.renderer.render_layer_tree(tree);
     }
 }
 
