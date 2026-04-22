@@ -8,6 +8,8 @@ import type {
   LayerBounds,
   LayerClipNode,
   LayerEllipseOp,
+  LayerEquationLayoutBox,
+  LayerEquationOp,
   LayerFootnoteMarkerOp,
   LayerFormObjectOp,
   LayerGradient,
@@ -47,6 +49,7 @@ const FONT_SANS_BOLD_URL = new URL('../../../web/fonts/NotoSansKR-Bold.woff2', i
 const FONT_SERIF_REGULAR_URL = new URL('../../../web/fonts/NotoSerifKR-Regular.woff2', import.meta.url).href;
 const FONT_SERIF_BOLD_URL = new URL('../../../web/fonts/NotoSerifKR-Bold.woff2', import.meta.url).href;
 const FONT_MONO_REGULAR_URL = new URL('../../../web/fonts/D2Coding-Regular.woff2', import.meta.url).href;
+const FONT_MATH_REGULAR_URL = new URL('../../../web/fonts/LatinModernMath-Regular.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_DOTUM_URL = new URL('../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_DOTUM_BOLD_URL = new URL('../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_BATANG_URL = new URL('../../../web/fonts/NotoSerifKR-Regular.woff2', import.meta.url).href;
@@ -97,6 +100,7 @@ const SERIF_ALIASES = [
   'NanumMyeongjo',
   '나눔명조',
   '바탕',
+  '바탕체',
   'AppleMyungjo',
   '궁서',
   '새궁서',
@@ -111,9 +115,17 @@ const MONO_ALIASES = [
   '나눔고딕코딩',
   '굴림체',
   'GulimChe',
-  '바탕체',
   'Noto Sans Mono',
 ];
+
+const MATH_ALIASES = [
+  'Latin Modern Math',
+  'STIX Two Math',
+  'Cambria Math',
+];
+
+const EQUATION_SCRIPT_SCALE = 0.7;
+const EQUATION_BIG_OP_SCALE = 1.5;
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -253,6 +265,7 @@ export class CanvasKitLayerRenderer {
     await registerAliases(SANS_ALIASES, FONT_SANS_REGULAR_URL, FONT_SANS_BOLD_URL);
     await registerAliases(SERIF_ALIASES, FONT_SERIF_REGULAR_URL, FONT_SERIF_BOLD_URL);
     await registerAliases(MONO_ALIASES, FONT_MONO_REGULAR_URL);
+    await registerAliases(MATH_ALIASES, FONT_MATH_REGULAR_URL);
   }
 
   private renderNode(
@@ -350,6 +363,10 @@ export class CanvasKitLayerRenderer {
         this.renderImage(canvas, op);
         return;
       case 'equation':
+        if (this.shouldOverlayEquation(op)) {
+          return;
+        }
+        this.renderEquation(canvas, op);
         return;
       case 'formObject':
         if (this.shouldOverlayFormObject(op)) {
@@ -361,42 +378,55 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayTextRun(op: LayerTextRunOp): boolean {
-    const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
+    if (this.renderMode === 'compat') {
+      const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
+      const clusters = splitIntoClusters(op.text);
+      if (
+        op.isVertical
+        || op.rotation !== 0
+        || !op.text.trim()
+        || op.style.bold
+        || op.style.italic
+        || Math.abs(ratio - 1) > 0.01
+        || op.style.underline !== 'none'
+        || op.style.strikethrough
+        || (op.style.outlineType ?? 0) > 0
+        || (op.style.shadowType ?? 0) > 0
+        || op.style.emboss
+        || op.style.engrave
+        || (op.style.emphasisDot ?? 0) > 0
+        || ((typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase() !== '#ffffff')
+        || (op.tabLeaders?.length ?? 0) > 0
+        || (
+          clusters.length > 8
+          && clusters.some((cluster) => cluster.text === ' ')
+        )
+      ) {
+        return true;
+      }
+      if (Math.abs(op.style.fontSize - 13.333333) > 0.01) {
+        return true;
+      }
+      if ((op.style.fontFamily?.trim() ?? '') !== '바탕체') {
+        return true;
+      }
+      return clusters.some((cluster) =>
+        cluster.text === '\t'
+        || cluster.text === '\u2007'
+        || startsWithInvalidControl(cluster.text)
+        || isHalfwidthScaledCluster(cluster.text),
+      );
+    }
+
     const clusters = splitIntoClusters(op.text);
     if (
       op.isVertical
-      || op.rotation !== 0
       || !op.text.trim()
-      || op.style.bold
-      || op.style.italic
-      || Math.abs(ratio - 1) > 0.01
-      || op.style.underline !== 'none'
-      || op.style.strikethrough
-      || (op.style.outlineType ?? 0) > 0
-      || (op.style.shadowType ?? 0) > 0
-      || op.style.emboss
-      || op.style.engrave
-      || (op.style.emphasisDot ?? 0) > 0
-      || ((typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase() !== '#ffffff')
-      || (op.tabLeaders?.length ?? 0) > 0
-      || (
-        clusters.length > 8
-        && clusters.some((cluster) => cluster.text === ' ')
-      )
     ) {
       return true;
     }
-    if (Math.abs(op.style.fontSize - 13.333333) > 0.01) {
-      return true;
-    }
-    if ((op.style.fontFamily?.trim() ?? '') !== '바탕체') {
-      return true;
-    }
     return clusters.some((cluster) =>
-      cluster.text === '\t'
-      || cluster.text === '\u2007'
-      || startsWithInvalidControl(cluster.text)
-      || isHalfwidthScaledCluster(cluster.text),
+      startsWithInvalidControl(cluster.text),
     );
   }
 
@@ -436,11 +466,15 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayFormObject(_op: LayerFormObjectOp): boolean {
-    return true;
+    return this.renderMode === 'compat';
   }
 
   private shouldOverlayImage(_op: LayerImageOp): boolean {
-    return true;
+    return this.renderMode === 'compat';
+  }
+
+  private shouldOverlayEquation(_op: LayerEquationOp): boolean {
+    return this.renderMode === 'compat';
   }
 
   private renderPageBackground(canvas: ReturnType<Surface['getCanvas']>, op: LayerPageBackgroundOp): void {
@@ -1139,6 +1173,443 @@ export class CanvasKitLayerRenderer {
     }
   }
 
+  private renderEquation(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerEquationOp,
+  ): void {
+    this.renderEquationBox(
+      canvas,
+      op.layoutBox,
+      op.bbox.x,
+      op.bbox.y,
+      op.color,
+      op.fontSize,
+      false,
+      false,
+    );
+  }
+
+  private renderEquationBox(
+    canvas: ReturnType<Surface['getCanvas']>,
+    layout: LayerEquationLayoutBox,
+    parentX: number,
+    parentY: number,
+    color: string,
+    fontSize: number,
+    italic: boolean,
+    bold: boolean,
+  ): void {
+    const x = parentX + layout.x;
+    const y = parentY + layout.y;
+
+    switch (layout.kind.type) {
+      case 'row':
+        for (const child of layout.kind.children) {
+          this.renderEquationBox(canvas, child, x, y, color, fontSize, italic, bold);
+        }
+        return;
+      case 'text':
+        this.drawEquationText(
+          canvas,
+          layout.kind.text,
+          x,
+          y + layout.baseline,
+          this.equationFontSizeFromBox(layout, fontSize),
+          color,
+          true,
+          bold,
+          this.resolveEquationFontFamily('text', layout.kind.text),
+          layout.width,
+        );
+        return;
+      case 'number':
+        this.drawEquationText(
+          canvas,
+          layout.kind.text,
+          x,
+          y + layout.baseline,
+          this.equationFontSizeFromBox(layout, fontSize),
+          color,
+          false,
+          bold,
+          this.resolveEquationFontFamily('number', layout.kind.text),
+          layout.width,
+        );
+        return;
+      case 'symbol':
+        this.drawEquationTextCentered(
+          canvas,
+          layout.kind.text,
+          x + layout.width / 2,
+          y + layout.baseline,
+          this.equationFontSizeFromBox(layout, fontSize),
+          color,
+          false,
+          false,
+          this.resolveEquationFontFamily('symbol', layout.kind.text),
+          layout.width,
+        );
+        return;
+      case 'mathSymbol':
+        this.drawEquationText(
+          canvas,
+          layout.kind.text,
+          x,
+          y + layout.baseline,
+          this.equationFontSizeFromBox(layout, fontSize),
+          color,
+          false,
+          false,
+          this.resolveEquationFontFamily('mathSymbol', layout.kind.text),
+          layout.width,
+        );
+        return;
+      case 'function':
+        this.drawEquationText(
+          canvas,
+          layout.kind.name,
+          x,
+          y + layout.baseline,
+          this.equationFontSizeFromBox(layout, fontSize),
+          color,
+          false,
+          false,
+          this.resolveEquationFontFamily('function', layout.kind.name),
+          layout.width,
+        );
+        return;
+      case 'fraction':
+        this.renderEquationBox(canvas, layout.kind.numer, x, y, color, fontSize, italic, bold);
+        this.drawEquationLine(
+          canvas,
+          x + fontSize * 0.05,
+          y + layout.baseline,
+          x + layout.width - fontSize * 0.05,
+          y + layout.baseline,
+          color,
+          fontSize * 0.04,
+        );
+        this.renderEquationBox(canvas, layout.kind.denom, x, y, color, fontSize, italic, bold);
+        return;
+      case 'sqrt': {
+        const bodyLeft = x + layout.kind.body.x - fontSize * 0.1;
+        const signHeight = layout.height;
+        const midX = bodyLeft - fontSize * 0.15;
+        const midY = y + signHeight;
+        const startX = midX - fontSize * 0.3;
+        const startY = y + signHeight * 0.6;
+        const tickX = startX - fontSize * 0.1;
+        const tickY = startY - fontSize * 0.05;
+        this.drawEquationLine(canvas, tickX, tickY, startX, startY, color, fontSize * 0.04);
+        this.drawEquationLine(canvas, startX, startY, midX, midY, color, fontSize * 0.04);
+        this.drawEquationLine(canvas, midX, midY, bodyLeft, y, color, fontSize * 0.04);
+        this.drawEquationLine(canvas, bodyLeft, y, x + layout.width, y, color, fontSize * 0.04);
+        if (layout.kind.index) {
+          this.renderEquationBox(
+            canvas,
+            layout.kind.index,
+            x,
+            y,
+            color,
+            fontSize * EQUATION_SCRIPT_SCALE,
+            false,
+            false,
+          );
+        }
+        this.renderEquationBox(canvas, layout.kind.body, x, y, color, fontSize, italic, bold);
+        return;
+      }
+      case 'superscript':
+        this.renderEquationBox(canvas, layout.kind.base, x, y, color, fontSize, italic, bold);
+        this.renderEquationBox(canvas, layout.kind.sup, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, italic, bold);
+        return;
+      case 'subscript':
+        this.renderEquationBox(canvas, layout.kind.base, x, y, color, fontSize, italic, bold);
+        this.renderEquationBox(canvas, layout.kind.sub, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, italic, bold);
+        return;
+      case 'subSup':
+        this.renderEquationBox(canvas, layout.kind.base, x, y, color, fontSize, italic, bold);
+        this.renderEquationBox(canvas, layout.kind.sub, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, italic, bold);
+        this.renderEquationBox(canvas, layout.kind.sup, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, italic, bold);
+        return;
+      case 'bigOp': {
+        const opFontSize = fontSize * EQUATION_BIG_OP_SCALE;
+        const supHeight = layout.kind.sup ? layout.kind.sup.height + fontSize * 0.05 : 0;
+        this.drawEquationTextCentered(
+          canvas,
+          layout.kind.symbol,
+          x + layout.width / 2,
+          y + supHeight + opFontSize * 0.8,
+          opFontSize,
+          color,
+          false,
+          false,
+          this.resolveEquationFontFamily('mathSymbol', layout.kind.symbol),
+          layout.width,
+        );
+        if (layout.kind.sup) {
+          this.renderEquationBox(canvas, layout.kind.sup, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, false, false);
+        }
+        if (layout.kind.sub) {
+          this.renderEquationBox(canvas, layout.kind.sub, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, false, false);
+        }
+        return;
+      }
+      case 'limit':
+        this.drawEquationText(
+          canvas,
+          layout.kind.isUpper ? 'Lim' : 'lim',
+          x,
+          y + this.equationFontSizeFromBox(layout, fontSize) * 0.8,
+          this.equationFontSizeFromBox(layout, fontSize),
+          color,
+          false,
+          false,
+          this.resolveEquationFontFamily('function', layout.kind.isUpper ? 'Lim' : 'lim'),
+          layout.width,
+        );
+        if (layout.kind.sub) {
+          this.renderEquationBox(canvas, layout.kind.sub, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, false, false);
+        }
+        return;
+      case 'matrix': {
+        const brackets = layout.kind.style === 'paren' ? ['(', ')']
+          : layout.kind.style === 'bracket' ? ['[', ']']
+            : layout.kind.style === 'vert' ? ['|', '|']
+              : ['', ''];
+        if (brackets[0]) {
+          this.drawEquationBracket(canvas, brackets[0], x, y, fontSize * 0.3, layout.height, color, fontSize);
+          this.drawEquationBracket(canvas, brackets[1], x + layout.width - fontSize * 0.3, y, fontSize * 0.3, layout.height, color, fontSize);
+        }
+        for (const row of layout.kind.cells) {
+          for (const cell of row) {
+            this.renderEquationBox(canvas, cell, x, y, color, fontSize, italic, bold);
+          }
+        }
+        return;
+      }
+      case 'rel':
+        this.renderEquationBox(canvas, layout.kind.over, x, y, color, fontSize, italic, bold);
+        this.renderEquationBox(canvas, layout.kind.arrow, x, y, color, fontSize, italic, bold);
+        if (layout.kind.under) {
+          this.renderEquationBox(canvas, layout.kind.under, x, y, color, fontSize, italic, bold);
+        }
+        return;
+      case 'eqAlign':
+        for (const row of layout.kind.rows) {
+          this.renderEquationBox(canvas, row.left, x, y, color, fontSize, italic, bold);
+          this.renderEquationBox(canvas, row.right, x, y, color, fontSize, italic, bold);
+        }
+        return;
+      case 'paren':
+        if (layout.kind.left) {
+          this.drawEquationBracket(canvas, layout.kind.left, x, y, fontSize * 0.3, layout.height, color, fontSize);
+        }
+        this.renderEquationBox(canvas, layout.kind.body, x, y, color, fontSize, italic, bold);
+        if (layout.kind.right) {
+          this.drawEquationBracket(canvas, layout.kind.right, x + layout.width - fontSize * 0.3, y, fontSize * 0.3, layout.height, color, fontSize);
+        }
+        return;
+      case 'decoration':
+        this.renderEquationBox(canvas, layout.kind.body, x, y, color, fontSize, italic, bold);
+        this.drawEquationDecoration(
+          canvas,
+          layout.kind.decoration,
+          x + layout.kind.body.x + layout.kind.body.width / 2,
+          y + fontSize * 0.05,
+          layout.kind.body.width,
+          color,
+          fontSize,
+        );
+        return;
+      case 'fontStyle': {
+        const nextItalic = layout.kind.fontStyle === 'roman' ? false : layout.kind.fontStyle === 'italic' ? true : italic;
+        const nextBold = layout.kind.fontStyle === 'roman' ? false : layout.kind.fontStyle === 'bold' ? true : bold;
+        this.renderEquationBox(canvas, layout.kind.body, x, y, color, fontSize, nextItalic, nextBold);
+        return;
+      }
+      case 'space':
+      case 'newline':
+      case 'empty':
+        return;
+    }
+  }
+
+  private drawEquationText(
+    canvas: ReturnType<Surface['getCanvas']>,
+    text: string,
+    x: number,
+    y: number,
+    size: number,
+    color: string,
+    italic: boolean,
+    bold: boolean,
+    fontFamily: string,
+    targetWidth: number,
+  ): void {
+    const { font, paint, typeface } = this.makeTextObjects(fontFamily, size, bold, italic, color);
+    const glyphIds = font.getGlyphIDs(text);
+    const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
+    const measuredWidth = glyphWidths.reduce((sum, width) => sum + width, 0);
+    if (targetWidth > 0 && measuredWidth > 0) {
+      font.setScaleX(targetWidth / measuredWidth);
+    }
+    canvas.drawText(text, x, y, paint, font);
+    paint.delete();
+    font.delete();
+    typeface.delete();
+  }
+
+  private drawEquationTextCentered(
+    canvas: ReturnType<Surface['getCanvas']>,
+    text: string,
+    centerX: number,
+    baselineY: number,
+    size: number,
+    color: string,
+    italic: boolean,
+    bold: boolean,
+    fontFamily: string,
+    targetWidth: number,
+  ): void {
+    this.drawEquationText(
+      canvas,
+      text,
+      centerX - targetWidth / 2,
+      baselineY,
+      size,
+      color,
+      italic,
+      bold,
+      fontFamily,
+      targetWidth,
+    );
+  }
+
+  private resolveEquationFontFamily(
+    kind: 'text' | 'number' | 'symbol' | 'mathSymbol' | 'function',
+    text: string,
+  ): string {
+    if (/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(text)) {
+      return HAMCHOROM_BATANG_FAMILY;
+    }
+    if (kind === 'text' || kind === 'number' || kind === 'function') {
+      return HAMCHOROM_BATANG_FAMILY;
+    }
+    return 'Latin Modern Math';
+  }
+
+  private drawEquationLine(
+    canvas: ReturnType<Surface['getCanvas']>,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
+    strokeWidth: number,
+  ): void {
+    const paint = this.makeLinePaint(color, Math.max(strokeWidth, 0.5), 'solid');
+    canvas.drawLine(x1, y1, x2, y2, paint);
+    paint.delete();
+  }
+
+  private drawEquationBracket(
+    canvas: ReturnType<Surface['getCanvas']>,
+    bracket: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    color: string,
+    fontSize: number,
+  ): void {
+    if (bracket === '|') {
+      this.drawEquationLine(canvas, x + width / 2, y, x + width / 2, y + height, color, fontSize * 0.04);
+      return;
+    }
+    this.drawEquationTextCentered(
+      canvas,
+      bracket,
+      x + width / 2,
+      y + height * 0.7,
+      Math.max(height, fontSize),
+      color,
+      false,
+      false,
+      this.resolveEquationFontFamily('symbol', bracket),
+      width,
+    );
+  }
+
+  private drawEquationDecoration(
+    canvas: ReturnType<Surface['getCanvas']>,
+    decoration: string,
+    midX: number,
+    y: number,
+    width: number,
+    color: string,
+    fontSize: number,
+  ): void {
+    const strokeWidth = Math.max(fontSize * 0.03, 0.5);
+    const halfWidth = width / 2;
+    switch (decoration) {
+      case 'hat':
+        this.drawEquationLine(canvas, midX - halfWidth * 0.6, y + fontSize * 0.15, midX, y, color, strokeWidth);
+        this.drawEquationLine(canvas, midX, y, midX + halfWidth * 0.6, y + fontSize * 0.15, color, strokeWidth);
+        return;
+      case 'bar':
+      case 'overline':
+        this.drawEquationLine(canvas, midX - halfWidth, y + fontSize * 0.05, midX + halfWidth, y + fontSize * 0.05, color, strokeWidth);
+        return;
+      case 'vec': {
+        const arrowY = y + fontSize * 0.05;
+        this.drawEquationLine(canvas, midX - halfWidth, arrowY, midX + halfWidth, arrowY, color, strokeWidth);
+        this.drawEquationLine(canvas, midX + halfWidth - fontSize * 0.1, arrowY - fontSize * 0.06, midX + halfWidth, arrowY, color, strokeWidth);
+        this.drawEquationLine(canvas, midX + halfWidth, arrowY, midX + halfWidth - fontSize * 0.1, arrowY + fontSize * 0.06, color, strokeWidth);
+        return;
+      }
+      case 'tilde': {
+        const leftX = midX - halfWidth * 0.6;
+        const rightX = midX + halfWidth * 0.6;
+        const midLeftX = midX - halfWidth * 0.2;
+        const midRightX = midX + halfWidth * 0.2;
+        const baseY = y + fontSize * 0.08;
+        this.drawEquationLine(canvas, leftX, baseY, midLeftX, baseY - fontSize * 0.08, color, strokeWidth);
+        this.drawEquationLine(canvas, midLeftX, baseY - fontSize * 0.08, midX, baseY, color, strokeWidth);
+        this.drawEquationLine(canvas, midX, baseY, midRightX, baseY + fontSize * 0.08, color, strokeWidth);
+        this.drawEquationLine(canvas, midRightX, baseY + fontSize * 0.08, rightX, baseY, color, strokeWidth);
+        return;
+      }
+      case 'dot':
+      case 'dDot': {
+        const radius = Math.max(fontSize * 0.03, 1);
+        const paint = this.makePaint(color, 'fill');
+        if (decoration === 'dot') {
+          canvas.drawCircle(midX, y + fontSize * 0.06, radius, paint);
+        } else {
+          const gap = fontSize * 0.1;
+          canvas.drawCircle(midX - gap, y + fontSize * 0.06, radius, paint);
+          canvas.drawCircle(midX + gap, y + fontSize * 0.06, radius, paint);
+        }
+        paint.delete();
+        return;
+      }
+      case 'underline':
+      case 'under':
+        this.drawEquationLine(canvas, midX - halfWidth, y + fontSize * 1.1, midX + halfWidth, y + fontSize * 1.1, color, strokeWidth);
+        return;
+      default:
+        this.drawEquationLine(canvas, midX - halfWidth * 0.5, y + fontSize * 0.1, midX + halfWidth * 0.5, y + fontSize * 0.1, color, strokeWidth);
+    }
+  }
+
+  private equationFontSizeFromBox(
+    layout: LayerEquationLayoutBox,
+    baseFontSize: number,
+  ): number {
+    return layout.height > 0 ? layout.height : baseFontSize;
+  }
+
   private renderFallbackOverlays(node: LayerNode, targetCanvas: HTMLCanvasElement, scale: number): void {
     const ctx = targetCanvas.getContext('2d');
     if (!ctx) {
@@ -1200,7 +1671,7 @@ export class CanvasKitLayerRenderer {
         }, op.bbox);
         continue;
       }
-      if (op.type === 'equation') {
+      if (op.type === 'equation' && this.shouldOverlayEquation(op)) {
         this.withCurrentOverlayClip(ctx, 0, () => {
           renderEquationLayoutBox(ctx, op.layoutBox, op.bbox.x, op.bbox.y, op.color, op.fontSize, false, false);
         }, op.bbox);
@@ -1960,19 +2431,17 @@ export class CanvasKitLayerRenderer {
   private makeTextObjects(fontFamily: string, fontSize: number, bold: boolean, italic: boolean, color: string, scaleX = 1): { typeface: Typeface; font: Font; paint: Paint } {
     const family = this.resolveCanvasKitFontFamily(fontFamily);
     const typeface = this.fontProvider.matchFamilyStyle(family, {
-      weight: this.canvasKit.FontWeight.Normal,
-      slant: this.canvasKit.FontSlant.Upright,
+      weight: bold ? this.canvasKit.FontWeight.Bold : this.canvasKit.FontWeight.Normal,
+      slant: italic ? this.canvasKit.FontSlant.Italic : this.canvasKit.FontSlant.Upright,
     });
     const font = new this.canvasKit.Font(typeface, fontSize || 12);
-    font.setEmbolden(bold);
+    font.setEmbolden(bold && (family === 'D2Coding' || family === 'Latin Modern Math'));
     font.setScaleX(scaleX > 0 ? scaleX : 1);
     font.setSkewX(italic ? -0.25 : 0);
-    if (this.renderMode === 'compat') {
-      font.setSubpixel(true);
-      if (fontSize >= 48 && bold && !italic) {
-        font.setEdging(this.canvasKit.FontEdging.SubpixelAntiAlias);
-        font.setHinting(this.canvasKit.FontHinting.Slight);
-      }
+    font.setSubpixel(true);
+    if (fontSize >= 48 && bold && !italic) {
+      font.setEdging(this.canvasKit.FontEdging.SubpixelAntiAlias);
+      font.setHinting(this.canvasKit.FontHinting.Slight);
     }
     const paint = this.makePaint(color, 'fill');
     return { typeface, font, paint };
@@ -1990,10 +2459,10 @@ export class CanvasKitLayerRenderer {
     if (this.fontAliases.has(fontFamily)) return fontFamily;
 
     const lower = resolved.toLowerCase();
-    if (/gulimche|batangche|coding|courier/.test(lower) || /굴림체|바탕체/.test(resolved)) {
+    if (/gulimche|coding|courier/.test(lower) || /굴림체/.test(resolved)) {
       return 'D2Coding';
     }
-    if (/batang|gungsuh|serif|times/.test(lower) || /바탕|명조|궁서/.test(resolved)) {
+    if (/batang|batangche|gungsuh|serif|times/.test(lower) || /바탕|바탕체|명조|궁서/.test(resolved)) {
       return 'Noto Serif KR';
     }
     return 'Noto Sans KR';
