@@ -40,12 +40,14 @@ export interface LayerBounds {
 export interface PageLayerTree {
   pageWidth: number;
   pageHeight: number;
+  profile: LayerRenderProfile;
   root: LayerNode;
 }
 
 export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;
 
 export type LayerCacheHint = 'none' | 'staticSubtree' | 'preferRaster' | 'preferVectorRecording';
+export type LayerRenderProfile = 'fast-preview' | 'screen' | 'print' | 'high-quality';
 
 export interface LayerGroupNode {
   bounds: LayerBounds;

@@ -1,5 +1,5 @@
 import init, { HwpDocument, version } from '@wasm/rhwp.js';
-import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, CellPathEntry, NavContextEntry, FieldInfoResult, BookmarkInfo, PageLayerTree } from './types';
+import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, CellPathEntry, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree } from './types';
 import { resolveFont, fontFamilyWithFallback } from './font-substitution';
 import { REGISTERED_FONTS } from './font-loader';
 
@@ -145,13 +145,21 @@ export class WasmBridge {
     return this.doc.renderPageSvg(pageNum);
   }
 
-  getPageLayerTree(pageNum: number): PageLayerTree {
+  getPageLayerTree(pageNum: number, profile: LayerRenderProfile = 'screen'): PageLayerTree {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
-    const valueGetter = (this.doc as any).getPageLayerTreeValue;
+    const doc = this.doc as any;
+    const valueGetter = doc.getPageLayerTreeValueWithProfile ?? doc.getPageLayerTreeValue;
     if (typeof valueGetter === 'function') {
+      if (typeof doc.getPageLayerTreeValueWithProfile === 'function') {
+        return valueGetter.call(this.doc, pageNum, profile) as PageLayerTree;
+      }
       return valueGetter.call(this.doc, pageNum) as PageLayerTree;
     }
-    return JSON.parse((this.doc as any).getPageLayerTree(pageNum));
+    const jsonGetter = doc.getPageLayerTreeWithProfile ?? doc.getPageLayerTree;
+    const json = typeof doc.getPageLayerTreeWithProfile === 'function'
+      ? jsonGetter.call(this.doc, pageNum, profile)
+      : jsonGetter.call(this.doc, pageNum);
+    return JSON.parse(json);
   }
 
   getCursorRect(sec: number, para: number, charOffset: number): CursorRect {

@@ -1,10 +1,11 @@
-import type { PageInfo } from '@/core/types';
+import type { LayerRenderProfile, PageInfo } from '@/core/types';
 
 export type RenderBackend = 'canvas2d' | 'canvaskit';
 export type CanvasKitRenderMode = 'default' | 'compat';
 
 const STORAGE_KEY = 'rhwp-render-backend';
 const CANVASKIT_MODE_STORAGE_KEY = 'rhwp-canvaskit-render-mode';
+const RENDER_PROFILE_STORAGE_KEY = 'rhwp-render-profile';
 
 export function resolveRenderBackend(search: string): RenderBackend {
   const params = new URLSearchParams(search);
@@ -47,6 +48,49 @@ export function resolveCanvasKitRenderMode(search: string): CanvasKitRenderMode 
 export function persistCanvasKitRenderMode(mode: CanvasKitRenderMode): void {
   try {
     window.localStorage.setItem(CANVASKIT_MODE_STORAGE_KEY, mode);
+  } catch {
+    // private mode / disabled storage: 무시하고 query-param 선택만 사용한다.
+  }
+}
+
+export function resolveRenderProfile(search: string): LayerRenderProfile {
+  const params = new URLSearchParams(search);
+  const requested = params.get('renderProfile')?.trim().toLowerCase();
+
+  switch (requested) {
+    case 'fast':
+    case 'preview':
+    case 'fastpreview':
+    case 'fast-preview':
+      return 'fast-preview';
+    case 'screen':
+      return 'screen';
+    case 'print':
+      return 'print';
+    case 'high':
+    case 'quality':
+    case 'highquality':
+    case 'high-quality':
+      return 'high-quality';
+    default:
+      break;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(RENDER_PROFILE_STORAGE_KEY);
+    return stored === 'fast-preview'
+      || stored === 'print'
+      || stored === 'high-quality'
+      ? stored
+      : 'screen';
+  } catch {
+    return 'screen';
+  }
+}
+
+export function persistRenderProfile(profile: LayerRenderProfile): void {
+  try {
+    window.localStorage.setItem(RENDER_PROFILE_STORAGE_KEY, profile);
   } catch {
     // private mode / disabled storage: 무시하고 query-param 선택만 사용한다.
   }

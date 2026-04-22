@@ -24,8 +24,10 @@ impl PageLayerTree {
         buf.push('{');
         let _ = write!(
             buf,
-            "\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"root\":",
-            self.page_width, self.page_height
+            "\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"root\":",
+            self.page_width,
+            self.page_height,
+            json_escape(self.profile.as_str())
         );
         self.root.write_json(&mut buf, &self.resources);
         buf.push('}');
@@ -988,6 +990,7 @@ mod tests {
 
         assert!(json.contains("\"kind\":\"leaf\""));
         assert!(json.contains("\"cacheHint\":\"none\""));
+        assert!(json.contains("\"profile\":\"screen\""));
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"fontFamily\":\"Noto Sans KR\""));
@@ -1116,6 +1119,19 @@ mod tests {
         let json = tree.to_json();
         assert!(json.contains("\"kind\":\"group\""));
         assert!(json.contains("\"cacheHint\":\"preferVectorRecording\""));
+    }
+
+    #[test]
+    fn serializes_non_default_profile_for_browser_replay() {
+        let tree = PageLayerTree::with_profile(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![]),
+            crate::paint::RenderProfile::HighQuality,
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"profile\":\"high-quality\""));
     }
 }
 

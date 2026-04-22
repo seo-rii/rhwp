@@ -54,6 +54,7 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085 }],
 ]);
 const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'default' ? 'default' : 'compat';
+const RENDER_PROFILE = process.env.RHWP_RENDER_PROFILE?.trim() || 'screen';
 const TOLERANT_DIFF = {
   ignoreChannelDelta: 8,
   maxDiffRatio: 0.0025,
@@ -104,8 +105,8 @@ function collectFullSweepCases() {
 
 async function renderScenario(page, backend, caseInfo) {
   const search = backend === 'canvaskit'
-    ? `?renderer=${backend}&canvaskitMode=${CANVASKIT_MODE}`
-    : `?renderer=${backend}`;
+    ? `?renderer=${backend}&canvaskitMode=${CANVASKIT_MODE}&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`
+    : `?renderer=${backend}&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`;
   await loadApp(page, search);
   await caseInfo.setup(page);
 
@@ -113,7 +114,8 @@ async function renderScenario(page, backend, caseInfo) {
   assert(activeBackend === backend || (backend === 'canvas2d' && activeBackend === 'canvas'), `${caseInfo.name} backend=${backend}`);
 
   const layerSummary = await page.evaluate(() => {
-    const tree = window.__wasm?.getPageLayerTree?.(0);
+    const profile = window.__renderProfile ?? 'screen';
+    const tree = window.__wasm?.getPageLayerTree?.(0, profile);
     if (!tree) return null;
     let opCount = 0;
     const walk = (node) => {
@@ -135,9 +137,11 @@ async function renderScenario(page, backend, caseInfo) {
       kind: tree.root.kind,
       opCount,
       mode: window.__canvaskitRenderMode,
+      profile: tree.profile,
     };
   });
   assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
+  assert(layerSummary?.profile === RENDER_PROFILE, `${caseInfo.name} renderProfile=${RENDER_PROFILE}`);
   if (backend === 'canvaskit') {
     assert(layerSummary?.mode === CANVASKIT_MODE, `${caseInfo.name} canvaskitMode=${CANVASKIT_MODE}`);
   }
@@ -149,10 +153,10 @@ async function renderScenario(page, backend, caseInfo) {
 }
 
 runTest('CanvasKit 렌더 비교', async ({ page }) => {
-  console.log(`[scope=${SAMPLE_SCOPE}] full-page cases=${FULL_PAGE_CASES.length}, feature cases=${FILTERED_FEATURE_CASES.length}, mode=${CANVASKIT_MODE}, filter=${SAMPLE_FILTER_PATTERN || 'none'}`);
+  console.log(`[scope=${SAMPLE_SCOPE}] full-page cases=${FULL_PAGE_CASES.length}, feature cases=${FILTERED_FEATURE_CASES.length}, mode=${CANVASKIT_MODE}, profile=${RENDER_PROFILE}, filter=${SAMPLE_FILTER_PATTERN || 'none'}`);
 
   setTestCase('canvas2d-layer-path');
-  await loadApp(page, '?renderer=canvas2d');
+  await loadApp(page, `?renderer=canvas2d&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`);
   const pathProbeInstall = await page.evaluate(() => {
     const wasm = window.__wasm;
     if (!wasm?.getPageLayerTree) {
@@ -419,7 +423,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   );
 
   setTestCase('canvaskit-layer-tree-value-and-footnote-routing');
-  await loadApp(page, `?renderer=canvaskit&canvaskitMode=${CANVASKIT_MODE}`);
+  await loadApp(page, `?renderer=canvaskit&canvaskitMode=${CANVASKIT_MODE}&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`);
   await createNewDocument(page);
   const nativeRouting = await page.evaluate(() => {
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
@@ -463,6 +467,11 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
 
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
+      hasLayerTreeValueWithProfileApi: typeof wasmDoc?.getPageLayerTreeValueWithProfile === 'function',
+      selectedRenderProfile: window.__renderProfile,
+      selectedProfileOnTree: window.__wasm?.getPageLayerTree?.(0, window.__renderProfile ?? 'screen')?.profile,
+      highQualityProfileOnTree: window.__wasm?.getPageLayerTree?.(0, 'high-quality')?.profile,
+      fastPreviewHasPreferRasterHint: JSON.stringify(window.__wasm?.getPageLayerTree?.(0, 'fast-preview') ?? {}).includes('"cacheHint":"preferRaster"'),
       simpleTextUsesOverlay: renderer.shouldOverlayTextRun(simpleTextRun),
       underlinedTextUsesOverlay: renderer.shouldOverlayTextRun({
         ...simpleTextRun,
@@ -484,6 +493,11 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
 
   assert(!nativeRouting.error, nativeRouting.error || 'canvaskit native routing probe captured');
   assert(nativeRouting.hasLayerTreeValueApi, 'wasm layer tree JS-value export enabled');
+  assert(nativeRouting.hasLayerTreeValueWithProfileApi, 'wasm layer tree JS-value export with profile enabled');
+  assert(nativeRouting.selectedRenderProfile === RENDER_PROFILE, `selected render profile=${nativeRouting.selectedRenderProfile}`);
+  assert(nativeRouting.selectedProfileOnTree === RENDER_PROFILE, `selected tree profile=${nativeRouting.selectedProfileOnTree}`);
+  assert(nativeRouting.highQualityProfileOnTree === 'high-quality', `high-quality tree profile=${nativeRouting.highQualityProfileOnTree}`);
+  assert(nativeRouting.fastPreviewHasPreferRasterHint === true, `fast-preview preferRaster=${nativeRouting.fastPreviewHasPreferRasterHint}`);
   assert(nativeRouting.simpleTextUsesOverlay === true, `simple text overlay=${nativeRouting.simpleTextUsesOverlay}`);
   assert(nativeRouting.underlinedTextUsesOverlay === true, `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
   assert(nativeRouting.footnoteUsesOverlay === false, `footnote overlay=${nativeRouting.footnoteUsesOverlay}`);

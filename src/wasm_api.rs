@@ -10,11 +10,11 @@
 // 하위 호환성: tests.rs에서 super::json_escape 등으로 접근 가능하도록 재내보내기
 pub(crate) use crate::document_core::helpers::*;
 
+#[cfg(target_arch = "wasm32")]
+use js_sys::JSON;
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
-#[cfg(target_arch = "wasm32")]
-use js_sys::JSON;
 
 use crate::document_core::{DocumentCore, DEFAULT_FALLBACK_FONT};
 use crate::error::HwpError;
@@ -39,6 +39,7 @@ use crate::renderer::style_resolver::{
 };
 use crate::renderer::svg::SvgRenderer;
 use crate::renderer::DEFAULT_DPI;
+use crate::paint::RenderProfile;
 
 impl From<HwpError> for JsValue {
     fn from(err: HwpError) -> Self {
@@ -82,6 +83,22 @@ impl HwpDocument {
 
     pub fn find_column_def_for_paragraph(paragraphs: &[Paragraph], para_idx: usize) -> ColumnDef {
         DocumentCore::find_column_def_for_paragraph(paragraphs, para_idx)
+    }
+
+    fn parse_layer_render_profile(
+        profile_name: &str,
+        default_profile: RenderProfile,
+    ) -> Result<RenderProfile, JsValue> {
+        if profile_name.trim().is_empty() {
+            return Ok(default_profile);
+        }
+
+        RenderProfile::parse_name(profile_name).ok_or_else(|| {
+            JsValue::from_str(&format!(
+                "알 수 없는 layered render profile: {}",
+                profile_name
+            ))
+        })
     }
 }
 
@@ -246,12 +263,39 @@ impl HwpDocument {
             .map_err(|e| e.into())
     }
 
+    /// 페이지 레이어 트리를 JSON 문자열로 반환한다. profile을 명시적으로 덮어쓸 수 있다.
+    #[wasm_bindgen(js_name = getPageLayerTreeWithProfile)]
+    pub fn get_page_layer_tree_with_profile(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+    ) -> Result<String, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        self.get_page_layer_tree_with_profile_native(page_num, profile)
+            .map_err(|e| e.into())
+    }
+
     /// 페이지 레이어 트리를 JS object로 반환한다.
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen(js_name = getPageLayerTreeValue)]
     pub fn get_page_layer_tree_value(&self, page_num: u32) -> Result<JsValue, JsValue> {
         let json = self
             .get_page_layer_tree_native(page_num)
+            .map_err(JsValue::from)?;
+        JSON::parse(&json)
+    }
+
+    /// 페이지 레이어 트리를 JS object로 반환한다. profile을 명시적으로 덮어쓸 수 있다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueWithProfile)]
+    pub fn get_page_layer_tree_value_with_profile(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+    ) -> Result<JsValue, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        let json = self
+            .get_page_layer_tree_with_profile_native(page_num, profile)
             .map_err(JsValue::from)?;
         JSON::parse(&json)
     }

@@ -195,6 +195,17 @@ impl DocumentCore {
         Ok(layer_tree.to_json())
     }
 
+    pub fn get_page_layer_tree_with_profile_native(
+        &self,
+        page_num: u32,
+        profile: RenderProfile,
+    ) -> Result<String, HwpError> {
+        let tree = self.build_page_tree_cached(page_num)?;
+        let _overflows = self.layout_engine.take_overflows();
+        let layer_tree = self.build_layer_tree_from_page_tree(&tree, profile);
+        Ok(layer_tree.to_json())
+    }
+
     /// 페이지 정보 (네이티브 에러 타입)
     pub fn get_page_info_native(&self, page_num: u32) -> Result<String, HwpError> {
         use crate::renderer::hwpunit_to_px;

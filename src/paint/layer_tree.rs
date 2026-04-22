@@ -1,4 +1,5 @@
 use crate::paint::paint_op::PaintOp;
+use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
 use crate::renderer::render_tree::{
     BoundingBox, GroupNode, NodeId, TableCellNode, TableNode, TextLineNode,
@@ -13,13 +14,20 @@ use crate::renderer::render_tree::{
 pub struct PageLayerTree {
     pub page_width: f64,
     pub page_height: f64,
+    pub profile: RenderProfile,
     pub root: LayerNode,
     pub resources: ResourceArena,
 }
 
 impl PageLayerTree {
     pub fn new(page_width: f64, page_height: f64, root: LayerNode) -> Self {
-        Self::with_resources(page_width, page_height, root, ResourceArena::default())
+        Self::with_resources_and_profile(
+            page_width,
+            page_height,
+            root,
+            ResourceArena::default(),
+            RenderProfile::default(),
+        )
     }
 
     pub fn with_resources(
@@ -28,9 +36,41 @@ impl PageLayerTree {
         root: LayerNode,
         resources: ResourceArena,
     ) -> Self {
+        Self::with_resources_and_profile(
+            page_width,
+            page_height,
+            root,
+            resources,
+            RenderProfile::default(),
+        )
+    }
+
+    pub fn with_profile(
+        page_width: f64,
+        page_height: f64,
+        root: LayerNode,
+        profile: RenderProfile,
+    ) -> Self {
+        Self::with_resources_and_profile(
+            page_width,
+            page_height,
+            root,
+            ResourceArena::default(),
+            profile,
+        )
+    }
+
+    pub fn with_resources_and_profile(
+        page_width: f64,
+        page_height: f64,
+        root: LayerNode,
+        resources: ResourceArena,
+        profile: RenderProfile,
+    ) -> Self {
         Self {
             page_width,
             page_height,
+            profile,
             root,
             resources,
         }

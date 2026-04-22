@@ -1,5 +1,5 @@
 import { WasmBridge } from '@/core/wasm-bridge';
-import type { PageInfo, PageLayerTree } from '@/core/types';
+import type { LayerRenderProfile, PageInfo, PageLayerTree } from '@/core/types';
 import { CanvasKitLayerRenderer } from './canvaskit-renderer';
 import { Canvas2DLayerRenderer } from './canvas2d-layer-renderer';
 import { clampRenderScale, type RenderBackend } from './render-backend';
@@ -12,6 +12,7 @@ export class PageRenderer {
   constructor(
     private wasm: WasmBridge,
     private backend: RenderBackend,
+    private renderProfile: LayerRenderProfile,
     private canvaskitRenderer: CanvasKitLayerRenderer | null,
   ) {}
 
@@ -38,7 +39,7 @@ export class PageRenderer {
     canvas.height = Math.max(1, Math.floor(pageInfo.height * appliedScale));
     let layerTree = this.layerTreeCache.get(pageIdx);
     if (!layerTree) {
-      layerTree = this.wasm.getPageLayerTree(pageIdx);
+      layerTree = this.wasm.getPageLayerTree(pageIdx, this.renderProfile);
       this.layerTreeCache.set(pageIdx, layerTree);
     }
 

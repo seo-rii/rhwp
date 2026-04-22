@@ -26,8 +26,10 @@ import { Ruler } from '@/view/ruler';
 import { CanvasKitLayerRenderer } from '@/view/canvaskit-renderer';
 import {
   persistCanvasKitRenderMode,
+  persistRenderProfile,
   persistRenderBackend,
   resolveCanvasKitRenderMode,
+  resolveRenderProfile,
   resolveRenderBackend,
 } from '@/view/render-backend';
 
@@ -100,6 +102,7 @@ async function initialize(): Promise<void> {
     await wasm.initialize();
     const requestedBackend = resolveRenderBackend(window.location.search);
     const canvaskitMode = resolveCanvasKitRenderMode(window.location.search);
+    const renderProfile = resolveRenderProfile(window.location.search);
     let renderBackend = requestedBackend;
     let canvaskitRenderer: CanvasKitLayerRenderer | null = null;
 
@@ -114,10 +117,18 @@ async function initialize(): Promise<void> {
     }
     persistRenderBackend(renderBackend);
     persistCanvasKitRenderMode(canvaskitMode);
+    persistRenderProfile(renderProfile);
     msg.textContent = 'HWP 파일을 선택해주세요.';
 
     const container = document.getElementById('scroll-container')!;
-    canvasView = new CanvasView(container, wasm, eventBus, renderBackend, canvaskitRenderer);
+    canvasView = new CanvasView(
+      container,
+      wasm,
+      eventBus,
+      renderBackend,
+      renderProfile,
+      canvaskitRenderer,
+    );
 
     // 눈금자 초기화
     ruler = new Ruler(
@@ -207,6 +218,7 @@ async function initialize(): Promise<void> {
       (window as any).__canvasView = canvasView;
       (window as any).__renderBackend = renderBackend;
       (window as any).__canvaskitRenderMode = canvaskitMode;
+      (window as any).__renderProfile = renderProfile;
     }
   } catch (error) {
     msg.textContent = `WASM 초기화 실패: ${error}`;

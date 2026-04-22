@@ -38,11 +38,12 @@ impl LayerBuilder {
             GroupKind::Generic,
         );
 
-        PageLayerTree::with_resources(
+        PageLayerTree::with_resources_and_profile(
             page_width,
             page_height,
             root,
             std::mem::take(&mut self.resources),
+            self.profile,
         )
     }
 

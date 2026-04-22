@@ -22,6 +22,7 @@ import type {
   LayerPathOp,
   LayerPatternFill,
   LayerRectangleOp,
+  LayerRenderProfile,
   LayerShapeShadow,
   LayerTabLeader,
   LayerTextRunOp,
@@ -129,6 +130,7 @@ export class CanvasKitLayerRenderer {
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
+  private currentProfile: LayerRenderProfile = 'screen';
   private rerenderScheduled = false;
   private disposed = false;
 
@@ -160,6 +162,7 @@ export class CanvasKitLayerRenderer {
     this.lastRenderedTree = tree;
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
+    this.currentProfile = tree.profile;
 
     let surface: Surface | null = null;
     let usedGpuSurface = false;
@@ -1750,7 +1753,12 @@ export class CanvasKitLayerRenderer {
       dstH: number,
     ) => {
       const useMipmaps =
-        this.renderMode === 'compat'
+        this.currentProfile !== 'fast-preview'
+        && (
+          this.renderMode === 'compat'
+          || this.currentProfile === 'print'
+          || this.currentProfile === 'high-quality'
+        )
         && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
       const sampledImage = useMipmaps ? this.getImage(base64, true) ?? image : image;
       const paint = new this.canvasKit.Paint();
@@ -2130,6 +2138,7 @@ export class CanvasKitLayerRenderer {
     this.lastRenderedTree = null;
     this.lastTargetCanvas = null;
     this.lastScale = 1;
+    this.currentProfile = 'screen';
     this.rerenderScheduled = false;
     this.currentClipStack.length = 0;
 

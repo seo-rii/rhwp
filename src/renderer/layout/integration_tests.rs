@@ -8,7 +8,9 @@ mod tests {
     use base64::Engine;
     use resvg::{tiny_skia, usvg};
     use std::path::{Path, PathBuf};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    use crate::paint::RenderProfile;
 
     const SKIA_TOLERANT_CHANNEL_DELTA: u8 = 8;
     const SKIA_TOLERANT_MAX_DIFF_PIXELS: usize = 64;
@@ -22,6 +24,12 @@ mod tests {
     fn render_path_env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn lock_render_path_env() -> MutexGuard<'static, ()> {
+        render_path_env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// 테스트용 DocumentCore 생성 헬퍼
@@ -1567,9 +1575,7 @@ mod tests {
             return;
         };
 
-        let _guard = render_path_env_lock()
-            .lock()
-            .expect("render path env lock 획득 실패");
+        let _guard = lock_render_path_env();
         std::env::remove_var("RHWP_RENDER_PROFILE");
         let screen = core
             .get_page_layer_tree_native(0)
@@ -1581,12 +1587,46 @@ mod tests {
         std::env::remove_var("RHWP_RENDER_PROFILE");
 
         assert!(
+            screen.contains("\"profile\":\"screen\""),
+            "screen 기본 profile은 JSON 경계에 profile 이름을 실어야 함"
+        );
+        assert!(
             !screen.contains("\"cacheHint\":\"preferRaster\""),
             "screen 기본 profile은 page background를 raster 선호로 내리지 않아야 함"
         );
         assert!(
+            fast_preview.contains("\"profile\":\"fast-preview\""),
+            "fast-preview override는 JSON 경계에 profile 이름을 실어야 함"
+        );
+        assert!(
             fast_preview.contains("\"cacheHint\":\"preferRaster\""),
             "fast-preview override는 cache hint를 JSON 경계까지 노출해야 함"
+        );
+    }
+
+    #[test]
+    fn test_get_page_layer_tree_with_profile_native_uses_requested_profile() {
+        let Some(core) = load_document("samples/lseg-01-basic.hwp") else {
+            return;
+        };
+
+        let _guard = lock_render_path_env();
+        std::env::set_var("RHWP_RENDER_PROFILE", "fast-preview");
+        let print = core
+            .get_page_layer_tree_with_profile_native(0, RenderProfile::Print)
+            .expect("print profile 레이어 트리 직렬화 실패");
+        let high_quality = core
+            .get_page_layer_tree_with_profile_native(0, RenderProfile::HighQuality)
+            .expect("high-quality profile 레이어 트리 직렬화 실패");
+        std::env::remove_var("RHWP_RENDER_PROFILE");
+
+        assert!(
+            print.contains("\"profile\":\"print\""),
+            "print profile 요청은 JSON에 print profile을 기록해야 함"
+        );
+        assert!(
+            high_quality.contains("\"profile\":\"high-quality\""),
+            "high-quality profile 요청은 JSON에 high-quality profile을 기록해야 함"
         );
     }
 
@@ -1596,9 +1636,7 @@ mod tests {
         let Some(core) = load_document("samples/lseg-01-basic.hwp") else {
             return;
         };
-        let _guard = render_path_env_lock()
-            .lock()
-            .expect("render path env lock 획득 실패");
+        let _guard = lock_render_path_env();
         std::env::set_var("RHWP_RENDER_PATH", "layer-svg");
 
         let layered = core
