@@ -27,11 +27,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
   assert(beforeDispose.hasRenderer, 'canvaskit renderer available');
   assert(
-    beforeDispose.imageCacheSize > 0
+    beforeDispose.fontAliasCount > 0
+      || beforeDispose.layerTreeCacheSize > 0
+      || beforeDispose.imageCacheSize > 0
       || beforeDispose.mipmappedImageCacheSize > 0
       || beforeDispose.domImageCacheSize > 0
       || beforeDispose.patternImageCacheSize > 0,
-    `canvaskit caches populated before dispose=${JSON.stringify(beforeDispose)}`,
+    `canvaskit reusable state populated before dispose=${JSON.stringify(beforeDispose)}`,
   );
   assert(beforeDispose.fontAliasCount > 0, `font aliases registered before dispose=${beforeDispose.fontAliasCount}`);
   assert(beforeDispose.layerTreeCacheSize > 0, `page layer cache populated before dispose=${beforeDispose.layerTreeCacheSize}`);

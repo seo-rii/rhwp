@@ -362,6 +362,7 @@ export class CanvasKitLayerRenderer {
 
   private shouldOverlayTextRun(op: LayerTextRunOp): boolean {
     const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
+    const clusters = splitIntoClusters(op.text);
     if (
       op.isVertical
       || op.rotation !== 0
@@ -378,6 +379,10 @@ export class CanvasKitLayerRenderer {
       || (op.style.emphasisDot ?? 0) > 0
       || ((typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase() !== '#ffffff')
       || (op.tabLeaders?.length ?? 0) > 0
+      || (
+        clusters.length > 8
+        && clusters.some((cluster) => cluster.text === ' ')
+      )
     ) {
       return true;
     }
@@ -387,7 +392,7 @@ export class CanvasKitLayerRenderer {
     if ((op.style.fontFamily?.trim() ?? '') !== '바탕체') {
       return true;
     }
-    return splitIntoClusters(op.text).some((cluster) =>
+    return clusters.some((cluster) =>
       cluster.text === '\t'
       || cluster.text === '\u2007'
       || startsWithInvalidControl(cluster.text)

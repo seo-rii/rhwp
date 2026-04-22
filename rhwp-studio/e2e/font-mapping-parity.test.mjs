@@ -58,7 +58,7 @@ function loadStudioFontList() {
 }
 
 function loadEditorFontList() {
-  const source = read('../rhwp/web/editor.html');
+  const source = read('web/editor.html');
   const literal = extractAssignedLiteral(
     source,
     '        const fonts = ',
@@ -78,7 +78,7 @@ function loadStudioSubstTables() {
 }
 
 function loadLegacySubstTables() {
-  const source = read('../rhwp/web/font_substitution.js');
+  const source = read('web/font_substitution.js');
   const literal = extractAssignedLiteral(
     source,
     '    const SUBST_TABLES = ',
@@ -88,7 +88,7 @@ function loadLegacySubstTables() {
 }
 
 function loadLegacyFontSubstitutionApi() {
-  const source = read('../rhwp/web/font_substitution.js');
+  const source = read('web/font_substitution.js');
   const sandbox = { globalThis: {}, console };
   vm.runInNewContext(source, sandbox, { filename: 'font_substitution.js' });
   return sandbox.globalThis.FontSubstitution;
