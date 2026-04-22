@@ -9,6 +9,7 @@ fn main() {
         Some("--help") | Some("-h") => print_help(),
         Some("--version") | Some("-V") => println!("rhwp v{}", rhwp::version()),
         Some("export-svg") => export_svg(&args[2..]),
+        Some("export-png") => export_png(&args[2..]),
         Some("export-pdf") => export_pdf(&args[2..]),
         Some("info") => show_info(&args[2..]),
         Some("dump") => dump_controls(&args[2..]),
@@ -48,6 +49,12 @@ fn print_help() {
     println!("      --embed-fonts           폰트 서브셋 임베딩 (사용 글자만 base64)");
     println!("      --embed-fonts=full      폰트 전체 임베딩 (base64)");
     println!("      --font-path <경로>      폰트 파일 탐색 경로 (여러 번 지정 가능)");
+    println!();
+    println!("  export-png <파일.hwp> [옵션]");
+    println!("      HWP 파일을 native Skia PNG로 내보내기 (native-skia feature 필요)");
+    println!();
+    println!("      -o, --output <폴더>     출력 폴더 (기본: output/)");
+    println!("      -p, --page <번호>       특정 페이지만 내보내기 (0부터 시작)");
     println!();
     println!("  info <파일.hwp>");
     println!("      HWP 파일 정보 표시");
@@ -257,6 +264,138 @@ fn export_svg(args: &[String]) {
         pages.len(),
         output_dir
     );
+}
+
+fn export_png(args: &[String]) {
+    #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-skia")))]
+    {
+        let _ = args;
+        eprintln!("오류: export-png는 non-wasm + native-skia feature 빌드에서만 사용할 수 있습니다.");
+        eprintln!("예시: cargo run --features native-skia --bin rhwp -- export-png sample.hwp");
+        std::process::exit(2);
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    {
+        if args.is_empty() {
+            eprintln!("오류: HWP 파일 경로를 지정해주세요.");
+            eprintln!("사용법: rhwp export-png <파일.hwp> [옵션] (rhwp --help 참조)");
+            return;
+        }
+
+        let file_path = &args[0];
+        let mut output_dir = "output".to_string();
+        let mut target_page: Option<u32> = None;
+
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--output" | "-o" => {
+                    if i + 1 < args.len() {
+                        output_dir = args[i + 1].clone();
+                        i += 2;
+                    } else {
+                        eprintln!("오류: --output 뒤에 폴더 경로가 필요합니다.");
+                        return;
+                    }
+                }
+                "--page" | "-p" => {
+                    if i + 1 < args.len() {
+                        match args[i + 1].parse::<u32>() {
+                            Ok(n) => target_page = Some(n),
+                            Err(_) => {
+                                eprintln!("오류: 페이지 번호가 올바르지 않습니다.");
+                                return;
+                            }
+                        }
+                        i += 2;
+                    } else {
+                        eprintln!("오류: --page 뒤에 페이지 번호가 필요합니다.");
+                        return;
+                    }
+                }
+                _ => {
+                    eprintln!("알 수 없는 옵션: {}", args[i]);
+                    i += 1;
+                }
+            }
+        }
+
+        let data = match fs::read(file_path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("오류: 파일을 읽을 수 없습니다 - {}: {}", file_path, e);
+                return;
+            }
+        };
+
+        let doc = match rhwp::wasm_api::HwpDocument::from_bytes(&data) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("오류: HWP 파싱 실패 - {}", e);
+                return;
+            }
+        };
+
+        let page_count = doc.page_count();
+        println!("문서 로드 완료: {} ({}페이지)", file_path, page_count);
+
+        let output_path = Path::new(&output_dir);
+        if !output_path.exists() {
+            if let Err(e) = fs::create_dir_all(output_path) {
+                eprintln!(
+                    "오류: 출력 폴더를 생성할 수 없습니다 - {}: {}",
+                    output_dir, e
+                );
+                return;
+            }
+        }
+
+        let pages: Vec<u32> = match target_page {
+            Some(p) => {
+                if p >= page_count {
+                    eprintln!(
+                        "오류: 페이지 번호가 범위를 벗어났습니다 (0~{})",
+                        page_count - 1
+                    );
+                    return;
+                }
+                vec![p]
+            }
+            None => (0..page_count).collect(),
+        };
+
+        let file_stem = Path::new(file_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("page");
+
+        for page_num in &pages {
+            match doc.render_page_png_native(*page_num) {
+                Ok(png) => {
+                    let png_filename = if page_count == 1 {
+                        format!("{}.png", file_stem)
+                    } else {
+                        format!("{}_{:03}.png", file_stem, page_num + 1)
+                    };
+                    let png_path = output_path.join(&png_filename);
+                    match fs::write(&png_path, &png) {
+                        Ok(_) => println!("  → {}", png_path.display()),
+                        Err(e) => eprintln!("오류: PNG 저장 실패 - {}: {}", png_path.display(), e),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("오류: 페이지 {} 렌더링 실패 - {:?}", page_num, e);
+                }
+            }
+        }
+
+        println!(
+            "내보내기 완료: {}개 PNG 파일 → {}/",
+            pages.len(),
+            output_dir
+        );
+    }
 }
 
 fn export_pdf(args: &[String]) {
