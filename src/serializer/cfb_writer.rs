@@ -18,26 +18,7 @@ use super::body_text::serialize_section;
 use super::doc_info::serialize_doc_info;
 use super::header::serialize_file_header;
 use super::mini_cfb;
-
-/// 직렬화 에러
-#[derive(Debug)]
-pub enum SerializeError {
-    /// CFB 생성/쓰기 실패
-    CfbError(String),
-    /// 압축 실패
-    CompressError(String),
-}
-
-impl std::fmt::Display for SerializeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SerializeError::CfbError(e) => write!(f, "CFB 쓰기 실패: {}", e),
-            SerializeError::CompressError(e) => write!(f, "압축 실패: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for SerializeError {}
+use super::SerializeError;
 
 /// Document IR을 HWP 5.0 CFB 바이너리로 직렬화
 pub fn serialize_hwp(doc: &Document) -> Result<Vec<u8>, SerializeError> {

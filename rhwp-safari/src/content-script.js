@@ -22,7 +22,8 @@
   });
 
   function init() {
-    if (settings.showBadges) {
+    const shouldProcess = settings.showBadges || settings.hoverPreview || settings.autoOpen;
+    if (shouldProcess) {
       processLinks();
       observeDynamicContent();
     }

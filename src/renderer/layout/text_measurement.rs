@@ -228,13 +228,34 @@ impl TextMeasurer for EmbeddedTextMeasurer {
         };
 
         let mut total = 0.0;
+        let mut tab_char_idx = 0usize;
         for i in 0..char_count {
             let c = chars[i];
             if cluster_len[i] == 0 {
                 continue;
             }
             if c == '\t' {
-                if has_custom_tabs {
+                // 인라인 탭 (HWP tab_extended / HWPX 인라인 탭)
+                if tab_char_idx < style.inline_tabs.len() {
+                    let ext = &style.inline_tabs[tab_char_idx];
+                    let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
+                    let tab_type = ext[2];
+                    let tab_target = total + tab_width_px;
+                    match tab_type {
+                        1 => {
+                            let seg_w = measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            total = (tab_target - seg_w).max(total);
+                        }
+                        2 => {
+                            let seg_w = measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            total = (tab_target - seg_w / 2.0).max(total);
+                        }
+                        _ => {
+                            total = tab_target.max(total);
+                        }
+                    }
+                    tab_char_idx += 1;
+                } else if has_custom_tabs {
                     let abs_x = style.line_x_offset + total;
                     let (tab_pos, tab_type, _) = find_next_tab_stop(
                         abs_x,
@@ -262,11 +283,13 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                             total = rel_tab.max(total);
                         }
                     }
+                    tab_char_idx += 1;
                 } else {
                     // 기본 등간격 탭: 라인 절대 위치(line_x_offset + total) 기준으로 계산
                     let abs_x = style.line_x_offset + total;
                     let next_abs = ((abs_x / tab_w).floor() + 1.0) * tab_w;
                     total = (next_abs - style.line_x_offset).max(total);
+                    tab_char_idx += 1;
                 }
                 continue;
             }
@@ -950,6 +973,12 @@ fn is_fullwidth_symbol(c: char) -> bool {
         '\u{00A3}' |                   // £ POUND SIGN
         '\u{00A5}' // ¥ YEN SIGN
     )
+    || ('\u{2460}'..='\u{24FF}').contains(&c) // Enclosed Alphanumerics (①②③ 등)
+    || ('\u{2600}'..='\u{26FF}').contains(&c) // Miscellaneous Symbols (☆★ 등)
+    || ('\u{2700}'..='\u{27BF}').contains(&c) // Dingbats (✓✗ 등)
+    || ('\u{3200}'..='\u{32FF}').contains(&c) // Enclosed CJK Letters (㉠㉡ 등)
+    || ('\u{3300}'..='\u{33FF}').contains(&c) // CJK Compatibility (㎜㎝ 등)
+    || ('\u{2160}'..='\u{217F}').contains(&c) // Roman Numerals (Ⅰ Ⅱ Ⅲ 등)
 }
 
 /// 한글 자모 초성 여부 (옛한글 포함)

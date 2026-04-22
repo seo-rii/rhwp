@@ -4,10 +4,10 @@
 
 use super::ast::*;
 use super::symbols::{
-    self, is_big_operator, is_function, is_structure_command, lookup_function, lookup_symbol,
-    DECORATIONS, FONT_STYLES,
+    self, is_big_operator, is_function, is_structure_command,
+    lookup_symbol, lookup_function, DECORATIONS, FONT_STYLES,
 };
-use super::tokenizer::{tokenize, Token, TokenType};
+use super::tokenizer::{Token, TokenType, tokenize};
 
 /// 수식 파서
 pub struct EqParser {
@@ -25,17 +25,11 @@ impl EqParser {
     }
 
     fn current_type(&self) -> TokenType {
-        self.tokens
-            .get(self.pos)
-            .map(|t| t.ty)
-            .unwrap_or(TokenType::Eof)
+        self.tokens.get(self.pos).map(|t| t.ty).unwrap_or(TokenType::Eof)
     }
 
     fn current_value(&self) -> &str {
-        self.tokens
-            .get(self.pos)
-            .map(|t| t.value.as_str())
-            .unwrap_or("")
+        self.tokens.get(self.pos).map(|t| t.value.as_str()).unwrap_or("")
     }
 
     fn at_end(&self) -> bool {
@@ -90,22 +84,11 @@ impl EqParser {
 
     /// 수식 전체 파싱 (엔트리 포인트)
     pub fn parse(&mut self) -> EqNode {
-        // 최상위 OVER 분수 확인
-        let non_eof: Vec<Token> = self
-            .tokens
-            .iter()
-            .filter(|t| t.ty != TokenType::Eof)
-            .cloned()
-            .collect();
-
-        if Self::has_toplevel_over(&non_eof) {
-            self.parse_fraction()
-        } else {
-            self.parse_expression()
-        }
+        self.parse_expression()
     }
 
     /// 표현식 파싱 (중단 조건 없이 끝까지)
+    /// OVER를 중위 연산자로 처리: 바로 앞 요소가 분자, 바로 뒤 요소가 분모
     fn parse_expression(&mut self) -> EqNode {
         let mut children = Vec::new();
         while !self.at_end() {
@@ -117,6 +100,19 @@ impl EqParser {
                 && Self::cmd_eq(self.current_value(), "RIGHT")
             {
                 break;
+            }
+            // OVER 중위 연산자: 직전 요소를 분자, 직후 요소를 분모로 결합
+            if self.current_type() == TokenType::Command
+                && Self::cmd_eq(self.current_value(), "OVER")
+            {
+                self.pos += 1; // OVER 건너뛰기
+                let numer = children.pop().unwrap_or(EqNode::Empty);
+                let denom = self.parse_element();
+                children.push(EqNode::Fraction {
+                    numer: Box::new(numer),
+                    denom: Box::new(denom),
+                });
+                continue;
             }
             children.push(self.parse_element());
         }
@@ -172,7 +168,8 @@ impl EqParser {
                 let group = self.parse_group();
                 self.try_parse_scripts(group)
             }
-            TokenType::LParen | TokenType::RParen | TokenType::LBracket | TokenType::RBracket => {
+            TokenType::LParen | TokenType::RParen |
+            TokenType::LBracket | TokenType::RBracket => {
                 self.pos += 1;
                 EqNode::Symbol(val)
             }
@@ -206,7 +203,16 @@ impl EqParser {
             return self.parse_sqrt();
         }
 
-        // 큰 연산자 — 대문자로 조회
+        // 적분 기호 — nolimits: 큰 기호 + 일반 첨자 (BigOp이 아닌 MathSymbol로 처리)
+        if matches!(cu, "INT" | "INTEGRAL" | "SMALLINT" | "DINT" | "TINT"
+            | "OINT" | "SMALLOINT" | "ODINT" | "OTINT")
+        {
+            let symbol = lookup_symbol(cu).or_else(|| lookup_symbol(cmd)).unwrap_or("∫").to_string();
+            let node = EqNode::MathSymbol(symbol);
+            return self.try_parse_scripts(node);
+        }
+
+        // 큰 연산자 (∑, ∏ 등) — limits: 기호 위/아래 중앙
         if is_big_operator(cu) {
             let symbol = lookup_symbol(cu).unwrap_or("?").to_string();
             return self.parse_big_op(symbol);
@@ -389,7 +395,15 @@ impl EqParser {
 
         // 글꼴 스타일
         if let Some(&style) = FONT_STYLES.get(cmd) {
-            let body = self.parse_single_or_group();
+            // 다음 토큰이 구조 명령어(LEFT, RIGHT 등)이면 body 없이 반환
+            // rm P it LEFT(...) 에서 it이 LEFT를 body로 먹지 않도록
+            let body = if self.current_type() == TokenType::Command
+                && is_structure_command(&self.current_value().to_ascii_uppercase())
+            {
+                EqNode::Empty
+            } else {
+                self.parse_single_or_group()
+            };
             return EqNode::FontStyle {
                 style,
                 body: Box::new(body),
@@ -399,6 +413,10 @@ impl EqParser {
         // 함수 (sin, cos, log 등)
         if is_function(cmd) {
             let func_name = lookup_function(cmd).unwrap_or(cmd).to_string();
+            // 함수명 바로 뒤의 Thin 공백(`)은 한컴에서 무시 — 소비하고 건너뛰기
+            if self.current_type() == TokenType::Whitespace && self.current_value() == "`" {
+                self.pos += 1;
+            }
             let node = EqNode::Function(func_name);
             return self.try_parse_scripts(node);
         }
@@ -415,35 +433,37 @@ impl EqParser {
     }
 
     /// 중괄호 그룹 파싱: {...}
+    /// 그룹 내의 OVER는 parse_expression의 중위 연산자 처리로 자동 처리된다.
     fn parse_group(&mut self) -> EqNode {
         if !self.expect(TokenType::LBrace) {
             return self.parse_element();
         }
 
-        // 그룹 내용에서 OVER 확인 (중첩 괄호 내부 제외)
-        let start = self.pos;
-        let end = self.find_matching_brace(start);
-
-        let group_tokens: Vec<Token> = self.tokens[start..end].to_vec();
-        let has_over = Self::has_toplevel_over(&group_tokens);
-
-        let result = if has_over {
-            self.parse_fraction_until_rbrace()
-        } else {
-            let mut children = Vec::new();
-            while self.pos < end && !self.at_end() {
-                if self.current_type() == TokenType::RBrace {
-                    break;
-                }
-                children.push(self.parse_element());
+        let mut children = Vec::new();
+        while !self.at_end() {
+            if self.current_type() == TokenType::RBrace {
+                break;
             }
-            EqNode::Row(children).simplify()
-        };
+            // OVER 중위 연산자: 그룹 내에서도 동일하게 처리
+            if self.current_type() == TokenType::Command
+                && Self::cmd_eq(self.current_value(), "OVER")
+            {
+                self.pos += 1;
+                let numer = children.pop().unwrap_or(EqNode::Empty);
+                let denom = self.parse_element();
+                children.push(EqNode::Fraction {
+                    numer: Box::new(numer),
+                    denom: Box::new(denom),
+                });
+                continue;
+            }
+            children.push(self.parse_element());
+        }
 
         // 닫는 괄호 건너뛰기
         self.expect(TokenType::RBrace);
 
-        result
+        EqNode::Row(children).simplify()
     }
 
     /// 매칭되는 닫는 괄호 위치 찾기
@@ -469,6 +489,11 @@ impl EqParser {
     /// 단일 토큰 또는 그룹 파싱 (첨자/인자용)
     fn parse_single_or_group(&mut self) -> EqNode {
         if self.at_end() {
+            return EqNode::Empty;
+        }
+
+        // RBrace는 그룹 종료 마커 — 소비하지 않고 빈 노드 반환
+        if self.current_type() == TokenType::RBrace {
             return EqNode::Empty;
         }
 
@@ -500,6 +525,8 @@ impl EqParser {
     }
 
     /// 첨자(subscript/superscript) 파싱 시도
+    /// 한컴 수식에서 함수/기호 뒤에 Thin 공백(`)이 오고 첨자가 따라오는 패턴이 일반적이므로,
+    /// Thin 공백 뒤에 첨자가 있으면 공백을 건너뛰고 첨자를 파싱한다.
     fn try_parse_scripts(&mut self, base: EqNode) -> EqNode {
         let mut result = base;
         let mut has_sub = false;
@@ -510,6 +537,18 @@ impl EqParser {
         loop {
             if self.at_end() {
                 break;
+            }
+            // Thin 공백(`) 뒤에 첨자가 바로 오는 경우 공백을 건너뛰기
+            if self.current_type() == TokenType::Whitespace
+                && self.current_value() == "`"
+            {
+                let next_pos = self.pos + 1;
+                if next_pos < self.tokens.len() {
+                    let next_ty = self.tokens[next_pos].ty;
+                    if next_ty == TokenType::Subscript || next_ty == TokenType::Superscript {
+                        self.pos += 1; // Thin 공백 건너뛰기
+                    }
+                }
             }
             let ty = self.current_type();
             if ty == TokenType::Subscript && !has_sub {
@@ -546,35 +585,90 @@ impl EqParser {
         }
     }
 
-    /// 분수 파싱: OVER 기준으로 분자/분모 분리
+    /// 분수 파싱: 최상위 OVER 기준으로 분자/분모 분리
+    /// LEFT-RIGHT 내부의 OVER는 무시하고 최상위 레벨의 OVER만 분수 분기점으로 사용한다.
     fn parse_fraction(&mut self) -> EqNode {
-        let mut numer_nodes = Vec::new();
-        while !self.at_end() {
-            if self.current_type() == TokenType::Command
-                && (Self::cmd_eq(self.current_value(), "OVER"))
-            {
-                self.pos += 1;
-                break;
+        // 최상위 OVER 위치를 먼저 찾는다 (brace_depth==0 && lr_depth==0)
+        let toplevel_over_pos = {
+            let mut brace_depth = 0i32;
+            let mut lr_depth = 0i32;
+            let mut found = None;
+            for i in self.pos..self.tokens.len() {
+                let t = &self.tokens[i];
+                match t.ty {
+                    TokenType::LBrace => brace_depth += 1,
+                    TokenType::RBrace => brace_depth -= 1,
+                    TokenType::Command => {
+                        if Self::cmd_eq(&t.value, "LEFT") {
+                            lr_depth += 1;
+                        } else if Self::cmd_eq(&t.value, "RIGHT") {
+                            lr_depth -= 1;
+                        } else if Self::cmd_eq(&t.value, "OVER") && brace_depth == 0 && lr_depth == 0 {
+                            found = Some(i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
             }
-            numer_nodes.push(self.parse_element());
+            found
+        };
+
+        let over_pos = match toplevel_over_pos {
+            Some(p) => p,
+            None => return self.parse_expression(), // fallback
+        };
+
+        // OVER 앞의 모든 요소를 파싱
+        let mut before_nodes = Vec::new();
+        while self.pos < over_pos && !self.at_end() {
+            before_nodes.push(self.parse_element());
+        }
+        // OVER 건너뛰기
+        if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "OVER") {
+            self.pos += 1;
         }
 
-        let mut denom_nodes = Vec::new();
+        // 분자: OVER 바로 앞의 마지막 요소 (그룹 또는 단일 요소)
+        let (pre_nodes, numer) = if before_nodes.len() > 1 {
+            let numer = before_nodes.pop().unwrap();
+            (before_nodes, numer)
+        } else {
+            (Vec::new(), EqNode::Row(before_nodes).simplify())
+        };
+
+        // 분모: OVER 바로 뒤의 첫 번째 요소 (그룹 또는 단일 요소)
+        let denom = if !self.at_end() {
+            self.parse_element()
+        } else {
+            EqNode::Empty
+        };
+
+        // 분수 뒤 나머지 요소
+        let mut after_nodes = Vec::new();
         while !self.at_end() {
             if self.current_type() == TokenType::RBrace {
                 break;
             }
-            if self.current_type() == TokenType::Command
-                && Self::cmd_eq(self.current_value(), "RIGHT")
-            {
+            if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT") {
                 break;
             }
-            denom_nodes.push(self.parse_element());
+            after_nodes.push(self.parse_element());
         }
 
-        EqNode::Fraction {
-            numer: Box::new(EqNode::Row(numer_nodes).simplify()),
-            denom: Box::new(EqNode::Row(denom_nodes).simplify()),
+        let fraction = EqNode::Fraction {
+            numer: Box::new(numer),
+            denom: Box::new(denom),
+        };
+
+        // 앞/뒤 요소와 분수를 Row로 조립
+        if pre_nodes.is_empty() && after_nodes.is_empty() {
+            fraction
+        } else {
+            let mut all = pre_nodes;
+            all.push(fraction);
+            all.extend(after_nodes);
+            EqNode::Row(all).simplify()
         }
     }
 
@@ -610,7 +704,7 @@ impl EqParser {
 
     /// 제곱근 파싱: SQRT x, SQRT(n) of x
     fn parse_sqrt(&mut self) -> EqNode {
-        // SQRT(n) of x 패턴 확인
+        // SQRT(n) of x 패턴 확인 — 소괄호
         if self.current_type() == TokenType::LParen {
             self.pos += 1; // (
             let mut index_nodes = Vec::new();
@@ -631,6 +725,35 @@ impl EqParser {
                 index: Some(Box::new(EqNode::Row(index_nodes).simplify())),
                 body: Box::new(body),
             };
+        }
+
+        // SQRT {n} of {x} 패턴 확인 — 중괄호 + of
+        if self.current_type() == TokenType::LBrace {
+            // 먼저 {n} 뒤에 'of'가 있는지 미리 확인
+            let saved_pos = self.pos;
+            let brace_end = self.find_matching_brace(self.pos + 1);
+            let after_brace = brace_end + 1;
+            let has_of = after_brace < self.tokens.len()
+                && self.tokens[after_brace].ty == TokenType::Command
+                && self.tokens[after_brace].value.eq_ignore_ascii_case("of");
+
+            if has_of {
+                // {n} 파싱
+                let index = self.parse_group();
+                // 'of' 건너뛰기
+                if self.current_type() == TokenType::Command
+                    && self.current_value().eq_ignore_ascii_case("of")
+                {
+                    self.pos += 1;
+                }
+                let body = self.parse_single_or_group();
+                return EqNode::Sqrt {
+                    index: Some(Box::new(index)),
+                    body: Box::new(body),
+                };
+            }
+            // of가 없으면 되돌리고 일반 제곱근으로 처리
+            self.pos = saved_pos;
         }
 
         // 일반 제곱근
@@ -741,6 +864,16 @@ impl EqParser {
                 rows.push(EqNode::Row(current_row).simplify());
                 current_row = Vec::new();
                 self.pos += 1;
+            } else if self.current_type() == TokenType::Whitespace && self.current_value() == "&" {
+                // && (연속 &): 큰 탭 공간으로 조건 부분 분리
+                let mut amp_count = 0;
+                while self.pos < end && self.current_type() == TokenType::Whitespace && self.current_value() == "&" {
+                    amp_count += 1;
+                    self.pos += 1;
+                }
+                for _ in 0..amp_count {
+                    current_row.push(EqNode::Space(super::ast::SpaceKind::Tab));
+                }
             } else {
                 current_row.push(self.parse_element());
             }
@@ -805,8 +938,7 @@ impl EqParser {
             if self.current_type() == TokenType::Whitespace && self.current_value() == "#" {
                 // 새 행: 현재 행 완료
                 let left = EqNode::Row(current_left).simplify();
-                let right = current_right
-                    .map(|r| EqNode::Row(r).simplify())
+                let right = current_right.map(|r| EqNode::Row(r).simplify())
                     .unwrap_or(EqNode::Empty);
                 rows.push((left, right));
                 current_left = Vec::new();
@@ -814,19 +946,26 @@ impl EqParser {
                 self.pos += 1;
             } else if self.current_type() == TokenType::Whitespace && self.current_value() == "&" {
                 // & 구분: 왼쪽→오른쪽 전환
+                // 연속 &&: 큰 탭 공간 (조건 부분 분리용)
+                let mut amp_count = 0;
+                while self.pos < end && self.current_type() == TokenType::Whitespace && self.current_value() == "&" {
+                    amp_count += 1;
+                    self.pos += 1;
+                }
                 if current_right.is_none() {
                     current_right = Some(Vec::new());
-                }
-                // 이미 오른쪽인 경우 왼쪽에 합침
-                if current_right.as_ref().map_or(false, |r| r.is_empty())
-                    && !current_left.is_empty()
-                {
-                    // 첫 번째 &: left 확정, right 시작
+                    // 연속 && 이면 큰 탭 공간 삽입
+                    if amp_count >= 2 {
+                        if let Some(ref mut right) = current_right {
+                            right.push(EqNode::Space(super::ast::SpaceKind::Tab));
+                        }
+                    }
                 } else if let Some(ref mut right) = current_right {
-                    // 추가 &는 right에 탭으로 추가
-                    right.push(EqNode::Space(super::ast::SpaceKind::Normal));
+                    // 이미 오른쪽: 추가 & → 탭 공간
+                    for _ in 0..amp_count {
+                        right.push(EqNode::Space(super::ast::SpaceKind::Tab));
+                    }
                 }
-                self.pos += 1;
             } else {
                 if let Some(ref mut right) = current_right {
                     right.push(self.parse_element());
@@ -839,8 +978,7 @@ impl EqParser {
         // 마지막 행 추가
         if !current_left.is_empty() || current_right.is_some() {
             let left = EqNode::Row(current_left).simplify();
-            let right = current_right
-                .map(|r| EqNode::Row(r).simplify())
+            let right = current_right.map(|r| EqNode::Row(r).simplify())
                 .unwrap_or(EqNode::Empty);
             rows.push((left, right));
         }
@@ -851,38 +989,17 @@ impl EqParser {
     }
 
     /// LEFT-RIGHT 괄호 파싱
+    /// 내부의 OVER는 parse_expression의 중위 연산자 처리로 자동 처리된다.
     fn parse_left_right(&mut self) -> EqNode {
         // LEFT 다음 괄호 문자 읽기
         let left = self.read_bracket_char();
 
-        // RIGHT까지의 내용 파싱
-        // RIGHT 위치 찾기
-        let right_pos = self.find_right_pos();
-        let content_end = right_pos;
-
-        // 내용에 OVER가 있는지 확인
-        let content_tokens: Vec<Token> = self.tokens[self.pos..content_end].to_vec();
-        let has_over = Self::has_toplevel_over(&content_tokens);
-
-        let body = if has_over {
-            let saved_end = self.tokens.len();
-            self.parse_fraction_in_range(content_end)
-        } else {
-            let mut children = Vec::new();
-            while self.pos < content_end && !self.at_end() {
-                if self.current_type() == TokenType::Command
-                    && Self::cmd_eq(self.current_value(), "RIGHT")
-                {
-                    break;
-                }
-                children.push(self.parse_element());
-            }
-            EqNode::Row(children).simplify()
-        };
+        // RIGHT까지의 내용을 parse_expression으로 파싱
+        // parse_expression은 RIGHT를 만나면 자동 중단하고, OVER도 중위 연산자로 처리
+        let body = self.parse_expression();
 
         // RIGHT 건너뛰기
-        if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT")
-        {
+        if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT") {
             self.pos += 1;
         }
 
@@ -906,12 +1023,9 @@ impl EqParser {
         let val = self.current_value().to_string();
 
         match ty {
-            TokenType::LParen
-            | TokenType::RParen
-            | TokenType::LBracket
-            | TokenType::RBracket
-            | TokenType::LBrace
-            | TokenType::RBrace => {
+            TokenType::LParen | TokenType::RParen |
+            TokenType::LBracket | TokenType::RBracket |
+            TokenType::LBrace | TokenType::RBrace => {
                 self.pos += 1;
                 val
             }
@@ -958,31 +1072,59 @@ impl EqParser {
     }
 
     /// 범위 내 분수 파싱
+    /// OVER 앞/뒤에 중괄호 그룹이 있으면 해당 그룹만 분자/분모로 사용하고
+    /// 나머지는 분수 바깥 요소로 처리한다.
     fn parse_fraction_in_range(&mut self, end: usize) -> EqNode {
-        let mut numer_nodes = Vec::new();
+        // OVER 앞의 모든 요소를 파싱
+        let mut before_nodes = Vec::new();
         while self.pos < end && !self.at_end() {
             if self.current_type() == TokenType::Command
-                && (Self::cmd_eq(self.current_value(), "OVER"))
+                && Self::cmd_eq(self.current_value(), "OVER")
             {
                 self.pos += 1;
                 break;
             }
-            numer_nodes.push(self.parse_element());
+            before_nodes.push(self.parse_element());
         }
 
-        let mut denom_nodes = Vec::new();
+        // 분자: OVER 바로 앞의 마지막 요소 (또는 그룹)
+        // 나머지 앞 요소들은 분수 앞에 배치
+        let (pre_nodes, numer) = if before_nodes.len() > 1 {
+            let numer = before_nodes.pop().unwrap();
+            (before_nodes, numer)
+        } else {
+            (Vec::new(), EqNode::Row(before_nodes).simplify())
+        };
+
+        // 분모: OVER 바로 뒤의 첫 번째 요소 (또는 그룹)
+        let denom = if self.pos < end && !self.at_end() {
+            self.parse_element()
+        } else {
+            EqNode::Empty
+        };
+
+        // 분수 뒤 나머지 요소
+        let mut after_nodes = Vec::new();
         while self.pos < end && !self.at_end() {
-            if self.current_type() == TokenType::Command
-                && Self::cmd_eq(self.current_value(), "RIGHT")
-            {
+            if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT") {
                 break;
             }
-            denom_nodes.push(self.parse_element());
+            after_nodes.push(self.parse_element());
         }
 
-        EqNode::Fraction {
-            numer: Box::new(EqNode::Row(numer_nodes).simplify()),
-            denom: Box::new(EqNode::Row(denom_nodes).simplify()),
+        let fraction = EqNode::Fraction {
+            numer: Box::new(numer),
+            denom: Box::new(denom),
+        };
+
+        // 앞/뒤 요소와 분수를 Row로 조립
+        if pre_nodes.is_empty() && after_nodes.is_empty() {
+            fraction
+        } else {
+            let mut all = pre_nodes;
+            all.push(fraction);
+            all.extend(after_nodes);
+            EqNode::Row(all).simplify()
         }
     }
 
@@ -1026,8 +1168,8 @@ pub fn parse(script: &str) -> EqNode {
 
 #[cfg(test)]
 mod tests {
-    use super::symbols::{DecoKind, FontStyleKind};
     use super::*;
+    use super::symbols::{DecoKind, FontStyleKind};
 
     #[test]
     fn test_simple_fraction() {
@@ -1093,14 +1235,13 @@ mod tests {
 
     #[test]
     fn test_integral() {
+        // 적분은 nolimits: MathSymbol + SubSup (일반 첨자)
         let ast = parse("INT_0^{inf}");
         match &ast {
-            EqNode::BigOp { symbol, sub, sup } => {
-                assert_eq!(symbol, "∫");
-                assert!(sub.is_some());
-                assert!(sup.is_some());
+            EqNode::SubSup { base, sub, sup } => {
+                assert!(matches!(base.as_ref(), EqNode::MathSymbol(s) if s == "∫"));
             }
-            _ => panic!("Expected BigOp, got {:?}", ast),
+            _ => panic!("Expected SubSup, got {:?}", ast),
         }
     }
 
@@ -1193,8 +1334,7 @@ mod tests {
     #[test]
     fn test_sample_eq01_script() {
         // samples/eq-01.hwp의 첫 번째 수식
-        let script =
-            "평점=입찰가격평가~배점한도 TIMES  LEFT ( {최저입찰가격} over {해당입찰가격} RIGHT )";
+        let script = "평점=입찰가격평가~배점한도 TIMES  LEFT ( {최저입찰가격} over {해당입찰가격} RIGHT )";
         let ast = parse(script);
         // 파싱 실패 없이 AST 생성되면 성공
         match &ast {
@@ -1207,4 +1347,67 @@ mod tests {
             _ => {} // 단일 노드도 허용
         }
     }
+
+    #[test]
+    fn test_cos_fraction_with_left_right() {
+        // cos`left({pi} over {2}+theta right)=`-{1} over {5}`
+        // OVER는 바로 앞/뒤 그룹만 분수로 만든다:
+        //   LEFT-RIGHT 안: {pi} over {2} → Fraction{π,2}, +θ는 분수 밖
+        //   최상위: {1} over {5} → Fraction{1,5}, cos(...)=-는 분수 밖
+        let script = " cos ` left({ pi} over {2}+ theta  right)=`-{1} over {5}`";
+        let ast = parse(script);
+        eprintln!("AST: {:#?}", ast);
+        // 최상위는 Row: [cos, Paren{π/2+θ}, =, -, Fraction{1,5}]
+        let ast_str = format!("{:?}", ast);
+        assert!(ast_str.contains("cos"), "cos가 있어야 함");
+        assert!(ast_str.contains("Paren"), "Paren이 있어야 함");
+        // Fraction{1,5}가 독립적으로 존재해야 함
+        assert!(ast_str.contains("Fraction { numer: Number(\"1\"), denom: Number(\"5\")"),
+            "Fraction{{1,5}}가 있어야 함: {}", ast_str);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn test_lim_fraction() {
+    let script = " lim _{h ``rarrow`` 0} {f left(2+h  right)-f left(2  right)} over {h}`";
+    let ast = parse(script);
+    eprintln!("LIM AST: {:#?}", ast);
+    let ast_str = format!("{:?}", ast);
+    // lim_{h→0} 가 있어야 함
+    assert!(ast_str.contains("Limit"), "Limit가 있어야 함: {}", ast_str);
+    // Fraction이 있어야 함
+    assert!(ast_str.contains("Fraction"), "Fraction이 있어야 함: {}", ast_str);
+}
+
+#[cfg(test)]
+#[test]
+fn test_bar_rm_it() {
+    let script = "bar {{rm{AB}} it }< bar {{rm{AC}} it }`";
+    let ast = parse(script);
+    eprintln!("BAR AST: {:#?}", ast);
+    let ast_str = format!("{:?}", ast);
+    assert!(ast_str.contains("Decoration"), "Decoration이 있어야 함");
+    // }} 가 텍스트로 나오면 안 됨
+    assert!(!ast_str.contains(r#"Text("}")"#), "brace가 텍스트로 나오면 안 됨");
+}
+
+#[cfg(test)]
+#[test]
+fn test_cases_double_amp() {
+    let script = "{cases{eqalign{``x^{3}#}&&eqalign{~LEFT(x LEQ 0 RIGHT)#}#``f LEFT(x RIGHT)&&~LEFT(x>0 RIGHT)}}";
+    let ast = parse(script);
+    eprintln!("CASES AST: {:#?}", ast);
+    let s = format!("{:?}", ast);
+    assert!(s.contains("Tab"), "Tab이 있어야 함: {}", s);
+}
+
+#[cfg(test)]
+#[test]
+fn test_rm_p_left() {
+    let script = "{rm{P}} it  left(A``|` B` right)";
+    let ast = parse(script);
+    eprintln!("RM_P AST: {:#?}", ast);
+    let s = format!("{:?}", ast);
+    assert!(s.contains("Paren"), "Paren이 있어야 함: {}", s);
 }

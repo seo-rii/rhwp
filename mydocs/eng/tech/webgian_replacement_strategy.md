@@ -22,7 +22,7 @@
 | Product | Developer | Notes |
 |---------|----------|-------|
 | Hangul/WebGian | Hancom | Original developer. Server-dependent OT architecture |
-| Polaris Office | Polaris Office (formerly Infraware) | Independent engine (no Hancom SDK). Serverless WASM browser editing. Mobile/web/desktop support. Expanding B2B web office (LG Academy, Gyeongnam Education Office, etc.). Only commercial competitor |
+| A commercial web office | — | Independent engine (no Hancom SDK). Serverless WASM browser editing. Mobile/web/desktop support. Expanding B2B web office in the commercial space |
 
 **Commercial Products -- Partial Implementation (Viewer/Conversion, Limited Editing)**:
 | Product | Developer | Notes |
@@ -42,11 +42,11 @@
 **LibreOffice**: The built-in hwpfilter only supports **HWP 3.0 and earlier**; HWP 5.0 can only be read via third-party extensions (H2Orestart) by converting to ODT first
 
 **Key Conclusions**:
-- Only **Hancom and Polaris Office** have fully implemented HWP 5.0 binary "read+edit+save+rendering (typesetting)"
+- Only **Hancom and a small number of commercial web offices** have fully implemented HWP 5.0 binary "read+edit+save+rendering (typesetting)"
 - Synapsoft is strong in viewing/conversion but does not provide a programmatic HWP binary generation API
 - Open source is limited to structure parsing/text extraction; **no implementations exist for editing+re-typesetting+rendering**
-- This product is the **third complete implementation** after Polaris Office
-- **WebAssembly-based client-only (no server required) HWP saving is a world first** -- Hancom depends on servers, Polaris has WASM editing but no programmatic generation API for AI agents
+- This product joins the small set of full implementations
+- **WebAssembly-based client-only (no server required) HWP saving is a world first** -- Hancom depends on servers; some commercial web offices offer WASM editing but no programmatic generation API for AI agents
 - **No HWP generation tool exists for AI Agents** (commercial or open source) -- a unique position
 - This represents both a high technical entry barrier and a source of competitive advantage
 - For detailed vision and roadmap, see [project_vision.md](mydocs/tech/project_vision.md)
@@ -109,7 +109,7 @@ Rendering quality was compared across major domestic commercial web viewers usin
 | Hancom HWP (Desktop) | Normal | Reference baseline |
 | **rhwp (This product)** | **Normal** | Identical result to Hancom HWP (both SVG/Canvas) |
 | Hancom Docs (Web) | Processing failed | Text box + paragraph flow not handled |
-| Polaris Office (Web) | Processing failed | Text box + paragraph flow not handled |
+| A commercial web office | Processing failed | Text box + paragraph flow not handled |
 | Synapsoft (Web) | Processing failed | Text box + paragraph flow not handled |
 
 Additional comparison using `KTX.hwp`, another Hancom HWP default example file.
@@ -120,7 +120,7 @@ Additional comparison using `KTX.hwp`, another Hancom HWP default example file.
 |---------|---------|-------|
 | Hancom HWP (Desktop) | 100% | Reference baseline |
 | **rhwp (This product)** | **95%** | |
-| Polaris Office (Web) | 90% | |
+| A commercial web office | 90% | |
 | Naver (Web) | 80% | |
 | Synapsoft (Web) | 70% | |
 

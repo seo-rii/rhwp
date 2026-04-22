@@ -27,9 +27,9 @@
 
   // 확장 존재 알림
   document.documentElement.setAttribute('data-hwp-extension', 'rhwp');
-  document.documentElement.setAttribute('data-hwp-extension-version', '0.1.0');
+  document.documentElement.setAttribute('data-hwp-extension-version', '0.2.1');
   window.dispatchEvent(new CustomEvent('hwp-extension-ready', {
-    detail: { name: 'rhwp', version: '0.1.0', capabilities: ['preview', 'edit', 'print'] }
+    detail: { name: 'rhwp', version: '0.2.1', capabilities: ['preview', 'edit', 'print'] }
   }));
 
   // 개발자 도구 주입 (페이지 컨텍스트에 rhwpDev 노출)
@@ -67,6 +67,7 @@
     img.src = new URL(dataUri).href;
     img.alt = '미리보기';
     img.referrerPolicy = 'no-referrer';
+    thumbDiv.textContent = '';
     thumbDiv.className = 'rhwp-hover-thumb';
     thumbDiv.appendChild(img);
   }

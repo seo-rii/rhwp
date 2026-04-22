@@ -18,6 +18,7 @@ pub fn draw_image_bytes(
     crop: Option<(i32, i32, i32, i32)>,
 ) {
     let Some(image) = decode_image(bytes) else {
+        draw_missing_image_placeholder(canvas, x, y, width, height);
         return;
     };
     let dst = Rect::from_xywh(x, y, width, height);
@@ -253,6 +254,32 @@ fn decode_svg_fragment(svg_fragment: &str, width: f32, height: f32) -> Option<Im
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
     let png = pixmap.encode_png().ok()?;
     Image::from_encoded(Data::new_copy(&png))
+}
+
+pub(crate) fn draw_missing_image_placeholder(
+    canvas: &Canvas,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) {
+    let rect = Rect::from_xywh(x, y, width, height);
+
+    let mut fill = Paint::default();
+    fill.set_anti_alias(true);
+    fill.set_style(skia_safe::paint::Style::Fill);
+    fill.set_color(skia_safe::Color::from_argb(0xFF, 0xCC, 0xCC, 0xCC));
+    canvas.draw_rect(rect, &fill);
+
+    let mut stroke = Paint::default();
+    stroke.set_anti_alias(true);
+    stroke.set_style(skia_safe::paint::Style::Stroke);
+    stroke.set_stroke_width(1.0);
+    stroke.set_color(skia_safe::Color::from_argb(0xFF, 0x99, 0x99, 0x99));
+    if let Some(effect) = skia_safe::PathEffect::dash(&[4.0, 4.0], 0.0) {
+        stroke.set_path_effect(effect);
+    }
+    canvas.draw_rect(rect, &stroke);
 }
 
 fn detect_image_mime_type(data: &[u8]) -> &'static str {

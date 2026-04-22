@@ -50,7 +50,7 @@ fn render_box(
             let text_x = x;
             let text_y = y + lb.baseline;
             let esc = escape_xml(text);
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             svg.push_str(&format!(
                 "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\" font-style=\"italic\"{}>{}</text>\n",
                 text_x, text_y, fi, color, EQ_FONT_FAMILY, esc,
@@ -60,7 +60,7 @@ fn render_box(
             let text_x = x;
             let text_y = y + lb.baseline;
             let esc = escape_xml(text);
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             let style_attr = if bold { " font-weight=\"bold\"" } else { "" };
             svg.push_str(&format!(
                 "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}{}>{}</text>\n",
@@ -71,7 +71,7 @@ fn render_box(
             let text_x = x + lb.width / 2.0;
             let text_y = y + lb.baseline;
             let esc = escape_xml(text);
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             svg.push_str(&format!(
                 "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\" text-anchor=\"middle\"{}>{}</text>\n",
                 text_x, text_y, fi, color, EQ_FONT_FAMILY, esc,
@@ -81,7 +81,8 @@ fn render_box(
             let text_x = x;
             let text_y = y + lb.baseline;
             let esc = escape_xml(text);
-            let fi = font_size_from_box(lb, fs);
+            // 적분 기호: layout에서 BIG_OP_SCALE이 적용된 높이를 font-size로 사용
+            let fi = if super::layout::is_integral_symbol(text) { lb.height } else { fs };
             svg.push_str(&format!(
                 "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}>{}</text>\n",
                 text_x, text_y, fi, color, EQ_FONT_FAMILY, esc,
@@ -91,7 +92,7 @@ fn render_box(
             let text_x = x;
             let text_y = y + lb.baseline;
             let esc = escape_xml(name);
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             svg.push_str(&format!(
                 "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}>{}</text>\n",
                 text_x, text_y, fi, color, EQ_FONT_FAMILY, esc,
@@ -100,8 +101,8 @@ fn render_box(
         LayoutKind::Fraction { numer, denom } => {
             // 분자
             render_box(svg, numer, x, y, color, fs, italic, bold);
-            // 분수선
-            let line_y = y + lb.baseline;
+            // 분수선 — baseline에서 axis_height 위에 배치
+            let line_y = y + lb.baseline - fs * super::layout::AXIS_HEIGHT;
             let line_thick = fs * 0.04;
             svg.push_str(&format!(
                 "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"{:.2}\"/>\n",
@@ -203,17 +204,29 @@ fn render_box(
             );
         }
         LayoutKind::BigOp { symbol, sub, sup } => {
-            // 큰 연산자 기호
             let op_fs = fs * super::layout::BIG_OP_SCALE;
-            let sup_h = sup.as_ref().map(|b| b.height + fs * 0.05).unwrap_or(0.0);
-            let op_x = x + (lb.width - estimate_op_width(symbol, op_fs)) / 2.0;
-            let op_y = y + sup_h + op_fs * 0.8;
+            let is_integral = super::layout::is_integral_symbol(symbol);
             let esc = escape_xml(symbol);
-            svg.push_str(&format!(
-                "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}>{}</text>\n",
-                op_x, op_y, op_fs, color, EQ_FONT_FAMILY, esc,
-            ));
-            // 위/아래 첨자
+
+            if is_integral {
+                // 적분: 기호는 왼쪽, 첨자는 오른쪽 위/아래 (nolimits)
+                let op_x = x;
+                let op_y = y + op_fs * 0.8;
+                svg.push_str(&format!(
+                    "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}>{}</text>\n",
+                    op_x, op_y, op_fs, color, EQ_FONT_FAMILY, esc,
+                ));
+            } else {
+                // ∑, ∏ 등: 기호는 중앙, 첨자는 위/아래 (limits)
+                let sup_h = sup.as_ref().map(|b| b.height + fs * 0.05).unwrap_or(0.0);
+                let op_x = x + (lb.width - estimate_op_width(symbol, op_fs)) / 2.0;
+                let op_y = y + sup_h + op_fs * 0.8;
+                svg.push_str(&format!(
+                    "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}>{}</text>\n",
+                    op_x, op_y, op_fs, color, EQ_FONT_FAMILY, esc,
+                ));
+            }
+            // 위/아래 첨자: LayoutBox의 자식 좌표로 배치
             if let Some(sup_box) = sup {
                 render_box(
                     svg,
@@ -241,7 +254,7 @@ fn render_box(
         }
         LayoutKind::Limit { is_upper, sub } => {
             let name = if *is_upper { "Lim" } else { "lim" };
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             svg.push_str(&format!(
                 "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}>{}</text>\n",
                 x,

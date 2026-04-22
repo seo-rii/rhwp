@@ -772,7 +772,7 @@ impl DocumentCore {
 
             if !runs.is_empty() {
                 // preferredX에 가장 가까운 문자 찾기
-                runs.sort_by(|a, b| a.char_start.cmp(&b.char_start));
+                runs.sort_by_key(|a| a.char_start);
                 let mut best_offset = char_range.0;
                 let mut best_dist = f64::MAX;
 

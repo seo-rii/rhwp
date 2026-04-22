@@ -45,6 +45,7 @@ fn print_help() {
     println!("      --show-para-marks       문단부호(↵/↓) 표시");
     println!("      --show-control-codes    조판부호 보이기 (문단부호 + 개체 마커 등)");
     println!("      --debug-overlay         디버그 오버레이 (문단/표 경계 + 인덱스 라벨)");
+    println!("      --show-grid             1mm 격자 오버레이 (레이아웃 디버깅용)");
     println!("      --font-style            @font-face local() 참조 삽입 (폰트 데이터 미포함)");
     println!("      --embed-fonts           폰트 서브셋 임베딩 (사용 글자만 base64)");
     println!("      --embed-fonts=full      폰트 전체 임베딩 (base64)");
@@ -99,6 +100,7 @@ fn export_svg(args: &[String]) {
     let mut show_para_marks = false;
     let mut show_control_codes = false;
     let mut debug_overlay = false;
+    let mut show_grid = false;
     let mut font_embed_mode = rhwp::renderer::svg::FontEmbedMode::None;
     let mut font_paths: Vec<std::path::PathBuf> = Vec::new();
 
@@ -139,6 +141,10 @@ fn export_svg(args: &[String]) {
             }
             "--debug-overlay" => {
                 debug_overlay = true;
+                i += 1;
+            }
+            "--show-grid" => {
+                show_grid = true;
                 i += 1;
             }
             "--font-style" => {
@@ -240,7 +246,10 @@ fn export_svg(args: &[String]) {
             doc.render_page_svg_native(*page_num)
         };
         match svg_result {
-            Ok(svg) => {
+            Ok(mut svg) => {
+                if show_grid {
+                    svg = insert_grid_overlay(&svg);
+                }
                 let svg_filename = if page_count == 1 {
                     format!("{}.svg", file_stem)
                 } else {
@@ -264,6 +273,68 @@ fn export_svg(args: &[String]) {
         pages.len(),
         output_dir
     );
+}
+
+/// SVG에 1mm 격자 오버레이를 삽입한다.
+fn insert_grid_overlay(svg: &str) -> String {
+    let (width, height) = extract_svg_dimensions(svg);
+    let grid_size = 96.0 / 25.4;
+
+    let g = format!("{grid_size:.4}");
+    let w = format!("{width:.2}");
+    let h = format!("{height:.2}");
+    let grid_defs = format!(
+        "<defs><pattern id=\"rhwp-grid\" width=\"{g}\" height=\"{g}\" patternUnits=\"userSpaceOnUse\"><path d=\"M {g} 0 L 0 0 0 {g}\" fill=\"none\" stroke=\"#CCCCCC\" stroke-width=\"0.3\"/></pattern></defs>\n<rect width=\"{w}\" height=\"{h}\" fill=\"url(#rhwp-grid)\"/>\n"
+    );
+
+    let bg_pattern = "fill=\"#ffffff\"/>";
+    if let Some(pos) = svg.find(bg_pattern) {
+        let insert_pos = pos + bg_pattern.len();
+        let defs_part = format!(
+            "<defs><pattern id=\"rhwp-grid\" width=\"{g}\" height=\"{g}\" patternUnits=\"userSpaceOnUse\"><path d=\"M {g} 0 L 0 0 0 {g}\" fill=\"none\" stroke=\"#CCCCCC\" stroke-width=\"0.3\"/></pattern></defs>"
+        );
+        let grid_rect = format!("\n<rect width=\"{w}\" height=\"{h}\" fill=\"url(#rhwp-grid)\"/>");
+        let mut result = svg.to_string();
+        result.insert_str(insert_pos, &grid_rect);
+        if let Some(svg_end) = result.find(">\n") {
+            result.insert_str(svg_end + 2, &format!("{defs_part}\n"));
+        }
+        result
+    } else if let Some(pos) = svg.find(">\n") {
+        let insert_pos = pos + 2;
+        format!("{}{}{}", &svg[..insert_pos], grid_defs, &svg[insert_pos..])
+    } else {
+        svg.to_string()
+    }
+}
+
+fn extract_svg_dimensions(svg: &str) -> (f64, f64) {
+    if let Some(vb_start) = svg.find("viewBox=\"") {
+        let vb = &svg[vb_start + 9..];
+        if let Some(vb_end) = vb.find('"') {
+            let parts: Vec<&str> = vb[..vb_end].split_whitespace().collect();
+            if parts.len() == 4 {
+                let width: f64 = parts[2].parse().unwrap_or(800.0);
+                let height: f64 = parts[3].parse().unwrap_or(1100.0);
+                return (width, height);
+            }
+        }
+    }
+
+    let width = extract_attr_f64(svg, "width").unwrap_or(800.0);
+    let height = extract_attr_f64(svg, "height").unwrap_or(1100.0);
+    (width, height)
+}
+
+fn extract_attr_f64(svg: &str, attr: &str) -> Option<f64> {
+    let pattern = format!("{attr}=\"");
+    if let Some(start) = svg.find(&pattern) {
+        let value = &svg[start + pattern.len()..];
+        if let Some(end) = value.find('"') {
+            return value[..end].trim_end_matches("px").parse().ok();
+        }
+    }
+    None
 }
 
 fn export_png(args: &[String]) {
@@ -1153,6 +1224,58 @@ fn dump_controls(args: &[String]) {
                 println!("{}[그림] bin_data_id={}", indent, p.image_attr.bin_data_id);
                 dump_common_fn(&p.common, indent);
                 dump_sa_fn(&p.shape_attr, indent);
+            }
+            ShapeObject::Chart(s) => {
+                println!(
+                    "{}[차트] type={:?}, title={}, series={}",
+                    indent,
+                    s.chart_type,
+                    s.title.as_deref().unwrap_or("(없음)"),
+                    s.series.len()
+                );
+                if let Some(legend) = &s.legend {
+                    println!(
+                        "{}  범례: visible={}, position={:?}",
+                        indent, legend.visible, legend.position
+                    );
+                }
+                if let Some(axis) = &s.x_axis {
+                    println!(
+                        "{}  X축: label={}, min={:?}, max={:?}",
+                        indent,
+                        axis.label.as_deref().unwrap_or("(없음)"),
+                        axis.min,
+                        axis.max
+                    );
+                }
+                if let Some(axis) = &s.y_axis {
+                    println!(
+                        "{}  Y축: label={}, min={:?}, max={:?}",
+                        indent,
+                        axis.label.as_deref().unwrap_or("(없음)"),
+                        axis.min,
+                        axis.max
+                    );
+                }
+                dump_common_fn(&s.common, indent);
+                dump_sa_fn(&s.drawing.shape_attr, indent);
+            }
+            ShapeObject::Ole(s) => {
+                println!(
+                    "{}[OLE] bin_data_id={}, extent={}×{}, aspect={:?}, preview={}",
+                    indent,
+                    s.bin_data_id,
+                    s.extent_x,
+                    s.extent_y,
+                    s.drawing_aspect,
+                    match &s.preview {
+                        Some(preview) => format!("{:?} ({} bytes)", preview.format, preview.bytes.len()),
+                        None => "(없음)".to_string(),
+                    }
+                );
+                println!("{}  flags={:#04x}", indent, s.flags);
+                dump_common_fn(&s.common, indent);
+                dump_sa_fn(&s.drawing.shape_attr, indent);
             }
         }
     }

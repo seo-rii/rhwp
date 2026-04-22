@@ -19,6 +19,8 @@ import { pageCommands } from '@/command/commands/page';
 import { toolCommands } from '@/command/commands/tool';
 import { ContextMenu } from '@/ui/context-menu';
 import { CommandPalette } from '@/ui/command-palette';
+import { showValidationModalIfNeeded } from '@/ui/validation-modal';
+import { showToast } from '@/ui/toast';
 import { CellSelectionRenderer } from '@/engine/cell-selection-renderer';
 import { TableObjectRenderer } from '@/engine/table-object-renderer';
 import { TableResizeRenderer } from '@/engine/table-resize-renderer';
@@ -51,8 +53,9 @@ let ruler: Ruler | null = null;
 const registry = new CommandRegistry();
 
 function getContext(): EditorContext {
+  const hasDoc = wasm.pageCount > 0;
   return {
-    hasDocument: wasm.pageCount > 0,
+    hasDocument: hasDoc,
     hasSelection: inputHandler?.hasSelection() ?? false,
     inTable: inputHandler?.isInTable() ?? false,
     inCellSelectionMode: inputHandler?.isInCellSelectionMode() ?? false,
@@ -64,6 +67,7 @@ function getContext(): EditorContext {
     canRedo: inputHandler?.canRedo() ?? false,
     zoom: canvasView?.getViewportManager().getZoom() ?? 1.0,
     showControlCodes: wasm.getShowControlCodes(),
+    sourceFormat: hasDoc ? (wasm.getSourceFormat() as 'hwp' | 'hwpx') : undefined,
   };
 }
 
@@ -461,6 +465,25 @@ async function initializeDocument(docInfo: DocumentInfo, displayName: string): P
     console.log('[initDoc] 7. inputHandler activateWithCaretPosition');
     inputHandler?.activateWithCaretPosition();
     console.log('[initDoc] 8. 완료');
+
+    // #177: HWPX 비표준 lineseg 감지 → 경고 있으면 모달로 사용자 선택 요청
+    try {
+      const report = wasm.getValidationWarnings();
+      console.log(`[validation] ${report.count} warnings`, report.summary);
+      if (report.count > 0) {
+        const choice = await showValidationModalIfNeeded(report);
+        console.log(`[validation] user choice: ${choice}`);
+        if (choice === 'auto-fix') {
+          const n = wasm.reflowLinesegs();
+          console.log(`[validation] reflowed ${n} paragraphs`);
+          // 렌더 재계산
+          canvasView?.loadDocument();
+          msg.textContent = `${displayName} (비표준 lineseg ${n}건 자동 보정됨)`;
+        }
+      }
+    } catch (e) {
+      console.warn('[validation] 감지/보정 실패 (치명적이지 않음):', e);
+    }
   } catch (error) {
     console.error('[initDoc] 오류:', error);
     if (window.innerWidth < 768) alert(`초기화 오류: ${error}`);
@@ -473,9 +496,7 @@ async function loadFile(file: File): Promise<void> {
     msg.textContent = '파일 로딩 중...';
     const startTime = performance.now();
     const data = new Uint8Array(await file.arrayBuffer());
-    const docInfo = wasm.loadDocument(data, file.name);
-    const elapsed = performance.now() - startTime;
-    await initializeDocument(docInfo, `${file.name} — ${docInfo.pageCount}페이지 (${elapsed.toFixed(1)}ms)`);
+    await loadBytes(data, file.name, null, startTime);
   } catch (error) {
     const errMsg = `파일 로드 실패: ${error}`;
     msg.textContent = errMsg;
@@ -483,6 +504,47 @@ async function loadFile(file: File): Promise<void> {
     // 모바일에서 상태 메시지가 숨겨질 수 있으므로 alert으로도 표시
     if (window.innerWidth < 768) alert(errMsg);
   }
+}
+
+async function loadBytes(
+  data: Uint8Array,
+  fileName: string,
+  fileHandle: typeof wasm.currentFileHandle,
+  startTime = performance.now(),
+): Promise<void> {
+  const docInfo = wasm.loadDocument(data, fileName);
+  wasm.currentFileHandle = fileHandle;
+  const elapsed = performance.now() - startTime;
+  // initializeDocument 안에서 #177 validation 모달이 표시될 수 있음.
+  // HWPX 토스트는 모달과의 이벤트 충돌을 피하기 위해 모달 닫힌 후 표시.
+  await initializeDocument(docInfo, `${fileName} — ${docInfo.pageCount}페이지 (${elapsed.toFixed(1)}ms)`);
+  notifyHwpxBetaIfNeeded();
+}
+
+/**
+ * #196: HWPX 출처 문서 로드 시 베타 안내 (저장 비활성화).
+ * - 우상단 토스트 1회
+ * - 상태 표시줄 메시지
+ *
+ * #197 (HWPX→HWP 완전 변환기) 완료 시 본 함수 제거.
+ */
+function notifyHwpxBetaIfNeeded(): void {
+  if (wasm.getSourceFormat() !== 'hwpx') return;
+
+  showToast({
+    message: 'HWPX 형식은 현재 베타 단계라 직접 저장이 비활성화되어 있습니다.\n다음 업데이트에서 지원 예정입니다.',
+    durationMs: 0, // 자동 페이드 없음 — 사용자가 확인 버튼으로 닫음
+    action: {
+      label: '자세히',
+      onClick: () => {
+        window.open('https://github.com/edwardkim/rhwp/issues/197', '_blank');
+      },
+    },
+    confirmLabel: '확인',
+  });
+
+  const sb = sbMessage();
+  if (sb) sb.textContent = 'HWPX 베타 모드 — 저장은 다음 업데이트에서 지원됩니다';
 }
 
 async function createNewDocument(): Promise<void> {
@@ -499,6 +561,14 @@ async function createNewDocument(): Promise<void> {
 
 // 커맨드에서 새 문서 생성 호출
 eventBus.on('create-new-document', () => { createNewDocument(); });
+eventBus.on('open-document-bytes', async (payload) => {
+  const data = payload as {
+    bytes: Uint8Array;
+    fileName: string;
+    fileHandle: typeof wasm.currentFileHandle;
+  };
+  await loadBytes(data.bytes, data.fileName, data.fileHandle);
+});
 
 // 수식 더블클릭 → 수식 편집 대화상자
 eventBus.on('equation-edit-request', () => {

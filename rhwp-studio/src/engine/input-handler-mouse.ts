@@ -323,6 +323,7 @@ export function onClick(this: any, e: MouseEvent): void {
                 ref: { sec: ref.sec, ppi: ref.ppi, ci: ref.ci, type: ref.type },
                 origWidth: props.width,
                 origHeight: props.height,
+                rotationAngle: (props.rotationAngle ?? 0) as number,
                 startClientX: e.clientX,
                 startClientY: e.clientY,
                 pageIndex: picBbox.pageIndex,
@@ -626,8 +627,9 @@ export function onClick(this: any, e: MouseEvent): void {
     {
       const picHit = this.findPictureAtClick(pageIdx, pageX, pageY);
       if (picHit) {
-        // Shift+클릭: 다중 선택
+        // Shift+클릭: 다중 선택 + 맨 앞으로 이동
         if (e.shiftKey && this.cursor.isInPictureObjectSelection()) {
+          bringShapeToFront.call(this, picHit);
           const selType = picHit.type === 'shape' ? 'shape' as const : picHit.type as any;
           this.cursor.togglePictureObjectSelection(picHit.sec, picHit.ppi, picHit.ci, selType);
           this.caret.hide();
@@ -639,7 +641,8 @@ export function onClick(this: any, e: MouseEvent): void {
         }
 
         if (picHit.type === 'line') {
-          // 직선 → 바로 객체 선택
+          // 직선 → 맨 앞으로 이동 후 객체 선택
+          bringShapeToFront.call(this, picHit);
           this.cursor.clearSelection();
           this.exitPictureObjectSelectionIfNeeded();
           this.cursor.enterPictureObjectSelectionDirect(picHit.sec, picHit.ppi, picHit.ci, 'line');
@@ -668,7 +671,8 @@ export function onClick(this: any, e: MouseEvent): void {
               return;
             }
           }
-          // 단일 클릭 → 객체 선택 (경계/내부 구분 없이)
+          // 단일 클릭 → 객체 선택 + 맨 앞으로 이동
+          bringShapeToFront.call(this, picHit);
           this.cursor.clearSelection();
           this.exitPictureObjectSelectionIfNeeded();
           this.cursor.enterPictureObjectSelectionDirect(picHit.sec, picHit.ppi, picHit.ci, 'shape');
@@ -680,7 +684,7 @@ export function onClick(this: any, e: MouseEvent): void {
           this.textarea.focus();
           return;
         }
-        // 이미지 → 기존 객체 선택 유지
+        // 이미지/방정식 → 객체 선택 (z-order 미지원)
         this.cursor.clearSelection();
         this.exitPictureObjectSelectionIfNeeded();
         this.cursor.enterPictureObjectSelectionDirect(picHit.sec, picHit.ppi, picHit.ci, picHit.type, picHit.cellIdx, picHit.cellParaIdx);
@@ -1037,6 +1041,11 @@ export function onMouseMove(this: any, e: MouseEvent): void {
       this.dragRafId = 0;
       if (!this.isPictureResizeDragging || !this.pictureResizeState) return;
       this.updatePictureResizeDrag(e);
+
+      // 드래그 중에도 커서 방향 업데이트 (Flipping 대응)
+      const state = this.pictureResizeState;
+      const angleDeg = (state.rotationAngle ?? 0) as number;
+      this.container.style.cursor = getRotatedCursor(state.dir, angleDeg);
     });
     return;
   }
@@ -1076,14 +1085,20 @@ export function onMouseMove(this: any, e: MouseEvent): void {
     const y = e.clientY - contentRect.top;
     const dir = this.pictureObjectRenderer.getHandleAtPoint(x, y);
     if (dir) {
-      const cursorMap: Record<string, string> = {
-        nw: 'nwse-resize', se: 'nwse-resize',
-        ne: 'nesw-resize', sw: 'nesw-resize',
-        n: 'ns-resize', s: 'ns-resize',
-        e: 'ew-resize', w: 'ew-resize',
-        rotate: 'grab',
-      };
-      this.container.style.cursor = cursorMap[dir] ?? '';
+      if (dir === 'rotate') {
+        this.container.style.cursor = 'grab';
+      } else {
+        // 회전된 도형의 경우 커서 방향도 회전시켜 표시
+        let angleDeg = 0;
+        const ref = this.cursor.getSelectedPictureRef();
+        if (ref && ref.type === 'shape') {
+          try {
+            const props = this.getObjectProperties(ref);
+            angleDeg = (props.rotationAngle ?? 0) as number;
+          } catch { /* ignore */ }
+        }
+        this.container.style.cursor = getRotatedCursor(dir, angleDeg);
+      }
     } else {
       // 핸들 밖 → 그림 본체 위이면 move 커서
       const ref = this.cursor.getSelectedPictureRef();
@@ -1335,3 +1350,36 @@ export function onMouseUp(this: any, _e: MouseEvent): void {
   this.updateCaret();
 }
 
+
+/**
+ * 회전각을 반영하여 적절한 리사이즈 커서 이름을 반환한다.
+ * @param dir 기본 방향 ('nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w')
+ * @param angleDeg 회전각 (도)
+ */
+function bringShapeToFront(this: any, picHit: any): void {
+  if (picHit.type === 'shape' || picHit.type === 'line' || picHit.type === 'group') {
+    try {
+      this.wasm.changeShapeZOrder(picHit.sec, picHit.ppi, picHit.ci, 'front');
+      this.eventBus.emit('document-changed');
+    } catch { /* ignore */ }
+  }
+}
+
+function getRotatedCursor(dir: string, angleDeg: number): string {
+  const dirs = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+  const idx = dirs.indexOf(dir);
+  if (idx === -1) return '';
+
+  // 45도 단위로 인덱스 시프트 (회전각 정규화)
+  const normalizedAngle = ((angleDeg % 360) + 360) % 360;
+  const shift = Math.round(normalizedAngle / 45);
+  const rotatedDir = dirs[(idx + shift) % 8];
+
+  const cursorMap: Record<string, string> = {
+    n: 'ns-resize', s: 'ns-resize',
+    e: 'ew-resize', w: 'ew-resize',
+    nw: 'nwse-resize', se: 'nwse-resize',
+    ne: 'nesw-resize', sw: 'nesw-resize',
+  };
+  return cursorMap[rotatedDir] ?? '';
+}

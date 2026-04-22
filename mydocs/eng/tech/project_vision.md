@@ -77,11 +77,11 @@ Used in: rhwp-studio loading screen, CLI ASCII art, MCP server tool icons.
 | Solution | Business Area | Limitations for AI Agents |
 |--------|----------|----------------|
 | Hancom webhwp | Web-based HWP editing (OT/server) | Server-dependent, paid cloud, non-public API, OT architecture |
-| Polaris Office | Web/mobile HWP editing (WASM) | B2B web office focused, no programmatic generation API |
+| A commercial web office | Web/mobile HWP editing (WASM) | B2B web office focused, no programmatic generation API |
 | Synapsoft | Document viewer/converter/editor server | Viewer/converter specialized, no HWP generation API, server-dependent |
 
-- **Polaris Office** (Infraware): Enables HWP editing in the browser via serverless WebAssembly.
-  Expanding as B2B web office for customers like LG Academy. However, it is a product for "humans editing through a UI",
+- **A commercial web office**: Enables HWP editing in the browser via serverless WebAssembly.
+  Expanding as a B2B web office across some public/educational institutions. However, it is a product for "humans editing through a UI",
   and does not provide an API/SDK for AI Agents to programmatically generate HWP.
 
 - **Synapsoft**: Provides Document AI solutions including Synap Document Viewer (supports HWP 96~2024),
@@ -219,7 +219,7 @@ Combining both projects enables a complete cycle where AI can **read -> understa
 ## Ultimate Goal: AI Agent's HWP Tool
 
 Provide tools for AI Agents to **locally and directly** create/read/modify/save HWP documents.
-While the existing HWP ecosystem (Hancom, Polaris, Synapsoft) all follow the "humans operate through UI" paradigm,
+While the existing HWP ecosystem (Hancom, a commercial web office, Synapsoft, etc.) all follows the "humans operate through UI" paradigm,
 rhwp is the first to realize the **"AI operates through code"** paradigm.
 
 ### Two Delivery Paths
@@ -254,7 +254,7 @@ Direct integration with Claude Code/Cowork via MCP protocol (JSON-RPC over stdio
 
 ### Differentiation from Existing Ecosystem
 
-| | Hancom/Polaris/Synapsoft | rhwp |
+| | Existing HWP ecosystem | rhwp |
 |---|---|---|
 | **User** | Humans (UI click/typing) | AI Agents (function calls) |
 | **Approach** | Web editor, viewer, conversion server | Library/MCP server |

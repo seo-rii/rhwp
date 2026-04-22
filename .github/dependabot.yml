@@ -2,12 +2,14 @@ version: 2
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
+    target-branch: "devel"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
 
   - package-ecosystem: "npm"
     directory: "/rhwp-studio"
+    target-branch: "devel"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10

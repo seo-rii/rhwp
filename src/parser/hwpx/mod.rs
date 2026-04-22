@@ -112,6 +112,22 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
         }
     }
 
+    // 5-1. Chart/*.xml (OOXML 차트) 로딩 — bin_data_id = 60000+N, extension="ooxml_chart"
+    // section 파서에서 <hp:chart chartIDRef="Chart/chartN.xml">를 만나면 동일 ID의 OleShape 생성
+    for n in 1..=64u16 {
+        let path = format!("Chart/chart{}.xml", n);
+        match reader.read_file_bytes(&path) {
+            Ok(data) => {
+                bin_data_content.push(BinDataContent {
+                    id: 60000 + n,
+                    data,
+                    extension: "ooxml_chart".to_string(),
+                });
+            }
+            Err(_) => break,
+        }
+    }
+
     // Document 조립
     let model_header = FileHeader {
         version: HwpVersion {

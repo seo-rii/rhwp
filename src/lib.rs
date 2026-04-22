@@ -13,6 +13,8 @@ pub mod renderer;
 pub mod serializer;
 pub mod wasm_api;
 pub mod wmf;
+pub mod emf;
+pub mod ooxml_chart;
 
 pub use document_core::DocumentCore;
 pub use error::HwpError;

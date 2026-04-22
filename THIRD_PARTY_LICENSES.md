@@ -103,6 +103,17 @@ rhwp 프로젝트가 사용하는 서드파티 라이브러리 및 리소스의 
 
 ---
 
+## 참조한 오픈소스 프로젝트 (스펙·설계 참조)
+
+rhwp는 아래 프로젝트들의 **코드를 직접 복사하지 않으며**, 공개된 스펙 정보(enum 값·속성 기본값·태그 이름·검증 규칙 등)만 참조한다. Apache 2.0 라이선스 고지 의무는 본 문서와 각 참조 파일의 헤더 주석으로 충족한다.
+
+| 프로젝트 | 라이선스 | 참조 범위 | rhwp 위치 |
+|---------|---------|----------|-----------|
+| [hancom-io/hwpx-owpml-model](https://github.com/hancom-io/hwpx-owpml-model) | Apache-2.0 © 2022 Hancom Inc. | HWPX enum 정의, 속성 기본값, 태그 전체 집합, canonical 속성·자식 순서 | `src/serializer/hwpx/canonical_defaults.rs` (예정), `mydocs/tech/hwpx_hancom_reference.md` |
+| [hancom-io/dvc](https://github.com/hancom-io/dvc) | Apache-2.0 © 2022 Hancom Inc. | HWPX 검증 규칙 JSON 스키마, errorCode 체계 (Rust 포팅 예정 #185) | `mydocs/tech/hwpx_dvc_reference.md` |
+
+---
+
 ## 라이선스 호환성
 
 rhwp는 **MIT 라이선스**로 배포된다.

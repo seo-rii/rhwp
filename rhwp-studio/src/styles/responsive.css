@@ -213,7 +213,7 @@
   }
   .md-item {
     min-height: var(--touch-target-min);
-    padding: 8px 16px;
+    padding: 8px 16px 8px 32px;
     font-size: var(--font-size-md);
   }
 }

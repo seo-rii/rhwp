@@ -20,6 +20,11 @@
 </p>
 
 <p align="center">
+  <a href="https://oosmetrics.com/repo/edwardkim/rhwp"><img src="https://api.oosmetrics.com/api/v1/badge/achievement/921c34bc-4dd3-4409-ba2e-2d99c8b4a9b6.svg" alt="Top 2 in WebAssembly by originality - 2026-04-21" /></a>
+  <a href="https://oosmetrics.com/repo/edwardkim/rhwp"><img src="https://api.oosmetrics.com/api/v1/badge/achievement/fd1e3217-b99a-4ec2-8cba-98429f3d91c7.svg" alt="Top 2 in Editors by originality - 2026-04-21" /></a>
+</p>
+
+<p align="center">
   <strong>한국어</strong> | <a href="README_EN.md">English</a>
 </p>
 
@@ -54,15 +59,38 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 
 ## 이정표
 
-### v0.5.0 — 뼈대 (현재)
+### v0.5.0 ~ v0.7.x — 뼈대 (현재)
 
 > 역공학 완성, 읽기/쓰기 기반 구축
 
 - HWP 5.0 / HWPX 파서, 문단·표·수식·이미지·차트 렌더링
 - 페이지네이션 (다단 분할, 표 행 분할), 머리말/꼬리말/바탕쪽/각주
-- 레이어 기반 SVG/Canvas2D/CanvasKit/native Skia 렌더링 경로
+- SVG 내보내기 (CLI, legacy + layer replay) + Canvas2D/CanvasKit/native Skia 레이어드 렌더링
 - 웹 에디터 + hwpctl 호환 API (30 Actions, Field API)
-- 793+ 테스트
+- 891+ 테스트
+
+#### 최근 변경 (v0.7.3 / 확장 v0.2.0, 2026-04-19)
+
+**rhwp-studio (라이브러리 0.7.3)**
+- HWPX 출처 문서 저장 비활성화 + 사용자 안내 ([#196](https://github.com/edwardkim/rhwp/issues/196)) — 데이터 손상 방지 (HWPX→HWP 완전 변환기 [#197](https://github.com/edwardkim/rhwp/issues/197) 완성 시까지)
+- HWPX→HWP IR 매핑 어댑터 자산 보존 ([#178](https://github.com/edwardkim/rhwp/issues/178)) — rhwp 자기 호환 100% 회복, 한컴 호환은 #197 후속
+- 회전된 도형 리사이즈 커서 개선 + Flip 처리 (외부 기여 by [@bapdodi](https://github.com/bapdodi) — PR [#192](https://github.com/edwardkim/rhwp/pull/192))
+- HWP 그림 효과(그레이스케일/흑백) SVG 반영 (외부 기여 by [@marsimon](https://github.com/marsimon) — PR [#149](https://github.com/edwardkim/rhwp/pull/149))
+- Windows 환경의 CFB 경로 구분자 오류 수정 (외부 기여 by [@dreamworker0](https://github.com/dreamworker0) — PR [#152](https://github.com/edwardkim/rhwp/pull/152))
+- HWPX Serializer 구현 — Document IR → HWPX 저장 (외부 기여 by [@seunghan91](https://github.com/seunghan91) — PR [#170](https://github.com/edwardkim/rhwp/pull/170))
+- HWPX ZIP 엔트리 압축 한도 + strikeout shape 화이트리스트 (외부 기여 by [@seunghan91](https://github.com/seunghan91) — PR [#153](https://github.com/edwardkim/rhwp/pull/153), PR [#154](https://github.com/edwardkim/rhwp/pull/154))
+- 도형 리사이즈 시 너비/높이 클램프 (외부 기여 by [@seunghan91](https://github.com/seunghan91) — PR [#163](https://github.com/edwardkim/rhwp/pull/163))
+- 모바일 드롭다운 메뉴 아이콘/라벨 겹침 수정 (외부 기여 by [@seunghan91](https://github.com/seunghan91) — PR [#161](https://github.com/edwardkim/rhwp/pull/161))
+
+**rhwp-chrome / Edge 확장 (v0.2.0)**
+- Chrome 확장 활성 시 일반 파일 다운로드의 마지막 위치 기억 동작 복원 ([#198](https://github.com/edwardkim/rhwp/issues/198))
+- 옵션 페이지 CSP 호환 수정 ([#166](https://github.com/edwardkim/rhwp/issues/166))
+- HWP 파일 `Ctrl+S` 시 같은 파일 직접 덮어쓰기 (외부 기여 by [@ahnbu](https://github.com/ahnbu) — PR [#189](https://github.com/edwardkim/rhwp/pull/189))
+- 썸네일 로딩 스피너 정리 + options CSP 호환 (외부 기여 by [@postmelee](https://github.com/postmelee) — PR [#168](https://github.com/edwardkim/rhwp/pull/168))
+- DEXT5 류 핸들러 다운로드 시 빈 뷰어 탭 차단
+
+**기여자 감사**
+이번 배포 주기에 기여해주신 분들: [@ahnbu](https://github.com/ahnbu), [@bapdodi](https://github.com/bapdodi), [@dreamworker0](https://github.com/dreamworker0), [@marsimon](https://github.com/marsimon), [@postmelee](https://github.com/postmelee), [@seunghan91](https://github.com/seunghan91)
 
 ### v1.0.0 — 조판 엔진
 
@@ -123,33 +151,9 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - vpos-based paragraph position correction
 
 ### Output (출력)
-- SVG export (CLI, legacy + layer replay)
-- Canvas rendering (WASM/Web, Canvas2D + CanvasKit)
-- Native Skia PNG rendering (feature-gated)
+- SVG export (CLI)
+- Canvas rendering (WASM/Web)
 - Debug overlay (paragraph/table boundaries + indices + y-coordinates)
-
-### Multi-Renderer Backends (멀티 렌더러 백엔드)
-- `PageLayerTree` 페인트 IR를 공유하고, 백엔드별로 replay만 다르게 수행합니다.
-- **Legacy SVG**: 기본 `rhwp export-svg sample.hwp`
-- **Layered SVG**: `RHWP_RENDER_PATH=layer-svg rhwp export-svg sample.hwp`
-- **Native Skia**: `rhwp export-png sample.hwp` (`native-skia` feature 필요)
-- **Browser Canvas2D / CanvasKit**: `rhwp-studio` 기본값은 Canvas2D, `?renderer=canvaskit`로 CanvasKit 선택
-- browser layered profile은 `?renderProfile=screen|print|high-quality|fast-preview`로 고를 수 있습니다.
-- `RHWP_RENDER_PROFILE=screen|print|high-quality|fast-preview`로 layered 출력 프로파일을 덮어쓸 수 있습니다.
-  기본값은 browser layer tree=`screen`, layer SVG export=`print`, native Skia PNG=`high-quality`입니다.
-  `PageLayerTree` JSON도 `profile`과 `cacheHint`를 함께 내보내므로 browser replay 경로가 Rust의 선택을 그대로 볼 수 있습니다.
-
-### Renderer Regression Tests (렌더러 회귀 테스트)
-- `cargo test layer_svg --lib`
-- `cargo test --features native-skia skia --lib`
-- `cargo test-skia-full-sweep`
-- `cd rhwp-studio && npm run e2e`
-- `cd rhwp-studio && npm run e2e:headless`
-- `cd rhwp-studio && npm run e2e:ci`
-- `cd rhwp-studio && npm run e2e:ci:full`
-- `python3 scripts/renderer_baseline.py`
-- `python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview`
-- diff artifact는 `output/layer-svg-diff`, `output/skia-diff`, `rhwp-studio/output/e2e`에 남습니다.
 
 ### Web Editor (웹 에디터)
 - Text editing (insert, delete, undo/redo)
@@ -224,8 +228,7 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 ```bash
 cargo build                    # Development build
 cargo build --release          # Release build
-cargo test                     # Run tests (793+ tests)
-cargo clippy --all-targets --all-features   # native-skia까지 보려면 fontconfig/freetype 개발 패키지가 필요할 수 있음
+cargo test                     # Run tests (755+ tests)
 ```
 
 ### WASM Build
@@ -249,8 +252,6 @@ npx vite --host 0.0.0.0 --port 7700
 
 Open `http://localhost:7700` in your browser.
 
-브라우저 렌더러를 바꿔 비교하려면 `http://localhost:7700/?renderer=canvas2d` 또는 `http://localhost:7700/?renderer=canvaskit`를 사용하세요.
-
 ## CLI Usage
 
 ### SVG Export
@@ -260,14 +261,6 @@ rhwp export-svg sample.hwp                         # Export to output/
 rhwp export-svg sample.hwp -o my_dir/              # Export to custom directory
 rhwp export-svg sample.hwp -p 0                    # Export specific page (0-indexed)
 rhwp export-svg sample.hwp --debug-overlay         # Debug overlay (paragraph/table boundaries)
-```
-
-### Native Skia PNG Export
-
-```bash
-cargo run --features native-skia --bin rhwp -- export-png sample.hwp
-cargo run --features native-skia --bin rhwp -- export-png sample.hwp -o my_dir/
-cargo run --features native-skia --bin rhwp -- export-png sample.hwp -p 0
 ```
 
 ### Document Inspection

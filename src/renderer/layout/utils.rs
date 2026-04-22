@@ -20,7 +20,14 @@ pub(crate) fn find_bin_data<'a>(
     if bin_data_id == 0 {
         return None;
     }
-    bin_data_content.get((bin_data_id - 1) as usize)
+    // 1-indexed 순번으로 먼저 조회 (기존 동작 유지)
+    if let Some(c) = bin_data_content.get((bin_data_id - 1) as usize) {
+        if c.id == bin_data_id {
+            return Some(c);
+        }
+    }
+    // 실패 시 id 필드로 직접 검색 (HWPX 차트처럼 sparse id 사용 시)
+    bin_data_content.iter().find(|c| c.id == bin_data_id)
 }
 
 /// 문단의 실효 numbering_id를 반환한다.

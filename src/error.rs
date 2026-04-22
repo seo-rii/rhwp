@@ -27,8 +27,8 @@ impl From<crate::parser::hwpx::HwpxError> for HwpError {
     }
 }
 
-impl From<crate::serializer::cfb_writer::SerializeError> for HwpError {
-    fn from(e: crate::serializer::cfb_writer::SerializeError) -> Self {
+impl From<crate::serializer::SerializeError> for HwpError {
+    fn from(e: crate::serializer::SerializeError) -> Self {
         HwpError::RenderError(format!("{:?}", e))
     }
 }

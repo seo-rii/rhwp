@@ -9,7 +9,7 @@ use crate::renderer::render_tree::{BoundingBox, TextRunNode};
 use crate::renderer::{LineRenderType, UnderlineType};
 
 use super::equation_conv::render_equation;
-use super::image_conv::{draw_image_bytes, draw_svg_fragment};
+use super::image_conv::{draw_image_bytes, draw_missing_image_placeholder, draw_svg_fragment};
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
     make_stroke_paint, make_text_paint,
@@ -257,7 +257,23 @@ impl SkiaLayerRenderer {
                                 image.original_size,
                                 image.crop,
                             );
+                        } else {
+                            draw_missing_image_placeholder(
+                                canvas,
+                                bbox.x as f32,
+                                bbox.y as f32,
+                                bbox.width as f32,
+                                bbox.height as f32,
+                            );
                         }
+                    } else {
+                        draw_missing_image_placeholder(
+                            canvas,
+                            bbox.x as f32,
+                            bbox.y as f32,
+                            bbox.width as f32,
+                            bbox.height as f32,
+                        );
                     }
                 });
             }

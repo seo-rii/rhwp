@@ -1,7 +1,9 @@
 use skia_safe::{paint, Canvas, Color, FontMgr, Paint, PathBuilder, Point};
 
 use crate::renderer::equation::ast::MatrixStyle;
-use crate::renderer::equation::layout::{LayoutBox, LayoutKind, BIG_OP_SCALE, SCRIPT_SCALE};
+use crate::renderer::equation::layout::{
+    is_integral_symbol, LayoutBox, LayoutKind, AXIS_HEIGHT, BIG_OP_SCALE, SCRIPT_SCALE,
+};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
 use crate::renderer::TextStyle;
 
@@ -53,14 +55,13 @@ fn render_box(
             }
         }
         LayoutKind::Text(text) => {
-            let fi = font_size_from_box(lb, fs);
             draw_text(
                 canvas,
                 font_mgr,
                 text,
                 x,
                 y + lb.baseline,
-                fi,
+                fs,
                 EQ_FONT_FAMILY,
                 true,
                 bold,
@@ -69,14 +70,13 @@ fn render_box(
             );
         }
         LayoutKind::Number(text) => {
-            let fi = font_size_from_box(lb, fs);
             draw_text(
                 canvas,
                 font_mgr,
                 text,
                 x,
                 y + lb.baseline,
-                fi,
+                fs,
                 EQ_FONT_FAMILY,
                 false,
                 bold,
@@ -85,14 +85,13 @@ fn render_box(
             );
         }
         LayoutKind::Symbol(text) => {
-            let fi = font_size_from_box(lb, fs);
             draw_text(
                 canvas,
                 font_mgr,
                 text,
                 x + lb.width / 2.0,
                 y + lb.baseline,
-                fi,
+                fs,
                 EQ_FONT_FAMILY,
                 false,
                 false,
@@ -101,7 +100,11 @@ fn render_box(
             );
         }
         LayoutKind::MathSymbol(text) => {
-            let fi = font_size_from_box(lb, fs);
+            let fi = if is_integral_symbol(text) {
+                lb.height
+            } else {
+                fs
+            };
             draw_text(
                 canvas,
                 font_mgr,
@@ -117,14 +120,13 @@ fn render_box(
             );
         }
         LayoutKind::Function(name) => {
-            let fi = font_size_from_box(lb, fs);
             draw_text(
                 canvas,
                 font_mgr,
                 name,
                 x,
                 y + lb.baseline,
-                fi,
+                fs,
                 EQ_FONT_FAMILY,
                 false,
                 false,
@@ -134,7 +136,7 @@ fn render_box(
         }
         LayoutKind::Fraction { numer, denom } => {
             render_box(canvas, font_mgr, numer, x, y, color, fs, italic, bold);
-            let line_y = y + lb.baseline;
+            let line_y = y + lb.baseline - fs * AXIS_HEIGHT;
             let line_thick = fs * 0.04;
             canvas.draw_line(
                 ((x + fs * 0.05) as f32, line_y as f32),
@@ -233,9 +235,15 @@ fn render_box(
         }
         LayoutKind::BigOp { symbol, sub, sup } => {
             let op_fs = fs * BIG_OP_SCALE;
-            let sup_h = sup.as_ref().map(|b| b.height + fs * 0.05).unwrap_or(0.0);
-            let op_x = x + (lb.width - estimate_op_width(symbol, op_fs)) / 2.0;
-            let op_y = y + sup_h + op_fs * 0.8;
+            let (op_x, op_y) = if is_integral_symbol(symbol) {
+                (x, y + op_fs * 0.8)
+            } else {
+                let sup_h = sup.as_ref().map(|b| b.height + fs * 0.05).unwrap_or(0.0);
+                (
+                    x + (lb.width - estimate_op_width(symbol, op_fs)) / 2.0,
+                    y + sup_h + op_fs * 0.8,
+                )
+            };
             draw_text(
                 canvas,
                 font_mgr,
@@ -278,14 +286,13 @@ fn render_box(
         }
         LayoutKind::Limit { is_upper, sub } => {
             let name = if *is_upper { "Lim" } else { "lim" };
-            let fi = font_size_from_box(lb, fs);
             draw_text(
                 canvas,
                 font_mgr,
                 name,
                 x,
-                y + fi * 0.8,
-                fi,
+                y + fs * 0.8,
+                fs,
                 EQ_FONT_FAMILY,
                 false,
                 false,
