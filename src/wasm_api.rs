@@ -13,6 +13,8 @@ pub(crate) use crate::document_core::helpers::*;
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
+#[cfg(target_arch = "wasm32")]
+use js_sys::JSON;
 
 use crate::document_core::{DocumentCore, DEFAULT_FALLBACK_FONT};
 use crate::error::HwpError;
@@ -242,6 +244,16 @@ impl HwpDocument {
     pub fn get_page_layer_tree(&self, page_num: u32) -> Result<String, JsValue> {
         self.get_page_layer_tree_native(page_num)
             .map_err(|e| e.into())
+    }
+
+    /// 페이지 레이어 트리를 JS object로 반환한다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValue)]
+    pub fn get_page_layer_tree_value(&self, page_num: u32) -> Result<JsValue, JsValue> {
+        let json = self
+            .get_page_layer_tree_native(page_num)
+            .map_err(JsValue::from)?;
+        JSON::parse(&json)
     }
 
     /// 페이지 정보를 JSON 문자열로 반환한다.

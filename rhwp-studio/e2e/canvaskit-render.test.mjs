@@ -417,4 +417,74 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     outlineCurrencyCalls.every((call) => /Malgun Gothic|맑은 고딕/.test(call.font)),
     `outline currency fonts=${outlineCurrencyCalls.map((call) => call.font).join(' | ')}`,
   );
+
+  setTestCase('canvaskit-layer-tree-value-and-footnote-routing');
+  await loadApp(page, `?renderer=canvaskit&canvaskitMode=${CANVASKIT_MODE}`);
+  await createNewDocument(page);
+  const nativeRouting = await page.evaluate(() => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    const wasmDoc = window.__wasm?.doc;
+    if (!renderer) {
+      return { error: 'canvaskit renderer access failed' };
+    }
+
+    const simpleTextRun = {
+      type: 'textRun',
+      text: '단순 텍스트',
+      positions: [0, 20, 40, 60, 80, 100],
+      bbox: { x: 8, y: 8, width: 120, height: 24 },
+      baseline: 18,
+      rotation: 0,
+      isVertical: false,
+      style: {
+        fontFamily: '함초롬돋움',
+        fontSize: 16,
+        color: '#111111',
+        bold: false,
+        italic: false,
+        ratio: 1,
+        underline: 'none',
+        underlineShape: 0,
+        strikethrough: false,
+        strikeShape: 0,
+        outlineType: 0,
+        shadowType: 0,
+        shadowColor: '#111111',
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        emboss: false,
+        engrave: false,
+        emphasisDot: 0,
+        underlineColor: '#111111',
+        strikeColor: '#111111',
+        shadeColor: '#ffffff',
+      },
+    };
+
+    return {
+      hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
+      simpleTextUsesOverlay: renderer.shouldOverlayTextRun(simpleTextRun),
+      underlinedTextUsesOverlay: renderer.shouldOverlayTextRun({
+        ...simpleTextRun,
+        style: {
+          ...simpleTextRun.style,
+          underline: 'bottom',
+        },
+      }),
+      footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
+        type: 'footnoteMarker',
+        text: '1)',
+        fontFamily: '함초롬돋움',
+        fontSize: 10,
+        color: '#111111',
+        bbox: { x: 4, y: 4, width: 12, height: 12 },
+      }),
+    };
+  });
+
+  assert(!nativeRouting.error, nativeRouting.error || 'canvaskit native routing probe captured');
+  assert(nativeRouting.hasLayerTreeValueApi, 'wasm layer tree JS-value export enabled');
+  assert(nativeRouting.simpleTextUsesOverlay === true, `simple text overlay=${nativeRouting.simpleTextUsesOverlay}`);
+  assert(nativeRouting.underlinedTextUsesOverlay === true, `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
+  assert(nativeRouting.footnoteUsesOverlay === false, `footnote overlay=${nativeRouting.footnoteUsesOverlay}`);
 }, { skipLoadApp: true });

@@ -361,8 +361,8 @@ export class CanvasKitLayerRenderer {
     return true;
   }
 
-  private shouldOverlayFootnoteMarker(op: LayerFootnoteMarkerOp): boolean {
-    return true;
+  private shouldOverlayFootnoteMarker(_op: LayerFootnoteMarkerOp): boolean {
+    return false;
   }
 
   private shouldOverlayLine(op: LayerLineOp): boolean {

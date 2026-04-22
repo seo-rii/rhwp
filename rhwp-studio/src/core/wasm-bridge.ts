@@ -147,6 +147,10 @@ export class WasmBridge {
 
   getPageLayerTree(pageNum: number): PageLayerTree {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const valueGetter = (this.doc as any).getPageLayerTreeValue;
+    if (typeof valueGetter === 'function') {
+      return valueGetter.call(this.doc, pageNum) as PageLayerTree;
+    }
     return JSON.parse((this.doc as any).getPageLayerTree(pageNum));
   }
 

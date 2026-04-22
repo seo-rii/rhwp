@@ -166,13 +166,11 @@ impl SvgRenderer {
                 let clip_id = match clip_kind {
                     ClipKind::Body => format!(
                         "body-clip-{}",
-                        node.source_node_id
-                            .map_or_else(|| self.next_clip_id(), |id| id)
+                        node.source_node_id.unwrap_or_else(|| self.next_clip_id())
                     ),
                     ClipKind::TableCell => format!(
                         "cell-clip-{}",
-                        node.source_node_id
-                            .map_or_else(|| self.next_clip_id(), |id| id)
+                        node.source_node_id.unwrap_or_else(|| self.next_clip_id())
                     ),
                     ClipKind::Generic => format!("layer-clip-{}", self.next_clip_id()),
                 };
