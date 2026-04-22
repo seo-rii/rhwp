@@ -894,7 +894,8 @@ fn cache_hint_str(value: CacheHint) -> &'static str {
 mod tests {
     use super::*;
     use crate::paint::{
-        CacheHint, ClipKind, LayerEquationPaint, LayerNode, PageLayerTree, ResourceArena,
+        CacheHint, ClipKind, LayerEquationPaint, LayerLinePaint, LayerNode, LayerPathPaint,
+        LayerRectanglePaint, PageLayerTree, ResourceArena,
     };
     use crate::renderer::render_tree::TextRunNode;
 
@@ -931,16 +932,17 @@ mod tests {
         };
         let rect = PaintOp::Rectangle {
             bbox: BoundingBox::new(8.0, 18.0, 84.0, 22.0),
-            rect: crate::renderer::render_tree::RectangleNode::new(
-                4.0,
-                ShapeStyle {
+            rect: LayerRectanglePaint {
+                corner_radius: 4.0,
+                style: ShapeStyle {
                     fill_color: Some(0x00F0F1F2),
                     stroke_color: Some(0x00030405),
                     stroke_width: 1.5,
                     ..Default::default()
                 },
-                None,
-            ),
+                gradient: None,
+                transform: ShapeTransform::default(),
+            },
         };
         let equation = PaintOp::Equation {
             bbox: BoundingBox::new(12.0, 44.0, 40.0, 16.0),
@@ -1005,12 +1007,12 @@ mod tests {
     fn serializes_line_shadow_and_connector_arrow_metadata() {
         let line = PaintOp::Line {
             bbox: BoundingBox::new(0.0, 0.0, 24.0, 24.0),
-            line: crate::renderer::render_tree::LineNode::new(
-                2.0,
-                4.0,
-                22.0,
-                20.0,
-                LineStyle {
+            line: LayerLinePaint {
+                x1: 2.0,
+                y1: 4.0,
+                x2: 22.0,
+                y2: 20.0,
+                style: LineStyle {
                     color: 0x000000ff,
                     width: 3.0,
                     dash: StrokeDash::Dash,
@@ -1027,33 +1029,35 @@ mod tests {
                         alpha: 64,
                     }),
                 },
-            ),
+                transform: ShapeTransform::default(),
+            },
         };
 
-        let mut path_node = crate::renderer::render_tree::PathNode::new(
-            vec![
+        let path_node = LayerPathPaint {
+            commands: vec![
                 PathCommand::MoveTo(4.0, 4.0),
                 PathCommand::CurveTo(8.0, 4.0, 16.0, 20.0, 20.0, 20.0),
             ],
-            ShapeStyle {
+            style: ShapeStyle {
                 stroke_color: Some(0x00010203),
                 stroke_width: 2.0,
                 ..Default::default()
             },
-            None,
-        );
-        path_node.connector_endpoints = Some((4.0, 4.0, 20.0, 20.0));
-        path_node.line_style = Some(LineStyle {
-            color: 0x00010203,
-            width: 2.0,
-            dash: StrokeDash::Solid,
-            line_type: LineRenderType::Single,
-            start_arrow: ArrowStyle::Circle,
-            end_arrow: ArrowStyle::Square,
-            start_arrow_size: 1,
-            end_arrow_size: 8,
-            shadow: None,
-        });
+            gradient: None,
+            transform: ShapeTransform::default(),
+            connector_endpoints: Some((4.0, 4.0, 20.0, 20.0)),
+            line_style: Some(LineStyle {
+                color: 0x00010203,
+                width: 2.0,
+                dash: StrokeDash::Solid,
+                line_type: LineRenderType::Single,
+                start_arrow: ArrowStyle::Circle,
+                end_arrow: ArrowStyle::Square,
+                start_arrow_size: 1,
+                end_arrow_size: 8,
+                shadow: None,
+            }),
+        };
 
         let tree = PageLayerTree::new(
             40.0,
@@ -1077,6 +1081,49 @@ mod tests {
             "\"connectorEndpoints\":{\"x1\":4.000000,\"y1\":4.000000,\"x2\":20.000000,\"y2\":20.000000}"
         ));
         assert!(json.contains("\"lineStyle\":{\"color\":\"#030201\",\"width\":2.000000,\"dash\":\"solid\",\"lineType\":\"single\",\"startArrow\":\"circle\",\"endArrow\":\"square\",\"startArrowSize\":1,\"endArrowSize\":8}"));
+    }
+
+    #[test]
+    fn serializes_flattened_form_and_footnote_ops() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![
+                    PaintOp::FootnoteMarker {
+                        bbox: BoundingBox::new(2.0, 2.0, 10.0, 10.0),
+                        marker: crate::paint::LayerFootnoteMarkerPaint {
+                            text: "1)".to_string(),
+                            font_family: "함초롬돋움".to_string(),
+                            base_font_size: 10.0,
+                            color: 0x00112233,
+                        },
+                    },
+                    PaintOp::FormObject {
+                        bbox: BoundingBox::new(4.0, 12.0, 30.0, 12.0),
+                        form: crate::paint::LayerFormObjectPaint {
+                            form_type: crate::model::control::FormType::CheckBox,
+                            caption: "동의".to_string(),
+                            text: String::new(),
+                            fore_color: "#123456".to_string(),
+                            back_color: "#ffffff".to_string(),
+                            value: 1,
+                            enabled: true,
+                        },
+                    },
+                ],
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"type\":\"footnoteMarker\""));
+        assert!(json.contains("\"fontFamily\":\"함초롬돋움\""));
+        assert!(json.contains("\"type\":\"formObject\""));
+        assert!(json.contains("\"formType\":\"checkBox\""));
+        assert!(json.contains("\"caption\":\"동의\""));
+        assert!(json.contains("\"foreColor\":\"#123456\""));
     }
 
     #[test]

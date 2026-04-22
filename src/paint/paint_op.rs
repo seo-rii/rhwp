@@ -1,13 +1,13 @@
+use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::model::ColorRef;
 use crate::paint::resources::{ImageResourceId, SvgResourceId};
 use crate::renderer::equation::layout::LayoutBox;
-use crate::renderer::render_tree::{
-    BoundingBox, EllipseNode, FootnoteMarkerNode, FormObjectNode, LineNode, PathNode,
-    RectangleNode, ShapeTransform, TextRunNode,
+use crate::renderer::render_tree::{BoundingBox, ShapeTransform, TextRunNode};
+use crate::renderer::{
+    GradientFillInfo, LineStyle, PathCommand, ShapeStyle,
 };
-use crate::renderer::GradientFillInfo;
 
 /// backend가 재생하는 leaf paint operation.
 ///
@@ -25,23 +25,23 @@ pub enum PaintOp {
     },
     FootnoteMarker {
         bbox: BoundingBox,
-        marker: FootnoteMarkerNode,
+        marker: LayerFootnoteMarkerPaint,
     },
     Line {
         bbox: BoundingBox,
-        line: LineNode,
+        line: LayerLinePaint,
     },
     Rectangle {
         bbox: BoundingBox,
-        rect: RectangleNode,
+        rect: LayerRectanglePaint,
     },
     Ellipse {
         bbox: BoundingBox,
-        ellipse: EllipseNode,
+        ellipse: LayerEllipsePaint,
     },
     Path {
         bbox: BoundingBox,
-        path: PathNode,
+        path: LayerPathPaint,
     },
     Image {
         bbox: BoundingBox,
@@ -53,8 +53,51 @@ pub enum PaintOp {
     },
     FormObject {
         bbox: BoundingBox,
-        form: FormObjectNode,
+        form: LayerFormObjectPaint,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerFootnoteMarkerPaint {
+    pub text: String,
+    pub font_family: String,
+    pub base_font_size: f64,
+    pub color: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerLinePaint {
+    pub x1: f64,
+    pub y1: f64,
+    pub x2: f64,
+    pub y2: f64,
+    pub style: LineStyle,
+    pub transform: ShapeTransform,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerRectanglePaint {
+    pub corner_radius: f64,
+    pub style: ShapeStyle,
+    pub gradient: Option<Box<GradientFillInfo>>,
+    pub transform: ShapeTransform,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerEllipsePaint {
+    pub style: ShapeStyle,
+    pub gradient: Option<Box<GradientFillInfo>>,
+    pub transform: ShapeTransform,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerPathPaint {
+    pub commands: Vec<PathCommand>,
+    pub style: ShapeStyle,
+    pub gradient: Option<Box<GradientFillInfo>>,
+    pub transform: ShapeTransform,
+    pub connector_endpoints: Option<(f64, f64, f64, f64)>,
+    pub line_style: Option<LineStyle>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +132,17 @@ pub struct LayerEquationPaint {
     pub color_str: String,
     pub color: u32,
     pub font_size: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerFormObjectPaint {
+    pub form_type: FormType,
+    pub caption: String,
+    pub text: String,
+    pub fore_color: String,
+    pub back_color: String,
+    pub value: i32,
+    pub enabled: bool,
 }
 
 impl PaintOp {

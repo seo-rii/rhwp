@@ -16,8 +16,9 @@ use super::{
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    ClipKind, GroupKind, LayerEquationPaint, LayerImagePaint, LayerNode, LayerNodeKind,
-    LayerPageBackgroundPaint, PageLayerTree, PaintOp, ResourceArena,
+    ClipKind, GroupKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint,
+    LayerNode, LayerNodeKind, LayerPageBackgroundPaint, PageLayerTree, PaintOp,
+    ResourceArena,
 };
 use base64::Engine;
 
@@ -264,7 +265,7 @@ impl SvgRenderer {
                 }
             }
             PaintOp::FormObject { bbox, form } => {
-                self.render_form_object(form, bbox);
+                self.render_layer_form_object(form, bbox);
             }
         }
     }
@@ -2266,7 +2267,7 @@ impl SvgRenderer {
     }
 
     /// 양식 개체 SVG 렌더링
-    fn render_form_object(&mut self, form: &FormObjectNode, bbox: &BoundingBox) {
+    fn render_layer_form_object(&mut self, form: &LayerFormObjectPaint, bbox: &BoundingBox) {
         let x = bbox.x;
         let y = bbox.y;
         let w = bbox.width;
@@ -2384,6 +2385,19 @@ impl SvgRenderer {
                 }
             }
         }
+    }
+
+    fn render_form_object(&mut self, form: &FormObjectNode, bbox: &BoundingBox) {
+        let paint = LayerFormObjectPaint {
+            form_type: form.form_type,
+            caption: form.caption.clone(),
+            text: form.text.clone(),
+            fore_color: form.fore_color.clone(),
+            back_color: form.back_color.clone(),
+            value: form.value,
+            enabled: form.enabled,
+        };
+        self.render_layer_form_object(&paint, bbox);
     }
     /// 디버그 오버레이: 문단/표 경계와 인덱스 라벨을 렌더링
     fn render_debug_overlay(&mut self) {

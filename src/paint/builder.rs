@@ -2,8 +2,9 @@ use crate::paint::layer_tree::{
     CacheHint, ClipKind, GroupKind, LayerNode, LayerNodeKind, PageLayerTree,
 };
 use crate::paint::paint_op::{
-    LayerEquationPaint, LayerImagePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    PaintOp,
+    LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
+    LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
+    LayerPathPaint, LayerRectanglePaint, PaintOp,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
@@ -81,35 +82,35 @@ impl LayerBuilder {
                 node,
                 PaintOp::FootnoteMarker {
                     bbox: node.bbox,
-                    marker: marker.clone(),
+                    marker: self.build_footnote_marker_paint(marker),
                 },
             )),
             RenderNodeType::Line(line) => Some(self.build_paint_node(
                 node,
                 PaintOp::Line {
                     bbox: node.bbox,
-                    line: line.clone(),
+                    line: self.build_line_paint(line),
                 },
             )),
             RenderNodeType::Rectangle(rect) => Some(self.build_paint_node(
                 node,
                 PaintOp::Rectangle {
                     bbox: node.bbox,
-                    rect: rect.clone(),
+                    rect: self.build_rectangle_paint(rect),
                 },
             )),
             RenderNodeType::Ellipse(ellipse) => Some(self.build_paint_node(
                 node,
                 PaintOp::Ellipse {
                     bbox: node.bbox,
-                    ellipse: ellipse.clone(),
+                    ellipse: self.build_ellipse_paint(ellipse),
                 },
             )),
             RenderNodeType::Path(path) => Some(self.build_paint_node(
                 node,
                 PaintOp::Path {
                     bbox: node.bbox,
-                    path: path.clone(),
+                    path: self.build_path_paint(path),
                 },
             )),
             RenderNodeType::Image(image) => {
@@ -136,7 +137,7 @@ impl LayerBuilder {
                 node,
                 PaintOp::FormObject {
                     bbox: node.bbox,
-                    form: form.clone(),
+                    form: self.build_form_object_paint(form),
                 },
             )),
             RenderNodeType::Body {
@@ -230,6 +231,69 @@ impl LayerBuilder {
         }
     }
 
+    fn build_footnote_marker_paint(
+        &self,
+        marker: &crate::renderer::render_tree::FootnoteMarkerNode,
+    ) -> LayerFootnoteMarkerPaint {
+        LayerFootnoteMarkerPaint {
+            text: marker.text.clone(),
+            font_family: marker.font_family.clone(),
+            base_font_size: marker.base_font_size,
+            color: marker.color,
+        }
+    }
+
+    fn build_line_paint(
+        &self,
+        line: &crate::renderer::render_tree::LineNode,
+    ) -> LayerLinePaint {
+        LayerLinePaint {
+            x1: line.x1,
+            y1: line.y1,
+            x2: line.x2,
+            y2: line.y2,
+            style: line.style.clone(),
+            transform: line.transform,
+        }
+    }
+
+    fn build_rectangle_paint(
+        &self,
+        rect: &crate::renderer::render_tree::RectangleNode,
+    ) -> LayerRectanglePaint {
+        LayerRectanglePaint {
+            corner_radius: rect.corner_radius,
+            style: rect.style.clone(),
+            gradient: rect.gradient.clone(),
+            transform: rect.transform,
+        }
+    }
+
+    fn build_ellipse_paint(
+        &self,
+        ellipse: &crate::renderer::render_tree::EllipseNode,
+    ) -> LayerEllipsePaint {
+        LayerEllipsePaint {
+            style: ellipse.style.clone(),
+            gradient: ellipse.gradient.clone(),
+            transform: ellipse.transform,
+        }
+    }
+
+    fn build_path_paint(
+        &self,
+        path: &crate::renderer::render_tree::PathNode,
+    ) -> LayerPathPaint {
+        LayerPathPaint {
+            commands: path.commands.clone(),
+            style: path.style.clone(),
+            gradient: path.gradient.clone(),
+            transform: path.transform,
+            connector_endpoints: path.connector_endpoints,
+            line_style: path.line_style.clone(),
+        }
+    }
+
     fn build_image_paint(
         &mut self,
         image: &crate::renderer::render_tree::ImageNode,
@@ -244,6 +308,21 @@ impl LayerBuilder {
             crop: image.crop,
             effect: image.effect,
             transform: image.transform,
+        }
+    }
+
+    fn build_form_object_paint(
+        &self,
+        form: &crate::renderer::render_tree::FormObjectNode,
+    ) -> LayerFormObjectPaint {
+        LayerFormObjectPaint {
+            form_type: form.form_type,
+            caption: form.caption.clone(),
+            text: form.text.clone(),
+            fore_color: form.fore_color.clone(),
+            back_color: form.back_color.clone(),
+            value: form.value,
+            enabled: form.enabled,
         }
     }
 

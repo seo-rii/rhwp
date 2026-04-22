@@ -2,7 +2,9 @@ use skia_safe::{
     surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, Point, Rect,
 };
 
-use crate::paint::{LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
+use crate::paint::{
+    LayerFormObjectPaint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
+};
 use crate::renderer::layer_renderer::LayerRasterRenderer;
 use crate::renderer::layout::{compute_char_positions, split_into_clusters};
 use crate::renderer::render_tree::{BoundingBox, TextRunNode};
@@ -296,7 +298,7 @@ impl SkiaLayerRenderer {
         &self,
         canvas: &Canvas,
         bbox: &BoundingBox,
-        form: &crate::renderer::render_tree::FormObjectNode,
+        form: &LayerFormObjectPaint,
     ) {
         let parse_css = |value: &str, fallback: Color| {
             if let Some(hex) = value.strip_prefix('#') {
