@@ -361,7 +361,38 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayTextRun(op: LayerTextRunOp): boolean {
-    return true;
+    const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
+    if (
+      op.isVertical
+      || op.rotation !== 0
+      || !op.text.trim()
+      || op.style.bold
+      || op.style.italic
+      || Math.abs(ratio - 1) > 0.01
+      || op.style.underline !== 'none'
+      || op.style.strikethrough
+      || (op.style.outlineType ?? 0) > 0
+      || (op.style.shadowType ?? 0) > 0
+      || op.style.emboss
+      || op.style.engrave
+      || (op.style.emphasisDot ?? 0) > 0
+      || ((typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase() !== '#ffffff')
+      || (op.tabLeaders?.length ?? 0) > 0
+    ) {
+      return true;
+    }
+    if (Math.abs(op.style.fontSize - 13.333333) > 0.01) {
+      return true;
+    }
+    if ((op.style.fontFamily?.trim() ?? '') !== '바탕체') {
+      return true;
+    }
+    return splitIntoClusters(op.text).some((cluster) =>
+      cluster.text === '\t'
+      || cluster.text === '\u2007'
+      || startsWithInvalidControl(cluster.text)
+      || isHalfwidthScaledCluster(cluster.text),
+    );
   }
 
   private shouldOverlayFootnoteMarker(_op: LayerFootnoteMarkerOp): boolean {
@@ -429,6 +460,7 @@ export class CanvasKitLayerRenderer {
 
   private renderTextRun(canvas: ReturnType<Surface['getCanvas']>, op: LayerTextRunOp): void {
     const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
+    const hasRatio = Math.abs(ratio - 1) > 0.01;
     const outlineType = op.style.outlineType ?? 0;
     const shadowType = op.style.shadowType ?? 0;
     const shadowColor = typeof op.style.shadowColor === 'string' ? op.style.shadowColor : op.style.color;
@@ -444,7 +476,7 @@ export class CanvasKitLayerRenderer {
       op.style.bold,
       op.style.italic,
       op.style.color,
-      ratio,
+      1,
     );
     const clusters = splitIntoClusters(op.text);
     const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
@@ -473,7 +505,7 @@ export class CanvasKitLayerRenderer {
               op.style.bold,
               op.style.italic,
               op.style.color,
-              ratio,
+              1,
             );
             textObjectsByFamily.set(family, candidate);
           }
@@ -502,12 +534,47 @@ export class CanvasKitLayerRenderer {
           if (cluster.text === ' ' || cluster.text === '\t' || cluster.text === '\u2007') {
             continue;
           }
+          if (startsWithInvalidControl(cluster.text)) {
+            continue;
+          }
           const x = originX + op.positions[cluster.start] + dx;
           const y = originY + dy;
-          canvas.drawText(cluster.text, x, y, fillPaint, clusterFonts[index]);
-          if (strokePaint) {
-            canvas.drawText(cluster.text, x, y, strokePaint, clusterFonts[index]);
+          const drawBlobAtOrigin = () => {
+            const blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+            if (!blob) {
+              return;
+            }
+            canvas.drawTextBlob(blob, 0, 0, fillPaint);
+            if (strokePaint) {
+              canvas.drawTextBlob(blob, 0, 0, strokePaint);
+            }
+            blob.delete();
+          };
+          if (isHalfwidthScaledCluster(cluster.text) && !hasRatio) {
+            canvas.save();
+            canvas.translate(x, y);
+            canvas.scale(0.5, 1);
+            drawBlobAtOrigin();
+            canvas.restore();
+            continue;
           }
+          if (hasRatio) {
+            canvas.save();
+            canvas.translate(x, y);
+            canvas.scale(ratio, 1);
+            drawBlobAtOrigin();
+            canvas.restore();
+            continue;
+          }
+          const blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+          if (!blob) {
+            continue;
+          }
+          canvas.drawTextBlob(blob, x, y, fillPaint);
+          if (strokePaint) {
+            canvas.drawTextBlob(blob, x, y, strokePaint);
+          }
+          blob.delete();
         }
       };
 

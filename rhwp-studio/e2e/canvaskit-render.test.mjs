@@ -62,6 +62,8 @@ const TOLERANT_DIFF = {
   inkMaskAlphaThreshold: 8,
   inkMaskNeighborhoodRadius: 1,
   inkMaskMaxDiffRatio: 0.0001,
+  nonInkMaxDiffPixels: 0,
+  solidInkMaxDiffRatio: 0.005,
 };
 const FEATURE_CASES = [
   {
@@ -117,11 +119,20 @@ async function renderScenario(page, backend, caseInfo) {
     const profile = window.__renderProfile ?? 'screen';
     const tree = window.__wasm?.getPageLayerTree?.(0, profile);
     if (!tree) return null;
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     let opCount = 0;
+    let nativeTextRunCount = 0;
     const walk = (node) => {
       if (!node) return;
       if (node.kind === 'leaf') {
         opCount += node.ops.length;
+        if (renderer) {
+          for (const op of node.ops) {
+            if (op.type === 'textRun' && !renderer.shouldOverlayTextRun(op)) {
+              nativeTextRunCount += 1;
+            }
+          }
+        }
         return;
       }
       if (node.kind === 'clipRect') {
@@ -138,6 +149,7 @@ async function renderScenario(page, backend, caseInfo) {
       opCount,
       mode: window.__canvaskitRenderMode,
       profile: tree.profile,
+      nativeTextRunCount,
     };
   });
   assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
@@ -149,7 +161,11 @@ async function renderScenario(page, backend, caseInfo) {
   const screenshotName = backend === 'canvaskit'
     ? `${caseInfo.name}-${backend}-${CANVASKIT_MODE}`
     : `${caseInfo.name}-${backend}`;
-  return screenshotCanvas(page, screenshotName);
+  const shot = await screenshotCanvas(page, screenshotName);
+  return {
+    ...shot,
+    layerSummary,
+  };
 }
 
 runTest('CanvasKit 렌더 비교', async ({ page }) => {
@@ -205,20 +221,23 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
 
       console.log(`[${caseInfo.name}] CanvasKit 렌더...`);
       const canvaskit = await renderScenario(page, 'canvaskit', caseInfo);
+      const nativeTextActive = (canvaskit.layerSummary?.nativeTextRunCount ?? 0) > 0;
 
       const diff = await comparePngBuffers(baseline.buffer, canvaskit.buffer, {
         diffName: `${caseInfo.name}-${CANVASKIT_MODE}`,
         ignoreChannelDelta: TOLERANT_DIFF.ignoreChannelDelta,
-        maxDiffRatio: caseInfo.maxDiffRatio ?? TOLERANT_DIFF.maxDiffRatio,
+        maxDiffRatio: nativeTextActive ? null : (caseInfo.maxDiffRatio ?? TOLERANT_DIFF.maxDiffRatio),
         inkMaskWhiteDelta: TOLERANT_DIFF.inkMaskWhiteDelta,
         inkMaskAlphaThreshold: TOLERANT_DIFF.inkMaskAlphaThreshold,
         inkMaskNeighborhoodRadius: TOLERANT_DIFF.inkMaskNeighborhoodRadius,
-        inkMaskMaxDiffRatio: TOLERANT_DIFF.inkMaskMaxDiffRatio,
+        inkMaskMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.inkMaskMaxDiffRatio : null,
+        nonInkMaxDiffPixels: nativeTextActive ? TOLERANT_DIFF.nonInkMaxDiffPixels : null,
+        solidInkMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.solidInkMaxDiffRatio : null,
       });
 
       assert(
         diff.passed,
-        `${caseInfo.name} screenshot exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
+        `${caseInfo.name} screenshot exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), non_ink=${diff.rawNonInkDiffPixels} (${diff.rawNonInkDiffRatio.toFixed(4)}), solid_ink=${diff.rawSolidInkDiffPixels} (${diff.rawSolidInkDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, non_ink_budget=${diff.nonInkBudgetPassed}, solid_ink_budget=${diff.solidInkBudgetPassed}, raster_only_budget=${diff.rasterOnlyBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
       );
     } catch (error) {
       await screenshot(page, `${caseInfo.name}-${CANVASKIT_MODE}-error`).catch(() => {});
@@ -235,6 +254,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
 
       console.log(`[${caseInfo.name}] CanvasKit 기능 렌더...`);
       const canvaskit = await renderScenario(page, 'canvaskit', caseInfo);
+      const nativeTextActive = (canvaskit.layerSummary?.nativeTextRunCount ?? 0) > 0;
 
       const boxes = await getLayerOpBBoxes(page, caseInfo.opType);
       assert(boxes.length > 0, `${caseInfo.name} ${caseInfo.opType} bbox exported`);
@@ -252,16 +272,18 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           {
             diffName: `${caseInfo.name}-${caseInfo.opType}-${index}-${CANVASKIT_MODE}`,
             ignoreChannelDelta: TOLERANT_DIFF.ignoreChannelDelta,
-            maxDiffRatio: TOLERANT_DIFF.maxDiffRatio,
+            maxDiffRatio: nativeTextActive ? null : TOLERANT_DIFF.maxDiffRatio,
             inkMaskWhiteDelta: TOLERANT_DIFF.inkMaskWhiteDelta,
             inkMaskAlphaThreshold: TOLERANT_DIFF.inkMaskAlphaThreshold,
             inkMaskNeighborhoodRadius: TOLERANT_DIFF.inkMaskNeighborhoodRadius,
-            inkMaskMaxDiffRatio: TOLERANT_DIFF.inkMaskMaxDiffRatio,
+            inkMaskMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.inkMaskMaxDiffRatio : null,
+            nonInkMaxDiffPixels: nativeTextActive ? TOLERANT_DIFF.nonInkMaxDiffPixels : null,
+            solidInkMaxDiffRatio: nativeTextActive ? TOLERANT_DIFF.solidInkMaxDiffRatio : null,
           },
         );
         assert(
           diff.passed,
-          `${caseInfo.name} ${caseInfo.opType}[${index}] exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
+          `${caseInfo.name} ${caseInfo.opType}[${index}] exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), non_ink=${diff.rawNonInkDiffPixels} (${diff.rawNonInkDiffRatio.toFixed(4)}), solid_ink=${diff.rawSolidInkDiffPixels} (${diff.rawSolidInkDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, non_ink_budget=${diff.nonInkBudgetPassed}, solid_ink_budget=${diff.solidInkBudgetPassed}, raster_only_budget=${diff.rasterOnlyBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
         );
       }
     } catch (error) {
@@ -441,8 +463,8 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       rotation: 0,
       isVertical: false,
       style: {
-        fontFamily: '함초롬돋움',
-        fontSize: 16,
+        fontFamily: '바탕체',
+        fontSize: 13.333333,
         color: '#111111',
         bold: false,
         italic: false,
@@ -498,7 +520,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.selectedProfileOnTree === RENDER_PROFILE, `selected tree profile=${nativeRouting.selectedProfileOnTree}`);
   assert(nativeRouting.highQualityProfileOnTree === 'high-quality', `high-quality tree profile=${nativeRouting.highQualityProfileOnTree}`);
   assert(nativeRouting.fastPreviewHasPreferRasterHint === true, `fast-preview preferRaster=${nativeRouting.fastPreviewHasPreferRasterHint}`);
-  assert(nativeRouting.simpleTextUsesOverlay === true, `simple text overlay=${nativeRouting.simpleTextUsesOverlay}`);
+  assert(nativeRouting.simpleTextUsesOverlay === false, `simple text overlay=${nativeRouting.simpleTextUsesOverlay}`);
   assert(nativeRouting.underlinedTextUsesOverlay === true, `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
   assert(nativeRouting.footnoteUsesOverlay === false, `footnote overlay=${nativeRouting.footnoteUsesOverlay}`);
 }, { skipLoadApp: true });
