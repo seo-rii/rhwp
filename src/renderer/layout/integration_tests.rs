@@ -1234,6 +1234,75 @@ mod tests {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
     #[test]
+    fn test_skia_equation_prefers_interned_svg_resource_over_layout_fallback() {
+        use crate::paint::{LayerBuilder, LayerNodeKind, PaintOp, RenderProfile};
+        use crate::renderer::equation::layout::{EqLayout, LayoutKind};
+        use crate::renderer::equation::parser::EqParser;
+        use crate::renderer::equation::svg_render::render_equation_svg;
+        use crate::renderer::equation::tokenizer::tokenize;
+        use crate::renderer::render_tree::{
+            BoundingBox, EquationNode, PageNode, PageRenderTree, RenderNode, RenderNodeType,
+        };
+
+        let font_size = 22.0;
+        let ast = EqParser::new(tokenize(
+            "SUM _{i=1} ^{n} LEFT ( x_i ^2 + y_i ^2 RIGHT ) over SQRT {n}",
+        ))
+        .parse();
+        let layout_box = EqLayout::new(font_size).layout(&ast);
+        let svg_content = render_equation_svg(&layout_box, "#000000", font_size);
+
+        let mut tree = PageRenderTree::new(0, 320.0, 140.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 320.0,
+            height: 140.0,
+            section_index: 0,
+        });
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::Equation(EquationNode {
+                svg_content,
+                layout_box: layout_box.clone(),
+                color_str: "#000000".to_string(),
+                color: 0x00000000,
+                font_size,
+                section_index: Some(0),
+                para_index: Some(0),
+                control_index: Some(0),
+                cell_index: None,
+                cell_para_index: None,
+            }),
+            BoundingBox::new(18.0, 24.0, layout_box.width, layout_box.height),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let mut layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &mut layer_tree.root.kind else {
+            panic!("expected root layer group");
+        };
+        let equation_leaf = children
+            .iter_mut()
+            .find_map(|child| match &mut child.kind {
+                LayerNodeKind::Leaf { ops, .. } => ops.iter_mut().find_map(|op| match op {
+                    PaintOp::Equation { equation, .. } => Some(equation),
+                    _ => None,
+                }),
+                _ => None,
+            })
+            .expect("synthetic equation leaf not found");
+
+        equation_leaf.layout_box.width = 1.0;
+        equation_leaf.layout_box.height = 1.0;
+        equation_leaf.layout_box.baseline = 0.0;
+        equation_leaf.layout_box.kind = LayoutKind::Empty;
+
+        assert_skia_layer_tree_matches_svg("synthetic-equation-svg-resource", &layer_tree);
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    #[test]
     fn test_skia_screenshot_matches_layer_svg_for_basic_text_sample() {
         assert_skia_png_matches_layer_svg("samples/lseg-01-basic.hwp", 0);
     }

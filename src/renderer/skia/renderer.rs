@@ -280,15 +280,28 @@ impl SkiaLayerRenderer {
                 });
             }
             PaintOp::Equation { bbox, equation } => {
-                render_equation(
-                    canvas,
-                    &self.font_mgr,
-                    &equation.layout_box,
-                    bbox.x,
-                    bbox.y,
-                    equation.color,
-                    equation.font_size,
-                );
+                let mut rendered = false;
+                if let Some(svg_fragment) = resources.svg_fragment(equation.svg_resource_id) {
+                    rendered = draw_svg_fragment(
+                        canvas,
+                        svg_fragment,
+                        bbox.x as f32,
+                        bbox.y as f32,
+                        bbox.width as f32,
+                        bbox.height as f32,
+                    );
+                }
+                if !rendered {
+                    render_equation(
+                        canvas,
+                        &self.font_mgr,
+                        &equation.layout_box,
+                        bbox.x,
+                        bbox.y,
+                        equation.color,
+                        equation.font_size,
+                    );
+                }
             }
             PaintOp::FormObject { bbox, form } => self.render_form_object(canvas, bbox, form),
         }

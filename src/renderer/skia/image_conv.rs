@@ -173,9 +173,9 @@ pub fn draw_svg_fragment(
     y: f32,
     width: f32,
     height: f32,
-) {
+) -> bool {
     let Some(image) = decode_svg_fragment(svg_fragment, width, height) else {
-        return;
+        return false;
     };
 
     let dst = Rect::from_xywh(x, y, width, height);
@@ -188,6 +188,7 @@ pub fn draw_svg_fragment(
         SamplingOptions::new(FilterMode::Linear, MipmapMode::None),
         &paint,
     );
+    true
 }
 
 fn resolve_image_placement(
