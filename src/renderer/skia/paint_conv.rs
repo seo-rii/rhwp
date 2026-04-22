@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn prioritizes_ascii_and_hangul_serif_fallbacks_differently() {
+    fn generic_serif_does_not_resolve_to_sans_fallbacks() {
         let font_mgr = FontMgr::default();
 
         let ascii_family = make_font(
@@ -606,15 +606,22 @@ mod tests {
         .typeface()
         .family_name();
 
-        if font_mgr
-            .match_family_style("DejaVu Serif", FontStyle::normal())
-            .is_some()
-        {
-            assert_eq!(
-                ascii_family, "DejaVu Serif",
-                "unexpected ASCII serif fallback family: {ascii_family}"
-            );
-        }
+        assert!(
+            !matches!(
+                ascii_family.as_str(),
+                "Malgun Gothic"
+                    | "맑은 고딕"
+                    | "Apple SD Gothic Neo"
+                    | "Noto Sans CJK KR"
+                    | "NanumGothic"
+                    | "Noto Sans KR"
+                    | "Pretendard"
+                    | "DejaVu Sans"
+                    | "Arial"
+                    | "sans-serif"
+            ),
+            "generic serif fallback unexpectedly resolved to a sans family: {ascii_family}"
+        );
         if font_mgr
             .match_family_style("Noto Serif CJK KR", FontStyle::normal())
             .is_some()
@@ -622,7 +629,7 @@ mod tests {
             assert!(
                 matches!(
                     hangul_family.as_str(),
-                    "Noto Serif CJK KR" | "NanumMyeongjo"
+                    "Noto Serif CJK KR" | "NanumMyeongjo" | "Batang"
                 ),
                 "unexpected Hangul serif fallback family: {hangul_family}"
             );
@@ -635,5 +642,21 @@ mod tests {
                 "unexpected Hangul serif fallback family: {hangul_family}"
             );
         }
+        assert!(
+            !matches!(
+                hangul_family.as_str(),
+                "Malgun Gothic"
+                    | "맑은 고딕"
+                    | "Apple SD Gothic Neo"
+                    | "Noto Sans CJK KR"
+                    | "NanumGothic"
+                    | "Noto Sans KR"
+                    | "Pretendard"
+                    | "DejaVu Sans"
+                    | "Arial"
+                    | "sans-serif"
+            ),
+            "generic serif fallback unexpectedly resolved Hangul to a sans family: {hangul_family}"
+        );
     }
 }

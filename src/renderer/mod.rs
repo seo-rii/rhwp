@@ -537,12 +537,28 @@ pub fn px_to_hwpunit(px: f64, dpi: f64) -> i32 {
 /// 폰트 이름에 명조/바탕/궁서 등 세리프 계열 키워드가 포함되면 "serif",
 /// 그 외에는 "sans-serif"를 반환한다.
 pub fn generic_fallback(font_family: &str) -> &'static str {
+    const SANS_FALLBACK: &str =
+        "'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans CJK KR','NanumGothic','나눔고딕','Noto Sans KR','Pretendard',sans-serif";
+    const SERIF_FALLBACK: &str =
+        "'Batang','바탕','AppleMyungjo','Noto Serif CJK KR','NanumMyeongjo','나눔명조','Noto Serif KR',serif";
+    const MONO_FALLBACK: &str =
+        "'GulimChe','굴림체','D2Coding','NanumGothicCoding','나눔고딕코딩','Noto Sans Mono',monospace";
+
     if font_family.is_empty() {
         // Sans-serif: Windows → macOS/iOS → Android → 오픈소스 → generic
-        return "'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans CJK KR','NanumGothic','나눔고딕','Noto Sans KR','Pretendard',sans-serif";
+        return SANS_FALLBACK;
     }
     // 고정폭 키워드
     let lower = font_family.to_ascii_lowercase();
+    if lower == "sans-serif" {
+        return SANS_FALLBACK;
+    }
+    if lower == "serif" {
+        return SERIF_FALLBACK;
+    }
+    if lower == "monospace" {
+        return MONO_FALLBACK;
+    }
     if font_family.contains("굴림체")
         || font_family.contains("바탕체")
         || lower.contains("gulimche")
@@ -551,13 +567,13 @@ pub fn generic_fallback(font_family: &str) -> &'static str {
         || lower.contains("courier")
     {
         // Monospace: Windows → 오픈소스 → generic
-        return "'GulimChe','굴림체','D2Coding','NanumGothicCoding','나눔고딕코딩','Noto Sans Mono',monospace";
+        return MONO_FALLBACK;
     }
     // 세리프 키워드 (한글)
     if font_family.contains("바탕") || font_family.contains("명조") || font_family.contains("궁서")
     {
         // Serif: Windows → macOS/iOS → Android → 오픈소스 → generic
-        return "'Batang','바탕','AppleMyungjo','Noto Serif CJK KR','NanumMyeongjo','나눔명조','Noto Serif KR',serif";
+        return SERIF_FALLBACK;
     }
     // 세리프 키워드 (영문)
     if lower.contains("times")
@@ -567,10 +583,10 @@ pub fn generic_fallback(font_family: &str) -> &'static str {
         || lower.contains("batang")
         || lower.contains("gungsuh")
     {
-        return "'Batang','바탕','AppleMyungjo','Noto Serif CJK KR','NanumMyeongjo','나눔명조','Noto Serif KR',serif";
+        return SERIF_FALLBACK;
     }
     // Sans-serif: Windows → macOS/iOS → Android → 오픈소스 → generic
-    "'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans CJK KR','NanumGothic','나눔고딕','Noto Sans KR','Pretendard',sans-serif"
+    SANS_FALLBACK
 }
 
 // ============================================================
@@ -968,16 +984,19 @@ mod tests {
         assert_eq!(generic_fallback("HY견명조"), serif);
         assert_eq!(generic_fallback("Times New Roman"), serif);
         assert_eq!(generic_fallback("Palatino Linotype"), serif);
+        assert_eq!(generic_fallback("serif"), serif);
         // 산세리프 계열
         assert_eq!(generic_fallback("함초롬돋움"), sans);
         assert_eq!(generic_fallback("돋움"), sans);
         assert_eq!(generic_fallback("굴림"), sans);
         assert_eq!(generic_fallback("Arial"), sans);
         assert_eq!(generic_fallback("맑은 고딕"), sans);
+        assert_eq!(generic_fallback("sans-serif"), sans);
         // 고정폭 계열
         assert_eq!(generic_fallback("굴림체"), mono);
         assert_eq!(generic_fallback("바탕체"), mono);
         assert_eq!(generic_fallback("Courier New"), mono);
+        assert_eq!(generic_fallback("monospace"), mono);
         // 빈 문자열
         assert_eq!(generic_fallback(""), sans);
     }
