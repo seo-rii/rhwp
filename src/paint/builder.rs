@@ -423,4 +423,68 @@ mod tests {
             other => panic!("expected root group, got {other:?}"),
         }
     }
+
+    #[test]
+    fn drops_invisible_nodes_from_layer_tree() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        let mut hidden = RenderNode::new(
+            10,
+            RenderNodeType::Header,
+            BoundingBox::new(0.0, 0.0, 800.0, 48.0),
+        );
+        hidden.visible = false;
+        tree.root.children.push(hidden);
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => {
+                assert!(children.is_empty(), "invisible nodes should not survive lowering");
+            }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn preserves_source_node_id_for_clip_and_leaf_nodes() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        let body_id = 21;
+        let background_id = 22;
+        tree.root.children.push(RenderNode::new(
+            background_id,
+            RenderNodeType::PageBackground(PageBackgroundNode {
+                background_color: Some(0x00FFFFFF),
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: None,
+            }),
+            BoundingBox::new(0.0, 0.0, 800.0, 600.0),
+        ));
+        tree.root.children.push(RenderNode::new(
+            body_id,
+            RenderNodeType::Body {
+                clip_rect: Some(BoundingBox::new(10.0, 20.0, 300.0, 400.0)),
+            },
+            BoundingBox::new(10.0, 20.0, 300.0, 400.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => {
+                assert_eq!(children[0].source_node_id, Some(background_id));
+                assert_eq!(children[1].source_node_id, Some(body_id));
+                match &children[1].kind {
+                    LayerNodeKind::ClipRect { child, .. } => {
+                        assert_eq!(child.source_node_id, Some(body_id));
+                    }
+                    other => panic!("expected clip rect, got {other:?}"),
+                }
+            }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
 }
