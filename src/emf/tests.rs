@@ -158,7 +158,7 @@ fn header_prefix() -> Vec<u8> {
 
 fn push_record(b: &mut Vec<u8>, rt: u32, payload: &[u8]) {
     let size = 8u32 + payload.len() as u32;
-    assert!(size % 4 == 0, "record size must be 4-aligned");
+    assert!(size.is_multiple_of(4), "record size must be 4-aligned");
     b.extend_from_slice(&rt.to_le_bytes());
     b.extend_from_slice(&size.to_le_bytes());
     b.extend_from_slice(payload);

@@ -217,12 +217,15 @@ mod tests {
 
     #[test]
     fn snap_to_grid_is_the_only_true_default() {
-        assert!(PARASHAPE_SNAP_TO_GRID);
-        assert!(!PARASHAPE_FONT_LINE_HEIGHT);
-        assert!(!PARASHAPE_SUPPRESS_LINE_NUMBERS);
-        assert!(!PARASHAPE_CHECKED);
-        assert!(!CHARSHAPE_USE_FONT_SPACE);
-        assert!(!CHARSHAPE_USE_KERNING);
+        let defaults = std::hint::black_box([
+            PARASHAPE_SNAP_TO_GRID,
+            PARASHAPE_FONT_LINE_HEIGHT,
+            PARASHAPE_SUPPRESS_LINE_NUMBERS,
+            PARASHAPE_CHECKED,
+            CHARSHAPE_USE_FONT_SPACE,
+            CHARSHAPE_USE_KERNING,
+        ]);
+        assert_eq!(defaults, [true, false, false, false, false, false]);
     }
 
     #[test]
