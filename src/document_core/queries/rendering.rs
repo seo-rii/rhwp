@@ -31,7 +31,7 @@ impl DocumentCore {
         Ok(tree)
     }
 
-    fn build_page_layer_tree_for_output(
+    pub(crate) fn build_page_layer_tree_for_output(
         &self,
         page_num: u32,
         default_profile: RenderProfile,

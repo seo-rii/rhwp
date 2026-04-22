@@ -438,7 +438,8 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayLine(op: LayerLineOp): boolean {
-    return op.style.lineType === 'single'
+    return this.renderMode === 'compat'
+      && op.style.lineType === 'single'
       && op.style.startArrow === 'none'
       && op.style.endArrow === 'none'
       && !op.style.shadow;

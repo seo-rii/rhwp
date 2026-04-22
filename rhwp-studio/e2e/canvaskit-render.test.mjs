@@ -525,6 +525,25 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
       hasLayerTreeValueWithProfileApi: typeof wasmDoc?.getPageLayerTreeValueWithProfile === 'function',
+      valueApiIgnoresPatchedJsonParse: (() => {
+        if (typeof wasmDoc?.getPageLayerTreeValue !== 'function') {
+          return false;
+        }
+        const originalJsonParse = JSON.parse;
+        JSON.parse = () => {
+          throw new Error('patched JSON.parse should stay unused by layer tree value API');
+        };
+        try {
+          const tree = typeof wasmDoc.getPageLayerTreeValueWithProfile === 'function'
+            ? wasmDoc.getPageLayerTreeValueWithProfile(0, 'screen')
+            : wasmDoc.getPageLayerTreeValue(0);
+          return tree?.profile === 'screen' && tree?.root?.kind === 'group';
+        } catch (error) {
+          return `error:${error?.message ?? error}`;
+        } finally {
+          JSON.parse = originalJsonParse;
+        }
+      })(),
       selectedRenderProfile: window.__renderProfile,
       selectedProfileOnTree: window.__wasm?.getPageLayerTree?.(0, window.__renderProfile ?? 'screen')?.profile,
       highQualityProfileOnTree: window.__wasm?.getPageLayerTree?.(0, 'high-quality')?.profile,
@@ -555,6 +574,25 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       verticalTextUsesOverlay: renderer.shouldOverlayTextRun({
         ...simpleTextRun,
         isVertical: true,
+      }),
+      simpleLineUsesOverlay: renderer.shouldOverlayLine({
+        type: 'line',
+        bbox: { x: 0, y: 0, width: 64, height: 1 },
+        x1: 0,
+        y1: 0,
+        x2: 64,
+        y2: 0,
+        transform: { rotation: 0, horzFlip: false, vertFlip: false },
+        style: {
+          color: '#111111',
+          width: 1,
+          dash: 'solid',
+          lineType: 'single',
+          startArrow: 'none',
+          endArrow: 'none',
+          startArrowSize: 0,
+          endArrowSize: 0,
+        },
       }),
       underlinedTextUsesOverlay: renderer.shouldOverlayTextRun({
         ...simpleTextRun,
@@ -653,6 +691,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(!nativeRouting.error, nativeRouting.error || 'canvaskit native routing probe captured');
   assert(nativeRouting.hasLayerTreeValueApi, 'wasm layer tree JS-value export enabled');
   assert(nativeRouting.hasLayerTreeValueWithProfileApi, 'wasm layer tree JS-value export with profile enabled');
+  assert(nativeRouting.valueApiIgnoresPatchedJsonParse === true, `value API without JSON.parse=${nativeRouting.valueApiIgnoresPatchedJsonParse}`);
   assert(nativeRouting.selectedRenderProfile === RENDER_PROFILE, `selected render profile=${nativeRouting.selectedRenderProfile}`);
   assert(nativeRouting.selectedProfileOnTree === RENDER_PROFILE, `selected tree profile=${nativeRouting.selectedProfileOnTree}`);
   assert(nativeRouting.highQualityProfileOnTree === 'high-quality', `high-quality tree profile=${nativeRouting.highQualityProfileOnTree}`);
@@ -666,6 +705,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.ratioTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `ratio text overlay=${nativeRouting.ratioTextUsesOverlay}`);
   assert(nativeRouting.rotatedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `rotated text overlay=${nativeRouting.rotatedTextUsesOverlay}`);
   assert(nativeRouting.verticalTextUsesOverlay === true, `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
+  assert(nativeRouting.simpleLineUsesOverlay === (CANVASKIT_MODE === 'compat'), `simple line overlay=${nativeRouting.simpleLineUsesOverlay}`);
   assert(nativeRouting.underlinedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
   assert(nativeRouting.tableCellFillUsesOverlay === (CANVASKIT_MODE === 'compat'), `table-cell fill overlay=${nativeRouting.tableCellFillUsesOverlay}`);
   assert(nativeRouting.tableCellBoldTextUsesOverlay === true, `table-cell bold text overlay=${nativeRouting.tableCellBoldTextUsesOverlay}`);

@@ -3,6 +3,8 @@
 //! semantic render tree를 backend-friendly layer tree로 변환한다.
 
 pub mod builder;
+#[cfg(target_arch = "wasm32")]
+pub mod js_value;
 mod json;
 pub mod layer_tree;
 pub mod paint_op;

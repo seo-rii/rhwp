@@ -10,8 +10,6 @@
 // 하위 호환성: tests.rs에서 super::json_escape 등으로 접근 가능하도록 재내보내기
 pub(crate) use crate::document_core::helpers::*;
 
-#[cfg(target_arch = "wasm32")]
-use js_sys::JSON;
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
@@ -23,6 +21,9 @@ use crate::model::document::{Document, Section};
 use crate::model::page::ColumnDef;
 use crate::model::paragraph::Paragraph;
 use crate::model::path::{path_from_flat, DocumentPath, PathSegment};
+#[cfg(target_arch = "wasm32")]
+use crate::paint::js_value::page_layer_tree_to_js_value;
+use crate::paint::RenderProfile;
 use crate::renderer::canvas::CanvasRenderer;
 use crate::renderer::composer::{
     compose_paragraph, compose_section, reflow_line_segs, ComposedParagraph,
@@ -39,7 +40,6 @@ use crate::renderer::style_resolver::{
 };
 use crate::renderer::svg::SvgRenderer;
 use crate::renderer::DEFAULT_DPI;
-use crate::paint::RenderProfile;
 
 impl From<HwpError> for JsValue {
     fn from(err: HwpError) -> Self {
@@ -279,10 +279,10 @@ impl HwpDocument {
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen(js_name = getPageLayerTreeValue)]
     pub fn get_page_layer_tree_value(&self, page_num: u32) -> Result<JsValue, JsValue> {
-        let json = self
-            .get_page_layer_tree_native(page_num)
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, RenderProfile::Screen)
             .map_err(JsValue::from)?;
-        JSON::parse(&json)
+        Ok(page_layer_tree_to_js_value(&tree))
     }
 
     /// 페이지 레이어 트리를 JS object로 반환한다. profile을 명시적으로 덮어쓸 수 있다.
@@ -294,10 +294,10 @@ impl HwpDocument {
         profile_name: &str,
     ) -> Result<JsValue, JsValue> {
         let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
-        let json = self
-            .get_page_layer_tree_with_profile_native(page_num, profile)
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, profile)
             .map_err(JsValue::from)?;
-        JSON::parse(&json)
+        Ok(page_layer_tree_to_js_value(&tree))
     }
 
     /// 페이지 정보를 JSON 문자열로 반환한다.
@@ -3501,19 +3501,19 @@ impl HwpDocument {
                 None => "null".to_string(),
             };
             let kind_name = match &w.kind {
-                crate::document_core::validation::WarningKind::LinesegArrayEmpty =>
-                    "LinesegArrayEmpty",
-                crate::document_core::validation::WarningKind::LinesegUncomputed =>
-                    "LinesegUncomputed",
-                crate::document_core::validation::WarningKind::LinesegTextRunReflow =>
-                    "LinesegTextRunReflow",
+                crate::document_core::validation::WarningKind::LinesegArrayEmpty => {
+                    "LinesegArrayEmpty"
+                }
+                crate::document_core::validation::WarningKind::LinesegUncomputed => {
+                    "LinesegUncomputed"
+                }
+                crate::document_core::validation::WarningKind::LinesegTextRunReflow => {
+                    "LinesegTextRunReflow"
+                }
             };
             warning_parts.push(format!(
                 r#"{{"section":{},"paragraph":{},"kind":"{}","cell":{}}}"#,
-                w.section_idx,
-                w.paragraph_idx,
-                kind_name,
-                cell_part,
+                w.section_idx, w.paragraph_idx, kind_name, cell_part,
             ));
         }
 
