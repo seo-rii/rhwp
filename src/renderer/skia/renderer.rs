@@ -3,11 +3,12 @@ use skia_safe::{
 };
 
 use crate::paint::{
-    LayerFormObjectPaint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
+    LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree, PaintOp,
+    ResourceArena,
 };
 use crate::renderer::layer_renderer::LayerRasterRenderer;
-use crate::renderer::layout::{compute_char_positions, split_into_clusters};
-use crate::renderer::render_tree::{BoundingBox, TextRunNode};
+use crate::renderer::layout::split_into_clusters;
+use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::{LineRenderType, UnderlineType};
 
 use super::equation_conv::render_equation;
@@ -307,12 +308,7 @@ impl SkiaLayerRenderer {
         }
     }
 
-    fn render_form_object(
-        &self,
-        canvas: &Canvas,
-        bbox: &BoundingBox,
-        form: &LayerFormObjectPaint,
-    ) {
+    fn render_form_object(&self, canvas: &Canvas, bbox: &BoundingBox, form: &LayerFormObjectPaint) {
         let parse_css = |value: &str, fallback: Color| {
             if let Some(hex) = value.strip_prefix('#') {
                 if hex.len() == 6 {
@@ -564,7 +560,7 @@ impl SkiaLayerRenderer {
         }
     }
 
-    fn render_text_run(&self, canvas: &Canvas, bbox: &BoundingBox, run: &TextRunNode) {
+    fn render_text_run(&self, canvas: &Canvas, bbox: &BoundingBox, run: &LayerTextRunPaint) {
         let base_font_size = if run.style.font_size > 0.0 {
             run.style.font_size
         } else {
@@ -581,9 +577,9 @@ impl SkiaLayerRenderer {
         }
 
         let paint = make_text_paint(&render_style);
-        let char_positions = compute_char_positions(&run.text, &run.style);
         let clusters = split_into_clusters(&run.text);
         let metrics_font = make_font(&render_style, &self.font_mgr, &run.text);
+        let char_positions = &run.positions;
         let text_width = char_positions.last().copied().unwrap_or(0.0) as f32;
         let shade_rgb = run.style.shade_color & 0x00FF_FFFF;
         if text_width > 0.0 && shade_rgb != 0x00FF_FFFF && shade_rgb != 0 {

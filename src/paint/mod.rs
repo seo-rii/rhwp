@@ -14,7 +14,7 @@ pub use layer_tree::{CacheHint, ClipKind, GroupKind, LayerNode, LayerNodeKind, P
 pub use paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerRectanglePaint, PaintOp,
+    LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PaintOp,
 };
 pub use profile::RenderProfile;
 pub use resources::{ImageResourceId, ResourceArena, SvgResourceId};

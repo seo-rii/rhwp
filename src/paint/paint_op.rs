@@ -3,11 +3,10 @@ use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::model::ColorRef;
 use crate::paint::resources::{ImageResourceId, SvgResourceId};
+use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::equation::layout::LayoutBox;
-use crate::renderer::render_tree::{BoundingBox, ShapeTransform, TextRunNode};
-use crate::renderer::{
-    GradientFillInfo, LineStyle, PathCommand, ShapeStyle,
-};
+use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
+use crate::renderer::{GradientFillInfo, LineStyle, PathCommand, ShapeStyle, TextStyle};
 
 /// backend가 재생하는 leaf paint operation.
 ///
@@ -21,7 +20,7 @@ pub enum PaintOp {
     },
     TextRun {
         bbox: BoundingBox,
-        run: TextRunNode,
+        run: LayerTextRunPaint,
     },
     FootnoteMarker {
         bbox: BoundingBox,
@@ -63,6 +62,20 @@ pub struct LayerFootnoteMarkerPaint {
     pub font_family: String,
     pub base_font_size: f64,
     pub color: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerTextRunPaint {
+    pub text: String,
+    pub style: TextStyle,
+    pub positions: Vec<f64>,
+    pub baseline: f64,
+    pub rotation: f64,
+    pub is_vertical: bool,
+    pub char_overlap: Option<CharOverlapInfo>,
+    pub field_marker: FieldMarkerType,
+    pub is_para_end: bool,
+    pub is_line_break_end: bool,
 }
 
 #[derive(Debug, Clone)]

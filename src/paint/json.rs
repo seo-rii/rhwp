@@ -6,13 +6,13 @@ use crate::document_core::helpers::{color_ref_to_css, json_escape as raw_json_es
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
+    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree, PaintOp,
+    ResourceArena,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
-use crate::renderer::layout::compute_char_positions;
-use crate::renderer::render_tree::{BoundingBox, ShapeTransform, TextRunNode};
+use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
 use crate::renderer::{
     ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, PatternFillInfo,
     ShadowStyle, ShapeStyle, StrokeDash, TabLeaderInfo, TextStyle,
@@ -391,10 +391,9 @@ fn write_text_style(buf: &mut String, style: &TextStyle) {
     buf.push('}');
 }
 
-fn write_text_positions(buf: &mut String, run: &TextRunNode) {
-    let positions = compute_char_positions(&run.text, &run.style);
+fn write_text_positions(buf: &mut String, run: &LayerTextRunPaint) {
     buf.push('[');
-    for (idx, position) in positions.iter().enumerate() {
+    for (idx, position) in run.positions.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
         }
@@ -895,16 +894,15 @@ mod tests {
     use super::*;
     use crate::paint::{
         CacheHint, ClipKind, LayerEquationPaint, LayerLinePaint, LayerNode, LayerPathPaint,
-        LayerRectanglePaint, PageLayerTree, ResourceArena,
+        LayerRectanglePaint, LayerTextRunPaint, PageLayerTree, ResourceArena,
     };
-    use crate::renderer::render_tree::TextRunNode;
 
     #[test]
     fn serializes_text_and_shape_ops_for_browser_replay() {
         let mut resources = ResourceArena::default();
         let text = PaintOp::TextRun {
             bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
-            run: TextRunNode {
+            run: LayerTextRunPaint {
                 text: "가A".to_string(),
                 style: TextStyle {
                     font_family: "Noto Sans KR".to_string(),
@@ -914,18 +912,12 @@ mod tests {
                     underline: UnderlineType::Bottom,
                     ..Default::default()
                 },
-                char_shape_id: None,
-                para_shape_id: None,
-                section_index: None,
-                para_index: None,
-                char_start: None,
-                cell_context: None,
+                positions: vec![0.0, 16.0, 24.0],
                 is_para_end: false,
                 is_line_break_end: false,
                 rotation: 0.0,
                 is_vertical: false,
                 char_overlap: None,
-                border_fill_id: 0,
                 baseline: 13.0,
                 field_marker: Default::default(),
             },
@@ -974,21 +966,7 @@ mod tests {
         );
 
         let json = tree.to_json();
-        let positions = compute_char_positions(
-            "가A",
-            &TextStyle {
-                font_family: "Noto Sans KR".to_string(),
-                font_size: 16.0,
-                color: 0x00010203,
-                bold: true,
-                underline: UnderlineType::Bottom,
-                ..Default::default()
-            },
-        );
-        let positions_json = format!(
-            "\"positions\":[{:.6},{:.6},{:.6}]",
-            positions[0], positions[1], positions[2]
-        );
+        let positions_json = format!("\"positions\":[{:.6},{:.6},{:.6}]", 0.0, 16.0, 24.0);
 
         assert!(json.contains("\"kind\":\"leaf\""));
         assert!(json.contains("\"cacheHint\":\"none\""));

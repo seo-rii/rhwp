@@ -16,8 +16,8 @@ use super::{
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    ClipKind, GroupKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint,
-    LayerNode, LayerNodeKind, LayerPageBackgroundPaint, PageLayerTree, PaintOp,
+    ClipKind, GroupKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint, LayerNode,
+    LayerNodeKind, LayerPageBackgroundPaint, LayerTextRunPaint, PageLayerTree, PaintOp,
     ResourceArena,
 };
 use base64::Engine;
@@ -389,6 +389,260 @@ impl SvgRenderer {
         };
         if let Some(label) = label {
             self.emit_control_code_marker(label, bounds);
+        }
+    }
+
+    fn draw_text_with_positions(
+        &mut self,
+        text: &str,
+        x: f64,
+        y: f64,
+        style: &TextStyle,
+        positions: Option<&[f64]>,
+    ) {
+        let color = color_to_svg(style.color);
+        let font_size = if style.font_size > 0.0 {
+            style.font_size
+        } else {
+            12.0
+        };
+        let font_family = Self::font_family_with_svg_fallbacks(&style.font_family);
+
+        let ratio = if style.ratio > 0.0 { style.ratio } else { 1.0 };
+        let has_ratio = (ratio - 1.0).abs() > 0.01;
+
+        let mut base_attrs = format!(
+            "font-family=\"{}\" font-size=\"{}\"",
+            escape_xml(&font_family),
+            font_size,
+        );
+        if style.bold {
+            base_attrs.push_str(" font-weight=\"bold\"");
+        }
+        if style.italic {
+            base_attrs.push_str(" font-style=\"italic\"");
+        }
+
+        let owned_positions;
+        let char_positions = if let Some(positions) = positions {
+            positions
+        } else {
+            owned_positions = compute_char_positions(text, style);
+            &owned_positions
+        };
+        let clusters = split_into_clusters(text);
+
+        if style.shadow_type > 0 {
+            let shadow_color = color_to_svg(style.shadow_color);
+            let shadow_attrs = format!("{} fill=\"{}\"", base_attrs, shadow_color);
+            let dx = style.shadow_offset_x;
+            let dy = style.shadow_offset_y;
+            for (char_idx, cluster_str) in &clusters {
+                if cluster_str == " " || cluster_str == "\t" {
+                    continue;
+                }
+                let char_x = x + char_positions[*char_idx] + dx;
+                let char_y = y + dy;
+                if has_ratio {
+                    self.output.push_str(&format!(
+                        "<text transform=\"translate({},{}) scale({:.4},1)\" {}>{}</text>\n",
+                        char_x,
+                        char_y,
+                        ratio,
+                        shadow_attrs,
+                        escape_xml(cluster_str),
+                    ));
+                } else {
+                    self.output.push_str(&format!(
+                        "<text x=\"{}\" y=\"{}\" {}>{}</text>\n",
+                        char_x,
+                        char_y,
+                        shadow_attrs,
+                        escape_xml(cluster_str),
+                    ));
+                }
+            }
+        }
+
+        let common_attrs = format!("{} fill=\"{}\"", base_attrs, color);
+        for (char_idx, cluster_str) in &clusters {
+            if cluster_str == " " || cluster_str == "\t" {
+                continue;
+            }
+            let char_x = x + char_positions[*char_idx];
+
+            if has_ratio {
+                self.output.push_str(&format!(
+                    "<text transform=\"translate({},{}) scale({:.4},1)\" {}>{}</text>\n",
+                    char_x,
+                    y,
+                    ratio,
+                    common_attrs,
+                    escape_xml(cluster_str),
+                ));
+            } else {
+                self.output.push_str(&format!(
+                    "<text x=\"{}\" y=\"{}\" {}>{}</text>\n",
+                    char_x,
+                    y,
+                    common_attrs,
+                    escape_xml(cluster_str),
+                ));
+            }
+        }
+
+        if !matches!(style.underline, UnderlineType::None) {
+            let text_width = *char_positions.last().unwrap_or(&0.0);
+            let underline_color = if style.underline_color != 0 {
+                color_to_svg(style.underline_color)
+            } else {
+                color.to_string()
+            };
+            let underline_y = match style.underline {
+                UnderlineType::Top => y - font_size + 1.0,
+                _ => y + 2.0,
+            };
+            self.draw_line_shape(
+                x,
+                underline_y,
+                x + text_width,
+                underline_y,
+                &underline_color,
+                style.underline_shape,
+            );
+        }
+        if style.strikethrough {
+            let text_width = *char_positions.last().unwrap_or(&0.0);
+            let strike_y = y - font_size * 0.3;
+            let strike_color = if style.strike_color != 0 {
+                color_to_svg(style.strike_color)
+            } else {
+                color.to_string()
+            };
+            self.draw_line_shape(
+                x,
+                strike_y,
+                x + text_width,
+                strike_y,
+                &strike_color,
+                style.strike_shape,
+            );
+        }
+
+        if style.emphasis_dot > 0 {
+            let dot_char = match style.emphasis_dot {
+                1 => "●",
+                2 => "○",
+                3 => "ˇ",
+                4 => "˜",
+                5 => "･",
+                6 => "˸",
+                _ => "",
+            };
+            if !dot_char.is_empty() {
+                let dot_size = font_size * 0.3;
+                let dot_y = y - font_size * 1.05;
+                for &cx in &char_positions[..char_positions.len().saturating_sub(1)] {
+                    let dot_x = x + cx + (font_size * style.ratio * 0.5);
+                    self.output.push_str(&format!(
+                        "<text x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"middle\" fill=\"{}\">{}</text>\n",
+                        dot_x, dot_y, dot_size, color, dot_char,
+                    ));
+                }
+            }
+        }
+
+        for leader in &style.tab_leaders {
+            if leader.fill_type == 0 {
+                continue;
+            }
+            let lx1 = x + leader.start_x;
+            let lx2 = x + leader.end_x;
+            let ly = y - font_size * 0.35;
+            match leader.fill_type {
+                1 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+                2 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"3 3\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+                3 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"1 2\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+                4 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"6 2 1 2\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+                5 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"6 2 1 2 1 2\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+                6 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"8 4\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+                7 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.7\" stroke-dasharray=\"0.1 2.5\" stroke-linecap=\"round\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+                8 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
+                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
+                        lx1, ly - 1.0, lx2, ly - 1.0, color,
+                        lx1, ly + 1.0, lx2, ly + 1.0, color,
+                    ));
+                }
+                9 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
+                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                        lx1, ly - 1.2, lx2, ly - 1.2, color,
+                        lx1, ly + 0.8, lx2, ly + 0.8, color,
+                    ));
+                }
+                10 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n\
+                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
+                        lx1, ly - 0.8, lx2, ly - 0.8, color,
+                        lx1, ly + 1.2, lx2, ly + 1.2, color,
+                    ));
+                }
+                11 => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
+                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n\
+                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
+                        lx1, ly - 2.0, lx2, ly - 2.0, color,
+                        lx1, ly, lx2, ly, color,
+                        lx1, ly + 2.0, lx2, ly + 2.0, color,
+                    ));
+                }
+                _ => {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"1 2\"/>\n",
+                        lx1, ly, lx2, ly, color,
+                    ));
+                }
+            }
         }
     }
 
@@ -898,11 +1152,7 @@ impl SvgRenderer {
         }
     }
 
-    fn render_layer_text_run(
-        &mut self,
-        bbox: BoundingBox,
-        run: &crate::renderer::render_tree::TextRunNode,
-    ) {
+    fn render_layer_text_run(&mut self, bbox: BoundingBox, run: &LayerTextRunPaint) {
         if self.font_embed_mode != FontEmbedMode::None && !run.style.font_family.is_empty() {
             let codepoints = self
                 .font_codepoints
@@ -962,7 +1212,13 @@ impl SvgRenderer {
                 ));
             }
         } else {
-            self.draw_text(&run.text, bbox.x, bbox.y + run.baseline, &run.style);
+            self.draw_text_with_positions(
+                &run.text,
+                bbox.x,
+                bbox.y + run.baseline,
+                &run.style,
+                Some(&run.positions),
+            );
         }
         if self.show_paragraph_marks || self.show_control_codes {
             let is_marker = !matches!(
@@ -975,13 +1231,12 @@ impl SvgRenderer {
                 12.0
             };
             if !run.text.is_empty() && !is_marker {
-                let char_positions = compute_char_positions(&run.text, &run.style);
                 let mark_font_size = font_size * 0.5;
                 for (i, c) in run.text.chars().enumerate() {
                     if c == ' ' {
-                        let cx = bbox.x + char_positions[i];
-                        let next_x = if i + 1 < char_positions.len() {
-                            bbox.x + char_positions[i + 1]
+                        let cx = bbox.x + run.positions[i];
+                        let next_x = if i + 1 < run.positions.len() {
+                            bbox.x + run.positions[i + 1]
                         } else {
                             bbox.x + bbox.width
                         };
@@ -993,7 +1248,7 @@ impl SvgRenderer {
                             mark_font_size,
                         ));
                     } else if c == '\t' {
-                        let cx = bbox.x + char_positions[i];
+                        let cx = bbox.x + run.positions[i];
                         self.output.push_str(&format!(
                             "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">\u{2192}</text>\n",
                             cx,
@@ -2532,268 +2787,7 @@ impl Renderer for SvgRenderer {
     }
 
     fn draw_text(&mut self, text: &str, x: f64, y: f64, style: &TextStyle) {
-        let color = color_to_svg(style.color);
-        let font_size = if style.font_size > 0.0 {
-            style.font_size
-        } else {
-            12.0
-        };
-        let font_family = Self::font_family_with_svg_fallbacks(&style.font_family);
-
-        let ratio = if style.ratio > 0.0 { style.ratio } else { 1.0 };
-        let has_ratio = (ratio - 1.0).abs() > 0.01;
-
-        // 공통 스타일 속성 구성 (fill 제외 — 그림자/원본에서 각각 설정)
-        let mut base_attrs = format!(
-            "font-family=\"{}\" font-size=\"{}\"",
-            escape_xml(&font_family),
-            font_size,
-        );
-        if style.bold {
-            base_attrs.push_str(" font-weight=\"bold\"");
-        }
-        if style.italic {
-            base_attrs.push_str(" font-style=\"italic\"");
-        }
-
-        // 클러스터 단위 렌더링: 옛한글 자모 조합 시퀀스를 하나의 <text>로 묶음
-        let char_positions = compute_char_positions(text, style);
-        let clusters = split_into_clusters(text);
-
-        // 그림자 렌더링 (원본 아래에 오프셋된 그림자색 텍스트)
-        if style.shadow_type > 0 {
-            let shadow_color = color_to_svg(style.shadow_color);
-            let shadow_attrs = format!("{} fill=\"{}\"", base_attrs, shadow_color);
-            let dx = style.shadow_offset_x;
-            let dy = style.shadow_offset_y;
-            for (char_idx, cluster_str) in &clusters {
-                if cluster_str == " " || cluster_str == "\t" {
-                    continue;
-                }
-                let char_x = x + char_positions[*char_idx] + dx;
-                let char_y = y + dy;
-                if has_ratio {
-                    self.output.push_str(&format!(
-                        "<text transform=\"translate({},{}) scale({:.4},1)\" {}>{}</text>\n",
-                        char_x,
-                        char_y,
-                        ratio,
-                        shadow_attrs,
-                        escape_xml(cluster_str),
-                    ));
-                } else {
-                    self.output.push_str(&format!(
-                        "<text x=\"{}\" y=\"{}\" {}>{}</text>\n",
-                        char_x,
-                        char_y,
-                        shadow_attrs,
-                        escape_xml(cluster_str),
-                    ));
-                }
-            }
-        }
-
-        // 원본 텍스트 렌더링
-        let common_attrs = format!("{} fill=\"{}\"", base_attrs, color);
-        for (char_idx, cluster_str) in &clusters {
-            if cluster_str == " " || cluster_str == "\t" {
-                continue;
-            }
-            let char_x = x + char_positions[*char_idx];
-
-            if has_ratio {
-                self.output.push_str(&format!(
-                    "<text transform=\"translate({},{}) scale({:.4},1)\" {}>{}</text>\n",
-                    char_x,
-                    y,
-                    ratio,
-                    common_attrs,
-                    escape_xml(cluster_str),
-                ));
-            } else {
-                self.output.push_str(&format!(
-                    "<text x=\"{}\" y=\"{}\" {}>{}</text>\n",
-                    char_x,
-                    y,
-                    common_attrs,
-                    escape_xml(cluster_str),
-                ));
-            }
-        }
-
-        // 밑줄 처리
-        if !matches!(style.underline, UnderlineType::None) {
-            let text_width = *char_positions.last().unwrap_or(&0.0);
-            let ul_color = if style.underline_color != 0 {
-                color_to_svg(style.underline_color)
-            } else {
-                color.to_string()
-            };
-            let ul_y = match style.underline {
-                UnderlineType::Top => y - font_size + 1.0,
-                _ => y + 2.0,
-            };
-            self.draw_line_shape(
-                x,
-                ul_y,
-                x + text_width,
-                ul_y,
-                &ul_color,
-                style.underline_shape,
-            );
-        }
-
-        // 취소선 처리
-        if style.strikethrough {
-            let text_width = *char_positions.last().unwrap_or(&0.0);
-            let strike_y = y - font_size * 0.3;
-            let st_color = if style.strike_color != 0 {
-                color_to_svg(style.strike_color)
-            } else {
-                color.to_string()
-            };
-            self.draw_line_shape(
-                x,
-                strike_y,
-                x + text_width,
-                strike_y,
-                &st_color,
-                style.strike_shape,
-            );
-        }
-
-        // 강조점 처리
-        if style.emphasis_dot > 0 {
-            let dot_char = match style.emphasis_dot {
-                1 => "●",
-                2 => "○",
-                3 => "ˇ",
-                4 => "˜",
-                5 => "･",
-                6 => "˸",
-                _ => "",
-            };
-            if !dot_char.is_empty() {
-                let dot_size = font_size * 0.3;
-                let dot_y = y - font_size * 1.05;
-                for &cx in &char_positions[..char_positions.len().saturating_sub(1)] {
-                    let dot_x = x + cx + (font_size * style.ratio * 0.5);
-                    self.output.push_str(&format!(
-                        "<text x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"middle\" fill=\"{}\">{}</text>\n",
-                        dot_x, dot_y, dot_size, color, dot_char,
-                    ));
-                }
-            }
-        }
-
-        // 탭 리더(채움 기호) 렌더링
-        for leader in &style.tab_leaders {
-            if leader.fill_type == 0 {
-                continue;
-            }
-            let lx1 = x + leader.start_x;
-            let lx2 = x + leader.end_x;
-            let ly = y - font_size * 0.35; // 글자 세로 중앙 (베이스라인에서 x-height 절반)
-                                           // 채울 모양 12종: 0=없음, 1=실선, 2=파선, 3=점선, 4=일점쇄선,
-                                           // 5=이점쇄선, 6=긴파선, 7=원형점선, 8=이중실선,
-                                           // 9=얇고굵은이중선, 10=굵고얇은이중선, 11=얇고굵고얇은삼중선
-            match leader.fill_type {
-                1 => {
-                    // 실선
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-                2 => {
-                    // 파선 - - -
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"3 3\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-                3 => {
-                    // 점선 ···
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"1 2\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-                4 => {
-                    // 일점쇄선 -·-·
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"6 2 1 2\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-                5 => {
-                    // 이점쇄선 -··-··
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"6 2 1 2 1 2\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-                6 => {
-                    // 긴파선 ── ──
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"8 4\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-                7 => {
-                    // 원형점선 ●●●
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.7\" stroke-dasharray=\"0.1 2.5\" stroke-linecap=\"round\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-                8 => {
-                    // 이중실선 ═══
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
-                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
-                        lx1, ly - 1.0, lx2, ly - 1.0, color,
-                        lx1, ly + 1.0, lx2, ly + 1.0, color,
-                    ));
-                }
-                9 => {
-                    // 얇고 굵은 이중선
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
-                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
-                        lx1, ly - 1.2, lx2, ly - 1.2, color,
-                        lx1, ly + 0.8, lx2, ly + 0.8, color,
-                    ));
-                }
-                10 => {
-                    // 굵고 얇은 이중선
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n\
-                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
-                        lx1, ly - 0.8, lx2, ly - 0.8, color,
-                        lx1, ly + 1.2, lx2, ly + 1.2, color,
-                    ));
-                }
-                11 => {
-                    // 얇고 굵고 얇은 삼중선
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
-                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n\
-                         <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
-                        lx1, ly - 2.0, lx2, ly - 2.0, color,
-                        lx1, ly, lx2, ly, color,
-                        lx1, ly + 2.0, lx2, ly + 2.0, color,
-                    ));
-                }
-                _ => {
-                    // 알 수 없는 타입: 점선 폴백
-                    self.output.push_str(&format!(
-                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"1 2\"/>\n",
-                        lx1, ly, lx2, ly, color,
-                    ));
-                }
-            }
-        }
+        self.draw_text_with_positions(text, x, y, style, None);
     }
 
     fn draw_rect(

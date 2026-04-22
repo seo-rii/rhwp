@@ -4,10 +4,11 @@ use crate::paint::layer_tree::{
 use crate::paint::paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerRectanglePaint, PaintOp,
+    LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PaintOp,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
+use crate::renderer::layout::compute_char_positions;
 use crate::renderer::render_tree::{PageRenderTree, RenderNode, RenderNodeType};
 
 /// semantic render tree를 visual layer tree로 내린다.
@@ -75,7 +76,18 @@ impl LayerBuilder {
                 node,
                 PaintOp::TextRun {
                     bbox: node.bbox,
-                    run: run.clone(),
+                    run: LayerTextRunPaint {
+                        text: run.text.clone(),
+                        style: run.style.clone(),
+                        positions: compute_char_positions(&run.text, &run.style),
+                        baseline: run.baseline,
+                        rotation: run.rotation,
+                        is_vertical: run.is_vertical,
+                        char_overlap: run.char_overlap.clone(),
+                        field_marker: run.field_marker,
+                        is_para_end: run.is_para_end,
+                        is_line_break_end: run.is_line_break_end,
+                    },
                 },
             )),
             RenderNodeType::FootnoteMarker(marker) => Some(self.build_paint_node(
@@ -243,10 +255,7 @@ impl LayerBuilder {
         }
     }
 
-    fn build_line_paint(
-        &self,
-        line: &crate::renderer::render_tree::LineNode,
-    ) -> LayerLinePaint {
+    fn build_line_paint(&self, line: &crate::renderer::render_tree::LineNode) -> LayerLinePaint {
         LayerLinePaint {
             x1: line.x1,
             y1: line.y1,
@@ -280,10 +289,7 @@ impl LayerBuilder {
         }
     }
 
-    fn build_path_paint(
-        &self,
-        path: &crate::renderer::render_tree::PathNode,
-    ) -> LayerPathPaint {
+    fn build_path_paint(&self, path: &crate::renderer::render_tree::PathNode) -> LayerPathPaint {
         LayerPathPaint {
             commands: path.commands.clone(),
             style: path.style.clone(),
