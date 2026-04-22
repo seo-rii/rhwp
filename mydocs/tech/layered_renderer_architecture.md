@@ -140,9 +140,11 @@ layer tree에서 사라지면 안 된다.
 - 구현: `src/renderer/svg_layer.rs`
 - 입력: `PageLayerTree`
 
-`SvgLayerRenderer`는 layer tree를 다시 temporary render tree 형태로 조립해
-기존 SVG leaf 로직을 재사용한다.
-즉 layer tree 기반이지만, SVG 출력 품질을 맞추기 위해 기존 SVG renderer를 완전히 버리지는 않았다.
+`SvgLayerRenderer`는 현재 `PageLayerTree`를 직접 순회하며 SVG를 재생한다.
+초기 단계의 temporary render tree bridge는 제거되었고, clip/group/leaf op를
+직접 SVG 출력으로 내리는 구조다.
+다만 text/path/image 같은 primitive emission 일부는 `src/renderer/svg.rs`와
+같은 lower-level SVG 출력 규칙을 공유한다.
 
 ### 6.3 Browser Canvas2D
 
@@ -188,7 +190,8 @@ native Skia는 non-wasm 타깃에서 layered raster backend 역할을 한다.
 ### 6.6 RenderProfile 기본값
 
 `RenderProfile`은 layered 출력 경로가 어떤 품질/캐시 힌트를 기본으로 택할지 나타내는 enum이다.
-아직 모든 profile이 큰 동작 차이를 만드는 것은 아니지만, 호출 경로에는 기본값이 명시되어 있다.
+이 값은 이제 `PageLayerTree` JSON 경계에도 `profile` 필드로 함께 직렬화된다.
+즉 browser backend도 단순히 `cacheHint`만 보는 것이 아니라, Rust가 선택한 출력 profile 자체를 확인할 수 있다.
 
 | 경로 | 기본 profile |
 |---|---|
@@ -199,12 +202,16 @@ native Skia는 non-wasm 타깃에서 layered raster backend 역할을 한다.
 추가로 `RHWP_RENDER_PROFILE` 환경 변수로 `screen`, `print`, `high-quality`, `fast-preview`를 지정해
 기본값을 덮어쓸 수 있다.
 
+browser studio 쪽에서는 `?renderProfile=screen|print|high-quality|fast-preview` query parameter와
+localStorage를 통해 이 값을 명시적으로 선택할 수 있다.
+이때 `WasmBridge.getPageLayerTree(page, profile)`는 해당 profile로 layer tree를 다시 요청한다.
+
 현재 `FastPreview`는 page background 쪽 cache hint만 다르게 적용하며,
 더 적극적인 preview simplification을 위한 예약 성격이 강하다.
 
-이 cache hint는 이제 `PageLayerTree` JSON에도 함께 직렬화된다.
-즉 browser backend도 Rust가 계산한 `cacheHint`를 관찰할 수 있다.
-현재 CanvasKit이 이를 적극적으로 소비하는 단계는 아니지만, JSON 경계에서 정보가 사라지지는 않게 정리한 상태다.
+이 cache hint는 `PageLayerTree` JSON에도 함께 직렬화된다.
+browser backend는 Rust가 계산한 `cacheHint`를 관찰할 수 있고,
+CanvasKit은 현재 image downscale 시 mipmap 사용 여부를 profile과 render mode에 따라 달리 고른다.
 
 ## 7. CanvasKit render mode
 
@@ -216,6 +223,7 @@ CanvasKit에는 현재 두 가지 모드가 있다.
 | `compat` | Canvas2D와의 시각적 유사도 우선 | 기본 |
 
 `rhwp-studio/src/view/render-backend.ts`에서 query param과 localStorage를 통해 이 값을 결정한다.
+같은 파일에서 layered `renderProfile`도 함께 관리한다.
 
 `compat`가 기본인 이유는 다음과 같다.
 
