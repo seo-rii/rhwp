@@ -67,7 +67,7 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - 페이지네이션 (다단 분할, 표 행 분할), 머리말/꼬리말/바탕쪽/각주
 - SVG 내보내기 (CLI, legacy + layer replay) + Canvas2D/CanvasKit/native Skia 레이어드 렌더링
 - 웹 에디터 + hwpctl 호환 API (30 Actions, Field API)
-- 891+ 테스트
+- 900+ Rust 테스트 + browser/native screenshot regression
 
 #### 최근 변경 (v0.7.3 / 확장 v0.2.0, 2026-04-19)
 
@@ -151,8 +151,10 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - vpos-based paragraph position correction
 
 ### Output (출력)
-- SVG export (CLI)
-- Canvas rendering (WASM/Web)
+- SVG export (CLI, legacy path + layered replay path)
+- Layered backend split (`PageRenderTree` → `PageLayerTree` → backend replay)
+- Canvas rendering (WASM/Web: Canvas2D + CanvasKit)
+- Native Skia PNG rendering and screenshot regression
 - Debug overlay (paragraph/table boundaries + indices + y-coordinates)
 
 ### Web Editor (웹 에디터)
@@ -228,7 +230,9 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 ```bash
 cargo build                    # Development build
 cargo build --release          # Release build
-cargo test                     # Run tests (755+ tests)
+cargo test --all-targets       # Core regression suite
+cargo test --all-targets --all-features   # Includes native-skia renderer path
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 ### WASM Build
@@ -251,6 +255,20 @@ npx vite --host 0.0.0.0 --port 7700
 ```
 
 Open `http://localhost:7700` in your browser.
+
+### Validation / Regression
+
+```bash
+npm --prefix rhwp-studio run e2e:ci        # Studio E2E (Canvas2D + CanvasKit)
+cargo test-skia-full-sweep                 # Native Skia full screenshot sweep
+python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview
+```
+
+GitHub Actions는 목적별로 분리되어 있습니다.
+
+- `CI`: push / PR 기본 관문 (`Build & Test`, `All Features / Native Skia`, `Studio E2E`)
+- `Full Renderer Sweep`: 수동 실행 전용 시각 회귀 검증
+- `WASM Build`: 태그 릴리즈 또는 수동 실행 전용 WASM 산출물 검증
 
 ## CLI Usage
 
@@ -287,28 +305,37 @@ src/
 ├── main.rs                    # CLI entry point
 ├── parser/                    # HWP/HWPX file parser
 ├── model/                     # HWP document model
+├── paint/                     # Layered paint IR (PageLayerTree, builder, ResourceArena)
 ├── document_core/             # Document core (CQRS: commands + queries)
 │   ├── commands/              # Edit commands (text, formatting, tables)
-│   ├── queries/               # Queries (rendering data, pagination)
+│   ├── queries/               # Queries (rendering data, pagination, layered backend entry)
 │   └── table_calc/            # Table formula engine (SUM, AVG, PRODUCT, etc.)
 ├── renderer/                  # Rendering engine
 │   ├── layout/                # Layout (paragraph, table, shapes, cells)
 │   ├── pagination/            # Pagination engine
 │   ├── equation/              # Equation parser/layout/renderer
-│   ├── svg.rs                 # SVG output
-│   └── web_canvas.rs          # Canvas output
+│   ├── skia/                  # Native Skia layered renderer
+│   ├── svg.rs                 # Legacy + direct layered SVG replay
+│   ├── svg_layer.rs           # LayerRenderer adapter for SVG replay
+│   ├── layer_renderer.rs      # Shared layered backend traits
+│   └── web_canvas.rs          # Legacy web canvas path
 ├── serializer/                # HWP file serializer (save)
+├── tools/                     # Utility binaries (font metrics, baseline helpers)
 └── wasm_api.rs                # WASM bindings
 
 rhwp-studio/                   # Web editor (TypeScript + Vite)
 ├── src/
-│   ├── core/                  # Core (WASM bridge, types)
+│   ├── core/                  # Core (WASM bridge, types, font substitution)
 │   ├── engine/                # Input handlers
 │   ├── hwpctl/                # hwpctl compatibility layer
 │   ├── ui/                    # UI (menus, toolbars, dialogs)
-│   └── view/                  # Views (ruler, status bar, canvas)
+│   └── view/                  # Views (Canvas2D, CanvasKit, page renderer)
 ├── e2e/                       # E2E tests (Puppeteer + Chrome CDP)
 │   └── helpers.mjs            # Test helpers (headless/host modes)
+
+tests/                         # Integration tests
+examples/                      # CLI / adapter examples
+.github/workflows/             # CI, manual renderer sweep, deploy, publish
 
 mydocs/                        # Project documentation (Korean)
 ├── orders/                    # Daily task tracking
@@ -336,10 +363,10 @@ scripts/                       # Build & quality tools
 |--|-----------|-----------|
 | **사람의 역할** | AI 출력 수락 | 지시, 검토, 결정 |
 | **계획** | 없음 — "그냥 만들어" | 계획서 작성 → 승인 → 실행 |
-| **품질 관문** | 동작하길 바람 | 783 테스트 + Clippy + CI + 코드 리뷰 |
+| **품질 관문** | 동작하길 바람 | 900+ Rust 테스트 + screenshot regression + Clippy + CI + 코드 리뷰 |
 | **디버깅** | AI에게 AI 버그 수정 요청 | 사람이 진단, AI가 구현 |
 | **아키텍처** | 우연히 형성 | 의도적 설계 (CQRS, 의존성 방향) |
-| **문서** | 없음 | 724개 파일의 프로세스 기록 |
+| **문서** | 없음 | 수백 개 문서로 남는 프로세스 기록 |
 | **결과물** | 취약, 유지보수 어려움 | 프로덕션 수준, 100K+ 라인 |
 
 AI는 배율기입니다. 하지만 배율기는 기존 프로세스를 증폭시킵니다. 프로세스 없음 × AI = 빠른 혼돈. 좋은 프로세스 × AI = 비범한 결과물.
@@ -358,7 +385,7 @@ AI는 배율기입니다. 하지만 배율기는 기존 프로세스를 증폭�
 품질 및 정확성 판단            ←    코드, 문서, 테스트 생성
 ```
 
-`mydocs/` 디렉토리(724개 파일, 영문 번역: `mydocs/eng/`)에 전체 개발 기록이 있습니다: 일일 작업 기록, 구현 계획서, 코드 리뷰 피드백, 기술 연구 문서, 트러블슈팅 기록.
+`mydocs/` 디렉토리(영문 번역: `mydocs/eng/`)에 전체 개발 기록이 있습니다: 일일 작업 기록, 구현 계획서, 코드 리뷰 피드백, 기술 연구 문서, 트러블슈팅 기록.
 
 > `mydocs/`는 코드에 대한 문서가 아닙니다 — **AI로 소프트웨어를 만드는 방법**에 대한 문서입니다. 오픈소스 방법론입니다.
 
