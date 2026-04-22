@@ -21,6 +21,7 @@ STUDIO_ROOT = ROOT / "rhwp-studio"
 DEFAULT_MANIFEST = ROOT / "scripts" / "renderer_baseline_manifest.json"
 DEFAULT_OUTPUT = ROOT / "output" / "renderer-baseline" / "latest"
 NPM_CMD = "npm.cmd" if sys.platform == "win32" else "npm"
+ALLOWED_PROFILES = ("screen", "print", "high-quality", "fast-preview")
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,6 +50,12 @@ def parse_args() -> argparse.Namespace:
         help="browser capture mode for rhwp-studio baseline screenshots",
     )
     parser.add_argument(
+        "--profiles",
+        default="screen,fast-preview",
+        help="comma-separated layered render profiles to capture "
+        f"({', '.join(ALLOWED_PROFILES)})",
+    )
+    parser.add_argument(
         "--skip-native",
         action="store_true",
         help="skip legacy svg / layer svg / native skia captures",
@@ -59,6 +66,29 @@ def parse_args() -> argparse.Namespace:
         help="skip canvas2d / canvaskit browser captures",
     )
     return parser.parse_args()
+
+
+def parse_profiles(raw: str) -> list[str]:
+    profiles = [item.strip().lower() for item in raw.split(",") if item.strip()]
+    if not profiles:
+        raise SystemExit("at least one layered render profile must be specified")
+
+    invalid = [profile for profile in profiles if profile not in ALLOWED_PROFILES]
+    if invalid:
+        raise SystemExit(
+            "unsupported layered render profile(s): "
+            + ", ".join(invalid)
+            + f" (allowed: {', '.join(ALLOWED_PROFILES)})"
+        )
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for profile in profiles:
+        if profile in seen:
+            continue
+        seen.add(profile)
+        ordered.append(profile)
+    return ordered
 
 
 def load_manifest(manifest_path: Path, filter_pattern: str) -> dict:
@@ -122,7 +152,9 @@ def collect_files(output_dir: Path, suffix: str) -> list[str]:
     return sorted(str(path.relative_to(ROOT)) for path in output_dir.glob(f"*{suffix}"))
 
 
-def capture_native_sample(sample: dict, output_root: Path) -> list[dict]:
+def capture_native_sample(
+    sample: dict, output_root: Path, profiles: list[str]
+) -> list[dict]:
     sample_path = SAMPLES_DIR / sample["file"]
     if not sample_path.exists():
         raise SystemExit(f"sample file not found: {sample_path}")
@@ -152,52 +184,70 @@ def capture_native_sample(sample: dict, output_root: Path) -> list[dict]:
     )
     outputs.append({"backend": "legacy-svg", "files": collect_files(legacy_dir, ".svg")})
 
-    layer_dir = output_root / sample["id"] / "layer-svg"
-    if layer_dir.exists():
-        shutil.rmtree(layer_dir)
-    ensure_dir(layer_dir)
-    run_command(
-        [
-            "cargo",
-            "run",
-            "--bin",
-            "rhwp",
-            "--",
-            "export-svg",
-            str(sample_path),
-            "--page",
-            target_page,
-            "--output",
-            str(layer_dir),
-        ],
-        ROOT,
-        {"RHWP_RENDER_PATH": "layer-svg"},
-    )
-    outputs.append({"backend": "layer-svg", "files": collect_files(layer_dir, ".svg")})
+    for profile in profiles:
+        layer_dir = output_root / sample["id"] / f"layer-svg-{profile}"
+        if layer_dir.exists():
+            shutil.rmtree(layer_dir)
+        ensure_dir(layer_dir)
+        run_command(
+            [
+                "cargo",
+                "run",
+                "--bin",
+                "rhwp",
+                "--",
+                "export-svg",
+                str(sample_path),
+                "--page",
+                target_page,
+                "--output",
+                str(layer_dir),
+            ],
+            ROOT,
+            {
+                "RHWP_RENDER_PATH": "layer-svg",
+                "RHWP_RENDER_PROFILE": profile,
+            },
+        )
+        outputs.append(
+            {
+                "backend": "layer-svg",
+                "profile": profile,
+                "files": collect_files(layer_dir, ".svg"),
+            }
+        )
 
-    skia_dir = output_root / sample["id"] / "native-skia"
-    if skia_dir.exists():
-        shutil.rmtree(skia_dir)
-    ensure_dir(skia_dir)
-    run_command(
-        [
-            "cargo",
-            "run",
-            "--features",
-            "native-skia",
-            "--bin",
-            "rhwp",
-            "--",
-            "export-png",
-            str(sample_path),
-            "--page",
-            target_page,
-            "--output",
-            str(skia_dir),
-        ],
-        ROOT,
-    )
-    outputs.append({"backend": "native-skia", "files": collect_files(skia_dir, ".png")})
+    for profile in profiles:
+        skia_dir = output_root / sample["id"] / f"native-skia-{profile}"
+        if skia_dir.exists():
+            shutil.rmtree(skia_dir)
+        ensure_dir(skia_dir)
+        run_command(
+            [
+                "cargo",
+                "run",
+                "--features",
+                "native-skia",
+                "--bin",
+                "rhwp",
+                "--",
+                "export-png",
+                str(sample_path),
+                "--page",
+                target_page,
+                "--output",
+                str(skia_dir),
+            ],
+            ROOT,
+            {"RHWP_RENDER_PROFILE": profile},
+        )
+        outputs.append(
+            {
+                "backend": "native-skia",
+                "profile": profile,
+                "files": collect_files(skia_dir, ".png"),
+            }
+        )
 
     return outputs
 
@@ -244,6 +294,7 @@ def capture_browser_baseline(
     output_root: Path,
     browser_mode: str,
     filter_pattern: str,
+    profiles: list[str],
 ) -> Path:
     port = find_available_port()
     vite_url = f"http://127.0.0.1:{port}"
@@ -270,6 +321,7 @@ def capture_browser_baseline(
             f"--mode={browser_mode}",
             f"--manifest={manifest_path}",
             f"--output={output_root}",
+            f"--profiles={','.join(profiles)}",
         ]
         if filter_pattern:
             cmd.append(f"--filter={filter_pattern}")
@@ -286,7 +338,13 @@ def repo_relative(path_value: str | Path) -> str:
     return str(path.relative_to(ROOT))
 
 
-def write_reports(manifest: dict, output_root: Path, native_results: list[dict], browser_report: Path | None) -> None:
+def write_reports(
+    manifest: dict,
+    output_root: Path,
+    native_results: list[dict],
+    browser_report: Path | None,
+    profiles: list[str],
+) -> None:
     browser_data = None
     if browser_report and browser_report.exists():
         browser_data = json.loads(browser_report.read_text(encoding="utf-8"))
@@ -308,6 +366,7 @@ def write_reports(manifest: dict, output_root: Path, native_results: list[dict],
         "",
         f"- manifest: `{Path(manifest.get('_path', '')).relative_to(ROOT) if manifest.get('_path') else 'n/a'}`",
         f"- samples: {len(manifest['samples'])}",
+        f"- layered profiles: {', '.join(profiles)}",
         "",
         "## Sample Matrix",
         "",
@@ -325,7 +384,10 @@ def write_reports(manifest: dict, output_root: Path, native_results: list[dict],
         native_paths: list[str] = []
         if native_entries:
             for backend in native_entries["backends"]:
-                native_paths.extend(backend["files"])
+                prefix = backend["backend"]
+                if backend.get("profile"):
+                    prefix = f"{prefix}@{backend['profile']}"
+                native_paths.extend(f"{prefix}: {path}" for path in backend["files"])
         browser_paths = browser_by_sample.get(sample["id"], [])
         native_text = "<br>".join(f"`{path}`" for path in native_paths) or "-"
         browser_text = "<br>".join(f"`{repo_relative(path)}`" for path in browser_paths) or "-"
@@ -340,6 +402,7 @@ def main() -> None:
     args = parse_args()
     manifest_path = Path(args.manifest).resolve()
     output_root = Path(args.output).resolve()
+    profiles = parse_profiles(args.profiles)
     ensure_dir(output_root)
 
     manifest = load_manifest(manifest_path, args.filter)
@@ -364,7 +427,7 @@ def main() -> None:
     if not args.skip_native:
         for sample in manifest["samples"]:
             print(f"\n[native] {sample['id']} ({sample['category']})", flush=True)
-            backends = capture_native_sample(sample, output_root)
+            backends = capture_native_sample(sample, output_root, profiles)
             native_results.append(
                 {
                     "sampleId": sample["id"],
@@ -380,9 +443,10 @@ def main() -> None:
             output_root / "browser",
             args.browser_mode,
             args.filter,
+            profiles,
         )
 
-    write_reports(manifest, output_root, native_results, browser_report)
+    write_reports(manifest, output_root, native_results, browser_report, profiles)
     print(f"\n[baseline] complete: {output_root}", flush=True)
 
 

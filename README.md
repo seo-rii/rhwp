@@ -148,6 +148,7 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - `cd rhwp-studio && npm run e2e:ci`
 - `cd rhwp-studio && npm run e2e:ci:full`
 - `python3 scripts/renderer_baseline.py`
+- `python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview`
 - diff artifact는 `output/layer-svg-diff`, `output/skia-diff`, `rhwp-studio/output/e2e`에 남습니다.
 
 ### Web Editor (웹 에디터)

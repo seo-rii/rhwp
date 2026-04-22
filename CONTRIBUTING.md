@@ -185,11 +185,12 @@ npm run e2e:ci:full                   # Vite 서버 자동 기동 + browser full
 
 cd ..
 python3 scripts/renderer_baseline.py  # manifest 기준 legacy/layer/skia/canvas2d/canvaskit baseline 고정
+python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview
 ```
 
 WSL/CI처럼 호스트 Chrome CDP가 없는 환경에서는 `npm run e2e` 대신 `npm run e2e:headless` 또는 `npm run e2e:ci`를 사용하세요.
 
-기준선 manifest는 `scripts/renderer_baseline_manifest.json`에 있습니다. 기본 출력은 `output/renderer-baseline/latest/`이며, filtered manifest / backend별 산출물 / markdown+json 보고서를 함께 남깁니다.
+기준선 manifest는 `scripts/renderer_baseline_manifest.json`에 있습니다. 기본 출력은 `output/renderer-baseline/latest/`이며, filtered manifest / backend별 산출물 / markdown+json 보고서를 함께 남깁니다. layered profile 축까지 고정하려면 `--profiles screen,print,high-quality,fast-preview`처럼 명시하면 됩니다. browser baseline PNG와 layer/native 산출물 경로에는 profile suffix가 붙습니다.
 
 비교 아티팩트는 아래 위치에 남습니다.
 

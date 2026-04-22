@@ -14,20 +14,33 @@ import {
 const BACKENDS = [
   {
     key: 'canvas2d',
-    query: '?renderer=canvas2d',
-    filename: 'canvas2d.png',
+    queryForProfile(profile) {
+      return `?renderer=canvas2d&renderProfile=${encodeURIComponent(profile)}`;
+    },
+    filenameForProfile(profile) {
+      return `canvas2d-${profile}.png`;
+    },
   },
   {
     key: 'canvaskit-compat',
-    query: '?renderer=canvaskit&canvaskitMode=compat',
-    filename: 'canvaskit-compat.png',
+    queryForProfile(profile) {
+      return `?renderer=canvaskit&canvaskitMode=compat&renderProfile=${encodeURIComponent(profile)}`;
+    },
+    filenameForProfile(profile) {
+      return `canvaskit-compat-${profile}.png`;
+    },
   },
   {
     key: 'canvaskit-default',
-    query: '?renderer=canvaskit&canvaskitMode=default',
-    filename: 'canvaskit-default.png',
+    queryForProfile(profile) {
+      return `?renderer=canvaskit&canvaskitMode=default&renderProfile=${encodeURIComponent(profile)}`;
+    },
+    filenameForProfile(profile) {
+      return `canvaskit-default-${profile}.png`;
+    },
   },
 ];
+const ALLOWED_PROFILES = new Set(['screen', 'print', 'high-quality', 'fast-preview']);
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -35,6 +48,7 @@ function parseArgs() {
     manifest: '',
     output: '',
     filter: '',
+    profiles: 'screen,fast-preview',
   };
 
   for (const arg of args) {
@@ -50,6 +64,10 @@ function parseArgs() {
       options.filter = arg.slice('--filter='.length);
       continue;
     }
+    if (arg.startsWith('--profiles=')) {
+      options.profiles = arg.slice('--profiles='.length);
+      continue;
+    }
   }
 
   if (!options.manifest) {
@@ -59,6 +77,30 @@ function parseArgs() {
     throw new Error('missing --output=/abs/path/to/output-dir');
   }
   return options;
+}
+
+function parseProfiles(rawProfiles) {
+  const profiles = rawProfiles
+    .split(',')
+    .map((profile) => profile.trim().toLowerCase())
+    .filter(Boolean);
+  if (profiles.length === 0) {
+    throw new Error('at least one layered render profile must be specified');
+  }
+
+  const deduped = [];
+  const seen = new Set();
+  for (const profile of profiles) {
+    if (!ALLOWED_PROFILES.has(profile)) {
+      throw new Error(`unsupported layered render profile: ${profile}`);
+    }
+    if (seen.has(profile)) {
+      continue;
+    }
+    seen.add(profile);
+    deduped.push(profile);
+  }
+  return deduped;
 }
 
 function normalizeSamples(manifest, filterPattern) {
@@ -79,6 +121,7 @@ function normalizeSamples(manifest, filterPattern) {
 const options = parseArgs();
 const manifest = JSON.parse(fs.readFileSync(options.manifest, 'utf8'));
 const samples = normalizeSamples(manifest, options.filter);
+const profiles = parseProfiles(options.profiles);
 
 if (samples.length === 0) {
   throw new Error('manifest filter removed every sample');
@@ -100,20 +143,23 @@ try {
 
     console.log(`\n[baseline] ${sample.id} (${sample.category})`);
 
-    for (const backend of BACKENDS) {
-      await loadApp(page, backend.query);
-      await loadHwpFile(page, sample.file);
+    for (const profile of profiles) {
+      for (const backend of BACKENDS) {
+        await loadApp(page, backend.queryForProfile(profile));
+        await loadHwpFile(page, sample.file);
 
-      const sampleDir = path.join(options.output, sample.id);
-      const outputPath = path.join(sampleDir, backend.filename);
-      await captureCanvasScreenshot(page, outputPath, `Baseline ${backend.key}`);
-      results.push({
-        sampleId: sample.id,
-        file: sample.file,
-        category: sample.category,
-        backend: backend.key,
-        path: outputPath,
-      });
+        const sampleDir = path.join(options.output, sample.id);
+        const outputPath = path.join(sampleDir, backend.filenameForProfile(profile));
+        await captureCanvasScreenshot(page, outputPath, `Baseline ${backend.key} (${profile})`);
+        results.push({
+          sampleId: sample.id,
+          file: sample.file,
+          category: sample.category,
+          backend: backend.key,
+          profile,
+          path: outputPath,
+        });
+      }
     }
   }
 } finally {
@@ -128,6 +174,7 @@ fs.writeFileSync(
     {
       manifest: options.manifest,
       sampleCount: samples.length,
+      profiles,
       results,
     },
     null,
