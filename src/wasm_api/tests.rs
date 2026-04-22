@@ -10681,11 +10681,7 @@ fn test_empty_save_analysis() {
         } else {
             36
         };
-        let seg_count = if seg_size > 0 {
-            data.len() / seg_size
-        } else {
-            0
-        };
+        let seg_count = data.len().checked_div(seg_size).unwrap_or(0);
         let mut result = format!("{} segments ({}B each): ", seg_count, seg_size);
         for s in 0..std::cmp::min(seg_count, 4) {
             let off = s * seg_size;
@@ -13751,11 +13747,10 @@ fn test_analyze_pic_in_table() {
                         "  일치: {}/{} ({}%)",
                         max.saturating_sub(diff_count),
                         max,
-                        if max > 0 {
-                            (max.saturating_sub(diff_count)) * 100 / max
-                        } else {
-                            100
-                        }
+                        max.saturating_sub(diff_count)
+                            .saturating_mul(100)
+                            .checked_div(max)
+                            .unwrap_or(100)
                     );
 
                     // 표 안 이미지 보존 확인
@@ -14070,11 +14065,11 @@ fn test_roundtrip_all_controls() {
             "  일치: {}/{} 레코드 ({}%)",
             max_recs - diff_count,
             max_recs,
-            if max_recs > 0 {
-                (max_recs - diff_count) * 100 / max_recs
-            } else {
-                100
-            }
+            max_recs
+                .saturating_sub(diff_count)
+                .saturating_mul(100)
+                .checked_div(max_recs)
+                .unwrap_or(100)
         );
 
         if all_match {
