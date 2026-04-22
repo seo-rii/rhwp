@@ -46,6 +46,7 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
     name: 'group-drawing-02',
     setup: (page) => loadHwpFile(page, 'group-drawing-02.hwp'),
     maxDiffRatio: 0.0085,
+    solidInkMaxDiffRatio: 0.0125,
   },
 ];
 const FULL_SWEEP_CASE_OVERRIDES = new Map([
@@ -262,7 +263,9 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         inkMaskNeighborhoodRadius: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.inkMaskNeighborhoodRadius : TOLERANT_DIFF.inkMaskNeighborhoodRadius,
         inkMaskMaxDiffRatio: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.inkMaskMaxDiffRatio : null,
         nonInkMaxDiffPixels: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.nonInkMaxDiffPixels : null,
-        solidInkMaxDiffRatio: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.solidInkMaxDiffRatio : null,
+        solidInkMaxDiffRatio: nativeTextActive
+          ? (caseInfo.solidInkMaxDiffRatio ?? NATIVE_TEXT_RASTER_DIFF.solidInkMaxDiffRatio)
+          : null,
       });
 
       assert(
@@ -308,7 +311,9 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
             inkMaskNeighborhoodRadius: nativeTextActive ? (caseInfo.inkMaskNeighborhoodRadius ?? NATIVE_TEXT_RASTER_DIFF.inkMaskNeighborhoodRadius) : TOLERANT_DIFF.inkMaskNeighborhoodRadius,
             inkMaskMaxDiffRatio: nativeTextActive ? (caseInfo.inkMaskMaxDiffRatio ?? NATIVE_TEXT_RASTER_DIFF.inkMaskMaxDiffRatio) : null,
             nonInkMaxDiffPixels: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.nonInkMaxDiffPixels : null,
-            solidInkMaxDiffRatio: nativeTextActive ? NATIVE_TEXT_RASTER_DIFF.solidInkMaxDiffRatio : null,
+            solidInkMaxDiffRatio: nativeTextActive
+              ? (caseInfo.solidInkMaxDiffRatio ?? NATIVE_TEXT_RASTER_DIFF.solidInkMaxDiffRatio)
+              : null,
           },
         );
         assert(
@@ -558,6 +563,49 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           underline: 'bottom',
         },
       }),
+      tableCellFillUsesOverlay: (() => {
+        renderer.currentClipStack.push({
+          bounds: { x: 0, y: 0, width: 64, height: 32 },
+          kind: 'tableCell',
+        });
+        try {
+          return renderer.shouldOverlayRectangle({
+            type: 'rectangle',
+            bbox: { x: 0, y: 0, width: 64, height: 32 },
+            cornerRadius: 0,
+            gradient: null,
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+            style: {
+              fillColor: '#ccffcc',
+              strokeColor: null,
+              strokeWidth: 0,
+              strokeDash: 'solid',
+              opacity: 1,
+              pattern: null,
+              shadow: null,
+            },
+          });
+        } finally {
+          renderer.currentClipStack.pop();
+        }
+      })(),
+      tableCellBoldTextUsesOverlay: (() => {
+        renderer.currentClipStack.push({
+          bounds: { x: 0, y: 0, width: 64, height: 32 },
+          kind: 'tableCell',
+        });
+        try {
+          return renderer.shouldOverlayTextRun({
+            ...simpleTextRun,
+            style: {
+              ...simpleTextRun.style,
+              bold: true,
+            },
+          });
+        } finally {
+          renderer.currentClipStack.pop();
+        }
+      })(),
       imageUsesOverlay: renderer.shouldOverlayImage({
         type: 'image',
         bbox: { x: 0, y: 0, width: 32, height: 32 },
@@ -619,6 +667,8 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.rotatedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `rotated text overlay=${nativeRouting.rotatedTextUsesOverlay}`);
   assert(nativeRouting.verticalTextUsesOverlay === true, `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
   assert(nativeRouting.underlinedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
+  assert(nativeRouting.tableCellFillUsesOverlay === (CANVASKIT_MODE === 'compat'), `table-cell fill overlay=${nativeRouting.tableCellFillUsesOverlay}`);
+  assert(nativeRouting.tableCellBoldTextUsesOverlay === true, `table-cell bold text overlay=${nativeRouting.tableCellBoldTextUsesOverlay}`);
   assert(nativeRouting.imageUsesOverlay === (CANVASKIT_MODE === 'compat'), `image overlay=${nativeRouting.imageUsesOverlay}`);
   assert(nativeRouting.formUsesOverlay === (CANVASKIT_MODE === 'compat'), `form overlay=${nativeRouting.formUsesOverlay}`);
   assert(nativeRouting.equationUsesOverlay === (CANVASKIT_MODE === 'compat'), `equation overlay=${nativeRouting.equationUsesOverlay}`);

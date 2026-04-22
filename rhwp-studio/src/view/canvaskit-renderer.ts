@@ -378,6 +378,8 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayTextRun(op: LayerTextRunOp): boolean {
+    const insideTableCell = this.currentClipStack.some((clip) => clip.kind === 'tableCell');
+
     if (this.renderMode === 'compat') {
       const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
       const clusters = splitIntoClusters(op.text);
@@ -420,7 +422,8 @@ export class CanvasKitLayerRenderer {
 
     const clusters = splitIntoClusters(op.text);
     if (
-      op.isVertical
+      (insideTableCell && op.style.bold)
+      || op.isVertical
       || !op.text.trim()
     ) {
       return true;
@@ -442,6 +445,15 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayRectangle(op: LayerRectangleOp): boolean {
+    const isSimpleTableCellFill =
+      this.currentClipStack.some((clip) => clip.kind === 'tableCell')
+      && !!op.style.fillColor
+      && !op.style.strokeColor;
+
+    if (this.renderMode === 'default' && isSimpleTableCellFill) {
+      return false;
+    }
+
     return op.cornerRadius === 0
       && !op.gradient
       && !op.style.pattern
@@ -451,11 +463,7 @@ export class CanvasKitLayerRenderer {
       && !op.transform.vertFlip
       && op.style.opacity === 1
       && (
-        (
-          this.currentClipStack.some((clip) => clip.kind === 'tableCell')
-          && !!op.style.fillColor
-          && !op.style.strokeColor
-        )
+        isSimpleTableCellFill
         || (
           !op.style.fillColor
           && !!op.style.strokeColor
