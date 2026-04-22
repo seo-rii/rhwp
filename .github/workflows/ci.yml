@@ -166,6 +166,17 @@ jobs:
         working-directory: rhwp-studio
         run: npm run e2e:ci
 
+      - name: Upload studio E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-e2e-artifacts
+          path: |
+            output/e2e/
+            rhwp-studio/e2e/screenshots/
+          if-no-files-found: warn
+          retention-days: 14
+
   full-renderer-sweep:
     name: Full Renderer Sweep
     runs-on: ubuntu-latest
@@ -232,6 +243,23 @@ jobs:
         env:
           RHWP_RENDER_SAMPLE_SCOPE: full
         run: npm run e2e:ci
+
+      - name: Capture representative multi-profile baseline
+        run: python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview --browser-mode headless --output output/renderer-baseline/workflow-dispatch
+
+      - name: Upload full renderer sweep artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-renderer-sweep-artifacts
+          path: |
+            output/layer-svg-diff/
+            output/skia-diff/
+            output/e2e/
+            output/renderer-baseline/
+            rhwp-studio/e2e/screenshots/
+          if-no-files-found: warn
+          retention-days: 14
 
   wasm-build:
     name: WASM Build
