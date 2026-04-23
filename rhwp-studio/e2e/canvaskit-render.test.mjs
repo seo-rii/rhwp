@@ -218,6 +218,7 @@ async function renderScenario(page, backend, caseInfo) {
     const profile = window.__renderProfile ?? 'screen';
     const tree = window.__wasm?.getPageLayerTree?.(0, profile);
     if (!tree) return null;
+    const treeAgain = window.__wasm?.getPageLayerTree?.(0, profile);
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     let opCount = 0;
     let nativeTextRunCount = 0;
@@ -226,6 +227,8 @@ async function renderScenario(page, backend, caseInfo) {
     let nativeFormObjectCount = 0;
     let resourceRefCount = 0;
     let svgResourceRefCount = 0;
+    let maxImageResourceId = -1;
+    let maxSvgResourceId = -1;
     let embeddedBase64PayloadCount = 0;
     let embeddedSvgPayloadCount = 0;
     const walk = (node) => {
@@ -235,7 +238,10 @@ async function renderScenario(page, backend, caseInfo) {
         if (renderer) {
           for (const op of node.ops) {
             if (op.type === 'pageBackground' && op.image) {
-              if (typeof op.image.resourceId === 'number') resourceRefCount += 1;
+              if (typeof op.image.resourceId === 'number') {
+                resourceRefCount += 1;
+                maxImageResourceId = Math.max(maxImageResourceId, op.image.resourceId);
+              }
               if (op.image.base64) embeddedBase64PayloadCount += 1;
             }
             if (op.type === 'textRun' && !renderer.shouldOverlayTextRun(op)) {
@@ -245,14 +251,20 @@ async function renderScenario(page, backend, caseInfo) {
               nativeImageCount += 1;
             }
             if (op.type === 'image') {
-              if (typeof op.resourceId === 'number') resourceRefCount += 1;
+              if (typeof op.resourceId === 'number') {
+                resourceRefCount += 1;
+                maxImageResourceId = Math.max(maxImageResourceId, op.resourceId);
+              }
               if (op.base64) embeddedBase64PayloadCount += 1;
             }
             if (op.type === 'equation' && !renderer.shouldOverlayEquation(op)) {
               nativeEquationCount += 1;
             }
             if (op.type === 'equation') {
-              if (typeof op.svgResourceId === 'number') svgResourceRefCount += 1;
+              if (typeof op.svgResourceId === 'number') {
+                svgResourceRefCount += 1;
+                maxSvgResourceId = Math.max(maxSvgResourceId, op.svgResourceId);
+              }
               if (op.svgContent) embeddedSvgPayloadCount += 1;
             }
             if (op.type === 'formObject' && !renderer.shouldOverlayFormObject(op)) {
@@ -276,10 +288,13 @@ async function renderScenario(page, backend, caseInfo) {
       opCount,
       mode: window.__canvaskitRenderMode,
       profile: tree.profile,
+      sharedResourceTable: !!tree.resources && tree.resources === treeAgain?.resources,
       resourceImageCount: tree.resources?.images?.length ?? 0,
       resourceSvgCount: tree.resources?.svgFragments?.length ?? 0,
       resourceRefCount,
       svgResourceRefCount,
+      maxImageResourceId,
+      maxSvgResourceId,
       embeddedBase64PayloadCount,
       embeddedSvgPayloadCount,
       nativeTextRunCount,
@@ -290,8 +305,17 @@ async function renderScenario(page, backend, caseInfo) {
   });
   assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
   assert(layerSummary?.profile === RENDER_PROFILE, `${caseInfo.name} renderProfile=${RENDER_PROFILE}`);
+  assert(layerSummary?.sharedResourceTable === true, `${caseInfo.name} layer resources use shared document table`);
   assert(layerSummary?.embeddedBase64PayloadCount === 0, `${caseInfo.name} object API embeds no base64 payloads`);
   assert(layerSummary?.embeddedSvgPayloadCount === 0, `${caseInfo.name} object API embeds no svg payloads`);
+  assert(
+    layerSummary?.maxImageResourceId === -1 || layerSummary.maxImageResourceId < layerSummary.resourceImageCount,
+    `${caseInfo.name} max image resource id=${layerSummary?.maxImageResourceId}, resources=${layerSummary?.resourceImageCount}`,
+  );
+  assert(
+    layerSummary?.maxSvgResourceId === -1 || layerSummary.maxSvgResourceId < layerSummary.resourceSvgCount,
+    `${caseInfo.name} max svg resource id=${layerSummary?.maxSvgResourceId}, resources=${layerSummary?.resourceSvgCount}`,
+  );
   assert(
     layerSummary?.resourceRefCount === 0 || layerSummary.resourceImageCount > 0,
     `${caseInfo.name} image resource refs=${layerSummary?.resourceRefCount}, resources=${layerSummary?.resourceImageCount}`,

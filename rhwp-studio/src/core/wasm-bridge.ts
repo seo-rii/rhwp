@@ -1,5 +1,5 @@
 import init, { HwpDocument, version } from '@wasm/rhwp.js';
-import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, CellPathEntry, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree } from './types';
+import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, CellPathEntry, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree, LayerNode, LayerPaintOp, LayerResources } from './types';
 import { resolveFont, fontFamilyWithFallback } from './font-substitution';
 import { REGISTERED_FONTS } from './font-loader';
 import type { FileSystemFileHandleLike } from '@/command/file-system-access';
@@ -41,11 +41,74 @@ function substituteCssFontFamily(cssFont: string): string {
   return prefix + fontFamilyWithFallback(resolved);
 }
 
+class LayerResourceStore {
+  resources: LayerResources = { images: [], svgFragments: [] };
+
+  private imageLookup = new Map<string, number[]>();
+  private svgLookup = new Map<string, number>();
+
+  clear(): void {
+    this.resources = { images: [], svgFragments: [] };
+    this.imageLookup.clear();
+    this.svgLookup.clear();
+  }
+
+  internImage(bytes: Uint8Array): number {
+    const key = `${bytes.byteLength}:${this.hashBytes(bytes)}`;
+    const candidates = this.imageLookup.get(key);
+    if (candidates) {
+      for (const candidate of candidates) {
+        if (this.bytesEqual(this.resources.images[candidate], bytes)) {
+          return candidate;
+        }
+      }
+    }
+
+    const id = this.resources.images.length;
+    this.resources.images.push(bytes);
+    if (candidates) {
+      candidates.push(id);
+    } else {
+      this.imageLookup.set(key, [id]);
+    }
+    return id;
+  }
+
+  internSvg(fragment: string): number {
+    const existing = this.svgLookup.get(fragment);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const id = this.resources.svgFragments.length;
+    this.resources.svgFragments.push(fragment);
+    this.svgLookup.set(fragment, id);
+    return id;
+  }
+
+  private hashBytes(bytes: Uint8Array): string {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < bytes.length; index += 1) {
+      hash ^= bytes[index];
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16);
+  }
+
+  private bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+    if (left.byteLength !== right.byteLength) return false;
+    for (let index = 0; index < left.byteLength; index += 1) {
+      if (left[index] !== right[index]) return false;
+    }
+    return true;
+  }
+}
+
 export class WasmBridge {
   private doc: HwpDocument | null = null;
   private initialized = false;
   private _fileName = 'document.hwp';
   private _currentFileHandle: FileSystemFileHandleLike | null = null;
+  private layerResourceStore = new LayerResourceStore();
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -77,6 +140,7 @@ export class WasmBridge {
     if (this.doc) {
       this.doc.free();
     }
+    this.layerResourceStore.clear();
     this._fileName = fileName ?? 'document.hwp';
     this._currentFileHandle = null;
     this.doc = new HwpDocument(data);
@@ -93,6 +157,7 @@ export class WasmBridge {
       this.doc = HwpDocument.createEmpty();
     }
     const info: DocumentInfo = JSON.parse(this.doc.createBlankDocument());
+    this.layerResourceStore.clear();
     this._fileName = '새 문서.hwp';
     this._currentFileHandle = null;
     this.doc.setFileName(this._fileName);
@@ -200,15 +265,86 @@ export class WasmBridge {
     const valueGetter = doc.getPageLayerTreeValueWithProfile ?? doc.getPageLayerTreeValue;
     if (typeof valueGetter === 'function') {
       if (typeof doc.getPageLayerTreeValueWithProfile === 'function') {
-        return valueGetter.call(this.doc, pageNum, profile) as PageLayerTree;
+        return this.normalizeLayerResources(valueGetter.call(this.doc, pageNum, profile) as PageLayerTree);
       }
-      return valueGetter.call(this.doc, pageNum) as PageLayerTree;
+      return this.normalizeLayerResources(valueGetter.call(this.doc, pageNum) as PageLayerTree);
     }
     const jsonGetter = doc.getPageLayerTreeWithProfile ?? doc.getPageLayerTree;
     const json = typeof doc.getPageLayerTreeWithProfile === 'function'
       ? jsonGetter.call(this.doc, pageNum, profile)
       : jsonGetter.call(this.doc, pageNum);
-    return JSON.parse(json);
+    return this.normalizeLayerResources(JSON.parse(json));
+  }
+
+  private normalizeLayerResources(tree: PageLayerTree): PageLayerTree {
+    const pageResources = tree.resources;
+    if (!pageResources) {
+      tree.resources = this.layerResourceStore.resources;
+      return tree;
+    }
+
+    const imageIdMap = new Map<number, number>();
+    const svgIdMap = new Map<number, number>();
+    const imageResources = pageResources.images ?? [];
+    const svgFragments = pageResources.svgFragments ?? [];
+
+    const mapImageResourceId = (resourceId: number | undefined): number | undefined => {
+      if (typeof resourceId !== 'number') return resourceId;
+      const mapped = imageIdMap.get(resourceId);
+      if (mapped !== undefined) return mapped;
+      const bytes = imageResources[resourceId];
+      if (!bytes) return resourceId;
+      const docResourceId = this.layerResourceStore.internImage(bytes);
+      imageIdMap.set(resourceId, docResourceId);
+      return docResourceId;
+    };
+
+    const mapSvgResourceId = (resourceId: number | undefined): number | undefined => {
+      if (typeof resourceId !== 'number') return resourceId;
+      const mapped = svgIdMap.get(resourceId);
+      if (mapped !== undefined) return mapped;
+      const fragment = svgFragments[resourceId];
+      if (typeof fragment !== 'string') return resourceId;
+      const docResourceId = this.layerResourceStore.internSvg(fragment);
+      svgIdMap.set(resourceId, docResourceId);
+      return docResourceId;
+    };
+
+    const rewriteOp = (op: LayerPaintOp): void => {
+      if (op.type === 'pageBackground') {
+        if (op.image) {
+          op.image.resourceId = mapImageResourceId(op.image.resourceId);
+        }
+        return;
+      }
+      if (op.type === 'image') {
+        op.resourceId = mapImageResourceId(op.resourceId);
+        return;
+      }
+      if (op.type === 'equation') {
+        op.svgResourceId = mapSvgResourceId(op.svgResourceId);
+      }
+    };
+
+    const walk = (node: LayerNode): void => {
+      if (node.kind === 'leaf') {
+        for (const op of node.ops) {
+          rewriteOp(op);
+        }
+        return;
+      }
+      if (node.kind === 'clipRect') {
+        walk(node.child);
+        return;
+      }
+      for (const child of node.children) {
+        walk(child);
+      }
+    };
+
+    walk(tree.root);
+    tree.resources = this.layerResourceStore.resources;
+    return tree;
   }
 
   getCursorRect(sec: number, para: number, charOffset: number): CursorRect {
