@@ -46,6 +46,7 @@ export interface PageLayerTree {
 }
 
 export interface LayerResources {
+  tableId: number;
   images: Array<Uint8Array | undefined>;
   imageHashes?: string[];
   imageKeys?: string[];

@@ -894,6 +894,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           ops: [equationOp],
         },
         resources: {
+          tableId: 900,
           images: [],
           imageHashes: [],
           imageKeys: [],
@@ -948,6 +949,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           ops: [simpleTextRun],
         },
         resources: {
+          tableId: 901,
           images: [],
           imageHashes: [],
           imageKeys: [],

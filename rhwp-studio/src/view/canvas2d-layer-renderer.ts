@@ -50,7 +50,9 @@ export class Canvas2DLayerRenderer {
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
   private currentResources: PageLayerTree['resources'] | null = null;
+  private currentResourceTableId: number | null = null;
   private rerenderScheduled = false;
+  private asyncResourceReadyCallback: (() => void) | null = null;
 
   constructor(private readonly renderMode: CanvasKitRenderMode = 'compat') {}
 
@@ -67,10 +69,11 @@ export class Canvas2DLayerRenderer {
     this.lastRenderedTree = tree;
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
-    if (this.currentResources !== (tree.resources ?? null)) {
+    if (this.currentResourceTableId !== (tree.resources?.tableId ?? null)) {
       this.clearResourceImageCaches();
-      this.currentResources = tree.resources ?? null;
     }
+    this.currentResources = tree.resources ?? null;
+    this.currentResourceTableId = tree.resources?.tableId ?? null;
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -82,6 +85,10 @@ export class Canvas2DLayerRenderer {
     ctx.textBaseline = 'alphabetic';
     this.renderNode(ctx, tree.root);
     ctx.restore();
+  }
+
+  setAsyncResourceReadyCallback(callback: (() => void) | null): void {
+    this.asyncResourceReadyCallback = callback;
   }
 
   private renderNode(ctx: CanvasRenderingContext2D, node: LayerNode): void {
@@ -936,7 +943,7 @@ export class Canvas2DLayerRenderer {
       ? this.currentResources?.imageHashes?.[resourceId]
       : undefined;
     const cacheKey = resourceBytes
-      ? `res:${resourceId}:${resourceHash ?? 'unknown'}`
+      ? `res:${this.currentResourceTableId ?? 'unknown'}:${resourceId}:${resourceHash ?? 'unknown'}`
       : base64
         ? `b64:${base64}`
         : null;
@@ -954,6 +961,10 @@ export class Canvas2DLayerRenderer {
     const mimeType = inferImageMime(bytes);
     image.decoding = 'sync';
     image.onload = () => {
+      if (this.asyncResourceReadyCallback && this.lastTargetCanvas?.parentElement) {
+        this.asyncResourceReadyCallback();
+        return;
+      }
       if (this.rerenderScheduled || !this.lastRenderedTree || !this.lastTargetCanvas) {
         return;
       }
@@ -983,7 +994,9 @@ export class Canvas2DLayerRenderer {
     this.lastRenderedTree = null;
     this.lastTargetCanvas = null;
     this.currentResources = null;
+    this.currentResourceTableId = null;
     this.rerenderScheduled = false;
+    this.asyncResourceReadyCallback = null;
   }
 
   private clearResourceImageCaches(): void {

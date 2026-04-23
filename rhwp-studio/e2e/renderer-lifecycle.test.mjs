@@ -24,7 +24,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         pageWidth: 100,
         pageHeight: 100,
         profile,
-        resources: { images: [], svgFragments: [] },
+        resources: { tableId: 1, images: [], svgFragments: [] },
         root: {
           kind: 'leaf',
           sourceNodeId: pageIdx,
@@ -85,6 +85,81 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `page layer cache load count=${layerCacheProbe.loads}`,
   );
 
+  setTestCase('async-resource-rerender');
+  await loadApp(page, '?renderer=canvas2d');
+  const asyncRerenderProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvas2dRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'page renderer unavailable' };
+    }
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = (pageIdx, profile = 'screen') => ({
+      pageWidth: 100,
+      pageHeight: 100,
+      profile,
+      resources: { tableId: 3, images: [], svgFragments: [] },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: pageIdx,
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+        cacheHint: 'none',
+        ops: [],
+      },
+    });
+
+    const originalRenderPage = renderer.renderPage.bind(renderer);
+    let renderCalls = 0;
+    renderer.renderPage = (...args) => {
+      renderCalls += 1;
+      return originalRenderPage(...args);
+    };
+
+    const canvas = document.createElement('canvas');
+    document.body.appendChild(canvas);
+    const pageInfo = {
+      pageIndex: 0,
+      width: 100,
+      height: 100,
+      sectionIndex: 0,
+      marginLeft: 10,
+      marginRight: 10,
+      marginTop: 10,
+      marginBottom: 10,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      pageRenderer.clearLayerTreeCache();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      const callsAfterInitial = renderCalls;
+      const hasTimerQueue = Object.prototype.hasOwnProperty.call(pageRenderer, 'reRenderTimers');
+      renderer.asyncResourceReadyCallback?.();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {
+        hasTimerQueue,
+        activeRenderStates: pageRenderer.activeRenderStates?.size ?? -1,
+        callsAfterInitial,
+        callsAfterAsync: renderCalls,
+        pendingAsyncResourceRerender: pageRenderer.pendingAsyncResourceRerender ?? null,
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+      renderer.renderPage = originalRenderPage;
+      canvas.remove();
+    }
+  });
+
+  assert(!asyncRerenderProbe.error, asyncRerenderProbe.error || 'async rerender probe available');
+  assert(asyncRerenderProbe.hasTimerQueue === false, `page renderer no longer uses timer queue=${JSON.stringify(asyncRerenderProbe)}`);
+  assert(asyncRerenderProbe.activeRenderStates === 1, `active page render state tracked=${JSON.stringify(asyncRerenderProbe)}`);
+  assert(asyncRerenderProbe.callsAfterAsync > asyncRerenderProbe.callsAfterInitial, `async resource callback rerenders page=${JSON.stringify(asyncRerenderProbe)}`);
+  assert(asyncRerenderProbe.pendingAsyncResourceRerender === null, `async rerender frame drains cleanly=${JSON.stringify(asyncRerenderProbe)}`);
+
   setTestCase('canvaskit-static-picture-cache-pages');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const staticPictureProbe = await page.evaluate(() => {
@@ -99,7 +174,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       pageWidth: 100,
       pageHeight: 100,
       profile,
-      resources: { images: [], svgFragments: [] },
+      resources: { tableId: 2, images: [], svgFragments: [] },
       root: {
         kind: 'group',
         sourceNodeId: 1000 + pageIdx,
@@ -179,6 +254,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     return {
       beforeImageCount: beforeResources?.images?.length ?? -1,
       afterImageCount: afterResources?.images?.length ?? -1,
+      beforeTableId: beforeResources?.tableId ?? null,
+      afterTableId: afterResources?.tableId ?? null,
       sameResourceTable: beforeResources === afterResources,
       layerTreeCacheSize: canvasView.pageRenderer?.layerTreeCache?.size ?? -1,
     };
@@ -197,6 +274,99 @@ runTest('Renderer lifecycle', async ({ page }) => {
     resourceInvalidationProbe.sameResourceTable === false,
     `resource table generation changes on refresh=${JSON.stringify(resourceInvalidationProbe)}`,
   );
+  assert(
+    resourceInvalidationProbe.beforeTableId !== resourceInvalidationProbe.afterTableId,
+    `resource table id changes on refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+  );
+
+  setTestCase('document-resource-table-cache-reuse');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const resourceReuseProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const pixelPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pG99u0AAAAASUVORK5CYII=';
+    const pixelBytes = Uint8Array.from(atob(pixelPngBase64), (ch) => ch.charCodeAt(0));
+    const makeResources = () => ({
+      tableId: 77,
+      images: [pixelBytes],
+      imageHashes: ['pixel-hash'],
+      imageKeys: ['pixel-key'],
+      svgFragments: [],
+      svgHashes: [],
+      svgKeys: [],
+    });
+    const makeTree = (pageIdx) => ({
+      pageWidth: 64,
+      pageHeight: 64,
+      profile: 'screen',
+      resources: makeResources(),
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 4000 + pageIdx,
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'image',
+          bbox: { x: 8, y: 8, width: 48, height: 48 },
+          resourceId: 0,
+          fillMode: 'stretch',
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+        }],
+      },
+    });
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = (pageIdx, profile = 'screen') => ({
+      ...makeTree(pageIdx),
+      profile,
+    });
+
+    const canvas = document.createElement('canvas');
+    const pageInfo = {
+      pageIndex: 0,
+      width: 64,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 10,
+      marginRight: 10,
+      marginTop: 10,
+      marginBottom: 10,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      pageRenderer.clearLayerTreeCache();
+      pageRenderer.renderPage(0, { ...pageInfo, pageIndex: 0 }, canvas, 1);
+      const firstResources = pageRenderer.layerTreeCache?.get?.(0)?.resources ?? null;
+      const firstCachedImage = Array.from(renderer.imageCache?.values?.() ?? [])[0] ?? null;
+      pageRenderer.renderPage(1, { ...pageInfo, pageIndex: 1 }, canvas, 1);
+      const secondResources = pageRenderer.layerTreeCache?.get?.(1)?.resources ?? null;
+      const secondCachedImage = Array.from(renderer.imageCache?.values?.() ?? [])[0] ?? null;
+      return {
+        imageCacheSize: renderer.imageCache?.size ?? -1,
+        firstTableId: firstResources?.tableId ?? null,
+        secondTableId: secondResources?.tableId ?? null,
+        distinctResourceObjects: firstResources !== secondResources,
+        reusedImageObject: firstCachedImage === secondCachedImage,
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+    }
+  });
+
+  assert(!resourceReuseProbe.error, resourceReuseProbe.error || 'document resource table reuse probe available');
+  assert(resourceReuseProbe.firstTableId === 77, `first resource table id=${JSON.stringify(resourceReuseProbe)}`);
+  assert(resourceReuseProbe.secondTableId === 77, `second resource table id=${JSON.stringify(resourceReuseProbe)}`);
+  assert(resourceReuseProbe.distinctResourceObjects, `resource tables differ by object=${JSON.stringify(resourceReuseProbe)}`);
+  assert(resourceReuseProbe.imageCacheSize === 1, `resource cache keeps one decoded image=${JSON.stringify(resourceReuseProbe)}`);
+  assert(resourceReuseProbe.reusedImageObject, `resource cache reuses image across pages=${JSON.stringify(resourceReuseProbe)}`);
 
   setTestCase('canvaskit-dispose');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');

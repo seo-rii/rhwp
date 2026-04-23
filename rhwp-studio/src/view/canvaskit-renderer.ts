@@ -85,6 +85,7 @@ export class CanvasKitLayerRenderer {
   private currentLayerTreeCacheKey = 'none';
   private rerenderScheduled = false;
   private disposed = false;
+  private asyncResourceReadyCallback: (() => void) | null = null;
 
   private constructor(
     private readonly canvasKit: CanvasKit,
@@ -155,6 +156,10 @@ export class CanvasKitLayerRenderer {
 
     this.renderSurface(fallbackSurface, tree, scale);
     this.renderFallbackOverlays(tree.root, targetCanvas, scale);
+  }
+
+  setAsyncResourceReadyCallback(callback: (() => void) | null): void {
+    this.asyncResourceReadyCallback = callback;
   }
 
   private renderSurface(surface: Surface, tree: PageLayerTree, scale: number): void {
@@ -2074,6 +2079,10 @@ export class CanvasKitLayerRenderer {
   }
 
   private scheduleRerender(): void {
+    if (this.asyncResourceReadyCallback && this.lastTargetCanvas?.parentElement) {
+      this.asyncResourceReadyCallback();
+      return;
+    }
     if (this.disposed || this.rerenderScheduled || !this.lastRenderedTree || !this.lastTargetCanvas) {
       return;
     }
@@ -2676,6 +2685,7 @@ export class CanvasKitLayerRenderer {
     this.currentProfile = 'screen';
     this.currentLayerTreeCacheKey = 'none';
     this.rerenderScheduled = false;
+    this.asyncResourceReadyCallback = null;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
 

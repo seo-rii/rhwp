@@ -6,25 +6,61 @@ import { clampRenderScale, type RenderBackend } from './render-backend';
 
 const DEFAULT_LAYER_TREE_CACHE_LIMIT = 12;
 
+type ActivePageRenderState = {
+  pageInfo: PageInfo;
+  canvas: HTMLCanvasElement;
+  scale: number;
+};
+
 export class PageRenderer {
-  private reRenderTimers = new Map<number, ReturnType<typeof setTimeout>[]>();
+  private activeRenderStates = new Map<number, ActivePageRenderState>();
+  private pendingAsyncResourceRerender: number | null = null;
   private layerTreeCache = new Map<number, PageLayerTree>();
   private retainedLayerTreePages = new Set<number>();
   private readonly layerTreeCacheLimit = DEFAULT_LAYER_TREE_CACHE_LIMIT;
   private canvas2dRenderer = new Canvas2DLayerRenderer('compat');
+  private readonly handleAsyncResourceReady = () => {
+    if (this.pendingAsyncResourceRerender !== null || this.activeRenderStates.size === 0) {
+      return;
+    }
+
+    this.pendingAsyncResourceRerender = requestAnimationFrame(() => {
+      this.pendingAsyncResourceRerender = null;
+      for (const [pageIdx, state] of this.activeRenderStates) {
+        if (!state.canvas.parentElement) {
+          this.activeRenderStates.delete(pageIdx);
+          continue;
+        }
+        try {
+          const appliedScale = this.renderContent(pageIdx, state.pageInfo, state.canvas, state.scale);
+          this.drawMarginGuides(state.pageInfo, state.canvas, appliedScale);
+        } catch (error) {
+          console.error(`[PageRenderer] 비동기 리소스 재렌더링 실패 (page=${pageIdx}):`, error);
+        }
+      }
+    });
+  };
 
   constructor(
     private wasm: WasmBridge,
     private backend: RenderBackend,
     private renderProfile: LayerRenderProfile,
     private canvaskitRenderer: CanvasKitLayerRenderer | null,
-  ) {}
+  ) {
+    this.canvas2dRenderer.setAsyncResourceReadyCallback(this.handleAsyncResourceReady);
+    this.canvaskitRenderer?.setAsyncResourceReadyCallback(this.handleAsyncResourceReady);
+  }
 
   /** 페이지를 Canvas에 렌더링한다 (scale = zoom × DPR) */
   renderPage(pageIdx: number, pageInfo: PageInfo, canvas: HTMLCanvasElement, scale: number): void {
-    const appliedScale = this.renderContent(pageIdx, pageInfo, canvas, scale);
-    this.drawMarginGuides(pageInfo, canvas, appliedScale);
-    this.scheduleReRender(pageIdx, pageInfo, canvas, scale);
+    this.activeRenderStates.set(pageIdx, { pageInfo, canvas, scale });
+    try {
+      const appliedScale = this.renderContent(pageIdx, pageInfo, canvas, scale);
+      this.drawMarginGuides(pageInfo, canvas, appliedScale);
+    } catch (error) {
+      this.activeRenderStates.delete(pageIdx);
+      throw error;
+    }
   }
 
   getBackend(): RenderBackend {
@@ -148,49 +184,22 @@ export class PageRenderer {
     ctx.restore();
   }
 
-  /**
-   * 비동기 이미지 로드 대응: data URL 이미지가 첫 렌더링 시
-   * 아직 디코딩되지 않았을 수 있으므로 점진적 재렌더링한다.
-   * 200ms, 600ms 두 번 재시도하여 대부분의 이미지 로드를 커버한다.
-   */
-  private scheduleReRender(
-    pageIdx: number,
-    pageInfo: PageInfo,
-    canvas: HTMLCanvasElement,
-    scale: number,
-  ): void {
-    this.cancelReRender(pageIdx);
-
-    const delays = [200, 600];
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
-    for (const delay of delays) {
-      const timer = setTimeout(() => {
-        if (canvas.parentElement) {
-          const appliedScale = this.renderContent(pageIdx, pageInfo, canvas, scale);
-          this.drawMarginGuides(pageInfo, canvas, appliedScale);
-        }
-      }, delay);
-      timers.push(timer);
-    }
-    this.reRenderTimers.set(pageIdx, timers);
-  }
-
-  /** 특정 페이지의 지연 재렌더링을 취소한다 */
+  /** 특정 페이지의 비동기 재렌더링 상태를 취소한다 */
   cancelReRender(pageIdx: number): void {
-    const timers = this.reRenderTimers.get(pageIdx);
-    if (timers) {
-      for (const t of timers) clearTimeout(t);
-      this.reRenderTimers.delete(pageIdx);
+    this.activeRenderStates.delete(pageIdx);
+    if (this.activeRenderStates.size === 0 && this.pendingAsyncResourceRerender !== null) {
+      cancelAnimationFrame(this.pendingAsyncResourceRerender);
+      this.pendingAsyncResourceRerender = null;
     }
   }
 
-  /** 모든 지연 재렌더링을 취소한다 */
+  /** 모든 비동기 재렌더링 상태를 취소한다 */
   cancelAll(): void {
-    for (const timers of this.reRenderTimers.values()) {
-      for (const t of timers) clearTimeout(t);
+    this.activeRenderStates.clear();
+    if (this.pendingAsyncResourceRerender !== null) {
+      cancelAnimationFrame(this.pendingAsyncResourceRerender);
+      this.pendingAsyncResourceRerender = null;
     }
-    this.reRenderTimers.clear();
   }
 
   clearLayerTreeCache(): void {
@@ -204,6 +213,8 @@ export class PageRenderer {
   dispose(): void {
     this.cancelAll();
     this.clearLayerTreeCache();
+    this.canvas2dRenderer.setAsyncResourceReadyCallback(null);
+    this.canvaskitRenderer?.setAsyncResourceReadyCallback(null);
     this.canvas2dRenderer.dispose();
     this.canvaskitRenderer?.dispose();
     this.canvaskitRenderer = null;

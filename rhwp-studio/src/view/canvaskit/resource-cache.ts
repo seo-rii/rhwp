@@ -17,6 +17,7 @@ export class CanvasKitResourceCache {
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
 
   private resources: PageLayerTree['resources'] | null = null;
+  private resourceTableId: number | null = null;
 
   constructor(
     private readonly canvasKit: CanvasKit,
@@ -25,12 +26,15 @@ export class CanvasKitResourceCache {
 
   setResources(resources: PageLayerTree['resources'] | null | undefined): void {
     const nextResources = resources ?? null;
-    if (this.resources === nextResources) {
+    const nextTableId = nextResources?.tableId ?? null;
+    if (this.resourceTableId === nextTableId) {
+      this.resources = nextResources;
       return;
     }
     this.clearResourceImageCaches();
     this.clearResourceSvgCaches();
     this.resources = nextResources;
+    this.resourceTableId = nextTableId;
   }
 
   svgFragment(resourceId?: number, fallback?: string): string {
@@ -44,7 +48,7 @@ export class CanvasKitResourceCache {
   svgResourceCacheKey(resourceId?: number, fallback?: string): string | null {
     if (typeof resourceId === 'number' && this.resources?.svgFragments?.[resourceId] !== undefined) {
       const resourceKey = this.resources.svgKeys?.[resourceId] ?? this.resources.svgHashes?.[resourceId] ?? 'unknown';
-      return `res-svg:${resourceId}:${resourceKey}`;
+      return `res-svg:${this.resources.tableId}:${resourceId}:${resourceKey}`;
     }
     const svgContent = fallback?.trim();
     return svgContent ? `inline-svg:${svgContent.length}:${this.hashString(svgContent)}` : null;
@@ -137,6 +141,7 @@ export class CanvasKitResourceCache {
 
   dispose(): void {
     this.resources = null;
+    this.resourceTableId = null;
 
     for (const image of this.patternImageCache.values()) {
       image?.delete();
@@ -175,7 +180,7 @@ export class CanvasKitResourceCache {
 
   private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
     if (typeof resourceId === 'number' && this.resources?.images?.[resourceId]) {
-      return `res:${resourceId}:${this.resources.imageHashes?.[resourceId] ?? 'unknown'}`;
+      return `res:${this.resources.tableId}:${resourceId}:${this.resources.imageHashes?.[resourceId] ?? 'unknown'}`;
     }
     return base64 ? `b64:${base64}` : null;
   }
