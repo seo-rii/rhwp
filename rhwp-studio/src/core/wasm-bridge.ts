@@ -276,6 +276,10 @@ export class WasmBridge {
     return this.normalizeLayerResources(JSON.parse(json));
   }
 
+  clearLayerResourceCache(): void {
+    this.layerResourceStore.clear();
+  }
+
   private normalizeLayerResources(tree: PageLayerTree): PageLayerTree {
     const pageResources = tree.resources;
     if (!pageResources) {

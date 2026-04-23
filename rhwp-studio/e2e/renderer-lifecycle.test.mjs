@@ -161,6 +161,43 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(staticPictureProbe.afterClear === 0, `static picture cache released with layer tree cache=${staticPictureProbe.afterClear}`);
 
+  setTestCase('layer-resource-cache-invalidation');
+  await loadHwpFile(page, '20250130-hongbo_saved.hwp');
+  const resourceInvalidationProbe = await page.evaluate(() => {
+    const canvasView = window.__canvasView;
+    const wasm = window.__wasm;
+    if (!canvasView || !wasm?.getPageLayerTree) {
+      return { error: 'canvas view or wasm bridge unavailable' };
+    }
+
+    const beforeTree = wasm.getPageLayerTree(0, 'screen');
+    const beforeResources = beforeTree.resources;
+    canvasView.refreshPages();
+    const afterTree = wasm.getPageLayerTree(0, 'screen');
+    const afterResources = afterTree.resources;
+
+    return {
+      beforeImageCount: beforeResources?.images?.length ?? -1,
+      afterImageCount: afterResources?.images?.length ?? -1,
+      sameResourceTable: beforeResources === afterResources,
+      layerTreeCacheSize: canvasView.pageRenderer?.layerTreeCache?.size ?? -1,
+    };
+  });
+
+  assert(!resourceInvalidationProbe.error, resourceInvalidationProbe.error || 'layer resource invalidation probe available');
+  assert(
+    resourceInvalidationProbe.beforeImageCount > 0,
+    `resource table populated before refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+  );
+  assert(
+    resourceInvalidationProbe.afterImageCount > 0,
+    `resource table repopulated after refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+  );
+  assert(
+    resourceInvalidationProbe.sameResourceTable === false,
+    `resource table generation changes on refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+  );
+
   setTestCase('canvaskit-dispose');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   await loadHwpFile(page, 'pic-crop-01.hwp');
