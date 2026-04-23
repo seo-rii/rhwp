@@ -39,8 +39,14 @@ export class PageRenderer {
   ): number {
     const appliedScale = clampRenderScale(pageInfo, scale);
 
-    canvas.width = Math.max(1, Math.floor(pageInfo.width * appliedScale));
-    canvas.height = Math.max(1, Math.floor(pageInfo.height * appliedScale));
+    const canvasWidth = Math.max(1, Math.floor(pageInfo.width * appliedScale));
+    const canvasHeight = Math.max(1, Math.floor(pageInfo.height * appliedScale));
+    if (canvas.width !== canvasWidth) {
+      canvas.width = canvasWidth;
+    }
+    if (canvas.height !== canvasHeight) {
+      canvas.height = canvasHeight;
+    }
     const layerTree = this.getLayerTree(pageIdx);
 
     if (this.backend === 'canvaskit') {

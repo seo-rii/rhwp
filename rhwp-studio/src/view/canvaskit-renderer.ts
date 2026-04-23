@@ -50,6 +50,7 @@ import {
 } from './canvaskit/policy';
 import { CanvasKitResourceCache } from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
+import { CanvasKitSurfaceCache } from './canvaskit/surface-cache';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
@@ -61,6 +62,7 @@ type OverlayClip = {
 
 export class CanvasKitLayerRenderer {
   private readonly resourceCache: CanvasKitResourceCache;
+  private readonly surfaceCache: CanvasKitSurfaceCache;
   private readonly fontRegistry: CanvasKitFontRegistry;
   private readonly imageCache: Map<string, Image>;
   private readonly mipmappedImageCache: Map<string, Image>;
@@ -86,6 +88,7 @@ export class CanvasKitLayerRenderer {
     private readonly renderMode: CanvasKitRenderMode,
   ) {
     this.resourceCache = new CanvasKitResourceCache(canvasKit, () => this.scheduleRerender());
+    this.surfaceCache = new CanvasKitSurfaceCache(canvasKit);
     this.fontRegistry = new CanvasKitFontRegistry(fontProvider);
     this.imageCache = this.resourceCache.imageCache;
     this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
@@ -123,33 +126,14 @@ export class CanvasKitLayerRenderer {
     this.resourceCache.setResources(tree.resources);
     this.currentCacheHintStack.length = 0;
 
-    let surface: Surface | null = null;
-    let usedGpuSurface = false;
-    try {
-      surface = this.canvasKit.MakeCanvasSurface(targetCanvas);
-      usedGpuSurface = surface !== null;
-    } catch {
-      surface = null;
-    }
-    surface ??= this.canvasKit.MakeSWCanvasSurface(targetCanvas);
-    if (!surface) {
-      throw new Error('CanvasKit surface 생성 실패');
-    }
+    const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
 
     let renderError: unknown = null;
     try {
-      const canvas = surface.getCanvas();
-      canvas.clear(this.canvasKit.TRANSPARENT);
-      canvas.save();
-      canvas.scale(scale, scale);
-      this.renderNode(canvas, tree.root);
-      canvas.restore();
-      surface.flush();
+      this.renderSurface(surface, tree, scale);
       this.renderFallbackOverlays(tree.root, targetCanvas, scale);
     } catch (error) {
       renderError = error;
-    } finally {
-      surface.delete();
     }
 
     if (!renderError) {
@@ -160,23 +144,23 @@ export class CanvasKitLayerRenderer {
       throw renderError;
     }
 
-    const fallbackSurface = this.canvasKit.MakeSWCanvasSurface(targetCanvas);
+    const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas);
     if (!fallbackSurface) {
       throw renderError;
     }
 
-    try {
-      const canvas = fallbackSurface.getCanvas();
-      canvas.clear(this.canvasKit.TRANSPARENT);
-      canvas.save();
-      canvas.scale(scale, scale);
-      this.renderNode(canvas, tree.root);
-      canvas.restore();
-      fallbackSurface.flush();
-      this.renderFallbackOverlays(tree.root, targetCanvas, scale);
-    } finally {
-      fallbackSurface.delete();
-    }
+    this.renderSurface(fallbackSurface, tree, scale);
+    this.renderFallbackOverlays(tree.root, targetCanvas, scale);
+  }
+
+  private renderSurface(surface: Surface, tree: PageLayerTree, scale: number): void {
+    const canvas = surface.getCanvas();
+    canvas.clear(this.canvasKit.TRANSPARENT);
+    canvas.save();
+    canvas.scale(scale, scale);
+    this.renderNode(canvas, tree.root);
+    canvas.restore();
+    surface.flush();
   }
 
   private renderNode(
@@ -1562,6 +1546,10 @@ export class CanvasKitLayerRenderer {
   }
 
   private renderFallbackOverlays(node: LayerNode, targetCanvas: HTMLCanvasElement, scale: number): void {
+    if (!this.hasFallbackOverlayNode(node)) {
+      return;
+    }
+
     const ctx = targetCanvas.getContext('2d');
     if (!ctx) {
       return;
@@ -1570,6 +1558,62 @@ export class CanvasKitLayerRenderer {
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     this.renderFallbackOverlayNode(ctx, node);
     ctx.restore();
+  }
+
+  private hasFallbackOverlayNode(node: LayerNode): boolean {
+    if (node.kind === 'group') {
+      this.currentCacheHintStack.push(node.cacheHint);
+      try {
+        return node.children.some((child) => this.hasFallbackOverlayNode(child));
+      } finally {
+        this.currentCacheHintStack.pop();
+      }
+    }
+    if (node.kind === 'clipRect') {
+      this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
+      try {
+        return this.hasFallbackOverlayNode(node.child);
+      } finally {
+        this.currentClipStack.pop();
+      }
+    }
+
+    this.currentCacheHintStack.push(node.cacheHint);
+    try {
+      return node.ops.some((op) => {
+        if (
+          this.renderMode === 'compat'
+          && op.type === 'pageBackground'
+          && op.image
+        ) {
+          return true;
+        }
+        if (op.type === 'image') {
+          return this.shouldOverlayImage(op);
+        }
+        if (op.type === 'line') {
+          return this.shouldOverlayLine(op);
+        }
+        if (op.type === 'rectangle') {
+          return this.shouldOverlayRectangle(op);
+        }
+        if (op.type === 'formObject') {
+          return this.shouldOverlayFormObject(op);
+        }
+        if (op.type === 'equation') {
+          return this.shouldOverlayEquation(op);
+        }
+        if (op.type === 'textRun') {
+          return this.shouldOverlayTextRun(op);
+        }
+        if (op.type === 'footnoteMarker') {
+          return this.shouldOverlayFootnoteMarker(op);
+        }
+        return false;
+      });
+    } finally {
+      this.currentCacheHintStack.pop();
+    }
   }
 
   private renderFallbackOverlayNode(ctx: CanvasRenderingContext2D, node: LayerNode): void {
@@ -2582,6 +2626,7 @@ export class CanvasKitLayerRenderer {
     this.currentCacheHintStack.length = 0;
 
     this.clearStaticPictureCache();
+    this.surfaceCache.clear();
     this.resourceCache.dispose();
     this.fontRegistry.clear();
     this.fontProvider.delete();

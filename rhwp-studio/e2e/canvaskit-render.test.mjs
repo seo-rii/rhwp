@@ -71,6 +71,11 @@ const PERFORMANCE_ITERATIONS = Math.max(
   1,
   Number.parseInt(process.env.RHWP_E2E_PERF_ITERATIONS ?? '3', 10) || 3,
 );
+const PERFORMANCE_GUARD = {
+  maxReplayRatio: Number.parseFloat(process.env.RHWP_CANVASKIT_MAX_REPLAY_RATIO ?? '25'),
+  maxReplayAvgMs: Number.parseFloat(process.env.RHWP_CANVASKIT_MAX_REPLAY_AVG_MS ?? '250'),
+  maxAverageReplayRatio: Number.parseFloat(process.env.RHWP_CANVASKIT_MAX_AVG_REPLAY_RATIO ?? '15'),
+};
 const TOLERANT_DIFF = {
   ignoreChannelDelta: 8,
   maxDiffRatio: 0.0025,
@@ -181,6 +186,17 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     canvaskitNativeEquations: canvaskit.layerSummary?.nativeEquationCount ?? 0,
     canvaskitNativeFormObjects: canvaskit.layerSummary?.nativeFormObjectCount ?? 0,
   };
+}
+
+function assertPerformanceGuard(row) {
+  assert(
+    row.replayRatio === null || row.replayRatio <= PERFORMANCE_GUARD.maxReplayRatio,
+    `${row.case} CanvasKit replay ratio=${row.replayRatio} <= ${PERFORMANCE_GUARD.maxReplayRatio}`,
+  );
+  assert(
+    row.canvaskitReplayAvgMs <= PERFORMANCE_GUARD.maxReplayAvgMs,
+    `${row.case} CanvasKit replay avg=${row.canvaskitReplayAvgMs}ms <= ${PERFORMANCE_GUARD.maxReplayAvgMs}ms`,
+  );
 }
 
 async function renderScenario(page, backend, caseInfo) {
@@ -436,6 +452,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       const performanceComparison = buildPerformanceComparison('full-page', caseInfo, baseline, canvaskit);
       performanceRows.push(performanceComparison);
       recordMetric(`${caseInfo.name} renderer performance`, performanceComparison);
+      assertPerformanceGuard(performanceComparison);
     } catch (error) {
       await screenshot(page, `${caseInfo.name}-${CANVASKIT_MODE}-error`).catch(() => {});
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -455,6 +472,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       const performanceComparison = buildPerformanceComparison('feature', caseInfo, baseline, canvaskit);
       performanceRows.push(performanceComparison);
       recordMetric(`${caseInfo.name} feature renderer performance`, performanceComparison);
+      assertPerformanceGuard(performanceComparison);
 
       const boxes = await getLayerOpBBoxes(page, caseInfo.opType);
       assert(boxes.length > 0, `${caseInfo.name} ${caseInfo.opType} bbox exported`);
@@ -512,7 +530,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     const canvas2dCaptureMs = rows.reduce((sum, row) => sum + row.canvas2dCaptureMs, 0) / rows.length;
     const canvaskitCaptureMs = rows.reduce((sum, row) => sum + row.canvaskitCaptureMs, 0) / rows.length;
     const captureRatio = canvas2dCaptureMs > 0 ? canvaskitCaptureMs / canvas2dCaptureMs : null;
-    recordMetric(`${scope} renderer performance average`, {
+    const summary = {
       scope,
       samples: rows.length,
       mode: CANVASKIT_MODE,
@@ -525,7 +543,12 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       canvas2dCaptureMs: roundMetric(canvas2dCaptureMs),
       canvaskitCaptureMs: roundMetric(canvaskitCaptureMs),
       captureRatio: roundMetric(captureRatio),
-    });
+    };
+    recordMetric(`${scope} renderer performance average`, summary);
+    assert(
+      summary.replayRatio === null || summary.replayRatio <= PERFORMANCE_GUARD.maxAverageReplayRatio,
+      `${scope} average CanvasKit replay ratio=${summary.replayRatio} <= ${PERFORMANCE_GUARD.maxAverageReplayRatio}`,
+    );
   }
 
   setTestCase('canvaskit-font-preload');
