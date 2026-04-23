@@ -10,6 +10,7 @@ import {
   getLayerOpBBoxes,
   loadApp,
   loadHwpFile,
+  recordMetric,
   runTest,
   screenshot,
   screenshotCanvas,
@@ -66,6 +67,10 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
 ]);
 const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'default' ? 'default' : 'compat';
 const RENDER_PROFILE = process.env.RHWP_RENDER_PROFILE?.trim() || 'screen';
+const PERFORMANCE_ITERATIONS = Math.max(
+  1,
+  Number.parseInt(process.env.RHWP_E2E_PERF_ITERATIONS ?? '3', 10) || 3,
+);
 const TOLERANT_DIFF = {
   ignoreChannelDelta: 8,
   maxDiffRatio: 0.0025,
@@ -131,12 +136,64 @@ function collectFullSweepCases() {
   }).filter((caseInfo) => matchesSampleFilter(caseInfo.name, caseInfo.fileName));
 }
 
+function roundMetric(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.round(value * 1000) / 1000;
+}
+
+function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
+  const canvas2dAvg = baseline.performance.replay.avgMs;
+  const canvaskitAvg = canvaskit.performance.replay.avgMs;
+  const replayRatio = canvas2dAvg > 0 ? canvaskitAvg / canvas2dAvg : null;
+  const captureRatio = baseline.performance.screenshotMs > 0
+    ? canvaskit.performance.screenshotMs / baseline.performance.screenshotMs
+    : null;
+  return {
+    scope,
+    case: caseInfo.name,
+    mode: CANVASKIT_MODE,
+    profile: RENDER_PROFILE,
+    iterations: PERFORMANCE_ITERATIONS,
+    canvas2dReplayAvgMs: roundMetric(canvas2dAvg),
+    canvaskitReplayAvgMs: roundMetric(canvaskitAvg),
+    replayRatio: roundMetric(replayRatio),
+    fasterReplayBackend: replayRatio === null ? 'n/a' : (replayRatio <= 1 ? 'canvaskit' : 'canvas2d'),
+    canvas2dReplayMedianMs: roundMetric(baseline.performance.replay.medianMs),
+    canvaskitReplayMedianMs: roundMetric(canvaskit.performance.replay.medianMs),
+    canvas2dReplayMinMs: roundMetric(baseline.performance.replay.minMs),
+    canvaskitReplayMinMs: roundMetric(canvaskit.performance.replay.minMs),
+    canvas2dReplayMaxMs: roundMetric(baseline.performance.replay.maxMs),
+    canvaskitReplayMaxMs: roundMetric(canvaskit.performance.replay.maxMs),
+    canvas2dCaptureMs: roundMetric(baseline.performance.screenshotMs),
+    canvaskitCaptureMs: roundMetric(canvaskit.performance.screenshotMs),
+    captureRatio: roundMetric(captureRatio),
+    canvas2dLoadMs: roundMetric(baseline.performance.loadMs),
+    canvaskitLoadMs: roundMetric(canvaskit.performance.loadMs),
+    canvas2dSetupMs: roundMetric(baseline.performance.setupMs),
+    canvaskitSetupMs: roundMetric(canvaskit.performance.setupMs),
+    canvasPixels: baseline.performance.replay.canvasPixels,
+    canvas2dOps: baseline.layerSummary?.opCount ?? 0,
+    canvaskitOps: canvaskit.layerSummary?.opCount ?? 0,
+    canvaskitNativeTextRuns: canvaskit.layerSummary?.nativeTextRunCount ?? 0,
+    canvaskitNativeImages: canvaskit.layerSummary?.nativeImageCount ?? 0,
+    canvaskitNativeEquations: canvaskit.layerSummary?.nativeEquationCount ?? 0,
+    canvaskitNativeFormObjects: canvaskit.layerSummary?.nativeFormObjectCount ?? 0,
+  };
+}
+
 async function renderScenario(page, backend, caseInfo) {
+  const scenarioStart = performance.now();
   const search = backend === 'canvaskit'
     ? `?renderer=${backend}&canvaskitMode=${CANVASKIT_MODE}&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`
     : `?renderer=${backend}&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`;
+  const loadStart = performance.now();
   await loadApp(page, search);
+  const loadMs = performance.now() - loadStart;
+  const setupStart = performance.now();
   await caseInfo.setup(page);
+  const setupMs = performance.now() - setupStart;
 
   const activeBackend = await page.evaluate(() => window.__renderBackend ?? window.__canvasView?.getRenderBackend?.());
   assert(activeBackend === backend || (backend === 'canvas2d' && activeBackend === 'canvas'), `${caseInfo.name} backend=${backend}`);
@@ -234,15 +291,77 @@ async function renderScenario(page, backend, caseInfo) {
   const screenshotName = backend === 'canvaskit'
     ? `${caseInfo.name}-${backend}-${CANVASKIT_MODE}`
     : `${caseInfo.name}-${backend}`;
+  const screenshotStart = performance.now();
   const shot = await screenshotCanvas(page, screenshotName);
+  const screenshotMs = performance.now() - screenshotStart;
+
+  const replay = await page.evaluate(async (iterations) => {
+    const canvasView = window.__canvasView;
+    const pageRenderer = canvasView?.pageRenderer;
+    const wasm = window.__wasm;
+    const canvas = document.querySelector('#scroll-container canvas') ?? document.querySelector('canvas');
+    if (!pageRenderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'page renderer is not exposed' };
+    }
+    if (!canvas) {
+      return { error: 'page canvas is not mounted' };
+    }
+    let pageInfo = null;
+    try {
+      pageInfo = wasm?.getPageInfo?.(0) ?? null;
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+    if (!pageInfo || !pageInfo.width || !pageInfo.height) {
+      return { error: 'page info is unavailable' };
+    }
+
+    const renderScale = canvas.width / pageInfo.width;
+    const samples = [];
+    pageRenderer.cancelAll?.();
+    for (let index = 0; index < iterations; index += 1) {
+      const startedAt = performance.now();
+      pageRenderer.renderPage(0, pageInfo, canvas, renderScale);
+      samples.push(performance.now() - startedAt);
+      pageRenderer.cancelAll?.();
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    const sorted = [...samples].sort((left, right) => left - right);
+    const total = samples.reduce((sum, value) => sum + value, 0);
+    return {
+      iterations: samples.length,
+      samples,
+      avgMs: total / samples.length,
+      medianMs: sorted[Math.floor(sorted.length / 2)],
+      minMs: sorted[0],
+      maxMs: sorted[sorted.length - 1],
+      renderScale,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      canvasPixels: canvas.width * canvas.height,
+    };
+  }, PERFORMANCE_ITERATIONS);
+  if (replay.error) {
+    throw new Error(`${caseInfo.name} performance replay failed: ${replay.error}`);
+  }
+
   return {
     ...shot,
     layerSummary,
+    performance: {
+      backend,
+      loadMs,
+      setupMs,
+      replay,
+      screenshotMs,
+      totalMs: performance.now() - scenarioStart,
+    },
   };
 }
 
 runTest('CanvasKit 렌더 비교', async ({ page }) => {
   console.log(`[scope=${SAMPLE_SCOPE}] full-page cases=${FULL_PAGE_CASES.length}, feature cases=${FILTERED_FEATURE_CASES.length}, mode=${CANVASKIT_MODE}, profile=${RENDER_PROFILE}, filter=${SAMPLE_FILTER_PATTERN || 'none'}`);
+  const performanceRows = [];
 
   setTestCase('canvas2d-layer-path');
   await loadApp(page, `?renderer=canvas2d&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`);
@@ -314,6 +433,9 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         diff.passed,
         `${caseInfo.name} screenshot exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), non_ink=${diff.rawNonInkDiffPixels} (${diff.rawNonInkDiffRatio.toFixed(4)}), solid_ink=${diff.rawSolidInkDiffPixels} (${diff.rawSolidInkDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, non_ink_budget=${diff.nonInkBudgetPassed}, solid_ink_budget=${diff.solidInkBudgetPassed}, raster_only_budget=${diff.rasterOnlyBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
       );
+      const performanceComparison = buildPerformanceComparison('full-page', caseInfo, baseline, canvaskit);
+      performanceRows.push(performanceComparison);
+      recordMetric(`${caseInfo.name} renderer performance`, performanceComparison);
     } catch (error) {
       await screenshot(page, `${caseInfo.name}-${CANVASKIT_MODE}-error`).catch(() => {});
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -330,6 +452,9 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       console.log(`[${caseInfo.name}] CanvasKit 기능 렌더...`);
       const canvaskit = await renderScenario(page, 'canvaskit', caseInfo);
       const nativeTextActive = (canvaskit.layerSummary?.nativeTextRunCount ?? 0) > 0;
+      const performanceComparison = buildPerformanceComparison('feature', caseInfo, baseline, canvaskit);
+      performanceRows.push(performanceComparison);
+      recordMetric(`${caseInfo.name} feature renderer performance`, performanceComparison);
 
       const boxes = await getLayerOpBBoxes(page, caseInfo.opType);
       assert(boxes.length > 0, `${caseInfo.name} ${caseInfo.opType} bbox exported`);
@@ -371,6 +496,36 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         `${caseInfo.name} feature error: ${message}`,
       );
     }
+  }
+
+  setTestCase('renderer-performance-summary');
+  for (const scope of ['full-page', 'feature', 'all']) {
+    const rows = scope === 'all'
+      ? performanceRows
+      : performanceRows.filter((row) => row.scope === scope);
+    if (rows.length === 0) {
+      continue;
+    }
+    const canvas2dReplayAvgMs = rows.reduce((sum, row) => sum + row.canvas2dReplayAvgMs, 0) / rows.length;
+    const canvaskitReplayAvgMs = rows.reduce((sum, row) => sum + row.canvaskitReplayAvgMs, 0) / rows.length;
+    const replayRatio = canvas2dReplayAvgMs > 0 ? canvaskitReplayAvgMs / canvas2dReplayAvgMs : null;
+    const canvas2dCaptureMs = rows.reduce((sum, row) => sum + row.canvas2dCaptureMs, 0) / rows.length;
+    const canvaskitCaptureMs = rows.reduce((sum, row) => sum + row.canvaskitCaptureMs, 0) / rows.length;
+    const captureRatio = canvas2dCaptureMs > 0 ? canvaskitCaptureMs / canvas2dCaptureMs : null;
+    recordMetric(`${scope} renderer performance average`, {
+      scope,
+      samples: rows.length,
+      mode: CANVASKIT_MODE,
+      profile: RENDER_PROFILE,
+      iterations: PERFORMANCE_ITERATIONS,
+      canvas2dReplayAvgMs: roundMetric(canvas2dReplayAvgMs),
+      canvaskitReplayAvgMs: roundMetric(canvaskitReplayAvgMs),
+      replayRatio: roundMetric(replayRatio),
+      fasterReplayBackend: replayRatio === null ? 'n/a' : (replayRatio <= 1 ? 'canvaskit' : 'canvas2d'),
+      canvas2dCaptureMs: roundMetric(canvas2dCaptureMs),
+      canvaskitCaptureMs: roundMetric(canvaskitCaptureMs),
+      captureRatio: roundMetric(captureRatio),
+    });
   }
 
   setTestCase('canvaskit-font-preload');

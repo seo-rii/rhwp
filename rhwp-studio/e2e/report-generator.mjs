@@ -15,6 +15,7 @@ export class TestReporter {
   constructor(title) {
     this.title = title;
     this.results = [];
+    this.metrics = [];
     this.startTime = Date.now();
     this.currentSection = null;
   }
@@ -35,12 +36,17 @@ export class TestReporter {
     this.results.push({ tc, status: 'SKIP', message, screenshot, section: this.currentSection });
   }
 
+  metric(tc, message, values) {
+    this.metrics.push({ tc, message, values, section: this.currentSection });
+  }
+
   generate(outputPath) {
     const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
     const passed = this.results.filter(r => r.status === 'PASS').length;
     const failed = this.results.filter(r => r.status === 'FAIL').length;
     const skipped = this.results.filter(r => r.status === 'SKIP').length;
     const total = this.results.length;
+    const metricCount = this.metrics.length;
     const statusClass = failed > 0 ? 'fail' : 'pass';
 
     // 스크린샷을 base64로 인코딩
@@ -62,10 +68,18 @@ export class TestReporter {
       if (!tcGroups.has(key)) tcGroups.set(key, []);
       tcGroups.get(key).push(r);
     }
+    const metricGroups = new Map();
+    for (const metric of this.metrics) {
+      const key = metric.tc || metric.section || 'General';
+      if (!metricGroups.has(key)) metricGroups.set(key, []);
+      metricGroups.get(key).push(metric);
+    }
 
     let tcRows = '';
-    for (const [tc, items] of tcGroups) {
-      const tcPassed = items.every(i => i.status !== 'FAIL');
+    const tcKeys = new Set([...tcGroups.keys(), ...metricGroups.keys()]);
+    for (const tc of tcKeys) {
+      const items = tcGroups.get(tc) ?? [];
+      const metrics = metricGroups.get(tc) ?? [];
       const tcStatus = items.some(i => i.status === 'FAIL') ? 'FAIL'
         : items.some(i => i.status === 'SKIP') ? 'SKIP' : 'PASS';
       const statusBadge = tcStatus === 'PASS' ? '<span class="badge pass">PASS</span>'
@@ -80,6 +94,29 @@ export class TestReporter {
         const icon = i.status === 'PASS' ? '✅' : i.status === 'FAIL' ? '❌' : '⏭️';
         return `<div class="assertion ${i.status.toLowerCase()}">${icon} ${escapeHtml(i.message)}</div>`;
       }).join('\n');
+      if (!assertionRows && metrics.length > 0) {
+        assertionRows = '<div class="assertion metric-only">📈 metric-only report row</div>';
+      }
+
+      const metricRows = metrics.map((metric) => {
+        const values = metric.values && typeof metric.values === 'object' ? metric.values : {};
+        const rows = Object.entries(values).map(([key, value]) => {
+          let displayValue = value;
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            displayValue = Math.abs(value) >= 100 ? value.toFixed(1) : value.toFixed(3);
+          } else if (typeof value === 'boolean') {
+            displayValue = value ? 'true' : 'false';
+          } else if (Array.isArray(value)) {
+            displayValue = value.join(', ');
+          }
+          return `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(displayValue)}</td></tr>`;
+        }).join('\n');
+        return `
+          <div class="metric-block">
+            <div class="metric-title">${escapeHtml(metric.message)}</div>
+            <table class="metric-table"><tbody>${rows}</tbody></table>
+          </div>`;
+      }).join('\n');
 
       tcRows += `
       <div class="tc-card ${tcStatus.toLowerCase()}">
@@ -88,6 +125,7 @@ export class TestReporter {
         </div>
         <div class="tc-body">
           <div class="assertions">${assertionRows}</div>
+          ${metricRows ? `<div class="metrics">${metricRows}</div>` : ''}
           ${imgData ? `<div class="screenshot"><img src="${imgData}" alt="${escapeHtml(tc)}" loading="lazy"></div>` : ''}
         </div>
       </div>`;
@@ -131,6 +169,14 @@ export class TestReporter {
   .assertion { padding: 4px 0; font-size: 14px; font-family: monospace; }
   .assertion.fail { color: #dc3545; font-weight: bold; }
   .assertion.skip { color: #856404; }
+  .assertion.metric-only { color: #0c5460; }
+  .metrics { margin: 12px 0; display: grid; gap: 12px; }
+  .metric-block { border: 1px solid #bee5eb; border-radius: 6px; overflow: hidden; background: #f8fdff; }
+  .metric-title { padding: 8px 10px; background: #d1ecf1; color: #0c5460; font-weight: 700; font-size: 13px; }
+  .metric-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .metric-table th, .metric-table td { padding: 6px 10px; border-top: 1px solid #e6f2f5; text-align: left; vertical-align: top; }
+  .metric-table th { width: 220px; color: #466; font-family: monospace; background: rgba(209,236,241,0.35); }
+  .metric-table td { font-family: monospace; }
   .screenshot { margin-top: 12px; }
   .screenshot img { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; transition: transform 0.2s; }
   .screenshot img:hover { transform: scale(1.02); }
@@ -140,7 +186,7 @@ export class TestReporter {
 <body>
 <div class="header">
   <h1>${escapeHtml(this.title)}</h1>
-  <div class="meta">생성: ${now} | 소요: ${elapsed}초 | rhwp E2E CDP 테스트</div>
+  <div class="meta">생성: ${now} | 소요: ${elapsed}초 | metrics: ${metricCount} | rhwp E2E CDP 테스트</div>
 </div>
 <div class="summary">
   <div class="stat total"><div class="number">${total}</div><div class="label">Total</div></div>

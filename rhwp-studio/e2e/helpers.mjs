@@ -684,6 +684,12 @@ export function assert(condition, message) {
   _lastScreenshot = null;
 }
 
+/** 테스트 리포트에 구조화된 측정값을 기록한다 */
+export function recordMetric(message, values) {
+  console.log(`  METRIC: ${message} ${JSON.stringify(values)}`);
+  if (_reporter) _reporter.metric(_currentTC, message, values);
+}
+
 // ─── 테스트 러너 ─────────────────────────────────────────
 
 /**
