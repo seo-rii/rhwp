@@ -20,6 +20,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       mipmappedImageCacheSize: renderer?.mipmappedImageCache?.size ?? -1,
       domImageCacheSize: renderer?.domImageCache?.size ?? -1,
       patternImageCacheSize: renderer?.patternImageCache?.size ?? -1,
+      staticPictureCacheSize: renderer?.staticPictureCache?.size ?? -1,
       fontAliasCount: renderer?.fontAliases?.size ?? -1,
       layerTreeCacheSize: canvasView?.pageRenderer?.layerTreeCache?.size ?? -1,
     };
@@ -32,7 +33,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       || beforeDispose.imageCacheSize > 0
       || beforeDispose.mipmappedImageCacheSize > 0
       || beforeDispose.domImageCacheSize > 0
-      || beforeDispose.patternImageCacheSize > 0,
+      || beforeDispose.patternImageCacheSize > 0
+      || beforeDispose.staticPictureCacheSize > 0,
     `canvaskit reusable state populated before dispose=${JSON.stringify(beforeDispose)}`,
   );
   assert(beforeDispose.fontAliasCount > 0, `font aliases registered before dispose=${beforeDispose.fontAliasCount}`);
@@ -60,6 +62,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       mipmappedImageCacheSize: renderer.mipmappedImageCache?.size ?? -1,
       domImageCacheSize: renderer.domImageCache?.size ?? -1,
       patternImageCacheSize: renderer.patternImageCache?.size ?? -1,
+      staticPictureCacheSize: renderer.staticPictureCache?.size ?? -1,
       fontAliasCount: renderer.fontAliases?.size ?? -1,
       lastRenderedTree: renderer.lastRenderedTree ? 'present' : 'null',
       lastTargetCanvas: renderer.lastTargetCanvas ? 'present' : 'null',
@@ -74,6 +77,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(afterDispose.mipmappedImageCacheSize === 0, `mipmap cache cleared=${afterDispose.mipmappedImageCacheSize}`);
   assert(afterDispose.domImageCacheSize === 0, `dom image cache cleared=${afterDispose.domImageCacheSize}`);
   assert(afterDispose.patternImageCacheSize === 0, `pattern cache cleared=${afterDispose.patternImageCacheSize}`);
+  assert(afterDispose.staticPictureCacheSize === 0, `static picture cache cleared=${afterDispose.staticPictureCacheSize}`);
   assert(afterDispose.fontAliasCount === 0, `font aliases cleared=${afterDispose.fontAliasCount}`);
   assert(afterDispose.lastRenderedTree === 'null', `last rendered tree released=${afterDispose.lastRenderedTree}`);
   assert(afterDispose.lastTargetCanvas === 'null', `last target canvas released=${afterDispose.lastTargetCanvas}`);
