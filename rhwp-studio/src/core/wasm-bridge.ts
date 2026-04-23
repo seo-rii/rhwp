@@ -46,6 +46,8 @@ class LayerResourceStore {
 
   private imageLookup = new Map<string, number[]>();
   private svgLookup = new Map<string, number[]>();
+  private cachedKnownImageKeys: string[] | null = null;
+  private cachedKnownSvgKeys: string[] | null = null;
   private importedImagePayloads = 0;
   private importedImagePayloadBytes = 0;
   private omittedImagePayloads = 0;
@@ -57,6 +59,8 @@ class LayerResourceStore {
     this.resources = { images: [], imageHashes: [], imageKeys: [], svgFragments: [], svgHashes: [], svgKeys: [] };
     this.imageLookup.clear();
     this.svgLookup.clear();
+    this.cachedKnownImageKeys = null;
+    this.cachedKnownSvgKeys = null;
     this.importedImagePayloads = 0;
     this.importedImagePayloadBytes = 0;
     this.omittedImagePayloads = 0;
@@ -89,6 +93,7 @@ class LayerResourceStore {
     } else {
       this.imageLookup.set(key, [id]);
     }
+    this.cachedKnownImageKeys = null;
     return id;
   }
 
@@ -116,6 +121,7 @@ class LayerResourceStore {
     } else {
       this.svgLookup.set(key, [id]);
     }
+    this.cachedKnownSvgKeys = null;
     return id;
   }
 
@@ -136,11 +142,13 @@ class LayerResourceStore {
   }
 
   knownImageKeys(): string[] {
-    return this.uniqueKeys(this.imageLookup);
+    this.cachedKnownImageKeys ??= this.uniqueKeys(this.imageLookup);
+    return this.cachedKnownImageKeys;
   }
 
   knownSvgKeys(): string[] {
-    return this.uniqueKeys(this.svgLookup);
+    this.cachedKnownSvgKeys ??= this.uniqueKeys(this.svgLookup);
+    return this.cachedKnownSvgKeys;
   }
 
   stats() {
