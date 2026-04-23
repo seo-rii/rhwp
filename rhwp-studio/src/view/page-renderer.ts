@@ -152,6 +152,7 @@ export class PageRenderer {
   dispose(): void {
     this.cancelAll();
     this.clearLayerTreeCache();
+    this.canvas2dRenderer.dispose();
     this.canvaskitRenderer?.dispose();
     this.canvaskitRenderer = null;
   }

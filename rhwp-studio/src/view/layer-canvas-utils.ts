@@ -17,6 +17,16 @@ export function decodeBase64(base64: string): Uint8Array {
   return bytes;
 }
 
+export function encodeBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return window.btoa(binary);
+}
+
 export function inferImageMime(bytes: Uint8Array): string {
   if (bytes.length >= 8
     && bytes[0] === 0x89

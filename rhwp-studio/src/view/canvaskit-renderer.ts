@@ -1,11 +1,12 @@
 import CanvasKitInit from 'canvaskit-wasm';
-import type { CanvasKit, Font, Image, Paint, Shader, Surface, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, Font, Image, Paint, Shader, SkPicture, Surface, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import { resolveFont } from '@/core/font-substitution';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
   LayerBounds,
+  LayerCacheHint,
   LayerClipNode,
   LayerEllipseOp,
   LayerEquationLayoutBox,
@@ -36,6 +37,7 @@ import {
   calculateArrowDimensions,
   computePathPaintBounds,
   decodeBase64,
+  encodeBase64,
   inferImageMime,
   isHalfwidthScaledCluster,
   rasterizePatternTileToPngBytes,
@@ -140,12 +142,15 @@ export class CanvasKitLayerRenderer {
   private readonly equationSvgDomImageCache = new Map<string, HTMLImageElement>();
   private readonly equationSvgImageCache = new Map<string, Image>();
   private readonly patternImageCache = new Map<string, Image | null>();
+  private readonly staticPictureCache = new Map<string, SkPicture>();
   private readonly fontAliases = new Set<string>();
   private readonly currentClipStack: OverlayClip[] = [];
+  private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
   private currentProfile: LayerRenderProfile = 'screen';
+  private currentResources: PageLayerTree['resources'] | null = null;
   private rerenderScheduled = false;
   private disposed = false;
 
@@ -174,10 +179,19 @@ export class CanvasKitLayerRenderer {
       throw new Error('CanvasKit renderer가 이미 dispose되었습니다');
     }
 
+    const previousTree = this.lastRenderedTree;
     this.lastRenderedTree = tree;
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
     this.currentProfile = tree.profile;
+    if (previousTree !== tree) {
+      this.clearStaticPictureCache();
+    }
+    if (this.currentResources !== (tree.resources ?? null)) {
+      this.clearResourceImageCaches();
+      this.currentResources = tree.resources ?? null;
+    }
+    this.currentCacheHintStack.length = 0;
 
     let surface: Surface | null = null;
     let usedGpuSurface = false;
@@ -277,24 +291,76 @@ export class CanvasKitLayerRenderer {
   ): void {
     switch (node.kind) {
       case 'group':
-        for (const child of node.children) {
-          this.renderNode(canvas, child);
-        }
+        this.withCacheHint(node.cacheHint, () => {
+          if (node.cacheHint === 'staticSubtree') {
+            const cacheKey = [
+              this.currentProfile,
+              node.sourceNodeId ?? 'anon',
+              node.bounds.x.toFixed(3),
+              node.bounds.y.toFixed(3),
+              node.bounds.width.toFixed(3),
+              node.bounds.height.toFixed(3),
+              node.children.length,
+            ].join(':');
+            const cachedPicture = this.staticPictureCache.get(cacheKey);
+            if (cachedPicture) {
+              canvas.drawPicture(cachedPicture);
+              return;
+            }
+
+            const recorder = new this.canvasKit.PictureRecorder();
+            try {
+              const recordingCanvas = recorder.beginRecording(this.toRect(node.bounds), true);
+              for (const child of node.children) {
+                this.renderNode(recordingCanvas, child);
+              }
+              const picture = recorder.finishRecordingAsPicture();
+              this.staticPictureCache.set(cacheKey, picture);
+              canvas.drawPicture(picture);
+            } finally {
+              recorder.delete();
+            }
+            return;
+          }
+          for (const child of node.children) {
+            this.renderNode(canvas, child);
+          }
+        });
         break;
       case 'clipRect':
         this.renderClipNode(canvas, node);
         break;
       case 'leaf':
-        this.renderLeafNode(canvas, node);
+        this.withCacheHint(node.cacheHint, () => {
+          this.renderLeafNode(canvas, node);
+        });
         break;
     }
+  }
+
+  private withCacheHint(cacheHint: LayerCacheHint, render: () => void): void {
+    this.currentCacheHintStack.push(cacheHint);
+    try {
+      render();
+    } finally {
+      this.currentCacheHintStack.pop();
+    }
+  }
+
+  private hasActiveCacheHint(cacheHint: LayerCacheHint): boolean {
+    return this.currentCacheHintStack.includes(cacheHint);
   }
 
   private renderClipNode(
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerClipNode,
   ): void {
-    const clipRightPad = node.clipKind === 'body' || node.clipKind === 'tableCell' ? CLIP_RASTER_EDGE_PAD_PX : 0;
+    const clipRightPad =
+      this.renderMode === 'compat'
+      && this.currentProfile === 'fast-preview'
+      && (node.clipKind === 'body' || node.clipKind === 'tableCell')
+        ? CLIP_RASTER_EDGE_PAD_PX
+        : 0;
     this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
     canvas.save();
     canvas.clipRect(
@@ -409,12 +475,6 @@ export class CanvasKitLayerRenderer {
       ) {
         return true;
       }
-      if (Math.abs(op.style.fontSize - 13.333333) > 0.01) {
-        return true;
-      }
-      if ((op.style.fontFamily?.trim() ?? '') !== '바탕체') {
-        return true;
-      }
       return clusters.some((cluster) =>
         cluster.text === '\t'
         || cluster.text === '\u2007'
@@ -440,15 +500,15 @@ export class CanvasKitLayerRenderer {
     return false;
   }
 
-  private shouldOverlayLine(op: LayerLineOp): boolean {
-    return this.renderMode === 'compat'
-      && op.style.lineType === 'single'
-      && op.style.startArrow === 'none'
-      && op.style.endArrow === 'none'
-      && !op.style.shadow;
+  private shouldOverlayLine(_op: LayerLineOp): boolean {
+    return false;
   }
 
   private shouldOverlayRectangle(op: LayerRectangleOp): boolean {
+    if (this.hasActiveCacheHint('preferVectorRecording')) {
+      return false;
+    }
+
     const isSimpleTableCellFill =
       this.currentClipStack.some((clip) => clip.kind === 'tableCell')
       && !!op.style.fillColor
@@ -482,10 +542,16 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayImage(_op: LayerImageOp): boolean {
+    if (this.hasActiveCacheHint('preferRaster')) {
+      return false;
+    }
     return this.renderMode === 'compat';
   }
 
   private shouldOverlayEquation(_op: LayerEquationOp): boolean {
+    if (this.hasActiveCacheHint('preferVectorRecording')) {
+      return false;
+    }
     return this.renderMode === 'compat';
   }
 
@@ -497,8 +563,8 @@ export class CanvasKitLayerRenderer {
       fill.paint.delete();
     }
 
-    if (op.image?.base64 && this.renderMode !== 'compat') {
-      this.drawEncodedImage(canvas, op.image.base64, op.bbox, op.image.fillMode);
+    if (op.image && this.renderMode !== 'compat') {
+      this.drawEncodedImage(canvas, op.image.resourceId, op.image.base64, op.bbox, op.image.fillMode);
     }
 
     if (op.borderColor && op.borderWidth > 0) {
@@ -1015,8 +1081,7 @@ export class CanvasKitLayerRenderer {
       return;
     }
     this.withTransform(canvas, op.bbox, op.transform, () => {
-      if (!op.base64) return;
-      this.drawEncodedImage(canvas, op.base64, op.bbox, op.fillMode, op.originalSize, op.crop);
+      this.drawEncodedImage(canvas, op.resourceId, op.base64, op.bbox, op.fillMode, op.originalSize, op.crop);
     });
   }
 
@@ -1189,7 +1254,11 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
   ): void {
-    const svgContent = op.svgContent.trim();
+    const svgContent = (
+      typeof op.svgResourceId === 'number'
+        ? this.currentResources?.svgFragments?.[op.svgResourceId] ?? op.svgContent ?? ''
+        : op.svgContent ?? ''
+    ).trim();
     if (svgContent && op.bbox.width > 0 && op.bbox.height > 0) {
       const svgWidth = Math.max(op.bbox.width, 1);
       const svgHeight = Math.max(op.bbox.height, 1);
@@ -1670,9 +1739,11 @@ export class CanvasKitLayerRenderer {
 
   private renderFallbackOverlayNode(ctx: CanvasRenderingContext2D, node: LayerNode): void {
     if (node.kind === 'group') {
-      for (const child of node.children) {
-        this.renderFallbackOverlayNode(ctx, child);
-      }
+      this.withCacheHint(node.cacheHint, () => {
+        for (const child of node.children) {
+          this.renderFallbackOverlayNode(ctx, child);
+        }
+      });
       return;
     }
     if (node.kind === 'clipRect') {
@@ -1681,68 +1752,74 @@ export class CanvasKitLayerRenderer {
       this.currentClipStack.pop();
       return;
     }
-    for (const op of node.ops) {
-      if (this.renderMode === 'compat' && op.type === 'pageBackground' && op.image?.base64) {
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          this.renderPageBackgroundImageOverlay(ctx, op);
-        }, op.bbox);
-        continue;
+    this.withCacheHint(node.cacheHint, () => {
+      for (const op of node.ops) {
+        if (
+          this.renderMode === 'compat'
+          && op.type === 'pageBackground'
+          && op.image
+        ) {
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            this.renderPageBackgroundImageOverlay(ctx, op);
+          }, op.bbox);
+          continue;
+        }
+        if (op.type === 'image' && this.shouldOverlayImage(op)) {
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            this.renderImageOverlay(ctx, op);
+          }, op.bbox);
+          continue;
+        }
+        if (op.type === 'line' && this.shouldOverlayLine(op)) {
+          const clipBounds = {
+            x: op.bbox.x,
+            y: op.bbox.y,
+            width: op.bbox.width,
+            height: op.bbox.height,
+          };
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            this.renderLineOverlay(ctx, op);
+          }, clipBounds);
+          continue;
+        }
+        if (op.type === 'rectangle' && this.shouldOverlayRectangle(op)) {
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            this.renderRectangleOverlay(ctx, op);
+          }, op.bbox);
+          continue;
+        }
+        if (op.type === 'formObject' && this.shouldOverlayFormObject(op)) {
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            this.renderFormObjectOverlay(ctx, op);
+          }, op.bbox);
+          continue;
+        }
+        if (op.type === 'equation' && this.shouldOverlayEquation(op)) {
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            renderEquationLayoutBox(ctx, op.layoutBox, op.bbox.x, op.bbox.y, op.color, op.fontSize, false, false);
+          }, op.bbox);
+          continue;
+        }
+        if (op.type === 'textRun' && this.shouldOverlayTextRun(op)) {
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            this.renderTextRunOverlay(ctx, op);
+          }, op.bbox);
+          continue;
+        }
+        if (op.type === 'footnoteMarker' && this.shouldOverlayFootnoteMarker(op)) {
+          this.withCurrentOverlayClip(ctx, 0, () => {
+            this.renderFootnoteMarkerOverlay(ctx, op);
+          }, op.bbox);
+        }
       }
-      if (op.type === 'image' && op.base64 && this.shouldOverlayImage(op)) {
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          this.renderImageOverlay(ctx, op);
-        }, op.bbox);
-        continue;
-      }
-      if (op.type === 'line' && this.shouldOverlayLine(op)) {
-        const clipBounds = {
-          x: op.bbox.x,
-          y: op.bbox.y,
-          width: op.bbox.width,
-          height: op.bbox.height,
-        };
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          this.renderLineOverlay(ctx, op);
-        }, clipBounds);
-        continue;
-      }
-      if (op.type === 'rectangle' && this.shouldOverlayRectangle(op)) {
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          this.renderRectangleOverlay(ctx, op);
-        }, op.bbox);
-        continue;
-      }
-      if (op.type === 'formObject' && this.shouldOverlayFormObject(op)) {
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          this.renderFormObjectOverlay(ctx, op);
-        }, op.bbox);
-        continue;
-      }
-      if (op.type === 'equation' && this.shouldOverlayEquation(op)) {
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          renderEquationLayoutBox(ctx, op.layoutBox, op.bbox.x, op.bbox.y, op.color, op.fontSize, false, false);
-        }, op.bbox);
-        continue;
-      }
-      if (op.type === 'textRun' && this.shouldOverlayTextRun(op)) {
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          this.renderTextRunOverlay(ctx, op);
-        }, op.bbox);
-        continue;
-      }
-      if (op.type === 'footnoteMarker' && this.shouldOverlayFootnoteMarker(op)) {
-        this.withCurrentOverlayClip(ctx, 0, () => {
-          this.renderFootnoteMarkerOverlay(ctx, op);
-        }, op.bbox);
-      }
-    }
+    });
   }
 
   private renderPageBackgroundImageOverlay(ctx: CanvasRenderingContext2D, op: LayerPageBackgroundOp): void {
-    if (!op.image?.base64) {
+    if (!op.image) {
       return;
     }
-    const image = this.getDomImage(op.image.base64);
+    const image = this.getDomImage(op.image.resourceId, op.image.base64);
     if (!image) {
       return;
     }
@@ -1750,10 +1827,7 @@ export class CanvasKitLayerRenderer {
   }
 
   private renderImageOverlay(ctx: CanvasRenderingContext2D, op: LayerImageOp): void {
-    if (!op.base64) {
-      return;
-    }
-    const image = this.getDomImage(op.base64);
+    const image = this.getDomImage(op.resourceId, op.base64);
     if (!image) {
       return;
     }
@@ -2066,19 +2140,42 @@ export class CanvasKitLayerRenderer {
     ctx.restore();
   }
 
-  private getDomImage(base64: string): HTMLImageElement | null {
-    const cached = this.domImageCache.get(base64);
+  private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
+    if (typeof resourceId === 'number' && this.currentResources?.images?.[resourceId]) {
+      return `res:${resourceId}`;
+    }
+    return base64 ? `b64:${base64}` : null;
+  }
+
+  private getDomImage(resourceId?: number, base64?: string): HTMLImageElement | null {
+    const cacheKey = this.imageResourceCacheKey(resourceId, base64);
+    if (!cacheKey) {
+      return null;
+    }
+
+    const cached = this.domImageCache.get(cacheKey);
     if (cached) {
       return cached.complete && cached.naturalWidth > 0 ? cached : null;
     }
 
     const image = new Image();
-    const bytes = decodeBase64(base64);
+    const bytes = typeof resourceId === 'number'
+      ? this.currentResources?.images?.[resourceId]
+      : base64
+        ? decodeBase64(base64)
+        : undefined;
+    if (!bytes) {
+      return null;
+    }
     const mimeType = inferImageMime(bytes);
     image.decoding = 'sync';
     image.onload = () => this.scheduleRerender();
-    image.src = `data:${mimeType};base64,${base64}`;
-    this.domImageCache.set(base64, image);
+    if (typeof resourceId === 'number') {
+      image.src = `data:${mimeType};base64,${encodeBase64(bytes)}`;
+    } else {
+      image.src = `data:${mimeType};base64,${base64}`;
+    }
+    this.domImageCache.set(cacheKey, image);
     return image.complete && image.naturalWidth > 0 ? image : null;
   }
 
@@ -2326,13 +2423,14 @@ export class CanvasKitLayerRenderer {
 
   private drawEncodedImage(
     canvas: ReturnType<Surface['getCanvas']>,
-    base64: string,
+    resourceId: number | undefined,
+    base64: string | undefined,
     bbox: LayerBounds,
     fillMode = 'fitToSize',
     originalSize?: { width: number; height: number },
     crop?: { left: number; top: number; right: number; bottom: number },
   ): void {
-    const image = this.getImage(base64);
+    const image = this.getImage(resourceId, base64);
     if (!image) return;
     const drawImageRect = (
       srcX: number,
@@ -2346,13 +2444,14 @@ export class CanvasKitLayerRenderer {
     ) => {
       const useMipmaps =
         this.currentProfile !== 'fast-preview'
+        && !this.hasActiveCacheHint('preferRaster')
         && (
           this.renderMode === 'compat'
           || this.currentProfile === 'print'
           || this.currentProfile === 'high-quality'
         )
         && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
-      const sampledImage = useMipmaps ? this.getImage(base64, true) ?? image : image;
+      const sampledImage = useMipmaps ? this.getImage(resourceId, base64, true) ?? image : image;
       const paint = new this.canvasKit.Paint();
       canvas.drawImageRectOptions(
         sampledImage,
@@ -2696,27 +2795,70 @@ export class CanvasKitLayerRenderer {
     paint.delete();
   }
 
-  private getImage(base64: string, withMipmaps = false): Image | null {
+  private getImage(resourceId?: number, base64?: string, withMipmaps = false): Image | null {
+    const cacheKey = this.imageResourceCacheKey(resourceId, base64);
+    if (!cacheKey) {
+      return null;
+    }
+
     if (withMipmaps) {
-      const cachedMipmap = this.mipmappedImageCache.get(base64);
+      const cachedMipmap = this.mipmappedImageCache.get(cacheKey);
       if (cachedMipmap) return cachedMipmap;
 
-      const original = this.getImage(base64);
+      const original = this.getImage(resourceId, base64);
       if (!original) return null;
 
       const mipmapped = original.makeCopyWithDefaultMipmaps();
-      this.mipmappedImageCache.set(base64, mipmapped);
+      this.mipmappedImageCache.set(cacheKey, mipmapped);
       return mipmapped;
     }
 
-    const cached = this.imageCache.get(base64);
+    const cached = this.imageCache.get(cacheKey);
     if (cached) return cached;
 
-    const bytes = decodeBase64(base64);
+    const bytes = typeof resourceId === 'number'
+      ? this.currentResources?.images?.[resourceId]
+      : base64
+        ? decodeBase64(base64)
+        : undefined;
+    if (!bytes) return null;
     const image = this.canvasKit.MakeImageFromEncoded(bytes);
     if (!image) return null;
-    this.imageCache.set(base64, image);
+    this.imageCache.set(cacheKey, image);
     return image;
+  }
+
+  private clearResourceImageCaches(): void {
+    for (const [key, image] of this.mipmappedImageCache) {
+      if (!key.startsWith('res:')) {
+        continue;
+      }
+      image.delete();
+      this.mipmappedImageCache.delete(key);
+    }
+    for (const [key, image] of this.imageCache) {
+      if (!key.startsWith('res:')) {
+        continue;
+      }
+      image.delete();
+      this.imageCache.delete(key);
+    }
+    for (const [key, image] of this.domImageCache) {
+      if (!key.startsWith('res:')) {
+        continue;
+      }
+      image.onload = null;
+      image.onerror = null;
+      image.src = '';
+      this.domImageCache.delete(key);
+    }
+  }
+
+  private clearStaticPictureCache(): void {
+    for (const picture of this.staticPictureCache.values()) {
+      picture.delete();
+    }
+    this.staticPictureCache.clear();
   }
 
   dispose(): void {
@@ -2729,13 +2871,17 @@ export class CanvasKitLayerRenderer {
     this.lastTargetCanvas = null;
     this.lastScale = 1;
     this.currentProfile = 'screen';
+    this.currentResources = null;
     this.rerenderScheduled = false;
     this.currentClipStack.length = 0;
+    this.currentCacheHintStack.length = 0;
 
     for (const image of this.patternImageCache.values()) {
       image?.delete();
     }
     this.patternImageCache.clear();
+
+    this.clearStaticPictureCache();
 
     for (const image of this.mipmappedImageCache.values()) {
       image.delete();

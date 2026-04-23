@@ -1,5 +1,4 @@
-use base64::Engine;
-use js_sys::{Array, Object, Reflect};
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsValue;
 
 use crate::document_core::helpers::color_ref_to_css;
@@ -7,7 +6,6 @@ use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp,
-    ResourceArena,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -23,15 +21,25 @@ pub fn page_layer_tree_to_js_value(tree: &PageLayerTree) -> JsValue {
     set_number(&value, "pageWidth", tree.page_width);
     set_number(&value, "pageHeight", tree.page_height);
     set_string(&value, "profile", tree.profile.as_str());
-    set_value(
-        &value,
-        "root",
-        layer_node_to_value(&tree.root, &tree.resources),
-    );
+    set_value(&value, "root", layer_node_to_value(&tree.root));
+
+    let resources = Object::new();
+    let images = Array::new();
+    for (id, bytes) in tree.resources.image_resources() {
+        images.set(id.0 as u32, Uint8Array::from(bytes).into());
+    }
+    set_value(&resources, "images", images.into());
+
+    let svg_fragments = Array::new();
+    for (id, svg) in tree.resources.svg_resources() {
+        svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
+    }
+    set_value(&resources, "svgFragments", svg_fragments.into());
+    set_value(&value, "resources", resources.into());
     value.into()
 }
 
-fn layer_node_to_value(node: &LayerNode, resources: &ResourceArena) -> JsValue {
+fn layer_node_to_value(node: &LayerNode) -> JsValue {
     let value = Object::new();
     set_value(&value, "bounds", bbox_to_value(node.bounds));
     if let Some(source_node_id) = node.source_node_id {
@@ -71,11 +79,7 @@ fn layer_node_to_value(node: &LayerNode, resources: &ResourceArena) -> JsValue {
             set_value(
                 &value,
                 "children",
-                array_to_value(
-                    children
-                        .iter()
-                        .map(|child| layer_node_to_value(child, resources)),
-                ),
+                array_to_value(children.iter().map(layer_node_to_value)),
             );
         }
         LayerNodeKind::ClipRect {
@@ -86,7 +90,7 @@ fn layer_node_to_value(node: &LayerNode, resources: &ResourceArena) -> JsValue {
             set_string(&value, "kind", "clipRect");
             set_value(&value, "clip", bbox_to_value(*clip));
             set_string(&value, "clipKind", clip_kind_str(*clip_kind));
-            set_value(&value, "child", layer_node_to_value(child, resources));
+            set_value(&value, "child", layer_node_to_value(child));
         }
         LayerNodeKind::Leaf { ops, cache_hint } => {
             set_string(&value, "kind", "leaf");
@@ -94,7 +98,7 @@ fn layer_node_to_value(node: &LayerNode, resources: &ResourceArena) -> JsValue {
             set_value(
                 &value,
                 "ops",
-                array_to_value(ops.iter().map(|op| paint_op_to_value(op, resources))),
+                array_to_value(ops.iter().map(paint_op_to_value)),
             );
         }
     }
@@ -102,7 +106,7 @@ fn layer_node_to_value(node: &LayerNode, resources: &ResourceArena) -> JsValue {
     value.into()
 }
 
-fn paint_op_to_value(op: &PaintOp, resources: &ResourceArena) -> JsValue {
+fn paint_op_to_value(op: &PaintOp) -> JsValue {
     let value = Object::new();
     match op {
         PaintOp::PageBackground { bbox, background } => {
@@ -120,10 +124,7 @@ fn paint_op_to_value(op: &PaintOp, resources: &ResourceArena) -> JsValue {
             }
             if let Some(image) = &background.image {
                 let image_value = Object::new();
-                if let Some(data) = resources.image_bytes(image.resource_id) {
-                    let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
-                    set_string(&image_value, "base64", &base64_data);
-                }
+                set_number(&image_value, "resourceId", image.resource_id.0 as f64);
                 set_string(
                     &image_value,
                     "fillMode",
@@ -215,10 +216,7 @@ fn paint_op_to_value(op: &PaintOp, resources: &ResourceArena) -> JsValue {
             set_string(&value, "type", "image");
             set_value(&value, "bbox", bbox_to_value(*bbox));
             if let Some(resource_id) = image.resource_id {
-                if let Some(data) = resources.image_bytes(resource_id) {
-                    let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
-                    set_string(&value, "base64", &base64_data);
-                }
+                set_number(&value, "resourceId", resource_id.0 as f64);
             }
             if let Some(fill_mode) = image.fill_mode {
                 set_string(&value, "fillMode", image_fill_mode_str(fill_mode));
@@ -244,13 +242,7 @@ fn paint_op_to_value(op: &PaintOp, resources: &ResourceArena) -> JsValue {
             set_value(&value, "bbox", bbox_to_value(*bbox));
             set_string(&value, "color", &equation.color_str);
             set_number(&value, "fontSize", equation.font_size);
-            set_string(
-                &value,
-                "svgContent",
-                resources
-                    .svg_fragment(equation.svg_resource_id)
-                    .unwrap_or(""),
-            );
+            set_number(&value, "svgResourceId", equation.svg_resource_id.0 as f64);
             set_value(
                 &value,
                 "layoutBox",

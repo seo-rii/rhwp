@@ -29,6 +29,7 @@ import {
   computePathPaintBounds,
   createPatternTileCanvas,
   decodeBase64,
+  encodeBase64,
   inferImageMime,
   isHalfwidthScaledCluster,
   renderEquationLayoutBox,
@@ -48,6 +49,7 @@ export class Canvas2DLayerRenderer {
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
+  private currentResources: PageLayerTree['resources'] | null = null;
   private rerenderScheduled = false;
 
   constructor(private readonly renderMode: CanvasKitRenderMode = 'compat') {}
@@ -65,6 +67,10 @@ export class Canvas2DLayerRenderer {
     this.lastRenderedTree = tree;
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
+    if (this.currentResources !== (tree.resources ?? null)) {
+      this.clearResourceImageCaches();
+      this.currentResources = tree.resources ?? null;
+    }
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -186,8 +192,8 @@ export class Canvas2DLayerRenderer {
       ctx.restore();
     }
 
-    if (op.image?.base64) {
-      const image = this.getDomImage(op.image.base64);
+    if (op.image) {
+      const image = this.getDomImage(op.image.resourceId, op.image.base64);
       if (image) {
         this.drawDomImage(ctx, image, op.bbox, op.image.fillMode);
       }
@@ -689,10 +695,7 @@ export class Canvas2DLayerRenderer {
   }
 
   private renderImage(ctx: CanvasRenderingContext2D, op: LayerImageOp): void {
-    if (!op.base64) {
-      return;
-    }
-    const image = this.getDomImage(op.base64);
+    const image = this.getDomImage(op.resourceId, op.base64);
     if (!image) {
       return;
     }
@@ -925,14 +928,26 @@ export class Canvas2DLayerRenderer {
     ctx.restore();
   }
 
-  private getDomImage(base64: string): HTMLImageElement | null {
-    const cached = this.domImageCache.get(base64);
+  private getDomImage(resourceId?: number, base64?: string): HTMLImageElement | null {
+    const resourceBytes = typeof resourceId === 'number'
+      ? this.currentResources?.images?.[resourceId]
+      : undefined;
+    const cacheKey = resourceBytes
+      ? `res:${resourceId}`
+      : base64
+        ? `b64:${base64}`
+        : null;
+    if (!cacheKey) {
+      return null;
+    }
+
+    const cached = this.domImageCache.get(cacheKey);
     if (cached) {
       return cached.complete && cached.naturalWidth > 0 ? cached : null;
     }
 
     const image = new Image();
-    const bytes = decodeBase64(base64);
+    const bytes = resourceBytes ?? decodeBase64(base64 ?? '');
     const mimeType = inferImageMime(bytes);
     image.decoding = 'sync';
     image.onload = () => {
@@ -948,9 +963,36 @@ export class Canvas2DLayerRenderer {
         this.renderPage(this.lastRenderedTree, this.lastTargetCanvas, this.lastScale);
       });
     };
-    image.src = `data:${mimeType};base64,${base64}`;
-    this.domImageCache.set(base64, image);
+    if (resourceBytes) {
+      image.src = `data:${mimeType};base64,${encodeBase64(resourceBytes)}`;
+    } else {
+      image.src = `data:${mimeType};base64,${base64}`;
+    }
+    this.domImageCache.set(cacheKey, image);
     return image.complete && image.naturalWidth > 0 ? image : null;
+  }
+
+  dispose(): void {
+    this.clearResourceImageCaches();
+    this.domImageCache.clear();
+    this.patternCache.clear();
+    this.currentClipStack.length = 0;
+    this.lastRenderedTree = null;
+    this.lastTargetCanvas = null;
+    this.currentResources = null;
+    this.rerenderScheduled = false;
+  }
+
+  private clearResourceImageCaches(): void {
+    for (const [key, image] of this.domImageCache) {
+      if (!key.startsWith('res:')) {
+        continue;
+      }
+      image.onload = null;
+      image.onerror = null;
+      image.src = '';
+      this.domImageCache.delete(key);
+    }
   }
 
   private withCanvasTransform(

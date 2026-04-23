@@ -41,7 +41,13 @@ export interface PageLayerTree {
   pageWidth: number;
   pageHeight: number;
   profile: LayerRenderProfile;
+  resources?: LayerResources;
   root: LayerNode;
+}
+
+export interface LayerResources {
+  images: Uint8Array[];
+  svgFragments: string[];
 }
 
 export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;
@@ -210,7 +216,8 @@ export interface LayerPageBackgroundOp {
   gradient?: LayerGradient;
   image?: {
     fillMode: string;
-    base64: string;
+    resourceId?: number;
+    base64?: string;
   };
 }
 
@@ -282,6 +289,7 @@ export interface LayerPathOp {
 export interface LayerImageOp {
   type: 'image';
   bbox: LayerBounds;
+  resourceId?: number;
   base64?: string;
   fillMode?: string;
   originalSize?: {
@@ -354,7 +362,8 @@ export interface LayerEquationOp {
   bbox: LayerBounds;
   color: string;
   fontSize: number;
-  svgContent: string;
+  svgResourceId?: number;
+  svgContent?: string;
   layoutBox: LayerEquationLayoutBox;
 }
 

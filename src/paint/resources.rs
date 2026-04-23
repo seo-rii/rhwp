@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImageResourceId(pub usize);
@@ -8,26 +9,30 @@ pub struct SvgResourceId(pub usize);
 
 /// 레이어 replay가 공유하는 바이너리/문자열 자원 저장소.
 ///
-/// 전환기에는 JSON wire format을 그대로 유지하되, 내부 IR에서는 큰 payload를
-/// handle로 참조해 backend와 캐시 계층이 같은 자원을 재사용하도록 만든다.
+/// 내부 IR과 WASM object export에서 큰 payload를 handle로 참조해 backend와
+/// 캐시 계층이 같은 자원을 재사용하도록 만든다.
 #[derive(Debug, Clone, Default)]
 pub struct ResourceArena {
     image_bytes: Vec<Vec<u8>>,
-    image_lookup: HashMap<Vec<u8>, ImageResourceId>,
+    image_lookup: HashMap<u64, Vec<ImageResourceId>>,
     svg_fragments: Vec<String>,
-    svg_lookup: HashMap<String, SvgResourceId>,
+    svg_lookup: HashMap<u64, Vec<SvgResourceId>>,
 }
 
 impl ResourceArena {
     pub fn intern_image_bytes(&mut self, bytes: &[u8]) -> ImageResourceId {
-        if let Some(id) = self.image_lookup.get(bytes) {
-            return *id;
+        let hash = resource_hash(bytes);
+        if let Some(candidates) = self.image_lookup.get(&hash) {
+            for id in candidates {
+                if self.image_bytes[id.0].as_slice() == bytes {
+                    return *id;
+                }
+            }
         }
 
-        let owned = bytes.to_vec();
         let id = ImageResourceId(self.image_bytes.len());
-        self.image_bytes.push(owned.clone());
-        self.image_lookup.insert(owned, id);
+        self.image_bytes.push(bytes.to_vec());
+        self.image_lookup.entry(hash).or_default().push(id);
         id
     }
 
@@ -39,15 +44,26 @@ impl ResourceArena {
         self.image_bytes.len()
     }
 
+    pub fn image_resources(&self) -> impl Iterator<Item = (ImageResourceId, &[u8])> + '_ {
+        self.image_bytes
+            .iter()
+            .enumerate()
+            .map(|(index, bytes)| (ImageResourceId(index), bytes.as_slice()))
+    }
+
     pub fn intern_svg_fragment(&mut self, svg: &str) -> SvgResourceId {
-        if let Some(id) = self.svg_lookup.get(svg) {
-            return *id;
+        let hash = resource_hash(svg);
+        if let Some(candidates) = self.svg_lookup.get(&hash) {
+            for id in candidates {
+                if self.svg_fragments[id.0].as_str() == svg {
+                    return *id;
+                }
+            }
         }
 
-        let owned = svg.to_string();
         let id = SvgResourceId(self.svg_fragments.len());
-        self.svg_fragments.push(owned.clone());
-        self.svg_lookup.insert(owned, id);
+        self.svg_fragments.push(svg.to_string());
+        self.svg_lookup.entry(hash).or_default().push(id);
         id
     }
 
@@ -58,6 +74,19 @@ impl ResourceArena {
     pub fn svg_count(&self) -> usize {
         self.svg_fragments.len()
     }
+
+    pub fn svg_resources(&self) -> impl Iterator<Item = (SvgResourceId, &str)> + '_ {
+        self.svg_fragments
+            .iter()
+            .enumerate()
+            .map(|(index, svg)| (SvgResourceId(index), svg.as_str()))
+    }
+}
+
+fn resource_hash<T: Hash + ?Sized>(value: &T) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
 }
 
 #[cfg(test)]
@@ -76,10 +105,18 @@ mod tests {
         assert_eq!(image_b, ImageResourceId(0));
         assert_eq!(arena.image_count(), 1);
         assert_eq!(arena.image_bytes(image_a), Some(&[1, 2, 3, 4][..]));
+        assert_eq!(
+            arena.image_resources().collect::<Vec<_>>(),
+            vec![(ImageResourceId(0), &[1, 2, 3, 4][..])]
+        );
 
         assert_eq!(svg_a, SvgResourceId(0));
         assert_eq!(svg_b, SvgResourceId(0));
         assert_eq!(arena.svg_count(), 1);
         assert_eq!(arena.svg_fragment(svg_a), Some("<svg/>"));
+        assert_eq!(
+            arena.svg_resources().collect::<Vec<_>>(),
+            vec![(SvgResourceId(0), "<svg/>")]
+        );
     }
 }
