@@ -1,5 +1,5 @@
 import CanvasKitInit from 'canvaskit-wasm';
-import type { CanvasKit, Font, Image, Paint, Shader, Surface, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, Font, Image, Paint, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import type { CanvasKitRenderMode } from '@/view/render-backend';
@@ -54,6 +54,7 @@ import { CanvasKitSurfaceCache } from './canvaskit/surface-cache';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
+const MAX_TEXT_BLOB_CACHE_ENTRIES = 4096;
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -72,6 +73,9 @@ export class CanvasKitLayerRenderer {
   private readonly patternImageCache: Map<string, Image | null>;
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new CanvasKitStaticPictureCache();
+  private readonly textBlobCache = new Map<string, TextBlob>();
+  private textBlobCacheHits = 0;
+  private textBlobCacheMisses = 0;
   private readonly currentClipStack: OverlayClip[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private lastRenderedTree: PageLayerTree | null = null;
@@ -432,8 +436,10 @@ export class CanvasKitLayerRenderer {
       'Noto Serif CJK KR',
     ].filter((family, index, all) => all.indexOf(family) === index);
     const clusterFonts: Font[] = [];
+    const clusterFontKeys: string[] = [];
     for (const cluster of clusters) {
       let selectedFont = primaryObjects.font;
+      let selectedFontFamily = op.style.fontFamily;
       const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
       if (primaryGlyphs?.some((glyphId) => glyphId === 0)) {
         for (const family of fallbackFamilies) {
@@ -452,11 +458,18 @@ export class CanvasKitLayerRenderer {
           const candidateGlyphs = candidate.font.getGlyphIDs(cluster.text);
           if (candidateGlyphs && candidateGlyphs.every((glyphId) => glyphId !== 0)) {
             selectedFont = candidate.font;
+            selectedFontFamily = family;
             break;
           }
         }
       }
       clusterFonts.push(selectedFont);
+      clusterFontKeys.push([
+        this.fontRegistry.resolveFamily(selectedFontFamily),
+        op.style.fontSize.toFixed(3),
+        op.style.bold ? 'bold' : 'normal',
+        op.style.italic ? 'italic' : 'upright',
+      ].join('|'));
     }
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = op.positions.at(-1) ?? 0;
@@ -480,7 +493,28 @@ export class CanvasKitLayerRenderer {
           const x = originX + op.positions[cluster.start] + dx;
           const y = originY + dy;
           const drawBlobAtOrigin = () => {
-            const blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+            const cacheKey = `${clusterFontKeys[index]}|${cluster.text}`;
+            let blob = this.textBlobCache.get(cacheKey);
+            if (blob) {
+              this.textBlobCacheHits += 1;
+              this.textBlobCache.delete(cacheKey);
+              this.textBlobCache.set(cacheKey, blob);
+            } else {
+              blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+              if (!blob) {
+                return;
+              }
+              this.textBlobCacheMisses += 1;
+              this.textBlobCache.set(cacheKey, blob);
+              if (this.textBlobCache.size > MAX_TEXT_BLOB_CACHE_ENTRIES) {
+                const oldestKey = this.textBlobCache.keys().next().value;
+                if (oldestKey !== undefined) {
+                  const oldestBlob = this.textBlobCache.get(oldestKey);
+                  oldestBlob?.delete();
+                  this.textBlobCache.delete(oldestKey);
+                }
+              }
+            }
             if (!blob) {
               return;
             }
@@ -488,7 +522,6 @@ export class CanvasKitLayerRenderer {
             if (strokePaint) {
               canvas.drawTextBlob(blob, 0, 0, strokePaint);
             }
-            blob.delete();
           };
           if (isHalfwidthScaledCluster(cluster.text) && !hasRatio) {
             canvas.save();
@@ -506,7 +539,28 @@ export class CanvasKitLayerRenderer {
             canvas.restore();
             continue;
           }
-          const blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+          const cacheKey = `${clusterFontKeys[index]}|${cluster.text}`;
+          let blob = this.textBlobCache.get(cacheKey);
+          if (blob) {
+            this.textBlobCacheHits += 1;
+            this.textBlobCache.delete(cacheKey);
+            this.textBlobCache.set(cacheKey, blob);
+          } else {
+            blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+            if (!blob) {
+              continue;
+            }
+            this.textBlobCacheMisses += 1;
+            this.textBlobCache.set(cacheKey, blob);
+            if (this.textBlobCache.size > MAX_TEXT_BLOB_CACHE_ENTRIES) {
+              const oldestKey = this.textBlobCache.keys().next().value;
+              if (oldestKey !== undefined) {
+                const oldestBlob = this.textBlobCache.get(oldestKey);
+                oldestBlob?.delete();
+                this.textBlobCache.delete(oldestKey);
+              }
+            }
+          }
           if (!blob) {
             continue;
           }
@@ -514,7 +568,6 @@ export class CanvasKitLayerRenderer {
           if (strokePaint) {
             canvas.drawTextBlob(blob, x, y, strokePaint);
           }
-          blob.delete();
         }
       };
 
@@ -2625,6 +2678,13 @@ export class CanvasKitLayerRenderer {
     this.rerenderScheduled = false;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
+
+    for (const blob of this.textBlobCache.values()) {
+      blob.delete();
+    }
+    this.textBlobCache.clear();
+    this.textBlobCacheHits = 0;
+    this.textBlobCacheMisses = 0;
 
     this.clearStaticPictureCache();
     this.surfaceCache.clear();

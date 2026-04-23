@@ -932,6 +932,43 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       }
     }
 
+    let textBlobNativeProbe = null;
+    if (window.__canvaskitRenderMode === 'default') {
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 160;
+      probeCanvas.height = 48;
+      const probeTree = {
+        pageWidth: 160,
+        pageHeight: 48,
+        profile: 'screen',
+        root: {
+          kind: 'leaf',
+          bounds: { x: 0, y: 0, width: 160, height: 48 },
+          cacheHint: 'none',
+          ops: [simpleTextRun],
+        },
+        resources: {
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+        },
+      };
+      const hitsBefore = renderer.textBlobCacheHits ?? 0;
+      const missesBefore = renderer.textBlobCacheMisses ?? 0;
+      renderer.renderPage(probeTree, probeCanvas, 1);
+      const cacheSizeAfterFirst = renderer.textBlobCache?.size ?? 0;
+      renderer.renderPage(probeTree, probeCanvas, 1);
+      textBlobNativeProbe = {
+        cacheSizeAfterFirst,
+        cacheSizeAfterSecond: renderer.textBlobCache?.size ?? 0,
+        hitsGained: (renderer.textBlobCacheHits ?? 0) - hitsBefore,
+        missesGained: (renderer.textBlobCacheMisses ?? 0) - missesBefore,
+      };
+    }
+
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
       hasLayerTreeValueWithProfileApi: typeof wasmDoc?.getPageLayerTreeValueWithProfile === 'function',
@@ -1133,6 +1170,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         ...equationOp,
       }),
       equationSvgNativeProbe,
+      textBlobNativeProbe,
       footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
         type: 'footnoteMarker',
         text: '1)',
@@ -1192,6 +1230,18 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     assert(
       nativeRouting.equationSvgNativeProbe?.layoutFallbackCalls === 0,
       `equation svg native fallback calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.cacheSizeAfterSecond > 0,
+      `text blob cache populated=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.missesGained > 0,
+      `text blob cache misses recorded=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.hitsGained > 0,
+      `text blob cache hits recorded=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
     );
   }
   assert(nativeRouting.footnoteUsesOverlay === false, `footnote overlay=${nativeRouting.footnoteUsesOverlay}`);
