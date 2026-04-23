@@ -4,9 +4,13 @@ import { CanvasKitLayerRenderer } from './canvaskit-renderer';
 import { Canvas2DLayerRenderer } from './canvas2d-layer-renderer';
 import { clampRenderScale, type RenderBackend } from './render-backend';
 
+const DEFAULT_LAYER_TREE_CACHE_LIMIT = 12;
+
 export class PageRenderer {
   private reRenderTimers = new Map<number, ReturnType<typeof setTimeout>[]>();
   private layerTreeCache = new Map<number, PageLayerTree>();
+  private retainedLayerTreePages = new Set<number>();
+  private readonly layerTreeCacheLimit = DEFAULT_LAYER_TREE_CACHE_LIMIT;
   private canvas2dRenderer = new Canvas2DLayerRenderer('compat');
 
   constructor(
@@ -37,11 +41,7 @@ export class PageRenderer {
 
     canvas.width = Math.max(1, Math.floor(pageInfo.width * appliedScale));
     canvas.height = Math.max(1, Math.floor(pageInfo.height * appliedScale));
-    let layerTree = this.layerTreeCache.get(pageIdx);
-    if (!layerTree) {
-      layerTree = this.wasm.getPageLayerTree(pageIdx, this.renderProfile);
-      this.layerTreeCache.set(pageIdx, layerTree);
-    }
+    const layerTree = this.getLayerTree(pageIdx);
 
     if (this.backend === 'canvaskit') {
       if (!this.canvaskitRenderer) {
@@ -53,6 +53,48 @@ export class PageRenderer {
 
     this.canvas2dRenderer.renderPage(layerTree, canvas, appliedScale);
     return appliedScale;
+  }
+
+  private getLayerTree(pageIdx: number): PageLayerTree {
+    const cached = this.layerTreeCache.get(pageIdx);
+    if (cached) {
+      this.layerTreeCache.delete(pageIdx);
+      this.layerTreeCache.set(pageIdx, cached);
+      return cached;
+    }
+
+    const layerTree = this.wasm.getPageLayerTree(pageIdx, this.renderProfile);
+    this.layerTreeCache.set(pageIdx, layerTree);
+    this.evictLayerTreeCache(
+      this.retainedLayerTreePages,
+      Math.max(this.layerTreeCacheLimit, this.retainedLayerTreePages.size),
+    );
+    return layerTree;
+  }
+
+  retainLayerTreeCache(pageIndexes: Iterable<number>): void {
+    this.retainedLayerTreePages = new Set(pageIndexes);
+    this.evictLayerTreeCache(
+      this.retainedLayerTreePages,
+      Math.max(this.layerTreeCacheLimit, this.retainedLayerTreePages.size),
+    );
+  }
+
+  private evictLayerTreeCache(retainedPages: Set<number>, maxEntries: number): void {
+    if (this.layerTreeCache.size <= maxEntries) {
+      return;
+    }
+
+    for (const [pageIdx, layerTree] of this.layerTreeCache) {
+      if (this.layerTreeCache.size <= maxEntries) {
+        return;
+      }
+      if (retainedPages.has(pageIdx)) {
+        continue;
+      }
+      this.layerTreeCache.delete(pageIdx);
+      this.canvaskitRenderer?.releaseLayerTree(layerTree);
+    }
   }
 
   /** 편집 용지 여백 가이드라인을 캔버스에 그린다 (4모서리 L자 표시) */
@@ -146,7 +188,11 @@ export class PageRenderer {
   }
 
   clearLayerTreeCache(): void {
+    for (const layerTree of this.layerTreeCache.values()) {
+      this.canvaskitRenderer?.releaseLayerTree(layerTree);
+    }
     this.layerTreeCache.clear();
+    this.retainedLayerTreePages.clear();
   }
 
   dispose(): void {

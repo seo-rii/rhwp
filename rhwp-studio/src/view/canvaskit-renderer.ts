@@ -69,12 +69,15 @@ export class CanvasKitLayerRenderer {
   private readonly patternImageCache: Map<string, Image | null>;
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new Map<string, SkPicture>();
+  private readonly layerTreeIds = new WeakMap<PageLayerTree, number>();
   private readonly currentClipStack: OverlayClip[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
   private currentProfile: LayerRenderProfile = 'screen';
+  private currentLayerTreeCacheKey = 'none';
+  private nextLayerTreeId = 1;
   private rerenderScheduled = false;
   private disposed = false;
 
@@ -113,14 +116,11 @@ export class CanvasKitLayerRenderer {
       throw new Error('CanvasKit renderer가 이미 dispose되었습니다');
     }
 
-    const previousTree = this.lastRenderedTree;
     this.lastRenderedTree = tree;
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
     this.currentProfile = tree.profile;
-    if (previousTree !== tree) {
-      this.clearStaticPictureCache();
-    }
+    this.currentLayerTreeCacheKey = this.cacheKeyForLayerTree(tree);
     this.resourceCache.setResources(tree.resources);
     this.currentCacheHintStack.length = 0;
 
@@ -189,6 +189,7 @@ export class CanvasKitLayerRenderer {
         this.withCacheHint(node.cacheHint, () => {
           if (node.cacheHint === 'staticSubtree') {
             const cacheKey = [
+              this.currentLayerTreeCacheKey,
               this.currentProfile,
               node.sourceNodeId ?? 'anon',
               node.bounds.x.toFixed(3),
@@ -244,6 +245,38 @@ export class CanvasKitLayerRenderer {
 
   private hasActiveCacheHint(cacheHint: LayerCacheHint): boolean {
     return this.currentCacheHintStack.includes(cacheHint);
+  }
+
+  private cacheKeyForLayerTree(tree: PageLayerTree): string {
+    let treeId = this.layerTreeIds.get(tree);
+    if (treeId === undefined) {
+      treeId = this.nextLayerTreeId;
+      this.nextLayerTreeId += 1;
+      this.layerTreeIds.set(tree, treeId);
+    }
+    return String(treeId);
+  }
+
+  releaseLayerTree(tree: PageLayerTree): void {
+    const treeId = this.layerTreeIds.get(tree);
+    if (treeId === undefined) {
+      return;
+    }
+
+    const cachePrefix = `${treeId}:`;
+    for (const [key, picture] of this.staticPictureCache) {
+      if (key.startsWith(cachePrefix)) {
+        picture.delete();
+        this.staticPictureCache.delete(key);
+      }
+    }
+    this.layerTreeIds.delete(tree);
+    if (this.lastRenderedTree === tree) {
+      this.lastRenderedTree = null;
+      this.lastTargetCanvas = null;
+      this.lastScale = 1;
+      this.currentLayerTreeCacheKey = 'none';
+    }
   }
 
   private renderClipNode(
@@ -2570,6 +2603,7 @@ export class CanvasKitLayerRenderer {
     this.lastTargetCanvas = null;
     this.lastScale = 1;
     this.currentProfile = 'screen';
+    this.currentLayerTreeCacheKey = 'none';
     this.rerenderScheduled = false;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;

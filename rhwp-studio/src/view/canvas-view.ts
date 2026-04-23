@@ -103,6 +103,7 @@ export class CanvasView {
 
     const prefetchPages = this.virtualScroll.getPrefetchPages(scrollY, vpHeight);
     const visiblePages = this.virtualScroll.getVisiblePages(scrollY, vpHeight);
+    this.pageRenderer.retainLayerTreeCache(prefetchPages);
 
     // 벗어난 페이지 해제
     const prefetchSet = new Set(prefetchPages);
