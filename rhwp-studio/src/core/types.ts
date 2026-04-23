@@ -46,10 +46,12 @@ export interface PageLayerTree {
 }
 
 export interface LayerResources {
-  images: Uint8Array[];
+  images: Array<Uint8Array | undefined>;
   imageHashes?: string[];
-  svgFragments: string[];
+  imageKeys?: string[];
+  svgFragments: Array<string | undefined>;
   svgHashes?: string[];
+  svgKeys?: string[];
 }
 
 export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;

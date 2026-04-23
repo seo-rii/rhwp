@@ -42,24 +42,39 @@ function substituteCssFontFamily(cssFont: string): string {
 }
 
 class LayerResourceStore {
-  resources: LayerResources = { images: [], imageHashes: [], svgFragments: [], svgHashes: [] };
+  resources: LayerResources = { images: [], imageHashes: [], imageKeys: [], svgFragments: [], svgHashes: [], svgKeys: [] };
 
   private imageLookup = new Map<string, number[]>();
   private svgLookup = new Map<string, number[]>();
+  private importedImagePayloads = 0;
+  private importedImagePayloadBytes = 0;
+  private omittedImagePayloads = 0;
+  private importedSvgPayloads = 0;
+  private importedSvgPayloadBytes = 0;
+  private omittedSvgPayloads = 0;
 
   clear(): void {
-    this.resources = { images: [], imageHashes: [], svgFragments: [], svgHashes: [] };
+    this.resources = { images: [], imageHashes: [], imageKeys: [], svgFragments: [], svgHashes: [], svgKeys: [] };
     this.imageLookup.clear();
     this.svgLookup.clear();
+    this.importedImagePayloads = 0;
+    this.importedImagePayloadBytes = 0;
+    this.omittedImagePayloads = 0;
+    this.importedSvgPayloads = 0;
+    this.importedSvgPayloadBytes = 0;
+    this.omittedSvgPayloads = 0;
   }
 
-  internImage(bytes: Uint8Array, contentHash?: string): number {
+  internImage(bytes: Uint8Array, contentHash?: string, resourceKey?: string): number {
+    this.importedImagePayloads += 1;
+    this.importedImagePayloadBytes += bytes.byteLength;
     const resourceHash = contentHash ?? this.hashBytes(bytes);
-    const key = `${bytes.byteLength}:${resourceHash}`;
+    const key = resourceKey ?? `${bytes.byteLength}:${resourceHash}`;
     const candidates = this.imageLookup.get(key);
     if (candidates) {
       for (const candidate of candidates) {
-        if (this.bytesEqual(this.resources.images[candidate], bytes)) {
+        const candidateBytes = this.resources.images[candidate];
+        if (candidateBytes && this.bytesEqual(candidateBytes, bytes)) {
           return candidate;
         }
       }
@@ -68,6 +83,7 @@ class LayerResourceStore {
     const id = this.resources.images.length;
     this.resources.images.push(bytes);
     this.resources.imageHashes?.push(resourceHash);
+    this.resources.imageKeys?.push(key);
     if (candidates) {
       candidates.push(id);
     } else {
@@ -76,9 +92,12 @@ class LayerResourceStore {
     return id;
   }
 
-  internSvg(fragment: string, contentHash?: string): number {
+  internSvg(fragment: string, contentHash?: string, resourceKey?: string): number {
+    const byteLength = new TextEncoder().encode(fragment).byteLength;
+    this.importedSvgPayloads += 1;
+    this.importedSvgPayloadBytes += byteLength;
     const resourceHash = contentHash ?? fragment;
-    const key = `${fragment.length}:${resourceHash}`;
+    const key = resourceKey ?? `${byteLength}:${resourceHash}`;
     const candidates = this.svgLookup.get(key);
     if (candidates) {
       for (const candidate of candidates) {
@@ -91,12 +110,52 @@ class LayerResourceStore {
     const id = this.resources.svgFragments.length;
     this.resources.svgFragments.push(fragment);
     this.resources.svgHashes?.push(resourceHash);
+    this.resources.svgKeys?.push(key);
     if (candidates) {
       candidates.push(id);
     } else {
       this.svgLookup.set(key, [id]);
     }
     return id;
+  }
+
+  findImageByKey(resourceKey: string | undefined): number | undefined {
+    if (!resourceKey) return undefined;
+    const candidates = this.imageLookup.get(resourceKey);
+    if (!candidates || candidates.length !== 1) return undefined;
+    this.omittedImagePayloads += 1;
+    return candidates[0];
+  }
+
+  findSvgByKey(resourceKey: string | undefined): number | undefined {
+    if (!resourceKey) return undefined;
+    const candidates = this.svgLookup.get(resourceKey);
+    if (!candidates || candidates.length !== 1) return undefined;
+    this.omittedSvgPayloads += 1;
+    return candidates[0];
+  }
+
+  knownImageKeys(): string[] {
+    return this.uniqueKeys(this.imageLookup);
+  }
+
+  knownSvgKeys(): string[] {
+    return this.uniqueKeys(this.svgLookup);
+  }
+
+  stats() {
+    return {
+      imageCount: this.resources.images.length,
+      imagePayloadsImported: this.importedImagePayloads,
+      imagePayloadBytesImported: this.importedImagePayloadBytes,
+      imagePayloadsOmitted: this.omittedImagePayloads,
+      svgCount: this.resources.svgFragments.length,
+      svgPayloadsImported: this.importedSvgPayloads,
+      svgPayloadBytesImported: this.importedSvgPayloadBytes,
+      svgPayloadsOmitted: this.omittedSvgPayloads,
+      knownImageKeyCount: this.knownImageKeys().length,
+      knownSvgKeyCount: this.knownSvgKeys().length,
+    };
   }
 
   private hashBytes(bytes: Uint8Array): string {
@@ -114,6 +173,12 @@ class LayerResourceStore {
       if (left[index] !== right[index]) return false;
     }
     return true;
+  }
+
+  private uniqueKeys(lookup: Map<string, number[]>): string[] {
+    return Array.from(lookup.entries())
+      .filter(([, candidates]) => candidates.length === 1)
+      .map(([key]) => key);
   }
 }
 
@@ -276,6 +341,14 @@ export class WasmBridge {
   getPageLayerTree(pageNum: number, profile: LayerRenderProfile = 'screen'): PageLayerTree {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     const doc = this.doc as any;
+    if (typeof doc.getPageLayerTreeValueWithProfileAndResourceKeys === 'function') {
+      return this.normalizeLayerResources(doc.getPageLayerTreeValueWithProfileAndResourceKeys(
+        pageNum,
+        profile,
+        this.layerResourceStore.knownImageKeys(),
+        this.layerResourceStore.knownSvgKeys(),
+      ) as PageLayerTree);
+    }
     const valueGetter = doc.getPageLayerTreeValueWithProfile ?? doc.getPageLayerTreeValue;
     if (typeof valueGetter === 'function') {
       if (typeof doc.getPageLayerTreeValueWithProfile === 'function') {
@@ -294,6 +367,10 @@ export class WasmBridge {
     this.layerResourceStore.clear();
   }
 
+  getLayerResourceStats() {
+    return this.layerResourceStore.stats();
+  }
+
   private normalizeLayerResources(tree: PageLayerTree): PageLayerTree {
     const pageResources = tree.resources;
     if (!pageResources) {
@@ -305,16 +382,23 @@ export class WasmBridge {
     const svgIdMap = new Map<number, number>();
     const imageResources = pageResources.images ?? [];
     const imageHashes = pageResources.imageHashes ?? [];
+    const imageKeys = pageResources.imageKeys ?? [];
     const svgFragments = pageResources.svgFragments ?? [];
     const svgHashes = pageResources.svgHashes ?? [];
+    const svgKeys = pageResources.svgKeys ?? [];
 
     const mapImageResourceId = (resourceId: number | undefined): number | undefined => {
       if (typeof resourceId !== 'number') return resourceId;
       const mapped = imageIdMap.get(resourceId);
       if (mapped !== undefined) return mapped;
+      const knownResourceId = this.layerResourceStore.findImageByKey(imageKeys[resourceId]);
+      if (knownResourceId !== undefined) {
+        imageIdMap.set(resourceId, knownResourceId);
+        return knownResourceId;
+      }
       const bytes = imageResources[resourceId];
       if (!bytes) return resourceId;
-      const docResourceId = this.layerResourceStore.internImage(bytes, imageHashes[resourceId]);
+      const docResourceId = this.layerResourceStore.internImage(bytes, imageHashes[resourceId], imageKeys[resourceId]);
       imageIdMap.set(resourceId, docResourceId);
       return docResourceId;
     };
@@ -323,9 +407,14 @@ export class WasmBridge {
       if (typeof resourceId !== 'number') return resourceId;
       const mapped = svgIdMap.get(resourceId);
       if (mapped !== undefined) return mapped;
+      const knownResourceId = this.layerResourceStore.findSvgByKey(svgKeys[resourceId]);
+      if (knownResourceId !== undefined) {
+        svgIdMap.set(resourceId, knownResourceId);
+        return knownResourceId;
+      }
       const fragment = svgFragments[resourceId];
       if (typeof fragment !== 'string') return resourceId;
-      const docResourceId = this.layerResourceStore.internSvg(fragment, svgHashes[resourceId]);
+      const docResourceId = this.layerResourceStore.internSvg(fragment, svgHashes[resourceId], svgKeys[resourceId]);
       svgIdMap.set(resourceId, docResourceId);
       return docResourceId;
     };

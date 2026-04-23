@@ -5,7 +5,10 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 #[cfg(target_arch = "wasm32")]
-use crate::paint::js_value::page_layer_tree_to_js_value;
+use crate::paint::js_value::{
+    page_layer_tree_to_js_value, page_layer_tree_to_js_value_with_resource_hints,
+    LayerResourceExportHints,
+};
 use crate::paint::RenderProfile;
 
 use super::HwpDocument;
@@ -131,6 +134,26 @@ impl HwpDocument {
             .build_page_layer_tree_for_output(page_num, profile)
             .map_err(JsValue::from)?;
         Ok(page_layer_tree_to_js_value(&tree))
+    }
+
+    /// 페이지 레이어 트리를 JS object로 반환하되, 이미 JS가 가진 resource payload는 생략한다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueWithProfileAndResourceKeys)]
+    pub fn get_page_layer_tree_value_with_profile_and_resource_keys(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+        known_image_keys: JsValue,
+        known_svg_keys: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, profile)
+            .map_err(JsValue::from)?;
+        let hints = LayerResourceExportHints::from_js_values(&known_image_keys, &known_svg_keys);
+        Ok(page_layer_tree_to_js_value_with_resource_hints(
+            &tree, &hints,
+        ))
     }
 
     /// 페이지 정보를 JSON 문자열로 반환한다.

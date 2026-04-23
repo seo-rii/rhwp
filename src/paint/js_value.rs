@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsValue;
 
@@ -16,7 +18,29 @@ use crate::renderer::{
     ShadowStyle, ShapeStyle, StrokeDash, TabLeaderInfo, TextStyle,
 };
 
+#[derive(Debug, Default)]
+pub struct LayerResourceExportHints {
+    known_image_keys: HashSet<String>,
+    known_svg_keys: HashSet<String>,
+}
+
+impl LayerResourceExportHints {
+    pub fn from_js_values(known_image_keys: &JsValue, known_svg_keys: &JsValue) -> Self {
+        Self {
+            known_image_keys: string_set_from_js_value(known_image_keys),
+            known_svg_keys: string_set_from_js_value(known_svg_keys),
+        }
+    }
+}
+
 pub fn page_layer_tree_to_js_value(tree: &PageLayerTree) -> JsValue {
+    page_layer_tree_to_js_value_with_resource_hints(tree, &LayerResourceExportHints::default())
+}
+
+pub fn page_layer_tree_to_js_value_with_resource_hints(
+    tree: &PageLayerTree,
+    hints: &LayerResourceExportHints,
+) -> JsValue {
     let value = Object::new();
     set_number(&value, "pageWidth", tree.page_width);
     set_number(&value, "pageHeight", tree.page_height);
@@ -26,27 +50,60 @@ pub fn page_layer_tree_to_js_value(tree: &PageLayerTree) -> JsValue {
     let resources = Object::new();
     let images = Array::new();
     let image_hashes = Array::new();
+    let image_keys = Array::new();
     for (id, bytes) in tree.resources.image_resources() {
-        images.set(id.0 as u32, Uint8Array::from(bytes).into());
         if let Some(hash) = tree.resources.image_hash(id) {
-            image_hashes.set(id.0 as u32, JsValue::from_str(&format!("{hash:016x}")));
+            let hash = format!("{hash:016x}");
+            let key = resource_key(bytes.len(), &hash);
+            image_hashes.set(id.0 as u32, JsValue::from_str(&hash));
+            image_keys.set(id.0 as u32, JsValue::from_str(&key));
+            if !hints.known_image_keys.contains(&key) {
+                images.set(id.0 as u32, Uint8Array::from(bytes).into());
+            }
+        } else {
+            images.set(id.0 as u32, Uint8Array::from(bytes).into());
         }
     }
     set_value(&resources, "images", images.into());
     set_value(&resources, "imageHashes", image_hashes.into());
+    set_value(&resources, "imageKeys", image_keys.into());
 
     let svg_fragments = Array::new();
     let svg_hashes = Array::new();
+    let svg_keys = Array::new();
     for (id, svg) in tree.resources.svg_resources() {
-        svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
         if let Some(hash) = tree.resources.svg_hash(id) {
-            svg_hashes.set(id.0 as u32, JsValue::from_str(&format!("{hash:016x}")));
+            let hash = format!("{hash:016x}");
+            let key = resource_key(svg.len(), &hash);
+            svg_hashes.set(id.0 as u32, JsValue::from_str(&hash));
+            svg_keys.set(id.0 as u32, JsValue::from_str(&key));
+            if !hints.known_svg_keys.contains(&key) {
+                svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
+            }
+        } else {
+            svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
         }
     }
     set_value(&resources, "svgFragments", svg_fragments.into());
     set_value(&resources, "svgHashes", svg_hashes.into());
+    set_value(&resources, "svgKeys", svg_keys.into());
     set_value(&value, "resources", resources.into());
     value.into()
+}
+
+fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
+    if value.is_null() || value.is_undefined() {
+        return HashSet::new();
+    }
+
+    Array::from(value)
+        .iter()
+        .filter_map(|item| item.as_string())
+        .collect()
+}
+
+fn resource_key(byte_len: usize, hash: &str) -> String {
+    format!("{byte_len}:{hash}")
 }
 
 fn layer_node_to_value(node: &LayerNode) -> JsValue {

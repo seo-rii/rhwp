@@ -192,6 +192,14 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     canvasPixels: baseline.performance.replay.canvasPixels,
     canvas2dOps: baseline.layerSummary?.opCount ?? 0,
     canvaskitOps: canvaskit.layerSummary?.opCount ?? 0,
+    canvas2dLayerResourceBytesImported: (baseline.layerSummary?.layerResourceStats?.imagePayloadBytesImported ?? 0)
+      + (baseline.layerSummary?.layerResourceStats?.svgPayloadBytesImported ?? 0),
+    canvaskitLayerResourceBytesImported: (canvaskit.layerSummary?.layerResourceStats?.imagePayloadBytesImported ?? 0)
+      + (canvaskit.layerSummary?.layerResourceStats?.svgPayloadBytesImported ?? 0),
+    canvaskitRepeatedImagePayloadImports: canvaskit.layerSummary?.secondTreeImagePayloadsImported ?? null,
+    canvaskitRepeatedSvgPayloadImports: canvaskit.layerSummary?.secondTreeSvgPayloadsImported ?? null,
+    canvaskitRepeatedImagePayloadOmissions: canvaskit.layerSummary?.secondTreeImagePayloadsOmitted ?? null,
+    canvaskitRepeatedSvgPayloadOmissions: canvaskit.layerSummary?.secondTreeSvgPayloadsOmitted ?? null,
     canvaskitNativeTextRuns: canvaskit.layerSummary?.nativeTextRunCount ?? 0,
     canvaskitNativeImages: canvaskit.layerSummary?.nativeImageCount ?? 0,
     canvaskitNativeEquations: canvaskit.layerSummary?.nativeEquationCount ?? 0,
@@ -229,9 +237,12 @@ async function renderScenario(page, backend, caseInfo) {
 
   const layerSummary = await page.evaluate(() => {
     const profile = window.__renderProfile ?? 'screen';
+    const statsBefore = window.__wasm?.getLayerResourceStats?.() ?? null;
     const tree = window.__wasm?.getPageLayerTree?.(0, profile);
     if (!tree) return null;
+    const statsAfterFirst = window.__wasm?.getLayerResourceStats?.() ?? null;
     const treeAgain = window.__wasm?.getPageLayerTree?.(0, profile);
+    const statsAfterSecond = window.__wasm?.getLayerResourceStats?.() ?? null;
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     let opCount = 0;
     let nativeTextRunCount = 0;
@@ -304,8 +315,10 @@ async function renderScenario(page, backend, caseInfo) {
       sharedResourceTable: !!tree.resources && tree.resources === treeAgain?.resources,
       resourceImageCount: tree.resources?.images?.length ?? 0,
       resourceImageHashCount: tree.resources?.imageHashes?.length ?? 0,
+      resourceImageKeyCount: tree.resources?.imageKeys?.length ?? 0,
       resourceSvgCount: tree.resources?.svgFragments?.length ?? 0,
       resourceSvgHashCount: tree.resources?.svgHashes?.length ?? 0,
+      resourceSvgKeyCount: tree.resources?.svgKeys?.length ?? 0,
       resourceRefCount,
       svgResourceRefCount,
       maxImageResourceId,
@@ -316,6 +329,25 @@ async function renderScenario(page, backend, caseInfo) {
       nativeImageCount,
       nativeEquationCount,
       nativeFormObjectCount,
+      layerResourceStats: statsAfterSecond,
+      firstTreeImagePayloadsImported: statsBefore && statsAfterFirst
+        ? statsAfterFirst.imagePayloadsImported - statsBefore.imagePayloadsImported
+        : null,
+      firstTreeSvgPayloadsImported: statsBefore && statsAfterFirst
+        ? statsAfterFirst.svgPayloadsImported - statsBefore.svgPayloadsImported
+        : null,
+      secondTreeImagePayloadsImported: statsAfterFirst && statsAfterSecond
+        ? statsAfterSecond.imagePayloadsImported - statsAfterFirst.imagePayloadsImported
+        : null,
+      secondTreeSvgPayloadsImported: statsAfterFirst && statsAfterSecond
+        ? statsAfterSecond.svgPayloadsImported - statsAfterFirst.svgPayloadsImported
+        : null,
+      secondTreeImagePayloadsOmitted: statsAfterFirst && statsAfterSecond
+        ? statsAfterSecond.imagePayloadsOmitted - statsAfterFirst.imagePayloadsOmitted
+        : null,
+      secondTreeSvgPayloadsOmitted: statsAfterFirst && statsAfterSecond
+        ? statsAfterSecond.svgPayloadsOmitted - statsAfterFirst.svgPayloadsOmitted
+        : null,
     };
   });
   assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
@@ -328,8 +360,16 @@ async function renderScenario(page, backend, caseInfo) {
     `${caseInfo.name} image hash count=${layerSummary?.resourceImageHashCount}, images=${layerSummary?.resourceImageCount}`,
   );
   assert(
+    layerSummary?.resourceImageCount === 0 || layerSummary.resourceImageKeyCount >= layerSummary.resourceImageCount,
+    `${caseInfo.name} image key count=${layerSummary?.resourceImageKeyCount}, images=${layerSummary?.resourceImageCount}`,
+  );
+  assert(
     layerSummary?.resourceSvgCount === 0 || layerSummary.resourceSvgHashCount >= layerSummary.resourceSvgCount,
     `${caseInfo.name} svg hash count=${layerSummary?.resourceSvgHashCount}, svgs=${layerSummary?.resourceSvgCount}`,
+  );
+  assert(
+    layerSummary?.resourceSvgCount === 0 || layerSummary.resourceSvgKeyCount >= layerSummary.resourceSvgCount,
+    `${caseInfo.name} svg key count=${layerSummary?.resourceSvgKeyCount}, svgs=${layerSummary?.resourceSvgCount}`,
   );
   assert(
     layerSummary?.maxImageResourceId === -1 || layerSummary.maxImageResourceId < layerSummary.resourceImageCount,
@@ -346,6 +386,14 @@ async function renderScenario(page, backend, caseInfo) {
   assert(
     layerSummary?.svgResourceRefCount === 0 || layerSummary.resourceSvgCount > 0,
     `${caseInfo.name} svg resource refs=${layerSummary?.svgResourceRefCount}, resources=${layerSummary?.resourceSvgCount}`,
+  );
+  assert(
+    layerSummary?.secondTreeImagePayloadsImported === null || layerSummary.secondTreeImagePayloadsImported === 0,
+    `${caseInfo.name} repeated layer export image payload imports=${layerSummary?.secondTreeImagePayloadsImported}, omitted=${layerSummary?.secondTreeImagePayloadsOmitted}`,
+  );
+  assert(
+    layerSummary?.secondTreeSvgPayloadsImported === null || layerSummary.secondTreeSvgPayloadsImported === 0,
+    `${caseInfo.name} repeated layer export svg payload imports=${layerSummary?.secondTreeSvgPayloadsImported}, omitted=${layerSummary?.secondTreeSvgPayloadsOmitted}`,
   );
   if (backend === 'canvaskit') {
     assert(layerSummary?.mode === CANVASKIT_MODE, `${caseInfo.name} canvaskitMode=${CANVASKIT_MODE}`);
