@@ -932,8 +932,11 @@ export class Canvas2DLayerRenderer {
     const resourceBytes = typeof resourceId === 'number'
       ? this.currentResources?.images?.[resourceId]
       : undefined;
+    const resourceHash = typeof resourceId === 'number'
+      ? this.currentResources?.imageHashes?.[resourceId]
+      : undefined;
     const cacheKey = resourceBytes
-      ? `res:${resourceId}`
+      ? `res:${resourceId}:${resourceHash ?? 'unknown'}`
       : base64
         ? `b64:${base64}`
         : null;

@@ -165,7 +165,7 @@ export class CanvasKitResourceCache {
 
   private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
     if (typeof resourceId === 'number' && this.resources?.images?.[resourceId]) {
-      return `res:${resourceId}`;
+      return `res:${resourceId}:${this.resources.imageHashes?.[resourceId] ?? 'unknown'}`;
     }
     return base64 ? `b64:${base64}` : null;
   }
