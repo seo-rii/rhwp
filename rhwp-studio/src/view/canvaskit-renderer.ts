@@ -126,6 +126,7 @@ const MATH_ALIASES = [
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
+const CLIP_RASTER_EDGE_PAD_PX = 4;
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -136,6 +137,8 @@ export class CanvasKitLayerRenderer {
   private readonly imageCache = new Map<string, Image>();
   private readonly mipmappedImageCache = new Map<string, Image>();
   private readonly domImageCache = new Map<string, HTMLImageElement>();
+  private readonly equationSvgDomImageCache = new Map<string, HTMLImageElement>();
+  private readonly equationSvgImageCache = new Map<string, Image>();
   private readonly patternImageCache = new Map<string, Image | null>();
   private readonly fontAliases = new Set<string>();
   private readonly currentClipStack: OverlayClip[] = [];
@@ -291,7 +294,7 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerClipNode,
   ): void {
-    const clipRightPad = node.clipKind === 'body' || node.clipKind === 'tableCell' ? 4 : 0;
+    const clipRightPad = node.clipKind === 'body' || node.clipKind === 'tableCell' ? CLIP_RASTER_EDGE_PAD_PX : 0;
     this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
     canvas.save();
     canvas.clipRect(
@@ -1186,6 +1189,41 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
   ): void {
+    const svgContent = op.svgContent.trim();
+    if (svgContent && op.bbox.width > 0 && op.bbox.height > 0) {
+      const svgWidth = Math.max(op.bbox.width, 1);
+      const svgHeight = Math.max(op.bbox.height, 1);
+      const cacheKey = `${svgWidth.toFixed(3)}x${svgHeight.toFixed(3)}:${svgContent}`;
+      const cachedImage = this.equationSvgImageCache.get(cacheKey);
+      if (cachedImage) {
+        this.drawCanvasKitImage(canvas, cachedImage, op.bbox);
+        return;
+      }
+
+      let domImage = this.equationSvgDomImageCache.get(cacheKey);
+      if (domImage?.complete && domImage.naturalWidth > 0 && domImage.naturalHeight > 0) {
+        try {
+          const image = this.canvasKit.MakeImageFromCanvasImageSource(domImage);
+          this.equationSvgImageCache.set(cacheKey, image);
+          this.drawCanvasKitImage(canvas, image, op.bbox);
+          return;
+        } catch {
+          // Fall through to the layout-box renderer if the browser cannot decode the SVG image.
+        }
+      } else if (!domImage) {
+        domImage = new Image();
+        domImage.decoding = 'sync';
+        domImage.onload = () => this.scheduleRerender();
+        domImage.onerror = () => {
+          this.equationSvgDomImageCache.delete(cacheKey);
+        };
+        const svgDocument =
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth.toFixed(2)}" height="${svgHeight.toFixed(2)}" viewBox="0 0 ${svgWidth.toFixed(2)} ${svgHeight.toFixed(2)}">${svgContent}</svg>`;
+        domImage.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgDocument)}`;
+        this.equationSvgDomImageCache.set(cacheKey, domImage);
+      }
+    }
+
     this.renderEquationBox(
       canvas,
       op.layoutBox,
@@ -2038,22 +2076,24 @@ export class CanvasKitLayerRenderer {
     const bytes = decodeBase64(base64);
     const mimeType = inferImageMime(bytes);
     image.decoding = 'sync';
-    image.onload = () => {
-      if (this.rerenderScheduled || !this.lastRenderedTree || !this.lastTargetCanvas) {
-        return;
-      }
-      this.rerenderScheduled = true;
-      requestAnimationFrame(() => {
-        this.rerenderScheduled = false;
-        if (!this.lastRenderedTree || !this.lastTargetCanvas) {
-          return;
-        }
-        this.renderPage(this.lastRenderedTree, this.lastTargetCanvas, this.lastScale);
-      });
-    };
+    image.onload = () => this.scheduleRerender();
     image.src = `data:${mimeType};base64,${base64}`;
     this.domImageCache.set(base64, image);
     return image.complete && image.naturalWidth > 0 ? image : null;
+  }
+
+  private scheduleRerender(): void {
+    if (this.disposed || this.rerenderScheduled || !this.lastRenderedTree || !this.lastTargetCanvas) {
+      return;
+    }
+    this.rerenderScheduled = true;
+    requestAnimationFrame(() => {
+      this.rerenderScheduled = false;
+      if (this.disposed || !this.lastRenderedTree || !this.lastTargetCanvas) {
+        return;
+      }
+      this.renderPage(this.lastRenderedTree, this.lastTargetCanvas, this.lastScale);
+    });
   }
 
   private renderTextRunOverlay(ctx: CanvasRenderingContext2D, op: LayerTextRunOp): void {
@@ -2707,12 +2747,24 @@ export class CanvasKitLayerRenderer {
     }
     this.imageCache.clear();
 
+    for (const image of this.equationSvgImageCache.values()) {
+      image.delete();
+    }
+    this.equationSvgImageCache.clear();
+
     for (const image of this.domImageCache.values()) {
       image.onload = null;
       image.onerror = null;
       image.src = '';
     }
     this.domImageCache.clear();
+
+    for (const image of this.equationSvgDomImageCache.values()) {
+      image.onload = null;
+      image.onerror = null;
+      image.src = '';
+    }
+    this.equationSvgDomImageCache.clear();
     this.fontAliases.clear();
     this.fontProvider.delete();
   }

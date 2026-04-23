@@ -482,7 +482,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   setTestCase('canvaskit-layer-tree-value-and-footnote-routing');
   await loadApp(page, `?renderer=canvaskit&canvaskitMode=${CANVASKIT_MODE}&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`);
   await createNewDocument(page);
-  const nativeRouting = await page.evaluate(() => {
+  const nativeRouting = await page.evaluate(async () => {
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     const wasmDoc = window.__wasm?.doc;
     if (!renderer) {
@@ -521,6 +521,67 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         shadeColor: '#ffffff',
       },
     };
+
+    const equationOp = {
+      type: 'equation',
+      bbox: { x: 0, y: 0, width: 40, height: 16 },
+      color: '#111111',
+      fontSize: 14,
+      svgContent: '<text x="0" y="12">x</text>',
+      layoutBox: {
+        x: 0,
+        y: 0,
+        width: 10,
+        height: 12,
+        baseline: 9,
+        kind: { type: 'text', text: 'x' },
+      },
+    };
+
+    let equationSvgNativeProbe = null;
+    if (window.__canvaskitRenderMode === 'default') {
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 96;
+      probeCanvas.height = 48;
+      const probeTree = {
+        pageWidth: 96,
+        pageHeight: 48,
+        profile: 'screen',
+        root: {
+          kind: 'leaf',
+          bounds: { x: 0, y: 0, width: 96, height: 48 },
+          cacheHint: 'none',
+          ops: [equationOp],
+        },
+      };
+      let layoutFallbackCalls = 0;
+      const originalRenderEquationBox = renderer.renderEquationBox;
+      renderer.renderEquationBox = function renderEquationBoxProbe(...args) {
+        layoutFallbackCalls += 1;
+        return originalRenderEquationBox.apply(this, args);
+      };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        const deadline = Date.now() + 1000;
+        while (
+          Date.now() < deadline
+          && (renderer.equationSvgImageCache?.size ?? 0) === 0
+          && !Array.from(renderer.equationSvgDomImageCache?.values?.() ?? []).some((image) => image.complete && image.naturalWidth > 0)
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+
+        layoutFallbackCalls = 0;
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        equationSvgNativeProbe = {
+          cachedDomSvgImages: renderer.equationSvgDomImageCache?.size ?? 0,
+          cachedCanvasKitSvgImages: renderer.equationSvgImageCache?.size ?? 0,
+          layoutFallbackCalls,
+        };
+      } finally {
+        renderer.renderEquationBox = originalRenderEquationBox;
+      }
+    }
 
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
@@ -663,20 +724,9 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         enabled: true,
       }),
       equationUsesOverlay: renderer.shouldOverlayEquation({
-        type: 'equation',
-        bbox: { x: 0, y: 0, width: 40, height: 16 },
-        color: '#111111',
-        fontSize: 14,
-        svgContent: '<text x="0" y="12">x</text>',
-        layoutBox: {
-          x: 0,
-          y: 0,
-          width: 10,
-          height: 12,
-          baseline: 9,
-          kind: { type: 'text', text: 'x' },
-        },
+        ...equationOp,
       }),
+      equationSvgNativeProbe,
       footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
         type: 'footnoteMarker',
         text: '1)',
@@ -712,5 +762,19 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.imageUsesOverlay === (CANVASKIT_MODE === 'compat'), `image overlay=${nativeRouting.imageUsesOverlay}`);
   assert(nativeRouting.formUsesOverlay === (CANVASKIT_MODE === 'compat'), `form overlay=${nativeRouting.formUsesOverlay}`);
   assert(nativeRouting.equationUsesOverlay === (CANVASKIT_MODE === 'compat'), `equation overlay=${nativeRouting.equationUsesOverlay}`);
+  if (CANVASKIT_MODE === 'default') {
+    assert(
+      nativeRouting.equationSvgNativeProbe?.cachedDomSvgImages > 0,
+      `equation svg DOM cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.equationSvgNativeProbe?.cachedCanvasKitSvgImages > 0,
+      `equation svg CanvasKit cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.equationSvgNativeProbe?.layoutFallbackCalls === 0,
+      `equation svg native fallback calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    );
+  }
   assert(nativeRouting.footnoteUsesOverlay === false, `footnote overlay=${nativeRouting.footnoteUsesOverlay}`);
 }, { skipLoadApp: true });
