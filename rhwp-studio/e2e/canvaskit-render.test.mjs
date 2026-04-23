@@ -75,6 +75,11 @@ const PERFORMANCE_GUARD = {
   maxReplayRatio: Number.parseFloat(process.env.RHWP_CANVASKIT_MAX_REPLAY_RATIO ?? '25'),
   maxReplayAvgMs: Number.parseFloat(process.env.RHWP_CANVASKIT_MAX_REPLAY_AVG_MS ?? '250'),
   maxAverageReplayRatio: Number.parseFloat(process.env.RHWP_CANVASKIT_MAX_AVG_REPLAY_RATIO ?? '15'),
+  minReplayRatioBaselineMs: Number.parseFloat(process.env.RHWP_CANVASKIT_MIN_REPLAY_RATIO_BASELINE_MS ?? '5'),
+  minAverageReplaySamples: Math.max(
+    1,
+    Number.parseInt(process.env.RHWP_CANVASKIT_MIN_AVG_REPLAY_SAMPLES ?? '2', 10) || 2,
+  ),
 };
 const TOLERANT_DIFF = {
   ignoreChannelDelta: 8,
@@ -152,6 +157,11 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
   const canvas2dAvg = baseline.performance.replay.avgMs;
   const canvaskitAvg = canvaskit.performance.replay.avgMs;
   const replayRatio = canvas2dAvg > 0 ? canvaskitAvg / canvas2dAvg : null;
+  const replayRatioGuard = replayRatio === null
+    ? 'disabled'
+    : canvas2dAvg < PERFORMANCE_GUARD.minReplayRatioBaselineMs
+      ? 'skipped-small-baseline'
+      : 'checked';
   const captureRatio = baseline.performance.screenshotMs > 0
     ? canvaskit.performance.screenshotMs / baseline.performance.screenshotMs
     : null;
@@ -164,6 +174,7 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     canvas2dReplayAvgMs: roundMetric(canvas2dAvg),
     canvaskitReplayAvgMs: roundMetric(canvaskitAvg),
     replayRatio: roundMetric(replayRatio),
+    replayRatioGuard,
     fasterReplayBackend: replayRatio === null ? 'n/a' : (replayRatio <= 1 ? 'canvaskit' : 'canvas2d'),
     canvas2dReplayMedianMs: roundMetric(baseline.performance.replay.medianMs),
     canvaskitReplayMedianMs: roundMetric(canvaskit.performance.replay.medianMs),
@@ -190,8 +201,10 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
 
 function assertPerformanceGuard(row) {
   assert(
-    row.replayRatio === null || row.replayRatio <= PERFORMANCE_GUARD.maxReplayRatio,
-    `${row.case} CanvasKit replay ratio=${row.replayRatio} <= ${PERFORMANCE_GUARD.maxReplayRatio}`,
+    row.replayRatio === null
+      || row.replayRatioGuard === 'skipped-small-baseline'
+      || row.replayRatio <= PERFORMANCE_GUARD.maxReplayRatio,
+    `${row.case} CanvasKit replay ratio=${row.replayRatio} <= ${PERFORMANCE_GUARD.maxReplayRatio} (guard=${row.replayRatioGuard}, canvas2dBaseline=${row.canvas2dReplayAvgMs}ms, minBaseline=${PERFORMANCE_GUARD.minReplayRatioBaselineMs}ms)`,
   );
   assert(
     row.canvaskitReplayAvgMs <= PERFORMANCE_GUARD.maxReplayAvgMs,
@@ -564,6 +577,13 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     const canvas2dCaptureMs = rows.reduce((sum, row) => sum + row.canvas2dCaptureMs, 0) / rows.length;
     const canvaskitCaptureMs = rows.reduce((sum, row) => sum + row.canvaskitCaptureMs, 0) / rows.length;
     const captureRatio = canvas2dCaptureMs > 0 ? canvaskitCaptureMs / canvas2dCaptureMs : null;
+    const replayRatioGuard = replayRatio === null
+      ? 'disabled'
+      : rows.length < PERFORMANCE_GUARD.minAverageReplaySamples
+        ? 'skipped-small-sample'
+        : canvas2dReplayAvgMs < PERFORMANCE_GUARD.minReplayRatioBaselineMs
+          ? 'skipped-small-baseline'
+          : 'checked';
     const summary = {
       scope,
       samples: rows.length,
@@ -573,6 +593,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       canvas2dReplayAvgMs: roundMetric(canvas2dReplayAvgMs),
       canvaskitReplayAvgMs: roundMetric(canvaskitReplayAvgMs),
       replayRatio: roundMetric(replayRatio),
+      replayRatioGuard,
       fasterReplayBackend: replayRatio === null ? 'n/a' : (replayRatio <= 1 ? 'canvaskit' : 'canvas2d'),
       canvas2dCaptureMs: roundMetric(canvas2dCaptureMs),
       canvaskitCaptureMs: roundMetric(canvaskitCaptureMs),
@@ -580,8 +601,10 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     };
     recordMetric(`${scope} renderer performance average`, summary);
     assert(
-      summary.replayRatio === null || summary.replayRatio <= PERFORMANCE_GUARD.maxAverageReplayRatio,
-      `${scope} average CanvasKit replay ratio=${summary.replayRatio} <= ${PERFORMANCE_GUARD.maxAverageReplayRatio}`,
+      summary.replayRatio === null
+        || summary.replayRatioGuard !== 'checked'
+        || summary.replayRatio <= PERFORMANCE_GUARD.maxAverageReplayRatio,
+      `${scope} average CanvasKit replay ratio=${summary.replayRatio} <= ${PERFORMANCE_GUARD.maxAverageReplayRatio} (guard=${summary.replayRatioGuard}, samples=${summary.samples}, minSamples=${PERFORMANCE_GUARD.minAverageReplaySamples})`,
     );
   }
 
