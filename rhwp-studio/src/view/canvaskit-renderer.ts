@@ -1,5 +1,5 @@
 import CanvasKitInit from 'canvaskit-wasm';
-import type { CanvasKit, Font, Image, Paint, Shader, SkPicture, Surface, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, Font, Image, Paint, Shader, Surface, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import type { CanvasKitRenderMode } from '@/view/render-backend';
@@ -49,6 +49,7 @@ import {
   shouldOverlayVectorEquation,
 } from './canvaskit/policy';
 import { CanvasKitResourceCache } from './canvaskit/resource-cache';
+import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
@@ -68,8 +69,7 @@ export class CanvasKitLayerRenderer {
   private readonly equationSvgImageCache: Map<string, Image>;
   private readonly patternImageCache: Map<string, Image | null>;
   private readonly fontAliases: Set<string>;
-  private readonly staticPictureCache = new Map<string, SkPicture>();
-  private readonly layerTreeIds = new WeakMap<PageLayerTree, number>();
+  private readonly staticPictureCache = new CanvasKitStaticPictureCache();
   private readonly currentClipStack: OverlayClip[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private lastRenderedTree: PageLayerTree | null = null;
@@ -77,7 +77,6 @@ export class CanvasKitLayerRenderer {
   private lastScale = 1;
   private currentProfile: LayerRenderProfile = 'screen';
   private currentLayerTreeCacheKey = 'none';
-  private nextLayerTreeId = 1;
   private rerenderScheduled = false;
   private disposed = false;
 
@@ -120,7 +119,7 @@ export class CanvasKitLayerRenderer {
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
     this.currentProfile = tree.profile;
-    this.currentLayerTreeCacheKey = this.cacheKeyForLayerTree(tree);
+    this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
     this.resourceCache.setResources(tree.resources);
     this.currentCacheHintStack.length = 0;
 
@@ -188,16 +187,11 @@ export class CanvasKitLayerRenderer {
       case 'group':
         this.withCacheHint(node.cacheHint, () => {
           if (node.cacheHint === 'staticSubtree') {
-            const cacheKey = [
+            const cacheKey = this.staticPictureCache.keyForStaticSubtree(
               this.currentLayerTreeCacheKey,
               this.currentProfile,
-              node.sourceNodeId ?? 'anon',
-              node.bounds.x.toFixed(3),
-              node.bounds.y.toFixed(3),
-              node.bounds.width.toFixed(3),
-              node.bounds.height.toFixed(3),
-              node.children.length,
-            ].join(':');
+              node,
+            );
             const cachedPicture = this.staticPictureCache.get(cacheKey);
             if (cachedPicture) {
               canvas.drawPicture(cachedPicture);
@@ -247,30 +241,12 @@ export class CanvasKitLayerRenderer {
     return this.currentCacheHintStack.includes(cacheHint);
   }
 
-  private cacheKeyForLayerTree(tree: PageLayerTree): string {
-    let treeId = this.layerTreeIds.get(tree);
-    if (treeId === undefined) {
-      treeId = this.nextLayerTreeId;
-      this.nextLayerTreeId += 1;
-      this.layerTreeIds.set(tree, treeId);
-    }
-    return String(treeId);
-  }
-
   releaseLayerTree(tree: PageLayerTree): void {
-    const treeId = this.layerTreeIds.get(tree);
-    if (treeId === undefined) {
+    const released = this.staticPictureCache.releaseLayerTree(tree);
+    if (!released) {
       return;
     }
 
-    const cachePrefix = `${treeId}:`;
-    for (const [key, picture] of this.staticPictureCache) {
-      if (key.startsWith(cachePrefix)) {
-        picture.delete();
-        this.staticPictureCache.delete(key);
-      }
-    }
-    this.layerTreeIds.delete(tree);
     if (this.lastRenderedTree === tree) {
       this.lastRenderedTree = null;
       this.lastTargetCanvas = null;
@@ -2587,9 +2563,6 @@ export class CanvasKitLayerRenderer {
   }
 
   private clearStaticPictureCache(): void {
-    for (const picture of this.staticPictureCache.values()) {
-      picture.delete();
-    }
     this.staticPictureCache.clear();
   }
 
