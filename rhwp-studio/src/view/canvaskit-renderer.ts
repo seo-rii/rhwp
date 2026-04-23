@@ -2,7 +2,6 @@ import CanvasKitInit from 'canvaskit-wasm';
 import type { CanvasKit, Font, Image, Paint, Shader, SkPicture, Surface, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
-import { resolveFont } from '@/core/font-substitution';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
   LayerBounds,
@@ -36,99 +35,23 @@ import {
   buildCanvasTextFont,
   calculateArrowDimensions,
   computePathPaintBounds,
-  decodeBase64,
-  encodeBase64,
-  inferImageMime,
   isHalfwidthScaledCluster,
-  rasterizePatternTileToPngBytes,
   renderEquationLayoutBox,
   splitIntoClusters,
   startsWithInvalidControl,
 } from './layer-canvas-utils';
-
-const FONT_SANS_REGULAR_URL = new URL('../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
-const FONT_SANS_BOLD_URL = new URL('../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
-const FONT_SERIF_REGULAR_URL = new URL('../../../web/fonts/NotoSerifKR-Regular.woff2', import.meta.url).href;
-const FONT_SERIF_BOLD_URL = new URL('../../../web/fonts/NotoSerifKR-Bold.woff2', import.meta.url).href;
-const FONT_MONO_REGULAR_URL = new URL('../../../web/fonts/D2Coding-Regular.woff2', import.meta.url).href;
-const FONT_MATH_REGULAR_URL = new URL('../../../web/fonts/LatinModernMath-Regular.woff2', import.meta.url).href;
-const FONT_HAMCHOROM_DOTUM_URL = new URL('../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
-const FONT_HAMCHOROM_DOTUM_BOLD_URL = new URL('../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
-const FONT_HAMCHOROM_BATANG_URL = new URL('../../../web/fonts/NotoSerifKR-Regular.woff2', import.meta.url).href;
-const FONT_HAMCHOROM_BATANG_BOLD_URL = new URL('../../../web/fonts/NotoSerifKR-Bold.woff2', import.meta.url).href;
-
-const HAMCHOROM_DOTUM_FAMILY = 'HCR Dotum';
-const HAMCHOROM_BATANG_FAMILY = 'HCR Batang';
-const HAMCHOROM_DOTUM_ALIASES = new Set([
-  '함초롬돋움',
-  '함초롱돋움',
-  '한컴돋움',
-  '새돋움',
-  HAMCHOROM_DOTUM_FAMILY,
-]);
-const HAMCHOROM_BATANG_ALIASES = new Set([
-  '함초롬바탕',
-  '함초롱바탕',
-  '한컴바탕',
-  '새바탕',
-  HAMCHOROM_BATANG_FAMILY,
-]);
-
-const SANS_ALIASES = [
-  'Noto Sans KR',
-  'Noto Sans CJK KR',
-  'NanumGothic',
-  '나눔고딕',
-  '맑은 고딕',
-  'Malgun Gothic',
-  'Apple SD Gothic Neo',
-  'Pretendard',
-  '돋움',
-  '돋움체',
-  '굴림',
-  '새굴림',
-  'HY중고딕',
-  'HY그래픽',
-  'HY그래픽M',
-  'HYHeadLine M',
-  'HYHeadLine Medium',
-  'HY헤드라인M',
-  'SpoqaHanSans',
-];
-
-const SERIF_ALIASES = [
-  'Noto Serif KR',
-  'Noto Serif CJK KR',
-  'NanumMyeongjo',
-  '나눔명조',
-  '바탕',
-  '바탕체',
-  'AppleMyungjo',
-  '궁서',
-  '새궁서',
-  'HY신명조',
-  'HY견명조',
-  'Batang',
-];
-
-const MONO_ALIASES = [
-  'D2Coding',
-  'NanumGothicCoding',
-  '나눔고딕코딩',
-  '굴림체',
-  'GulimChe',
-  'Noto Sans Mono',
-];
-
-const MATH_ALIASES = [
-  'Latin Modern Math',
-  'STIX Two Math',
-  'Cambria Math',
-];
+import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
+import {
+  canvaskitClipRightPad,
+  shouldOverlayRasterImage,
+  shouldOverlayRectangle as shouldOverlayRectanglePolicy,
+  shouldOverlayTextRun as shouldOverlayTextRunPolicy,
+  shouldOverlayVectorEquation,
+} from './canvaskit/policy';
+import { CanvasKitResourceCache } from './canvaskit/resource-cache';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
-const CLIP_RASTER_EDGE_PAD_PX = 4;
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -136,21 +59,22 @@ type OverlayClip = {
 };
 
 export class CanvasKitLayerRenderer {
-  private readonly imageCache = new Map<string, Image>();
-  private readonly mipmappedImageCache = new Map<string, Image>();
-  private readonly domImageCache = new Map<string, HTMLImageElement>();
-  private readonly equationSvgDomImageCache = new Map<string, HTMLImageElement>();
-  private readonly equationSvgImageCache = new Map<string, Image>();
-  private readonly patternImageCache = new Map<string, Image | null>();
+  private readonly resourceCache: CanvasKitResourceCache;
+  private readonly fontRegistry: CanvasKitFontRegistry;
+  private readonly imageCache: Map<string, Image>;
+  private readonly mipmappedImageCache: Map<string, Image>;
+  private readonly domImageCache: Map<string, HTMLImageElement>;
+  private readonly equationSvgDomImageCache: Map<string, HTMLImageElement>;
+  private readonly equationSvgImageCache: Map<string, Image>;
+  private readonly patternImageCache: Map<string, Image | null>;
+  private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new Map<string, SkPicture>();
-  private readonly fontAliases = new Set<string>();
   private readonly currentClipStack: OverlayClip[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
   private currentProfile: LayerRenderProfile = 'screen';
-  private currentResources: PageLayerTree['resources'] | null = null;
   private rerenderScheduled = false;
   private disposed = false;
 
@@ -158,7 +82,17 @@ export class CanvasKitLayerRenderer {
     private readonly canvasKit: CanvasKit,
     private readonly fontProvider: TypefaceFontProvider,
     private readonly renderMode: CanvasKitRenderMode,
-  ) {}
+  ) {
+    this.resourceCache = new CanvasKitResourceCache(canvasKit, () => this.scheduleRerender());
+    this.fontRegistry = new CanvasKitFontRegistry(fontProvider);
+    this.imageCache = this.resourceCache.imageCache;
+    this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
+    this.domImageCache = this.resourceCache.domImageCache;
+    this.equationSvgDomImageCache = this.resourceCache.equationSvgDomImageCache;
+    this.equationSvgImageCache = this.resourceCache.equationSvgImageCache;
+    this.patternImageCache = this.resourceCache.patternImageCache;
+    this.fontAliases = this.fontRegistry.aliases;
+  }
 
   static async create(renderMode: CanvasKitRenderMode = 'compat'): Promise<CanvasKitLayerRenderer> {
     const canvasKit = await CanvasKitInit({
@@ -166,7 +100,7 @@ export class CanvasKitLayerRenderer {
     });
     const fontProvider = canvasKit.TypefaceFontProvider.Make();
     const renderer = new CanvasKitLayerRenderer(canvasKit, fontProvider, renderMode);
-    await renderer.registerFonts();
+    await renderer.fontRegistry.registerFonts();
     return renderer;
   }
 
@@ -187,10 +121,7 @@ export class CanvasKitLayerRenderer {
     if (previousTree !== tree) {
       this.clearStaticPictureCache();
     }
-    if (this.currentResources !== (tree.resources ?? null)) {
-      this.clearResourceImageCaches();
-      this.currentResources = tree.resources ?? null;
-    }
+    this.resourceCache.setResources(tree.resources);
     this.currentCacheHintStack.length = 0;
 
     let surface: Surface | null = null;
@@ -247,42 +178,6 @@ export class CanvasKitLayerRenderer {
     } finally {
       fallbackSurface.delete();
     }
-  }
-
-  private async registerFonts(): Promise<void> {
-    const fontFiles = new Map<string, Uint8Array>();
-
-    const loadFontFile = async (url: string): Promise<Uint8Array> => {
-      const cached = fontFiles.get(url);
-      if (cached) return cached;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`CanvasKit font fetch failed: ${response.status} ${url}`);
-      }
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      fontFiles.set(url, bytes);
-      return bytes;
-    };
-
-    const registerAliases = async (aliases: string[], regularUrl: string, boldUrl?: string): Promise<void> => {
-      const regularBytes = await loadFontFile(regularUrl);
-      const boldBytes = boldUrl ? await loadFontFile(boldUrl) : null;
-
-      for (const alias of aliases) {
-        this.fontProvider.registerFont(regularBytes, alias);
-        this.fontAliases.add(alias);
-        if (boldBytes) {
-          this.fontProvider.registerFont(boldBytes, alias);
-        }
-      }
-    };
-
-    await registerAliases([HAMCHOROM_DOTUM_FAMILY], FONT_HAMCHOROM_DOTUM_URL, FONT_HAMCHOROM_DOTUM_BOLD_URL);
-    await registerAliases([HAMCHOROM_BATANG_FAMILY], FONT_HAMCHOROM_BATANG_URL, FONT_HAMCHOROM_BATANG_BOLD_URL);
-    await registerAliases(SANS_ALIASES, FONT_SANS_REGULAR_URL, FONT_SANS_BOLD_URL);
-    await registerAliases(SERIF_ALIASES, FONT_SERIF_REGULAR_URL, FONT_SERIF_BOLD_URL);
-    await registerAliases(MONO_ALIASES, FONT_MONO_REGULAR_URL);
-    await registerAliases(MATH_ALIASES, FONT_MATH_REGULAR_URL);
   }
 
   private renderNode(
@@ -355,12 +250,7 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerClipNode,
   ): void {
-    const clipRightPad =
-      this.renderMode === 'compat'
-      && this.currentProfile === 'fast-preview'
-      && (node.clipKind === 'body' || node.clipKind === 'tableCell')
-        ? CLIP_RASTER_EDGE_PAD_PX
-        : 0;
+    const clipRightPad = canvaskitClipRightPad(this.renderMode, this.currentProfile, node.clipKind);
     this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
     canvas.save();
     canvas.clipRect(
@@ -448,52 +338,12 @@ export class CanvasKitLayerRenderer {
 
   private shouldOverlayTextRun(op: LayerTextRunOp): boolean {
     const insideTableCell = this.currentClipStack.some((clip) => clip.kind === 'tableCell');
-
-    if (this.renderMode === 'compat') {
-      const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
-      const clusters = splitIntoClusters(op.text);
-      if (
-        op.isVertical
-        || op.rotation !== 0
-        || !op.text.trim()
-        || op.style.bold
-        || op.style.italic
-        || Math.abs(ratio - 1) > 0.01
-        || op.style.underline !== 'none'
-        || op.style.strikethrough
-        || (op.style.outlineType ?? 0) > 0
-        || (op.style.shadowType ?? 0) > 0
-        || op.style.emboss
-        || op.style.engrave
-        || (op.style.emphasisDot ?? 0) > 0
-        || ((typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase() !== '#ffffff')
-        || (op.tabLeaders?.length ?? 0) > 0
-        || (
-          clusters.length > 8
-          && clusters.some((cluster) => cluster.text === ' ')
-        )
-      ) {
-        return true;
-      }
-      return clusters.some((cluster) =>
-        cluster.text === '\t'
-        || cluster.text === '\u2007'
-        || startsWithInvalidControl(cluster.text)
-        || isHalfwidthScaledCluster(cluster.text),
-      );
-    }
-
-    const clusters = splitIntoClusters(op.text);
-    if (
-      (insideTableCell && op.style.bold)
-      || op.isVertical
-      || !op.text.trim()
-    ) {
-      return true;
-    }
-    return clusters.some((cluster) =>
-      startsWithInvalidControl(cluster.text),
-    );
+    return shouldOverlayTextRunPolicy(op, {
+      renderMode: this.renderMode,
+      profile: this.currentProfile,
+      insideTableCell,
+      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
+    });
   }
 
   private shouldOverlayFootnoteMarker(_op: LayerFootnoteMarkerOp): boolean {
@@ -505,36 +355,12 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayRectangle(op: LayerRectangleOp): boolean {
-    if (this.hasActiveCacheHint('preferVectorRecording')) {
-      return false;
-    }
-
-    const isSimpleTableCellFill =
-      this.currentClipStack.some((clip) => clip.kind === 'tableCell')
-      && !!op.style.fillColor
-      && !op.style.strokeColor;
-
-    if (this.renderMode === 'default' && isSimpleTableCellFill) {
-      return false;
-    }
-
-    return op.cornerRadius === 0
-      && !op.gradient
-      && !op.style.pattern
-      && !op.style.shadow
-      && !op.transform.rotation
-      && !op.transform.horzFlip
-      && !op.transform.vertFlip
-      && op.style.opacity === 1
-      && (
-        isSimpleTableCellFill
-        || (
-          !op.style.fillColor
-          && !!op.style.strokeColor
-          && op.style.strokeDash === 'solid'
-          && op.style.strokeWidth <= 1
-        )
-      );
+    return shouldOverlayRectanglePolicy(op, {
+      renderMode: this.renderMode,
+      profile: this.currentProfile,
+      insideTableCell: this.currentClipStack.some((clip) => clip.kind === 'tableCell'),
+      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
+    });
   }
 
   private shouldOverlayFormObject(_op: LayerFormObjectOp): boolean {
@@ -542,17 +368,21 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayImage(_op: LayerImageOp): boolean {
-    if (this.hasActiveCacheHint('preferRaster')) {
-      return false;
-    }
-    return this.renderMode === 'compat';
+    return shouldOverlayRasterImage({
+      renderMode: this.renderMode,
+      profile: this.currentProfile,
+      insideTableCell: this.currentClipStack.some((clip) => clip.kind === 'tableCell'),
+      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
+    });
   }
 
   private shouldOverlayEquation(_op: LayerEquationOp): boolean {
-    if (this.hasActiveCacheHint('preferVectorRecording')) {
-      return false;
-    }
-    return this.renderMode === 'compat';
+    return shouldOverlayVectorEquation({
+      renderMode: this.renderMode,
+      profile: this.currentProfile,
+      insideTableCell: this.currentClipStack.some((clip) => clip.kind === 'tableCell'),
+      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
+    });
   }
 
   private renderPageBackground(canvas: ReturnType<Surface['getCanvas']>, op: LayerPageBackgroundOp): void {
@@ -1102,7 +932,7 @@ export class CanvasKitLayerRenderer {
 
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.5, 8), 12);
-          const family = this.resolveCanvasKitFontFamily('sans-serif');
+          const family = this.fontRegistry.resolveFamily('sans-serif');
           const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, '#808080');
           const metrics = font.getMetrics();
           const cssFont = buildCanvasTextFont(family, fontSize, false, false);
@@ -1141,7 +971,7 @@ export class CanvasKitLayerRenderer {
 
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
-          const family = this.resolveCanvasKitFontFamily('sans-serif');
+          const family = this.fontRegistry.resolveFamily('sans-serif');
           const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
@@ -1171,7 +1001,7 @@ export class CanvasKitLayerRenderer {
 
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
-          const family = this.resolveCanvasKitFontFamily('sans-serif');
+          const family = this.fontRegistry.resolveFamily('sans-serif');
           const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
@@ -1216,7 +1046,7 @@ export class CanvasKitLayerRenderer {
 
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
-          const family = this.resolveCanvasKitFontFamily('sans-serif');
+          const family = this.fontRegistry.resolveFamily('sans-serif');
           const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
@@ -1237,7 +1067,7 @@ export class CanvasKitLayerRenderer {
 
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
-          const family = this.resolveCanvasKitFontFamily('sans-serif');
+          const family = this.fontRegistry.resolveFamily('sans-serif');
           const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
@@ -1254,26 +1084,22 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
   ): void {
-    const svgContent = (
-      typeof op.svgResourceId === 'number'
-        ? this.currentResources?.svgFragments?.[op.svgResourceId] ?? op.svgContent ?? ''
-        : op.svgContent ?? ''
-    ).trim();
+    const svgContent = this.resourceCache.svgFragment(op.svgResourceId, op.svgContent);
     if (svgContent && op.bbox.width > 0 && op.bbox.height > 0) {
       const svgWidth = Math.max(op.bbox.width, 1);
       const svgHeight = Math.max(op.bbox.height, 1);
       const cacheKey = `${svgWidth.toFixed(3)}x${svgHeight.toFixed(3)}:${svgContent}`;
-      const cachedImage = this.equationSvgImageCache.get(cacheKey);
+      const cachedImage = this.resourceCache.equationSvgImage(cacheKey);
       if (cachedImage) {
         this.drawCanvasKitImage(canvas, cachedImage, op.bbox);
         return;
       }
 
-      let domImage = this.equationSvgDomImageCache.get(cacheKey);
+      let domImage = this.resourceCache.equationSvgDomImage(cacheKey);
       if (domImage?.complete && domImage.naturalWidth > 0 && domImage.naturalHeight > 0) {
         try {
           const image = this.canvasKit.MakeImageFromCanvasImageSource(domImage);
-          this.equationSvgImageCache.set(cacheKey, image);
+          this.resourceCache.setEquationSvgImage(cacheKey, image);
           this.drawCanvasKitImage(canvas, image, op.bbox);
           return;
         } catch {
@@ -1284,12 +1110,12 @@ export class CanvasKitLayerRenderer {
         domImage.decoding = 'sync';
         domImage.onload = () => this.scheduleRerender();
         domImage.onerror = () => {
-          this.equationSvgDomImageCache.delete(cacheKey);
+          this.resourceCache.deleteEquationSvgDomImage(cacheKey);
         };
         const svgDocument =
           `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth.toFixed(2)}" height="${svgHeight.toFixed(2)}" viewBox="0 0 ${svgWidth.toFixed(2)} ${svgHeight.toFixed(2)}">${svgContent}</svg>`;
         domImage.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgDocument)}`;
-        this.equationSvgDomImageCache.set(cacheKey, domImage);
+        this.resourceCache.setEquationSvgDomImage(cacheKey, domImage);
       }
     }
 
@@ -1819,7 +1645,7 @@ export class CanvasKitLayerRenderer {
     if (!op.image) {
       return;
     }
-    const image = this.getDomImage(op.image.resourceId, op.image.base64);
+    const image = this.resourceCache.domImage(op.image.resourceId, op.image.base64);
     if (!image) {
       return;
     }
@@ -1827,7 +1653,7 @@ export class CanvasKitLayerRenderer {
   }
 
   private renderImageOverlay(ctx: CanvasRenderingContext2D, op: LayerImageOp): void {
-    const image = this.getDomImage(op.resourceId, op.base64);
+    const image = this.resourceCache.domImage(op.resourceId, op.base64);
     if (!image) {
       return;
     }
@@ -2140,45 +1966,6 @@ export class CanvasKitLayerRenderer {
     ctx.restore();
   }
 
-  private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
-    if (typeof resourceId === 'number' && this.currentResources?.images?.[resourceId]) {
-      return `res:${resourceId}`;
-    }
-    return base64 ? `b64:${base64}` : null;
-  }
-
-  private getDomImage(resourceId?: number, base64?: string): HTMLImageElement | null {
-    const cacheKey = this.imageResourceCacheKey(resourceId, base64);
-    if (!cacheKey) {
-      return null;
-    }
-
-    const cached = this.domImageCache.get(cacheKey);
-    if (cached) {
-      return cached.complete && cached.naturalWidth > 0 ? cached : null;
-    }
-
-    const image = new Image();
-    const bytes = typeof resourceId === 'number'
-      ? this.currentResources?.images?.[resourceId]
-      : base64
-        ? decodeBase64(base64)
-        : undefined;
-    if (!bytes) {
-      return null;
-    }
-    const mimeType = inferImageMime(bytes);
-    image.decoding = 'sync';
-    image.onload = () => this.scheduleRerender();
-    if (typeof resourceId === 'number') {
-      image.src = `data:${mimeType};base64,${encodeBase64(bytes)}`;
-    } else {
-      image.src = `data:${mimeType};base64,${base64}`;
-    }
-    this.domImageCache.set(cacheKey, image);
-    return image.complete && image.naturalWidth > 0 ? image : null;
-  }
-
   private scheduleRerender(): void {
     if (this.disposed || this.rerenderScheduled || !this.lastRenderedTree || !this.lastTargetCanvas) {
       return;
@@ -2430,7 +2217,7 @@ export class CanvasKitLayerRenderer {
     originalSize?: { width: number; height: number },
     crop?: { left: number; top: number; right: number; bottom: number },
   ): void {
-    const image = this.getImage(resourceId, base64);
+    const image = this.resourceCache.image(resourceId, base64);
     if (!image) return;
     const drawImageRect = (
       srcX: number,
@@ -2451,7 +2238,7 @@ export class CanvasKitLayerRenderer {
           || this.currentProfile === 'high-quality'
         )
         && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
-      const sampledImage = useMipmaps ? this.getImage(resourceId, base64, true) ?? image : image;
+      const sampledImage = useMipmaps ? this.resourceCache.image(resourceId, base64, true) ?? image : image;
       const paint = new this.canvasKit.Paint();
       canvas.drawImageRectOptions(
         sampledImage,
@@ -2577,7 +2364,7 @@ export class CanvasKitLayerRenderer {
   }
 
   private makeTextObjects(fontFamily: string, fontSize: number, bold: boolean, italic: boolean, color: string, scaleX = 1): { typeface: Typeface; font: Font; paint: Paint } {
-    const family = this.resolveCanvasKitFontFamily(fontFamily);
+    const family = this.fontRegistry.resolveFamily(fontFamily);
     const typeface = this.fontProvider.matchFamilyStyle(family, {
       weight: bold ? this.canvasKit.FontWeight.Bold : this.canvasKit.FontWeight.Normal,
       slant: italic ? this.canvasKit.FontSlant.Italic : this.canvasKit.FontSlant.Upright,
@@ -2596,24 +2383,7 @@ export class CanvasKitLayerRenderer {
   }
 
   private resolveCanvasKitFontFamily(fontFamily: string): string {
-    const resolved = resolveFont(fontFamily, 0, 0);
-    if (HAMCHOROM_DOTUM_ALIASES.has(resolved) || HAMCHOROM_DOTUM_ALIASES.has(fontFamily)) {
-      return HAMCHOROM_DOTUM_FAMILY;
-    }
-    if (HAMCHOROM_BATANG_ALIASES.has(resolved) || HAMCHOROM_BATANG_ALIASES.has(fontFamily)) {
-      return HAMCHOROM_BATANG_FAMILY;
-    }
-    if (this.fontAliases.has(resolved)) return resolved;
-    if (this.fontAliases.has(fontFamily)) return fontFamily;
-
-    const lower = resolved.toLowerCase();
-    if (/gulimche|coding|courier/.test(lower) || /굴림체/.test(resolved)) {
-      return 'D2Coding';
-    }
-    if (/batang|batangche|gungsuh|serif|times/.test(lower) || /바탕|바탕체|명조|궁서/.test(resolved)) {
-      return 'Noto Serif KR';
-    }
-    return 'Noto Sans KR';
+    return this.fontRegistry.resolveFamily(fontFamily);
   }
 
   private makePaint(color: string, style: 'fill' | 'stroke', opacity = 1): Paint {
@@ -2697,7 +2467,7 @@ export class CanvasKitLayerRenderer {
   }
 
   private makePatternShader(pattern: LayerPatternFill): Shader | null {
-    const image = this.getPatternImage(pattern);
+    const image = this.resourceCache.patternImage(pattern);
     return image
       ? image.makeShaderOptions(
         this.canvasKit.TileMode.Repeat,
@@ -2706,18 +2476,6 @@ export class CanvasKitLayerRenderer {
         this.canvasKit.MipmapMode.None,
       )
       : null;
-  }
-
-  private getPatternImage(pattern: LayerPatternFill): Image | null {
-    const cacheKey = `${pattern.patternType}:${pattern.patternColor}:${pattern.backgroundColor}`;
-    if (this.patternImageCache.has(cacheKey)) {
-      return this.patternImageCache.get(cacheKey) ?? null;
-    }
-
-    const bytes = rasterizePatternTileToPngBytes(pattern);
-    const image = bytes ? this.canvasKit.MakeImageFromEncoded(bytes) : null;
-    this.patternImageCache.set(cacheKey, image);
-    return image;
   }
 
   private drawShadow(
@@ -2795,65 +2553,6 @@ export class CanvasKitLayerRenderer {
     paint.delete();
   }
 
-  private getImage(resourceId?: number, base64?: string, withMipmaps = false): Image | null {
-    const cacheKey = this.imageResourceCacheKey(resourceId, base64);
-    if (!cacheKey) {
-      return null;
-    }
-
-    if (withMipmaps) {
-      const cachedMipmap = this.mipmappedImageCache.get(cacheKey);
-      if (cachedMipmap) return cachedMipmap;
-
-      const original = this.getImage(resourceId, base64);
-      if (!original) return null;
-
-      const mipmapped = original.makeCopyWithDefaultMipmaps();
-      this.mipmappedImageCache.set(cacheKey, mipmapped);
-      return mipmapped;
-    }
-
-    const cached = this.imageCache.get(cacheKey);
-    if (cached) return cached;
-
-    const bytes = typeof resourceId === 'number'
-      ? this.currentResources?.images?.[resourceId]
-      : base64
-        ? decodeBase64(base64)
-        : undefined;
-    if (!bytes) return null;
-    const image = this.canvasKit.MakeImageFromEncoded(bytes);
-    if (!image) return null;
-    this.imageCache.set(cacheKey, image);
-    return image;
-  }
-
-  private clearResourceImageCaches(): void {
-    for (const [key, image] of this.mipmappedImageCache) {
-      if (!key.startsWith('res:')) {
-        continue;
-      }
-      image.delete();
-      this.mipmappedImageCache.delete(key);
-    }
-    for (const [key, image] of this.imageCache) {
-      if (!key.startsWith('res:')) {
-        continue;
-      }
-      image.delete();
-      this.imageCache.delete(key);
-    }
-    for (const [key, image] of this.domImageCache) {
-      if (!key.startsWith('res:')) {
-        continue;
-      }
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-      this.domImageCache.delete(key);
-    }
-  }
-
   private clearStaticPictureCache(): void {
     for (const picture of this.staticPictureCache.values()) {
       picture.delete();
@@ -2871,47 +2570,13 @@ export class CanvasKitLayerRenderer {
     this.lastTargetCanvas = null;
     this.lastScale = 1;
     this.currentProfile = 'screen';
-    this.currentResources = null;
     this.rerenderScheduled = false;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
 
-    for (const image of this.patternImageCache.values()) {
-      image?.delete();
-    }
-    this.patternImageCache.clear();
-
     this.clearStaticPictureCache();
-
-    for (const image of this.mipmappedImageCache.values()) {
-      image.delete();
-    }
-    this.mipmappedImageCache.clear();
-
-    for (const image of this.imageCache.values()) {
-      image.delete();
-    }
-    this.imageCache.clear();
-
-    for (const image of this.equationSvgImageCache.values()) {
-      image.delete();
-    }
-    this.equationSvgImageCache.clear();
-
-    for (const image of this.domImageCache.values()) {
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-    }
-    this.domImageCache.clear();
-
-    for (const image of this.equationSvgDomImageCache.values()) {
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-    }
-    this.equationSvgDomImageCache.clear();
-    this.fontAliases.clear();
+    this.resourceCache.dispose();
+    this.fontRegistry.clear();
     this.fontProvider.delete();
   }
 
