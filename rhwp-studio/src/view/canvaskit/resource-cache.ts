@@ -29,6 +29,7 @@ export class CanvasKitResourceCache {
       return;
     }
     this.clearResourceImageCaches();
+    this.clearResourceSvgCaches();
     this.resources = nextResources;
   }
 
@@ -38,6 +39,15 @@ export class CanvasKitResourceCache {
         ? this.resources?.svgFragments?.[resourceId] ?? fallback ?? ''
         : fallback ?? ''
     ).trim();
+  }
+
+  svgResourceCacheKey(resourceId?: number, fallback?: string): string | null {
+    if (typeof resourceId === 'number' && this.resources?.svgFragments?.[resourceId] !== undefined) {
+      const resourceKey = this.resources.svgKeys?.[resourceId] ?? this.resources.svgHashes?.[resourceId] ?? 'unknown';
+      return `res-svg:${resourceId}:${resourceKey}`;
+    }
+    const svgContent = fallback?.trim();
+    return svgContent ? `inline-svg:${svgContent.length}:${this.hashString(svgContent)}` : null;
   }
 
   image(resourceId?: number, base64?: string, withMipmaps = false): CanvasKitImage | null {
@@ -178,6 +188,15 @@ export class CanvasKitResourceCache {
         : undefined;
   }
 
+  private hashString(value: string): string {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16);
+  }
+
   private clearResourceImageCaches(): void {
     for (const [key, image] of this.mipmappedImageCache) {
       if (!key.startsWith('res:')) {
@@ -201,6 +220,25 @@ export class CanvasKitResourceCache {
       image.onerror = null;
       image.src = '';
       this.domImageCache.delete(key);
+    }
+  }
+
+  private clearResourceSvgCaches(): void {
+    for (const [key, image] of this.equationSvgImageCache) {
+      if (!key.includes(':res-svg:')) {
+        continue;
+      }
+      image.delete();
+      this.equationSvgImageCache.delete(key);
+    }
+    for (const [key, image] of this.equationSvgDomImageCache) {
+      if (!key.includes(':res-svg:')) {
+        continue;
+      }
+      image.onload = null;
+      image.onerror = null;
+      image.src = '';
+      this.equationSvgDomImageCache.delete(key);
     }
   }
 }

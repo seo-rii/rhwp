@@ -1081,7 +1081,8 @@ export class CanvasKitLayerRenderer {
     if (svgContent && op.bbox.width > 0 && op.bbox.height > 0) {
       const svgWidth = Math.max(op.bbox.width, 1);
       const svgHeight = Math.max(op.bbox.height, 1);
-      const cacheKey = `${svgWidth.toFixed(3)}x${svgHeight.toFixed(3)}:${svgContent}`;
+      const svgCacheKey = this.resourceCache.svgResourceCacheKey(op.svgResourceId, op.svgContent);
+      const cacheKey = `${svgWidth.toFixed(3)}x${svgHeight.toFixed(3)}:${svgCacheKey ?? 'inline-svg:missing'}`;
       const cachedImage = this.resourceCache.equationSvgImage(cacheKey);
       if (cachedImage) {
         this.drawCanvasKitImage(canvas, cachedImage, op.bbox);

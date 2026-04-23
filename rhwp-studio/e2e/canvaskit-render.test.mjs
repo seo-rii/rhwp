@@ -866,6 +866,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       bbox: { x: 0, y: 0, width: 40, height: 16 },
       color: '#111111',
       fontSize: 14,
+      svgResourceId: 0,
       svgContent: '<text x="0" y="12">x</text>',
       layoutBox: {
         x: 0,
@@ -892,6 +893,14 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           cacheHint: 'none',
           ops: [equationOp],
         },
+        resources: {
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: ['<text x="0" y="12">x</text>'],
+          svgHashes: ['probe-hash'],
+          svgKeys: ['probe-key'],
+        },
       };
       let layoutFallbackCalls = 0;
       const originalRenderEquationBox = renderer.renderEquationBox;
@@ -915,6 +924,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         equationSvgNativeProbe = {
           cachedDomSvgImages: renderer.equationSvgDomImageCache?.size ?? 0,
           cachedCanvasKitSvgImages: renderer.equationSvgImageCache?.size ?? 0,
+          canvasKitCacheKeys: Array.from(renderer.equationSvgImageCache?.keys?.() ?? []),
           layoutFallbackCalls,
         };
       } finally {
@@ -1170,6 +1180,14 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     assert(
       nativeRouting.equationSvgNativeProbe?.cachedCanvasKitSvgImages > 0,
       `equation svg CanvasKit cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.some((key) => key.includes('probe-key')) === true,
+      `equation svg CanvasKit cache uses resource key=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.some((key) => key.includes('<text')) === false,
+      `equation svg CanvasKit cache avoids raw svg keys=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
     );
     assert(
       nativeRouting.equationSvgNativeProbe?.layoutFallbackCalls === 0,
