@@ -6,6 +6,39 @@ use skia_safe::{
 
 use crate::model::style::ImageFillMode;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ImageSampling {
+    filter_mode: FilterMode,
+    mipmap_mode: MipmapMode,
+}
+
+impl ImageSampling {
+    pub fn nearest() -> Self {
+        Self {
+            filter_mode: FilterMode::Nearest,
+            mipmap_mode: MipmapMode::None,
+        }
+    }
+
+    pub fn linear() -> Self {
+        Self {
+            filter_mode: FilterMode::Linear,
+            mipmap_mode: MipmapMode::None,
+        }
+    }
+
+    pub fn linear_mipmap() -> Self {
+        Self {
+            filter_mode: FilterMode::Linear,
+            mipmap_mode: MipmapMode::Linear,
+        }
+    }
+
+    fn options(self) -> SamplingOptions {
+        SamplingOptions::new(self.filter_mode, self.mipmap_mode)
+    }
+}
+
 pub fn draw_image_bytes(
     canvas: &Canvas,
     bytes: &[u8],
@@ -16,6 +49,7 @@ pub fn draw_image_bytes(
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
+    sampling: ImageSampling,
 ) {
     let Some(image) = decode_image(bytes) else {
         draw_missing_image_placeholder(canvas, x, y, width, height);
@@ -32,7 +66,7 @@ pub fn draw_image_bytes(
                 &image,
                 Some((src, SrcRectConstraint::Strict)),
                 dst,
-                SamplingOptions::new(FilterMode::Linear, MipmapMode::None),
+                sampling.options(),
                 &paint,
             );
         } else {
@@ -40,7 +74,7 @@ pub fn draw_image_bytes(
                 &image,
                 None,
                 dst,
-                SamplingOptions::new(FilterMode::Linear, MipmapMode::None),
+                sampling.options(),
                 &paint,
             );
         }
@@ -173,6 +207,7 @@ pub fn draw_svg_fragment(
     y: f32,
     width: f32,
     height: f32,
+    sampling: ImageSampling,
 ) -> bool {
     let Some(image) = decode_svg_fragment(svg_fragment, width, height) else {
         return false;
@@ -181,13 +216,7 @@ pub fn draw_svg_fragment(
     let dst = Rect::from_xywh(x, y, width, height);
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
-    canvas.draw_image_rect_with_sampling_options(
-        &image,
-        None,
-        dst,
-        SamplingOptions::new(FilterMode::Linear, MipmapMode::None),
-        &paint,
-    );
+    canvas.draw_image_rect_with_sampling_options(&image, None, dst, sampling.options(), &paint);
     true
 }
 

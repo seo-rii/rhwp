@@ -3,8 +3,8 @@ use skia_safe::{
 };
 
 use crate::paint::{
-    LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree, PaintOp,
-    ResourceArena,
+    CacheHint, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree,
+    PaintOp, RenderProfile, ResourceArena,
 };
 use crate::renderer::layer_renderer::LayerRasterRenderer;
 use crate::renderer::layout::split_into_clusters;
@@ -12,7 +12,9 @@ use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::{LineRenderType, UnderlineType};
 
 use super::equation_conv::render_equation;
-use super::image_conv::{draw_image_bytes, draw_missing_image_placeholder, draw_svg_fragment};
+use super::image_conv::{
+    draw_image_bytes, draw_missing_image_placeholder, draw_svg_fragment, ImageSampling,
+};
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
     make_stroke_paint, make_text_paint,
@@ -25,6 +27,52 @@ pub struct SkiaLayerRenderer {
 
 fn raster_dimension(length: f64) -> i32 {
     length.round().max(1.0) as i32
+}
+
+struct SkiaReplayContext {
+    profile: RenderProfile,
+    cache_hints: Vec<CacheHint>,
+}
+
+impl SkiaReplayContext {
+    fn new(profile: RenderProfile) -> Self {
+        Self {
+            profile,
+            cache_hints: Vec::new(),
+        }
+    }
+
+    fn push_cache_hint(&mut self, cache_hint: CacheHint) {
+        self.cache_hints.push(cache_hint);
+    }
+
+    fn pop_cache_hint(&mut self) {
+        self.cache_hints.pop();
+    }
+
+    fn has_cache_hint(&self, cache_hint: CacheHint) -> bool {
+        self.cache_hints.contains(&cache_hint)
+    }
+
+    fn image_sampling(&self) -> ImageSampling {
+        if self.profile == RenderProfile::FastPreview
+            || self.has_cache_hint(CacheHint::PreferRaster)
+        {
+            return ImageSampling::nearest();
+        }
+        if matches!(
+            self.profile,
+            RenderProfile::Print | RenderProfile::HighQuality
+        ) || self.has_cache_hint(CacheHint::PreferVectorRecording)
+        {
+            return ImageSampling::linear_mipmap();
+        }
+        ImageSampling::linear()
+    }
+
+    fn clip_antialias(&self) -> bool {
+        self.profile != RenderProfile::FastPreview || !self.has_cache_hint(CacheHint::PreferRaster)
+    }
 }
 
 impl SkiaLayerRenderer {
@@ -41,7 +89,8 @@ impl SkiaLayerRenderer {
             .ok_or_else(|| "Skia raster surface 생성 실패".to_string())?;
         let canvas = surface.canvas();
         canvas.clear(Color::from_argb(0, 0, 0, 0));
-        self.render_node(canvas, &tree.root, &tree.resources);
+        let mut replay = SkiaReplayContext::new(tree.profile);
+        self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
         let image = surface.image_snapshot();
         let data = image
             .encode(None, EncodedImageFormat::PNG, None)
@@ -49,12 +98,23 @@ impl SkiaLayerRenderer {
         Ok(data.as_bytes().to_vec())
     }
 
-    fn render_node(&self, canvas: &Canvas, node: &LayerNode, resources: &ResourceArena) {
+    fn render_node(
+        &self,
+        canvas: &Canvas,
+        node: &LayerNode,
+        resources: &ResourceArena,
+        replay: &mut SkiaReplayContext,
+    ) {
         match &node.kind {
-            LayerNodeKind::Group { children, .. } => {
+            LayerNodeKind::Group {
+                children,
+                cache_hint,
+            } => {
+                replay.push_cache_hint(*cache_hint);
                 for child in children {
-                    self.render_node(canvas, child, resources);
+                    self.render_node(canvas, child, resources, replay);
                 }
+                replay.pop_cache_hint();
             }
             LayerNodeKind::ClipRect { clip, child, .. } => {
                 canvas.save();
@@ -66,20 +126,28 @@ impl SkiaLayerRenderer {
                         clip.height as f32,
                     ),
                     None,
-                    Some(true),
+                    Some(replay.clip_antialias()),
                 );
-                self.render_node(canvas, child, resources);
+                self.render_node(canvas, child, resources, replay);
                 canvas.restore();
             }
-            LayerNodeKind::Leaf { ops, .. } => {
+            LayerNodeKind::Leaf { ops, cache_hint } => {
+                replay.push_cache_hint(*cache_hint);
                 for op in ops {
-                    self.render_op(canvas, op, resources);
+                    self.render_op(canvas, op, resources, replay);
                 }
+                replay.pop_cache_hint();
             }
         }
     }
 
-    fn render_op(&self, canvas: &Canvas, op: &PaintOp, resources: &ResourceArena) {
+    fn render_op(
+        &self,
+        canvas: &Canvas,
+        op: &PaintOp,
+        resources: &ResourceArena,
+        replay: &SkiaReplayContext,
+    ) {
         match op {
             PaintOp::PageBackground { bbox, background } => {
                 if let Some(image) = &background.image {
@@ -94,6 +162,7 @@ impl SkiaLayerRenderer {
                             Some(image.fill_mode),
                             None,
                             None,
+                            replay.image_sampling(),
                         );
                     }
                 } else {
@@ -259,6 +328,7 @@ impl SkiaLayerRenderer {
                                 image.fill_mode,
                                 image.original_size,
                                 image.crop,
+                                replay.image_sampling(),
                             );
                         } else {
                             draw_missing_image_placeholder(
@@ -290,6 +360,7 @@ impl SkiaLayerRenderer {
                         bbox.y as f32,
                         bbox.width as f32,
                         bbox.height as f32,
+                        replay.image_sampling(),
                     );
                 }
                 if !rendered {
@@ -674,6 +745,7 @@ impl SkiaLayerRenderer {
                         pass_y - render_style.font_size as f32,
                         cluster_width,
                         render_style.font_size as f32 * 1.4,
+                        ImageSampling::linear(),
                     );
                     continue;
                 }
@@ -940,8 +1012,8 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::SkiaLayerRenderer;
-    use crate::paint::{LayerBuilder, RenderProfile};
+    use super::{ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
+    use crate::paint::{CacheHint, LayerBuilder, RenderProfile};
     use crate::renderer::render_tree::{
         BoundingBox, PageNode, RectangleNode, RenderNode, RenderNodeType,
     };
@@ -1009,5 +1081,28 @@ mod tests {
         let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
 
         assert_eq!((pixmap.width(), pixmap.height()), (794, 1122));
+    }
+
+    #[test]
+    fn consumes_profile_and_cache_hints_for_sampling_policy() {
+        let screen = SkiaReplayContext::new(RenderProfile::Screen);
+        assert_eq!(screen.image_sampling(), ImageSampling::linear());
+        assert!(screen.clip_antialias());
+
+        let fast_preview = SkiaReplayContext::new(RenderProfile::FastPreview);
+        assert_eq!(fast_preview.image_sampling(), ImageSampling::nearest());
+        assert!(fast_preview.clip_antialias());
+
+        let print = SkiaReplayContext::new(RenderProfile::Print);
+        assert_eq!(print.image_sampling(), ImageSampling::linear_mipmap());
+
+        let mut raster = SkiaReplayContext::new(RenderProfile::HighQuality);
+        raster.push_cache_hint(CacheHint::PreferRaster);
+        assert_eq!(raster.image_sampling(), ImageSampling::nearest());
+        assert!(raster.clip_antialias());
+
+        let mut vector = SkiaReplayContext::new(RenderProfile::Screen);
+        vector.push_cache_hint(CacheHint::PreferVectorRecording);
+        assert_eq!(vector.image_sampling(), ImageSampling::linear_mipmap());
     }
 }
