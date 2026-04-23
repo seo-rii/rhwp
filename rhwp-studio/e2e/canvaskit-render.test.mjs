@@ -290,7 +290,9 @@ async function renderScenario(page, backend, caseInfo) {
       profile: tree.profile,
       sharedResourceTable: !!tree.resources && tree.resources === treeAgain?.resources,
       resourceImageCount: tree.resources?.images?.length ?? 0,
+      resourceImageHashCount: tree.resources?.imageHashes?.length ?? 0,
       resourceSvgCount: tree.resources?.svgFragments?.length ?? 0,
+      resourceSvgHashCount: tree.resources?.svgHashes?.length ?? 0,
       resourceRefCount,
       svgResourceRefCount,
       maxImageResourceId,
@@ -308,6 +310,14 @@ async function renderScenario(page, backend, caseInfo) {
   assert(layerSummary?.sharedResourceTable === true, `${caseInfo.name} layer resources use shared document table`);
   assert(layerSummary?.embeddedBase64PayloadCount === 0, `${caseInfo.name} object API embeds no base64 payloads`);
   assert(layerSummary?.embeddedSvgPayloadCount === 0, `${caseInfo.name} object API embeds no svg payloads`);
+  assert(
+    layerSummary?.resourceImageCount === 0 || layerSummary.resourceImageHashCount >= layerSummary.resourceImageCount,
+    `${caseInfo.name} image hash count=${layerSummary?.resourceImageHashCount}, images=${layerSummary?.resourceImageCount}`,
+  );
+  assert(
+    layerSummary?.resourceSvgCount === 0 || layerSummary.resourceSvgHashCount >= layerSummary.resourceSvgCount,
+    `${caseInfo.name} svg hash count=${layerSummary?.resourceSvgHashCount}, svgs=${layerSummary?.resourceSvgCount}`,
+  );
   assert(
     layerSummary?.maxImageResourceId === -1 || layerSummary.maxImageResourceId < layerSummary.resourceImageCount,
     `${caseInfo.name} max image resource id=${layerSummary?.maxImageResourceId}, resources=${layerSummary?.resourceImageCount}`,

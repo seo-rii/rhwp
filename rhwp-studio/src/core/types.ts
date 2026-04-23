@@ -47,7 +47,9 @@ export interface PageLayerTree {
 
 export interface LayerResources {
   images: Uint8Array[];
+  imageHashes?: string[];
   svgFragments: string[];
+  svgHashes?: string[];
 }
 
 export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;

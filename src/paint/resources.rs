@@ -14,8 +14,10 @@ pub struct SvgResourceId(pub usize);
 #[derive(Debug, Clone, Default)]
 pub struct ResourceArena {
     image_bytes: Vec<Vec<u8>>,
+    image_hashes: Vec<u64>,
     image_lookup: HashMap<u64, Vec<ImageResourceId>>,
     svg_fragments: Vec<String>,
+    svg_hashes: Vec<u64>,
     svg_lookup: HashMap<u64, Vec<SvgResourceId>>,
 }
 
@@ -32,6 +34,7 @@ impl ResourceArena {
 
         let id = ImageResourceId(self.image_bytes.len());
         self.image_bytes.push(bytes.to_vec());
+        self.image_hashes.push(hash);
         self.image_lookup.entry(hash).or_default().push(id);
         id
     }
@@ -42,6 +45,10 @@ impl ResourceArena {
 
     pub fn image_count(&self) -> usize {
         self.image_bytes.len()
+    }
+
+    pub fn image_hash(&self, id: ImageResourceId) -> Option<u64> {
+        self.image_hashes.get(id.0).copied()
     }
 
     pub fn image_resources(&self) -> impl Iterator<Item = (ImageResourceId, &[u8])> + '_ {
@@ -63,6 +70,7 @@ impl ResourceArena {
 
         let id = SvgResourceId(self.svg_fragments.len());
         self.svg_fragments.push(svg.to_string());
+        self.svg_hashes.push(hash);
         self.svg_lookup.entry(hash).or_default().push(id);
         id
     }
@@ -73,6 +81,10 @@ impl ResourceArena {
 
     pub fn svg_count(&self) -> usize {
         self.svg_fragments.len()
+    }
+
+    pub fn svg_hash(&self, id: SvgResourceId) -> Option<u64> {
+        self.svg_hashes.get(id.0).copied()
     }
 
     pub fn svg_resources(&self) -> impl Iterator<Item = (SvgResourceId, &str)> + '_ {
@@ -105,6 +117,8 @@ mod tests {
         assert_eq!(image_b, ImageResourceId(0));
         assert_eq!(arena.image_count(), 1);
         assert_eq!(arena.image_bytes(image_a), Some(&[1, 2, 3, 4][..]));
+        assert_eq!(arena.image_hash(image_a), arena.image_hash(image_b));
+        assert!(arena.image_hash(image_a).is_some());
         assert_eq!(
             arena.image_resources().collect::<Vec<_>>(),
             vec![(ImageResourceId(0), &[1, 2, 3, 4][..])]
@@ -114,6 +128,8 @@ mod tests {
         assert_eq!(svg_b, SvgResourceId(0));
         assert_eq!(arena.svg_count(), 1);
         assert_eq!(arena.svg_fragment(svg_a), Some("<svg/>"));
+        assert_eq!(arena.svg_hash(svg_a), arena.svg_hash(svg_b));
+        assert!(arena.svg_hash(svg_a).is_some());
         assert_eq!(
             arena.svg_resources().collect::<Vec<_>>(),
             vec![(SvgResourceId(0), "<svg/>")]

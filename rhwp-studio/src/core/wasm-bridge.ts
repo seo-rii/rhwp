@@ -42,19 +42,20 @@ function substituteCssFontFamily(cssFont: string): string {
 }
 
 class LayerResourceStore {
-  resources: LayerResources = { images: [], svgFragments: [] };
+  resources: LayerResources = { images: [], imageHashes: [], svgFragments: [], svgHashes: [] };
 
   private imageLookup = new Map<string, number[]>();
-  private svgLookup = new Map<string, number>();
+  private svgLookup = new Map<string, number[]>();
 
   clear(): void {
-    this.resources = { images: [], svgFragments: [] };
+    this.resources = { images: [], imageHashes: [], svgFragments: [], svgHashes: [] };
     this.imageLookup.clear();
     this.svgLookup.clear();
   }
 
-  internImage(bytes: Uint8Array): number {
-    const key = `${bytes.byteLength}:${this.hashBytes(bytes)}`;
+  internImage(bytes: Uint8Array, contentHash?: string): number {
+    const resourceHash = contentHash ?? this.hashBytes(bytes);
+    const key = `${bytes.byteLength}:${resourceHash}`;
     const candidates = this.imageLookup.get(key);
     if (candidates) {
       for (const candidate of candidates) {
@@ -66,6 +67,7 @@ class LayerResourceStore {
 
     const id = this.resources.images.length;
     this.resources.images.push(bytes);
+    this.resources.imageHashes?.push(resourceHash);
     if (candidates) {
       candidates.push(id);
     } else {
@@ -74,14 +76,26 @@ class LayerResourceStore {
     return id;
   }
 
-  internSvg(fragment: string): number {
-    const existing = this.svgLookup.get(fragment);
-    if (existing !== undefined) {
-      return existing;
+  internSvg(fragment: string, contentHash?: string): number {
+    const resourceHash = contentHash ?? fragment;
+    const key = `${fragment.length}:${resourceHash}`;
+    const candidates = this.svgLookup.get(key);
+    if (candidates) {
+      for (const candidate of candidates) {
+        if (this.resources.svgFragments[candidate] === fragment) {
+          return candidate;
+        }
+      }
     }
+
     const id = this.resources.svgFragments.length;
     this.resources.svgFragments.push(fragment);
-    this.svgLookup.set(fragment, id);
+    this.resources.svgHashes?.push(resourceHash);
+    if (candidates) {
+      candidates.push(id);
+    } else {
+      this.svgLookup.set(key, [id]);
+    }
     return id;
   }
 
@@ -290,7 +304,9 @@ export class WasmBridge {
     const imageIdMap = new Map<number, number>();
     const svgIdMap = new Map<number, number>();
     const imageResources = pageResources.images ?? [];
+    const imageHashes = pageResources.imageHashes ?? [];
     const svgFragments = pageResources.svgFragments ?? [];
+    const svgHashes = pageResources.svgHashes ?? [];
 
     const mapImageResourceId = (resourceId: number | undefined): number | undefined => {
       if (typeof resourceId !== 'number') return resourceId;
@@ -298,7 +314,7 @@ export class WasmBridge {
       if (mapped !== undefined) return mapped;
       const bytes = imageResources[resourceId];
       if (!bytes) return resourceId;
-      const docResourceId = this.layerResourceStore.internImage(bytes);
+      const docResourceId = this.layerResourceStore.internImage(bytes, imageHashes[resourceId]);
       imageIdMap.set(resourceId, docResourceId);
       return docResourceId;
     };
@@ -309,7 +325,7 @@ export class WasmBridge {
       if (mapped !== undefined) return mapped;
       const fragment = svgFragments[resourceId];
       if (typeof fragment !== 'string') return resourceId;
-      const docResourceId = this.layerResourceStore.internSvg(fragment);
+      const docResourceId = this.layerResourceStore.internSvg(fragment, svgHashes[resourceId]);
       svgIdMap.set(resourceId, docResourceId);
       return docResourceId;
     };

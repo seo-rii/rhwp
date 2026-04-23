@@ -25,16 +25,26 @@ pub fn page_layer_tree_to_js_value(tree: &PageLayerTree) -> JsValue {
 
     let resources = Object::new();
     let images = Array::new();
+    let image_hashes = Array::new();
     for (id, bytes) in tree.resources.image_resources() {
         images.set(id.0 as u32, Uint8Array::from(bytes).into());
+        if let Some(hash) = tree.resources.image_hash(id) {
+            image_hashes.set(id.0 as u32, JsValue::from_str(&format!("{hash:016x}")));
+        }
     }
     set_value(&resources, "images", images.into());
+    set_value(&resources, "imageHashes", image_hashes.into());
 
     let svg_fragments = Array::new();
+    let svg_hashes = Array::new();
     for (id, svg) in tree.resources.svg_resources() {
         svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
+        if let Some(hash) = tree.resources.svg_hash(id) {
+            svg_hashes.set(id.0 as u32, JsValue::from_str(&format!("{hash:016x}")));
+        }
     }
     set_value(&resources, "svgFragments", svg_fragments.into());
+    set_value(&resources, "svgHashes", svg_hashes.into());
     set_value(&value, "resources", resources.into());
     value.into()
 }
