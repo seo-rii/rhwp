@@ -6,7 +6,8 @@ use crate::document_core::helpers::color_ref_to_css;
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
+    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp,
+    ResourceArena,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -36,12 +37,34 @@ fn layer_node_to_value(node: &LayerNode, resources: &ResourceArena) -> JsValue {
     if let Some(source_node_id) = node.source_node_id {
         set_number(&value, "sourceNodeId", source_node_id as f64);
     }
+    if node.semantic != LayerSemantic::default() {
+        let semantic = Object::new();
+        set_string(&semantic, "role", node.semantic.role.as_str());
+        if let Some(section_index) = node.semantic.section_index {
+            set_number(&semantic, "sectionIndex", section_index as f64);
+        }
+        if let Some(column_index) = node.semantic.column_index {
+            set_number(&semantic, "columnIndex", column_index as f64);
+        }
+        if let Some(para_index) = node.semantic.para_index {
+            set_number(&semantic, "paraIndex", para_index as f64);
+        }
+        if let Some(control_index) = node.semantic.control_index {
+            set_number(&semantic, "controlIndex", control_index as f64);
+        }
+        if let Some(row_count) = node.semantic.row_count {
+            set_number(&semantic, "rowCount", row_count as f64);
+        }
+        if let Some(col_count) = node.semantic.col_count {
+            set_number(&semantic, "colCount", col_count as f64);
+        }
+        set_value(&value, "semantic", semantic.into());
+    }
 
     match &node.kind {
         LayerNodeKind::Group {
             children,
             cache_hint,
-            ..
         } => {
             set_string(&value, "kind", "group");
             set_string(&value, "cacheHint", cache_hint_str(*cache_hint));

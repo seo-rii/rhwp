@@ -6,8 +6,8 @@ use crate::document_core::helpers::{color_ref_to_css, json_escape as raw_json_es
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree, PaintOp,
-    ResourceArena,
+    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerTextRunPaint, PageLayerTree,
+    PaintOp, ResourceArena,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -43,12 +43,34 @@ impl LayerNode {
         if let Some(source_node_id) = self.source_node_id {
             let _ = write!(buf, ",\"sourceNodeId\":{}", source_node_id);
         }
+        if self.semantic != LayerSemantic::default() {
+            buf.push_str(",\"semantic\":{");
+            let _ = write!(buf, "\"role\":{}", json_escape(self.semantic.role.as_str()));
+            if let Some(section_index) = self.semantic.section_index {
+                let _ = write!(buf, ",\"sectionIndex\":{}", section_index);
+            }
+            if let Some(column_index) = self.semantic.column_index {
+                let _ = write!(buf, ",\"columnIndex\":{}", column_index);
+            }
+            if let Some(para_index) = self.semantic.para_index {
+                let _ = write!(buf, ",\"paraIndex\":{}", para_index);
+            }
+            if let Some(control_index) = self.semantic.control_index {
+                let _ = write!(buf, ",\"controlIndex\":{}", control_index);
+            }
+            if let Some(row_count) = self.semantic.row_count {
+                let _ = write!(buf, ",\"rowCount\":{}", row_count);
+            }
+            if let Some(col_count) = self.semantic.col_count {
+                let _ = write!(buf, ",\"colCount\":{}", col_count);
+            }
+            buf.push('}');
+        }
 
         match &self.kind {
             LayerNodeKind::Group {
                 children,
                 cache_hint,
-                ..
             } => {
                 let _ = write!(
                     buf,
@@ -1137,13 +1159,56 @@ mod tests {
                     vec![],
                 )],
                 CacheHint::PreferVectorRecording,
-                crate::paint::GroupKind::Generic,
+                crate::paint::LayerSemantic::default(),
             ),
         );
 
         let json = tree.to_json();
         assert!(json.contains("\"kind\":\"group\""));
         assert!(json.contains("\"cacheHint\":\"preferVectorRecording\""));
+    }
+
+    #[test]
+    fn serializes_lightweight_semantic_metadata_separately_from_visual_kind() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::group(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                Some(7),
+                vec![],
+                CacheHint::None,
+                crate::paint::LayerSemantic::table(Some(1), Some(2), Some(3), 4, 5),
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"kind\":\"group\""));
+        assert!(json.contains("\"semantic\":{\"role\":\"table\""));
+        assert!(json.contains("\"sectionIndex\":1"));
+        assert!(json.contains("\"paraIndex\":2"));
+        assert!(json.contains("\"controlIndex\":3"));
+        assert!(json.contains("\"rowCount\":4"));
+        assert!(json.contains("\"colCount\":5"));
+    }
+
+    #[test]
+    fn serializes_column_semantic_index() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::group(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                Some(8),
+                vec![],
+                CacheHint::None,
+                crate::paint::LayerSemantic::column(2),
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"semantic\":{\"role\":\"column\""));
+        assert!(json.contains("\"columnIndex\":2"));
     }
 
     #[test]

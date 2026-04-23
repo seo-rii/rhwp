@@ -1,5 +1,5 @@
 use crate::paint::layer_tree::{
-    CacheHint, ClipKind, GroupKind, LayerNode, LayerNodeKind, PageLayerTree,
+    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerSemanticRole, PageLayerTree,
 };
 use crate::paint::paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
@@ -37,7 +37,7 @@ impl LayerBuilder {
             Some(tree.root.id),
             self.build_children(&tree.root),
             self.cache_hint_for(&tree.root.node_type),
-            GroupKind::Generic,
+            LayerSemantic::role(LayerSemanticRole::Page),
         );
 
         PageLayerTree::with_resources_and_profile(
@@ -160,7 +160,7 @@ impl LayerBuilder {
                     Some(node.id),
                     self.build_children(node),
                     self.cache_hint_for(&node.node_type),
-                    GroupKind::Body,
+                    LayerSemantic::role(LayerSemanticRole::Body),
                 );
                 Some(LayerNode::clip_rect(
                     node.bbox,
@@ -176,7 +176,7 @@ impl LayerBuilder {
                     Some(node.id),
                     self.build_children(node),
                     self.cache_hint_for(&node.node_type),
-                    GroupKind::TableCell(cell.clone()),
+                    LayerSemantic::role(LayerSemanticRole::TableCell),
                 );
                 Some(LayerNode::clip_rect(
                     node.bbox,
@@ -191,7 +191,7 @@ impl LayerBuilder {
                 Some(node.id),
                 self.build_children(node),
                 self.cache_hint_for(&node.node_type),
-                self.group_kind_for(&node.node_type),
+                self.semantic_for(&node.node_type),
             )),
         }
     }
@@ -220,7 +220,7 @@ impl LayerBuilder {
             None,
             children,
             self.cache_hint_for(&node.node_type),
-            GroupKind::Generic,
+            LayerSemantic::default(),
         )
     }
 
@@ -371,20 +371,34 @@ impl LayerBuilder {
         }
     }
 
-    fn group_kind_for(&self, node_type: &RenderNodeType) -> GroupKind {
+    fn semantic_for(&self, node_type: &RenderNodeType) -> LayerSemantic {
         match node_type {
-            RenderNodeType::MasterPage => GroupKind::MasterPage,
-            RenderNodeType::Header => GroupKind::Header,
-            RenderNodeType::Footer => GroupKind::Footer,
-            RenderNodeType::Body { .. } => GroupKind::Body,
-            RenderNodeType::Column(index) => GroupKind::Column(*index),
-            RenderNodeType::FootnoteArea => GroupKind::FootnoteArea,
-            RenderNodeType::TextLine(line) => GroupKind::TextLine(line.clone()),
-            RenderNodeType::Table(table) => GroupKind::Table(table.clone()),
-            RenderNodeType::TableCell(cell) => GroupKind::TableCell(cell.clone()),
-            RenderNodeType::TextBox => GroupKind::TextBox,
-            RenderNodeType::Group(group) => GroupKind::Group(group.clone()),
-            _ => GroupKind::Generic,
+            RenderNodeType::MasterPage => LayerSemantic::role(LayerSemanticRole::MasterPage),
+            RenderNodeType::Header => LayerSemantic::role(LayerSemanticRole::Header),
+            RenderNodeType::Footer => LayerSemantic::role(LayerSemanticRole::Footer),
+            RenderNodeType::Body { .. } => LayerSemantic::role(LayerSemanticRole::Body),
+            RenderNodeType::Column(index) => LayerSemantic::column(*index),
+            RenderNodeType::FootnoteArea => LayerSemantic::role(LayerSemanticRole::FootnoteArea),
+            RenderNodeType::TextLine(line) => {
+                LayerSemantic::text_line(line.section_index, line.para_index)
+            }
+            RenderNodeType::Table(table) => LayerSemantic::table(
+                table.section_index,
+                table.para_index,
+                table.control_index,
+                table.row_count,
+                table.col_count,
+            ),
+            RenderNodeType::TableCell(_) => LayerSemantic::role(LayerSemanticRole::TableCell),
+            RenderNodeType::TextBox => LayerSemantic::role(LayerSemanticRole::TextBox),
+            RenderNodeType::Group(group) => LayerSemantic {
+                role: LayerSemanticRole::Group,
+                section_index: group.section_index,
+                para_index: group.para_index,
+                control_index: group.control_index,
+                ..LayerSemantic::default()
+            },
+            _ => LayerSemantic::default(),
         }
     }
 }
@@ -394,6 +408,7 @@ mod tests {
     use super::*;
     use crate::renderer::render_tree::{
         BoundingBox, PageBackgroundNode, PageNode, RenderNode, RenderNodeType, TableCellNode,
+        TableNode, TextLineNode,
     };
     use crate::renderer::render_tree::{EquationNode, ImageNode};
 
@@ -483,6 +498,56 @@ mod tests {
                     }
                     other => panic!("expected clip rect, got {other:?}"),
                 }
+            }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_group_semantics_as_lightweight_metadata() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.children.push(RenderNode::new(
+            10,
+            RenderNodeType::TextLine(TextLineNode::with_para(18.0, 14.0, 2, 9)),
+            BoundingBox::new(20.0, 30.0, 400.0, 18.0),
+        ));
+        tree.root.children.push(RenderNode::new(
+            11,
+            RenderNodeType::Table(TableNode {
+                row_count: 3,
+                col_count: 4,
+                border_fill_id: 0,
+                section_index: Some(2),
+                para_index: Some(9),
+                control_index: Some(1),
+            }),
+            BoundingBox::new(20.0, 60.0, 360.0, 120.0),
+        ));
+        tree.root.children.push(RenderNode::new(
+            12,
+            RenderNodeType::Column(5),
+            BoundingBox::new(420.0, 30.0, 300.0, 500.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        assert_eq!(layer_tree.root.semantic.role, LayerSemanticRole::Page);
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => {
+                assert_eq!(children[0].semantic.role, LayerSemanticRole::TextLine);
+                assert_eq!(children[0].semantic.section_index, Some(2));
+                assert_eq!(children[0].semantic.para_index, Some(9));
+
+                assert_eq!(children[1].semantic.role, LayerSemanticRole::Table);
+                assert_eq!(children[1].semantic.section_index, Some(2));
+                assert_eq!(children[1].semantic.para_index, Some(9));
+                assert_eq!(children[1].semantic.control_index, Some(1));
+                assert_eq!(children[1].semantic.row_count, Some(3));
+                assert_eq!(children[1].semantic.col_count, Some(4));
+
+                assert_eq!(children[2].semantic.role, LayerSemanticRole::Column);
+                assert_eq!(children[2].semantic.column_index, Some(5));
             }
             other => panic!("expected root group, got {other:?}"),
         }

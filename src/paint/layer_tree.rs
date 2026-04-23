@@ -1,15 +1,14 @@
 use crate::paint::paint_op::PaintOp;
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
-use crate::renderer::render_tree::{
-    BoundingBox, GroupNode, NodeId, TableCellNode, TableNode, TextLineNode,
-};
+use crate::renderer::render_tree::{BoundingBox, NodeId};
 
 /// 한 페이지의 visual layer tree.
 ///
-/// 최종 lean visual IR이라기보다는 semantic render tree에서 backend replay용으로
-/// 내려가는 1차 전환 표현이다. backend가 다시 레이아웃을 해석하지 않도록 clip/group/
-/// leaf 순서와 paint payload를 고정하되, 일부 semantic 메타데이터는 아직 유지한다.
+/// Semantic render tree에서 backend replay용으로 내려간 안정화된 visual IR이다.
+/// backend가 다시 레이아웃을 해석하지 않도록 clip/group/leaf 순서와 paint payload를
+/// 고정하고, 문서 의미는 `LayerSemantic`의 작은 디버그/히트테스트 메타데이터로만
+/// 분리해 둔다.
 #[derive(Debug, Clone)]
 pub struct PageLayerTree {
     pub page_width: f64,
@@ -97,6 +96,7 @@ pub enum ClipKind {
 pub struct LayerNode {
     pub bounds: BoundingBox,
     pub source_node_id: Option<NodeId>,
+    pub semantic: LayerSemantic,
     pub kind: LayerNodeKind,
 }
 
@@ -106,15 +106,15 @@ impl LayerNode {
         source_node_id: Option<NodeId>,
         children: Vec<LayerNode>,
         cache_hint: CacheHint,
-        group_kind: GroupKind,
+        semantic: LayerSemantic,
     ) -> Self {
         Self {
             bounds,
             source_node_id,
+            semantic,
             kind: LayerNodeKind::Group {
                 children,
                 cache_hint,
-                group_kind,
             },
         }
     }
@@ -129,6 +129,7 @@ impl LayerNode {
         Self {
             bounds,
             source_node_id,
+            semantic: LayerSemantic::default(),
             kind: LayerNodeKind::ClipRect {
                 clip,
                 child: Box::new(child),
@@ -150,6 +151,7 @@ impl LayerNode {
         Self {
             bounds,
             source_node_id,
+            semantic: LayerSemantic::default(),
             kind: LayerNodeKind::Leaf { ops, cache_hint },
         }
     }
@@ -160,7 +162,6 @@ pub enum LayerNodeKind {
     Group {
         children: Vec<LayerNode>,
         cache_hint: CacheHint,
-        group_kind: GroupKind,
     },
     ClipRect {
         clip: BoundingBox,
@@ -173,18 +174,95 @@ pub enum LayerNodeKind {
     },
 }
 
-#[derive(Debug, Clone)]
-pub enum GroupKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayerSemanticRole {
+    #[default]
     Generic,
+    Page,
     MasterPage,
     Header,
     Footer,
     Body,
-    Column(u16),
+    Column,
     FootnoteArea,
-    TextLine(TextLineNode),
-    Table(TableNode),
-    TableCell(TableCellNode),
+    TextLine,
+    Table,
+    TableCell,
     TextBox,
-    Group(GroupNode),
+    Group,
+}
+
+impl LayerSemanticRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::Page => "page",
+            Self::MasterPage => "masterPage",
+            Self::Header => "header",
+            Self::Footer => "footer",
+            Self::Body => "body",
+            Self::Column => "column",
+            Self::FootnoteArea => "footnoteArea",
+            Self::TextLine => "textLine",
+            Self::Table => "table",
+            Self::TableCell => "tableCell",
+            Self::TextBox => "textBox",
+            Self::Group => "group",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LayerSemantic {
+    pub role: LayerSemanticRole,
+    pub section_index: Option<usize>,
+    pub column_index: Option<u16>,
+    pub para_index: Option<usize>,
+    pub control_index: Option<usize>,
+    pub row_count: Option<u16>,
+    pub col_count: Option<u16>,
+}
+
+impl LayerSemantic {
+    pub fn role(role: LayerSemanticRole) -> Self {
+        Self {
+            role,
+            ..Self::default()
+        }
+    }
+
+    pub fn column(index: u16) -> Self {
+        Self {
+            role: LayerSemanticRole::Column,
+            column_index: Some(index),
+            ..Self::default()
+        }
+    }
+
+    pub fn text_line(section_index: Option<usize>, para_index: Option<usize>) -> Self {
+        Self {
+            role: LayerSemanticRole::TextLine,
+            section_index,
+            para_index,
+            ..Self::default()
+        }
+    }
+
+    pub fn table(
+        section_index: Option<usize>,
+        para_index: Option<usize>,
+        control_index: Option<usize>,
+        row_count: u16,
+        col_count: u16,
+    ) -> Self {
+        Self {
+            role: LayerSemanticRole::Table,
+            section_index,
+            column_index: None,
+            para_index,
+            control_index,
+            row_count: Some(row_count),
+            col_count: Some(col_count),
+        }
+    }
 }

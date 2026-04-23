@@ -16,9 +16,9 @@ use super::{
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    ClipKind, GroupKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint, LayerNode,
-    LayerNodeKind, LayerPageBackgroundPaint, LayerTextRunPaint, PageLayerTree, PaintOp,
-    ResourceArena,
+    ClipKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint, LayerNode, LayerNodeKind,
+    LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole, LayerTextRunPaint, PageLayerTree,
+    PaintOp, ResourceArena,
 };
 use base64::Engine;
 
@@ -148,16 +148,12 @@ impl SvgRenderer {
 
     fn render_layer_node(&mut self, node: &LayerNode, resources: &ResourceArena) {
         match &node.kind {
-            LayerNodeKind::Group {
-                children,
-                group_kind,
-                ..
-            } => {
-                self.enter_layer_group(node.bounds, group_kind);
+            LayerNodeKind::Group { children, .. } => {
+                self.enter_layer_group(node.bounds, &node.semantic);
                 for child in children {
                     self.render_layer_node(child, resources);
                 }
-                self.leave_layer_group(node.bounds, group_kind);
+                self.leave_layer_group(node.bounds, &node.semantic);
             }
             LayerNodeKind::ClipRect {
                 clip,
@@ -270,12 +266,13 @@ impl SvgRenderer {
         }
     }
 
-    fn enter_layer_group(&mut self, bounds: BoundingBox, group_kind: &GroupKind) {
+    fn enter_layer_group(&mut self, bounds: BoundingBox, semantic: &LayerSemantic) {
         if self.debug_overlay {
-            match group_kind {
-                GroupKind::TextLine(line) => {
+            match semantic.role {
+                LayerSemanticRole::TextLine => {
                     if self.overlay_skip_depth == 0 {
-                        if let (Some(pi), Some(si)) = (line.para_index, line.section_index) {
+                        if let (Some(pi), Some(si)) = (semantic.para_index, semantic.section_index)
+                        {
                             if self.overlay_page_section == -1 {
                                 self.overlay_page_section = si as i32;
                             }
@@ -303,10 +300,10 @@ impl SvgRenderer {
                         }
                     }
                 }
-                GroupKind::Table(table) => {
-                    if let (Some(pi), Some(ci)) = (table.para_index, table.control_index) {
+                LayerSemanticRole::Table => {
+                    if let (Some(pi), Some(ci)) = (semantic.para_index, semantic.control_index) {
                         if self.overlay_skip_depth == 0 {
-                            let table_section = table.section_index.unwrap_or(0);
+                            let table_section = semantic.section_index.unwrap_or(0);
                             if self.overlay_page_section == -1 {
                                 self.overlay_page_section = table_section as i32;
                             }
@@ -319,8 +316,8 @@ impl SvgRenderer {
                                     y: bounds.y,
                                     width: bounds.width,
                                     height: bounds.height,
-                                    row_count: table.row_count,
-                                    col_count: table.col_count,
+                                    row_count: semantic.row_count.unwrap_or(0),
+                                    col_count: semantic.col_count.unwrap_or(0),
                                 });
                                 let key = table_section * 100000 + pi;
                                 let entry =
@@ -346,12 +343,12 @@ impl SvgRenderer {
                     }
                     self.overlay_skip_depth += 1;
                 }
-                GroupKind::Header
-                | GroupKind::Footer
-                | GroupKind::MasterPage
-                | GroupKind::FootnoteArea
-                | GroupKind::TextBox
-                | GroupKind::Group(_) => {
+                LayerSemanticRole::Header
+                | LayerSemanticRole::Footer
+                | LayerSemanticRole::MasterPage
+                | LayerSemanticRole::FootnoteArea
+                | LayerSemanticRole::TextBox
+                | LayerSemanticRole::Group => {
                     self.overlay_skip_depth += 1;
                 }
                 _ => {}
@@ -359,16 +356,16 @@ impl SvgRenderer {
         }
     }
 
-    fn leave_layer_group(&mut self, bounds: BoundingBox, group_kind: &GroupKind) {
+    fn leave_layer_group(&mut self, bounds: BoundingBox, semantic: &LayerSemantic) {
         if self.debug_overlay {
-            match group_kind {
-                GroupKind::Table(_)
-                | GroupKind::Header
-                | GroupKind::Footer
-                | GroupKind::MasterPage
-                | GroupKind::FootnoteArea
-                | GroupKind::TextBox
-                | GroupKind::Group(_) => {
+            match semantic.role {
+                LayerSemanticRole::Table
+                | LayerSemanticRole::Header
+                | LayerSemanticRole::Footer
+                | LayerSemanticRole::MasterPage
+                | LayerSemanticRole::FootnoteArea
+                | LayerSemanticRole::TextBox
+                | LayerSemanticRole::Group => {
                     self.overlay_skip_depth = self.overlay_skip_depth.saturating_sub(1);
                 }
                 _ => {}
@@ -379,12 +376,12 @@ impl SvgRenderer {
             return;
         }
 
-        let label = match group_kind {
-            GroupKind::Table(_) => Some("[표]"),
-            GroupKind::TextBox => Some("[글상자]"),
-            GroupKind::Header => Some("[머리말]"),
-            GroupKind::Footer => Some("[꼬리말]"),
-            GroupKind::FootnoteArea => Some("[각주]"),
+        let label = match semantic.role {
+            LayerSemanticRole::Table => Some("[표]"),
+            LayerSemanticRole::TextBox => Some("[글상자]"),
+            LayerSemanticRole::Header => Some("[머리말]"),
+            LayerSemanticRole::Footer => Some("[꼬리말]"),
+            LayerSemanticRole::FootnoteArea => Some("[각주]"),
             _ => None,
         };
         if let Some(label) = label {

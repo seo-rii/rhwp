@@ -48,11 +48,36 @@ export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;
 
 export type LayerCacheHint = 'none' | 'staticSubtree' | 'preferRaster' | 'preferVectorRecording';
 export type LayerRenderProfile = 'fast-preview' | 'screen' | 'print' | 'high-quality';
+export type LayerSemanticRole =
+  | 'generic'
+  | 'page'
+  | 'masterPage'
+  | 'header'
+  | 'footer'
+  | 'body'
+  | 'column'
+  | 'footnoteArea'
+  | 'textLine'
+  | 'table'
+  | 'tableCell'
+  | 'textBox'
+  | 'group';
+
+export interface LayerSemantic {
+  role: LayerSemanticRole;
+  sectionIndex?: number;
+  columnIndex?: number;
+  paraIndex?: number;
+  controlIndex?: number;
+  rowCount?: number;
+  colCount?: number;
+}
 
 export interface LayerGroupNode {
   bounds: LayerBounds;
   kind: 'group';
   sourceNodeId?: number;
+  semantic?: LayerSemantic;
   cacheHint: LayerCacheHint;
   children: LayerNode[];
 }
@@ -61,6 +86,7 @@ export interface LayerClipNode {
   bounds: LayerBounds;
   kind: 'clipRect';
   sourceNodeId?: number;
+  semantic?: LayerSemantic;
   clip: LayerBounds;
   clipKind: 'body' | 'tableCell' | 'generic';
   child: LayerNode;
@@ -70,6 +96,7 @@ export interface LayerLeafNode {
   bounds: LayerBounds;
   kind: 'leaf';
   sourceNodeId?: number;
+  semantic?: LayerSemantic;
   cacheHint: LayerCacheHint;
   ops: LayerPaintOp[];
 }
