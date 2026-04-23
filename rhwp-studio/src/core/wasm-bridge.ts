@@ -190,12 +190,22 @@ class LayerResourceStore {
   }
 }
 
+type LayerTreeExportStats = {
+  transport: 'js-value-resource-keys' | 'js-value' | 'json';
+  wasmExportMs: number;
+  resourceNormalizeMs: number;
+  totalMs: number;
+  pageNum: number;
+  profile: LayerRenderProfile;
+};
+
 export class WasmBridge {
   private doc: HwpDocument | null = null;
   private initialized = false;
   private _fileName = 'document.hwp';
   private _currentFileHandle: FileSystemFileHandleLike | null = null;
   private layerResourceStore = new LayerResourceStore();
+  private lastLayerTreeExportStats: LayerTreeExportStats | null = null;
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -349,30 +359,78 @@ export class WasmBridge {
   getPageLayerTree(pageNum: number, profile: LayerRenderProfile = 'screen'): PageLayerTree {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     const doc = this.doc as any;
+    const startedAt = performance.now();
     if (typeof doc.getPageLayerTreeValueWithProfileAndResourceKeys === 'function') {
-      return this.normalizeLayerResources(doc.getPageLayerTreeValueWithProfileAndResourceKeys(
+      const exportStartedAt = performance.now();
+      const rawTree = doc.getPageLayerTreeValueWithProfileAndResourceKeys(
         pageNum,
         profile,
         this.layerResourceStore.knownImageKeys(),
         this.layerResourceStore.knownSvgKeys(),
-      ) as PageLayerTree);
+      ) as PageLayerTree;
+      const wasmExportMs = performance.now() - exportStartedAt;
+      const normalizeStartedAt = performance.now();
+      const tree = this.normalizeLayerResources(rawTree);
+      this.lastLayerTreeExportStats = {
+        transport: 'js-value-resource-keys',
+        wasmExportMs,
+        resourceNormalizeMs: performance.now() - normalizeStartedAt,
+        totalMs: performance.now() - startedAt,
+        pageNum,
+        profile,
+      };
+      return tree;
     }
     const valueGetter = doc.getPageLayerTreeValueWithProfile ?? doc.getPageLayerTreeValue;
     if (typeof valueGetter === 'function') {
-      if (typeof doc.getPageLayerTreeValueWithProfile === 'function') {
-        return this.normalizeLayerResources(valueGetter.call(this.doc, pageNum, profile) as PageLayerTree);
-      }
-      return this.normalizeLayerResources(valueGetter.call(this.doc, pageNum) as PageLayerTree);
+      const exportStartedAt = performance.now();
+      const rawTree = typeof doc.getPageLayerTreeValueWithProfile === 'function'
+        ? valueGetter.call(this.doc, pageNum, profile) as PageLayerTree
+        : valueGetter.call(this.doc, pageNum) as PageLayerTree;
+      const wasmExportMs = performance.now() - exportStartedAt;
+      const normalizeStartedAt = performance.now();
+      const tree = this.normalizeLayerResources(rawTree);
+      this.lastLayerTreeExportStats = {
+        transport: 'js-value',
+        wasmExportMs,
+        resourceNormalizeMs: performance.now() - normalizeStartedAt,
+        totalMs: performance.now() - startedAt,
+        pageNum,
+        profile,
+      };
+      return tree;
     }
     const jsonGetter = doc.getPageLayerTreeWithProfile ?? doc.getPageLayerTree;
+    const exportStartedAt = performance.now();
     const json = typeof doc.getPageLayerTreeWithProfile === 'function'
       ? jsonGetter.call(this.doc, pageNum, profile)
       : jsonGetter.call(this.doc, pageNum);
-    return this.normalizeLayerResources(JSON.parse(json));
+    const rawTree = JSON.parse(json);
+    const wasmExportMs = performance.now() - exportStartedAt;
+    const normalizeStartedAt = performance.now();
+    const tree = this.normalizeLayerResources(rawTree);
+    this.lastLayerTreeExportStats = {
+      transport: 'json',
+      wasmExportMs,
+      resourceNormalizeMs: performance.now() - normalizeStartedAt,
+      totalMs: performance.now() - startedAt,
+      pageNum,
+      profile,
+    };
+    return tree;
+  }
+
+  getLayerTreeExportStats(): LayerTreeExportStats | null {
+    return this.lastLayerTreeExportStats;
+  }
+
+  getLayerTreeExportStatsSnapshot(): LayerTreeExportStats | null {
+    return this.lastLayerTreeExportStats ? { ...this.lastLayerTreeExportStats } : null;
   }
 
   clearLayerResourceCache(): void {
     this.layerResourceStore.clear();
+    this.lastLayerTreeExportStats = null;
   }
 
   getLayerResourceStats() {

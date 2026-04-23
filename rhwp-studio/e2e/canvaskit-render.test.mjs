@@ -192,6 +192,14 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     canvasPixels: baseline.performance.replay.canvasPixels,
     canvas2dOps: baseline.layerSummary?.opCount ?? 0,
     canvaskitOps: canvaskit.layerSummary?.opCount ?? 0,
+    canvas2dLayerTreeTransport: baseline.layerSummary?.layerTreeExportStats?.transport ?? 'n/a',
+    canvaskitLayerTreeTransport: canvaskit.layerSummary?.layerTreeExportStats?.transport ?? 'n/a',
+    canvas2dLayerTreeExportMs: roundMetric(baseline.layerSummary?.layerTreeExportStats?.wasmExportMs ?? null),
+    canvaskitLayerTreeExportMs: roundMetric(canvaskit.layerSummary?.layerTreeExportStats?.wasmExportMs ?? null),
+    canvas2dLayerTreeNormalizeMs: roundMetric(baseline.layerSummary?.layerTreeExportStats?.resourceNormalizeMs ?? null),
+    canvaskitLayerTreeNormalizeMs: roundMetric(canvaskit.layerSummary?.layerTreeExportStats?.resourceNormalizeMs ?? null),
+    canvas2dLayerTreeMaterializeMs: roundMetric(baseline.layerSummary?.layerTreeExportStats?.totalMs ?? null),
+    canvaskitLayerTreeMaterializeMs: roundMetric(canvaskit.layerSummary?.layerTreeExportStats?.totalMs ?? null),
     canvas2dLayerResourceBytesImported: (baseline.layerSummary?.layerResourceStats?.imagePayloadBytesImported ?? 0)
       + (baseline.layerSummary?.layerResourceStats?.svgPayloadBytesImported ?? 0),
     canvaskitLayerResourceBytesImported: (canvaskit.layerSummary?.layerResourceStats?.imagePayloadBytesImported ?? 0)
@@ -243,6 +251,7 @@ async function renderScenario(page, backend, caseInfo) {
     const statsAfterFirst = window.__wasm?.getLayerResourceStats?.() ?? null;
     const treeAgain = window.__wasm?.getPageLayerTree?.(0, profile);
     const statsAfterSecond = window.__wasm?.getLayerResourceStats?.() ?? null;
+    const layerTreeExportStats = window.__wasm?.getLayerTreeExportStatsSnapshot?.() ?? null;
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     let opCount = 0;
     let nativeTextRunCount = 0;
@@ -329,6 +338,7 @@ async function renderScenario(page, backend, caseInfo) {
       nativeImageCount,
       nativeEquationCount,
       nativeFormObjectCount,
+      layerTreeExportStats,
       layerResourceStats: statsAfterSecond,
       firstTreeImagePayloadsImported: statsBefore && statsAfterFirst
         ? statsAfterFirst.imagePayloadsImported - statsBefore.imagePayloadsImported
@@ -355,6 +365,10 @@ async function renderScenario(page, backend, caseInfo) {
   assert(layerSummary?.sharedResourceTable === true, `${caseInfo.name} layer resources use shared document table`);
   assert(layerSummary?.embeddedBase64PayloadCount === 0, `${caseInfo.name} object API embeds no base64 payloads`);
   assert(layerSummary?.embeddedSvgPayloadCount === 0, `${caseInfo.name} object API embeds no svg payloads`);
+  assert(
+    layerSummary?.layerTreeExportStats?.transport !== 'json',
+    `${caseInfo.name} layer tree transport=${layerSummary?.layerTreeExportStats?.transport}`,
+  );
   assert(
     layerSummary?.resourceImageCount === 0 || layerSummary.resourceImageHashCount >= layerSummary.resourceImageCount,
     `${caseInfo.name} image hash count=${layerSummary?.resourceImageHashCount}, images=${layerSummary?.resourceImageCount}`,
