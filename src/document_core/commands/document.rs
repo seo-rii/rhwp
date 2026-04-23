@@ -83,6 +83,7 @@ impl DocumentCore {
             dirty_paragraphs: Vec::new(),
             para_column_map: Vec::new(),
             page_tree_cache: RefCell::new(Vec::new()),
+            page_layer_tree_cache: RefCell::new(HashMap::new()),
             batch_mode: false,
             event_log: Vec::new(),
             overflow_links_cache: RefCell::new(HashMap::new()),
@@ -453,7 +454,7 @@ impl DocumentCore {
         self.measured_sections = Vec::new();
         self.dirty_paragraphs = Vec::new();
         self.para_column_map = Vec::new();
-        self.page_tree_cache.borrow_mut().clear();
+        self.invalidate_page_tree_cache();
         self.snapshot_store.clear();
         self.next_snapshot_id = 0;
 
@@ -591,7 +592,7 @@ impl DocumentCore {
         self.measured_sections.clear();
         self.dirty_paragraphs.clear();
         self.para_column_map.clear();
-        self.page_tree_cache.borrow_mut().clear();
+        self.invalidate_page_tree_cache();
         self.overflow_links_cache.borrow_mut().clear();
         self.paginate();
         Ok(super::super::helpers::json_ok())

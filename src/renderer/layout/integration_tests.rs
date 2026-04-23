@@ -1636,6 +1636,13 @@ mod tests {
             !cache.is_empty() && cache[0].is_some(),
             "레이어 트리 조회는 페이지 트리 캐시를 채워야 함"
         );
+        drop(cache);
+
+        let layer_cache = core.page_layer_tree_cache.borrow();
+        assert!(
+            layer_cache.contains_key(&(0, RenderProfile::Screen)),
+            "기본 레이어 트리 조회는 screen profile 캐시를 채워야 함"
+        );
     }
 
     #[test]
@@ -1696,6 +1703,21 @@ mod tests {
         assert!(
             high_quality.contains("\"profile\":\"high-quality\""),
             "high-quality profile 요청은 JSON에 high-quality profile을 기록해야 함"
+        );
+
+        let layer_cache = core.page_layer_tree_cache.borrow();
+        assert!(
+            layer_cache.contains_key(&(0, RenderProfile::Print)),
+            "print profile 요청은 print 레이어 캐시를 채워야 함"
+        );
+        assert!(
+            layer_cache.contains_key(&(0, RenderProfile::HighQuality)),
+            "high-quality profile 요청은 high-quality 레이어 캐시를 채워야 함"
+        );
+        assert_eq!(
+            layer_cache.len(),
+            2,
+            "서로 다른 profile은 페이지별로 별도 레이어 캐시 엔트리를 가져야 함"
         );
     }
 

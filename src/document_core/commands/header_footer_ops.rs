@@ -716,6 +716,9 @@ impl DocumentCore {
         if let Some(slot) = cache.get_mut(page_num as usize) {
             *slot = None;
         }
+        self.page_layer_tree_cache
+            .borrow_mut()
+            .retain(|(cached_page, _), _| *cached_page != page_num);
         Ok(format!("{{\"ok\":true,\"hidden\":{}}}", hidden))
     }
 

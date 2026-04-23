@@ -1,5 +1,5 @@
 /// Layer builder/profile 힌트
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum RenderProfile {
     FastPreview,
     #[default]

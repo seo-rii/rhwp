@@ -36,12 +36,10 @@ impl DocumentCore {
         page_num: u32,
         default_profile: RenderProfile,
     ) -> Result<PageLayerTree, HwpError> {
-        let tree = self.build_page_tree_cached(page_num)?;
-        let _overflows = self.layout_engine.take_overflows();
-        Ok(self.build_layer_tree_from_page_tree(
-            &tree,
+        self.build_page_layer_tree_cached(
+            page_num,
             self.resolve_layer_render_profile(default_profile),
-        ))
+        )
     }
 
     fn build_layer_tree_from_page_tree(
@@ -118,10 +116,10 @@ impl DocumentCore {
             Some("layer-svg")
         ) {
             let tree = self.build_page_tree_for_output(page_num)?;
-            let layer_tree = self.build_layer_tree_from_page_tree(
-                &tree,
+            let layer_tree = self.build_page_layer_tree_cached(
+                page_num,
                 self.resolve_layer_render_profile(RenderProfile::Print),
-            );
+            )?;
 
             let mut layer_renderer = SvgLayerRenderer::new();
             layer_renderer.configure_output(
@@ -200,9 +198,7 @@ impl DocumentCore {
         page_num: u32,
         profile: RenderProfile,
     ) -> Result<String, HwpError> {
-        let tree = self.build_page_tree_cached(page_num)?;
-        let _overflows = self.layout_engine.take_overflows();
-        let layer_tree = self.build_layer_tree_from_page_tree(&tree, profile);
+        let layer_tree = self.build_page_layer_tree_cached(page_num, profile)?;
         Ok(layer_tree.to_json())
     }
 
@@ -1930,11 +1926,15 @@ impl DocumentCore {
         for i in from..cache.len() {
             cache[i] = None;
         }
+        self.page_layer_tree_cache
+            .borrow_mut()
+            .retain(|(page_num, _), _| *page_num < from_page);
     }
 
     /// 페이지 렌더 트리 캐시 전체 무효화.
     pub(crate) fn invalidate_page_tree_cache(&self) {
         self.page_tree_cache.borrow_mut().clear();
+        self.page_layer_tree_cache.borrow_mut().clear();
     }
 
     /// 캐시된 페이지 렌더 트리를 반환한다 (캐시 미스 시 빌드 후 캐시).
@@ -1965,6 +1965,27 @@ impl DocumentCore {
         }
 
         Ok(tree)
+    }
+
+    /// 캐시된 페이지 레이어 트리를 반환한다 (캐시 미스 시 빌드 후 캐시).
+    pub(crate) fn build_page_layer_tree_cached(
+        &self,
+        page_num: u32,
+        profile: RenderProfile,
+    ) -> Result<PageLayerTree, HwpError> {
+        let cache_key = (page_num, profile);
+        if let Some(tree) = self.page_layer_tree_cache.borrow().get(&cache_key) {
+            let _overflows = self.layout_engine.take_overflows();
+            return Ok(tree.clone());
+        }
+
+        let page_tree = self.build_page_tree_cached(page_num)?;
+        let _overflows = self.layout_engine.take_overflows();
+        let layer_tree = self.build_layer_tree_from_page_tree(&page_tree, profile);
+        self.page_layer_tree_cache
+            .borrow_mut()
+            .insert(cache_key, layer_tree.clone());
+        Ok(layer_tree)
     }
 
     /// 페이지 렌더 트리를 빌드한다.

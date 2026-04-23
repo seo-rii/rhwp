@@ -16,6 +16,7 @@ pub mod converters;
 use crate::model::document::Document;
 use crate::model::event::DocumentEvent;
 use crate::model::paragraph::Paragraph;
+use crate::paint::{PageLayerTree, RenderProfile};
 use crate::renderer::composer::ComposedParagraph;
 use crate::renderer::height_measurer::{MeasuredSection, MeasuredTable};
 use crate::renderer::layout::LayoutEngine;
@@ -83,6 +84,8 @@ pub struct DocumentCore {
     pub(crate) para_column_map: Vec<Vec<u16>>,
     /// 페이지별 렌더 트리 캐시 (지연 구축, 부분 무효화)
     pub(crate) page_tree_cache: RefCell<Vec<Option<PageRenderTree>>>,
+    /// 페이지/profile별 레이어 트리 캐시 (지연 구축, 페이지 재생 재사용)
+    pub(crate) page_layer_tree_cache: RefCell<HashMap<(u32, RenderProfile), PageLayerTree>>,
     /// Batch 모드 플래그 — true이면 paginate() 스킵
     pub(crate) batch_mode: bool,
     /// 이벤트 로그 (Command 실행 시 누적)
@@ -225,6 +228,7 @@ impl DocumentCore {
             dirty_paragraphs: Vec::new(),
             para_column_map: Vec::new(),
             page_tree_cache: RefCell::new(Vec::new()),
+            page_layer_tree_cache: RefCell::new(HashMap::new()),
             batch_mode: false,
             event_log: Vec::new(),
             overflow_links_cache: RefCell::new(HashMap::new()),
