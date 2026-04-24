@@ -22,3 +22,20 @@ Work through `RISK_REGISTER.md` in order, committing and pushing completed batch
 - `cargo test --lib -- --quiet` passed: 973 passed, 1 ignored.
 - `cargo fmt --check` and `git diff --check` passed.
 - Full wasm target check for the binary is currently blocked by pre-existing `src/main.rs` wasm-incompatible CLI code, so this batch uses `--lib` for the WASM-specific public API check.
+
+## Current Batch: ARCH-002 / BUG-001
+
+Reduce backend-local TextRun interpretation drift by making the first missing visible TextRun special case, `char_overlap`, render in Skia layer replay.
+
+## Steps
+
+1. Done: add Skia rendering for `LayerTextRunPaint::char_overlap`.
+2. Done: keep normal TextRun rendering unchanged when `char_overlap` is absent.
+3. Done: add and run a focused Skia PNG smoke test that exercises char overlap.
+4. Done: update `RISK_REGISTER.md` with the completed portion and remaining TextRun risks.
+5. Pending: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_char_overlap_to_png -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.

@@ -6,6 +6,7 @@ use crate::paint::{
     CacheHint, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree,
     PaintOp, RenderProfile, ResourceArena,
 };
+use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
 use crate::renderer::layer_renderer::{LayerRasterRenderer, RasterRenderOptions};
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::BoundingBox;
@@ -1024,6 +1025,129 @@ impl SkiaLayerRenderer {
             y += (base_font_size * 0.15) as f32;
         }
 
+        if let Some(overlap) = &run.char_overlap {
+            let chars: Vec<char> = run.text.chars().collect();
+            if chars.is_empty() {
+                return;
+            }
+
+            let box_size = render_style.font_size.max(1.0) as f32;
+            let size_ratio = if overlap.inner_char_size > 0 {
+                f64::from(overlap.inner_char_size) / 100.0
+            } else {
+                1.0
+            };
+            let mut overlap_style = render_style.clone();
+            overlap_style.font_size = (render_style.font_size * size_ratio).max(1.0);
+            let inner_font_size = overlap_style.font_size as f32;
+
+            let draw_overlap_cell =
+                |display: &str, cx: f32, cy: f32, target_text_width: Option<f32>| {
+                    let effective_border =
+                        if target_text_width.is_some() && overlap.border_type == 0 {
+                            1
+                        } else {
+                            overlap.border_type
+                        };
+                    let is_reversed = effective_border == 2 || effective_border == 4;
+                    let is_circle = effective_border == 1 || effective_border == 2;
+                    let is_rect = effective_border == 3 || effective_border == 4;
+
+                    let mut fill = Paint::default();
+                    fill.set_anti_alias(true);
+                    fill.set_style(skia_safe::paint::Style::Fill);
+                    fill.set_color(Color::BLACK);
+
+                    let mut stroke = Paint::default();
+                    stroke.set_anti_alias(true);
+                    stroke.set_style(skia_safe::paint::Style::Stroke);
+                    stroke.set_stroke_width(0.8);
+                    stroke.set_color(Color::BLACK);
+
+                    if is_circle {
+                        let radius = box_size / 2.0;
+                        if is_reversed {
+                            canvas.draw_circle((cx, cy), radius, &fill);
+                        }
+                        canvas.draw_circle((cx, cy), radius, &stroke);
+                    } else if is_rect {
+                        let rect = Rect::from_xywh(
+                            cx - box_size / 2.0,
+                            cy - box_size / 2.0,
+                            box_size,
+                            box_size,
+                        );
+                        if is_reversed {
+                            canvas.draw_rect(rect, &fill);
+                        }
+                        canvas.draw_rect(rect, &stroke);
+                    }
+
+                    let mut text_paint = Paint::default();
+                    text_paint.set_anti_alias(true);
+                    text_paint.set_style(skia_safe::paint::Style::Fill);
+                    text_paint.set_color(if is_reversed {
+                        Color::WHITE
+                    } else {
+                        colorref_to_skia(run.style.color, 1.0)
+                    });
+                    let font = make_font(&overlap_style, &self.font_mgr, display);
+                    let (measured_width, _) = font.measure_str(display, Some(&text_paint));
+                    let measured_width = measured_width.max(1.0);
+                    let baseline_y = inner_font_size * 0.35;
+
+                    if let Some(target_width) = target_text_width {
+                        let scale_x = (target_width / measured_width).min(1.0);
+                        canvas.save();
+                        canvas.translate((cx, cy));
+                        canvas.scale((scale_x, 1.0));
+                        canvas.draw_str(
+                            display,
+                            (-measured_width / 2.0, baseline_y),
+                            &font,
+                            &text_paint,
+                        );
+                        canvas.restore();
+                    } else {
+                        canvas.draw_str(
+                            display,
+                            (cx - measured_width / 2.0, cy + baseline_y),
+                            &font,
+                            &text_paint,
+                        );
+                    }
+                };
+
+            if let Some(number_str) = decode_pua_overlap_number(&chars) {
+                let cx = bbox.x as f32 + box_size / 2.0;
+                let cy = bbox.y as f32 + bbox.height as f32 / 2.0;
+                draw_overlap_cell(&number_str, cx, cy, Some(box_size * 0.7));
+                return;
+            }
+
+            let char_advance = if chars.len() > 1 {
+                bbox.width as f32 / chars.len() as f32
+            } else {
+                box_size
+            };
+            for (index, ch) in chars.iter().enumerate() {
+                let display = {
+                    let codepoint = u32::from(*ch);
+                    if (0x2460..=0x2473).contains(&codepoint) {
+                        format!("{}", codepoint - 0x2460 + 1)
+                    } else if let Some(text) = pua_to_display_text(*ch) {
+                        text
+                    } else {
+                        ch.to_string()
+                    }
+                };
+                let cx = bbox.x as f32 + index as f32 * char_advance + box_size / 2.0;
+                let cy = bbox.y as f32 + bbox.height as f32 / 2.0;
+                draw_overlap_cell(&display, cx, cy, None);
+            }
+            return;
+        }
+
         let paint = make_text_paint(&render_style);
         let clusters = split_into_clusters(&run.text);
         let metrics_font = make_font(&render_style, &self.font_mgr, &run.text);
@@ -1395,10 +1519,11 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 mod tests {
     use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
     use crate::paint::{CacheHint, LayerBuilder, RenderProfile};
+    use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::render_tree::{
-        BoundingBox, PageNode, RectangleNode, RenderNode, RenderNodeType,
+        BoundingBox, PageNode, RectangleNode, RenderNode, RenderNodeType, TextRunNode,
     };
-    use crate::renderer::ShapeStyle;
+    use crate::renderer::{ShapeStyle, TextStyle};
     use resvg::tiny_skia;
 
     #[test]
@@ -1470,6 +1595,53 @@ mod tests {
         assert!(raster_dimension(0.0, 16_384).is_err());
         assert!(raster_dimension(16_385.0, 16_384).is_err());
         assert_eq!(raster_dimension(12.4, 16_384), Ok(12));
+    }
+
+    #[test]
+    fn renders_char_overlap_to_png() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 90.0, 60.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "12".to_string(),
+                style: TextStyle {
+                    font_size: 24.0,
+                    color: 0x00000000,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: Some(CharOverlapInfo {
+                    border_type: 1,
+                    inner_char_size: 85,
+                }),
+                border_fill_id: 0,
+                baseline: 24.0,
+                field_marker: Default::default(),
+            }),
+            BoundingBox::new(20.0, 16.0, 48.0, 28.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let renderer = SkiaLayerRenderer::new();
+        let png = renderer.render_png(&layer_tree).expect("skia png render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+        let ink_pixels = pixmap
+            .pixels()
+            .iter()
+            .filter(|pixel| pixel.alpha() > 0)
+            .count();
+
+        assert!(ink_pixels > 20, "expected visible char overlap ink");
     }
 
     #[test]

@@ -261,7 +261,8 @@
 **진행 메모**:
 
 - Skia text run이 `rotation`과 `is_vertical` 회전을 적용하도록 1차 수정했습니다.
-- `char_overlap`, control/paragraph mark 분리와 shaped text 전략은 아직 남아 있습니다.
+- Skia text run이 `char_overlap`을 일반 glyph run 대신 겹침문자 도형/텍스트로 렌더링하도록 수정했습니다.
+- control/paragraph mark 분리와 shaped text 전략은 아직 남아 있습니다.
 
 ---
 
