@@ -4,7 +4,7 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
-## Current Batch: ARCH-001
+## Completed Batch: ARCH-001
 
 `renderPageToCanvas` should use the canonical `PageRenderTree -> PageLayerTree -> backend replay` path instead of sending `PageRenderTree` directly to `WebCanvasRenderer`.
 
@@ -14,7 +14,7 @@ Work through `RISK_REGISTER.md` in order, committing and pushing completed batch
 2. Done: keep the existing direct `PageRenderTree` renderer as a fallback/debug path.
 3. Done: switch WASM `renderPageToCanvas` to build `PageLayerTree` with `RenderProfile::Screen`.
 4. Done: verify native tests and wasm library compilation.
-5. In progress: mark the corresponding risk item completion and commit/push only files changed in this batch.
+5. Done: mark the corresponding risk item completion and commit/push only files changed in this batch.
 
 ## Notes
 
@@ -23,7 +23,7 @@ Work through `RISK_REGISTER.md` in order, committing and pushing completed batch
 - `cargo fmt --check` and `git diff --check` passed.
 - Full wasm target check for the binary is currently blocked by pre-existing `src/main.rs` wasm-incompatible CLI code, so this batch uses `--lib` for the WASM-specific public API check.
 
-## Current Batch: ARCH-002 / BUG-001
+## Completed Batch: ARCH-002 / BUG-001
 
 Reduce backend-local TextRun interpretation drift by making the first missing visible TextRun special case, `char_overlap`, render in Skia layer replay.
 
@@ -33,9 +33,33 @@ Reduce backend-local TextRun interpretation drift by making the first missing vi
 2. Done: keep normal TextRun rendering unchanged when `char_overlap` is absent.
 3. Done: add and run a focused Skia PNG smoke test that exercises char overlap.
 4. Done: update `RISK_REGISTER.md` with the completed portion and remaining TextRun risks.
-5. Pending: commit and push only this batch's files.
+5. Done: commit and push only this batch's files.
 
 ## Verification
 
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_char_overlap_to_png -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+
+## Current Batch: BUG-001 Output Marks
+
+Give layer backends the same output-option context used by legacy renderers, then use it in Skia text replay for visible whitespace and paragraph/line-break marks.
+
+## Steps
+
+1. Done: add `LayerOutputOptions` to `PageLayerTree`.
+2. Done: populate the options from `DocumentCore` when building cached layer trees.
+3. Done: export the options through JSON/JS and TypeScript types.
+4. Done: render Skia text control marks when the options request them.
+5. Done: verify Rust/native-Skia tests and `rhwp-studio` build.
+6. Done: update risk notes, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::output_options_enable_text_control_marks -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo test --lib paint::json::tests::serializes_output_options_for_backend_replay -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo test --lib -- --quiet` passed: 974 passed, 1 ignored.
+- `rustfmt --check` passed for changed Rust files.
+- `git diff --check` passed for this batch's files.

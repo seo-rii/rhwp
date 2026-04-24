@@ -13,7 +13,8 @@ pub mod resources;
 
 pub use builder::LayerBuilder;
 pub use layer_tree::{
-    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerSemanticRole, PageLayerTree,
+    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic,
+    LayerSemanticRole, PageLayerTree,
 };
 pub use paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,

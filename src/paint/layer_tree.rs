@@ -14,6 +14,7 @@ pub struct PageLayerTree {
     pub page_width: f64,
     pub page_height: f64,
     pub profile: RenderProfile,
+    pub output_options: LayerOutputOptions,
     pub root: LayerNode,
     pub resources: ResourceArena,
 }
@@ -70,10 +71,25 @@ impl PageLayerTree {
             page_width,
             page_height,
             profile,
+            output_options: LayerOutputOptions::default(),
             root,
             resources,
         }
     }
+
+    pub fn with_output_options(mut self, output_options: LayerOutputOptions) -> Self {
+        self.output_options = output_options;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LayerOutputOptions {
+    pub show_paragraph_marks: bool,
+    pub show_control_codes: bool,
+    pub show_transparent_borders: bool,
+    pub clip_enabled: bool,
+    pub debug_overlay: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

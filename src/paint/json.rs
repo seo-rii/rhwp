@@ -25,10 +25,15 @@ impl PageLayerTree {
         buf.push('{');
         let _ = write!(
             buf,
-            "\"schemaVersion\":1,\"unit\":\"px\",\"coordinateSystem\":\"page-top-left-y-down\",\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"root\":",
+            "\"schemaVersion\":1,\"unit\":\"px\",\"coordinateSystem\":\"page-top-left-y-down\",\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"root\":",
             self.page_width,
             self.page_height,
-            json_escape(self.profile.as_str())
+            json_escape(self.profile.as_str()),
+            self.output_options.show_paragraph_marks,
+            self.output_options.show_control_codes,
+            self.output_options.show_transparent_borders,
+            self.output_options.clip_enabled,
+            self.output_options.debug_overlay,
         );
         self.root.write_json(&mut buf, &self.resources);
         buf.push('}');
@@ -934,7 +939,8 @@ mod tests {
     use crate::model::image::ImageEffect;
     use crate::paint::{
         CacheHint, ClipKind, LayerEquationPaint, LayerImagePaint, LayerLinePaint, LayerNode,
-        LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PageLayerTree, ResourceArena,
+        LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PageLayerTree,
+        ResourceArena,
     };
 
     #[test]
@@ -1014,6 +1020,8 @@ mod tests {
         assert!(json.contains("\"unit\":\"px\""));
         assert!(json.contains("\"coordinateSystem\":\"page-top-left-y-down\""));
         assert!(json.contains("\"profile\":\"screen\""));
+        assert!(json.contains("\"outputOptions\":{"));
+        assert!(json.contains("\"showParagraphMarks\":false"));
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"fontFamily\":\"Noto Sans KR\""));
@@ -1273,6 +1281,29 @@ mod tests {
 
         let json = tree.to_json();
         assert!(json.contains("\"profile\":\"high-quality\""));
+    }
+
+    #[test]
+    fn serializes_output_options_for_backend_replay() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![]),
+        )
+        .with_output_options(LayerOutputOptions {
+            show_paragraph_marks: true,
+            show_control_codes: true,
+            show_transparent_borders: true,
+            clip_enabled: false,
+            debug_overlay: true,
+        });
+
+        let json = tree.to_json();
+        assert!(json.contains("\"showParagraphMarks\":true"));
+        assert!(json.contains("\"showControlCodes\":true"));
+        assert!(json.contains("\"showTransparentBorders\":true"));
+        assert!(json.contains("\"clipEnabled\":false"));
+        assert!(json.contains("\"debugOverlay\":true"));
     }
 }
 

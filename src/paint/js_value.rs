@@ -49,6 +49,33 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_number(&value, "pageWidth", tree.page_width);
     set_number(&value, "pageHeight", tree.page_height);
     set_string(&value, "profile", tree.profile.as_str());
+    let output_options = Object::new();
+    set_bool(
+        &output_options,
+        "showParagraphMarks",
+        tree.output_options.show_paragraph_marks,
+    );
+    set_bool(
+        &output_options,
+        "showControlCodes",
+        tree.output_options.show_control_codes,
+    );
+    set_bool(
+        &output_options,
+        "showTransparentBorders",
+        tree.output_options.show_transparent_borders,
+    );
+    set_bool(
+        &output_options,
+        "clipEnabled",
+        tree.output_options.clip_enabled,
+    );
+    set_bool(
+        &output_options,
+        "debugOverlay",
+        tree.output_options.debug_overlay,
+    );
+    set_value(&value, "outputOptions", output_options.into());
     set_value(&value, "root", layer_node_to_value(&tree.root));
 
     let resources = Object::new();

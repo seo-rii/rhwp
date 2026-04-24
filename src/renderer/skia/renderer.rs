@@ -3,8 +3,8 @@ use skia_safe::{
 };
 
 use crate::paint::{
-    CacheHint, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree,
-    PaintOp, RenderProfile, ResourceArena,
+    CacheHint, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerOutputOptions,
+    LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
 };
 use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
 use crate::renderer::layer_renderer::{LayerRasterRenderer, RasterRenderOptions};
@@ -191,13 +191,15 @@ fn draw_arrow_head(
 
 struct SkiaReplayContext {
     profile: RenderProfile,
+    output_options: LayerOutputOptions,
     cache_hints: Vec<CacheHint>,
 }
 
 impl SkiaReplayContext {
-    fn new(profile: RenderProfile) -> Self {
+    fn new(profile: RenderProfile, output_options: LayerOutputOptions) -> Self {
         Self {
             profile,
+            output_options,
             cache_hints: Vec::new(),
         }
     }
@@ -264,7 +266,7 @@ impl SkiaLayerRenderer {
             Color::WHITE
         };
         canvas.clear(clear_color);
-        let mut replay = SkiaReplayContext::new(tree.profile);
+        let mut replay = SkiaReplayContext::new(tree.profile, tree.output_options);
         self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
         let image = surface.image_snapshot();
         let data = image
@@ -387,10 +389,10 @@ impl SkiaLayerRenderer {
                     let cy = (bbox.y + bbox.height / 2.0) as f32;
                     canvas.save();
                     canvas.rotate(rotation as f32, Some((cx, cy).into()));
-                    self.render_text_run(canvas, bbox, run);
+                    self.render_text_run(canvas, bbox, run, replay);
                     canvas.restore();
                 } else {
-                    self.render_text_run(canvas, bbox, run);
+                    self.render_text_run(canvas, bbox, run, replay);
                 }
             }
             PaintOp::FootnoteMarker { bbox, marker } => {
@@ -1009,7 +1011,13 @@ impl SkiaLayerRenderer {
         }
     }
 
-    fn render_text_run(&self, canvas: &Canvas, bbox: &BoundingBox, run: &LayerTextRunPaint) {
+    fn render_text_run(
+        &self,
+        canvas: &Canvas,
+        bbox: &BoundingBox,
+        run: &LayerTextRunPaint,
+        replay: &SkiaReplayContext,
+    ) {
         let base_font_size = if run.style.font_size > 0.0 {
             run.style.font_size
         } else {
@@ -1379,6 +1387,65 @@ impl SkiaLayerRenderer {
                 }
             }
         }
+
+        if replay.output_options.show_paragraph_marks || replay.output_options.show_control_codes {
+            let is_marker = !matches!(
+                run.field_marker,
+                crate::renderer::render_tree::FieldMarkerType::None
+            );
+            let mut marker_paint = Paint::default();
+            marker_paint.set_anti_alias(true);
+            marker_paint.set_color(Color::from_argb(255, 0x4A, 0x90, 0xD9));
+
+            if !run.text.is_empty() && !is_marker {
+                let mark_font_size = (base_font_size * 0.5).max(1.0);
+                let marker_style = crate::renderer::TextStyle {
+                    font_family: "sans-serif".to_string(),
+                    font_size: mark_font_size,
+                    ..Default::default()
+                };
+                let marker_font = make_font(&marker_style, &self.font_mgr, "∨→");
+                for (index, ch) in run.text.chars().enumerate() {
+                    if ch == ' ' {
+                        let current_x = bbox.x
+                            + char_positions
+                                .get(index)
+                                .copied()
+                                .unwrap_or(text_width as f64);
+                        let next_x = if index + 1 < char_positions.len() {
+                            bbox.x + char_positions[index + 1]
+                        } else {
+                            bbox.x + bbox.width
+                        };
+                        let mid_x = (current_x + next_x) / 2.0 - mark_font_size * 0.25;
+                        canvas.draw_str("∨", (mid_x as f32, y), &marker_font, &marker_paint);
+                    } else if ch == '\t' {
+                        let current_x = bbox.x
+                            + char_positions
+                                .get(index)
+                                .copied()
+                                .unwrap_or(text_width as f64);
+                        canvas.draw_str("→", (current_x as f32, y), &marker_font, &marker_paint);
+                    }
+                }
+            }
+
+            if run.is_para_end || run.is_line_break_end {
+                let marker_style = crate::renderer::TextStyle {
+                    font_family: "sans-serif".to_string(),
+                    font_size: base_font_size,
+                    ..Default::default()
+                };
+                let mark = if run.is_line_break_end { "↓" } else { "↵" };
+                let marker_font = make_font(&marker_style, &self.font_mgr, mark);
+                let mark_x = if run.text.is_empty() {
+                    bbox.x
+                } else {
+                    bbox.x + bbox.width
+                };
+                canvas.draw_str(mark, (mark_x as f32, y), &marker_font, &marker_paint);
+            }
+        }
     }
 
     fn draw_text_line_shape(
@@ -1518,7 +1585,7 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 #[cfg(test)]
 mod tests {
     use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
-    use crate::paint::{CacheHint, LayerBuilder, RenderProfile};
+    use crate::paint::{CacheHint, LayerBuilder, LayerOutputOptions, RenderProfile};
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::render_tree::{
         BoundingBox, PageNode, RectangleNode, RenderNode, RenderNodeType, TextRunNode,
@@ -1645,24 +1712,82 @@ mod tests {
     }
 
     #[test]
+    fn output_options_enable_text_control_marks() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "a b".to_string(),
+                style: TextStyle {
+                    font_size: 22.0,
+                    color: 0x00000000,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: true,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 26.0,
+                field_marker: Default::default(),
+            }),
+            BoundingBox::new(10.0, 12.0, 70.0, 32.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let base_tree = builder.build(&tree);
+        let marked_tree = base_tree.clone().with_output_options(LayerOutputOptions {
+            show_paragraph_marks: true,
+            show_control_codes: true,
+            ..Default::default()
+        });
+        let renderer = SkiaLayerRenderer::new();
+        let base_png = renderer.render_png(&base_tree).expect("base skia render");
+        let marked_png = renderer
+            .render_png(&marked_tree)
+            .expect("marked skia render");
+        let base = tiny_skia::Pixmap::decode_png(&base_png).expect("base decode");
+        let marked = tiny_skia::Pixmap::decode_png(&marked_png).expect("marked decode");
+        let count_ink = |pixmap: &tiny_skia::Pixmap| {
+            pixmap
+                .pixels()
+                .iter()
+                .filter(|pixel| pixel.alpha() > 0)
+                .count()
+        };
+
+        assert!(count_ink(&marked) > count_ink(&base));
+    }
+
+    #[test]
     fn consumes_profile_and_cache_hints_for_sampling_policy() {
-        let screen = SkiaReplayContext::new(RenderProfile::Screen);
+        let screen = SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default());
         assert_eq!(screen.image_sampling(), ImageSampling::linear());
         assert!(screen.clip_antialias());
 
-        let fast_preview = SkiaReplayContext::new(RenderProfile::FastPreview);
+        let fast_preview =
+            SkiaReplayContext::new(RenderProfile::FastPreview, LayerOutputOptions::default());
         assert_eq!(fast_preview.image_sampling(), ImageSampling::nearest());
         assert!(fast_preview.clip_antialias());
 
-        let print = SkiaReplayContext::new(RenderProfile::Print);
+        let print = SkiaReplayContext::new(RenderProfile::Print, LayerOutputOptions::default());
         assert_eq!(print.image_sampling(), ImageSampling::linear_mipmap());
 
-        let mut raster = SkiaReplayContext::new(RenderProfile::HighQuality);
+        let mut raster =
+            SkiaReplayContext::new(RenderProfile::HighQuality, LayerOutputOptions::default());
         raster.push_cache_hint(CacheHint::PreferRaster);
         assert_eq!(raster.image_sampling(), ImageSampling::nearest());
         assert!(raster.clip_antialias());
 
-        let mut vector = SkiaReplayContext::new(RenderProfile::Screen);
+        let mut vector =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default());
         vector.push_cache_hint(CacheHint::PreferVectorRecording);
         assert_eq!(vector.image_sampling(), ImageSampling::linear_mipmap());
     }

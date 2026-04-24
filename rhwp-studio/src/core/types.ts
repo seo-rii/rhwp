@@ -44,6 +44,13 @@ export interface PageLayerTree {
   pageWidth: number;
   pageHeight: number;
   profile: LayerRenderProfile;
+  outputOptions?: {
+    showParagraphMarks?: boolean;
+    showControlCodes?: boolean;
+    showTransparentBorders?: boolean;
+    clipEnabled?: boolean;
+    debugOverlay?: boolean;
+  };
   resources?: LayerResources;
   root: LayerNode;
 }

@@ -40,6 +40,7 @@
 - Canvas2D layer, CanvasKit, SVG, Skia의 image crop 축 계산을 맞추고 image effect 전달을 추가했다.
 - layer cache key에 profile과 주요 출력 옵션을 포함했다.
 - WASM `renderPageToCanvas`가 `PageLayerTree`를 만든 뒤 `WebCanvasRenderer`의 layer replay 경로로 렌더링하도록 전환했다.
+- `PageLayerTree`에 출력 옵션을 실어 JSON/JS/TypeScript export로 전달하고, Skia text run이 paragraph/control mark 옵션을 반영하도록 했다.
 
 ---
 
@@ -262,7 +263,8 @@
 
 - Skia text run이 `rotation`과 `is_vertical` 회전을 적용하도록 1차 수정했습니다.
 - Skia text run이 `char_overlap`을 일반 glyph run 대신 겹침문자 도형/텍스트로 렌더링하도록 수정했습니다.
-- control/paragraph mark 분리와 shaped text 전략은 아직 남아 있습니다.
+- `PageLayerTree`에 `LayerOutputOptions`를 추가하고 JSON/JS export로 전달해, Skia text run이 공백/탭/문단 끝/강제 줄바꿈 표시를 그릴 수 있게 했습니다.
+- control/paragraph mark의 별도 PaintOp 분리와 shaped text 전략은 아직 남아 있습니다.
 
 ---
 

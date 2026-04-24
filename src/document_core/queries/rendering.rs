@@ -7,7 +7,7 @@ use crate::model::control::Control;
 use crate::model::document::Section;
 use crate::model::page::ColumnDef;
 use crate::model::paragraph::Paragraph;
-use crate::paint::{LayerBuilder, PageLayerTree, RenderProfile};
+use crate::paint::{LayerBuilder, LayerOutputOptions, PageLayerTree, RenderProfile};
 use crate::renderer::canvas::CanvasRenderer;
 use crate::renderer::composer::{compose_paragraph, compose_section, ComposedParagraph};
 use crate::renderer::height_measurer::{HeightMeasurer, MeasuredSection, MeasuredTable};
@@ -48,7 +48,13 @@ impl DocumentCore {
         profile: RenderProfile,
     ) -> PageLayerTree {
         let mut builder = LayerBuilder::new(profile);
-        builder.build(tree)
+        builder.build(tree).with_output_options(LayerOutputOptions {
+            show_paragraph_marks: self.show_paragraph_marks,
+            show_control_codes: self.show_control_codes,
+            show_transparent_borders: self.show_transparent_borders,
+            clip_enabled: self.clip_enabled,
+            debug_overlay: self.debug_overlay,
+        })
     }
 
     fn resolve_layer_render_profile(&self, default_profile: RenderProfile) -> RenderProfile {
