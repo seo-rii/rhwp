@@ -1733,6 +1733,112 @@ mod tests {
         assert_skia_layer_tree_matches_svg("synthetic-image-fill-modes", &layer_tree);
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    #[test]
+    fn test_skia_screenshot_matches_layer_svg_for_synthetic_clip_overflow() {
+        use crate::paint::{LayerBuilder, RenderProfile};
+        use crate::renderer::render_tree::{
+            BoundingBox, PageBackgroundNode, PageNode, PageRenderTree, RectangleNode, RenderNode,
+            RenderNodeType, TableCellNode, TextLineNode,
+        };
+        use crate::renderer::ShapeStyle;
+
+        let mut tree = PageRenderTree::new(0, 220.0, 150.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 220.0,
+            height: 150.0,
+            section_index: 0,
+        });
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::PageBackground(PageBackgroundNode {
+                background_color: Some(0x00FFFFFF),
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: None,
+            }),
+            BoundingBox::new(0.0, 0.0, 220.0, 150.0),
+        ));
+
+        let make_rect = |id, bbox, fill_color| {
+            RenderNode::new(
+                id,
+                RenderNodeType::Rectangle(RectangleNode::new(
+                    0.0,
+                    ShapeStyle {
+                        fill_color: Some(fill_color),
+                        ..Default::default()
+                    },
+                    None,
+                )),
+                bbox,
+            )
+        };
+
+        let mut body = RenderNode::new(
+            10,
+            RenderNodeType::Body {
+                clip_rect: Some(BoundingBox::new(30.0, 20.0, 120.0, 80.0)),
+            },
+            BoundingBox::new(30.0, 20.0, 120.0, 80.0),
+        );
+        let mut column = RenderNode::new(
+            11,
+            RenderNodeType::Column(0),
+            BoundingBox::new(30.0, 20.0, 120.0, 80.0),
+        );
+        let mut text_line = RenderNode::new(
+            12,
+            RenderNodeType::TextLine(TextLineNode::new(28.0, 20.0)),
+            BoundingBox::new(30.0, 28.0, 120.0, 28.0),
+        );
+        text_line.children.push(make_rect(
+            13,
+            BoundingBox::new(138.0, 34.0, 18.0, 16.0),
+            0x0000AA00,
+        ));
+        column.children.push(make_rect(
+            14,
+            BoundingBox::new(48.0, 62.0, 52.0, 22.0),
+            0x000066CC,
+        ));
+        column.children.push(text_line);
+        column.children.push(make_rect(
+            15,
+            BoundingBox::new(166.0, 42.0, 32.0, 24.0),
+            0x00CC3333,
+        ));
+        body.children.push(column);
+        tree.root.children.push(body);
+
+        let mut cell = RenderNode::new(
+            20,
+            RenderNodeType::TableCell(TableCellNode {
+                col: 0,
+                row: 0,
+                col_span: 1,
+                row_span: 1,
+                border_fill_id: 0,
+                text_direction: 0,
+                clip: true,
+                model_cell_index: None,
+            }),
+            BoundingBox::new(30.0, 112.0, 74.0, 24.0),
+        );
+        cell.children.push(make_rect(
+            21,
+            BoundingBox::new(98.0, 116.0, 14.0, 14.0),
+            0x00FF9900,
+        ));
+        tree.root.children.push(cell);
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        assert_skia_layer_tree_matches_svg("synthetic-clip-overflow", &layer_tree);
+    }
+
     #[test]
     fn test_get_page_layer_tree_native_populates_page_tree_cache() {
         let Some(core) = load_document("samples/lseg-01-basic.hwp") else {

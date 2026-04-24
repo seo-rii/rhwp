@@ -418,3 +418,21 @@ Expand native Skia-vs-layer-SVG image regression coverage for crop, effects, fil
 - `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_image_fill_modes -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::skia::image_conv::tests:: -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_page_background_image -- --quiet` passed.
+
+## Current Batch: TEST-007 Clip Overflow Fixture
+
+Add a native Skia-vs-layer-SVG synthetic fixture for Body/TableCell clip policy and horizontal overflow replay.
+
+## Steps
+
+1. Done: build a synthetic page with Body right-overflow slop, a body-level overflow control, and TableCell clip slop.
+2. Done: verify the focused native-Skia parity fixture and existing clip unit tests.
+3. Pending: run formatting, wasm, and diff checks.
+4. Pending: update `RISK_REGISTER.md`, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_clip_overflow -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::body_clip_policy_allows_right_overflow_slop -- --quiet` passed.
+- `cargo test --lib paint::builder::tests::lowers_body_horizontal_overflow_controls -- --quiet` passed.
+- `cargo test --lib paint::builder::tests::preserves_leaf_payloads -- --quiet` passed.

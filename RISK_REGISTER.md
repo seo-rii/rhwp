@@ -946,7 +946,7 @@
 ### [TEST-007] clip/overflow fixture가 필요함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: Body/TableCell clip, overflow control regression tests
 
@@ -957,6 +957,12 @@
 **권장 조치**:
 
 - 셀 끝 glyph, 여백 밖 도형, 편집 모드 overflow control fixture를 만듭니다.
+
+**완료 메모**:
+
+- native Skia-vs-layer-SVG 합성 clip/overflow fixture를 추가했습니다.
+- fixture는 Body right-overflow slop, Body y-only/full-page-width overflow control replay, TableCell right-overflow slop을 한 장면에서 렌더링합니다.
+- 기존 LayerBuilder 단위 테스트와 Skia clip policy 단위 테스트도 함께 확인했습니다.
 
 ---
 
