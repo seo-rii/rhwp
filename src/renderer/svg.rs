@@ -1959,49 +1959,43 @@ impl SvgRenderer {
         let data_uri = format!("data:{};base64,{}", render_mime, base64_data);
 
         let fill_mode = img.fill_mode.unwrap_or(ImageFillMode::FitToSize);
+        let crop_viewbox = img.crop.and_then(|(cl, ct, cr, cb)| {
+            let (img_w, img_h) = parse_image_dimensions(&render_data)?;
+            let img_w = img_w as f64;
+            let img_h = img_h as f64;
+            let scale_x = cr as f64 / img_w;
+            let scale_y = cb as f64 / img_h;
+            if scale_x <= 0.0 || scale_y <= 0.0 {
+                return None;
+            }
+            let src_x = cl as f64 / scale_x;
+            let src_y = ct as f64 / scale_y;
+            let src_w = (cr - cl) as f64 / scale_x;
+            let src_h = (cb - ct) as f64 / scale_y;
+            let is_cropped = src_x > 0.5
+                || src_y > 0.5
+                || (src_w - img_w).abs() > 1.0
+                || (src_h - img_h).abs() > 1.0;
+            if is_cropped && src_w > 0.0 && src_h > 0.0 {
+                Some((src_x, src_y, src_w, src_h, img_w, img_h))
+            } else {
+                None
+            }
+        });
 
         match fill_mode {
             ImageFillMode::FitToSize => {
                 // 그림 자르기: crop이 있으면 원본 이미지의 일부만 표시
-                if let Some((cl, ct, cr, cb)) = img.crop {
-                    if let Some((img_w, img_h)) = parse_image_dimensions(&render_data) {
-                        let img_w = img_w as f64;
-                        let img_h = img_h as f64;
-                        let scale_x = (cr as f64 / img_w).max(1.0);
-                        let scale_y = (cb as f64 / img_h).max(1.0);
-                        let src_x = cl as f64 / scale_x;
-                        let src_y = ct as f64 / scale_y;
-                        let src_w = (cr - cl) as f64 / scale_x;
-                        let src_h = (cb - ct) as f64 / scale_y;
-                        // 전체 이미지 대비 잘림이 있는지 확인
-                        let is_cropped = src_x > 0.5
-                            || src_y > 0.5
-                            || (src_w - img_w).abs() > 1.0
-                            || (src_h - img_h).abs() > 1.0;
-                        if is_cropped {
-                            // SVG: 중첩 svg + viewBox로 crop 영역만 표시
-                            self.output.push_str(&format!(
-                                "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\">\
-                                <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></svg>\n",
-                                bbox.x, bbox.y, bbox.width, bbox.height,
-                                src_x, src_y, src_w, src_h,
-                                img_w, img_h, data_uri,
-                            ));
-                        } else {
-                            self.output.push_str(&format!(
-                                "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
-                                bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
-                            ));
-                        }
-                    } else {
-                        // 이미지 크기 파싱 실패 → crop 무시
-                        self.output.push_str(&format!(
-                            "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
-                            bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
-                        ));
-                    }
+                if let Some((src_x, src_y, src_w, src_h, img_w, img_h)) = crop_viewbox {
+                    // SVG: 중첩 svg + viewBox로 crop 영역만 표시
+                    self.output.push_str(&format!(
+                        "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\">\
+                        <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></svg>\n",
+                        bbox.x, bbox.y, bbox.width, bbox.height,
+                        src_x, src_y, src_w, src_h,
+                        img_w, img_h, data_uri,
+                    ));
                 } else {
-                    // crop 없음: 기존 동작
                     self.output.push_str(&format!(
                         "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
                         bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
@@ -2017,6 +2011,7 @@ impl SvgRenderer {
                     true,
                     true,
                     img.original_size,
+                    crop_viewbox,
                 );
             }
             ImageFillMode::TileHorzTop | ImageFillMode::TileHorzBottom => {
@@ -2028,6 +2023,7 @@ impl SvgRenderer {
                     true,
                     false,
                     img.original_size,
+                    crop_viewbox,
                 );
             }
             ImageFillMode::TileVertLeft | ImageFillMode::TileVertRight => {
@@ -2039,6 +2035,7 @@ impl SvgRenderer {
                     false,
                     true,
                     img.original_size,
+                    crop_viewbox,
                 );
             }
             _ => {
@@ -2049,6 +2046,7 @@ impl SvgRenderer {
                     bbox,
                     fill_mode,
                     img.original_size,
+                    crop_viewbox,
                 );
             }
         }
@@ -2115,6 +2113,7 @@ impl SvgRenderer {
         bbox: &super::render_tree::BoundingBox,
         fill_mode: ImageFillMode,
         original_size: Option<(f64, f64)>,
+        crop_viewbox: Option<(f64, f64, f64, f64, f64, f64)>,
     ) {
         // 원본 크기: HWP shape_attr 기반(우선) 또는 이미지 픽셀 크기(폴백)
         let (img_width, img_height) = if let Some((ow, oh)) = original_size {
@@ -2177,10 +2176,18 @@ impl SvgRenderer {
             "<clipPath id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/></clipPath>\n",
             clip_id, bbox.x, bbox.y, bbox.width, bbox.height,
         ));
-        self.output.push_str(&format!(
-            "<g clip-path=\"url(#{})\"><image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></g>\n",
-            clip_id, ix, iy, img_width, img_height, data_uri,
-        ));
+        if let Some((src_x, src_y, src_w, src_h, natural_w, natural_h)) = crop_viewbox {
+            self.output.push_str(&format!(
+                "<g clip-path=\"url(#{})\"><svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\">\
+                 <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></svg></g>\n",
+                clip_id, ix, iy, img_width, img_height, src_x, src_y, src_w, src_h, natural_w, natural_h, data_uri,
+            ));
+        } else {
+            self.output.push_str(&format!(
+                "<g clip-path=\"url(#{})\"><image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></g>\n",
+                clip_id, ix, iy, img_width, img_height, data_uri,
+            ));
+        }
     }
 
     /// 이미지를 타일링 모드로 렌더링
@@ -2192,6 +2199,7 @@ impl SvgRenderer {
         tile_h: bool,
         tile_v: bool,
         original_size: Option<(f64, f64)>,
+        crop_viewbox: Option<(f64, f64, f64, f64, f64, f64)>,
     ) {
         // 원본 크기: HWP shape_attr 기반(우선) 또는 이미지 픽셀 크기(폴백)
         let (img_width, img_height) = if let Some((ow, oh)) = original_size {
@@ -2214,12 +2222,24 @@ impl SvgRenderer {
         let pat_w = if tile_h { img_width } else { bbox.width };
         let pat_h = if tile_v { img_height } else { bbox.height };
 
+        let pattern_image = if let Some((src_x, src_y, src_w, src_h, natural_w, natural_h)) =
+            crop_viewbox
+        {
+            format!(
+                "<svg width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\">\
+                 <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></svg>",
+                img_width, img_height, src_x, src_y, src_w, src_h, natural_w, natural_h, data_uri,
+            )
+        } else {
+            format!(
+                "<image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>",
+                img_width, img_height, data_uri,
+            )
+        };
         self.defs.push(format!(
-            "<pattern id=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" patternUnits=\"userSpaceOnUse\">\
-             <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\
+            "<pattern id=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" patternUnits=\"userSpaceOnUse\">{}\
              </pattern>\n",
-            pat_id, bbox.x, bbox.y, pat_w, pat_h,
-            img_width, img_height, data_uri,
+            pat_id, bbox.x, bbox.y, pat_w, pat_h, pattern_image,
         ));
         self.output.push_str(&format!(
             "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#{})\"/>\n",

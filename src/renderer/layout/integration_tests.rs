@@ -1581,50 +1581,151 @@ mod tests {
         use crate::model::style::ImageFillMode;
         use crate::paint::{LayerBuilder, RenderProfile};
         use crate::renderer::render_tree::{
-            BoundingBox, ImageNode, PageNode, PageRenderTree, RenderNode, RenderNodeType,
-            ShapeTransform,
+            BoundingBox, ImageNode, PageBackgroundNode, PageNode, PageRenderTree, RenderNode,
+            RenderNodeType, ShapeTransform,
         };
 
         let png_bytes = synthetic_png_bytes();
-        let mut tree = PageRenderTree::new(0, 240.0, 160.0);
+        let mut transparent_pixmap =
+            tiny_skia::Pixmap::new(32, 32).expect("transparent synthetic pixmap 생성 실패");
+        for y in 0..32usize {
+            for x in 0..32usize {
+                let alpha = if (x / 8 + y / 8) % 2 == 0 { 255 } else { 0 };
+                let (r, g, b) = if y < 16 {
+                    (40, 120, 255)
+                } else {
+                    (255, 80, 120)
+                };
+                let base = (y * 32 + x) * 4;
+                transparent_pixmap.data_mut()[base..base + 4].copy_from_slice(&[r, g, b, alpha]);
+            }
+        }
+        let transparent_png = transparent_pixmap
+            .encode_png()
+            .expect("transparent synthetic png 인코딩 실패");
+        let mut blackwhite_pixmap =
+            tiny_skia::Pixmap::new(24, 16).expect("blackwhite synthetic pixmap 생성 실패");
+        for y in 0..16usize {
+            for x in 0..24usize {
+                let value = if x < 12 { 36 } else { 224 };
+                let base = (y * 24 + x) * 4;
+                blackwhite_pixmap.data_mut()[base..base + 4]
+                    .copy_from_slice(&[value, value, value, 255]);
+            }
+        }
+        let blackwhite_png = blackwhite_pixmap
+            .encode_png()
+            .expect("blackwhite synthetic png 인코딩 실패");
+
+        let mut tree = PageRenderTree::new(0, 280.0, 220.0);
         tree.root.node_type = RenderNodeType::Page(PageNode {
             page_index: 0,
-            width: 240.0,
-            height: 160.0,
+            width: 280.0,
+            height: 220.0,
             section_index: 0,
         });
-
-        let mut cropped = ImageNode::new(0, Some(png_bytes.clone()));
-        cropped.fill_mode = Some(ImageFillMode::FitToSize);
-        cropped.crop = Some((20 * 75, 0, 40 * 75, 30 * 75));
-        cropped.transform = ShapeTransform::default();
-        cropped.effect = ImageEffect::RealPic;
         tree.root.children.push(RenderNode::new(
             1,
-            RenderNodeType::Image(cropped),
-            BoundingBox::new(16.0, 16.0, 96.0, 72.0),
+            RenderNodeType::PageBackground(PageBackgroundNode {
+                background_color: Some(0x00F5F0E3),
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: None,
+            }),
+            BoundingBox::new(0.0, 0.0, 280.0, 220.0),
         ));
 
-        let mut centered = ImageNode::new(0, Some(png_bytes.clone()));
-        centered.fill_mode = Some(ImageFillMode::CenterBottom);
-        centered.original_size = Some((40.0, 30.0));
-        centered.transform = ShapeTransform::default();
-        centered.effect = ImageEffect::RealPic;
+        let mut crop_x = ImageNode::new(0, Some(png_bytes.clone()));
+        crop_x.fill_mode = Some(ImageFillMode::FitToSize);
+        crop_x.crop = Some((10 * 75, 0, 32 * 75, 30 * 75));
+        crop_x.transform = ShapeTransform::default();
+        crop_x.effect = ImageEffect::RealPic;
         tree.root.children.push(RenderNode::new(
             2,
-            RenderNodeType::Image(centered),
-            BoundingBox::new(132.0, 16.0, 80.0, 72.0),
+            RenderNodeType::Image(crop_x),
+            BoundingBox::new(16.0, 16.0, 72.0, 52.0),
         ));
 
-        let mut tiled = ImageNode::new(0, Some(png_bytes));
+        let mut crop_y = ImageNode::new(0, Some(png_bytes.clone()));
+        crop_y.fill_mode = Some(ImageFillMode::FitToSize);
+        crop_y.crop = Some((0, 6 * 75, 40 * 75, 24 * 75));
+        crop_y.transform = ShapeTransform::default();
+        crop_y.effect = ImageEffect::GrayScale;
+        tree.root.children.push(RenderNode::new(
+            3,
+            RenderNodeType::Image(crop_y),
+            BoundingBox::new(104.0, 16.0, 72.0, 52.0),
+        ));
+
+        let mut crop_both_centered = ImageNode::new(0, Some(png_bytes.clone()));
+        crop_both_centered.fill_mode = Some(ImageFillMode::Center);
+        crop_both_centered.original_size = Some((42.0, 30.0));
+        crop_both_centered.crop = Some((8 * 75, 5 * 75, 34 * 75, 24 * 75));
+        crop_both_centered.transform = ShapeTransform::default();
+        crop_both_centered.effect = ImageEffect::RealPic;
+        tree.root.children.push(RenderNode::new(
+            4,
+            RenderNodeType::Image(crop_both_centered),
+            BoundingBox::new(192.0, 16.0, 72.0, 52.0),
+        ));
+
+        let mut patterned_center_bottom = ImageNode::new(0, Some(png_bytes.clone()));
+        patterned_center_bottom.fill_mode = Some(ImageFillMode::CenterBottom);
+        patterned_center_bottom.original_size = Some((40.0, 30.0));
+        patterned_center_bottom.transform = ShapeTransform::default();
+        patterned_center_bottom.effect = ImageEffect::Pattern8x8;
+        tree.root.children.push(RenderNode::new(
+            5,
+            RenderNodeType::Image(patterned_center_bottom),
+            BoundingBox::new(16.0, 86.0, 72.0, 58.0),
+        ));
+
+        let mut tiled = ImageNode::new(0, Some(png_bytes.clone()));
         tiled.fill_mode = Some(ImageFillMode::TileAll);
+        tiled.crop = Some((5 * 75, 4 * 75, 30 * 75, 26 * 75));
         tiled.original_size = Some((20.0, 15.0));
         tiled.transform = ShapeTransform::default();
         tiled.effect = ImageEffect::RealPic;
         tree.root.children.push(RenderNode::new(
-            3,
+            6,
             RenderNodeType::Image(tiled),
-            BoundingBox::new(16.0, 100.0, 196.0, 44.0),
+            BoundingBox::new(104.0, 86.0, 160.0, 58.0),
+        ));
+
+        let mut transparent_over_background = ImageNode::new(0, Some(transparent_png));
+        transparent_over_background.fill_mode = Some(ImageFillMode::FitToSize);
+        transparent_over_background.transform = ShapeTransform::default();
+        transparent_over_background.effect = ImageEffect::RealPic;
+        tree.root.children.push(RenderNode::new(
+            7,
+            RenderNodeType::Image(transparent_over_background),
+            BoundingBox::new(16.0, 164.0, 56.0, 40.0),
+        ));
+
+        let mut transformed = ImageNode::new(0, Some(png_bytes));
+        transformed.fill_mode = Some(ImageFillMode::FitToSize);
+        transformed.crop = Some((0, 0, 36 * 75, 26 * 75));
+        transformed.transform = ShapeTransform {
+            rotation: 14.0,
+            horz_flip: true,
+            vert_flip: true,
+        };
+        transformed.effect = ImageEffect::RealPic;
+        tree.root.children.push(RenderNode::new(
+            8,
+            RenderNodeType::Image(transformed),
+            BoundingBox::new(108.0, 162.0, 86.0, 42.0),
+        ));
+
+        let mut blackwhite = ImageNode::new(0, Some(blackwhite_png));
+        blackwhite.fill_mode = Some(ImageFillMode::FitToSize);
+        blackwhite.transform = ShapeTransform::default();
+        blackwhite.effect = ImageEffect::BlackWhite;
+        tree.root.children.push(RenderNode::new(
+            9,
+            RenderNodeType::Image(blackwhite),
+            BoundingBox::new(216.0, 164.0, 48.0, 34.0),
         ));
 
         let mut builder = LayerBuilder::new(RenderProfile::Screen);

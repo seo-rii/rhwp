@@ -259,7 +259,7 @@ fn image_effect_filter(effect: ImageEffect) -> Option<skia_safe::ColorFilter> {
     match effect {
         ImageEffect::RealPic => None,
         ImageEffect::GrayScale => Some(grayscale_filter(1.0, 0.0)),
-        ImageEffect::BlackWhite => Some(grayscale_filter(32.0, -4096.0)),
+        ImageEffect::BlackWhite => Some(grayscale_filter(255.0, -127.5)),
         ImageEffect::Pattern8x8 => Some(grayscale_filter(1.0, 0.0)),
     }
 }

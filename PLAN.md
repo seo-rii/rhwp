@@ -218,6 +218,7 @@ Preserve TextRun marker semantics in layer JSON/JS export and replay paragraph/c
 ## Verification
 
 - `cargo test --lib paint::json::tests::serializes_text_and_shape_ops_for_browser_replay -- --quiet` passed.
+
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `npm run build` passed in `rhwp-studio`.
 - `cargo test --lib -- --quiet` passed: 977 passed, 1 ignored.
@@ -400,3 +401,20 @@ Use Skia's normal text draw path for plain TextRun replay instead of turning eve
 - `cargo fmt --check` passed.
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `git diff --check` passed for this batch's files.
+
+## Current Batch: TEST-006 Image Fixture Coverage
+
+Expand native Skia-vs-layer-SVG image regression coverage for crop, effects, fill modes, and transforms.
+
+## Steps
+
+1. Done: extend the synthetic image fill-mode fixture with crop only-x, crop only-y, crop both, grayscale/blackwhite/pattern effect, tile/center/fit modes, transparent image over background, and rotation/flip.
+2. Done: fix the Skia blackwhite image effect threshold exposed by the expanded fixture.
+3. Done: make SVG image replay apply crop viewBox for positioned and tiled fill modes.
+4. Done: run focused native-Skia parity and image conversion tests.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_image_fill_modes -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::image_conv::tests:: -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_page_background_image -- --quiet` passed.

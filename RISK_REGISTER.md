@@ -921,7 +921,7 @@
 ### [TEST-006] 이미지 crop/effect/fill mode fixture가 필요함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: image rendering regression tests
 
@@ -933,6 +933,13 @@
 
 - PNG/JPEG/GIF/BMP/WMF/TIFF fixture를 준비합니다.
 - fit/stretch/center/tile, crop only-x/crop only-y/crop both, grayscale/blackwhite/pattern effect, transparent image over page background, image rotation/flip 조합을 포함합니다.
+
+**완료 메모**:
+
+- native Skia-vs-layer-SVG 합성 image fixture를 확장해 crop only-x, crop only-y, crop both, fit/center/tile fill mode, grayscale/blackwhite/pattern effect, 투명 이미지 over page background, image rotation/flip 조합을 고정했습니다.
+- 확장 fixture가 드러낸 Skia `BlackWhite` effect threshold 오류를 수정했습니다.
+- SVG image replay도 positioned/tiled fill mode에서 crop viewBox를 적용하도록 맞춰 Skia와 layer SVG의 crop source rect 의미를 일치시켰습니다.
+- PNG/JPEG/GIF/BMP/WMF/TIFF 실제 샘플 확장은 별도 corpus 확장 작업으로 남깁니다.
 
 ---
 
