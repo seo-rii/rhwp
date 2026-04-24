@@ -426,7 +426,7 @@
 ### [BUG-007] 이미지 crop 계산과 fill mode 적용 범위가 의심스러움
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 검증 필요  
 **위치**: Skia `draw_image_bytes`, `ImageFillMode`, image crop
 
@@ -450,7 +450,8 @@
 - Skia image replay는 crop source rect를 공통 계산해 `fitToSize`/`none`, align, tile 계열 fill mode에 모두 적용합니다.
 - Canvas2D layer와 CanvasKit replay도 동일하게 crop source rect를 align/tile draw call에 적용합니다.
 - native Skia regression으로 crop + center fill mode가 잘린 source rect만 그리는지 확인했습니다.
-- crop 좌표계 문서화와 실제 HWP sample 기반 crop + tile/rotation fixture는 아직 남아 있습니다.
+- native Skia regression으로 crop + tile fill mode도 잘린 source rect만 반복하는지 확인했습니다.
+- 실제 HWP sample 기반 crop/effect/fill mode fixture 확장은 [TEST-006]에서 추적합니다.
 
 ---
 

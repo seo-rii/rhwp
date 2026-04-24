@@ -389,8 +389,7 @@ mod tests {
     use super::*;
     use skia_safe::{surfaces, Color, EncodedImageFormat};
 
-    #[test]
-    fn applies_crop_source_rect_to_aligned_fill_modes() {
+    fn red_top_blue_bottom_png() -> Vec<u8> {
         let mut source = tiny_skia::Pixmap::new(2, 2).expect("source pixmap");
         source.pixels_mut()[0] =
             tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 0, 255).unwrap();
@@ -400,18 +399,20 @@ mod tests {
             tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 255, 255).unwrap();
         source.pixels_mut()[3] =
             tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 255, 255).unwrap();
-        let source_png = source.encode_png().expect("source png");
+        source.encode_png().expect("source png")
+    }
 
+    fn render_cropped_bottom_row(fill_mode: ImageFillMode) -> tiny_skia::Pixmap {
         let mut surface = surfaces::raster_n32_premul((4, 4)).expect("surface");
         surface.canvas().clear(Color::TRANSPARENT);
         draw_image_bytes(
             surface.canvas(),
-            &source_png,
+            &red_top_blue_bottom_png(),
             0.0,
             0.0,
             4.0,
             4.0,
-            Some(ImageFillMode::Center),
+            Some(fill_mode),
             Some((4.0, 4.0)),
             Some((0, 1, 2, 2)),
             ImageEffect::RealPic,
@@ -421,7 +422,21 @@ mod tests {
             .image_snapshot()
             .encode(None, EncodedImageFormat::PNG, None)
             .expect("render png");
-        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render")
+    }
+
+    #[test]
+    fn applies_crop_source_rect_to_aligned_fill_modes() {
+        let pixmap = render_cropped_bottom_row(ImageFillMode::Center);
+
+        for pixel in pixmap.pixels() {
+            assert!(pixel.blue() > pixel.red());
+        }
+    }
+
+    #[test]
+    fn applies_crop_source_rect_to_tiled_fill_modes() {
+        let pixmap = render_cropped_bottom_row(ImageFillMode::TileAll);
 
         for pixel in pixmap.pixels() {
             assert!(pixel.blue() > pixel.red());

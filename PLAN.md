@@ -94,6 +94,16 @@ Close the stale `BUG-003` status in `RISK_REGISTER.md`; the Skia multi-line stro
 
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_multi_line_type_as_separated_strokes -- --quiet` passed.
 
+## Completed Batch: BUG-007 Crop Tile Regression
+
+Close the code-risk portion of `BUG-007` after adding explicit native Skia coverage for crop source rect reuse in tiled fill modes. Broader HWP sample fixtures remain tracked by `TEST-006`.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::image_conv::tests:: -- --quiet` passed.
+- `rustfmt --check src/renderer/skia/image_conv.rs` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.
