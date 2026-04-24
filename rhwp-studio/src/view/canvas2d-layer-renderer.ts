@@ -379,6 +379,38 @@ export class Canvas2DLayerRenderer {
         ctx.stroke();
         ctx.restore();
       }
+
+      const outputOptions = this.lastRenderedTree?.outputOptions;
+      if (outputOptions?.showParagraphMarks || outputOptions?.showControlCodes) {
+        const fieldMarker = op.fieldMarker ?? 'none';
+        ctx.save();
+        ctx.fillStyle = '#4A90D9';
+        if (op.text && fieldMarker === 'none') {
+          const markFontSize = Math.max(fontSize * 0.5, 1);
+          this.setCanvasTextFont(ctx, 'Noto Sans KR', markFontSize, false, false);
+          const chars = Array.from(op.text);
+          for (const [index, ch] of chars.entries()) {
+            if (ch === ' ') {
+              const currentX = originX + (op.positions[index] ?? textWidth);
+              const nextX = index + 1 < op.positions.length
+                ? originX + op.positions[index + 1]
+                : originX + op.bbox.width;
+              const midX = (currentX + nextX) / 2 - markFontSize * 0.25;
+              ctx.fillText('∨', midX, originY);
+            } else if (ch === '\t') {
+              const currentX = originX + (op.positions[index] ?? textWidth);
+              ctx.fillText('→', currentX, originY);
+            }
+          }
+        }
+        if (op.isParaEnd || op.isLineBreakEnd) {
+          this.setCanvasTextFont(ctx, 'Noto Sans KR', fontSize, false, false);
+          const mark = op.isLineBreakEnd ? '↓' : '↵';
+          const markX = op.text ? originX + op.bbox.width : originX;
+          ctx.fillText(mark, markX, originY);
+        }
+        ctx.restore();
+      }
     };
 
     ctx.save();

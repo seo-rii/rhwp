@@ -13,7 +13,7 @@ use crate::paint::{
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
-use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
+use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
     ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, PatternFillInfo,
     ShadowStyle, ShapeStyle, StrokeDash, TabLeaderInfo, TextStyle,
@@ -183,6 +183,16 @@ impl PaintOp {
                 write_text_style(buf, &run.style);
                 buf.push_str(",\"positions\":");
                 write_text_positions(buf, run);
+                let _ = write!(
+                    buf,
+                    ",\"fieldMarker\":{},\"isParaEnd\":{},\"isLineBreakEnd\":{}",
+                    json_escape(field_marker_str(run.field_marker)),
+                    run.is_para_end,
+                    run.is_line_break_end,
+                );
+                if let FieldMarkerType::ShapeMarker(index) = run.field_marker {
+                    let _ = write!(buf, ",\"shapeMarkerIndex\":{}", index);
+                }
                 if !run.style.tab_leaders.is_empty() {
                     buf.push_str(",\"tabLeaders\":");
                     write_tab_leaders(buf, &run.style.tab_leaders);
@@ -932,6 +942,16 @@ fn cache_hint_str(value: CacheHint) -> &'static str {
     }
 }
 
+fn field_marker_str(value: FieldMarkerType) -> &'static str {
+    match value {
+        FieldMarkerType::None => "none",
+        FieldMarkerType::FieldBegin => "fieldBegin",
+        FieldMarkerType::FieldEnd => "fieldEnd",
+        FieldMarkerType::FieldBeginEnd => "fieldBeginEnd",
+        FieldMarkerType::ShapeMarker(_) => "shapeMarker",
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
@@ -1024,6 +1044,9 @@ mod tests {
         assert!(json.contains("\"showParagraphMarks\":false"));
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
+        assert!(json.contains("\"fieldMarker\":\"none\""));
+        assert!(json.contains("\"isParaEnd\":false"));
+        assert!(json.contains("\"isLineBreakEnd\":false"));
         assert!(json.contains("\"fontFamily\":\"Noto Sans KR\""));
         assert!(json.contains("\"type\":\"rectangle\""));
         assert!(json.contains("\"type\":\"equation\""));

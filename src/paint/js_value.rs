@@ -13,7 +13,7 @@ use crate::paint::{
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
-use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
+use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
     ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, PatternFillInfo,
     ShadowStyle, ShapeStyle, StrokeDash, TabLeaderInfo, TextStyle,
@@ -244,6 +244,12 @@ fn paint_op_to_value(op: &PaintOp) -> JsValue {
                 "positions",
                 array_to_value(run.positions.iter().copied().map(JsValue::from_f64)),
             );
+            set_string(&value, "fieldMarker", field_marker_str(run.field_marker));
+            set_bool(&value, "isParaEnd", run.is_para_end);
+            set_bool(&value, "isLineBreakEnd", run.is_line_break_end);
+            if let FieldMarkerType::ShapeMarker(index) = run.field_marker {
+                set_number(&value, "shapeMarkerIndex", index as f64);
+            }
             if !run.style.tab_leaders.is_empty() {
                 set_value(
                     &value,
@@ -851,5 +857,15 @@ fn cache_hint_str(value: CacheHint) -> &'static str {
         CacheHint::StaticSubtree => "staticSubtree",
         CacheHint::PreferRaster => "preferRaster",
         CacheHint::PreferVectorRecording => "preferVectorRecording",
+    }
+}
+
+fn field_marker_str(value: FieldMarkerType) -> &'static str {
+    match value {
+        FieldMarkerType::None => "none",
+        FieldMarkerType::FieldBegin => "fieldBegin",
+        FieldMarkerType::FieldEnd => "fieldEnd",
+        FieldMarkerType::FieldBeginEnd => "fieldBeginEnd",
+        FieldMarkerType::ShapeMarker(_) => "shapeMarker",
     }
 }

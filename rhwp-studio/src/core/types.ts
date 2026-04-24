@@ -243,6 +243,10 @@ export interface LayerTextRunOp {
   baseline: number;
   rotation: number;
   isVertical: boolean;
+  fieldMarker?: 'none' | 'fieldBegin' | 'fieldEnd' | 'fieldBeginEnd' | 'shapeMarker';
+  shapeMarkerIndex?: number;
+  isParaEnd?: boolean;
+  isLineBreakEnd?: boolean;
   style: LayerTextStyle;
   positions: number[];
   tabLeaders?: LayerTabLeader[];

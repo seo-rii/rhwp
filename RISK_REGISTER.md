@@ -45,6 +45,7 @@
 - native Skia가 `CacheHint::StaticSubtree`를 실제 SkPicture cache로 사용하도록 연결했다.
 - PaintOp logical bounds와 visual bounds를 분리하고 layer node bounds에 visual extent를 반영했다.
 - Skia `LineRenderType` multi-stroke 동작을 native regression test로 고정했다.
+- TextRun marker flags를 JSON/JS/TypeScript export에 보존하고 Canvas2D layer replay에서 outputOptions 기반 mark를 그리도록 했다.
 
 ---
 
@@ -277,7 +278,8 @@
 - Skia text run이 `rotation`과 `is_vertical` 회전을 적용하도록 1차 수정했습니다.
 - Skia text run이 `char_overlap`을 일반 glyph run 대신 겹침문자 도형/텍스트로 렌더링하도록 수정했습니다.
 - `PageLayerTree`에 `LayerOutputOptions`를 추가하고 JSON/JS export로 전달해, Skia text run이 공백/탭/문단 끝/강제 줄바꿈 표시를 그릴 수 있게 했습니다.
-- control/paragraph mark의 별도 PaintOp 분리와 shaped text 전략은 아직 남아 있습니다.
+- JSON/JS/TypeScript TextRun export에 `fieldMarker`, `shapeMarkerIndex`, `isParaEnd`, `isLineBreakEnd`를 추가했고, Canvas2D layer replay가 exported marker fields와 `outputOptions`로 공백/탭/문단 끝/강제 줄바꿈 표시를 그리도록 했습니다.
+- control/paragraph mark의 별도 PaintOp 분리, CanvasKit marker replay, shaped text 전략은 아직 남아 있습니다.
 
 ---
 

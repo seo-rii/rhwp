@@ -103,6 +103,27 @@ Lock the existing Skia multi-line `LineRenderType` implementation with a native 
 - `rustfmt --check` passed for changed Rust files.
 - `git diff --check` passed for this batch's files.
 
+## Current Batch: BUG-001 Text Marker Export
+
+Preserve TextRun marker semantics in layer JSON/JS export and replay paragraph/control marks in the browser Canvas2D layer path from exported fields.
+
+## Steps
+
+1. Done: export `fieldMarker`, `shapeMarkerIndex`, `isParaEnd`, and `isLineBreakEnd` for TextRun ops.
+2. Done: add matching `LayerTextRunOp` TypeScript fields.
+3. Done: render Canvas2D layer whitespace and paragraph/line-break marks from exported marker fields and `outputOptions`.
+4. Done: verify JSON, wasm lib, studio build, full lib tests, formatting, and diff checks.
+5. Done: update `RISK_REGISTER.md`, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --lib paint::json::tests::serializes_text_and_shape_ops_for_browser_replay -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo test --lib -- --quiet` passed: 977 passed, 1 ignored.
+- `rustfmt --check` passed for changed Rust files.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: ARCH-006 Paint Visual Bounds
 
 Separate logical paint bounds from visual paint bounds and make layer leaf/group nodes use visual bounds so future culling/cache invalidation does not clip stroke, arrow, shadow, or text decoration pixels.
