@@ -290,6 +290,26 @@ Avoid repeated native Skia image/SVG raster decode work inside a single layer re
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `git diff --check` passed for this batch's files.
 
+## Current Batch: TEST-001 LayerBuilder Totality
+
+Make RenderNodeType lowering explicit so visual render nodes cannot silently pass through as empty groups.
+
+## Steps
+
+1. Done: lower `Placeholder` nodes to existing `Rectangle + TextRun` paint ops.
+2. Done: lower `RawSvg` nodes through the SVG-backed replay path with bbox-local coordinate normalization.
+3. Done: add a no-wildcard totality test that classifies every `RenderNodeType` as structural group, clip, or paint ops.
+4. Done: run final formatting, wasm, and diff checks before committing this batch.
+
+## Verification
+
+- `cargo test --lib paint::builder::tests::render_node_type_lowering_is_explicit_for_all_variants -- --quiet` passed.
+- `cargo test --lib paint::builder::tests:: -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `git diff --check` passed for this batch's files.
+- Full `cargo test --lib -- --quiet` was attempted and currently fails in 3 layer SVG parity tests: `test_layer_svg_matches_legacy_for_basic_text_sample`, `test_layer_svg_matches_legacy_for_table_sample`, and `test_layer_svg_screenshot_matches_legacy_for_table_sample`.
+
 ## Current Batch: PERF-002 Skia Plain Text Draw
 
 Use Skia's normal text draw path for plain TextRun replay instead of turning every glyph into a path.

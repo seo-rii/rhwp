@@ -798,7 +798,7 @@
 ### [TEST-001] LayerBuilder totality test가 필요함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: LayerBuilder, RenderNodeType lowering
 
@@ -811,6 +811,12 @@
 
 - RenderNodeType별 lowering totality test를 추가합니다.
 - unsupported node는 explicit marker와 diagnostic을 남기게 합니다.
+
+**완료 메모**:
+
+- 모든 `RenderNodeType` variant가 structural group/clip 또는 명시적 paint op로 낮아지는지 확인하는 totality test를 추가했습니다.
+- test-side expectation match에는 wildcard를 두지 않아 새 `RenderNodeType`이 추가되면 lowering 정책을 갱신해야 컴파일됩니다.
+- 누락되어 있던 `Placeholder`는 `Rectangle + TextRun` paint op로 낮추고, `RawSvg`는 bbox-local SVG-backed replay op로 보존하도록 했습니다.
 
 ---
 

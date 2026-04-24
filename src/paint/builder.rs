@@ -155,6 +155,86 @@ impl LayerBuilder {
                     form: self.build_form_object_paint(form),
                 },
             )),
+            RenderNodeType::Placeholder(placeholder) => {
+                let rect_op = PaintOp::Rectangle {
+                    bbox: node.bbox,
+                    rect: LayerRectanglePaint {
+                        corner_radius: 0.0,
+                        style: crate::renderer::ShapeStyle {
+                            fill_color: Some(placeholder.fill_color & 0x00FF_FFFF),
+                            stroke_color: Some(placeholder.stroke_color & 0x00FF_FFFF),
+                            stroke_width: 1.0,
+                            ..Default::default()
+                        },
+                        gradient: None,
+                        transform: Default::default(),
+                    },
+                };
+                let font_size = (node.bbox.height * 0.18).clamp(8.0, 16.0);
+                let text_width = (placeholder.label.chars().count() as f64 * font_size * 0.55)
+                    .min((node.bbox.width - 4.0).max(1.0));
+                let text_bbox = crate::renderer::render_tree::BoundingBox::new(
+                    node.bbox.x + (node.bbox.width - text_width) / 2.0,
+                    node.bbox.y + (node.bbox.height - font_size * 1.2) / 2.0,
+                    text_width,
+                    font_size * 1.2,
+                );
+                let text_style = crate::renderer::TextStyle {
+                    font_size,
+                    color: placeholder.stroke_color & 0x00FF_FFFF,
+                    ..Default::default()
+                };
+                let text_op = PaintOp::TextRun {
+                    bbox: text_bbox,
+                    run: LayerTextRunPaint {
+                        text: placeholder.label.clone(),
+                        positions: compute_char_positions(&placeholder.label, &text_style),
+                        style: text_style,
+                        baseline: font_size,
+                        rotation: 0.0,
+                        is_vertical: false,
+                        char_overlap: None,
+                        field_marker: Default::default(),
+                        is_para_end: false,
+                        is_line_break_end: false,
+                    },
+                };
+                Some(LayerNode::leaf_with_hint(
+                    node.bbox,
+                    Some(node.id),
+                    vec![rect_op, text_op],
+                    self.cache_hint_for(&node.node_type),
+                ))
+            }
+            RenderNodeType::RawSvg(raw_svg) => {
+                // RawSvg producers currently emit page-absolute coordinates, while the
+                // SVG-backed layer replay path draws fragments in bbox-local space.
+                let normalized_svg = format!(
+                    "<g transform=\"translate({:.6},{:.6})\">{}</g>",
+                    -node.bbox.x, -node.bbox.y, raw_svg.svg,
+                );
+                let svg_resource_id = self.resources.intern_svg_fragment(&normalized_svg);
+                Some(self.build_paint_node(
+                    node,
+                    PaintOp::Equation {
+                        bbox: node.bbox,
+                        equation: LayerEquationPaint {
+                            svg_resource_id,
+                            layout_box: crate::renderer::equation::layout::LayoutBox {
+                                x: 0.0,
+                                y: 0.0,
+                                width: node.bbox.width,
+                                height: node.bbox.height,
+                                baseline: 0.0,
+                                kind: crate::renderer::equation::layout::LayoutKind::Empty,
+                            },
+                            color_str: "#000000".to_string(),
+                            color: 0,
+                            font_size: node.bbox.height,
+                        },
+                    },
+                ))
+            }
             RenderNodeType::Body {
                 clip_rect: Some(clip),
             } => {
@@ -703,6 +783,326 @@ mod tests {
                 assert_eq!(children[2].semantic.column_index, Some(5));
             }
             other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn render_node_type_lowering_is_explicit_for_all_variants() {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum ExpectedLowering {
+            StructuralGroup,
+            Clip(ClipKind),
+            Ops(&'static [&'static str]),
+        }
+
+        fn expected_for(node_type: &RenderNodeType) -> ExpectedLowering {
+            match node_type {
+                RenderNodeType::Page(_) => ExpectedLowering::StructuralGroup,
+                RenderNodeType::PageBackground(_) => ExpectedLowering::Ops(&["PageBackground"]),
+                RenderNodeType::MasterPage => ExpectedLowering::StructuralGroup,
+                RenderNodeType::Header => ExpectedLowering::StructuralGroup,
+                RenderNodeType::Footer => ExpectedLowering::StructuralGroup,
+                RenderNodeType::Body { clip_rect: Some(_) } => {
+                    ExpectedLowering::Clip(ClipKind::Body)
+                }
+                RenderNodeType::Body { clip_rect: None } => ExpectedLowering::StructuralGroup,
+                RenderNodeType::Column(_) => ExpectedLowering::StructuralGroup,
+                RenderNodeType::FootnoteArea => ExpectedLowering::StructuralGroup,
+                RenderNodeType::TextLine(_) => ExpectedLowering::StructuralGroup,
+                RenderNodeType::TextRun(_) => ExpectedLowering::Ops(&["TextRun"]),
+                RenderNodeType::Table(_) => ExpectedLowering::StructuralGroup,
+                RenderNodeType::TableCell(cell) if cell.clip => {
+                    ExpectedLowering::Clip(ClipKind::TableCell)
+                }
+                RenderNodeType::TableCell(_) => ExpectedLowering::StructuralGroup,
+                RenderNodeType::Line(_) => ExpectedLowering::Ops(&["Line"]),
+                RenderNodeType::Rectangle(_) => ExpectedLowering::Ops(&["Rectangle"]),
+                RenderNodeType::Ellipse(_) => ExpectedLowering::Ops(&["Ellipse"]),
+                RenderNodeType::Path(_) => ExpectedLowering::Ops(&["Path"]),
+                RenderNodeType::Image(_) => ExpectedLowering::Ops(&["Image"]),
+                RenderNodeType::Group(_) => ExpectedLowering::StructuralGroup,
+                RenderNodeType::TextBox => ExpectedLowering::StructuralGroup,
+                RenderNodeType::Equation(_) => ExpectedLowering::Ops(&["Equation"]),
+                RenderNodeType::FormObject(_) => ExpectedLowering::Ops(&["FormObject"]),
+                RenderNodeType::FootnoteMarker(_) => ExpectedLowering::Ops(&["FootnoteMarker"]),
+                RenderNodeType::Placeholder(_) => ExpectedLowering::Ops(&["Rectangle", "TextRun"]),
+                RenderNodeType::RawSvg(_) => ExpectedLowering::Ops(&["Equation"]),
+            }
+        }
+
+        let bbox = BoundingBox::new(10.0, 20.0, 120.0, 40.0);
+        let line_style = || crate::renderer::LineStyle {
+            color: 0,
+            width: 1.0,
+            dash: crate::renderer::StrokeDash::Solid,
+            line_type: crate::renderer::LineRenderType::Single,
+            start_arrow: crate::renderer::ArrowStyle::None,
+            end_arrow: crate::renderer::ArrowStyle::None,
+            start_arrow_size: 0,
+            end_arrow_size: 0,
+            shadow: None,
+        };
+        let empty_layout = || crate::renderer::equation::layout::LayoutBox {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            baseline: 0.0,
+            kind: crate::renderer::equation::layout::LayoutKind::Empty,
+        };
+        let text_run = || crate::renderer::render_tree::TextRunNode {
+            text: "x".to_string(),
+            style: crate::renderer::TextStyle {
+                font_size: 12.0,
+                ..Default::default()
+            },
+            char_shape_id: None,
+            para_shape_id: None,
+            section_index: None,
+            para_index: None,
+            char_start: None,
+            cell_context: None,
+            is_para_end: false,
+            is_line_break_end: false,
+            rotation: 0.0,
+            is_vertical: false,
+            char_overlap: None,
+            border_fill_id: 0,
+            baseline: 12.0,
+            field_marker: Default::default(),
+        };
+        let table_cell = |clip| TableCellNode {
+            col: 0,
+            row: 0,
+            col_span: 1,
+            row_span: 1,
+            border_fill_id: 0,
+            text_direction: 0,
+            clip,
+            model_cell_index: None,
+        };
+        let cases = vec![
+            (
+                "page",
+                RenderNodeType::Page(PageNode {
+                    page_index: 0,
+                    width: 120.0,
+                    height: 40.0,
+                    section_index: 0,
+                }),
+            ),
+            (
+                "page background",
+                RenderNodeType::PageBackground(PageBackgroundNode {
+                    background_color: Some(0x00FF_FFFF),
+                    border_color: None,
+                    border_width: 0.0,
+                    gradient: None,
+                    image: None,
+                }),
+            ),
+            ("master page", RenderNodeType::MasterPage),
+            ("header", RenderNodeType::Header),
+            ("footer", RenderNodeType::Footer),
+            (
+                "body clipped",
+                RenderNodeType::Body {
+                    clip_rect: Some(bbox),
+                },
+            ),
+            ("body unclipped", RenderNodeType::Body { clip_rect: None }),
+            ("column", RenderNodeType::Column(0)),
+            ("footnote area", RenderNodeType::FootnoteArea),
+            (
+                "text line",
+                RenderNodeType::TextLine(TextLineNode::new(14.0, 11.0)),
+            ),
+            ("text run", RenderNodeType::TextRun(text_run())),
+            (
+                "table",
+                RenderNodeType::Table(TableNode {
+                    row_count: 1,
+                    col_count: 1,
+                    border_fill_id: 0,
+                    section_index: None,
+                    para_index: None,
+                    control_index: None,
+                }),
+            ),
+            (
+                "table cell clipped",
+                RenderNodeType::TableCell(table_cell(true)),
+            ),
+            (
+                "table cell unclipped",
+                RenderNodeType::TableCell(table_cell(false)),
+            ),
+            (
+                "line",
+                RenderNodeType::Line(crate::renderer::render_tree::LineNode::new(
+                    10.0,
+                    20.0,
+                    80.0,
+                    20.0,
+                    line_style(),
+                )),
+            ),
+            (
+                "rectangle",
+                RenderNodeType::Rectangle(RectangleNode::new(0.0, ShapeStyle::default(), None)),
+            ),
+            (
+                "ellipse",
+                RenderNodeType::Ellipse(crate::renderer::render_tree::EllipseNode::new(
+                    ShapeStyle::default(),
+                    None,
+                )),
+            ),
+            (
+                "path",
+                RenderNodeType::Path(crate::renderer::render_tree::PathNode::new(
+                    vec![
+                        crate::renderer::PathCommand::MoveTo(10.0, 20.0),
+                        crate::renderer::PathCommand::LineTo(80.0, 20.0),
+                    ],
+                    ShapeStyle::default(),
+                    None,
+                )),
+            ),
+            (
+                "image",
+                RenderNodeType::Image(ImageNode::new(1, Some(vec![1, 2, 3]))),
+            ),
+            (
+                "group",
+                RenderNodeType::Group(crate::renderer::render_tree::GroupNode {
+                    section_index: None,
+                    para_index: None,
+                    control_index: None,
+                }),
+            ),
+            ("text box", RenderNodeType::TextBox),
+            (
+                "equation",
+                RenderNodeType::Equation(EquationNode {
+                    svg_content: "<text>x</text>".to_string(),
+                    layout_box: empty_layout(),
+                    color_str: "#000000".to_string(),
+                    color: 0,
+                    font_size: 12.0,
+                    section_index: None,
+                    para_index: None,
+                    control_index: None,
+                    cell_index: None,
+                    cell_para_index: None,
+                }),
+            ),
+            (
+                "form object",
+                RenderNodeType::FormObject(crate::renderer::render_tree::FormObjectNode {
+                    form_type: crate::model::control::FormType::PushButton,
+                    caption: "button".to_string(),
+                    text: String::new(),
+                    fore_color: "#000000".to_string(),
+                    back_color: "#ffffff".to_string(),
+                    value: 0,
+                    enabled: true,
+                    section_index: 0,
+                    para_index: 0,
+                    control_index: 0,
+                    name: String::new(),
+                    cell_location: None,
+                }),
+            ),
+            (
+                "footnote marker",
+                RenderNodeType::FootnoteMarker(crate::renderer::render_tree::FootnoteMarkerNode {
+                    number: 1,
+                    text: "1)".to_string(),
+                    base_font_size: 12.0,
+                    font_family: String::new(),
+                    color: 0,
+                    section_index: 0,
+                    para_index: 0,
+                    control_index: 0,
+                }),
+            ),
+            (
+                "placeholder",
+                RenderNodeType::Placeholder(crate::renderer::render_tree::PlaceholderNode {
+                    fill_color: 0xFFE8_F0FE,
+                    stroke_color: 0xFF4A_90E2,
+                    label: "Chart".to_string(),
+                }),
+            ),
+            (
+                "raw svg",
+                RenderNodeType::RawSvg(crate::renderer::render_tree::RawSvgNode {
+                    svg: "<rect x=\"10\" y=\"20\" width=\"10\" height=\"10\"/>".to_string(),
+                }),
+            ),
+        ];
+
+        for (name, node_type) in cases {
+            let expected = expected_for(&node_type);
+            let mut tree = PageRenderTree::new(0, 200.0, 120.0);
+            tree.root.children.push(RenderNode::new(1, node_type, bbox));
+
+            let mut builder = LayerBuilder::new(RenderProfile::Screen);
+            let layer_tree = builder.build(&tree);
+            let child = match &layer_tree.root.kind {
+                LayerNodeKind::Group { children, .. } => children
+                    .first()
+                    .unwrap_or_else(|| panic!("missing child for {name}")),
+                other => panic!("expected root group for {name}, got {other:?}"),
+            };
+
+            match expected {
+                ExpectedLowering::StructuralGroup => {
+                    assert!(
+                        matches!(child.kind, LayerNodeKind::Group { .. }),
+                        "expected structural group for {name}, got {:?}",
+                        child.kind,
+                    );
+                }
+                ExpectedLowering::Clip(clip_kind) => match &child.kind {
+                    LayerNodeKind::ClipRect {
+                        clip_kind: actual, ..
+                    } => assert_eq!(*actual, clip_kind, "wrong clip kind for {name}"),
+                    other => panic!("expected clip lowering for {name}, got {other:?}"),
+                },
+                ExpectedLowering::Ops(expected_ops) => {
+                    let mut actual_ops = Vec::new();
+                    let mut stack = vec![child];
+                    while let Some(node) = stack.pop() {
+                        match &node.kind {
+                            LayerNodeKind::Group { children, .. } => {
+                                for child in children.iter().rev() {
+                                    stack.push(child);
+                                }
+                            }
+                            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+                            LayerNodeKind::Leaf { ops, .. } => {
+                                for op in ops {
+                                    actual_ops.push(match op {
+                                        PaintOp::PageBackground { .. } => "PageBackground",
+                                        PaintOp::TextRun { .. } => "TextRun",
+                                        PaintOp::FootnoteMarker { .. } => "FootnoteMarker",
+                                        PaintOp::Line { .. } => "Line",
+                                        PaintOp::Rectangle { .. } => "Rectangle",
+                                        PaintOp::Ellipse { .. } => "Ellipse",
+                                        PaintOp::Path { .. } => "Path",
+                                        PaintOp::Image { .. } => "Image",
+                                        PaintOp::Equation { .. } => "Equation",
+                                        PaintOp::FormObject { .. } => "FormObject",
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    assert_eq!(actual_ops, expected_ops, "wrong paint ops for {name}");
+                }
+            }
         }
     }
 
