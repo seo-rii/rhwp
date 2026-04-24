@@ -635,7 +635,9 @@ mod tests {
         use crate::renderer::svg_layer::SvgLayerRenderer;
 
         let mut svg_renderer = SvgLayerRenderer::new();
-        svg_renderer.render_page(layer_tree);
+        svg_renderer
+            .render_page(layer_tree)
+            .expect("synthetic SVG layer render");
         let expected = rasterize_svg(svg_renderer.output()).expect("synthetic SVG rasterize 실패");
         let renderer = SkiaLayerRenderer::new();
         let actual_png = LayerRasterRenderer::render_png(&renderer, layer_tree)
@@ -1640,7 +1642,15 @@ mod tests {
 
         let layer_cache = core.page_layer_tree_cache.borrow();
         assert!(
-            layer_cache.contains_key(&(0, RenderProfile::Screen)),
+            layer_cache.contains_key(&crate::document_core::PageLayerTreeCacheKey {
+                page_num: 0,
+                profile: RenderProfile::Screen,
+                show_paragraph_marks: false,
+                show_control_codes: false,
+                show_transparent_borders: false,
+                clip_enabled: true,
+                debug_overlay: false,
+            }),
             "기본 레이어 트리 조회는 screen profile 캐시를 채워야 함"
         );
     }
@@ -1707,11 +1717,27 @@ mod tests {
 
         let layer_cache = core.page_layer_tree_cache.borrow();
         assert!(
-            layer_cache.contains_key(&(0, RenderProfile::Print)),
+            layer_cache.contains_key(&crate::document_core::PageLayerTreeCacheKey {
+                page_num: 0,
+                profile: RenderProfile::Print,
+                show_paragraph_marks: false,
+                show_control_codes: false,
+                show_transparent_borders: false,
+                clip_enabled: true,
+                debug_overlay: false,
+            }),
             "print profile 요청은 print 레이어 캐시를 채워야 함"
         );
         assert!(
-            layer_cache.contains_key(&(0, RenderProfile::HighQuality)),
+            layer_cache.contains_key(&crate::document_core::PageLayerTreeCacheKey {
+                page_num: 0,
+                profile: RenderProfile::HighQuality,
+                show_paragraph_marks: false,
+                show_control_codes: false,
+                show_transparent_borders: false,
+                clip_enabled: true,
+                debug_overlay: false,
+            }),
             "high-quality profile 요청은 high-quality 레이어 캐시를 채워야 함"
         );
         assert_eq!(

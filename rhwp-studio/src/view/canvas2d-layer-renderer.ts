@@ -708,7 +708,24 @@ export class Canvas2DLayerRenderer {
     }
 
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
-      this.drawDomImage(ctx, image, op.bbox, op.fillMode, op.originalSize, op.crop);
+      const previousFilter = ctx.filter;
+      try {
+        switch (op.effect) {
+          case 'grayScale':
+          case 'pattern8x8':
+            ctx.filter = 'grayscale(1)';
+            break;
+          case 'blackWhite':
+            ctx.filter = 'grayscale(1) contrast(3200%)';
+            break;
+          default:
+            ctx.filter = 'none';
+            break;
+        }
+        this.drawDomImage(ctx, image, op.bbox, op.fillMode, op.originalSize, op.crop);
+      } finally {
+        ctx.filter = previousFilter;
+      }
     });
   }
 
@@ -888,11 +905,12 @@ export class Canvas2DLayerRenderer {
 
     if (fillMode === 'fitToSize' || fillMode === 'none') {
       if (crop) {
-        const scaleX = crop.right / imageWidth;
+        const scaleX = Math.max(crop.right / imageWidth, 1);
+        const scaleY = Math.max(crop.bottom / imageHeight, 1);
         const srcX = crop.left / scaleX;
-        const srcY = crop.top / scaleX;
+        const srcY = crop.top / scaleY;
         const srcW = (crop.right - crop.left) / scaleX;
-        const srcH = (crop.bottom - crop.top) / scaleX;
+        const srcH = (crop.bottom - crop.top) / scaleY;
         const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imageWidth) > 1 || Math.abs(srcH - imageHeight) > 1;
         if (isCropped) {
           ctx.drawImage(image, srcX, srcY, srcW, srcH, bbox.x, bbox.y, bbox.width, bbox.height);

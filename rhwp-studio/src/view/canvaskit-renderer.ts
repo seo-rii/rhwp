@@ -1,5 +1,5 @@
 import CanvasKitInit from 'canvaskit-wasm';
-import type { CanvasKit, Font, Image, Paint, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, ColorFilter, Font, Image, Paint, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import type { CanvasKitRenderMode } from '@/view/render-backend';
@@ -962,7 +962,7 @@ export class CanvasKitLayerRenderer {
       return;
     }
     this.withTransform(canvas, op.bbox, op.transform, () => {
-      this.drawEncodedImage(canvas, op.resourceId, op.base64, op.bbox, op.fillMode, op.originalSize, op.crop);
+      this.drawEncodedImage(canvas, op.resourceId, op.base64, op.bbox, op.fillMode, op.originalSize, op.crop, op.effect);
     });
   }
 
@@ -1771,7 +1771,24 @@ export class CanvasKitLayerRenderer {
     }
 
     this.withCanvasOverlayTransform(ctx, op.bbox, op.transform, () => {
-      this.drawDomImage(ctx, image, op.bbox, op.fillMode, op.originalSize, op.crop);
+      const previousFilter = ctx.filter;
+      try {
+        switch (op.effect) {
+          case 'grayScale':
+          case 'pattern8x8':
+            ctx.filter = 'grayscale(1)';
+            break;
+          case 'blackWhite':
+            ctx.filter = 'grayscale(1) contrast(3200%)';
+            break;
+          default:
+            ctx.filter = 'none';
+            break;
+        }
+        this.drawDomImage(ctx, image, op.bbox, op.fillMode, op.originalSize, op.crop);
+      } finally {
+        ctx.filter = previousFilter;
+      }
     });
   }
 
@@ -2031,11 +2048,12 @@ export class CanvasKitLayerRenderer {
 
     if (fillMode === 'fitToSize' || fillMode === 'none') {
       if (crop) {
-        const scaleX = crop.right / imageWidth;
+        const scaleX = Math.max(crop.right / imageWidth, 1);
+        const scaleY = Math.max(crop.bottom / imageHeight, 1);
         const srcX = crop.left / scaleX;
-        const srcY = crop.top / scaleX;
+        const srcY = crop.top / scaleY;
         const srcW = (crop.right - crop.left) / scaleX;
-        const srcH = (crop.bottom - crop.top) / scaleX;
+        const srcH = (crop.bottom - crop.top) / scaleY;
         const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imageWidth) > 1 || Math.abs(srcH - imageHeight) > 1;
         if (isCropped) {
           ctx.drawImage(image, srcX, srcY, srcW, srcH, bbox.x, bbox.y, bbox.width, bbox.height);
@@ -2332,9 +2350,32 @@ export class CanvasKitLayerRenderer {
     fillMode = 'fitToSize',
     originalSize?: { width: number; height: number },
     crop?: { left: number; top: number; right: number; bottom: number },
+    effect: LayerImageOp['effect'] = 'realPic',
   ): void {
     const image = this.resourceCache.image(resourceId, base64);
     if (!image) return;
+    let colorFilter: ColorFilter | null = null;
+    switch (effect) {
+      case 'grayScale':
+      case 'pattern8x8':
+        colorFilter = this.canvasKit.ColorFilter.MakeMatrix([
+          0.299, 0.587, 0.114, 0, 0,
+          0.299, 0.587, 0.114, 0, 0,
+          0.299, 0.587, 0.114, 0, 0,
+          0, 0, 0, 1, 0,
+        ]);
+        break;
+      case 'blackWhite':
+        colorFilter = this.canvasKit.ColorFilter.MakeMatrix([
+          9.568, 18.784, 3.648, 0, -4096,
+          9.568, 18.784, 3.648, 0, -4096,
+          9.568, 18.784, 3.648, 0, -4096,
+          0, 0, 0, 1, 0,
+        ]);
+        break;
+    }
+
+    try {
     const drawImageRect = (
       srcX: number,
       srcY: number,
@@ -2356,6 +2397,9 @@ export class CanvasKitLayerRenderer {
         && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
       const sampledImage = useMipmaps ? this.resourceCache.image(resourceId, base64, true) ?? image : image;
       const paint = new this.canvasKit.Paint();
+      if (colorFilter) {
+        paint.setColorFilter(colorFilter);
+      }
       canvas.drawImageRectOptions(
         sampledImage,
         this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
@@ -2371,11 +2415,12 @@ export class CanvasKitLayerRenderer {
       if (crop) {
         const imgW = image.width();
         const imgH = image.height();
-        const scaleX = crop.right / imgW;
+        const scaleX = Math.max(crop.right / imgW, 1);
+        const scaleY = Math.max(crop.bottom / imgH, 1);
         const srcX = crop.left / scaleX;
-        const srcY = crop.top / scaleX;
+        const srcY = crop.top / scaleY;
         const srcW = (crop.right - crop.left) / scaleX;
-        const srcH = (crop.bottom - crop.top) / scaleX;
+        const srcH = (crop.bottom - crop.top) / scaleY;
         const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imgW) > 1 || Math.abs(srcH - imgH) > 1;
         if (isCropped) {
           drawImageRect(srcX, srcY, srcW, srcH, bbox.x, bbox.y, bbox.width, bbox.height);
@@ -2416,6 +2461,9 @@ export class CanvasKitLayerRenderer {
     }
 
     canvas.restore();
+    } finally {
+      colorFilter?.delete();
+    }
   }
 
   private resolveImagePlacement(fillMode: string, bbox: LayerBounds, imageWidth: number, imageHeight: number): { x: number; y: number } {

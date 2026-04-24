@@ -1,5 +1,4 @@
-use std::collections::{hash_map::DefaultHasher, HashMap};
-use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImageResourceId(pub usize);
@@ -95,10 +94,16 @@ impl ResourceArena {
     }
 }
 
-fn resource_hash<T: Hash + ?Sized>(value: &T) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    value.hash(&mut hasher);
-    hasher.finish()
+fn resource_hash(bytes: impl AsRef<[u8]>) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in bytes.as_ref() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }
 
 #[cfg(test)]
@@ -118,7 +123,7 @@ mod tests {
         assert_eq!(arena.image_count(), 1);
         assert_eq!(arena.image_bytes(image_a), Some(&[1, 2, 3, 4][..]));
         assert_eq!(arena.image_hash(image_a), arena.image_hash(image_b));
-        assert!(arena.image_hash(image_a).is_some());
+        assert_eq!(arena.image_hash(image_a), Some(0xbe7a_5e77_5165_785d));
         assert_eq!(
             arena.image_resources().collect::<Vec<_>>(),
             vec![(ImageResourceId(0), &[1, 2, 3, 4][..])]

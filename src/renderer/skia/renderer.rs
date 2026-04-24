@@ -6,10 +6,10 @@ use crate::paint::{
     CacheHint, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree,
     PaintOp, RenderProfile, ResourceArena,
 };
-use crate::renderer::layer_renderer::LayerRasterRenderer;
+use crate::renderer::layer_renderer::{LayerRasterRenderer, RasterRenderOptions};
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::BoundingBox;
-use crate::renderer::{LineRenderType, UnderlineType};
+use crate::renderer::{ArrowStyle, LineRenderType, LineStyle, UnderlineType};
 
 use super::equation_conv::render_equation;
 use super::image_conv::{
@@ -25,8 +25,167 @@ pub struct SkiaLayerRenderer {
     font_mgr: FontMgr,
 }
 
-fn raster_dimension(length: f64) -> i32 {
-    length.round().max(1.0) as i32
+const MAX_RASTER_DIMENSION: i32 = 16_384;
+
+fn raster_dimension(length: f64, max_dimension: i32) -> Result<i32, String> {
+    if !length.is_finite() {
+        return Err(format!("non-finite raster dimension: {length}"));
+    }
+    if length <= 0.0 {
+        return Err(format!("non-positive raster dimension: {length}"));
+    }
+    let rounded = length.round();
+    if max_dimension <= 0 {
+        return Err(format!(
+            "non-positive max raster dimension: {max_dimension}"
+        ));
+    }
+    if rounded > f64::from(max_dimension) {
+        return Err(format!(
+            "raster dimension {rounded} exceeds max {max_dimension}"
+        ));
+    }
+    Ok(rounded.max(1.0) as i32)
+}
+
+fn calc_arrow_dims(stroke_width: f64, line_len: f64, arrow_size: u8) -> (f64, f64) {
+    let width_level = arrow_size / 3;
+    let length_level = arrow_size % 3;
+    let width_mult = match width_level {
+        0 => 1.5,
+        1 => 2.5,
+        _ => 3.5,
+    };
+    let length_mult = match length_level {
+        0 => 1.0,
+        1 => 1.5,
+        _ => 2.0,
+    };
+    let arrow_h = (stroke_width * width_mult).max(3.0);
+    let arrow_w = (arrow_h * length_mult).min(line_len * 0.3);
+    (arrow_w, arrow_h)
+}
+
+fn draw_arrow_head(
+    canvas: &Canvas,
+    tip_x: f64,
+    tip_y: f64,
+    dir_x: f64,
+    dir_y: f64,
+    arrow_w: f64,
+    arrow_h: f64,
+    arrow_style: ArrowStyle,
+    color: u32,
+    stroke_width: f64,
+) {
+    let along_x = -dir_x;
+    let along_y = -dir_y;
+    let perp_x = dir_y;
+    let perp_y = -dir_x;
+    let half_h = arrow_h / 2.0;
+    let to_world = |along: f64, perp: f64| -> (f32, f32) {
+        (
+            (tip_x + along * along_x + perp * perp_x) as f32,
+            (tip_y + along * along_y + perp * perp_y) as f32,
+        )
+    };
+
+    let mut fill = Paint::default();
+    fill.set_anti_alias(true);
+    fill.set_style(skia_safe::paint::Style::Fill);
+    fill.set_color(colorref_to_skia(color, 1.0));
+
+    let mut stroke = Paint::default();
+    stroke.set_anti_alias(true);
+    stroke.set_style(skia_safe::paint::Style::Stroke);
+    stroke.set_stroke_width((stroke_width * 0.3).max(0.5) as f32);
+    stroke.set_color(colorref_to_skia(color, 1.0));
+
+    let mut open_fill = Paint::default();
+    open_fill.set_anti_alias(true);
+    open_fill.set_style(skia_safe::paint::Style::Fill);
+    open_fill.set_color(Color::WHITE);
+
+    match arrow_style {
+        ArrowStyle::Arrow => {
+            let (bx1, by1) = to_world(arrow_w, -half_h);
+            let (bx2, by2) = to_world(arrow_w, half_h);
+            let mut path = PathBuilder::new();
+            path.move_to((tip_x as f32, tip_y as f32));
+            path.line_to((bx1, by1));
+            path.line_to((bx2, by2));
+            path.close();
+            canvas.draw_path(&path.detach(), &fill);
+        }
+        ArrowStyle::ConcaveArrow => {
+            let concave = arrow_w * 0.3;
+            let (bx1, by1) = to_world(arrow_w, -half_h);
+            let (bx2, by2) = to_world(arrow_w, half_h);
+            let (cx, cy) = to_world(arrow_w - concave, 0.0);
+            let mut path = PathBuilder::new();
+            path.move_to((tip_x as f32, tip_y as f32));
+            path.line_to((bx1, by1));
+            path.line_to((cx, cy));
+            path.line_to((bx2, by2));
+            path.close();
+            canvas.draw_path(&path.detach(), &fill);
+        }
+        ArrowStyle::Diamond | ArrowStyle::OpenDiamond => {
+            let half_w = arrow_w / 2.0;
+            let (px1, py1) = to_world(0.0, 0.0);
+            let (px2, py2) = to_world(half_w, -half_h);
+            let (px3, py3) = to_world(arrow_w, 0.0);
+            let (px4, py4) = to_world(half_w, half_h);
+            let mut path = PathBuilder::new();
+            path.move_to((px1, py1));
+            path.line_to((px2, py2));
+            path.line_to((px3, py3));
+            path.line_to((px4, py4));
+            path.close();
+            let path = path.detach();
+            if arrow_style == ArrowStyle::Diamond {
+                canvas.draw_path(&path, &fill);
+            } else {
+                canvas.draw_path(&path, &open_fill);
+                canvas.draw_path(&path, &stroke);
+            }
+        }
+        ArrowStyle::Circle | ArrowStyle::OpenCircle => {
+            let (cx, cy) = to_world(arrow_w / 2.0, 0.0);
+            let rect = Rect::from_xywh(
+                cx - (arrow_w as f32 * 0.4),
+                cy - (half_h as f32 * 0.8),
+                arrow_w as f32 * 0.8,
+                arrow_h as f32 * 0.8,
+            );
+            if arrow_style == ArrowStyle::Circle {
+                canvas.draw_oval(rect, &fill);
+            } else {
+                canvas.draw_oval(rect, &open_fill);
+                canvas.draw_oval(rect, &stroke);
+            }
+        }
+        ArrowStyle::Square | ArrowStyle::OpenSquare => {
+            let (px1, py1) = to_world(0.0, -half_h);
+            let (px2, py2) = to_world(arrow_w, -half_h);
+            let (px3, py3) = to_world(arrow_w, half_h);
+            let (px4, py4) = to_world(0.0, half_h);
+            let mut path = PathBuilder::new();
+            path.move_to((px1, py1));
+            path.line_to((px2, py2));
+            path.line_to((px3, py3));
+            path.line_to((px4, py4));
+            path.close();
+            let path = path.detach();
+            if arrow_style == ArrowStyle::Square {
+                canvas.draw_path(&path, &fill);
+            } else {
+                canvas.draw_path(&path, &open_fill);
+                canvas.draw_path(&path, &stroke);
+            }
+        }
+        ArrowStyle::None => {}
+    }
 }
 
 struct SkiaReplayContext {
@@ -83,12 +242,27 @@ impl SkiaLayerRenderer {
     }
 
     pub fn render_png(&self, tree: &PageLayerTree) -> Result<Vec<u8>, String> {
-        let width = raster_dimension(tree.page_width);
-        let height = raster_dimension(tree.page_height);
+        self.render_png_with_options(tree, RasterRenderOptions::default())
+    }
+
+    pub fn render_png_with_options(
+        &self,
+        tree: &PageLayerTree,
+        options: RasterRenderOptions,
+    ) -> Result<Vec<u8>, String> {
+        let width = raster_dimension(tree.page_width, options.max_dimension)?;
+        let height = raster_dimension(tree.page_height, options.max_dimension)?;
         let mut surface = surfaces::raster_n32_premul((width, height))
             .ok_or_else(|| "Skia raster surface 생성 실패".to_string())?;
         let canvas = surface.canvas();
-        canvas.clear(Color::from_argb(0, 0, 0, 0));
+        let clear_color = if let Some(color) = options.background_color {
+            colorref_to_skia(color, 1.0)
+        } else if options.transparent {
+            Color::from_argb(0, 0, 0, 0)
+        } else {
+            Color::WHITE
+        };
+        canvas.clear(clear_color);
         let mut replay = SkiaReplayContext::new(tree.profile);
         self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
         let image = surface.image_snapshot();
@@ -150,6 +324,19 @@ impl SkiaLayerRenderer {
     ) {
         match op {
             PaintOp::PageBackground { bbox, background } => {
+                let background_rect = Rect::from_xywh(
+                    bbox.x as f32,
+                    bbox.y as f32,
+                    bbox.width as f32,
+                    bbox.height as f32,
+                );
+                if let Some(fill) = make_background_fill_paint(
+                    background_rect,
+                    background.background_color,
+                    background.gradient.as_deref(),
+                ) {
+                    canvas.draw_rect(background_rect, &fill);
+                }
                 if let Some(image) = &background.image {
                     if let Some(bytes) = resources.image_bytes(image.resource_id) {
                         draw_image_bytes(
@@ -162,22 +349,9 @@ impl SkiaLayerRenderer {
                             Some(image.fill_mode),
                             None,
                             None,
+                            crate::model::image::ImageEffect::RealPic,
                             replay.image_sampling(),
                         );
-                    }
-                } else {
-                    let background_rect = Rect::from_xywh(
-                        bbox.x as f32,
-                        bbox.y as f32,
-                        bbox.width as f32,
-                        bbox.height as f32,
-                    );
-                    if let Some(fill) = make_background_fill_paint(
-                        background_rect,
-                        background.background_color,
-                        background.gradient.as_deref(),
-                    ) {
-                        canvas.draw_rect(background_rect, &fill);
                     }
                 }
                 if let Some(border) = background.border_color {
@@ -201,7 +375,23 @@ impl SkiaLayerRenderer {
                     );
                 }
             }
-            PaintOp::TextRun { bbox, run } => self.render_text_run(canvas, bbox, run),
+            PaintOp::TextRun { bbox, run } => {
+                let rotation = if run.is_vertical {
+                    run.rotation + 90.0
+                } else {
+                    run.rotation
+                };
+                if rotation != 0.0 {
+                    let cx = (bbox.x + bbox.width / 2.0) as f32;
+                    let cy = (bbox.y + bbox.height / 2.0) as f32;
+                    canvas.save();
+                    canvas.rotate(rotation as f32, Some((cx, cy).into()));
+                    self.render_text_run(canvas, bbox, run);
+                    canvas.restore();
+                } else {
+                    self.render_text_run(canvas, bbox, run);
+                }
+            }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 let mut font = make_font(
                     &crate::renderer::TextStyle {
@@ -224,21 +414,102 @@ impl SkiaLayerRenderer {
                     &paint,
                 );
             }
-            PaintOp::Line { line, .. } => {
-                self.with_shape_transform(canvas, line.transform, None, |canvas| {
+            PaintOp::Line { bbox, line } => {
+                self.with_shape_transform(canvas, line.transform, Some(*bbox), |canvas| {
+                    let mut x1 = line.x1;
+                    let mut y1 = line.y1;
+                    let mut x2 = line.x2;
+                    let mut y2 = line.y2;
+                    let dx = x2 - x1;
+                    let dy = y2 - y1;
+                    let line_len = (dx * dx + dy * dy).sqrt();
+                    let width = line.style.width.max(0.5);
+
+                    if line_len > 0.0 {
+                        let ux = dx / line_len;
+                        let uy = dy / line_len;
+                        if line.style.start_arrow != ArrowStyle::None {
+                            let (arrow_w, arrow_h) =
+                                calc_arrow_dims(width, line_len, line.style.start_arrow_size);
+                            draw_arrow_head(
+                                canvas,
+                                x1,
+                                y1,
+                                -ux,
+                                -uy,
+                                arrow_w,
+                                arrow_h,
+                                line.style.start_arrow,
+                                line.style.color,
+                                width,
+                            );
+                            x1 += ux * arrow_w;
+                            y1 += uy * arrow_w;
+                        }
+                        if line.style.end_arrow != ArrowStyle::None {
+                            let (arrow_w, arrow_h) =
+                                calc_arrow_dims(width, line_len, line.style.end_arrow_size);
+                            draw_arrow_head(
+                                canvas,
+                                x2,
+                                y2,
+                                ux,
+                                uy,
+                                arrow_w,
+                                arrow_h,
+                                line.style.end_arrow,
+                                line.style.color,
+                                width,
+                            );
+                            x2 -= ux * arrow_w;
+                            y2 -= uy * arrow_w;
+                        }
+                    }
+
                     let paint = make_line_paint(&line.style);
                     match line.style.line_type {
-                        LineRenderType::Single => canvas.draw_line(
-                            (line.x1 as f32, line.y1 as f32),
-                            (line.x2 as f32, line.y2 as f32),
-                            &paint,
-                        ),
-                        _ => canvas.draw_line(
-                            (line.x1 as f32, line.y1 as f32),
-                            (line.x2 as f32, line.y2 as f32),
-                            &paint,
-                        ),
-                    };
+                        LineRenderType::Double
+                        | LineRenderType::ThickThinDouble
+                        | LineRenderType::ThinThickDouble
+                        | LineRenderType::ThinThickThinTriple => {
+                            let line_dx = x2 - x1;
+                            let line_dy = y2 - y1;
+                            let line_len = (line_dx * line_dx + line_dy * line_dy).sqrt();
+                            if line_len > 0.001 {
+                                let nx = -line_dy / line_len;
+                                let ny = line_dx / line_len;
+                                let lines: &[(f64, f64)] = match line.style.line_type {
+                                    LineRenderType::Double => &[(0.30, -0.35), (0.30, 0.35)],
+                                    LineRenderType::ThickThinDouble => &[(0.4, -0.30), (0.2, 0.40)],
+                                    LineRenderType::ThinThickDouble => &[(0.2, -0.40), (0.4, 0.30)],
+                                    LineRenderType::ThinThickThinTriple => {
+                                        &[(0.15, -0.425), (0.30, 0.0), (0.15, 0.425)]
+                                    }
+                                    LineRenderType::Single => &[],
+                                };
+                                for (width_ratio, offset_ratio) in lines {
+                                    let mut segment_paint = paint.clone();
+                                    segment_paint
+                                        .set_stroke_width((width * width_ratio).max(0.3) as f32);
+                                    let offset = width * offset_ratio;
+                                    let ox = nx * offset;
+                                    let oy = ny * offset;
+                                    canvas.draw_line(
+                                        ((x1 + ox) as f32, (y1 + oy) as f32),
+                                        ((x2 + ox) as f32, (y2 + oy) as f32),
+                                        &segment_paint,
+                                    );
+                                }
+                            }
+                        }
+                        LineRenderType::Single => {
+                            canvas.draw_line(
+                                (x1 as f32, y1 as f32),
+                                (x2 as f32, y2 as f32),
+                                &paint,
+                            );
+                        }
+                    }
                 });
             }
             PaintOp::Rectangle { bbox, rect } => {
@@ -296,7 +567,7 @@ impl SkiaLayerRenderer {
                 });
             }
             PaintOp::Path { bbox, path } => {
-                self.with_shape_transform(canvas, path.transform, None, |canvas| {
+                self.with_shape_transform(canvas, path.transform, Some(*bbox), |canvas| {
                     let sk_path = to_skia_path(&path.commands);
                     let path_bounds = Rect::from_xywh(
                         bbox.x as f32,
@@ -311,6 +582,96 @@ impl SkiaLayerRenderer {
                     }
                     if let Some(stroke) = make_stroke_paint(&path.style) {
                         canvas.draw_path(&sk_path, &stroke);
+                    }
+                    if let (Some(line_style), Some((x1, y1, x2, y2))) =
+                        (&path.line_style, path.connector_endpoints)
+                    {
+                        let len = ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
+                            .sqrt()
+                            .max(1.0);
+                        if line_style.start_arrow != ArrowStyle::None {
+                            let mut found = (x1 - x2, y1 - y2);
+                            for command in path.commands.iter().skip(1) {
+                                let point = match command {
+                                    crate::renderer::PathCommand::LineTo(px, py) => {
+                                        Some((*px, *py))
+                                    }
+                                    crate::renderer::PathCommand::CurveTo(cx, cy, _, _, _, _) => {
+                                        Some((*cx, *cy))
+                                    }
+                                    _ => None,
+                                };
+                                if let Some((px, py)) = point {
+                                    if (x1 - px).abs() > 0.5 || (y1 - py).abs() > 0.5 {
+                                        found = (x1 - px, y1 - py);
+                                        break;
+                                    }
+                                }
+                            }
+                            let distance =
+                                (found.0 * found.0 + found.1 * found.1).sqrt().max(0.001);
+                            let (arrow_w, arrow_h) = calc_arrow_dims(
+                                line_style.width.max(0.5),
+                                len,
+                                line_style.start_arrow_size,
+                            );
+                            draw_arrow_head(
+                                canvas,
+                                x1,
+                                y1,
+                                found.0 / distance,
+                                found.1 / distance,
+                                arrow_w,
+                                arrow_h,
+                                line_style.start_arrow,
+                                line_style.color,
+                                line_style.width.max(0.5),
+                            );
+                        }
+                        if line_style.end_arrow != ArrowStyle::None {
+                            let mut points = Vec::new();
+                            for command in &path.commands {
+                                match command {
+                                    crate::renderer::PathCommand::MoveTo(px, py)
+                                    | crate::renderer::PathCommand::LineTo(px, py) => {
+                                        points.push((*px, *py));
+                                    }
+                                    crate::renderer::PathCommand::CurveTo(_, _, cx, cy, ex, ey) => {
+                                        points.push((*cx, *cy));
+                                        points.push((*ex, *ey));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            let mut found = (x2 - x1, y2 - y1);
+                            for point in points.iter().rev() {
+                                let dx = x2 - point.0;
+                                let dy = y2 - point.1;
+                                if dx.abs() > 0.5 || dy.abs() > 0.5 {
+                                    found = (dx, dy);
+                                    break;
+                                }
+                            }
+                            let distance =
+                                (found.0 * found.0 + found.1 * found.1).sqrt().max(0.001);
+                            let (arrow_w, arrow_h) = calc_arrow_dims(
+                                line_style.width.max(0.5),
+                                len,
+                                line_style.end_arrow_size,
+                            );
+                            draw_arrow_head(
+                                canvas,
+                                x2,
+                                y2,
+                                found.0 / distance,
+                                found.1 / distance,
+                                arrow_w,
+                                arrow_h,
+                                line_style.end_arrow,
+                                line_style.color,
+                                line_style.width.max(0.5),
+                            );
+                        }
                     }
                 });
             }
@@ -328,6 +689,7 @@ impl SkiaLayerRenderer {
                                 image.fill_mode,
                                 image.original_size,
                                 image.crop,
+                                image.effect,
                                 replay.image_sampling(),
                             );
                         } else {
@@ -405,19 +767,34 @@ impl SkiaLayerRenderer {
             font_family: "Noto Sans CJK KR".to_string(),
             ..Default::default()
         };
+        let control_back = parse_css(&form.back_color, Color::WHITE);
+        let control_text = if form.enabled {
+            parse_css(&form.fore_color, Color::BLACK)
+        } else {
+            Color::from_argb(255, 128, 128, 128)
+        };
+        let border_color = if form.enabled {
+            Color::from_argb(255, 160, 160, 160)
+        } else {
+            Color::from_argb(255, 190, 190, 190)
+        };
 
         match form.form_type {
             crate::model::control::FormType::PushButton => {
                 let mut fill = Paint::default();
                 fill.set_anti_alias(true);
-                fill.set_color(Color::from_argb(255, 208, 208, 208));
+                fill.set_color(if form.back_color.is_empty() {
+                    Color::from_argb(255, 208, 208, 208)
+                } else {
+                    control_back
+                });
                 canvas.draw_rect(rect, &fill);
 
                 let mut stroke = Paint::default();
                 stroke.set_anti_alias(true);
                 stroke.set_style(skia_safe::paint::Style::Stroke);
                 stroke.set_stroke_width(0.5);
-                stroke.set_color(Color::from_argb(255, 160, 160, 160));
+                stroke.set_color(border_color);
                 canvas.draw_rect(rect, &stroke);
 
                 if !form.caption.is_empty() {
@@ -427,7 +804,7 @@ impl SkiaLayerRenderer {
                         super::paint_conv::make_font(&text_style, &self.font_mgr, &form.caption);
                     let mut paint = Paint::default();
                     paint.set_anti_alias(true);
-                    paint.set_color(Color::from_argb(255, 128, 128, 128));
+                    paint.set_color(control_text);
                     let text_width = form.caption.chars().count() as f32 * font_size as f32 * 0.55;
                     canvas.draw_str(
                         &form.caption,
@@ -447,14 +824,14 @@ impl SkiaLayerRenderer {
 
                 let mut fill = Paint::default();
                 fill.set_anti_alias(true);
-                fill.set_color(Color::WHITE);
+                fill.set_color(control_back);
                 canvas.draw_rect(Rect::from_xywh(box_x, box_y, box_size, box_size), &fill);
 
                 let mut stroke = Paint::default();
                 stroke.set_anti_alias(true);
                 stroke.set_style(skia_safe::paint::Style::Stroke);
                 stroke.set_stroke_width(0.8);
-                stroke.set_color(Color::from_argb(255, 96, 96, 96));
+                stroke.set_color(border_color);
                 canvas.draw_rect(Rect::from_xywh(box_x, box_y, box_size, box_size), &stroke);
 
                 if form.value != 0 {
@@ -466,7 +843,7 @@ impl SkiaLayerRenderer {
                     mark.set_anti_alias(true);
                     mark.set_style(skia_safe::paint::Style::Stroke);
                     mark.set_stroke_width(1.5);
-                    mark.set_color(Color::BLACK);
+                    mark.set_color(control_text);
                     canvas.draw_path(&check.detach(), &mark);
                 }
 
@@ -477,7 +854,7 @@ impl SkiaLayerRenderer {
                         super::paint_conv::make_font(&text_style, &self.font_mgr, &form.caption);
                     let mut paint = Paint::default();
                     paint.set_anti_alias(true);
-                    paint.set_color(parse_css(&form.fore_color, Color::BLACK));
+                    paint.set_color(control_text);
                     canvas.draw_str(
                         &form.caption,
                         (
@@ -496,20 +873,20 @@ impl SkiaLayerRenderer {
 
                 let mut fill = Paint::default();
                 fill.set_anti_alias(true);
-                fill.set_color(Color::WHITE);
+                fill.set_color(control_back);
                 canvas.draw_circle((cx, cy), radius, &fill);
 
                 let mut stroke = Paint::default();
                 stroke.set_anti_alias(true);
                 stroke.set_style(skia_safe::paint::Style::Stroke);
                 stroke.set_stroke_width(0.8);
-                stroke.set_color(Color::from_argb(255, 96, 96, 96));
+                stroke.set_color(border_color);
                 canvas.draw_circle((cx, cy), radius, &stroke);
 
                 if form.value != 0 {
                     let mut dot = Paint::default();
                     dot.set_anti_alias(true);
-                    dot.set_color(Color::BLACK);
+                    dot.set_color(control_text);
                     canvas.draw_circle((cx, cy), radius * 0.5, &dot);
                 }
 
@@ -520,7 +897,7 @@ impl SkiaLayerRenderer {
                         super::paint_conv::make_font(&text_style, &self.font_mgr, &form.caption);
                     let mut paint = Paint::default();
                     paint.set_anti_alias(true);
-                    paint.set_color(parse_css(&form.fore_color, Color::BLACK));
+                    paint.set_color(control_text);
                     canvas.draw_str(
                         &form.caption,
                         (
@@ -536,14 +913,14 @@ impl SkiaLayerRenderer {
                 let btn_w = (bbox.height * 0.8).min(16.0) as f32;
                 let mut fill = Paint::default();
                 fill.set_anti_alias(true);
-                fill.set_color(Color::WHITE);
+                fill.set_color(control_back);
                 canvas.draw_rect(rect, &fill);
 
                 let mut stroke = Paint::default();
                 stroke.set_anti_alias(true);
                 stroke.set_style(skia_safe::paint::Style::Stroke);
                 stroke.set_stroke_width(0.8);
-                stroke.set_color(Color::from_argb(255, 160, 160, 160));
+                stroke.set_color(border_color);
                 canvas.draw_rect(rect, &stroke);
 
                 let button_rect = Rect::from_xywh(
@@ -561,7 +938,7 @@ impl SkiaLayerRenderer {
                 button_stroke.set_anti_alias(true);
                 button_stroke.set_style(skia_safe::paint::Style::Stroke);
                 button_stroke.set_stroke_width(0.5);
-                button_stroke.set_color(Color::from_argb(255, 160, 160, 160));
+                button_stroke.set_color(border_color);
                 canvas.draw_rect(button_rect, &button_stroke);
 
                 let arrow_cx = bbox.x as f32 + bbox.width as f32 - btn_w / 2.0;
@@ -574,7 +951,7 @@ impl SkiaLayerRenderer {
                 arrow.close();
                 let mut arrow_paint = Paint::default();
                 arrow_paint.set_anti_alias(true);
-                arrow_paint.set_color(Color::from_argb(255, 64, 64, 64));
+                arrow_paint.set_color(control_text);
                 canvas.draw_path(&arrow.detach(), &arrow_paint);
 
                 if !form.text.is_empty() {
@@ -584,7 +961,7 @@ impl SkiaLayerRenderer {
                         super::paint_conv::make_font(&text_style, &self.font_mgr, &form.text);
                     let mut paint = Paint::default();
                     paint.set_anti_alias(true);
-                    paint.set_color(parse_css(&form.fore_color, Color::BLACK));
+                    paint.set_color(control_text);
                     canvas.draw_str(
                         &form.text,
                         (
@@ -599,14 +976,14 @@ impl SkiaLayerRenderer {
             crate::model::control::FormType::Edit => {
                 let mut fill = Paint::default();
                 fill.set_anti_alias(true);
-                fill.set_color(Color::WHITE);
+                fill.set_color(control_back);
                 canvas.draw_rect(rect, &fill);
 
                 let mut stroke = Paint::default();
                 stroke.set_anti_alias(true);
                 stroke.set_style(skia_safe::paint::Style::Stroke);
                 stroke.set_stroke_width(0.8);
-                stroke.set_color(Color::from_argb(255, 160, 160, 160));
+                stroke.set_color(border_color);
                 canvas.draw_rect(rect, &stroke);
 
                 if !form.text.is_empty() {
@@ -616,7 +993,7 @@ impl SkiaLayerRenderer {
                         super::paint_conv::make_font(&text_style, &self.font_mgr, &form.text);
                     let mut paint = Paint::default();
                     paint.set_anti_alias(true);
-                    paint.set_color(parse_css(&form.fore_color, Color::BLACK));
+                    paint.set_color(control_text);
                     canvas.draw_str(
                         &form.text,
                         (
@@ -1005,14 +1382,18 @@ impl SkiaLayerRenderer {
 }
 
 impl LayerRasterRenderer for SkiaLayerRenderer {
-    fn render_png(&self, tree: &PageLayerTree) -> Result<Vec<u8>, String> {
-        SkiaLayerRenderer::render_png(self, tree)
+    fn render_png_with_options(
+        &self,
+        tree: &PageLayerTree,
+        options: RasterRenderOptions,
+    ) -> Result<Vec<u8>, String> {
+        SkiaLayerRenderer::render_png_with_options(self, tree, options)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
+    use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
     use crate::paint::{CacheHint, LayerBuilder, RenderProfile};
     use crate::renderer::render_tree::{
         BoundingBox, PageNode, RectangleNode, RenderNode, RenderNodeType,
@@ -1081,6 +1462,14 @@ mod tests {
         let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
 
         assert_eq!((pixmap.width(), pixmap.height()), (794, 1122));
+    }
+
+    #[test]
+    fn rejects_invalid_raster_dimensions() {
+        assert!(raster_dimension(f64::NAN, 16_384).is_err());
+        assert!(raster_dimension(0.0, 16_384).is_err());
+        assert!(raster_dimension(16_385.0, 16_384).is_err());
+        assert_eq!(raster_dimension(12.4, 16_384), Ok(12));
     }
 
     #[test]

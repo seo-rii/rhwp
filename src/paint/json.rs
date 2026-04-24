@@ -4,6 +4,7 @@ use base64::Engine;
 
 use crate::document_core::helpers::{color_ref_to_css, json_escape as raw_json_escape};
 use crate::model::control::FormType;
+use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerTextRunPaint, PageLayerTree,
@@ -24,7 +25,7 @@ impl PageLayerTree {
         buf.push('{');
         let _ = write!(
             buf,
-            "\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"root\":",
+            "\"schemaVersion\":1,\"unit\":\"px\",\"coordinateSystem\":\"page-top-left-y-down\",\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"root\":",
             self.page_width,
             self.page_height,
             json_escape(self.profile.as_str())
@@ -154,6 +155,7 @@ impl PaintOp {
                         Some(image.fill_mode),
                         None,
                         None,
+                        None,
                         false,
                     );
                     buf.push('}');
@@ -280,6 +282,7 @@ impl PaintOp {
                     image.fill_mode,
                     image.original_size,
                     image.crop,
+                    Some(image.effect),
                     true,
                 );
                 buf.push_str(",\"transform\":");
@@ -332,6 +335,7 @@ fn write_layer_image_fields(
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
+    effect: Option<ImageEffect>,
     leading_comma: bool,
 ) {
     let mut wrote_any = false;
@@ -372,6 +376,10 @@ fn write_layer_image_fields(
             "\"crop\":{{\"left\":{},\"top\":{},\"right\":{},\"bottom\":{}}}",
             left, top, right, bottom
         );
+    }
+    if let Some(effect) = effect {
+        push_prefix(buf);
+        let _ = write!(buf, "\"effect\":{}", json_escape(image_effect_str(effect)));
     }
 }
 
@@ -883,6 +891,15 @@ fn image_fill_mode_str(value: ImageFillMode) -> &'static str {
     }
 }
 
+fn image_effect_str(value: ImageEffect) -> &'static str {
+    match value {
+        ImageEffect::RealPic => "realPic",
+        ImageEffect::GrayScale => "grayScale",
+        ImageEffect::BlackWhite => "blackWhite",
+        ImageEffect::Pattern8x8 => "pattern8x8",
+    }
+}
+
 fn form_type_str(value: FormType) -> &'static str {
     match value {
         FormType::PushButton => "pushButton",
@@ -914,9 +931,10 @@ fn cache_hint_str(value: CacheHint) -> &'static str {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+    use crate::model::image::ImageEffect;
     use crate::paint::{
-        CacheHint, ClipKind, LayerEquationPaint, LayerLinePaint, LayerNode, LayerPathPaint,
-        LayerRectanglePaint, LayerTextRunPaint, PageLayerTree, ResourceArena,
+        CacheHint, ClipKind, LayerEquationPaint, LayerImagePaint, LayerLinePaint, LayerNode,
+        LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PageLayerTree, ResourceArena,
     };
 
     #[test]
@@ -992,6 +1010,9 @@ mod tests {
 
         assert!(json.contains("\"kind\":\"leaf\""));
         assert!(json.contains("\"cacheHint\":\"none\""));
+        assert!(json.contains("\"schemaVersion\":1"));
+        assert!(json.contains("\"unit\":\"px\""));
+        assert!(json.contains("\"coordinateSystem\":\"page-top-left-y-down\""));
         assert!(json.contains("\"profile\":\"screen\""));
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
@@ -1001,6 +1022,36 @@ mod tests {
         assert!(json.contains("\"svgContent\":\"<text x=\\\"0\\\" y=\\\"12\\\">x</text>\""));
         assert!(json.contains("\"layoutBox\":{\"x\":0.000000,\"y\":0.000000,\"width\":10.000000,\"height\":12.000000,\"baseline\":9.000000,\"kind\":{\"type\":\"text\",\"text\":\"x\"}}"));
         assert!(json.contains("\"cornerRadius\":4.000000"));
+    }
+
+    #[test]
+    fn serializes_image_effect_for_backend_parity() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&[0x89, b'P', b'N', b'G']);
+        let tree = PageLayerTree::with_resources(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![PaintOp::Image {
+                    bbox: BoundingBox::new(4.0, 4.0, 20.0, 20.0),
+                    image: LayerImagePaint {
+                        resource_id: Some(image_id),
+                        fill_mode: Some(ImageFillMode::FitToSize),
+                        original_size: Some((10.0, 10.0)),
+                        crop: Some((0, 0, 10, 10)),
+                        effect: ImageEffect::GrayScale,
+                        transform: ShapeTransform::default(),
+                    },
+                }],
+            ),
+            resources,
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"type\":\"image\""));
+        assert!(json.contains("\"effect\":\"grayScale\""));
     }
 
     #[test]

@@ -7,11 +7,11 @@ pub(crate) mod helpers;
 pub(crate) use helpers::*;
 
 mod commands;
+pub mod converters;
 pub(crate) mod html_table_import;
 mod queries;
 pub mod table_calc;
 pub mod validation;
-pub mod converters;
 
 use crate::model::document::Document;
 use crate::model::event::DocumentEvent;
@@ -26,6 +26,17 @@ use crate::renderer::style_resolver::ResolvedStyleSet;
 use crate::renderer::DEFAULT_DPI;
 use std::cell::RefCell;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct PageLayerTreeCacheKey {
+    pub page_num: u32,
+    pub profile: RenderProfile,
+    pub show_paragraph_marks: bool,
+    pub show_control_codes: bool,
+    pub show_transparent_borders: bool,
+    pub clip_enabled: bool,
+    pub debug_overlay: bool,
+}
 
 /// 기본 폰트 fallback 경로
 pub const DEFAULT_FALLBACK_FONT: &str = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf";
@@ -85,7 +96,7 @@ pub struct DocumentCore {
     /// 페이지별 렌더 트리 캐시 (지연 구축, 부분 무효화)
     pub(crate) page_tree_cache: RefCell<Vec<Option<PageRenderTree>>>,
     /// 페이지/profile별 레이어 트리 캐시 (지연 구축, 페이지 재생 재사용)
-    pub(crate) page_layer_tree_cache: RefCell<HashMap<(u32, RenderProfile), PageLayerTree>>,
+    pub(crate) page_layer_tree_cache: RefCell<HashMap<PageLayerTreeCacheKey, PageLayerTree>>,
     /// Batch 모드 플래그 — true이면 paginate() 스킵
     pub(crate) batch_mode: bool,
     /// 이벤트 로그 (Command 실행 시 누적)

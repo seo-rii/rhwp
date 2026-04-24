@@ -718,7 +718,7 @@ impl DocumentCore {
         }
         self.page_layer_tree_cache
             .borrow_mut()
-            .retain(|(cached_page, _), _| *cached_page != page_num);
+            .retain(|cache_key, _| cache_key.page_num != page_num);
         Ok(format!("{{\"ok\":true,\"hidden\":{}}}", hidden))
     }
 

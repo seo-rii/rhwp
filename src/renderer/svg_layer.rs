@@ -33,8 +33,9 @@ impl SvgLayerRenderer {
 }
 
 impl LayerRenderer for SvgLayerRenderer {
-    fn render_page(&mut self, tree: &PageLayerTree) {
+    fn render_page(&mut self, tree: &PageLayerTree) -> Result<(), String> {
         self.renderer.render_layer_tree(tree);
+        Ok(())
     }
 }
 
@@ -108,7 +109,7 @@ mod tests {
         let mut builder = LayerBuilder::new(RenderProfile::Screen);
         let layer_tree = builder.build(&render_tree);
         let mut layer = SvgLayerRenderer::new();
-        layer.render_page(&layer_tree);
+        layer.render_page(&layer_tree).expect("layer svg render");
 
         assert_eq!(layer.output(), legacy.output());
     }

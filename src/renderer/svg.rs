@@ -246,6 +246,49 @@ impl SvgRenderer {
             PaintOp::Path { bbox, path } => {
                 self.open_shape_transform(&path.transform, bbox);
                 self.draw_path_with_gradient(&path.commands, &path.style, path.gradient.as_deref());
+                if let (Some(line_style), Some((x1, y1, x2, y2))) =
+                    (&path.line_style, path.connector_endpoints)
+                {
+                    let color = color_to_svg(line_style.color);
+                    let width = if line_style.width > 0.0 {
+                        line_style.width
+                    } else {
+                        1.0
+                    };
+                    let line_len = ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
+                        .sqrt()
+                        .max(1.0);
+                    let mut marker_start_attr = String::new();
+                    let mut marker_end_attr = String::new();
+                    if line_style.start_arrow != super::ArrowStyle::None {
+                        let marker_id = self.ensure_arrow_marker(
+                            &color,
+                            width,
+                            line_len,
+                            &line_style.start_arrow,
+                            line_style.start_arrow_size,
+                            true,
+                        );
+                        marker_start_attr = format!(" marker-start=\"url(#{})\"", marker_id);
+                    }
+                    if line_style.end_arrow != super::ArrowStyle::None {
+                        let marker_id = self.ensure_arrow_marker(
+                            &color,
+                            width,
+                            line_len,
+                            &line_style.end_arrow,
+                            line_style.end_arrow_size,
+                            false,
+                        );
+                        marker_end_attr = format!(" marker-end=\"url(#{})\"", marker_id);
+                    }
+                    if !marker_start_attr.is_empty() || !marker_end_attr.is_empty() {
+                        self.output.push_str(&format!(
+                            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-opacity=\"0\" stroke-width=\"{}\"{}{} pointer-events=\"none\"/>\n",
+                            x1, y1, x2, y2, color, width, marker_start_attr, marker_end_attr
+                        ));
+                    }
+                }
                 self.close_layer_op_transform(op);
             }
             PaintOp::Image { bbox, image } => {
@@ -1919,21 +1962,12 @@ impl SvgRenderer {
                     if let Some((img_w, img_h)) = parse_image_dimensions(&render_data) {
                         let img_w = img_w as f64;
                         let img_h = img_h as f64;
-                        // crop 좌표 → 원본 이미지 비율 (crop 좌표 / 안 자른 전체 crop 크기)
-                        // 안 자른 전체 crop 크기 ≈ 원본 px × (crop.right / img_w)
-                        // 즉 scale = crop.right / img_w (이 값이 ~75)
-                        let scale_x = cr as f64 / img_w;
-                        let scale_y = if ct == 0 && cl == 0 {
-                            // 전체 이미지의 scale은 right/width로 추정
-                            scale_x
-                        } else {
-                            cb as f64 / img_h // fallback
-                        };
-                        // 원본 px 좌표로 변환
+                        let scale_x = (cr as f64 / img_w).max(1.0);
+                        let scale_y = (cb as f64 / img_h).max(1.0);
                         let src_x = cl as f64 / scale_x;
-                        let src_y = ct as f64 / scale_x;
+                        let src_y = ct as f64 / scale_y;
                         let src_w = (cr - cl) as f64 / scale_x;
-                        let src_h = (cb - ct) as f64 / scale_x;
+                        let src_h = (cb - ct) as f64 / scale_y;
                         // 전체 이미지 대비 잘림이 있는지 확인
                         let is_cropped = src_x > 0.5
                             || src_y > 0.5
@@ -2524,19 +2558,37 @@ impl SvgRenderer {
         let y = bbox.y;
         let w = bbox.width;
         let h = bbox.height;
+        let fore_color = if form.fore_color.is_empty() {
+            "#000000"
+        } else {
+            form.fore_color.as_str()
+        };
+        let back_color = if form.back_color.is_empty() {
+            "white"
+        } else {
+            form.back_color.as_str()
+        };
+        let control_text = if form.enabled { fore_color } else { "#808080" };
+        let border_color = if form.enabled { "#a0a0a0" } else { "#bebebe" };
+        let choice_border_color = if form.enabled { "#606060" } else { "#bebebe" };
 
         match form.form_type {
             FormType::PushButton => {
                 // 3D 버튼 (웹 환경 비활성 — 회색 스타일)
+                let button_fill = if form.back_color.is_empty() {
+                    "#d0d0d0"
+                } else {
+                    back_color
+                };
                 self.output.push_str(&format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#d0d0d0\" stroke=\"#a0a0a0\" stroke-width=\"0.5\"/>\n",
-                    x, y, w, h));
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+                    x, y, w, h, button_fill, border_color));
                 // 캡션 텍스트 (회색, 중앙)
                 if !form.caption.is_empty() {
                     let font_size = (h * 0.55).min(12.0).max(7.0);
                     self.output.push_str(&format!(
-                        "<text x=\"{}\" y=\"{}\" font-size=\"{:.1}\" fill=\"#808080\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"'맑은 고딕',sans-serif\">{}</text>\n",
-                        x + w / 2.0, y + h / 2.0, font_size, escape_xml(&form.caption)));
+                        "<text x=\"{}\" y=\"{}\" font-size=\"{:.1}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"central\" font-family=\"'맑은 고딕',sans-serif\">{}</text>\n",
+                        x + w / 2.0, y + h / 2.0, font_size, control_text, escape_xml(&form.caption)));
                 }
             }
             FormType::CheckBox => {
@@ -2545,8 +2597,8 @@ impl SvgRenderer {
                 let box_y = y + (h - box_size) / 2.0;
                 let box_x = x + 2.0;
                 self.output.push_str(&format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"white\" stroke=\"#606060\" stroke-width=\"0.8\"/>\n",
-                    box_x, box_y, box_size, box_size));
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                    box_x, box_y, box_size, box_size, back_color, choice_border_color));
                 if form.value != 0 {
                     // 체크 마크 (✓)
                     let cx = box_x + box_size * 0.2;
@@ -2556,8 +2608,8 @@ impl SvgRenderer {
                     let ex = box_x + box_size * 0.85;
                     let ey = box_y + box_size * 0.2;
                     self.output.push_str(&format!(
-                        "<polyline points=\"{},{} {},{} {},{}\" fill=\"none\" stroke=\"#000000\" stroke-width=\"1.5\"/>\n",
-                        cx, cy, mx, my, ex, ey));
+                        "<polyline points=\"{},{} {},{} {},{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"/>\n",
+                        cx, cy, mx, my, ex, ey, control_text));
                 }
                 // 캡션
                 if !form.caption.is_empty() {
@@ -2565,7 +2617,7 @@ impl SvgRenderer {
                     let font_size = (h * 0.55).min(12.0).max(7.0);
                     self.output.push_str(&format!(
                         "<text x=\"{}\" y=\"{}\" font-size=\"{:.1}\" fill=\"{}\" dominant-baseline=\"central\" font-family=\"'맑은 고딕',sans-serif\">{}</text>\n",
-                        text_x, y + h / 2.0, font_size, form.fore_color, escape_xml(&form.caption)));
+                        text_x, y + h / 2.0, font_size, control_text, escape_xml(&form.caption)));
                 }
             }
             FormType::RadioButton => {
@@ -2574,14 +2626,15 @@ impl SvgRenderer {
                 let cx = x + 2.0 + r;
                 let cy = y + h / 2.0;
                 self.output.push_str(&format!(
-                    "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"white\" stroke=\"#606060\" stroke-width=\"0.8\"/>\n",
-                    cx, cy, r));
+                    "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                    cx, cy, r, back_color, choice_border_color));
                 if form.value != 0 {
                     self.output.push_str(&format!(
-                        "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"#000000\"/>\n",
+                        "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\"/>\n",
                         cx,
                         cy,
-                        r * 0.5
+                        r * 0.5,
+                        control_text
                     ));
                 }
                 // 캡션
@@ -2590,50 +2643,51 @@ impl SvgRenderer {
                     let font_size = (h * 0.55).min(12.0).max(7.0);
                     self.output.push_str(&format!(
                         "<text x=\"{}\" y=\"{}\" font-size=\"{:.1}\" fill=\"{}\" dominant-baseline=\"central\" font-family=\"'맑은 고딕',sans-serif\">{}</text>\n",
-                        text_x, y + h / 2.0, font_size, form.fore_color, escape_xml(&form.caption)));
+                        text_x, y + h / 2.0, font_size, control_text, escape_xml(&form.caption)));
                 }
             }
             FormType::ComboBox => {
                 // 콤보박스: 입력 영역 + 드롭다운 버튼(▼)
                 let btn_w = (h * 0.8).min(16.0);
                 self.output.push_str(&format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"white\" stroke=\"#a0a0a0\" stroke-width=\"0.8\"/>\n",
-                    x, y, w, h));
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                    x, y, w, h, back_color, border_color));
                 // 드롭다운 버튼
                 self.output.push_str(&format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#e0e0e0\" stroke=\"#a0a0a0\" stroke-width=\"0.5\"/>\n",
-                    x + w - btn_w, y, btn_w, h));
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#e0e0e0\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+                    x + w - btn_w, y, btn_w, h, border_color));
                 // ▼ 화살표
                 let arrow_cx = x + w - btn_w / 2.0;
                 let arrow_cy = y + h / 2.0;
                 let arrow_size = (h * 0.2).min(4.0);
                 self.output.push_str(&format!(
-                    "<polygon points=\"{},{} {},{} {},{}\" fill=\"#404040\"/>\n",
+                    "<polygon points=\"{},{} {},{} {},{}\" fill=\"{}\"/>\n",
                     arrow_cx - arrow_size,
                     arrow_cy - arrow_size * 0.5,
                     arrow_cx + arrow_size,
                     arrow_cy - arrow_size * 0.5,
                     arrow_cx,
-                    arrow_cy + arrow_size * 0.5
+                    arrow_cy + arrow_size * 0.5,
+                    control_text
                 ));
                 // 텍스트
                 if !form.text.is_empty() {
                     let font_size = (h * 0.55).min(12.0).max(7.0);
                     self.output.push_str(&format!(
                         "<text x=\"{}\" y=\"{}\" font-size=\"{:.1}\" fill=\"{}\" dominant-baseline=\"central\" font-family=\"'맑은 고딕',sans-serif\">{}</text>\n",
-                        x + 3.0, y + h / 2.0, font_size, form.fore_color, escape_xml(&form.text)));
+                        x + 3.0, y + h / 2.0, font_size, control_text, escape_xml(&form.text)));
                 }
             }
             FormType::Edit => {
                 // 입력 상자: 테두리 사각형 + 내부 텍스트
                 self.output.push_str(&format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"white\" stroke=\"#a0a0a0\" stroke-width=\"0.8\"/>\n",
-                    x, y, w, h));
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                    x, y, w, h, back_color, border_color));
                 if !form.text.is_empty() {
                     let font_size = (h * 0.55).min(12.0).max(7.0);
                     self.output.push_str(&format!(
                         "<text x=\"{}\" y=\"{}\" font-size=\"{:.1}\" fill=\"{}\" dominant-baseline=\"central\" font-family=\"'맑은 고딕',sans-serif\">{}</text>\n",
-                        x + 3.0, y + h / 2.0, font_size, form.fore_color, escape_xml(&form.text)));
+                        x + 3.0, y + h / 2.0, font_size, control_text, escape_xml(&form.text)));
                 }
             }
         }

@@ -1,9 +1,10 @@
 use resvg::{tiny_skia, usvg};
 use skia_safe::{
-    canvas::SrcRectConstraint, Canvas, Data, FilterMode, Image, MipmapMode, Paint, Rect,
-    SamplingOptions,
+    canvas::SrcRectConstraint, color_filters, Canvas, Data, FilterMode, Image, MipmapMode, Paint,
+    Rect, SamplingOptions,
 };
 
+use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,8 +50,18 @@ pub fn draw_image_bytes(
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
+    effect: ImageEffect,
     sampling: ImageSampling,
 ) {
+    if !x.is_finite()
+        || !y.is_finite()
+        || !width.is_finite()
+        || !height.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+    {
+        return;
+    }
     let Some(image) = decode_image(bytes) else {
         draw_missing_image_placeholder(canvas, x, y, width, height);
         return;
@@ -58,6 +69,9 @@ pub fn draw_image_bytes(
     let dst = Rect::from_xywh(x, y, width, height);
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
+    if let Some(color_filter) = image_effect_filter(effect) {
+        paint.set_color_filter(color_filter);
+    }
     let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
 
     let draw_image_rect = |canvas: &Canvas, src: Option<Rect>, dst: Rect| {
@@ -86,11 +100,12 @@ pub fn draw_image_bytes(
             let image_height = image.height() as f32;
             if image_width > 0.0 && image_height > 0.0 {
                 let scale_x = right as f32 / image_width;
-                if scale_x > 0.0 {
+                let scale_y = bottom as f32 / image_height;
+                if scale_x > 0.0 && scale_y > 0.0 {
                     let src_x = left as f32 / scale_x;
-                    let src_y = top as f32 / scale_x;
+                    let src_y = top as f32 / scale_y;
                     let src_w = (right - left) as f32 / scale_x;
-                    let src_h = (bottom - top) as f32 / scale_x;
+                    let src_h = (bottom - top) as f32 / scale_y;
                     let is_cropped = src_x > 0.5
                         || src_y > 0.5
                         || (src_w - image_width).abs() > 1.0
@@ -127,6 +142,14 @@ pub fn draw_image_bytes(
     let image_height = original_size
         .map(|(_, height)| height as f32)
         .unwrap_or_else(|| image.height() as f32);
+    if !image_width.is_finite()
+        || !image_height.is_finite()
+        || image_width <= 0.0
+        || image_height <= 0.0
+    {
+        draw_missing_image_placeholder(canvas, x, y, width, height);
+        return;
+    }
 
     canvas.save();
     canvas.clip_rect(dst, None, Some(true));
@@ -139,16 +162,19 @@ pub fn draw_image_bytes(
             | ImageFillMode::TileVertLeft
             | ImageFillMode::TileVertRight
     ) {
+        const MAX_TILE_DRAWS: usize = 4096;
+        let mut tile_draws = 0usize;
         if matches!(mode, ImageFillMode::TileAll) {
             let mut tile_y = y;
-            while tile_y < y + height {
+            while tile_y < y + height && tile_draws < MAX_TILE_DRAWS {
                 let mut tile_x = x;
-                while tile_x < x + width {
+                while tile_x < x + width && tile_draws < MAX_TILE_DRAWS {
                     draw_image_rect(
                         canvas,
                         None,
                         Rect::from_xywh(tile_x, tile_y, image_width, image_height),
                     );
+                    tile_draws += 1;
                     tile_x += image_width.max(1.0);
                 }
                 tile_y += image_height.max(1.0);
@@ -163,12 +189,13 @@ pub fn draw_image_bytes(
                 y + height - image_height
             };
             let mut tile_x = x;
-            while tile_x < x + width {
+            while tile_x < x + width && tile_draws < MAX_TILE_DRAWS {
                 draw_image_rect(
                     canvas,
                     None,
                     Rect::from_xywh(tile_x, tile_y, image_width, image_height),
                 );
+                tile_draws += 1;
                 tile_x += image_width.max(1.0);
             }
         } else {
@@ -178,12 +205,13 @@ pub fn draw_image_bytes(
                 x + width - image_width
             };
             let mut tile_y = y;
-            while tile_y < y + height {
+            while tile_y < y + height && tile_draws < MAX_TILE_DRAWS {
                 draw_image_rect(
                     canvas,
                     None,
                     Rect::from_xywh(tile_x, tile_y, image_width, image_height),
                 );
+                tile_draws += 1;
                 tile_y += image_height.max(1.0);
             }
         }
@@ -198,6 +226,28 @@ pub fn draw_image_bytes(
     }
 
     canvas.restore();
+}
+
+fn image_effect_filter(effect: ImageEffect) -> Option<skia_safe::ColorFilter> {
+    match effect {
+        ImageEffect::RealPic => None,
+        ImageEffect::GrayScale => Some(grayscale_filter(1.0, 0.0)),
+        ImageEffect::BlackWhite => Some(grayscale_filter(32.0, -4096.0)),
+        ImageEffect::Pattern8x8 => Some(grayscale_filter(1.0, 0.0)),
+    }
+}
+
+fn grayscale_filter(scale: f32, translate: f32) -> skia_safe::ColorFilter {
+    let r = 0.299 * scale;
+    let g = 0.587 * scale;
+    let b = 0.114 * scale;
+    color_filters::matrix_row_major(
+        &[
+            r, g, b, 0.0, translate, r, g, b, 0.0, translate, r, g, b, 0.0, translate, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+        ],
+        None,
+    )
 }
 
 pub fn draw_svg_fragment(

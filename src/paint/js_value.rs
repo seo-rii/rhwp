@@ -5,6 +5,7 @@ use wasm_bindgen::JsValue;
 
 use crate::document_core::helpers::color_ref_to_css;
 use crate::model::control::FormType;
+use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp,
@@ -42,6 +43,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     hints: &LayerResourceExportHints,
 ) -> JsValue {
     let value = Object::new();
+    set_number(&value, "schemaVersion", 1.0);
+    set_string(&value, "unit", "px");
+    set_string(&value, "coordinateSystem", "page-top-left-y-down");
     set_number(&value, "pageWidth", tree.page_width);
     set_number(&value, "pageHeight", tree.page_height);
     set_string(&value, "profile", tree.profile.as_str());
@@ -103,7 +107,7 @@ fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
 }
 
 fn resource_key(byte_len: usize, hash: &str) -> String {
-    format!("{byte_len}:{hash}")
+    format!("r1:{byte_len}:{hash}")
 }
 
 fn layer_node_to_value(node: &LayerNode) -> JsValue {
@@ -302,6 +306,7 @@ fn paint_op_to_value(op: &PaintOp) -> JsValue {
                 set_number(&crop, "bottom", bottom as f64);
                 set_value(&value, "crop", crop.into());
             }
+            set_string(&value, "effect", image_effect_str(image.effect));
             set_value(&value, "transform", transform_to_value(image.transform));
         }
         PaintOp::Equation { bbox, equation } => {
@@ -783,6 +788,15 @@ fn image_fill_mode_str(value: ImageFillMode) -> &'static str {
         ImageFillMode::RightTop => "rightTop",
         ImageFillMode::RightBottom => "rightBottom",
         ImageFillMode::None => "none",
+    }
+}
+
+fn image_effect_str(value: ImageEffect) -> &'static str {
+    match value {
+        ImageEffect::RealPic => "realPic",
+        ImageEffect::GrayScale => "grayScale",
+        ImageEffect::BlackWhite => "blackWhite",
+        ImageEffect::Pattern8x8 => "pattern8x8",
     }
 }
 

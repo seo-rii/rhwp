@@ -91,7 +91,9 @@ impl DocumentCore {
             self.show_control_codes,
             self.debug_overlay,
         );
-        renderer.render_page(&layer_tree);
+        renderer
+            .render_page(&layer_tree)
+            .map_err(HwpError::RenderError)?;
         Ok(renderer.output().to_string())
     }
 
@@ -127,7 +129,9 @@ impl DocumentCore {
                 self.show_control_codes,
                 self.debug_overlay,
             );
-            layer_renderer.render_page(&layer_tree);
+            layer_renderer
+                .render_page(&layer_tree)
+                .map_err(HwpError::RenderError)?;
 
             let mut collector = SvgRenderer::new();
             self.configure_svg_renderer(&mut collector);
@@ -1928,7 +1932,7 @@ impl DocumentCore {
         }
         self.page_layer_tree_cache
             .borrow_mut()
-            .retain(|(page_num, _), _| *page_num < from_page);
+            .retain(|cache_key, _| cache_key.page_num < from_page);
     }
 
     /// 페이지 렌더 트리 캐시 전체 무효화.
@@ -1973,7 +1977,7 @@ impl DocumentCore {
         page_num: u32,
         profile: RenderProfile,
     ) -> Result<PageLayerTree, HwpError> {
-        let cache_key = (page_num, profile);
+        let cache_key = self.page_layer_tree_cache_key(page_num, profile);
         if let Some(tree) = self.page_layer_tree_cache.borrow().get(&cache_key) {
             let _overflows = self.layout_engine.take_overflows();
             return Ok(tree.clone());
@@ -1986,6 +1990,22 @@ impl DocumentCore {
             .borrow_mut()
             .insert(cache_key, layer_tree.clone());
         Ok(layer_tree)
+    }
+
+    fn page_layer_tree_cache_key(
+        &self,
+        page_num: u32,
+        profile: RenderProfile,
+    ) -> super::super::PageLayerTreeCacheKey {
+        super::super::PageLayerTreeCacheKey {
+            page_num,
+            profile,
+            show_paragraph_marks: self.show_paragraph_marks,
+            show_control_codes: self.show_control_codes,
+            show_transparent_borders: self.show_transparent_borders,
+            clip_enabled: self.clip_enabled,
+            debug_overlay: self.debug_overlay,
+        }
     }
 
     /// 페이지 렌더 트리를 빌드한다.

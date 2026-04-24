@@ -38,6 +38,9 @@ export interface LayerBounds {
 }
 
 export interface PageLayerTree {
+  schemaVersion?: number;
+  unit?: 'px';
+  coordinateSystem?: 'page-top-left-y-down';
   pageWidth: number;
   pageHeight: number;
   profile: LayerRenderProfile;
@@ -297,6 +300,7 @@ export interface LayerImageOp {
   resourceId?: number;
   base64?: string;
   fillMode?: string;
+  effect?: 'realPic' | 'grayScale' | 'blackWhite' | 'pattern8x8';
   originalSize?: {
     width: number;
     height: number;
