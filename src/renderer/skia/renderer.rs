@@ -1,6 +1,9 @@
 use skia_safe::{
-    surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, Point, Rect,
+    surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, Picture,
+    PictureRecorder, Point, Rect,
 };
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::paint::{
     CacheHint, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerOutputOptions,
@@ -27,6 +30,7 @@ use super::path_conv::to_skia_path;
 
 pub struct SkiaLayerRenderer {
     font_mgr: FontMgr,
+    static_picture_cache: RefCell<HashMap<u64, Picture>>,
 }
 
 const MAX_RASTER_DIMENSION: i32 = 16_384;
@@ -215,14 +219,16 @@ fn draw_arrow_head(
 struct SkiaReplayContext {
     profile: RenderProfile,
     output_options: LayerOutputOptions,
+    scale: f64,
     cache_hints: Vec<CacheHint>,
 }
 
 impl SkiaReplayContext {
-    fn new(profile: RenderProfile, output_options: LayerOutputOptions) -> Self {
+    fn new(profile: RenderProfile, output_options: LayerOutputOptions, scale: f64) -> Self {
         Self {
             profile,
             output_options,
+            scale,
             cache_hints: Vec::new(),
         }
     }
@@ -264,6 +270,7 @@ impl SkiaLayerRenderer {
     pub fn new() -> Self {
         Self {
             font_mgr: FontMgr::default(),
+            static_picture_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -313,7 +320,7 @@ impl SkiaLayerRenderer {
         if options.scale != 1.0 {
             canvas.scale((options.scale as f32, options.scale as f32));
         }
-        let mut replay = SkiaReplayContext::new(tree.profile, tree.output_options);
+        let mut replay = SkiaReplayContext::new(tree.profile, tree.output_options, options.scale);
         self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
         let image = surface.image_snapshot();
         let data = image
@@ -341,6 +348,83 @@ impl SkiaLayerRenderer {
                 children,
                 cache_hint,
             } => {
+                if *cache_hint == CacheHint::StaticSubtree
+                    && node.bounds.width > 0.0
+                    && node.bounds.height > 0.0
+                    && node.bounds.x.is_finite()
+                    && node.bounds.y.is_finite()
+                    && node.bounds.width.is_finite()
+                    && node.bounds.height.is_finite()
+                {
+                    let mut cache_key = 0xcbf29ce484222325u64;
+                    let mix = |key: &mut u64, bytes: &[u8]| {
+                        for byte in bytes {
+                            *key ^= u64::from(*byte);
+                            *key = key.wrapping_mul(0x100000001b3);
+                        }
+                    };
+                    mix(&mut cache_key, replay.profile.as_str().as_bytes());
+                    mix(
+                        &mut cache_key,
+                        &[
+                            replay.output_options.show_paragraph_marks as u8,
+                            replay.output_options.show_control_codes as u8,
+                            replay.output_options.show_transparent_borders as u8,
+                            replay.output_options.clip_enabled as u8,
+                            replay.output_options.debug_overlay as u8,
+                        ],
+                    );
+                    mix(&mut cache_key, &replay.scale.to_bits().to_le_bytes());
+                    match node.source_node_id {
+                        Some(source_node_id) => mix(&mut cache_key, &source_node_id.to_le_bytes()),
+                        None => mix(&mut cache_key, &[0xff]),
+                    }
+                    mix(&mut cache_key, &node.bounds.x.to_bits().to_le_bytes());
+                    mix(&mut cache_key, &node.bounds.y.to_bits().to_le_bytes());
+                    mix(&mut cache_key, &node.bounds.width.to_bits().to_le_bytes());
+                    mix(&mut cache_key, &node.bounds.height.to_bits().to_le_bytes());
+                    mix(&mut cache_key, format!("{node:?}").as_bytes());
+                    for (id, bytes) in resources.image_resources() {
+                        mix(&mut cache_key, &id.0.to_le_bytes());
+                        mix(&mut cache_key, &bytes.len().to_le_bytes());
+                        if let Some(hash) = resources.image_hash(id) {
+                            mix(&mut cache_key, &hash.to_le_bytes());
+                        }
+                    }
+                    for (id, fragment) in resources.svg_resources() {
+                        mix(&mut cache_key, &id.0.to_le_bytes());
+                        mix(&mut cache_key, &fragment.len().to_le_bytes());
+                        if let Some(hash) = resources.svg_hash(id) {
+                            mix(&mut cache_key, &hash.to_le_bytes());
+                        }
+                    }
+                    if let Some(picture) = self.static_picture_cache.borrow().get(&cache_key) {
+                        canvas.draw_picture(picture, None, None);
+                        return;
+                    }
+
+                    let cull_rect = Rect::from_xywh(
+                        node.bounds.x as f32,
+                        node.bounds.y as f32,
+                        node.bounds.width as f32,
+                        node.bounds.height as f32,
+                    );
+                    let mut recorder = PictureRecorder::new();
+                    let recording_canvas = recorder.begin_recording(cull_rect, true);
+                    replay.push_cache_hint(*cache_hint);
+                    for child in children {
+                        self.render_node(recording_canvas, child, resources, replay);
+                    }
+                    replay.pop_cache_hint();
+                    if let Some(picture) = recorder.finish_recording_as_picture(Some(&cull_rect)) {
+                        canvas.draw_picture(&picture, None, None);
+                        self.static_picture_cache
+                            .borrow_mut()
+                            .insert(cache_key, picture);
+                        return;
+                    }
+                }
+
                 replay.push_cache_hint(*cache_hint);
                 for child in children {
                     self.render_node(canvas, child, resources, replay);
@@ -1639,7 +1723,10 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 #[cfg(test)]
 mod tests {
     use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
-    use crate::paint::{CacheHint, LayerBuilder, LayerOutputOptions, RenderProfile};
+    use crate::paint::{
+        CacheHint, LayerBuilder, LayerNode, LayerOutputOptions, LayerRectanglePaint, LayerSemantic,
+        PageLayerTree, PaintOp, RenderProfile,
+    };
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
     use crate::renderer::render_tree::{
@@ -1677,6 +1764,42 @@ mod tests {
         let png = renderer.render_png(&layer_tree).expect("skia png render");
         assert!(!png.is_empty());
         assert_eq!(&png[0..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn static_subtree_hint_records_picture_cache() {
+        let rect_bounds = BoundingBox::new(5.0, 5.0, 20.0, 10.0);
+        let leaf = LayerNode::leaf(
+            rect_bounds,
+            Some(2),
+            vec![PaintOp::Rectangle {
+                bbox: rect_bounds,
+                rect: LayerRectanglePaint {
+                    corner_radius: 0.0,
+                    style: ShapeStyle {
+                        fill_color: Some(0x00AA00),
+                        ..Default::default()
+                    },
+                    gradient: None,
+                    transform: Default::default(),
+                },
+            }],
+        );
+        let root = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, 40.0, 20.0),
+            Some(1),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        let tree = PageLayerTree::new(40.0, 20.0, root);
+        let renderer = SkiaLayerRenderer::new();
+
+        assert_eq!(renderer.static_picture_cache.borrow().len(), 0);
+        renderer.render_png(&tree).expect("first skia render");
+        assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+        renderer.render_png(&tree).expect("cached skia render");
+        assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
     }
 
     #[test]
@@ -1854,26 +1977,34 @@ mod tests {
 
     #[test]
     fn consumes_profile_and_cache_hints_for_sampling_policy() {
-        let screen = SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default());
+        let screen =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
         assert_eq!(screen.image_sampling(), ImageSampling::linear());
         assert!(screen.clip_antialias());
 
-        let fast_preview =
-            SkiaReplayContext::new(RenderProfile::FastPreview, LayerOutputOptions::default());
+        let fast_preview = SkiaReplayContext::new(
+            RenderProfile::FastPreview,
+            LayerOutputOptions::default(),
+            1.0,
+        );
         assert_eq!(fast_preview.image_sampling(), ImageSampling::nearest());
         assert!(fast_preview.clip_antialias());
 
-        let print = SkiaReplayContext::new(RenderProfile::Print, LayerOutputOptions::default());
+        let print =
+            SkiaReplayContext::new(RenderProfile::Print, LayerOutputOptions::default(), 1.0);
         assert_eq!(print.image_sampling(), ImageSampling::linear_mipmap());
 
-        let mut raster =
-            SkiaReplayContext::new(RenderProfile::HighQuality, LayerOutputOptions::default());
+        let mut raster = SkiaReplayContext::new(
+            RenderProfile::HighQuality,
+            LayerOutputOptions::default(),
+            1.0,
+        );
         raster.push_cache_hint(CacheHint::PreferRaster);
         assert_eq!(raster.image_sampling(), ImageSampling::nearest());
         assert!(raster.clip_antialias());
 
         let mut vector =
-            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default());
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
         vector.push_cache_hint(CacheHint::PreferVectorRecording);
         assert_eq!(vector.image_sampling(), ImageSampling::linear_mipmap());
     }

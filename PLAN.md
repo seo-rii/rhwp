@@ -84,3 +84,24 @@ Replace stringly layer render errors with a structured error type and make raste
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `rustfmt --check` passed for changed Rust files.
 - `git diff --check` passed for this batch's files.
+
+## Current Batch: ARCH-005 Skia Static Picture Cache
+
+Connect `CacheHint::StaticSubtree` to a native Skia `PictureRecorder` cache so the hint has an actual cache-backed behavior outside the browser CanvasKit path.
+
+## Steps
+
+1. Done: add a static picture cache to `SkiaLayerRenderer`.
+2. Done: include profile, output options, scale, node fingerprint, and resource hashes in the picture cache key.
+3. Done: record and reuse `StaticSubtree` groups as Skia pictures, with direct rendering fallback if recording fails.
+4. Done: add and run focused Skia cache tests plus lib/wasm checks.
+5. Done: update `RISK_REGISTER.md`, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::static_subtree_hint_records_picture_cache -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo test --lib -- --quiet` passed: 974 passed, 1 ignored.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `rustfmt --check` passed for changed Rust files.
+- `git diff --check` passed for this batch's files.

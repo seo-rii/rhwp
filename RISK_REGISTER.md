@@ -42,6 +42,7 @@
 - WASM `renderPageToCanvas`가 `PageLayerTree`를 만든 뒤 `WebCanvasRenderer`의 layer replay 경로로 렌더링하도록 전환했다.
 - `PageLayerTree`에 출력 옵션을 실어 JSON/JS/TypeScript export로 전달하고, Skia text run이 paragraph/control mark 옵션을 반영하도록 했다.
 - layer renderer API에 typed render error와 scale/DPI/color-space/output metadata를 추가했다.
+- native Skia가 `CacheHint::StaticSubtree`를 실제 SkPicture cache로 사용하도록 연결했다.
 
 ---
 
@@ -165,7 +166,7 @@
 ### [ARCH-005] CacheHint와 layer cache key의 계약이 충분하지 않음
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: `CacheHint`, `DocumentCore` layer cache, `SkiaReplayContext`
 
@@ -185,10 +186,12 @@
 - cache key에 subtree hash, resource hash, profile, scale, 출력 옵션 전체를 포함합니다.
 - `StaticSubtree -> SkPicture`, `PreferRaster -> subtree bitmap`, `PreferVectorRecording -> print/PDF recording` 매핑을 명시합니다.
 
-**진행 메모**:
+**완료 메모**:
 
 - `DocumentCore` layer cache key에 page number, render profile, paragraph/control mark 표시, transparent border, clip, debug overlay 옵션을 포함했습니다.
-- `CacheHint`를 실제 SkPicture/raster cache로 연결하는 작업은 아직 남아 있습니다.
+- browser CanvasKit은 `staticSubtree`를 picture cache key로 사용하고 있습니다.
+- native Skia도 `StaticSubtree` group을 `PictureRecorder`로 기록해 renderer-local SkPicture cache에 저장하고 재사용하도록 연결했습니다.
+- Skia picture cache key에는 profile, output options, raster scale, node fingerprint, image/svg resource hash를 포함했습니다.
 
 ---
 

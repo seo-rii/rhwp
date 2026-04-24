@@ -83,7 +83,7 @@ impl PageLayerTree {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct LayerOutputOptions {
     pub show_paragraph_marks: bool,
     pub show_control_codes: bool,
