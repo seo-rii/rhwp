@@ -416,45 +416,52 @@ impl WebCanvasRenderer {
                         node.bbox.width,
                         node.bbox.height,
                     );
-                } else if run.rotation != 0.0 {
-                    // 회전 텍스트: bbox 중앙 기준으로 중앙 정렬 후 회전
-                    let cx = node.bbox.x + node.bbox.width / 2.0;
-                    let cy = node.bbox.y + node.bbox.height / 2.0;
-                    // 폰트 설정
-                    let font_weight = if run.style.bold { "bold " } else { "" };
-                    let font_style_str = if run.style.italic { "italic " } else { "" };
-                    let font_size = if run.style.font_size > 0.0 {
-                        run.style.font_size
-                    } else {
-                        12.0
-                    };
-                    let font_family = if run.style.font_family.is_empty() {
-                        "sans-serif".to_string()
-                    } else {
-                        let fallback = super::generic_fallback(&run.style.font_family);
-                        format!("\"{}\" , {}", run.style.font_family, fallback)
-                    };
-                    let font = format!(
-                        "{}{}{:.3}px {}",
-                        font_style_str, font_weight, font_size, font_family
-                    );
-                    self.ctx.set_font(&font);
-                    self.ctx.set_fill_style_str(&color_to_css(run.style.color));
-                    self.ctx.save();
-                    let _ = self.ctx.translate(cx, cy);
-                    let _ = self.ctx.rotate(run.rotation * std::f64::consts::PI / 180.0);
-                    // 중앙 정렬로 글리프를 원점에 배치 → 회전 후 bbox 중앙에 위치
-                    self.ctx.set_text_align("center");
-                    self.ctx.set_text_baseline("middle");
-                    let _ = self.ctx.fill_text(&run.text, 0.0, 0.0);
-                    self.ctx.restore();
                 } else {
-                    self.draw_text(
-                        &run.text,
-                        node.bbox.x,
-                        node.bbox.y + run.baseline,
-                        &run.style,
-                    );
+                    let rotation = if run.is_vertical {
+                        run.rotation + 90.0
+                    } else {
+                        run.rotation
+                    };
+                    if rotation == 0.0 {
+                        self.draw_text(
+                            &run.text,
+                            node.bbox.x,
+                            node.bbox.y + run.baseline,
+                            &run.style,
+                        );
+                    } else {
+                        // 회전 텍스트: bbox 중앙 기준으로 중앙 정렬 후 회전
+                        let cx = node.bbox.x + node.bbox.width / 2.0;
+                        let cy = node.bbox.y + node.bbox.height / 2.0;
+                        // 폰트 설정
+                        let font_weight = if run.style.bold { "bold " } else { "" };
+                        let font_style_str = if run.style.italic { "italic " } else { "" };
+                        let font_size = if run.style.font_size > 0.0 {
+                            run.style.font_size
+                        } else {
+                            12.0
+                        };
+                        let font_family = if run.style.font_family.is_empty() {
+                            "sans-serif".to_string()
+                        } else {
+                            let fallback = super::generic_fallback(&run.style.font_family);
+                            format!("\"{}\" , {}", run.style.font_family, fallback)
+                        };
+                        let font = format!(
+                            "{}{}{:.3}px {}",
+                            font_style_str, font_weight, font_size, font_family
+                        );
+                        self.ctx.set_font(&font);
+                        self.ctx.set_fill_style_str(&color_to_css(run.style.color));
+                        self.ctx.save();
+                        let _ = self.ctx.translate(cx, cy);
+                        let _ = self.ctx.rotate(rotation * std::f64::consts::PI / 180.0);
+                        // 중앙 정렬로 글리프를 원점에 배치 → 회전 후 bbox 중앙에 위치
+                        self.ctx.set_text_align("center");
+                        self.ctx.set_text_baseline("middle");
+                        let _ = self.ctx.fill_text(&run.text, 0.0, 0.0);
+                        self.ctx.restore();
+                    }
                 }
                 if self.show_paragraph_marks || self.show_control_codes {
                     let is_marker = !matches!(

@@ -423,11 +423,12 @@ export class Canvas2DLayerRenderer {
     ctx.save();
     ctx.font = baseFont;
     ctx.textBaseline = 'alphabetic';
-    if (op.rotation !== 0) {
+    const textRotation = op.isVertical ? op.rotation + 90 : op.rotation;
+    if (textRotation !== 0) {
       const cx = op.bbox.x + op.bbox.width / 2;
       const cy = op.bbox.y + op.bbox.height / 2;
       ctx.translate(cx, cy);
-      ctx.rotate((op.rotation * Math.PI) / 180);
+      ctx.rotate((textRotation * Math.PI) / 180);
       drawClusters(-op.bbox.width / 2, -op.bbox.height / 2 + op.baseline);
     } else {
       drawClusters(op.bbox.x, op.bbox.y + op.baseline);
