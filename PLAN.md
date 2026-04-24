@@ -135,6 +135,15 @@ Apply exported FormObject colors and enabled state in browser Canvas2D layer, Ca
 
 - `npm run build` passed in `rhwp-studio`.
 
+## Completed Batch: BUG-015 Skia Dash Scale
+
+Scale Skia dash intervals by effective stroke width so thick dashed/dotted strokes do not reuse the same fixed dash length as thin strokes. Fill/stroke independent alpha remains a model/IR semantics question because `ShapeStyle` currently exposes one shared `opacity`.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::paint_conv::tests::scales_dash_intervals_by_stroke_width -- --quiet` passed.
+- `rustfmt --check src/renderer/skia/paint_conv.rs` passed.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.

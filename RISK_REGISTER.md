@@ -670,6 +670,11 @@
 - HWP dash 단위와 stroke width/DPI/profile 관계를 확인합니다.
 - fill alpha와 stroke alpha가 독립이라면 IR에 분리합니다.
 
+**진행 메모**:
+
+- Skia dash intervals가 effective stroke width를 기준으로 스케일되도록 수정했습니다.
+- `ShapeStyle`은 현재 fill/stroke가 공유하는 단일 `opacity`만 갖고 있어, 독립 alpha 처리는 모델/IR 필드 확장이 필요합니다.
+
 ---
 
 ### [BUG-016] 텍스트 장식, 공백, symbol/equation fallback 세부 동작이 취약함

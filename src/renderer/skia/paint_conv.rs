@@ -487,6 +487,15 @@ fn make_pattern_shader(pattern: &PatternFillInfo) -> Option<skia_safe::Shader> {
 }
 
 fn apply_dash(paint: &mut Paint, dash: StrokeDash) {
+    let intervals = dash_intervals(dash, paint.stroke_width());
+    if let Some(intervals) = intervals {
+        if let Some(effect) = skia_safe::PathEffect::dash(&intervals, 0.0) {
+            paint.set_path_effect(effect);
+        }
+    }
+}
+
+fn dash_intervals(dash: StrokeDash, stroke_width: f32) -> Option<Vec<f32>> {
     let intervals: Option<[f32; 6]> = match dash {
         StrokeDash::Solid => None,
         StrokeDash::Dash => Some([6.0, 3.0, 0.0, 0.0, 0.0, 0.0]),
@@ -494,19 +503,33 @@ fn apply_dash(paint: &mut Paint, dash: StrokeDash) {
         StrokeDash::DashDot => Some([6.0, 3.0, 2.0, 3.0, 0.0, 0.0]),
         StrokeDash::DashDotDot => Some([6.0, 3.0, 2.0, 3.0, 2.0, 3.0]),
     };
-    if let Some(intervals) = intervals {
-        let trimmed: Vec<f32> = intervals.into_iter().filter(|value| *value > 0.0).collect();
-        if let Some(effect) = skia_safe::PathEffect::dash(&trimmed, 0.0) {
-            paint.set_path_effect(effect);
-        }
-    }
+    let scale = stroke_width.max(1.0);
+    intervals.map(|intervals| {
+        intervals
+            .into_iter()
+            .filter(|value| *value > 0.0)
+            .map(|value| value * scale)
+            .collect()
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::make_font;
-    use crate::renderer::TextStyle;
+    use super::{dash_intervals, make_font};
+    use crate::renderer::{StrokeDash, TextStyle};
     use skia_safe::{FontMgr, FontStyle};
+
+    #[test]
+    fn scales_dash_intervals_by_stroke_width() {
+        assert_eq!(
+            dash_intervals(StrokeDash::Dash, 0.5).expect("dash intervals"),
+            vec![6.0, 3.0]
+        );
+        assert_eq!(
+            dash_intervals(StrokeDash::DashDot, 2.0).expect("dash-dot intervals"),
+            vec![12.0, 6.0, 4.0, 6.0]
+        );
+    }
 
     #[test]
     fn resolves_deterministic_generic_fallback_families() {
