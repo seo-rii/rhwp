@@ -516,7 +516,7 @@
 ### [BUG-010] FormObject 렌더링이 placeholder 성격에 가까움
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: `FormObjectNode`, Skia form object renderer
 
@@ -536,7 +536,8 @@
 **진행 메모**:
 
 - Skia form object renderer가 `back_color`, `fore_color`, `enabled` 상태를 일부 반영하도록 수정했습니다.
-- 출력 목표와 전체 style lowering은 아직 확정이 필요합니다.
+- Canvas2D layer, CanvasKit native replay, CanvasKit overlay replay도 exported `backColor`, `foreColor`, `enabled` 상태를 form control fill/text/border/mark 색에 반영합니다.
+- 출력 목표와 전체 style lowering은 장기 구조 개선으로 남깁니다.
 
 ---
 

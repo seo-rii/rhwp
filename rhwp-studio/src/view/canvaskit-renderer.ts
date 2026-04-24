@@ -385,6 +385,22 @@ export class CanvasKitLayerRenderer {
     return this.renderMode === 'compat';
   }
 
+  private formPalette(op: LayerFormObjectOp): {
+    backColor: string;
+    foreColor: string;
+    borderColor: string;
+    buttonBackColor: string;
+    buttonFaceColor: string;
+  } {
+    return {
+      backColor: op.backColor || '#ffffff',
+      foreColor: op.enabled ? op.foreColor : '#808080',
+      borderColor: op.enabled ? '#808080' : '#bebebe',
+      buttonBackColor: op.backColor || (op.enabled ? '#d0d0d0' : '#e0e0e0'),
+      buttonFaceColor: op.enabled ? '#c0c0c0' : '#e0e0e0',
+    };
+  }
+
   private shouldOverlayImage(_op: LayerImageOp): boolean {
     return shouldOverlayRasterImage({
       renderMode: this.renderMode,
@@ -987,11 +1003,12 @@ export class CanvasKitLayerRenderer {
     op: LayerFormObjectOp,
   ): void {
     const { x, y, width: w, height: h } = op.bbox;
+    const palette = this.formPalette(op);
 
     switch (op.formType) {
       case 'pushButton': {
-        const fillPaint = this.makePaint('#d0d0d0', 'fill');
-        const strokePaint = this.makeLinePaint('#a0a0a0', 0.5, 'solid');
+        const fillPaint = this.makePaint(palette.buttonBackColor, 'fill');
+        const strokePaint = this.makeLinePaint(palette.borderColor, 0.5, 'solid');
         canvas.drawRect(this.toRect(op.bbox), fillPaint);
         canvas.drawRect(this.toRect(op.bbox), strokePaint);
         fillPaint.delete();
@@ -1000,7 +1017,7 @@ export class CanvasKitLayerRenderer {
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.5, 8), 12);
           const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, '#808080');
+          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
           const metrics = font.getMetrics();
           const cssFont = buildCanvasTextFont(family, fontSize, false, false);
           const textWidth = (globalThis as any).measureTextWidth?.(cssFont, op.caption) ?? op.caption.length * fontSize * 0.55;
@@ -1016,8 +1033,8 @@ export class CanvasKitLayerRenderer {
         const boxSize = Math.min(h, 14);
         const boxY = y + (h - boxSize) / 2;
         const boxX = x;
-        const fillPaint = this.makePaint('#ffffff', 'fill');
-        const strokePaint = this.makeLinePaint('#000000', 1, 'solid');
+        const fillPaint = this.makePaint(palette.backColor, 'fill');
+        const strokePaint = this.makeLinePaint(palette.borderColor, 1, 'solid');
         canvas.drawRect(this.canvasKit.XYWHRect(boxX, boxY, boxSize, boxSize), fillPaint);
         canvas.drawRect(this.canvasKit.XYWHRect(boxX, boxY, boxSize, boxSize), strokePaint);
         fillPaint.delete();
@@ -1028,7 +1045,7 @@ export class CanvasKitLayerRenderer {
           path.moveTo(boxX + 2, boxY + boxSize / 2);
           path.lineTo(boxX + boxSize / 3, boxY + boxSize - 3);
           path.lineTo(boxX + boxSize - 2, boxY + 2);
-          const markPaint = this.makeLinePaint('#000000', 2, 'solid');
+          const markPaint = this.makeLinePaint(palette.foreColor, 2, 'solid');
           const checkPath = path.detach();
           canvas.drawPath(checkPath, markPaint);
           markPaint.delete();
@@ -1039,7 +1056,7 @@ export class CanvasKitLayerRenderer {
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
           const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
+          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
           canvas.drawText(op.caption, boxX + boxSize + 4, baselineY, paint, font);
@@ -1053,15 +1070,15 @@ export class CanvasKitLayerRenderer {
         const r = Math.min(h, 14) / 2;
         const cx = x + r;
         const cy = y + h / 2;
-        const fillPaint = this.makePaint('#ffffff', 'fill');
-        const strokePaint = this.makeLinePaint('#000000', 1, 'solid');
+        const fillPaint = this.makePaint(palette.backColor, 'fill');
+        const strokePaint = this.makeLinePaint(palette.borderColor, 1, 'solid');
         canvas.drawCircle(cx, cy, r, fillPaint);
         canvas.drawCircle(cx, cy, r, strokePaint);
         fillPaint.delete();
         strokePaint.delete();
 
         if (op.value !== 0) {
-          const dotPaint = this.makePaint('#000000', 'fill');
+          const dotPaint = this.makePaint(palette.foreColor, 'fill');
           canvas.drawCircle(cx, cy, r * 0.5, dotPaint);
           dotPaint.delete();
         }
@@ -1069,7 +1086,7 @@ export class CanvasKitLayerRenderer {
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
           const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
+          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
           canvas.drawText(op.caption, x + r * 2 + 4, baselineY, paint, font);
@@ -1081,16 +1098,16 @@ export class CanvasKitLayerRenderer {
       }
       case 'comboBox': {
         const btnW = Math.min(h, 20);
-        const fillPaint = this.makePaint('#ffffff', 'fill');
-        const strokePaint = this.makeLinePaint('#808080', 1, 'solid');
+        const fillPaint = this.makePaint(palette.backColor, 'fill');
+        const strokePaint = this.makeLinePaint(palette.borderColor, 1, 'solid');
         canvas.drawRect(this.canvasKit.XYWHRect(x, y, w - btnW, h), fillPaint);
         canvas.drawRect(this.canvasKit.XYWHRect(x, y, w - btnW, h), strokePaint);
         fillPaint.delete();
         strokePaint.delete();
 
         const buttonRect = this.canvasKit.XYWHRect(x + w - btnW, y, btnW, h);
-        const buttonFill = this.makePaint('#c0c0c0', 'fill');
-        const buttonStroke = this.makeLinePaint('#808080', 1, 'solid');
+        const buttonFill = this.makePaint(palette.buttonFaceColor, 'fill');
+        const buttonStroke = this.makeLinePaint(palette.borderColor, 1, 'solid');
         canvas.drawRect(buttonRect, buttonFill);
         canvas.drawRect(buttonRect, buttonStroke);
         buttonFill.delete();
@@ -1104,7 +1121,7 @@ export class CanvasKitLayerRenderer {
         arrowPath.lineTo(arrowCx + arrowSize, arrowCy - arrowSize / 2);
         arrowPath.lineTo(arrowCx, arrowCy + arrowSize / 2);
         arrowPath.close();
-        const arrowPaint = this.makePaint('#000000', 'fill');
+        const arrowPaint = this.makePaint(palette.foreColor, 'fill');
         const arrowShape = arrowPath.detach();
         canvas.drawPath(arrowShape, arrowPaint);
         arrowPaint.delete();
@@ -1114,7 +1131,7 @@ export class CanvasKitLayerRenderer {
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
           const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
+          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
           canvas.drawText(op.text, x + 2, baselineY, paint, font);
@@ -1125,8 +1142,8 @@ export class CanvasKitLayerRenderer {
         return;
       }
       case 'edit': {
-        const fillPaint = this.makePaint(op.backColor, 'fill');
-        const strokePaint = this.makeLinePaint('#808080', 1, 'solid');
+        const fillPaint = this.makePaint(palette.backColor, 'fill');
+        const strokePaint = this.makeLinePaint(palette.borderColor, 1, 'solid');
         canvas.drawRect(this.toRect(op.bbox), fillPaint);
         canvas.drawRect(this.toRect(op.bbox), strokePaint);
         fillPaint.delete();
@@ -1135,7 +1152,7 @@ export class CanvasKitLayerRenderer {
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
           const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, op.foreColor);
+          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
           const metrics = font.getMetrics();
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
           canvas.drawText(op.text, x + 2, baselineY, paint, font);
@@ -1845,19 +1862,20 @@ export class CanvasKitLayerRenderer {
 
   private renderFormObjectOverlay(ctx: CanvasRenderingContext2D, op: LayerFormObjectOp): void {
     const { x, y, width: w, height: h } = op.bbox;
+    const palette = this.formPalette(op);
     ctx.save();
 
     switch (op.formType) {
       case 'pushButton': {
-        ctx.fillStyle = '#d0d0d0';
+        ctx.fillStyle = palette.buttonBackColor;
         ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = '#a0a0a0';
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 0.5;
         ctx.strokeRect(x, y, w, h);
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.5, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = '#808080';
+          ctx.fillStyle = palette.foreColor;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(op.caption, x + w / 2, y + h / 2);
@@ -1867,12 +1885,13 @@ export class CanvasKitLayerRenderer {
       case 'checkBox': {
         const boxSize = Math.min(h, 14);
         const boxY = y + (h - boxSize) / 2;
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = palette.backColor;
         ctx.fillRect(x, boxY, boxSize, boxSize);
-        ctx.strokeStyle = '#000000';
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.strokeRect(x, boxY, boxSize, boxSize);
         if (op.value !== 0) {
+          ctx.strokeStyle = palette.foreColor;
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.moveTo(x + 2, boxY + boxSize / 2);
@@ -1883,7 +1902,7 @@ export class CanvasKitLayerRenderer {
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = op.foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.caption, x + boxSize + 4, y + h / 2);
         }
@@ -1895,21 +1914,21 @@ export class CanvasKitLayerRenderer {
         const cy = y + h / 2;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = palette.backColor;
         ctx.fill();
-        ctx.strokeStyle = '#000000';
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.stroke();
         if (op.value !== 0) {
           ctx.beginPath();
           ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#000000';
+          ctx.fillStyle = palette.foreColor;
           ctx.fill();
         }
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = op.foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.caption, x + r * 2 + 4, y + h / 2);
         }
@@ -1917,22 +1936,22 @@ export class CanvasKitLayerRenderer {
       }
       case 'comboBox': {
         const btnW = Math.min(h, 20);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = palette.backColor;
         ctx.fillRect(x, y, w - btnW, h);
-        ctx.strokeStyle = '#808080';
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, w - btnW, h);
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = op.foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.text, x + 2, y + h / 2);
         }
         const buttonX = x + w - btnW;
-        ctx.fillStyle = '#c0c0c0';
+        ctx.fillStyle = palette.buttonFaceColor;
         ctx.fillRect(buttonX, y, btnW, h);
-        ctx.strokeStyle = '#808080';
+        ctx.strokeStyle = palette.borderColor;
         ctx.strokeRect(buttonX, y, btnW, h);
         ctx.beginPath();
         const triCx = buttonX + btnW / 2;
@@ -1942,20 +1961,20 @@ export class CanvasKitLayerRenderer {
         ctx.lineTo(triCx + triSize, triCy - triSize / 2);
         ctx.lineTo(triCx, triCy + triSize / 2);
         ctx.closePath();
-        ctx.fillStyle = '#000000';
+        ctx.fillStyle = palette.foreColor;
         ctx.fill();
         break;
       }
       case 'edit': {
-        ctx.fillStyle = op.backColor;
+        ctx.fillStyle = palette.backColor;
         ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = '#808080';
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, w, h);
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = op.foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.text, x + 2, y + h / 2);
         }

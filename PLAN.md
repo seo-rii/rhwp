@@ -127,6 +127,14 @@ Lower Body horizontal overflow controls into a sibling layer replay under a y-on
 - `rustfmt --check src/paint/builder.rs` passed.
 - `git diff --check` passed for this batch's files.
 
+## Completed Batch: BUG-010 FormObject Replay State
+
+Apply exported FormObject colors and enabled state in browser Canvas2D layer, CanvasKit native replay, and CanvasKit overlay replay so the Skia/browser layer paths no longer hardcode most form control colors.
+
+## Verification
+
+- `npm run build` passed in `rhwp-studio`.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.
