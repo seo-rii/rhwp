@@ -141,6 +141,9 @@ impl SvgRenderer {
 
     /// 레이어 트리를 SVG로 직접 재생한다.
     pub fn render_layer_tree(&mut self, tree: &PageLayerTree) {
+        self.show_paragraph_marks = tree.output_options.show_paragraph_marks;
+        self.show_control_codes = tree.output_options.show_control_codes;
+        self.debug_overlay = tree.output_options.debug_overlay;
         self.begin_page(tree.page_width, tree.page_height);
         self.render_layer_node(&tree.root, &tree.resources);
         self.end_page();

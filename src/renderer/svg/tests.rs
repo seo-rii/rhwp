@@ -1,4 +1,5 @@
 use super::*;
+use crate::paint::LayerOutputOptions;
 use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
 
@@ -298,5 +299,49 @@ fn test_legacy_svg_vertical_text_uses_effective_rotation() {
     assert!(
         output.contains("<g transform=\"rotate(105,30,25)\">"),
         "vertical legacy text should compose author rotation and vertical rotation:\n{output}"
+    );
+}
+
+#[test]
+fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
+    let bbox = BoundingBox::new(10.0, 15.0, 40.0, 20.0);
+    let root = LayerNode::leaf(
+        bbox,
+        Some(1),
+        vec![PaintOp::TextRun {
+            bbox,
+            run: LayerTextRunPaint {
+                text: "a b".to_string(),
+                style: TextStyle {
+                    font_size: 14.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 8.0, 16.0, 24.0],
+                baseline: 16.0,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                field_marker: Default::default(),
+                is_para_end: true,
+                is_line_break_end: false,
+            },
+        }],
+    );
+    let tree = PageLayerTree::new(80.0, 60.0, root).with_output_options(LayerOutputOptions {
+        show_paragraph_marks: true,
+        show_control_codes: true,
+        ..Default::default()
+    });
+    let mut renderer = SvgRenderer::new();
+    renderer.render_layer_tree(&tree);
+
+    let output = renderer.output();
+    assert!(
+        output.contains("\u{2228}"),
+        "layer outputOptions should enable visible space marks:\n{output}"
+    );
+    assert!(
+        output.contains("\u{21B5}"),
+        "layer outputOptions should enable paragraph end marks:\n{output}"
     );
 }
