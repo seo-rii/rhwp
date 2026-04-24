@@ -1879,6 +1879,7 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 #[cfg(test)]
 mod tests {
     use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
+    use crate::model::style::UnderlineType;
     use crate::paint::{
         CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerNode, LayerOutputOptions,
         LayerRectanglePaint, LayerSemantic, PageLayerTree, PaintOp, RenderProfile, SvgResourceId,
@@ -2259,6 +2260,169 @@ mod tests {
             .count();
 
         assert!(ink_pixels > 20, "expected visible plain text ink");
+    }
+
+    #[test]
+    fn renders_text_feature_fixture_to_png() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 240.0, 170.0);
+        let mut next_id = 1;
+        let mut push_text = |tree: &mut crate::renderer::render_tree::PageRenderTree,
+                             text: &str,
+                             bbox: BoundingBox,
+                             style: TextStyle,
+                             baseline: f64,
+                             rotation: f64,
+                             is_vertical: bool,
+                             char_overlap: Option<CharOverlapInfo>| {
+            tree.root.children.push(RenderNode::new(
+                next_id,
+                RenderNodeType::TextRun(TextRunNode {
+                    text: text.to_string(),
+                    style,
+                    char_shape_id: None,
+                    para_shape_id: None,
+                    section_index: None,
+                    para_index: None,
+                    char_start: None,
+                    cell_context: None,
+                    is_para_end: false,
+                    is_line_break_end: false,
+                    rotation,
+                    is_vertical,
+                    char_overlap,
+                    border_fill_id: 0,
+                    baseline,
+                    field_marker: Default::default(),
+                }),
+                bbox,
+            ));
+            next_id += 1;
+        };
+
+        push_text(
+            &mut tree,
+            "한글 ABC 日本 123",
+            BoundingBox::new(12.0, 14.0, 190.0, 28.0),
+            TextStyle {
+                font_size: 18.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            22.0,
+            0.0,
+            false,
+            None,
+        );
+        push_text(
+            &mut tree,
+            "회전",
+            BoundingBox::new(198.0, 22.0, 28.0, 42.0),
+            TextStyle {
+                font_size: 16.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            20.0,
+            90.0,
+            false,
+            None,
+        );
+        push_text(
+            &mut tree,
+            "세로",
+            BoundingBox::new(170.0, 58.0, 28.0, 48.0),
+            TextStyle {
+                font_size: 16.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            20.0,
+            0.0,
+            true,
+            None,
+        );
+        push_text(
+            &mut tree,
+            "12",
+            BoundingBox::new(18.0, 56.0, 28.0, 28.0),
+            TextStyle {
+                font_size: 22.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            22.0,
+            0.0,
+            false,
+            Some(CharOverlapInfo {
+                border_type: 1,
+                inner_char_size: 80,
+            }),
+        );
+        push_text(
+            &mut tree,
+            "위첨자",
+            BoundingBox::new(58.0, 58.0, 58.0, 24.0),
+            TextStyle {
+                font_size: 18.0,
+                color: 0x00000000,
+                superscript: true,
+                ..Default::default()
+            },
+            20.0,
+            0.0,
+            false,
+            None,
+        );
+        push_text(
+            &mut tree,
+            "아래첨자",
+            BoundingBox::new(58.0, 90.0, 72.0, 26.0),
+            TextStyle {
+                font_size: 18.0,
+                color: 0x00000000,
+                subscript: true,
+                ..Default::default()
+            },
+            18.0,
+            0.0,
+            false,
+            None,
+        );
+        push_text(
+            &mut tree,
+            "밑줄 취소 강조",
+            BoundingBox::new(14.0, 126.0, 160.0, 30.0),
+            TextStyle {
+                font_size: 18.0,
+                color: 0x00000000,
+                underline: UnderlineType::Bottom,
+                strikethrough: true,
+                emphasis_dot: 1,
+                ..Default::default()
+            },
+            22.0,
+            0.0,
+            false,
+            None,
+        );
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let renderer = SkiaLayerRenderer::new();
+        let png = renderer
+            .render_png(&layer_tree)
+            .expect("text feature fixture render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+        let ink_pixels = pixmap
+            .pixels()
+            .iter()
+            .filter(|pixel| pixel.alpha() > 0)
+            .count();
+
+        assert!(
+            ink_pixels > 500,
+            "expected visible text feature fixture ink"
+        );
     }
 
     #[test]

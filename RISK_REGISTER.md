@@ -873,7 +873,7 @@
 ### [TEST-004] 텍스트 fixture를 최우선으로 확장해야 함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: text rendering regression tests
 
@@ -885,6 +885,12 @@
 
 - 한글/영문/CJK 혼합, 숫자/기호 fallback, 회전 글자, 세로쓰기, 글자겹침, 위첨자/아래첨자, 장평/자간 fixture를 추가합니다.
 - 음영/그림자/양각/음각/외곽선, 밑줄/취소선/강조점, 탭/공백 조판부호, 누름틀 field marker, 문단 끝/강제 줄바꿈 표시도 포함합니다.
+
+**완료 메모**:
+
+- native Skia 합성 텍스트 fixture를 추가해 한글/영문/CJK 혼합, 숫자, 회전 텍스트, 세로 텍스트, 글자겹침, 위첨자/아래첨자, 밑줄/취소선/강조점 조합을 한 번에 렌더링합니다.
+- 기존 Skia text tests의 char overlap, output control marks, tab leaders, plain text 경로와 함께 텍스트 회귀 범위를 넓혔습니다.
+- shaping/metric parity의 장기 전략은 [BUG-002]와 실제 sample 기반 Skia screenshot corpus에서 계속 다룹니다.
 
 ---
 

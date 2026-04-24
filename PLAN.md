@@ -306,6 +306,24 @@ Close the stale Skia golden ladder risk after verifying the existing native scre
 - `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_basic_text_sample -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_table_sample -- --quiet` passed.
 
+## Current Batch: TEST-004 Skia Text Feature Fixture
+
+Broaden native Skia text regression coverage with one synthetic text fixture that exercises the high-risk text features together.
+
+## Steps
+
+1. Done: add a synthetic TextRun fixture covering mixed Korean/Latin/CJK/numeric text.
+2. Done: include rotated text, vertical text, char overlap, superscript/subscript, underline, strike, and emphasis marks.
+3. Done: verify the focused fixture and full native Skia renderer test group.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_text_feature_fixture_to_png -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: TEST-001 LayerBuilder Totality
 
 Make RenderNodeType lowering explicit so visual render nodes cannot silently pass through as empty groups.
