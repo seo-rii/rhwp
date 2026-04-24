@@ -197,9 +197,10 @@ impl LayerBuilder {
     }
 
     fn build_paint_node(&mut self, node: &RenderNode, op: PaintOp) -> LayerNode {
+        let visual_bounds = op.visual_bounds();
         if node.children.is_empty() {
             return LayerNode::leaf_with_hint(
-                node.bbox,
+                visual_bounds,
                 Some(node.id),
                 vec![op],
                 self.cache_hint_for(&node.node_type),
@@ -208,15 +209,31 @@ impl LayerBuilder {
 
         let mut children = Vec::with_capacity(node.children.len() + 1);
         children.push(LayerNode::leaf_with_hint(
-            node.bbox,
+            visual_bounds,
             Some(node.id),
             vec![op],
             self.cache_hint_for(&node.node_type),
         ));
         children.extend(self.build_children(node));
 
+        let mut group_bounds = visual_bounds;
+        for child in &children[1..] {
+            let left = group_bounds.x.min(child.bounds.x);
+            let top = group_bounds.y.min(child.bounds.y);
+            let right =
+                (group_bounds.x + group_bounds.width).max(child.bounds.x + child.bounds.width);
+            let bottom =
+                (group_bounds.y + group_bounds.height).max(child.bounds.y + child.bounds.height);
+            group_bounds = crate::renderer::render_tree::BoundingBox::new(
+                left,
+                top,
+                right - left,
+                bottom - top,
+            );
+        }
+
         LayerNode::group(
-            node.bbox,
+            group_bounds,
             None,
             children,
             self.cache_hint_for(&node.node_type),
@@ -407,10 +424,11 @@ impl LayerBuilder {
 mod tests {
     use super::*;
     use crate::renderer::render_tree::{
-        BoundingBox, PageBackgroundNode, PageNode, RenderNode, RenderNodeType, TableCellNode,
-        TableNode, TextLineNode,
+        BoundingBox, PageBackgroundNode, PageNode, RectangleNode, RenderNode, RenderNodeType,
+        TableCellNode, TableNode, TextLineNode,
     };
     use crate::renderer::render_tree::{EquationNode, ImageNode};
+    use crate::renderer::ShapeStyle;
 
     #[test]
     fn builds_body_clip_layer() {
@@ -758,6 +776,37 @@ mod tests {
                     }
                     other => panic!("expected clip rect, got {other:?}"),
                 }
+            }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_leaf_nodes_with_visual_bounds() {
+        let mut tree = PageRenderTree::new(0, 200.0, 100.0);
+        tree.root.children.push(RenderNode::new(
+            30,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    stroke_color: Some(0x000000),
+                    stroke_width: 12.0,
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(40.0, 20.0, 60.0, 30.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => {
+                assert!(children[0].bounds.x < 40.0);
+                assert!(children[0].bounds.y < 20.0);
+                assert!(children[0].bounds.width > 60.0);
+                assert!(children[0].bounds.height > 30.0);
             }
             other => panic!("expected root group, got {other:?}"),
         }

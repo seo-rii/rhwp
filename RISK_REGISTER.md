@@ -43,6 +43,7 @@
 - `PageLayerTree`에 출력 옵션을 실어 JSON/JS/TypeScript export로 전달하고, Skia text run이 paragraph/control mark 옵션을 반영하도록 했다.
 - layer renderer API에 typed render error와 scale/DPI/color-space/output metadata를 추가했다.
 - native Skia가 `CacheHint::StaticSubtree`를 실제 SkPicture cache로 사용하도록 연결했다.
+- PaintOp logical bounds와 visual bounds를 분리하고 layer node bounds에 visual extent를 반영했다.
 
 ---
 
@@ -198,7 +199,7 @@
 ### [ARCH-006] PaintOp bounds가 visual extent를 충분히 표현하는지 확인해야 함
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 검증 필요  
 **위치**: `PaintOp::bounds()`, culling, cache invalidation, dirty rect 계산
 
@@ -214,6 +215,12 @@
 
 - `PaintBounds { logical, visual }`처럼 logical bounds와 visual bounds를 분리합니다.
 - stroke width, shadow blur/offset, text decoration, image effect, arrowhead 확장을 visual bounds에 반영합니다.
+
+**완료 메모**:
+
+- `PaintBounds { logical, visual }`, `PaintOp::paint_bounds()`, `PaintOp::visual_bounds()`를 추가했습니다.
+- 기존 `PaintOp::bounds()`는 Canvas2D replay 호환을 위해 logical bbox를 유지합니다.
+- LayerBuilder는 leaf/group node bounds에 visual bounds를 사용해 stroke, double/triple line, arrowhead, shadow, text decoration extent가 cache/culling 후보 bbox에 포함되도록 했습니다.
 
 ---
 

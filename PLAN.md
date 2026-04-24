@@ -85,6 +85,28 @@ Replace stringly layer render errors with a structured error type and make raste
 - `rustfmt --check` passed for changed Rust files.
 - `git diff --check` passed for this batch's files.
 
+## Current Batch: ARCH-006 Paint Visual Bounds
+
+Separate logical paint bounds from visual paint bounds and make layer leaf/group nodes use visual bounds so future culling/cache invalidation does not clip stroke, arrow, shadow, or text decoration pixels.
+
+## Steps
+
+1. Done: add `PaintBounds { logical, visual }`, `paint_bounds()`, and `visual_bounds()`.
+2. Done: expand visual bounds for stroke width, double/triple line spacing, arrowheads, shadows, and text decoration marks.
+3. Done: keep `PaintOp::bounds()` as the logical bbox for existing replay compatibility.
+4. Done: use visual bounds when lowering paint ops into layer leaf/group nodes.
+5. Done: verify focused paint/builder tests, lib/wasm checks, formatting, and diff checks.
+6. Done: update `RISK_REGISTER.md`, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --lib paint::paint_op::tests:: -- --quiet` passed.
+- `cargo test --lib paint::builder::tests::lowers_leaf_nodes_with_visual_bounds -- --quiet` passed.
+- `cargo test --lib -- --quiet` passed: 977 passed, 1 ignored.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `rustfmt --check` passed for changed Rust files.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: ARCH-005 Skia Static Picture Cache
 
 Connect `CacheHint::StaticSubtree` to a native Skia `PictureRecorder` cache so the hint has an actual cache-backed behavior outside the browser CanvasKit path.

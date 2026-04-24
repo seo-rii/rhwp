@@ -19,7 +19,7 @@ pub use layer_tree::{
 pub use paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PaintOp,
+    LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PaintBounds, PaintOp,
 };
 pub use profile::RenderProfile;
 pub use resources::{ImageResourceId, ResourceArena, SvgResourceId};
