@@ -116,6 +116,17 @@ Carry structural clip policy through `PageLayerTree` so Body/TableCell right-ove
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `npm run build` passed in `rhwp-studio`.
 
+## Completed Batch: BUG-009 Body Overflow Replay
+
+Lower Body horizontal overflow controls into a sibling layer replay under a y-only, full-page-width clip so layer backends match the legacy Canvas2D re-render path for non-text controls outside the body margins.
+
+## Verification
+
+- `cargo test --lib paint::builder::tests::lowers_body_horizontal_overflow_controls -- --quiet` passed.
+- `cargo test --lib paint::builder::tests:: -- --quiet` passed.
+- `rustfmt --check src/paint/builder.rs` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.

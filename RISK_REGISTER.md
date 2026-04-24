@@ -486,7 +486,7 @@
 ### [BUG-009] Clip/overflow 정책이 backend마다 다름
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: Canvas2D Body/TableCell clip, Skia `ClipRect`
 
@@ -508,7 +508,8 @@
 
 - `ClipRect`에 `clipPolicy.rightOverflowSlop`과 `allowHorizontalOverflowControls`를 추가하고 JSON/JS/TypeScript export로 전달합니다.
 - Body/TableCell clip은 기본 `rightOverflowSlop = 4.0`을 갖고, native Skia/SVG layer/WASM Canvas2D/CanvasKit replay가 같은 policy를 사용합니다.
-- Body overflow control 재렌더링을 별도 PaintOp로 낮추는 작업은 아직 남아 있습니다.
+- Body 좌우 overflow control은 y-only/full-page-width clip을 갖는 sibling layer replay로 낮춰 legacy Canvas2D의 재렌더링 경로와 맞췄습니다.
+- 전용 `PaintOp::OverflowControl`로 분리하는 구조 개선은 장기 과제로 남깁니다.
 
 ---
 
