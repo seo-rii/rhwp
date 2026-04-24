@@ -144,6 +144,17 @@ Scale Skia dash intervals by effective stroke width so thick dashed/dotted strok
 - `cargo test --features native-skia --lib renderer::skia::paint_conv::tests::scales_dash_intervals_by_stroke_width -- --quiet` passed.
 - `rustfmt --check src/renderer/skia/paint_conv.rs` passed.
 
+## Completed Batch: BUG-016 Skia Tab Leaders
+
+Render Skia tab leaders for skipped tab clusters using the legacy Canvas2D fill-type mapping, so tab leader marks no longer disappear when the tab glyph itself is skipped.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_tab_leaders_for_skipped_tab_clusters -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `rustfmt --check src/renderer/skia/renderer.rs` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.

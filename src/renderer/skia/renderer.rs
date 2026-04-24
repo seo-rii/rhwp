@@ -1,5 +1,5 @@
 use skia_safe::{
-    surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, Picture,
+    paint::Cap, surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, Picture,
     PictureRecorder, Point, Rect,
 };
 use std::cell::RefCell;
@@ -1503,6 +1503,59 @@ impl SkiaLayerRenderer {
             );
         }
 
+        for leader in &run.style.tab_leaders {
+            if leader.fill_type == 0 {
+                continue;
+            }
+            let lx1 = bbox.x as f32 + leader.start_x as f32;
+            let lx2 = bbox.x as f32 + leader.end_x as f32;
+            let ly = y - render_style.font_size as f32 * 0.35;
+            let draw_line = |line_y: f32, stroke_width: f32, dash: &[f32], round_cap: bool| {
+                let mut leader_paint = Paint::default();
+                leader_paint.set_anti_alias(true);
+                leader_paint.set_style(skia_safe::paint::Style::Stroke);
+                leader_paint.set_stroke_width(stroke_width);
+                leader_paint.set_color(colorref_to_skia(run.style.color, 1.0));
+                if round_cap {
+                    leader_paint.set_stroke_cap(Cap::Round);
+                }
+                if !dash.is_empty() {
+                    if let Some(effect) = skia_safe::PathEffect::dash(dash, 0.0) {
+                        leader_paint.set_path_effect(effect);
+                    }
+                }
+                canvas.draw_line((lx1, line_y), (lx2, line_y), &leader_paint);
+            };
+
+            match leader.fill_type {
+                1 => draw_line(ly, 0.5, &[], false),
+                2 => draw_line(ly, 0.5, &[3.0, 3.0], false),
+                3 => draw_line(ly, 0.5, &[1.0, 2.0], false),
+                4 => draw_line(ly, 0.5, &[6.0, 2.0, 1.0, 2.0], false),
+                5 => draw_line(ly, 0.5, &[6.0, 2.0, 1.0, 2.0, 1.0, 2.0], false),
+                6 => draw_line(ly, 0.5, &[8.0, 4.0], false),
+                7 => draw_line(ly, 0.7, &[0.1, 2.5], true),
+                8 => {
+                    draw_line(ly - 1.0, 0.3, &[], false);
+                    draw_line(ly + 1.0, 0.3, &[], false);
+                }
+                9 => {
+                    draw_line(ly - 1.2, 0.3, &[], false);
+                    draw_line(ly + 0.8, 0.8, &[], false);
+                }
+                10 => {
+                    draw_line(ly - 0.8, 0.8, &[], false);
+                    draw_line(ly + 1.2, 0.3, &[], false);
+                }
+                11 => {
+                    draw_line(ly - 2.0, 0.3, &[], false);
+                    draw_line(ly, 0.8, &[], false);
+                    draw_line(ly + 2.0, 0.3, &[], false);
+                }
+                _ => draw_line(ly, 0.5, &[1.0, 2.0], false),
+            }
+        }
+
         if run.style.emphasis_dot > 0 {
             let dot_char = match run.style.emphasis_dot {
                 1 => "●",
@@ -1738,7 +1791,7 @@ mod tests {
         BoundingBox, LineNode, PageNode, RectangleNode, RenderNode, RenderNodeType, TextRunNode,
     };
     use crate::renderer::{
-        ArrowStyle, LineRenderType, LineStyle, ShapeStyle, StrokeDash, TextStyle,
+        ArrowStyle, LineRenderType, LineStyle, ShapeStyle, StrokeDash, TabLeaderInfo, TextStyle,
     };
     use resvg::tiny_skia;
 
@@ -2069,6 +2122,61 @@ mod tests {
         };
 
         assert!(count_ink(&marked) > count_ink(&base));
+    }
+
+    #[test]
+    fn renders_tab_leaders_for_skipped_tab_clusters() {
+        let render_with_leaders = |tab_leaders| {
+            let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
+            tree.root.children.push(RenderNode::new(
+                1,
+                RenderNodeType::TextRun(TextRunNode {
+                    text: "\t".to_string(),
+                    style: TextStyle {
+                        font_size: 18.0,
+                        color: 0x00000000,
+                        tab_leaders,
+                        ..Default::default()
+                    },
+                    char_shape_id: None,
+                    para_shape_id: None,
+                    section_index: None,
+                    para_index: None,
+                    char_start: None,
+                    cell_context: None,
+                    is_para_end: false,
+                    is_line_break_end: false,
+                    rotation: 0.0,
+                    is_vertical: false,
+                    char_overlap: None,
+                    border_fill_id: 0,
+                    baseline: 30.0,
+                    field_marker: Default::default(),
+                }),
+                BoundingBox::new(10.0, 16.0, 90.0, 30.0),
+            ));
+            let mut builder = LayerBuilder::new(RenderProfile::Screen);
+            let layer_tree = builder.build(&tree);
+            let renderer = SkiaLayerRenderer::new();
+            let png = renderer
+                .render_png(&layer_tree)
+                .expect("skia tab leader render");
+            let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("tab leader decode");
+            pixmap
+                .pixels()
+                .iter()
+                .filter(|pixel| pixel.alpha() > 0)
+                .count()
+        };
+
+        let without_leaders = render_with_leaders(Vec::new());
+        let with_leaders = render_with_leaders(vec![TabLeaderInfo {
+            start_x: 0.0,
+            end_x: 80.0,
+            fill_type: 1,
+        }]);
+
+        assert!(with_leaders > without_leaders);
     }
 
     #[test]

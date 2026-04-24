@@ -699,6 +699,11 @@
 - 텍스트 장식/공백/control mark를 backend-local hidden rule이 아니라 명시적인 PaintOp 또는 shaped run metadata로 표현합니다.
 - symbol/equation SVG fragment는 parse/render cache를 붙이고 fallback 품질 fixture를 둡니다.
 
+**진행 메모**:
+
+- Skia text replay가 tab cluster를 glyph로는 건너뛰더라도 `tab_leaders`를 별도 stroke로 렌더링하도록 수정했습니다.
+- underline/strike/emphasis 세부 위치 fixture와 symbol/equation SVG fragment cache/fallback 품질 검증은 아직 남아 있습니다.
+
 ---
 
 ### [BUG-017] Image fill tile 계열의 dimension guard가 부족할 수 있음
