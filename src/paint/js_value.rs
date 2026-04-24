@@ -8,8 +8,8 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    image_resource_key, svg_resource_key, CacheHint, ClipKind, LayerNode, LayerNodeKind,
-    LayerSemantic, PageLayerTree, PaintOp, LAYER_TREE_SCHEMA,
+    image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, LayerNode,
+    LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -97,15 +97,11 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let image_hashes = Array::new();
     let image_keys = Array::new();
     for (id, bytes) in tree.resources.image_resources() {
-        if let Some(hash) = tree.resources.image_hash(id) {
-            let hash_hex = format!("{hash:016x}");
-            let key = image_resource_key(bytes.len(), hash);
-            image_hashes.set(id.0 as u32, JsValue::from_str(&hash_hex));
-            image_keys.set(id.0 as u32, JsValue::from_str(&key));
-            if !hints.known_image_keys.contains(&key) {
-                images.set(id.0 as u32, Uint8Array::from(bytes).into());
-            }
-        } else {
+        let digest = resource_digest_hex(bytes);
+        let key = image_resource_key(bytes.len(), &digest);
+        image_hashes.set(id.0 as u32, JsValue::from_str(&digest));
+        image_keys.set(id.0 as u32, JsValue::from_str(&key));
+        if !hints.known_image_keys.contains(&key) {
             images.set(id.0 as u32, Uint8Array::from(bytes).into());
         }
     }
@@ -117,15 +113,11 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let svg_hashes = Array::new();
     let svg_keys = Array::new();
     for (id, svg) in tree.resources.svg_resources() {
-        if let Some(hash) = tree.resources.svg_hash(id) {
-            let hash_hex = format!("{hash:016x}");
-            let key = svg_resource_key(svg.len(), hash);
-            svg_hashes.set(id.0 as u32, JsValue::from_str(&hash_hex));
-            svg_keys.set(id.0 as u32, JsValue::from_str(&key));
-            if !hints.known_svg_keys.contains(&key) {
-                svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
-            }
-        } else {
+        let digest = resource_digest_hex(svg);
+        let key = svg_resource_key(svg.len(), &digest);
+        svg_hashes.set(id.0 as u32, JsValue::from_str(&digest));
+        svg_keys.set(id.0 as u32, JsValue::from_str(&key));
+        if !hints.known_svg_keys.contains(&key) {
             svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
         }
     }

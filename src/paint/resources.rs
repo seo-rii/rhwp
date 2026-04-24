@@ -6,7 +6,7 @@ pub struct ImageResourceId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SvgResourceId(pub usize);
 
-pub const RESOURCE_KEY_ALGORITHM: &str = "fnv1a64";
+pub const RESOURCE_KEY_ALGORITHM: &str = "blake3";
 
 /// 레이어 replay가 공유하는 바이너리/문자열 자원 저장소.
 ///
@@ -108,22 +108,27 @@ fn resource_hash(bytes: impl AsRef<[u8]>) -> u64 {
     hash
 }
 
-pub fn image_resource_key(byte_len: usize, hash: u64) -> String {
-    resource_key("img", byte_len, hash)
+pub fn resource_digest_hex(bytes: impl AsRef<[u8]>) -> String {
+    blake3::hash(bytes.as_ref()).to_hex().to_string()
 }
 
-pub fn svg_resource_key(byte_len: usize, hash: u64) -> String {
-    resource_key("svg", byte_len, hash)
+pub fn image_resource_key(byte_len: usize, digest: &str) -> String {
+    resource_key("img", byte_len, digest)
 }
 
-fn resource_key(kind: &str, byte_len: usize, hash: u64) -> String {
-    format!("{kind}:{RESOURCE_KEY_ALGORITHM}:{byte_len}:{hash:016x}")
+pub fn svg_resource_key(byte_len: usize, digest: &str) -> String {
+    resource_key("svg", byte_len, digest)
+}
+
+fn resource_key(kind: &str, byte_len: usize, digest: &str) -> String {
+    format!("{kind}:{RESOURCE_KEY_ALGORITHM}:{byte_len}:{digest}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        image_resource_key, svg_resource_key, ImageResourceId, ResourceArena, SvgResourceId,
+        image_resource_key, resource_digest_hex, svg_resource_key, ImageResourceId, ResourceArena,
+        SvgResourceId,
     };
 
     #[test]
@@ -158,14 +163,19 @@ mod tests {
     }
 
     #[test]
-    fn resource_keys_include_kind_algorithm_length_and_hash() {
+    fn resource_digest_is_stable_and_content_dependent() {
+        let digest = resource_digest_hex([1, 2, 3, 4]);
+        assert_eq!(digest.len(), 64);
+        assert_eq!(digest, resource_digest_hex([1, 2, 3, 4]));
+        assert_ne!(digest, resource_digest_hex([1, 2, 3, 5]));
+    }
+
+    #[test]
+    fn resource_keys_include_kind_algorithm_length_and_digest() {
+        assert_eq!(image_resource_key(4, "abcd"), "img:blake3:4:abcd");
         assert_eq!(
-            image_resource_key(4, 0xbe7a_5e77_5165_785d),
-            "img:fnv1a64:4:be7a5e775165785d"
-        );
-        assert_eq!(
-            svg_resource_key(6, 0x0123_4567_89ab_cdef),
-            "svg:fnv1a64:6:0123456789abcdef"
+            svg_resource_key(6, "0123456789abcdef"),
+            "svg:blake3:6:0123456789abcdef"
         );
     }
 }

@@ -39,7 +39,7 @@ export class LayerResourceStore {
     this.importedImagePayloadBytes += bytes.byteLength;
     const resourceHash = contentHash ?? this.hashBytes(bytes);
     const key = resourceKey
-      ?? this.makeResourceKey('img', contentHash ? 'fnv1a64' : 'fnv1a32', bytes.byteLength, resourceHash);
+      ?? this.makeResourceKey('img', contentHash ? 'blake3' : 'fnv1a32', bytes.byteLength, resourceHash);
     const candidates = this.imageLookup.get(key);
     if (candidates) {
       for (const candidate of candidates) {
@@ -70,7 +70,7 @@ export class LayerResourceStore {
     this.importedSvgPayloadBytes += byteLength;
     const resourceHash = contentHash ?? this.hashBytes(encoded);
     const key = resourceKey
-      ?? this.makeResourceKey('svg', contentHash ? 'fnv1a64' : 'fnv1a32', byteLength, resourceHash);
+      ?? this.makeResourceKey('svg', contentHash ? 'blake3' : 'fnv1a32', byteLength, resourceHash);
     const candidates = this.svgLookup.get(key);
     if (candidates) {
       for (const candidate of candidates) {
@@ -158,7 +158,7 @@ export class LayerResourceStore {
 
   private makeResourceKey(
     kind: 'img' | 'svg',
-    algorithm: 'fnv1a64' | 'fnv1a32',
+    algorithm: 'blake3' | 'fnv1a32',
     byteLength: number,
     hash: string,
   ): string {
