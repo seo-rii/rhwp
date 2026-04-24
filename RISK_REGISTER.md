@@ -897,7 +897,7 @@
 ### [TEST-005] 도형/선 fixture를 세분화해야 함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: shape, line, path regression tests
 
@@ -909,6 +909,12 @@
 
 - double/triple line, dash/dot/dash-dot, arrowhead start/end, rounded rectangle, ellipse, Bezier path, arc, connector path fixture를 추가합니다.
 - rotation, horizontal/vertical flip, group transform fixture도 추가합니다.
+
+**완료 메모**:
+
+- native Skia 합성 shape fixture를 추가해 triple/double line, dash-dot, arrowhead start/end, rounded rectangle, ellipse, Bezier path, arc path, connector arrow를 한 번에 렌더링합니다.
+- rectangle/ellipse rotation 및 horizontal/vertical flip transform도 fixture에 포함했습니다.
+- 기존 synthetic SVG-vs-Skia shape fixture와 multi-line stroke regression에 더해 선/도형 회귀 범위를 넓혔습니다.
 
 ---
 

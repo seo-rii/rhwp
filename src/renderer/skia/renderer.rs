@@ -1887,10 +1887,12 @@ mod tests {
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
     use crate::renderer::render_tree::{
-        BoundingBox, LineNode, PageNode, RectangleNode, RenderNode, RenderNodeType, TextRunNode,
+        BoundingBox, EllipseNode, LineNode, PageNode, PathNode, RectangleNode, RenderNode,
+        RenderNodeType, ShapeTransform, TextRunNode,
     };
     use crate::renderer::{
-        ArrowStyle, LineRenderType, LineStyle, ShapeStyle, StrokeDash, TabLeaderInfo, TextStyle,
+        ArrowStyle, LineRenderType, LineStyle, PathCommand, ShapeStyle, StrokeDash, TabLeaderInfo,
+        TextStyle,
     };
     use resvg::tiny_skia;
 
@@ -2011,6 +2013,152 @@ mod tests {
         assert!(
             triple_ink < single_ink,
             "expected separated triple line ink ({triple_ink}) to be less than solid single line ink ({single_ink})"
+        );
+    }
+
+    #[test]
+    fn renders_shape_feature_fixture_to_png() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 220.0, 180.0);
+        let mut next_id = 1;
+        let mut push_node = |tree: &mut crate::renderer::render_tree::PageRenderTree,
+                             node_type: RenderNodeType,
+                             bbox: BoundingBox| {
+            tree.root
+                .children
+                .push(RenderNode::new(next_id, node_type, bbox));
+            next_id += 1;
+        };
+        let line_style = |dash, line_type, start_arrow, end_arrow| LineStyle {
+            color: 0x00000000,
+            width: 4.0,
+            dash,
+            line_type,
+            start_arrow,
+            end_arrow,
+            start_arrow_size: 4,
+            end_arrow_size: 4,
+            shadow: None,
+        };
+
+        push_node(
+            &mut tree,
+            RenderNodeType::Line(LineNode::new(
+                14.0,
+                18.0,
+                200.0,
+                18.0,
+                line_style(
+                    StrokeDash::Solid,
+                    LineRenderType::ThinThickThinTriple,
+                    ArrowStyle::Arrow,
+                    ArrowStyle::OpenDiamond,
+                ),
+            )),
+            BoundingBox::new(10.0, 8.0, 196.0, 24.0),
+        );
+        push_node(
+            &mut tree,
+            RenderNodeType::Line(LineNode::new(
+                18.0,
+                44.0,
+                206.0,
+                44.0,
+                line_style(
+                    StrokeDash::DashDot,
+                    LineRenderType::Double,
+                    ArrowStyle::None,
+                    ArrowStyle::ConcaveArrow,
+                ),
+            )),
+            BoundingBox::new(12.0, 34.0, 200.0, 24.0),
+        );
+
+        let mut rect = RectangleNode::new(
+            8.0,
+            ShapeStyle {
+                fill_color: Some(0x00D9E7FF),
+                stroke_color: Some(0x00000000),
+                stroke_width: 2.0,
+                ..Default::default()
+            },
+            None,
+        );
+        rect.transform = ShapeTransform {
+            rotation: 12.0,
+            horz_flip: true,
+            vert_flip: false,
+        };
+        push_node(
+            &mut tree,
+            RenderNodeType::Rectangle(rect),
+            BoundingBox::new(16.0, 70.0, 56.0, 42.0),
+        );
+
+        let mut ellipse = EllipseNode::new(
+            ShapeStyle {
+                fill_color: Some(0x00D5E8D4),
+                stroke_color: Some(0x00000000),
+                stroke_width: 2.0,
+                stroke_dash: StrokeDash::Dot,
+                ..Default::default()
+            },
+            None,
+        );
+        ellipse.transform = ShapeTransform {
+            rotation: -18.0,
+            horz_flip: false,
+            vert_flip: true,
+        };
+        push_node(
+            &mut tree,
+            RenderNodeType::Ellipse(ellipse),
+            BoundingBox::new(92.0, 70.0, 58.0, 42.0),
+        );
+
+        let mut path = PathNode::new(
+            vec![
+                PathCommand::MoveTo(26.0, 148.0),
+                PathCommand::CurveTo(58.0, 116.0, 88.0, 178.0, 118.0, 142.0),
+                PathCommand::ArcTo(26.0, 18.0, 0.0, false, true, 172.0, 142.0),
+            ],
+            ShapeStyle {
+                fill_color: None,
+                stroke_color: Some(0x00000000),
+                stroke_width: 3.0,
+                stroke_dash: StrokeDash::Dash,
+                ..Default::default()
+            },
+            None,
+        );
+        path.connector_endpoints = Some((26.0, 148.0, 172.0, 142.0));
+        path.line_style = Some(line_style(
+            StrokeDash::Dash,
+            LineRenderType::Single,
+            ArrowStyle::Circle,
+            ArrowStyle::Arrow,
+        ));
+        push_node(
+            &mut tree,
+            RenderNodeType::Path(path),
+            BoundingBox::new(20.0, 112.0, 160.0, 52.0),
+        );
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let renderer = SkiaLayerRenderer::new();
+        let png = renderer
+            .render_png(&layer_tree)
+            .expect("shape feature fixture render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("shape fixture png decode");
+        let ink_pixels = pixmap
+            .pixels()
+            .iter()
+            .filter(|pixel| pixel.alpha() > 0)
+            .count();
+
+        assert!(
+            ink_pixels > 800,
+            "expected visible shape feature fixture ink"
         );
     }
 

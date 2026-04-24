@@ -290,6 +290,25 @@ Avoid repeated native Skia image/SVG raster decode work inside a single layer re
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `git diff --check` passed for this batch's files.
 
+## Current Batch: TEST-005 Skia Shape Feature Fixture
+
+Broaden native Skia shape/line regression coverage for high-risk stroke, arrow, path, and transform combinations.
+
+## Steps
+
+1. Done: add a synthetic fixture with triple/double lines, dash-dot strokes, and start/end arrowheads.
+2. Done: include rounded rectangle, ellipse, Bezier path, SVG arc path, and connector arrow rendering.
+3. Done: include rectangle and ellipse rotation/flip transforms.
+4. Done: verify the focused fixture and full native Skia renderer test group.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_shape_feature_fixture_to_png -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: TEST-003 Skia Golden Ladder Status
 
 Close the stale Skia golden ladder risk after verifying the existing native screenshot ladder covers synthetic layer trees, layer SVG raster comparison, and actual HWP samples.
