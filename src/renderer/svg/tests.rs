@@ -1,4 +1,5 @@
 use super::*;
+use crate::renderer::{ArrowStyle, LineRenderType};
 
 #[test]
 fn test_svg_begin_end_page() {
@@ -179,4 +180,46 @@ fn test_xml_escape() {
 fn test_color_to_svg() {
     assert_eq!(color_to_svg(0x000000FF), "#ff0000");
     assert_eq!(color_to_svg(0x00FFFFFF), "#ffffff");
+}
+
+#[test]
+fn test_svg_double_line_preserves_dash_and_arrows() {
+    let mut renderer = SvgRenderer::new();
+    renderer.begin_page(800.0, 600.0);
+    renderer.draw_line(
+        10.0,
+        20.0,
+        210.0,
+        20.0,
+        &LineStyle {
+            color: 0x00000000,
+            width: 4.0,
+            dash: StrokeDash::Dash,
+            line_type: LineRenderType::Double,
+            start_arrow: ArrowStyle::Arrow,
+            end_arrow: ArrowStyle::OpenDiamond,
+            start_arrow_size: 0,
+            end_arrow_size: 0,
+            shadow: None,
+        },
+    );
+    renderer.end_page();
+
+    let output = renderer.output();
+    assert!(
+        output.matches("stroke-dasharray=").count() >= 2,
+        "parallel double-line strokes should keep dash arrays:\n{output}"
+    );
+    assert!(
+        output.contains("marker-start=\"url(#"),
+        "start arrow marker should be attached to the central marker line:\n{output}"
+    );
+    assert!(
+        output.contains("marker-end=\"url(#"),
+        "end arrow marker should be attached to the central marker line:\n{output}"
+    );
+    assert!(
+        output.contains("stroke-opacity=\"0\""),
+        "central marker carrier should not add an extra visible stroke:\n{output}"
+    );
 }

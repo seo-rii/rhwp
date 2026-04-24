@@ -1875,6 +1875,7 @@ impl SvgRenderer {
         y2: f64,
         total_width: f64,
         color: &str,
+        dash: super::StrokeDash,
         line_type: &super::LineRenderType,
     ) {
         let dx = x2 - x1;
@@ -1914,11 +1915,39 @@ impl SvgRenderer {
             let off = total_width * offset_ratio;
             let ox = nx * off;
             let oy = ny * off;
+            let dash_attr = Self::stroke_dasharray(dash, w)
+                .map(|dasharray| format!(" stroke-dasharray=\"{}\"", dasharray))
+                .unwrap_or_default();
             self.output.push_str(&format!(
-                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>\n",
-                x1 + ox, y1 + oy, x2 + ox, y2 + oy, color, w,
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
+                x1 + ox, y1 + oy, x2 + ox, y2 + oy, color, w, dash_attr,
             ));
         }
+    }
+
+    fn stroke_dasharray(dash: super::StrokeDash, stroke_width: f64) -> Option<String> {
+        let values: &[f64] = match dash {
+            super::StrokeDash::Solid => return None,
+            super::StrokeDash::Dash => &[6.0, 3.0],
+            super::StrokeDash::Dot => &[2.0, 2.0],
+            super::StrokeDash::DashDot => &[6.0, 3.0, 2.0, 3.0],
+            super::StrokeDash::DashDotDot => &[6.0, 3.0, 2.0, 3.0, 2.0, 3.0],
+        };
+        let scale = stroke_width.max(1.0);
+        Some(
+            values
+                .iter()
+                .map(|value| {
+                    let scaled = value * scale;
+                    if (scaled.fract()).abs() < 0.000_001 {
+                        format!("{scaled:.0}")
+                    } else {
+                        format!("{scaled:.3}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
     }
 
     /// 이미지 노드를 fill_mode에 따라 렌더링한다.
@@ -2882,18 +2911,6 @@ impl Renderer for SvgRenderer {
         let color = color_to_svg(style.color);
         let width = if style.width > 0.0 { style.width } else { 1.0 };
 
-        // 이중선/삼중선 처리: 여러 평행선으로 렌더링
-        match style.line_type {
-            super::LineRenderType::Double
-            | super::LineRenderType::ThinThickDouble
-            | super::LineRenderType::ThickThinDouble
-            | super::LineRenderType::ThinThickThinTriple => {
-                self.draw_multi_line(x1, y1, x2, y2, width, &color, &style.line_type);
-                return;
-            }
-            _ => {}
-        }
-
         let dx = x2 - x1;
         let dy = y2 - y1;
         let line_len = (dx * dx + dy * dy).sqrt();
@@ -2943,16 +2960,39 @@ impl Renderer for SvgRenderer {
             }
         }
 
+        // 이중선/삼중선 처리: 여러 평행선으로 렌더링하되 화살표는 중앙선에 한 번만 붙인다.
+        match style.line_type {
+            super::LineRenderType::Double
+            | super::LineRenderType::ThinThickDouble
+            | super::LineRenderType::ThickThinDouble
+            | super::LineRenderType::ThinThickThinTriple => {
+                self.draw_multi_line(
+                    lx1,
+                    ly1,
+                    lx2,
+                    ly2,
+                    width,
+                    &color,
+                    style.dash,
+                    &style.line_type,
+                );
+                if !marker_start_attr.is_empty() || !marker_end_attr.is_empty() {
+                    self.output.push_str(&format!(
+                        "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"0\"{}{} />\n",
+                        lx1, ly1, lx2, ly2, color, width, marker_start_attr, marker_end_attr,
+                    ));
+                }
+                return;
+            }
+            _ => {}
+        }
+
         let mut attrs = format!(
             "x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\"",
             lx1, ly1, lx2, ly2, color, width,
         );
-        match style.dash {
-            super::StrokeDash::Dash => attrs.push_str(" stroke-dasharray=\"6 3\""),
-            super::StrokeDash::Dot => attrs.push_str(" stroke-dasharray=\"2 2\""),
-            super::StrokeDash::DashDot => attrs.push_str(" stroke-dasharray=\"6 3 2 3\""),
-            super::StrokeDash::DashDotDot => attrs.push_str(" stroke-dasharray=\"6 3 2 3 2 3\""),
-            _ => {} // Solid
+        if let Some(dasharray) = Self::stroke_dasharray(style.dash, width) {
+            attrs.push_str(&format!(" stroke-dasharray=\"{}\"", dasharray));
         }
         attrs.push_str(&marker_start_attr);
         attrs.push_str(&marker_end_attr);
