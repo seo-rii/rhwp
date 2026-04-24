@@ -83,7 +83,7 @@
 ### [ARCH-002] PaintOp가 아직 semantic render node에 가까움
 
 **심각도**: 높음  
-**상태**: 제안  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: `paint_op`, `layer_tree`, Canvas2D/SVG/Skia replayer
 
@@ -101,6 +101,12 @@
 
 - 편집용 semantic IR과 paint IR을 분리하거나, PaintOp를 `GlyphRun`, `Stroke`, `Fill`, `ImageDraw`, `Clip`, `Transform` 같은 더 낮은 단계로 낮춥니다.
 - 최소한 `CharOverlap`, `ControlMark`, `ParagraphMark`, `RotatedText`, `VerticalText`, `ArrowHead`, `ImageEffect`, `ClipPolicy`, `Transform { matrix, origin }`을 명시적인 PaintOp 또는 공통 lowering 결과로 분리합니다.
+
+**완료 메모**:
+
+- 1차 layer IR 계약을 `paint` 모듈 문서에 명시했습니다. backend parity에 영향을 주는 visible semantics는 `PaintOp` payload, `ClipPolicy`, `LayerOutputOptions`, transform, resource handle 중 하나로 보존해야 합니다.
+- 현재 브랜치에서 char overlap, paragraph/control mark flags, image effect, clip policy, output options, transform bbox, connector arrow, visual bounds, stable resource handles를 layer replay 계약으로 끌어올렸습니다.
+- 완전한 shaped `GlyphRun`/low-level `Stroke`/`Fill` IR 분리는 장기 재설계 과제로 남지만, backend-local hidden rule을 줄이는 이번 risk의 1차 목표는 완료했습니다.
 
 ---
 

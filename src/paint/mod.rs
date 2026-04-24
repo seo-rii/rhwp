@@ -1,6 +1,17 @@
 //! 시각 레이어 IR 모듈
 //!
 //! semantic render tree를 backend-friendly layer tree로 변환한다.
+//!
+//! Layer IR lowering contract:
+//! - Visible semantics that affect backend parity must be carried in `PaintOp`
+//!   payloads, `ClipPolicy`, `LayerOutputOptions`, transforms, or resource handles.
+//! - Legacy/direct renderer behavior should be lowered here first, then replayed
+//!   by SVG, Canvas2D, CanvasKit, and native Skia.
+//! - Backend-local interpretation is acceptable only for renderer mechanics such
+//!   as antialiasing policy, caches, and platform font lookup.
+//! - Fully shaped glyph runs are a future lower-level IR step; until then,
+//!   `LayerTextRunPaint` is the text replay contract and must preserve every
+//!   visible text flag exported to browser/native backends.
 
 #![deny(unused_imports, unused_must_use, unused_variables)]
 

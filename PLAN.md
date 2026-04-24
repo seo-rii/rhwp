@@ -556,3 +556,19 @@ Separate native Skia replay quality policy axes while preserving current renderi
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::consumes_profile_and_cache_hints_for_sampling_policy -- --quiet` passed.
 - `cargo check --features native-skia --lib` passed.
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
+
+## Current Batch: ARCH-002 Paint IR Contract
+
+Close the first-stage PaintOp semantic drift risk by documenting the layer lowering contract now enforced by the parity fixes.
+
+## Steps
+
+1. Done: document that visible backend-parity semantics must be carried by `PaintOp`, `ClipPolicy`, `LayerOutputOptions`, transforms, or resource handles.
+2. Done: document that legacy/direct renderer behavior should be lowered into layer IR before backend replay.
+3. Done: record that fully shaped glyph/lower-level stroke/fill IR remains a future deeper refactor.
+
+## Verification
+
+- `cargo fmt --check` passed.
+- `cargo check --lib` passed.
+- `git diff --check` passed for this batch's files.
