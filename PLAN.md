@@ -436,3 +436,20 @@ Add a native Skia-vs-layer-SVG synthetic fixture for Body/TableCell clip policy 
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::body_clip_policy_allows_right_overflow_slop -- --quiet` passed.
 - `cargo test --lib paint::builder::tests::lowers_body_horizontal_overflow_controls -- --quiet` passed.
 - `cargo test --lib paint::builder::tests::preserves_leaf_payloads -- --quiet` passed.
+
+## Current Batch: TEST-008 Pattern Gradient Fixture
+
+Add native Skia-vs-layer-SVG regression coverage for pattern and gradient mapping.
+
+## Steps
+
+1. Done: add a synthetic fixture covering pattern types 0..5 and gradient types 1..4.
+2. Done: align SVG gradient type 3/4 replay with Skia/Canvas radial handling.
+3. Done: verify focused native-Skia parity and existing layer SVG fixture coverage.
+4. Pending: run final formatting/wasm/diff checks and push this batch.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_pattern_gradient_matrix -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_shapes -- --quiet` passed.
+- `cargo test --lib renderer::layout::integration_tests::tests::test_layer_svg_fixture_matrix_rasterizes_against_legacy -- --quiet` passed.

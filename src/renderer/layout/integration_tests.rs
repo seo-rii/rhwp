@@ -1164,6 +1164,110 @@ mod tests {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
     #[test]
+    fn test_skia_screenshot_matches_layer_svg_for_synthetic_pattern_gradient_matrix() {
+        use crate::paint::{LayerBuilder, RenderProfile};
+        use crate::renderer::layer_renderer::{LayerRasterRenderer, LayerRenderer};
+        use crate::renderer::render_tree::{
+            BoundingBox, PageNode, PageRenderTree, RectangleNode, RenderNode, RenderNodeType,
+        };
+        use crate::renderer::skia::SkiaLayerRenderer;
+        use crate::renderer::svg_layer::SvgLayerRenderer;
+        use crate::renderer::ShapeStyle;
+        use crate::renderer::{GradientFillInfo, PatternFillInfo};
+
+        let mut tree = PageRenderTree::new(0, 288.0, 160.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 288.0,
+            height: 160.0,
+            section_index: 0,
+        });
+
+        let make_rect = |id, bbox, style, gradient| {
+            RenderNode::new(
+                id,
+                RenderNodeType::Rectangle(RectangleNode::new(0.0, style, gradient)),
+                bbox,
+            )
+        };
+
+        for pattern_type in 0..=5 {
+            let x = 12.0 + pattern_type as f64 * 44.0;
+            tree.root.children.push(make_rect(
+                10 + pattern_type as u32,
+                BoundingBox::new(x, 12.0, 32.0, 26.0),
+                ShapeStyle {
+                    fill_color: Some(0x00E8EEF8),
+                    pattern: Some(PatternFillInfo {
+                        pattern_type,
+                        pattern_color: 0x002B5BA7,
+                        background_color: 0x00E8EEF8,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            ));
+        }
+
+        let gradient_cases = [
+            (1, 0, 50, 50),
+            (1, 45, 50, 50),
+            (1, 90, 50, 50),
+            (1, 135, 50, 50),
+            (1, 33, 50, 50),
+            (2, 0, 35, 35),
+            (3, 0, 70, 30),
+            (4, 0, 50, 70),
+        ];
+        for (idx, (gradient_type, angle, center_x, center_y)) in
+            gradient_cases.into_iter().enumerate()
+        {
+            let x = 12.0 + (idx % 4) as f64 * 68.0;
+            let y = 54.0 + (idx / 4) as f64 * 44.0;
+            tree.root.children.push(make_rect(
+                30 + idx as u32,
+                BoundingBox::new(x, y, 54.0, 34.0),
+                ShapeStyle {
+                    fill_color: Some(0x00F4F4F4),
+                    ..Default::default()
+                },
+                Some(Box::new(GradientFillInfo {
+                    gradient_type,
+                    angle,
+                    center_x,
+                    center_y,
+                    colors: vec![0x003A66B7, 0x00F4D35E, 0x00E94F37],
+                    positions: vec![0.0, 0.48, 1.0],
+                })),
+            ));
+        }
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        assert_skia_layer_tree_matches_svg("synthetic-pattern-gradient-matrix", &layer_tree);
+
+        let mut svg_renderer = SvgLayerRenderer::new();
+        svg_renderer
+            .render_page(&layer_tree)
+            .expect("synthetic pattern/gradient SVG layer render");
+        let expected =
+            rasterize_svg(svg_renderer.output()).expect("synthetic pattern/gradient SVG rasterize");
+        let renderer = SkiaLayerRenderer::new();
+        let actual_png = LayerRasterRenderer::render_png(&renderer, &layer_tree)
+            .expect("synthetic pattern/gradient Skia render");
+        let actual = decode_png(&actual_png).expect("synthetic pattern/gradient Skia decode");
+        let color_diff = diff_pixmaps_with_neighborhood(&expected, &actual, 32, 1);
+        let color_diff_ratio = color_diff.diff_pixels as f64 / color_diff.total_pixels as f64;
+
+        assert!(
+            color_diff_ratio < 0.18,
+            "pattern/gradient color diff ratio too high: {:.3}%",
+            color_diff_ratio * 100.0,
+        );
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    #[test]
     fn test_skia_screenshot_matches_layer_svg_for_shape_group_sample() {
         assert_skia_png_matches_layer_svg("samples/shape-group-02.hwp", 0);
     }

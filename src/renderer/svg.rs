@@ -1427,8 +1427,8 @@ impl SvgRenderer {
         let stops = Self::build_gradient_stops(grad);
 
         let def = match grad.gradient_type {
-            2 => {
-                // 원형 (Radial)
+            2..=4 => {
+                // 원형/Radial 계열. Canvas2D/Skia도 type 2, 3, 4를 radial로 재생한다.
                 let cx = grad.center_x as f64;
                 let cy = grad.center_y as f64;
                 format!(
@@ -1437,7 +1437,7 @@ impl SvgRenderer {
                 )
             }
             _ => {
-                // 선형 (Linear) — gradient_type 1(줄무늬), 3(원뿔), 4(사각) 모두 선형으로 근사
+                // 선형 (Linear)
                 let (x1, y1, x2, y2) = Self::angle_to_svg_coords(grad.angle);
                 format!(
                     "<linearGradient id=\"{}\" x1=\"{}%\" y1=\"{}%\" x2=\"{}%\" y2=\"{}%\">\n{}</linearGradient>\n",

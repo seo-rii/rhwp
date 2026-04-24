@@ -969,7 +969,7 @@
 ### [TEST-008] pattern/gradient mapping golden 검증이 필요함
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 검증 필요  
 **위치**: Skia `make_gradient_shader`, pattern fill renderer
 
@@ -981,6 +981,13 @@
 
 - pattern 0..N, gradient type 전체, angle 0/45/90/135/임의각, center_x/center_y fixture를 추가합니다.
 - legacy SVG/Canvas/HWP reference와 비교합니다.
+
+**완료 메모**:
+
+- native Skia-vs-layer-SVG 합성 pattern/gradient fixture를 추가했습니다.
+- fixture는 pattern type 0..5, linear gradient angle 0/45/90/135/33, gradient type 2/3/4와 center_x/center_y offset을 포함합니다.
+- SVG gradient replay가 type 3/4를 linear로 근사하던 부분을 Skia/Canvas와 같은 radial 계열 처리로 맞췄습니다.
+- 실제 HWP reference와의 세부 의미 검증은 별도 corpus 확장으로 남깁니다.
 
 ---
 
