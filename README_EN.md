@@ -169,9 +169,18 @@ See the [roadmap document](mydocs/eng/report/rhwp-milestone.md) for details.
 - vpos-based paragraph position correction
 
 ### Output
-- SVG export (CLI)
-- Canvas rendering (WASM/Web)
+- SVG export (CLI, legacy path + layered replay path)
+- Layered backend split (`PageRenderTree` → `PageLayerTree` → backend replay)
+- Canvas rendering (WASM/Web: Canvas2D + CanvasKit)
+- Native Skia PNG rendering and screenshot regression
 - Debug overlay (paragraph/table boundaries + indices + y-coordinates)
+
+#### Rendering Backend Boundary
+- Canonical render path: `PageRenderTree` is lowered to `PageLayerTree`, then SVG layer, Canvas2D layer, CanvasKit, and native Skia replay the same layer tree.
+- Browser `renderPageToCanvas` uses the layered Canvas2D replay path. Legacy direct Canvas/SVG/HTML renderers remain compatibility and debug paths.
+- New visual semantics should be lowered into `paint::PaintOp` or shared layer policy first, then replayed by each backend. Backend-only behavior is treated as a parity risk.
+- Public layer export: JS value export with profile/resource-key support is the preferred frontend API for large documents. JSON string export is kept for debug, snapshots, and schema regression checks.
+- Layer schema exports include version, unit, coordinate system, profile, output options, and resource-table metadata so frontends can reject incompatible IR safely.
 
 ### Web Editor
 - Text editing (insert, delete, undo/redo)

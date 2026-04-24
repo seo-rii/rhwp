@@ -25,7 +25,7 @@ impl PageLayerTree {
         buf.push('{');
         let _ = write!(
             buf,
-            "\"schemaVersion\":1,\"unit\":\"px\",\"coordinateSystem\":\"page-top-left-y-down\",\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"root\":",
+            "\"schemaVersion\":1,\"resourceTableVersion\":1,\"unit\":\"px\",\"coordinateSystem\":\"page-top-left-y-down\",\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"root\":",
             self.page_width,
             self.page_height,
             json_escape(self.profile.as_str()),
@@ -1040,6 +1040,7 @@ mod tests {
         assert!(json.contains("\"kind\":\"leaf\""));
         assert!(json.contains("\"cacheHint\":\"none\""));
         assert!(json.contains("\"schemaVersion\":1"));
+        assert!(json.contains("\"resourceTableVersion\":1"));
         assert!(json.contains("\"unit\":\"px\""));
         assert!(json.contains("\"coordinateSystem\":\"page-top-left-y-down\""));
         assert!(json.contains("\"profile\":\"screen\""));

@@ -39,6 +39,7 @@ export interface LayerBounds {
 
 export interface PageLayerTree {
   schemaVersion?: number;
+  resourceTableVersion?: number;
   unit?: 'px';
   coordinateSystem?: 'page-top-left-y-down';
   pageWidth: number;

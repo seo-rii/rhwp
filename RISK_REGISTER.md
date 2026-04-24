@@ -138,7 +138,7 @@
 ### [ARCH-004] JSON/JS export schema와 canonical API 경계가 불명확함
 
 **심각도**: 중간  
-**상태**: 제안  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: JSON export, JS value export, `RenderBackend`, WASM public API
 
@@ -159,10 +159,11 @@
 - JSON export는 debug/snapshot 용도인지, public wire format인지 역할을 명확히 합니다.
 - schema version과 좌표계/단위/profile/resource table version을 필수 필드로 둡니다.
 
-**진행 메모**:
+**완료 메모**:
 
 - JSON/JS layer export root에 `schemaVersion`, `unit`, `coordinateSystem`을 추가했습니다.
-- `profile`, `resourceTableVersion`, canonical API 문서화는 아직 남아 있습니다.
+- JSON/JS layer export root에 `profile`과 `resourceTableVersion`을 포함하고 Studio TypeScript 타입에도 반영했습니다.
+- README/README_EN에 JS value export를 대용량 문서용 선호 frontend API로, JSON export를 debug/snapshot/schema regression 용도로 문서화했습니다.
 
 ---
 
@@ -1045,7 +1046,7 @@
 ### [DOC-001] legacy/new backend의 canonical 경계 문서화가 필요함
 
 **심각도**: 중간  
-**상태**: 제안  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: README, renderer docs, WASM API docs
 
@@ -1062,6 +1063,12 @@
 
 - README/API docs에 canonical render path, fallback/debug path, export-only path를 명시합니다.
 - `renderPageToCanvas` 전환 계획과 compatibility policy를 문서화합니다.
+
+**완료 메모**:
+
+- README/README_EN에 canonical render path를 `PageRenderTree -> PageLayerTree -> backend replay`로 명시했습니다.
+- `renderPageToCanvas`는 layered Canvas2D replay를 사용하고, legacy direct Canvas/SVG/HTML renderer는 compatibility/debug path임을 문서화했습니다.
+- 신규 시각 의미는 `PaintOp` 또는 shared layer policy로 먼저 낮춘 뒤 backend가 replay해야 한다는 compatibility policy를 추가했습니다.
 
 ---
 

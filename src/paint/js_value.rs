@@ -44,6 +44,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
 ) -> JsValue {
     let value = Object::new();
     set_number(&value, "schemaVersion", 1.0);
+    set_number(&value, "resourceTableVersion", 1.0);
     set_string(&value, "unit", "px");
     set_string(&value, "coordinateSystem", "page-top-left-y-down");
     set_number(&value, "pageWidth", tree.page_width);

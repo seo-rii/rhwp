@@ -504,3 +504,21 @@ Close the remaining text decoration/space/symbol/equation risk after verifying t
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_tab_leaders_for_skipped_tab_clusters -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_equation_prefers_interned_svg_resource_over_layout_fallback -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_keeps_repeated_resource_caches_bounded -- --quiet` passed.
+
+## Current Batch: ARCH-004 / DOC-001 Render API Boundary
+
+Document the canonical layered render path and make the layer export schema carry resource table version metadata.
+
+## Steps
+
+1. Done: document canonical `PageRenderTree -> PageLayerTree -> backend replay` semantics in README and README_EN.
+2. Done: document `renderPageToCanvas` as layered Canvas2D replay and legacy direct renderers as compatibility/debug paths.
+3. Done: document JS value export as the preferred frontend API and JSON as debug/snapshot/schema output.
+4. Done: add `resourceTableVersion` to JSON/JS layer export and Studio TypeScript types.
+5. Done: run focused schema/type/build checks before committing this batch.
+
+## Verification
+
+- `cargo test --lib paint::json::tests::serializes_text_and_shape_ops_for_browser_replay -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `npm run build` passed in `rhwp-studio`.

@@ -157,6 +157,13 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - Native Skia PNG rendering and screenshot regression
 - Debug overlay (paragraph/table boundaries + indices + y-coordinates)
 
+#### Rendering backend boundary
+- Canonical render path: `PageRenderTree` is lowered to `PageLayerTree`, then SVG layer, Canvas2D layer, CanvasKit, and native Skia replay the same layer tree.
+- Browser `renderPageToCanvas` uses the layered Canvas2D replay path. Legacy direct Canvas/SVG/HTML renderers remain compatibility and debug paths.
+- New visual semantics should be lowered into `paint::PaintOp` or shared layer policy first, then replayed by each backend. Backend-only behavior is treated as a parity risk.
+- Public layer export: JS value export with profile/resource-key support is the preferred frontend API for large documents. JSON string export is kept for debug, snapshots, and schema regression checks.
+- Layer schema exports include version, unit, coordinate system, profile, output options, and resource-table metadata so frontends can reject incompatible IR safely.
+
 ### Web Editor (웹 에디터)
 - Text editing (insert, delete, undo/redo)
 - Character/paragraph formatting dialogs
@@ -266,7 +273,7 @@ python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-p
 
 GitHub Actions는 목적별로 분리되어 있습니다.
 
-- `CI`: push / PR 기본 관문 (`Build & Test`, `All Features / Native Skia`, `Studio E2E`)
+- `CI`: push / PR 기본 관문 (`Build & Test`, `All Features / Native Skia`, `Feature Matrix`, `Studio E2E`)
 - `Full Renderer Sweep`: 수동 실행 전용 시각 회귀 검증
 - `WASM Build`: 태그 릴리즈 또는 수동 실행 전용 WASM 산출물 검증
 
