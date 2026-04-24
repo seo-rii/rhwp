@@ -2114,6 +2114,16 @@ export class CanvasKitLayerRenderer {
     if (!imageWidth || !imageHeight) {
       return;
     }
+    if (
+      !Number.isFinite(bbox.x)
+      || !Number.isFinite(bbox.y)
+      || !Number.isFinite(bbox.width)
+      || !Number.isFinite(bbox.height)
+      || bbox.width <= 0
+      || bbox.height <= 0
+    ) {
+      return;
+    }
     const cropSource = crop
       ? (() => {
         const scaleX = Math.max(crop.right / imageWidth, 1);
@@ -2129,6 +2139,16 @@ export class CanvasKitLayerRenderer {
       })()
       : null;
     const drawImage = (x: number, y: number, width: number, height: number) => {
+      if (
+        !Number.isFinite(x)
+        || !Number.isFinite(y)
+        || !Number.isFinite(width)
+        || !Number.isFinite(height)
+        || width <= 0
+        || height <= 0
+      ) {
+        return;
+      }
       if (cropSource) {
         ctx.drawImage(image, cropSource.x, cropSource.y, cropSource.width, cropSource.height, x, y, width, height);
         return;
@@ -2141,8 +2161,17 @@ export class CanvasKitLayerRenderer {
       return;
     }
 
-    const placedWidth = originalSize?.width ?? imageWidth;
-    const placedHeight = originalSize?.height ?? imageHeight;
+    let placedWidth = originalSize?.width ?? imageWidth;
+    let placedHeight = originalSize?.height ?? imageHeight;
+    if (
+      !Number.isFinite(placedWidth)
+      || !Number.isFinite(placedHeight)
+      || placedWidth <= 0
+      || placedHeight <= 0
+    ) {
+      placedWidth = imageWidth;
+      placedHeight = imageHeight;
+    }
     const { x, y } = this.resolveImagePlacement(fillMode, bbox, placedWidth, placedHeight);
 
     ctx.save();
@@ -2151,20 +2180,29 @@ export class CanvasKitLayerRenderer {
     ctx.clip();
 
     if (fillMode === 'tileAll') {
-      for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
-        for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
+      const maxTileDraws = 4096;
+      let tileDraws = 0;
+      for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += placedHeight) {
+        for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += placedWidth) {
           drawImage(tx, ty, placedWidth, placedHeight);
+          tileDraws += 1;
         }
       }
     } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
+      const maxTileDraws = 4096;
+      let tileDraws = 0;
       const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - placedHeight;
-      for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
+      for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += placedWidth) {
         drawImage(tx, ty, placedWidth, placedHeight);
+        tileDraws += 1;
       }
     } else if (fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
+      const maxTileDraws = 4096;
+      let tileDraws = 0;
       const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - placedWidth;
-      for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
+      for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += placedHeight) {
         drawImage(tx, ty, placedWidth, placedHeight);
+        tileDraws += 1;
       }
     } else {
       drawImage(x, y, placedWidth, placedHeight);
@@ -2488,7 +2526,18 @@ export class CanvasKitLayerRenderer {
     try {
       const sourceWidth = image.width();
       const sourceHeight = image.height();
-      if (!sourceWidth || !sourceHeight) {
+      if (
+        !Number.isFinite(sourceWidth)
+        || !Number.isFinite(sourceHeight)
+        || sourceWidth <= 0
+        || sourceHeight <= 0
+        || !Number.isFinite(bbox.x)
+        || !Number.isFinite(bbox.y)
+        || !Number.isFinite(bbox.width)
+        || !Number.isFinite(bbox.height)
+        || bbox.width <= 0
+        || bbox.height <= 0
+      ) {
         return;
       }
       const cropSource = crop
@@ -2515,6 +2564,22 @@ export class CanvasKitLayerRenderer {
         dstW: number,
         dstH: number,
       ) => {
+        if (
+          !Number.isFinite(srcX)
+          || !Number.isFinite(srcY)
+          || !Number.isFinite(srcW)
+          || !Number.isFinite(srcH)
+          || !Number.isFinite(dstX)
+          || !Number.isFinite(dstY)
+          || !Number.isFinite(dstW)
+          || !Number.isFinite(dstH)
+          || srcW <= 0
+          || srcH <= 0
+          || dstW <= 0
+          || dstH <= 0
+        ) {
+          return;
+        }
         const useMipmaps =
           this.currentProfile !== 'fast-preview'
           && !this.hasActiveCacheHint('preferRaster')
@@ -2552,29 +2617,43 @@ export class CanvasKitLayerRenderer {
         return;
       }
 
-      const imageWidth = originalSize?.width ?? sourceWidth;
-      const imageHeight = originalSize?.height ?? sourceHeight;
+      let imageWidth = originalSize?.width ?? sourceWidth;
+      let imageHeight = originalSize?.height ?? sourceHeight;
+      if (
+        !Number.isFinite(imageWidth)
+        || !Number.isFinite(imageHeight)
+        || imageWidth <= 0
+        || imageHeight <= 0
+      ) {
+        imageWidth = sourceWidth;
+        imageHeight = sourceHeight;
+      }
       const { x, y } = this.resolveImagePlacement(fillMode, bbox, imageWidth, imageHeight);
 
       canvas.save();
       canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
 
       if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
+        const maxTileDraws = 4096;
+        let tileDraws = 0;
         if (fillMode === 'tileAll') {
-          for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += imageHeight) {
-            for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += imageWidth) {
+          for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
+            for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
               drawImage(tx, ty, imageWidth, imageHeight);
+              tileDraws += 1;
             }
           }
         } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
           const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - imageHeight;
-          for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += imageWidth) {
+          for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
             drawImage(tx, ty, imageWidth, imageHeight);
+            tileDraws += 1;
           }
         } else {
           const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - imageWidth;
-          for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += imageHeight) {
+          for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
             drawImage(tx, ty, imageWidth, imageHeight);
+            tileDraws += 1;
           }
         }
       } else {

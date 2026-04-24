@@ -2549,6 +2549,19 @@ impl WebCanvasRenderer {
             );
             previous
         });
+        if !bbox.x.is_finite()
+            || !bbox.y.is_finite()
+            || !bbox.width.is_finite()
+            || !bbox.height.is_finite()
+            || bbox.width <= 0.0
+            || bbox.height <= 0.0
+        {
+            if let Some(previous_filter) = &previous_filter {
+                let _ =
+                    js_sys::Reflect::set(&self.ctx, &JsValue::from_str("filter"), &previous_filter);
+            }
+            return;
+        }
         let crop_source = crop.and_then(|(cl, ct, cr, cb)| {
             let (img_w, img_h) = parse_image_dimensions_canvas(data)?;
             let img_w = img_w as f64;
@@ -2602,6 +2615,21 @@ impl WebCanvasRenderer {
                         }
                     }
                 };
+                if !img_width.is_finite()
+                    || !img_height.is_finite()
+                    || img_width <= 0.0
+                    || img_height <= 0.0
+                {
+                    draw_image(self, bbox.x, bbox.y, bbox.width, bbox.height);
+                    if let Some(previous_filter) = &previous_filter {
+                        let _ = js_sys::Reflect::set(
+                            &self.ctx,
+                            &JsValue::from_str("filter"),
+                            &previous_filter,
+                        );
+                    }
+                    return;
+                }
 
                 let (ix, iy) = match mode {
                     ImageFillMode::LeftTop => (bbox.x, bbox.y),
@@ -2644,37 +2672,46 @@ impl WebCanvasRenderer {
                 match mode {
                     ImageFillMode::TileAll => {
                         // 바둑판식으로-모두: 전체 타일링
+                        const MAX_TILE_DRAWS: usize = 4096;
+                        let mut tile_draws = 0usize;
                         let mut ty = bbox.y;
-                        while ty < bbox.y + bbox.height {
+                        while ty < bbox.y + bbox.height && tile_draws < MAX_TILE_DRAWS {
                             let mut tx = bbox.x;
-                            while tx < bbox.x + bbox.width {
+                            while tx < bbox.x + bbox.width && tile_draws < MAX_TILE_DRAWS {
                                 draw_image(self, tx, ty, img_width, img_height);
+                                tile_draws += 1;
                                 tx += img_width;
                             }
                             ty += img_height;
                         }
                     }
                     ImageFillMode::TileHorzTop | ImageFillMode::TileHorzBottom => {
+                        const MAX_TILE_DRAWS: usize = 4096;
+                        let mut tile_draws = 0usize;
                         let ty = if mode == ImageFillMode::TileHorzTop {
                             bbox.y
                         } else {
                             bbox.y + bbox.height - img_height
                         };
                         let mut tx = bbox.x;
-                        while tx < bbox.x + bbox.width {
+                        while tx < bbox.x + bbox.width && tile_draws < MAX_TILE_DRAWS {
                             draw_image(self, tx, ty, img_width, img_height);
+                            tile_draws += 1;
                             tx += img_width;
                         }
                     }
                     ImageFillMode::TileVertLeft | ImageFillMode::TileVertRight => {
+                        const MAX_TILE_DRAWS: usize = 4096;
+                        let mut tile_draws = 0usize;
                         let tx = if mode == ImageFillMode::TileVertLeft {
                             bbox.x
                         } else {
                             bbox.x + bbox.width - img_width
                         };
                         let mut ty = bbox.y;
-                        while ty < bbox.y + bbox.height {
+                        while ty < bbox.y + bbox.height && tile_draws < MAX_TILE_DRAWS {
                             draw_image(self, tx, ty, img_width, img_height);
+                            tile_draws += 1;
                             ty += img_height;
                         }
                     }
