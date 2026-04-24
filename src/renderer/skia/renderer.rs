@@ -16,7 +16,7 @@ use crate::renderer::layer_renderer::{
 };
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::BoundingBox;
-use crate::renderer::{ArrowStyle, LineRenderType, LineStyle, UnderlineType};
+use crate::renderer::{ArrowStyle, LineRenderType, UnderlineType};
 
 use super::equation_conv::render_equation;
 use super::image_conv::{

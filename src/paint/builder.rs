@@ -1,5 +1,5 @@
 use crate::paint::layer_tree::{
-    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerSemanticRole, PageLayerTree,
+    CacheHint, ClipKind, LayerNode, LayerSemantic, LayerSemanticRole, PageLayerTree,
 };
 use crate::paint::paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
@@ -558,6 +558,7 @@ impl LayerBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paint::LayerNodeKind;
     use crate::renderer::render_tree::{
         BoundingBox, PageBackgroundNode, PageNode, RectangleNode, RenderNode, RenderNodeType,
         TableCellNode, TableNode, TextLineNode,

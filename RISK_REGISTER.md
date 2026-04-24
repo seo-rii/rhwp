@@ -1075,7 +1075,7 @@
 ### [DOC-002] 새 렌더링 코드에는 더 엄격한 lint policy가 필요함
 
 **심각도**: 낮음  
-**상태**: 제안  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: `Cargo.toml`, paint/skia modules, CI lint profile
 
@@ -1087,3 +1087,9 @@
 
 - 새 paint/skia 모듈에 한해 `#![deny(...)]` 또는 별도 clippy CI profile을 둡니다.
 - 특히 IR 필드가 backend/export에서 사용되지 않는 경우를 빠르게 감지하도록 합니다.
+
+**완료 메모**:
+
+- `paint` 모듈과 `renderer::skia` 모듈에 `#![deny(unused_imports, unused_must_use, unused_variables)]`를 적용했습니다.
+- deny 적용으로 드러난 test-only import를 test module로 옮기고, native Skia의 unused import를 제거했습니다.
+- 전체 crate의 전환기용 lint allow 정책은 유지하되 새 layer/skia 코드의 미사용 경로는 더 빨리 실패하도록 했습니다.

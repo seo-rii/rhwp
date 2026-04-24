@@ -2,6 +2,8 @@
 //!
 //! semantic render tree를 backend-friendly layer tree로 변환한다.
 
+#![deny(unused_imports, unused_must_use, unused_variables)]
+
 pub mod builder;
 #[cfg(target_arch = "wasm32")]
 pub mod js_value;

@@ -522,3 +522,21 @@ Document the canonical layered render path and make the layer export schema carr
 - `cargo test --lib paint::json::tests::serializes_text_and_shape_ops_for_browser_replay -- --quiet` passed.
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `npm run build` passed in `rhwp-studio`.
+
+## Current Batch: DOC-002 Renderer Lint Policy
+
+Apply stricter unused-code linting to the new paint and native Skia modules without changing the global transition-period lint policy.
+
+## Steps
+
+1. Done: add module-level deny for `unused_imports`, `unused_must_use`, and `unused_variables` in `paint` and `renderer::skia`.
+2. Done: move test-only `LayerNodeKind` import into the paint builder test module.
+3. Done: remove the native Skia renderer's unused `LineStyle` import.
+4. Done: verify default/native checks and focused tests.
+
+## Verification
+
+- `cargo check --lib` passed.
+- `cargo check --features native-skia --lib` passed.
+- `cargo test --lib paint::builder::tests::render_node_type_lowering_is_explicit_for_all_variants -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_shape_feature_fixture_to_png -- --quiet` passed.
