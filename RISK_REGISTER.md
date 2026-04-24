@@ -823,7 +823,7 @@
 ### [TEST-002] legacy SVG와 layer SVG 비교 fixture가 부족함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: `SvgLayerRenderer`, legacy SVG comparison tests
 
@@ -834,6 +834,13 @@
 **권장 조치**:
 
 - text style, image, crop, table clip, line types, gradient, pattern, arrows, form object, equation, page background fixture를 추가합니다.
+
+**완료 메모**:
+
+- legacy SVG와 layer SVG를 raster diff로 비교하는 fixture matrix를 추가했습니다.
+- fixture matrix는 text style, spacing, equation, image crop, form object, drawing group 샘플을 포함합니다.
+- table clip 샘플은 Body/TableCell right-overflow slop 차이를 작은 픽셀 허용치로 명시해 계속 회귀 감시합니다.
+- 전체 `cargo test --lib -- --quiet` 기준으로 layer SVG parity 테스트가 통과하는 상태로 복구했습니다.
 
 ---
 

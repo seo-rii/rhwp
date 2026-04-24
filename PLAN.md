@@ -310,6 +310,25 @@ Make RenderNodeType lowering explicit so visual render nodes cannot silently pas
 - `git diff --check` passed for this batch's files.
 - Full `cargo test --lib -- --quiet` was attempted and currently fails in 3 layer SVG parity tests: `test_layer_svg_matches_legacy_for_basic_text_sample`, `test_layer_svg_matches_legacy_for_table_sample`, and `test_layer_svg_screenshot_matches_legacy_for_table_sample`.
 
+## Current Batch: TEST-002 Layer SVG Fixture Matrix
+
+Expand legacy SVG vs layer SVG comparison beyond the original basic text/table smoke pair and make the comparison raster-based where string equality is too brittle.
+
+## Steps
+
+1. Done: convert the strict basic/table layer SVG comparisons to raster parity checks.
+2. Done: keep exact raster parity for basic text and explicitly bound the known table clip slop diff.
+3. Done: add a fixture matrix covering text style, spacing, equation, image crop, form object, and drawing group samples.
+4. Done: restore full library test pass for the layer SVG parity group.
+
+## Verification
+
+- `cargo test --lib renderer::layout::integration_tests::tests::test_layer_svg -- --quiet` passed.
+- `cargo test --lib -- --quiet` passed: 980 passed, 1 ignored.
+- `cargo fmt --check` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: PERF-002 Skia Plain Text Draw
 
 Use Skia's normal text draw path for plain TextRun replay instead of turning every glyph into a path.

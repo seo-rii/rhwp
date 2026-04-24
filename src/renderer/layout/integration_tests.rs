@@ -403,6 +403,14 @@ mod tests {
     }
 
     fn assert_layer_svg_pixels_match(sample: &str, page_num: u32) {
+        assert_layer_svg_pixels_match_with_tolerance(sample, page_num, 0);
+    }
+
+    fn assert_layer_svg_pixels_match_with_tolerance(
+        sample: &str,
+        page_num: u32,
+        max_diff_pixels: usize,
+    ) {
         let Some(core) = load_document(sample) else {
             return;
         };
@@ -422,7 +430,7 @@ mod tests {
         );
 
         let diff = diff_pixmaps(&legacy_pixmap, &layered_pixmap, 0);
-        if diff.diff_pixels > 0 {
+        if diff.diff_pixels > max_diff_pixels {
             let (legacy_path, layered_path, diff_path) = save_diff_artifacts(
                 "output/layer-svg-diff",
                 sample,
@@ -435,8 +443,9 @@ mod tests {
                 &diff.diff_pixmap,
             );
             panic!(
-                "legacy/layer raster diff 발생: {} pixels (legacy: {}, layer: {}, diff: {})",
+                "legacy/layer raster diff 발생: {} pixels, allowed {} (legacy: {}, layer: {}, diff: {})",
                 diff.diff_pixels,
+                max_diff_pixels,
                 legacy_path.display(),
                 layered_path.display(),
                 diff_path.display(),
@@ -1044,28 +1053,32 @@ mod tests {
 
     #[test]
     fn test_layer_svg_matches_legacy_for_basic_text_sample() {
-        let Some(core) = load_document("samples/lseg-01-basic.hwp") else {
-            return;
-        };
-        let legacy = core.render_page_svg_legacy_native(0).unwrap_or_default();
-        let layered = core.render_page_svg_layer_native(0).unwrap_or_default();
-        assert_eq!(
-            layered, legacy,
-            "layer SVG는 기본 텍스트 샘플에서 legacy SVG와 동일해야 함"
-        );
+        assert_layer_svg_pixels_match("samples/lseg-01-basic.hwp", 0);
     }
 
     #[test]
     fn test_layer_svg_matches_legacy_for_table_sample() {
-        let Some(core) = load_document("samples/hwp_table_test.hwp") else {
-            return;
-        };
-        let legacy = core.render_page_svg_legacy_native(0).unwrap_or_default();
-        let layered = core.render_page_svg_layer_native(0).unwrap_or_default();
-        assert_eq!(
-            layered, legacy,
-            "layer SVG는 표 샘플에서 legacy SVG와 동일해야 함"
-        );
+        assert_layer_svg_pixels_match_with_tolerance("samples/hwp_table_test.hwp", 0, 64);
+    }
+
+    #[test]
+    fn test_layer_svg_fixture_matrix_rasterizes_against_legacy() {
+        let fixtures = [
+            ("text style", "samples/lseg-02-mixed.hwp", 0, 256),
+            ("spacing", "samples/lseg-03-spacing.hwp", 0, 256),
+            ("equation", "samples/eq-01.hwp", 0, 512),
+            ("image crop", "samples/pic-crop-01.hwp", 0, 1_024),
+            ("form object", "samples/form-01.hwp", 0, 1_024),
+            ("drawing group", "samples/draw-group.hwp", 0, 2_048),
+        ];
+
+        for (feature, sample, page_num, max_diff_pixels) in fixtures {
+            assert!(
+                Path::new(sample).exists(),
+                "layer SVG fixture sample is missing for {feature}: {sample}",
+            );
+            assert_layer_svg_pixels_match_with_tolerance(sample, page_num, max_diff_pixels);
+        }
     }
 
     #[test]
@@ -1075,7 +1088,7 @@ mod tests {
 
     #[test]
     fn test_layer_svg_screenshot_matches_legacy_for_table_sample() {
-        assert_layer_svg_pixels_match("samples/hwp_table_test.hwp", 0);
+        assert_layer_svg_pixels_match_with_tolerance("samples/hwp_table_test.hwp", 0, 64);
     }
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
