@@ -75,9 +75,9 @@
 <text transform="translate(119.56,151.50666666666666) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">발</text>
 <text transform="translate(133.95999999999998,151.50666666666666) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">형</text>
 <text transform="translate(148.35999999999999,151.50666666666666) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">태</text>
-<rect x="205.20666666666668" y="139.40666666666667" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="205.20666666666668" y="139.40666666666667" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="221.20666666666668" y="145.90666666666667" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">원천기술형</text>
-<rect x="313.0733333333333" y="139.40666666666667" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="313.0733333333333" y="139.40666666666667" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <polyline points="315.67333333333335,146.55666666666667 318.92333333333335,149.80666666666667 324.12333333333333,142.00666666666666" fill="none" stroke="#000000" stroke-width="1.5"/>
 <text x="329.0733333333333" y="145.90666666666667" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">혁신제품형</text>
 <text transform="translate(505.98666666666657,150.57333333333332) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="13.333333333333334" fill="#000000">의</text>
@@ -91,11 +91,11 @@
 <text transform="translate(126.96,177.93333333333334) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">도</text>
 <text transform="translate(141.35999999999999,177.93333333333334) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">전</text>
 <text transform="translate(155.76,177.93333333333334) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">형</text>
-<rect x="243.30666666666667" y="165.83333333333334" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="243.30666666666667" y="165.83333333333334" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="259.3066666666667" y="172.33333333333334" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">세계최초</text>
-<rect x="415.9933333333333" y="165.83333333333334" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="415.9933333333333" y="165.83333333333334" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="431.9933333333333" y="172.33333333333334" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">세계최고</text>
-<rect x="588.8733333333333" y="165.83333333333334" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="588.8733333333333" y="165.83333333333334" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <polyline points="591.4733333333334,172.98333333333335 594.7233333333334,176.23333333333335 599.9233333333333,168.43333333333334" fill="none" stroke="#000000" stroke-width="1.5"/>
 <text x="604.8733333333333" y="172.33333333333334" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">해당없음</text>
 <rect x="75.58666666666667" y="185.54666666666668" width="117.14666666666666" height="26.426666666666666" fill="#cccccc"/>
@@ -103,13 +103,13 @@
 <text transform="translate(119.50319999999999,204.36) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">I</text>
 <text transform="translate(129.66,204.36) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">연</text>
 <text transform="translate(144.06,204.36) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">계</text>
-<rect x="202.8466666666667" y="192.26000000000002" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="202.8466666666667" y="192.26000000000002" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="218.8466666666667" y="198.76000000000002" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">AI 응용 및 활용</text>
-<rect x="351.34000000000003" y="192.26000000000002" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="351.34000000000003" y="192.26000000000002" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="367.34000000000003" y="198.76000000000002" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">AI 기반</text>
-<rect x="455.8133333333333" y="192.26000000000002" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="455.8133333333333" y="192.26000000000002" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="471.8133333333333" y="198.76000000000002" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">기타 AI 연계 기술</text>
-<rect x="610.5933333333332" y="192.26000000000002" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="610.5933333333332" y="192.26000000000002" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <polyline points="613.1933333333333,199.41000000000003 616.4433333333333,202.66000000000003 621.6433333333332,194.86" fill="none" stroke="#000000" stroke-width="1.5"/>
 <text x="626.5933333333332" y="198.76000000000002" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">해당없음</text>
 <rect x="75.58666666666667" y="211.97333333333333" width="117.14666666666666" height="26.426666666666666" fill="#cccccc"/>
@@ -123,13 +123,13 @@
 <text transform="translate(152.91786666666667,230.78666666666666) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="13.333333333333334" fill="#000000">)</text>
 <text transform="translate(160.6,230.78666666666666) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">연</text>
 <text transform="translate(173.72,230.78666666666666) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">계</text>
-<rect x="202.8466666666667" y="218.68666666666667" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="202.8466666666667" y="218.68666666666667" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="218.8466666666667" y="225.18666666666667" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">지역 산업 연계</text>
-<rect x="330.56" y="218.68666666666667" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="330.56" y="218.68666666666667" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="346.56" y="225.18666666666667" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">지역 기업 성장</text>
-<rect x="448.26666666666665" y="218.68666666666667" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="448.26666666666665" y="218.68666666666667" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="464.26666666666665" y="225.18666666666667" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">지역 인재 및 일자리</text>
-<rect x="610.5933333333332" y="218.68666666666667" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="610.5933333333332" y="218.68666666666667" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <polyline points="613.1933333333333,225.83666666666667 616.4433333333333,229.08666666666667 621.6433333333332,221.28666666666666" fill="none" stroke="#000000" stroke-width="1.5"/>
 <text x="626.5933333333332" y="225.18666666666667" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">해당없음</text>
 <rect x="75.58666666666667" y="238.39999999999998" width="117.14666666666666" height="98.80000000000001" fill="#cccccc"/>
@@ -260,13 +260,13 @@
 <text transform="translate(119.56,356.01333333333326) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">계</text>
 <text transform="translate(133.95999999999998,356.01333333333326) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">유</text>
 <text transform="translate(148.35999999999999,356.01333333333326) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">형</text>
-<rect x="212.32" y="343.91333333333324" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="212.32" y="343.91333333333324" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="228.32" y="350.41333333333324" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">IP R&amp;amp;&amp;amp;D연계</text>
-<rect x="338.0133333333333" y="343.91333333333324" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="338.0133333333333" y="343.91333333333324" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="354.0133333333333" y="350.41333333333324" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">표준연계</text>
-<rect x="463.7066666666666" y="343.91333333333324" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="463.7066666666666" y="343.91333333333324" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="479.7066666666666" y="350.41333333333324" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">적합성인증연계</text>
-<rect x="589.4133333333333" y="343.91333333333324" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="589.4133333333333" y="343.91333333333324" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <polyline points="592.0133333333333,351.0633333333332 595.2633333333333,354.3133333333332 600.4633333333333,346.51333333333326" fill="none" stroke="#000000" stroke-width="1.5"/>
 <text x="605.4133333333333" y="350.41333333333324" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">해당없음</text>
 <rect x="75.58666666666667" y="363.6266666666666" width="117.14666666666666" height="105.70666666666666" fill="#cccccc"/>
@@ -274,44 +274,44 @@
 <text transform="translate(119.56,422.08) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">성</text>
 <text transform="translate(133.95999999999998,422.08) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">분</text>
 <text transform="translate(148.35999999999999,422.08) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">류</text>
-<rect x="212.32" y="370.3399999999999" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="212.32" y="370.3399999999999" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="228.32" y="376.8399999999999" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">경쟁형과제</text>
-<rect x="337.90666666666664" y="370.3399999999999" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="337.90666666666664" y="370.3399999999999" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="353.90666666666664" y="376.8399999999999" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">복수형과제</text>
-<rect x="463.49333333333334" y="370.3399999999999" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="463.49333333333334" y="370.3399999999999" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="479.49333333333334" y="376.8399999999999" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">국가핵심기술</text>
-<rect x="589.1466666666666" y="370.3399999999999" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="589.1466666666666" y="370.3399999999999" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="605.1466666666666" y="376.8399999999999" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">국제공동</text>
-<rect x="212.32" y="396.7666666666666" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="212.32" y="396.7666666666666" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="228.32" y="403.2666666666666" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">대형통합형</text>
-<rect x="337.90666666666664" y="396.7666666666666" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="337.90666666666664" y="396.7666666666666" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="353.90666666666664" y="403.2666666666666" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">민간투자연계형</text>
-<rect x="463.49333333333334" y="396.7666666666666" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="463.49333333333334" y="396.7666666666666" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="479.49333333333334" y="403.2666666666666" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">서비스형</text>
-<rect x="589.1466666666666" y="396.7666666666666" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="589.1466666666666" y="396.7666666666666" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="605.1466666666666" y="403.2666666666666" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">안전관리형</text>
-<rect x="212.32" y="423.19333333333327" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="212.32" y="423.19333333333327" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="228.32" y="429.69333333333327" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">원스톱형</text>
-<rect x="337.90666666666664" y="423.19333333333327" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="337.90666666666664" y="423.19333333333327" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="353.90666666666664" y="429.69333333333327" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">유연 컨소시엄</text>
-<rect x="463.49333333333334" y="423.19333333333327" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="463.49333333333334" y="423.19333333333327" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="479.49333333333334" y="429.69333333333327" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">초고난도 과제</text>
-<rect x="589.1466666666666" y="423.19333333333327" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="589.1466666666666" y="423.19333333333327" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="605.1466666666666" y="429.69333333333327" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">탄소중립</text>
-<rect x="212.32" y="449.61999999999995" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="212.32" y="449.61999999999995" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="228.32" y="456.11999999999995" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">보안과제</text>
 <rect x="334.02666666666664" y="442.90666666666664" width="117.8533333333333" height="26.426666666666666" fill="#cccccc"/>
 <text transform="translate(381.45333333333326,461.2533333333333) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="14.666666666666666" font-weight="bold" fill="#000000">E</text>
 <text transform="translate(388.1509333333333,461.2533333333333) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="14.666666666666666" font-weight="bold" fill="#000000">S</text>
 <text transform="translate(395.23253333333327,461.2533333333333) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="14.666666666666666" font-weight="bold" fill="#000000">G</text>
-<rect x="463.2933333333333" y="449.61999999999995" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="463.2933333333333" y="449.61999999999995" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="479.2933333333333" y="456.11999999999995" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">E</text>
-<rect x="505.33333333333337" y="449.61999999999995" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="505.33333333333337" y="449.61999999999995" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="521.3333333333334" y="456.11999999999995" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">S</text>
-<rect x="547.3733333333333" y="449.61999999999995" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="547.3733333333333" y="449.61999999999995" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <polyline points="549.9733333333334,456.7699999999999 553.2233333333334,460.0199999999999 558.4233333333333,452.21999999999997" fill="none" stroke="#000000" stroke-width="1.5"/>
 <text x="563.3733333333333" y="456.11999999999995" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">G</text>
-<rect x="589.4133333333333" y="449.61999999999995" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="589.4133333333333" y="449.61999999999995" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="605.4133333333333" y="456.11999999999995" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">해당없음</text>
 <rect x="75.58666666666667" y="469.3333333333333" width="117.14666666666666" height="26.426666666666666" fill="#cccccc"/>
 <text transform="translate(85.16,488.14666666666665) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">R</text>
@@ -321,10 +321,10 @@
 <text transform="translate(139.95999999999998,488.14666666666665) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">성</text>
 <text transform="translate(154.35999999999999,488.14666666666665) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">트</text>
 <text transform="translate(168.76,488.14666666666665) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">랙</text>
-<rect x="244.88666666666666" y="476.0466666666666" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="244.88666666666666" y="476.0466666666666" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <polyline points="247.48666666666665,483.1966666666666 250.73666666666665,486.4466666666666 255.93666666666667,478.64666666666665" fill="none" stroke="#000000" stroke-width="1.5"/>
 <text x="260.88666666666666" y="482.5466666666666" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">R&amp;amp;&amp;amp;D 자율성트랙(일반)</text>
-<rect x="504.1333333333333" y="476.0466666666666" width="13" height="13" fill="white" stroke="#606060" stroke-width="0.8"/>
+<rect x="504.1333333333333" y="476.0466666666666" width="13" height="13" fill="#ffffff" stroke="#606060" stroke-width="0.8"/>
 <text x="520.1333333333333" y="482.5466666666666" font-size="12.0" fill="#000000" dominant-baseline="central" font-family="'맑은 고딕',sans-serif">R&amp;amp;&amp;amp;D 자율성트랙(지정)</text>
 <rect x="75.58666666666667" y="495.76" width="117.14666666666666" height="58.133333333333326" fill="#cccccc"/>
 <text transform="translate(112.66,530.4266666666666) scale(0.9600,1)" font-family="&apos;맑은 고딕&apos;,&apos;Malgun Gothic&apos;,&apos;맑은 고딕&apos;,&apos;Apple SD Gothic Neo&apos;,&apos;Noto Sans CJK KR&apos;,&apos;NanumGothic&apos;,&apos;나눔고딕&apos;,&apos;Noto Sans KR&apos;,&apos;Pretendard&apos;,sans-serif" font-size="16" font-weight="bold" fill="#000000">품</text>
