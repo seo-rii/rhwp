@@ -934,9 +934,8 @@ export class Canvas2DLayerRenderer {
     if (!imageWidth || !imageHeight) {
       return;
     }
-
-    if (fillMode === 'fitToSize' || fillMode === 'none') {
-      if (crop) {
+    const cropSource = crop
+      ? (() => {
         const scaleX = Math.max(crop.right / imageWidth, 1);
         const scaleY = Math.max(crop.bottom / imageHeight, 1);
         const srcX = crop.left / scaleX;
@@ -944,12 +943,21 @@ export class Canvas2DLayerRenderer {
         const srcW = (crop.right - crop.left) / scaleX;
         const srcH = (crop.bottom - crop.top) / scaleY;
         const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imageWidth) > 1 || Math.abs(srcH - imageHeight) > 1;
-        if (isCropped) {
-          ctx.drawImage(image, srcX, srcY, srcW, srcH, bbox.x, bbox.y, bbox.width, bbox.height);
-          return;
-        }
+        return isCropped && srcW > 0 && srcH > 0
+          ? { x: srcX, y: srcY, width: srcW, height: srcH }
+          : null;
+      })()
+      : null;
+    const drawImage = (x: number, y: number, width: number, height: number) => {
+      if (cropSource) {
+        ctx.drawImage(image, cropSource.x, cropSource.y, cropSource.width, cropSource.height, x, y, width, height);
+        return;
       }
-      ctx.drawImage(image, bbox.x, bbox.y, bbox.width, bbox.height);
+      ctx.drawImage(image, x, y, width, height);
+    };
+
+    if (fillMode === 'fitToSize' || fillMode === 'none') {
+      drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
       return;
     }
 
@@ -965,21 +973,21 @@ export class Canvas2DLayerRenderer {
     if (fillMode === 'tileAll') {
       for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
         for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
-          ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+          drawImage(tx, ty, placedWidth, placedHeight);
         }
       }
     } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
       const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - placedHeight;
       for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
-        ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+        drawImage(tx, ty, placedWidth, placedHeight);
       }
     } else if (fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
       const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - placedWidth;
       for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
-        ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+        drawImage(tx, ty, placedWidth, placedHeight);
       }
     } else {
-      ctx.drawImage(image, x, y, placedWidth, placedHeight);
+      drawImage(x, y, placedWidth, placedHeight);
     }
 
     ctx.restore();

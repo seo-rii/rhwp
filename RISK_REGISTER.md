@@ -447,7 +447,10 @@
 **진행 메모**:
 
 - Skia, SVG, Canvas2D direct, Canvas2D layer, CanvasKit crop 계산에서 x/y scale을 분리했습니다.
-- crop 좌표계 문서화와 tile/align 계열 crop semantics fixture는 아직 남아 있습니다.
+- Skia image replay는 crop source rect를 공통 계산해 `fitToSize`/`none`, align, tile 계열 fill mode에 모두 적용합니다.
+- Canvas2D layer와 CanvasKit replay도 동일하게 crop source rect를 align/tile draw call에 적용합니다.
+- native Skia regression으로 crop + center fill mode가 잘린 source rect만 그리는지 확인했습니다.
+- crop 좌표계 문서화와 실제 HWP sample 기반 crop + tile/rotation fixture는 아직 남아 있습니다.
 
 ---
 

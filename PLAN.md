@@ -64,6 +64,28 @@ Give layer backends the same output-option context used by legacy renderers, the
 - `rustfmt --check` passed for changed Rust files.
 - `git diff --check` passed for this batch's files.
 
+## Completed Batch: BUG-007 Image Crop Fill Modes
+
+Apply image crop source rectangles outside `fitToSize` so Skia, Canvas2D layer, and CanvasKit aligned/tiled fill modes replay the same cropped resource area instead of silently ignoring crop.
+
+## Steps
+
+1. Done: compute a shared crop source rect with separate x/y scaling in Skia image replay.
+2. Done: use that source rect for Skia fit, aligned placement, and tile draw calls.
+3. Done: apply the same source-rect handling to Canvas2D layer and CanvasKit replay.
+4. Done: add a native Skia regression for crop + aligned center fill.
+5. Done: run formatting/build/diff checks.
+6. Done: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::image_conv::tests::applies_crop_source_rect_to_aligned_fill_modes -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia:: -- --quiet` passed.
+- `rustfmt --check src/renderer/skia/image_conv.rs` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.

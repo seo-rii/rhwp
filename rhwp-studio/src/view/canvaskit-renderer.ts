@@ -2045,9 +2045,8 @@ export class CanvasKitLayerRenderer {
     if (!imageWidth || !imageHeight) {
       return;
     }
-
-    if (fillMode === 'fitToSize' || fillMode === 'none') {
-      if (crop) {
+    const cropSource = crop
+      ? (() => {
         const scaleX = Math.max(crop.right / imageWidth, 1);
         const scaleY = Math.max(crop.bottom / imageHeight, 1);
         const srcX = crop.left / scaleX;
@@ -2055,12 +2054,21 @@ export class CanvasKitLayerRenderer {
         const srcW = (crop.right - crop.left) / scaleX;
         const srcH = (crop.bottom - crop.top) / scaleY;
         const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imageWidth) > 1 || Math.abs(srcH - imageHeight) > 1;
-        if (isCropped) {
-          ctx.drawImage(image, srcX, srcY, srcW, srcH, bbox.x, bbox.y, bbox.width, bbox.height);
-          return;
-        }
+        return isCropped && srcW > 0 && srcH > 0
+          ? { x: srcX, y: srcY, width: srcW, height: srcH }
+          : null;
+      })()
+      : null;
+    const drawImage = (x: number, y: number, width: number, height: number) => {
+      if (cropSource) {
+        ctx.drawImage(image, cropSource.x, cropSource.y, cropSource.width, cropSource.height, x, y, width, height);
+        return;
       }
-      ctx.drawImage(image, bbox.x, bbox.y, bbox.width, bbox.height);
+      ctx.drawImage(image, x, y, width, height);
+    };
+
+    if (fillMode === 'fitToSize' || fillMode === 'none') {
+      drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
       return;
     }
 
@@ -2076,21 +2084,21 @@ export class CanvasKitLayerRenderer {
     if (fillMode === 'tileAll') {
       for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
         for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
-          ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+          drawImage(tx, ty, placedWidth, placedHeight);
         }
       }
     } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
       const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - placedHeight;
       for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += placedWidth) {
-        ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+        drawImage(tx, ty, placedWidth, placedHeight);
       }
     } else if (fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
       const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - placedWidth;
       for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += placedHeight) {
-        ctx.drawImage(image, tx, ty, placedWidth, placedHeight);
+        drawImage(tx, ty, placedWidth, placedHeight);
       }
     } else {
-      ctx.drawImage(image, x, y, placedWidth, placedHeight);
+      drawImage(x, y, placedWidth, placedHeight);
     }
 
     ctx.restore();
@@ -2376,91 +2384,102 @@ export class CanvasKitLayerRenderer {
     }
 
     try {
-    const drawImageRect = (
-      srcX: number,
-      srcY: number,
-      srcW: number,
-      srcH: number,
-      dstX: number,
-      dstY: number,
-      dstW: number,
-      dstH: number,
-    ) => {
-      const useMipmaps =
-        this.currentProfile !== 'fast-preview'
-        && !this.hasActiveCacheHint('preferRaster')
-        && (
-          this.renderMode === 'compat'
-          || this.currentProfile === 'print'
-          || this.currentProfile === 'high-quality'
-        )
-        && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
-      const sampledImage = useMipmaps ? this.resourceCache.image(resourceId, base64, true) ?? image : image;
-      const paint = new this.canvasKit.Paint();
-      if (colorFilter) {
-        paint.setColorFilter(colorFilter);
+      const sourceWidth = image.width();
+      const sourceHeight = image.height();
+      if (!sourceWidth || !sourceHeight) {
+        return;
       }
-      canvas.drawImageRectOptions(
-        sampledImage,
-        this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
-        this.canvasKit.XYWHRect(dstX, dstY, dstW, dstH),
-        this.canvasKit.FilterMode.Linear,
-        useMipmaps ? this.canvasKit.MipmapMode.Linear : this.canvasKit.MipmapMode.None,
-        paint,
-      );
-      paint.delete();
-    };
-
-    if (fillMode === 'fitToSize' || fillMode === 'none') {
-      if (crop) {
-        const imgW = image.width();
-        const imgH = image.height();
-        const scaleX = Math.max(crop.right / imgW, 1);
-        const scaleY = Math.max(crop.bottom / imgH, 1);
-        const srcX = crop.left / scaleX;
-        const srcY = crop.top / scaleY;
-        const srcW = (crop.right - crop.left) / scaleX;
-        const srcH = (crop.bottom - crop.top) / scaleY;
-        const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imgW) > 1 || Math.abs(srcH - imgH) > 1;
-        if (isCropped) {
-          drawImageRect(srcX, srcY, srcW, srcH, bbox.x, bbox.y, bbox.width, bbox.height);
+      const cropSource = crop
+        ? (() => {
+          const scaleX = Math.max(crop.right / sourceWidth, 1);
+          const scaleY = Math.max(crop.bottom / sourceHeight, 1);
+          const srcX = crop.left / scaleX;
+          const srcY = crop.top / scaleY;
+          const srcW = (crop.right - crop.left) / scaleX;
+          const srcH = (crop.bottom - crop.top) / scaleY;
+          const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - sourceWidth) > 1 || Math.abs(srcH - sourceHeight) > 1;
+          return isCropped && srcW > 0 && srcH > 0
+            ? { x: srcX, y: srcY, width: srcW, height: srcH }
+            : null;
+        })()
+        : null;
+      const drawImageRect = (
+        srcX: number,
+        srcY: number,
+        srcW: number,
+        srcH: number,
+        dstX: number,
+        dstY: number,
+        dstW: number,
+        dstH: number,
+      ) => {
+        const useMipmaps =
+          this.currentProfile !== 'fast-preview'
+          && !this.hasActiveCacheHint('preferRaster')
+          && (
+            this.renderMode === 'compat'
+            || this.currentProfile === 'print'
+            || this.currentProfile === 'high-quality'
+          )
+          && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
+        const sampledImage = useMipmaps ? this.resourceCache.image(resourceId, base64, true) ?? image : image;
+        const paint = new this.canvasKit.Paint();
+        if (colorFilter) {
+          paint.setColorFilter(colorFilter);
+        }
+        canvas.drawImageRectOptions(
+          sampledImage,
+          this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
+          this.canvasKit.XYWHRect(dstX, dstY, dstW, dstH),
+          this.canvasKit.FilterMode.Linear,
+          useMipmaps ? this.canvasKit.MipmapMode.Linear : this.canvasKit.MipmapMode.None,
+          paint,
+        );
+        paint.delete();
+      };
+      const drawImage = (dstX: number, dstY: number, dstW: number, dstH: number) => {
+        if (cropSource) {
+          drawImageRect(cropSource.x, cropSource.y, cropSource.width, cropSource.height, dstX, dstY, dstW, dstH);
           return;
         }
+        drawImageRect(0, 0, sourceWidth, sourceHeight, dstX, dstY, dstW, dstH);
+      };
+
+      if (fillMode === 'fitToSize' || fillMode === 'none') {
+        drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
+        return;
       }
-      drawImageRect(0, 0, image.width(), image.height(), bbox.x, bbox.y, bbox.width, bbox.height);
-      return;
-    }
 
-    const imageWidth = originalSize?.width ?? image.width();
-    const imageHeight = originalSize?.height ?? image.height();
-    const { x, y } = this.resolveImagePlacement(fillMode, bbox, imageWidth, imageHeight);
+      const imageWidth = originalSize?.width ?? sourceWidth;
+      const imageHeight = originalSize?.height ?? sourceHeight;
+      const { x, y } = this.resolveImagePlacement(fillMode, bbox, imageWidth, imageHeight);
 
-    canvas.save();
-    canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
+      canvas.save();
+      canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
 
-    if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
-      if (fillMode === 'tileAll') {
-        for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += imageHeight) {
+      if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
+        if (fillMode === 'tileAll') {
+          for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += imageHeight) {
+            for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += imageWidth) {
+              drawImage(tx, ty, imageWidth, imageHeight);
+            }
+          }
+        } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
+          const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - imageHeight;
           for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += imageWidth) {
-            drawImageRect(0, 0, image.width(), image.height(), tx, ty, imageWidth, imageHeight);
+            drawImage(tx, ty, imageWidth, imageHeight);
+          }
+        } else {
+          const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - imageWidth;
+          for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += imageHeight) {
+            drawImage(tx, ty, imageWidth, imageHeight);
           }
         }
-      } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
-        const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - imageHeight;
-        for (let tx = bbox.x; tx < bbox.x + bbox.width; tx += imageWidth) {
-          drawImageRect(0, 0, image.width(), image.height(), tx, ty, imageWidth, imageHeight);
-        }
       } else {
-        const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - imageWidth;
-        for (let ty = bbox.y; ty < bbox.y + bbox.height; ty += imageHeight) {
-          drawImageRect(0, 0, image.width(), image.height(), tx, ty, imageWidth, imageHeight);
-        }
+        drawImage(x, y, imageWidth, imageHeight);
       }
-    } else {
-      drawImageRect(0, 0, image.width(), image.height(), x, y, imageWidth, imageHeight);
-    }
 
-    canvas.restore();
+      canvas.restore();
     } finally {
       colorFilter?.delete();
     }

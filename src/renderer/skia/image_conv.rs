@@ -73,6 +73,31 @@ pub fn draw_image_bytes(
         paint.set_color_filter(color_filter);
     }
     let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
+    let decoded_width = image.width() as f32;
+    let decoded_height = image.height() as f32;
+    let crop_src = crop.and_then(|(left, top, right, bottom)| {
+        if decoded_width <= 0.0 || decoded_height <= 0.0 {
+            return None;
+        }
+        let scale_x = right as f32 / decoded_width;
+        let scale_y = bottom as f32 / decoded_height;
+        if scale_x <= 0.0 || scale_y <= 0.0 {
+            return None;
+        }
+        let src_x = left as f32 / scale_x;
+        let src_y = top as f32 / scale_y;
+        let src_w = (right - left) as f32 / scale_x;
+        let src_h = (bottom - top) as f32 / scale_y;
+        let is_cropped = src_x > 0.5
+            || src_y > 0.5
+            || (src_w - decoded_width).abs() > 1.0
+            || (src_h - decoded_height).abs() > 1.0;
+        if is_cropped && src_w > 0.0 && src_h > 0.0 {
+            Some(Rect::from_xywh(src_x, src_y, src_w, src_h))
+        } else {
+            None
+        }
+    });
 
     let draw_image_rect = |canvas: &Canvas, src: Option<Rect>, dst: Rect| {
         if let Some(src) = src.as_ref() {
@@ -95,41 +120,9 @@ pub fn draw_image_bytes(
     };
 
     if matches!(mode, ImageFillMode::FitToSize | ImageFillMode::None) {
-        if let Some((left, top, right, bottom)) = crop {
-            let image_width = image.width() as f32;
-            let image_height = image.height() as f32;
-            if image_width > 0.0 && image_height > 0.0 {
-                let scale_x = right as f32 / image_width;
-                let scale_y = bottom as f32 / image_height;
-                if scale_x > 0.0 && scale_y > 0.0 {
-                    let src_x = left as f32 / scale_x;
-                    let src_y = top as f32 / scale_y;
-                    let src_w = (right - left) as f32 / scale_x;
-                    let src_h = (bottom - top) as f32 / scale_y;
-                    let is_cropped = src_x > 0.5
-                        || src_y > 0.5
-                        || (src_w - image_width).abs() > 1.0
-                        || (src_h - image_height).abs() > 1.0;
-                    if is_cropped {
-                        let scale_x = width / src_w.max(1.0);
-                        let scale_y = height / src_h.max(1.0);
-                        let draw_x = x - src_x * scale_x;
-                        let draw_y = y - src_y * scale_y;
-                        let draw_w = image_width * scale_x;
-                        let draw_h = image_height * scale_y;
-
-                        canvas.save();
-                        canvas.clip_rect(dst, None, Some(true));
-                        draw_image_rect(
-                            canvas,
-                            None,
-                            Rect::from_xywh(draw_x, draw_y, draw_w, draw_h),
-                        );
-                        canvas.restore();
-                        return;
-                    }
-                }
-            }
+        if let Some(src) = crop_src {
+            draw_image_rect(canvas, Some(src), dst);
+            return;
         }
 
         draw_image_rect(canvas, None, dst);
@@ -171,7 +164,7 @@ pub fn draw_image_bytes(
                 while tile_x < x + width && tile_draws < MAX_TILE_DRAWS {
                     draw_image_rect(
                         canvas,
-                        None,
+                        crop_src,
                         Rect::from_xywh(tile_x, tile_y, image_width, image_height),
                     );
                     tile_draws += 1;
@@ -192,7 +185,7 @@ pub fn draw_image_bytes(
             while tile_x < x + width && tile_draws < MAX_TILE_DRAWS {
                 draw_image_rect(
                     canvas,
-                    None,
+                    crop_src,
                     Rect::from_xywh(tile_x, tile_y, image_width, image_height),
                 );
                 tile_draws += 1;
@@ -208,7 +201,7 @@ pub fn draw_image_bytes(
             while tile_y < y + height && tile_draws < MAX_TILE_DRAWS {
                 draw_image_rect(
                     canvas,
-                    None,
+                    crop_src,
                     Rect::from_xywh(tile_x, tile_y, image_width, image_height),
                 );
                 tile_draws += 1;
@@ -220,7 +213,7 @@ pub fn draw_image_bytes(
             resolve_image_placement(mode, x, y, width, height, image_width, image_height);
         draw_image_rect(
             canvas,
-            None,
+            crop_src,
             Rect::from_xywh(image_x, image_y, image_width, image_height),
         );
     }
@@ -389,4 +382,49 @@ fn detect_image_mime_type(data: &[u8]) -> &'static str {
     }
 
     "application/octet-stream"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use skia_safe::{surfaces, Color, EncodedImageFormat};
+
+    #[test]
+    fn applies_crop_source_rect_to_aligned_fill_modes() {
+        let mut source = tiny_skia::Pixmap::new(2, 2).expect("source pixmap");
+        source.pixels_mut()[0] =
+            tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 0, 255).unwrap();
+        source.pixels_mut()[1] =
+            tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 0, 255).unwrap();
+        source.pixels_mut()[2] =
+            tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 255, 255).unwrap();
+        source.pixels_mut()[3] =
+            tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 255, 255).unwrap();
+        let source_png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((4, 4)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &source_png,
+            0.0,
+            0.0,
+            4.0,
+            4.0,
+            Some(ImageFillMode::Center),
+            Some((4.0, 4.0)),
+            Some((0, 1, 2, 2)),
+            ImageEffect::RealPic,
+            ImageSampling::nearest(),
+        );
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+
+        for pixel in pixmap.pixels() {
+            assert!(pixel.blue() > pixel.red());
+        }
+    }
 }
