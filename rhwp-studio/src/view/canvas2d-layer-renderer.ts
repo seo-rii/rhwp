@@ -40,6 +40,8 @@ import {
 type OverlayClip = {
   bounds: LayerBounds;
   kind: LayerClipNode['clipKind'];
+  rightOverflowSlop: number;
+  allowHorizontalOverflowControls: boolean;
 };
 
 export class Canvas2DLayerRenderer {
@@ -108,7 +110,12 @@ export class Canvas2DLayerRenderer {
   }
 
   private renderClipNode(ctx: CanvasRenderingContext2D, node: LayerClipNode): void {
-    this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
+    this.currentClipStack.push({
+      bounds: node.clip,
+      kind: node.clipKind,
+      rightOverflowSlop: node.clipPolicy?.rightOverflowSlop ?? (node.clipKind === 'body' || node.clipKind === 'tableCell' ? 4 : 0),
+      allowHorizontalOverflowControls: node.clipPolicy?.allowHorizontalOverflowControls ?? (node.clipKind === 'body'),
+    });
     this.renderNode(ctx, node.child);
     this.currentClipStack.pop();
   }
@@ -1116,9 +1123,7 @@ export class Canvas2DLayerRenderer {
       let rightPad = padding;
       let bottomPad = padding;
 
-      if (clip.kind === 'body' || clip.kind === 'tableCell') {
-        rightPad = Math.max(rightPad, 4);
-      }
+      rightPad = Math.max(rightPad, clip.rightOverflowSlop);
 
       if (bounds) {
         if (bounds.x < clipBounds.x) {

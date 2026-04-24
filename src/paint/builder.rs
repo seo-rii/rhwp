@@ -457,10 +457,15 @@ mod tests {
                 assert_eq!(children.len(), 1);
                 match &children[0].kind {
                     LayerNodeKind::ClipRect {
-                        clip, clip_kind, ..
+                        clip,
+                        clip_kind,
+                        clip_policy,
+                        ..
                     } => {
                         assert_eq!(clip.x, 10.0);
                         assert_eq!(*clip_kind, ClipKind::Body);
+                        assert_eq!(clip_policy.right_overflow_slop, 4.0);
+                        assert!(clip_policy.allow_horizontal_overflow_controls);
                     }
                     other => panic!("expected clip rect, got {other:?}"),
                 }
@@ -511,8 +516,14 @@ mod tests {
                     other => panic!("expected leaf, got {other:?}"),
                 }
                 match &children[1].kind {
-                    LayerNodeKind::ClipRect { clip_kind, .. } => {
+                    LayerNodeKind::ClipRect {
+                        clip_kind,
+                        clip_policy,
+                        ..
+                    } => {
                         assert_eq!(*clip_kind, ClipKind::TableCell);
+                        assert_eq!(clip_policy.right_overflow_slop, 4.0);
+                        assert!(!clip_policy.allow_horizontal_overflow_controls);
                     }
                     other => panic!("expected clip rect, got {other:?}"),
                 }

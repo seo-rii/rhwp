@@ -159,6 +159,7 @@ impl SvgRenderer {
                 clip,
                 child,
                 clip_kind,
+                clip_policy,
             } => {
                 let clip_id = match clip_kind {
                     ClipKind::Body => format!(
@@ -173,7 +174,11 @@ impl SvgRenderer {
                 };
                 self.defs.push(format!(
                     "<clipPath id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/></clipPath>\n",
-                    clip_id, clip.x, clip.y, clip.width, clip.height,
+                    clip_id,
+                    clip.x,
+                    clip.y,
+                    clip.width + clip_policy.right_overflow_slop,
+                    clip.height,
                 ));
                 self.output
                     .push_str(&format!("<g clip-path=\"url(#{})\">", clip_id));

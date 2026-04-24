@@ -95,13 +95,16 @@ impl LayerNode {
                 clip,
                 child,
                 clip_kind,
+                clip_policy,
             } => {
                 buf.push_str(",\"kind\":\"clipRect\",\"clip\":");
                 write_bbox(buf, *clip);
                 let _ = write!(
                     buf,
-                    ",\"clipKind\":{}",
-                    json_escape(clip_kind_str(*clip_kind))
+                    ",\"clipKind\":{},\"clipPolicy\":{{\"rightOverflowSlop\":{},\"allowHorizontalOverflowControls\":{}}}",
+                    json_escape(clip_kind_str(*clip_kind)),
+                    clip_policy.right_overflow_slop,
+                    clip_policy.allow_horizontal_overflow_controls
                 );
                 buf.push_str(",\"child\":");
                 child.write_json(buf, resources);
@@ -1225,6 +1228,8 @@ mod tests {
         let json = tree.to_json();
         assert!(json.contains("\"kind\":\"clipRect\""));
         assert!(json.contains("\"clipKind\":\"body\""));
+        assert!(json.contains("\"rightOverflowSlop\":4"));
+        assert!(json.contains("\"allowHorizontalOverflowControls\":true"));
     }
 
     #[test]

@@ -104,6 +104,18 @@ Close the code-risk portion of `BUG-007` after adding explicit native Skia cover
 - `rustfmt --check src/renderer/skia/image_conv.rs` passed.
 - `git diff --check` passed for this batch's files.
 
+## Completed Batch: BUG-009 Clip Policy
+
+Carry structural clip policy through `PageLayerTree` so Body/TableCell right-overflow slop is explicit in Rust, JSON/JS export, native Skia, SVG layer, WASM Canvas2D, and CanvasKit replay. Overflow control re-rendering still needs a separate PaintOp/lowering pass.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::body_clip_policy_allows_right_overflow_slop -- --quiet` passed.
+- `cargo test --lib paint::builder::tests::builds_body_clip_layer -- --quiet` passed.
+- `cargo test --lib paint::json::tests::serializes_clip_kind_for_browser_replay -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.

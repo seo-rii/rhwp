@@ -431,13 +431,18 @@ impl SkiaLayerRenderer {
                 }
                 replay.pop_cache_hint();
             }
-            LayerNodeKind::ClipRect { clip, child, .. } => {
+            LayerNodeKind::ClipRect {
+                clip,
+                child,
+                clip_policy,
+                ..
+            } => {
                 canvas.save();
                 canvas.clip_rect(
                     Rect::from_xywh(
                         clip.x as f32,
                         clip.y as f32,
-                        clip.width as f32,
+                        (clip.width + clip_policy.right_overflow_slop) as f32,
                         clip.height as f32,
                     ),
                     None,
@@ -1724,8 +1729,8 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 mod tests {
     use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
     use crate::paint::{
-        CacheHint, LayerBuilder, LayerNode, LayerOutputOptions, LayerRectanglePaint, LayerSemantic,
-        PageLayerTree, PaintOp, RenderProfile,
+        CacheHint, ClipKind, LayerBuilder, LayerNode, LayerOutputOptions, LayerRectanglePaint,
+        LayerSemantic, PageLayerTree, PaintOp, RenderProfile,
     };
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
@@ -1766,6 +1771,49 @@ mod tests {
         let png = renderer.render_png(&layer_tree).expect("skia png render");
         assert!(!png.is_empty());
         assert_eq!(&png[0..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn body_clip_policy_allows_right_overflow_slop() {
+        let rect_bounds = BoundingBox::new(8.0, 8.0, 8.0, 4.0);
+        let leaf = LayerNode::leaf(
+            rect_bounds,
+            None,
+            vec![PaintOp::Rectangle {
+                bbox: rect_bounds,
+                rect: LayerRectanglePaint {
+                    corner_radius: 0.0,
+                    style: ShapeStyle {
+                        fill_color: Some(0x000000),
+                        ..Default::default()
+                    },
+                    gradient: None,
+                    transform: Default::default(),
+                },
+            }],
+        );
+        let root = LayerNode::clip_rect(
+            BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            None,
+            BoundingBox::new(4.0, 4.0, 8.0, 12.0),
+            leaf,
+            ClipKind::Body,
+        );
+        let tree = PageLayerTree::new(20.0, 20.0, root);
+        let renderer = SkiaLayerRenderer::new();
+        let png = renderer.render_png(&tree).expect("skia clip render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+        let width = pixmap.width() as usize;
+
+        assert!(
+            pixmap.pixels()[10 * width + 13].alpha() > 0,
+            "body clip should preserve pixels inside the right overflow slop"
+        );
+        assert_eq!(
+            pixmap.pixels()[10 * width + 17].alpha(),
+            0,
+            "body clip should still reject pixels beyond the slop"
+        );
     }
 
     #[test]

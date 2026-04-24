@@ -504,6 +504,12 @@
 - `ClipRect`에 `right_overflow_slop`, `allow_horizontal_overflow_controls`, `clip_kind` 같은 의미를 넣습니다.
 - overflow 재렌더링을 별도 PaintOp로 낮춥니다.
 
+**진행 메모**:
+
+- `ClipRect`에 `clipPolicy.rightOverflowSlop`과 `allowHorizontalOverflowControls`를 추가하고 JSON/JS/TypeScript export로 전달합니다.
+- Body/TableCell clip은 기본 `rightOverflowSlop = 4.0`을 갖고, native Skia/SVG layer/WASM Canvas2D/CanvasKit replay가 같은 policy를 사용합니다.
+- Body overflow control 재렌더링을 별도 PaintOp로 낮추는 작업은 아직 남아 있습니다.
+
 ---
 
 ### [BUG-010] FormObject 렌더링이 placeholder 성격에 가까움

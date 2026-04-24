@@ -110,6 +110,10 @@ export interface LayerClipNode {
   semantic?: LayerSemantic;
   clip: LayerBounds;
   clipKind: 'body' | 'tableCell' | 'generic';
+  clipPolicy?: {
+    rightOverflowSlop?: number;
+    allowHorizontalOverflowControls?: boolean;
+  };
   child: LayerNode;
 }
 

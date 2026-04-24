@@ -184,10 +184,23 @@ fn layer_node_to_value(node: &LayerNode) -> JsValue {
             clip,
             child,
             clip_kind,
+            clip_policy,
         } => {
             set_string(&value, "kind", "clipRect");
             set_value(&value, "clip", bbox_to_value(*clip));
             set_string(&value, "clipKind", clip_kind_str(*clip_kind));
+            let policy = Object::new();
+            set_number(
+                &policy,
+                "rightOverflowSlop",
+                clip_policy.right_overflow_slop,
+            );
+            set_bool(
+                &policy,
+                "allowHorizontalOverflowControls",
+                clip_policy.allow_horizontal_overflow_controls,
+            );
+            set_value(&value, "clipPolicy", policy.into());
             set_value(&value, "child", layer_node_to_value(child));
         }
         LayerNodeKind::Leaf { ops, cache_hint } => {

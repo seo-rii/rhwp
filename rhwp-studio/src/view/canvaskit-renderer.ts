@@ -59,6 +59,8 @@ const MAX_TEXT_BLOB_CACHE_ENTRIES = 4096;
 type OverlayClip = {
   bounds: LayerBounds;
   kind: LayerClipNode['clipKind'];
+  rightOverflowSlop: number;
+  allowHorizontalOverflowControls: boolean;
 };
 
 export class CanvasKitLayerRenderer {
@@ -252,14 +254,14 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerClipNode,
   ): void {
-    const clipRightPad = canvaskitClipRightPad(this.renderMode, this.currentProfile, node.clipKind);
-    this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
+    const clip = this.overlayClipForNode(node);
+    this.currentClipStack.push(clip);
     canvas.save();
     canvas.clipRect(
       this.canvasKit.XYWHRect(
         node.clip.x,
         node.clip.y,
-        node.clip.width + clipRightPad,
+        node.clip.width + clip.rightOverflowSlop,
         node.clip.height,
       ),
       this.canvasKit.ClipOp.Intersect,
@@ -268,6 +270,20 @@ export class CanvasKitLayerRenderer {
     this.renderNode(canvas, node.child);
     canvas.restore();
     this.currentClipStack.pop();
+  }
+
+  private overlayClipForNode(node: LayerClipNode): OverlayClip {
+    return {
+      bounds: node.clip,
+      kind: node.clipKind,
+      rightOverflowSlop: canvaskitClipRightPad(
+        this.renderMode,
+        this.currentProfile,
+        node.clipKind,
+        node.clipPolicy?.rightOverflowSlop,
+      ),
+      allowHorizontalOverflowControls: node.clipPolicy?.allowHorizontalOverflowControls ?? (node.clipKind === 'body'),
+    };
   }
 
   private renderLeafNode(
@@ -1629,7 +1645,7 @@ export class CanvasKitLayerRenderer {
       }
     }
     if (node.kind === 'clipRect') {
-      this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
+      this.currentClipStack.push(this.overlayClipForNode(node));
       try {
         return this.hasFallbackOverlayNode(node.child);
       } finally {
@@ -1685,7 +1701,7 @@ export class CanvasKitLayerRenderer {
       return;
     }
     if (node.kind === 'clipRect') {
-      this.currentClipStack.push({ bounds: node.clip, kind: node.clipKind });
+      this.currentClipStack.push(this.overlayClipForNode(node));
       this.renderFallbackOverlayNode(ctx, node.child);
       this.currentClipStack.pop();
       return;
@@ -1997,9 +2013,7 @@ export class CanvasKitLayerRenderer {
       let rightPad = padding;
       let bottomPad = padding;
 
-      if (clip.kind === 'body' || clip.kind === 'tableCell') {
-        rightPad = Math.max(rightPad, 4);
-      }
+      rightPad = Math.max(rightPad, clip.rightOverflowSlop);
 
       if (bounds) {
         if (bounds.x < clipBounds.x) {

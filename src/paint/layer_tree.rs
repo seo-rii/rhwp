@@ -108,6 +108,31 @@ pub enum ClipKind {
     Generic,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClipPolicy {
+    pub right_overflow_slop: f64,
+    pub allow_horizontal_overflow_controls: bool,
+}
+
+impl ClipPolicy {
+    pub fn for_kind(kind: ClipKind) -> Self {
+        match kind {
+            ClipKind::Body => Self {
+                right_overflow_slop: 4.0,
+                allow_horizontal_overflow_controls: true,
+            },
+            ClipKind::TableCell => Self {
+                right_overflow_slop: 4.0,
+                allow_horizontal_overflow_controls: false,
+            },
+            ClipKind::Generic => Self {
+                right_overflow_slop: 0.0,
+                allow_horizontal_overflow_controls: false,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LayerNode {
     pub bounds: BoundingBox,
@@ -142,6 +167,7 @@ impl LayerNode {
         child: LayerNode,
         clip_kind: ClipKind,
     ) -> Self {
+        let clip_policy = ClipPolicy::for_kind(clip_kind);
         Self {
             bounds,
             source_node_id,
@@ -150,6 +176,7 @@ impl LayerNode {
                 clip,
                 child: Box::new(child),
                 clip_kind,
+                clip_policy,
             },
         }
     }
@@ -183,6 +210,7 @@ pub enum LayerNodeKind {
         clip: BoundingBox,
         child: Box<LayerNode>,
         clip_kind: ClipKind,
+        clip_policy: ClipPolicy,
     },
     Leaf {
         ops: Vec<PaintOp>,

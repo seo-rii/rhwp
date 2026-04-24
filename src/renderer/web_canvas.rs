@@ -29,7 +29,7 @@ use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::model::style::UnderlineType;
 #[cfg(target_arch = "wasm32")]
-use crate::paint::{ClipKind, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
+use crate::paint::{LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
 
 // 이미지 캐시: data 해시 → HtmlImageElement
 // WASM 단일 스레드이므로 thread_local 안전
@@ -197,16 +197,17 @@ impl WebCanvasRenderer {
             LayerNodeKind::ClipRect {
                 clip,
                 child,
-                clip_kind,
+                clip_policy,
+                ..
             } => {
                 self.ctx.save();
                 self.ctx.begin_path();
-                let right_pad = match clip_kind {
-                    ClipKind::Body | ClipKind::TableCell => 4.0,
-                    ClipKind::Generic => 0.0,
-                };
-                self.ctx
-                    .rect(clip.x, clip.y, clip.width + right_pad, clip.height);
+                self.ctx.rect(
+                    clip.x,
+                    clip.y,
+                    clip.width + clip_policy.right_overflow_slop,
+                    clip.height,
+                );
                 self.ctx.clip();
                 self.render_layer_node(child, resources);
                 self.ctx.restore();
