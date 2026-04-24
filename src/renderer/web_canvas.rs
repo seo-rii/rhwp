@@ -2566,8 +2566,11 @@ impl WebCanvasRenderer {
             let (img_w, img_h) = parse_image_dimensions_canvas(data)?;
             let img_w = img_w as f64;
             let img_h = img_h as f64;
-            let scale_x = (cr as f64 / img_w).max(1.0);
-            let scale_y = (cb as f64 / img_h).max(1.0);
+            let scale_x = cr as f64 / img_w;
+            let scale_y = cb as f64 / img_h;
+            if scale_x <= 0.0 || scale_y <= 0.0 {
+                return None;
+            }
             let src_x = cl as f64 / scale_x;
             let src_y = ct as f64 / scale_y;
             let src_w = (cr - cl) as f64 / scale_x;

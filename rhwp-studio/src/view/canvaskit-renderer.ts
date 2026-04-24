@@ -2126,8 +2126,11 @@ export class CanvasKitLayerRenderer {
     }
     const cropSource = crop
       ? (() => {
-        const scaleX = Math.max(crop.right / imageWidth, 1);
-        const scaleY = Math.max(crop.bottom / imageHeight, 1);
+        const scaleX = crop.right / imageWidth;
+        const scaleY = crop.bottom / imageHeight;
+        if (scaleX <= 0 || scaleY <= 0) {
+          return null;
+        }
         const srcX = crop.left / scaleX;
         const srcY = crop.top / scaleY;
         const srcW = (crop.right - crop.left) / scaleX;
@@ -2542,8 +2545,11 @@ export class CanvasKitLayerRenderer {
       }
       const cropSource = crop
         ? (() => {
-          const scaleX = Math.max(crop.right / sourceWidth, 1);
-          const scaleY = Math.max(crop.bottom / sourceHeight, 1);
+          const scaleX = crop.right / sourceWidth;
+          const scaleY = crop.bottom / sourceHeight;
+          if (scaleX <= 0 || scaleY <= 0) {
+            return null;
+          }
           const srcX = crop.left / scaleX;
           const srcY = crop.top / scaleY;
           const srcW = (crop.right - crop.left) / scaleX;
