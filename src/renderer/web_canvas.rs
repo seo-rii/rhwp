@@ -2549,48 +2549,37 @@ impl WebCanvasRenderer {
             );
             previous
         });
+        let crop_source = crop.and_then(|(cl, ct, cr, cb)| {
+            let (img_w, img_h) = parse_image_dimensions_canvas(data)?;
+            let img_w = img_w as f64;
+            let img_h = img_h as f64;
+            let scale_x = (cr as f64 / img_w).max(1.0);
+            let scale_y = (cb as f64 / img_h).max(1.0);
+            let src_x = cl as f64 / scale_x;
+            let src_y = ct as f64 / scale_y;
+            let src_w = (cr - cl) as f64 / scale_x;
+            let src_h = (cb - ct) as f64 / scale_y;
+            let is_cropped = src_x > 0.5
+                || src_y > 0.5
+                || (src_w - img_w).abs() > 1.0
+                || (src_h - img_h).abs() > 1.0;
+            if is_cropped && src_w > 0.0 && src_h > 0.0 {
+                Some((src_x, src_y, src_w, src_h))
+            } else {
+                None
+            }
+        });
+        let draw_image = |renderer: &mut Self, x: f64, y: f64, width: f64, height: f64| {
+            if let Some((src_x, src_y, src_w, src_h)) = crop_source {
+                renderer.draw_image_cropped(data, src_x, src_y, src_w, src_h, x, y, width, height);
+            } else {
+                renderer.draw_image(data, x, y, width, height);
+            }
+        };
         let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
         match mode {
             ImageFillMode::FitToSize | ImageFillMode::None => {
-                // crop이 있으면 source rect 기반 drawImage 사용
-                if let Some((cl, ct, cr, cb)) = crop {
-                    if let Some((img_w, img_h)) = parse_image_dimensions_canvas(data) {
-                        let img_w = img_w as f64;
-                        let img_h = img_h as f64;
-                        let scale_x = (cr as f64 / img_w).max(1.0);
-                        let scale_y = (cb as f64 / img_h).max(1.0);
-                        let src_x = cl as f64 / scale_x;
-                        let src_y = ct as f64 / scale_y;
-                        let src_w = (cr - cl) as f64 / scale_x;
-                        let src_h = (cb - ct) as f64 / scale_y;
-                        let is_cropped = src_x > 0.5
-                            || src_y > 0.5
-                            || (src_w - img_w).abs() > 1.0
-                            || (src_h - img_h).abs() > 1.0;
-                        if is_cropped {
-                            self.draw_image_cropped(
-                                data,
-                                src_x,
-                                src_y,
-                                src_w,
-                                src_h,
-                                bbox.x,
-                                bbox.y,
-                                bbox.width,
-                                bbox.height,
-                            );
-                            if let Some(previous_filter) = &previous_filter {
-                                let _ = js_sys::Reflect::set(
-                                    &self.ctx,
-                                    &JsValue::from_str("filter"),
-                                    &previous_filter,
-                                );
-                            }
-                            return;
-                        }
-                    }
-                }
-                self.draw_image(data, bbox.x, bbox.y, bbox.width, bbox.height);
+                draw_image(self, bbox.x, bbox.y, bbox.width, bbox.height);
             }
             _ => {
                 // 원본 크기: HWP shape_attr 기반(우선) 또는 이미지 픽셀 크기(폴백)
@@ -2601,7 +2590,7 @@ impl WebCanvasRenderer {
                         Some((w, h)) => (w as f64, h as f64),
                         None => {
                             // 크기 파싱 실패 시 전체 채우기로 폴백
-                            self.draw_image(data, bbox.x, bbox.y, bbox.width, bbox.height);
+                            draw_image(self, bbox.x, bbox.y, bbox.width, bbox.height);
                             if let Some(previous_filter) = &previous_filter {
                                 let _ = js_sys::Reflect::set(
                                     &self.ctx,
@@ -2659,7 +2648,7 @@ impl WebCanvasRenderer {
                         while ty < bbox.y + bbox.height {
                             let mut tx = bbox.x;
                             while tx < bbox.x + bbox.width {
-                                self.draw_image(data, tx, ty, img_width, img_height);
+                                draw_image(self, tx, ty, img_width, img_height);
                                 tx += img_width;
                             }
                             ty += img_height;
@@ -2673,7 +2662,7 @@ impl WebCanvasRenderer {
                         };
                         let mut tx = bbox.x;
                         while tx < bbox.x + bbox.width {
-                            self.draw_image(data, tx, ty, img_width, img_height);
+                            draw_image(self, tx, ty, img_width, img_height);
                             tx += img_width;
                         }
                     }
@@ -2685,13 +2674,13 @@ impl WebCanvasRenderer {
                         };
                         let mut ty = bbox.y;
                         while ty < bbox.y + bbox.height {
-                            self.draw_image(data, tx, ty, img_width, img_height);
+                            draw_image(self, tx, ty, img_width, img_height);
                             ty += img_height;
                         }
                     }
                     _ => {
                         // 배치 모드: 원본 크기로 지정 위치에 배치
-                        self.draw_image(data, ix, iy, img_width, img_height);
+                        draw_image(self, ix, iy, img_width, img_height);
                     }
                 }
 
