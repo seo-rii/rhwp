@@ -85,6 +85,24 @@ Replace stringly layer render errors with a structured error type and make raste
 - `rustfmt --check` passed for changed Rust files.
 - `git diff --check` passed for this batch's files.
 
+## Current Batch: BUG-003 Skia LineRenderType Regression
+
+Lock the existing Skia multi-line `LineRenderType` implementation with a native regression test and mark the risk item complete.
+
+## Steps
+
+1. Done: add a native Skia regression that distinguishes `ThinThickThinTriple` from `Single`.
+2. Done: verify the focused regression and Skia renderer test group.
+3. Done: run formatting/diff checks.
+4. Done: update `RISK_REGISTER.md`, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_multi_line_type_as_separated_strokes -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `rustfmt --check` passed for changed Rust files.
+- `git diff --check` passed for this batch's files.
+
 ## Current Batch: ARCH-006 Paint Visual Bounds
 
 Separate logical paint bounds from visual paint bounds and make layer leaf/group nodes use visual bounds so future culling/cache invalidation does not clip stroke, arrow, shadow, or text decoration pixels.

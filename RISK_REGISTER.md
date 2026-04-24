@@ -44,6 +44,7 @@
 - layer renderer API에 typed render error와 scale/DPI/color-space/output metadata를 추가했다.
 - native Skia가 `CacheHint::StaticSubtree`를 실제 SkPicture cache로 사용하도록 연결했다.
 - PaintOp logical bounds와 visual bounds를 분리하고 layer node bounds에 visual extent를 반영했다.
+- Skia `LineRenderType` multi-stroke 동작을 native regression test로 고정했다.
 
 ---
 
@@ -253,7 +254,7 @@
 ### [BUG-001] Skia 텍스트 렌더링이 LayerTextRun 의미를 충분히 사용하지 않음
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: `LayerTextRunPaint`, Skia `render_text_run`, Canvas2D direct renderer
 
@@ -326,6 +327,7 @@
 **완료 메모**:
 
 - Skia line renderer가 double, thin-thick, thick-thin, triple line을 여러 stroke로 그리도록 수정했습니다.
+- `ThinThickThinTriple`이 `Single`과 다른 separated stroke 결과를 내는지 native Skia PNG regression test를 추가했습니다.
 - 공통 lowering으로 더 낮추는 구조 개선은 [ARCH-002]의 장기 과제로 남깁니다.
 
 ---

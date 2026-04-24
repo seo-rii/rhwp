@@ -1730,9 +1730,11 @@ mod tests {
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
     use crate::renderer::render_tree::{
-        BoundingBox, PageNode, RectangleNode, RenderNode, RenderNodeType, TextRunNode,
+        BoundingBox, LineNode, PageNode, RectangleNode, RenderNode, RenderNodeType, TextRunNode,
     };
-    use crate::renderer::{ShapeStyle, TextStyle};
+    use crate::renderer::{
+        ArrowStyle, LineRenderType, LineStyle, ShapeStyle, StrokeDash, TextStyle,
+    };
     use resvg::tiny_skia;
 
     #[test]
@@ -1764,6 +1766,52 @@ mod tests {
         let png = renderer.render_png(&layer_tree).expect("skia png render");
         assert!(!png.is_empty());
         assert_eq!(&png[0..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn renders_multi_line_type_as_separated_strokes() {
+        let render_line = |line_type: LineRenderType| -> usize {
+            let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 80.0);
+            tree.root.children.push(RenderNode::new(
+                1,
+                RenderNodeType::Line(LineNode::new(
+                    15.0,
+                    40.0,
+                    105.0,
+                    40.0,
+                    LineStyle {
+                        color: 0x000000,
+                        width: 20.0,
+                        dash: StrokeDash::Solid,
+                        line_type,
+                        start_arrow: ArrowStyle::None,
+                        end_arrow: ArrowStyle::None,
+                        start_arrow_size: 0,
+                        end_arrow_size: 0,
+                        shadow: None,
+                    },
+                )),
+                BoundingBox::new(15.0, 20.0, 90.0, 40.0),
+            ));
+            let mut builder = LayerBuilder::new(RenderProfile::Screen);
+            let layer_tree = builder.build(&tree);
+            let renderer = SkiaLayerRenderer::new();
+            let png = renderer.render_png(&layer_tree).expect("skia line render");
+            let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+            pixmap
+                .pixels()
+                .iter()
+                .filter(|pixel| pixel.alpha() > 0)
+                .count()
+        };
+
+        let single_ink = render_line(LineRenderType::Single);
+        let triple_ink = render_line(LineRenderType::ThinThickThinTriple);
+
+        assert!(
+            triple_ink < single_ink,
+            "expected separated triple line ink ({triple_ink}) to be less than solid single line ink ({single_ink})"
+        );
     }
 
     #[test]
