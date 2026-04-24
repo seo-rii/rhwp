@@ -231,6 +231,14 @@ struct SvgFragmentCacheKey {
     height_bits: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SkiaReplayPolicy {
+    image_sampling: ImageSampling,
+    vector_antialias: bool,
+    clip_antialias: bool,
+    prefer_direct_text: bool,
+}
+
 struct SkiaReplayContext {
     profile: RenderProfile,
     output_options: LayerOutputOptions,
@@ -266,24 +274,35 @@ impl SkiaReplayContext {
         self.cache_hints.contains(&cache_hint)
     }
 
-    fn image_sampling(&self) -> ImageSampling {
-        if self.profile == RenderProfile::FastPreview
-            || self.has_cache_hint(CacheHint::PreferRaster)
-        {
-            return ImageSampling::nearest();
-        }
-        if matches!(
+    fn replay_policy(&self) -> SkiaReplayPolicy {
+        let prefer_raster = self.has_cache_hint(CacheHint::PreferRaster);
+        let prefer_vector = self.has_cache_hint(CacheHint::PreferVectorRecording);
+        let image_sampling = if self.profile == RenderProfile::FastPreview || prefer_raster {
+            ImageSampling::nearest()
+        } else if matches!(
             self.profile,
             RenderProfile::Print | RenderProfile::HighQuality
-        ) || self.has_cache_hint(CacheHint::PreferVectorRecording)
+        ) || prefer_vector
         {
-            return ImageSampling::linear_mipmap();
+            ImageSampling::linear_mipmap()
+        } else {
+            ImageSampling::linear()
+        };
+
+        SkiaReplayPolicy {
+            image_sampling,
+            vector_antialias: self.profile != RenderProfile::FastPreview || !prefer_raster,
+            clip_antialias: self.profile != RenderProfile::FastPreview || !prefer_raster,
+            prefer_direct_text: true,
         }
-        ImageSampling::linear()
+    }
+
+    fn image_sampling(&self) -> ImageSampling {
+        self.replay_policy().image_sampling
     }
 
     fn clip_antialias(&self) -> bool {
-        self.profile != RenderProfile::FastPreview || !self.has_cache_hint(CacheHint::PreferRaster)
+        self.replay_policy().clip_antialias
     }
 
     fn image_for_resource(&mut self, resource_id: ImageResourceId, bytes: &[u8]) -> Option<Image> {
@@ -2724,20 +2743,28 @@ mod tests {
     fn consumes_profile_and_cache_hints_for_sampling_policy() {
         let screen =
             SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
-        assert_eq!(screen.image_sampling(), ImageSampling::linear());
-        assert!(screen.clip_antialias());
+        let screen_policy = screen.replay_policy();
+        assert_eq!(screen_policy.image_sampling, ImageSampling::linear());
+        assert!(screen_policy.vector_antialias);
+        assert!(screen_policy.clip_antialias);
+        assert!(screen_policy.prefer_direct_text);
 
         let fast_preview = SkiaReplayContext::new(
             RenderProfile::FastPreview,
             LayerOutputOptions::default(),
             1.0,
         );
-        assert_eq!(fast_preview.image_sampling(), ImageSampling::nearest());
-        assert!(fast_preview.clip_antialias());
+        let fast_preview_policy = fast_preview.replay_policy();
+        assert_eq!(fast_preview_policy.image_sampling, ImageSampling::nearest());
+        assert!(fast_preview_policy.vector_antialias);
+        assert!(fast_preview_policy.clip_antialias);
 
         let print =
             SkiaReplayContext::new(RenderProfile::Print, LayerOutputOptions::default(), 1.0);
-        assert_eq!(print.image_sampling(), ImageSampling::linear_mipmap());
+        assert_eq!(
+            print.replay_policy().image_sampling,
+            ImageSampling::linear_mipmap()
+        );
 
         let mut raster = SkiaReplayContext::new(
             RenderProfile::HighQuality,
@@ -2745,12 +2772,27 @@ mod tests {
             1.0,
         );
         raster.push_cache_hint(CacheHint::PreferRaster);
-        assert_eq!(raster.image_sampling(), ImageSampling::nearest());
-        assert!(raster.clip_antialias());
+        let raster_policy = raster.replay_policy();
+        assert_eq!(raster_policy.image_sampling, ImageSampling::nearest());
+        assert!(raster_policy.vector_antialias);
+        assert!(raster_policy.clip_antialias);
+
+        let mut fast_raster = SkiaReplayContext::new(
+            RenderProfile::FastPreview,
+            LayerOutputOptions::default(),
+            1.0,
+        );
+        fast_raster.push_cache_hint(CacheHint::PreferRaster);
+        let fast_raster_policy = fast_raster.replay_policy();
+        assert_eq!(fast_raster_policy.image_sampling, ImageSampling::nearest());
+        assert!(!fast_raster_policy.vector_antialias);
+        assert!(!fast_raster_policy.clip_antialias);
 
         let mut vector =
             SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
         vector.push_cache_hint(CacheHint::PreferVectorRecording);
-        assert_eq!(vector.image_sampling(), ImageSampling::linear_mipmap());
+        let vector_policy = vector.replay_policy();
+        assert_eq!(vector_policy.image_sampling, ImageSampling::linear_mipmap());
+        assert!(vector_policy.vector_antialias);
     }
 }

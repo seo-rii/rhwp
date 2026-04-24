@@ -540,3 +540,19 @@ Apply stricter unused-code linting to the new paint and native Skia modules with
 - `cargo check --features native-skia --lib` passed.
 - `cargo test --lib paint::builder::tests::render_node_type_lowering_is_explicit_for_all_variants -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_shape_feature_fixture_to_png -- --quiet` passed.
+
+## Current Batch: ARCH-007 Skia Replay Policy
+
+Separate native Skia replay quality policy axes while preserving current rendering behavior.
+
+## Steps
+
+1. Done: add `SkiaReplayPolicy` with image sampling, vector antialias, clip antialias, and direct-text preference fields.
+2. Done: route existing image sampling and clip antialias accessors through the policy.
+3. Done: extend the policy regression test for screen, fast-preview, print, prefer-raster, and prefer-vector-recording combinations.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::consumes_profile_and_cache_hints_for_sampling_policy -- --quiet` passed.
+- `cargo check --features native-skia --lib` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.

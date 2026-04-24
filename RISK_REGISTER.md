@@ -230,7 +230,7 @@
 ### [ARCH-007] Skia antialias/sampling 정책이 profile과 cache hint에 과하게 섞여 있음
 
 **심각도**: 중간  
-**상태**: 제안  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: Skia image sampling, clip antialias, render profile policy
 
@@ -248,6 +248,13 @@
 - image sampling, vector antialias, text rendering, clip antialias 옵션을 분리합니다.
 - FastPreview와 screenshot regression 목표가 다르면 별도 profile 또는 explicit option으로 나눕니다.
 - clip antialias fixture를 추가합니다.
+
+**완료 메모**:
+
+- native Skia replay policy를 `SkiaReplayPolicy` 구조체로 분리해 image sampling, vector antialias, clip antialias, direct text preference를 별도 축으로 계산합니다.
+- 기존 image sampling/clip 호출부는 policy 결과를 읽도록 유지해 동작은 보존했습니다.
+- policy regression test가 screen, fast-preview, print, prefer-raster, prefer-vector-recording 조합을 확인합니다.
+- clip antialias fixture는 [TEST-007] synthetic clip/overflow fixture와 Skia clip policy unit test로 고정했습니다.
 
 ---
 
