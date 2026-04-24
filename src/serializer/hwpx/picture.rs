@@ -477,5 +477,6 @@ mod tests {
         assert_eq!(image_effect_str(ImageEffect::RealPic), "REAL_PIC");
         assert_eq!(image_effect_str(ImageEffect::GrayScale), "GRAY_SCALE");
         assert_eq!(image_effect_str(ImageEffect::BlackWhite), "BLACK_WHITE");
+        assert_eq!(image_effect_str(ImageEffect::Pattern8x8), "PATTERN_8_8");
     }
 }

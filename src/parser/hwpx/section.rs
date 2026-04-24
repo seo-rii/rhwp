@@ -1259,6 +1259,7 @@ fn parse_picture(
                                         "REAL_PIC" => ImageEffect::RealPic,
                                         "GRAY_SCALE" => ImageEffect::GrayScale,
                                         "BLACK_WHITE" => ImageEffect::BlackWhite,
+                                        "PATTERN_8_8" => ImageEffect::Pattern8x8,
                                         _ => ImageEffect::RealPic,
                                     };
                                 }
@@ -3302,6 +3303,28 @@ mod tests {
         assert_eq!(para.char_shapes[0].start_pos, 0);
         assert_eq!(para.char_shapes[1].start_pos, 9);
         assert_eq!(para.controls.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_picture_pattern_8x8_effect() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:pic zOrder="0" textWrap="SQUARE" instid="1">
+      <hp:sz width="1000" height="1000"/>
+      <hp:img binaryItemIDRef="image1" effect="PATTERN_8_8"/>
+    </hp:pic>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+        assert_eq!(para.controls.len(), 1);
+        let Control::Picture(pic) = &para.controls[0] else {
+            panic!("expected picture control");
+        };
+        assert_eq!(pic.image_attr.effect, ImageEffect::Pattern8x8);
     }
 
     #[test]
