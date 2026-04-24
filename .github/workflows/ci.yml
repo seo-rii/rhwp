@@ -125,6 +125,45 @@ jobs:
       - name: Clippy (all-features)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  feature-matrix:
+    name: Feature Matrix / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default-lib
+            command: cargo check --lib
+          - name: no-default-features-lib
+            command: cargo check --no-default-features --lib
+          - name: wasm32-lib
+            command: cargo check --target wasm32-unknown-unknown --lib
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-feature-matrix-${{ matrix.name }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-feature-matrix-${{ matrix.name }}-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.command }}
+
   studio-e2e:
     name: Studio E2E
     runs-on: ubuntu-latest

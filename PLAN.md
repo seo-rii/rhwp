@@ -469,3 +469,20 @@ Add repeated-resource regression coverage for native Skia decode/raster cache be
 
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_keeps_repeated_resource_caches_bounded -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_caches -- --quiet` passed.
+
+## Current Batch: TEST-010 Feature Matrix CI
+
+Add lightweight Cargo feature matrix checks to regular CI.
+
+## Steps
+
+1. Done: inspect existing CI coverage for default, native-skia, WASM build, and screenshot sweep.
+2. Done: add a `feature-matrix` job for default lib, no-default-features lib, and wasm32 lib checks.
+3. Done: verify the same Cargo commands locally.
+4. Pending: run final formatting/diff checks, update `RISK_REGISTER.md`, commit, and push.
+
+## Verification
+
+- `cargo check --lib` passed.
+- `cargo check --no-default-features --lib` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.

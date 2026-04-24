@@ -1018,7 +1018,7 @@
 ### [TEST-010] feature matrix CI가 필요함
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: CI, Cargo feature matrix, wasm build
 
@@ -1029,6 +1029,12 @@
 **권장 조치**:
 
 - 최소 조합으로 default, `--features native-skia`, wasm32 build, no-default-features, screenshot regression을 CI에 추가합니다.
+
+**완료 메모**:
+
+- 기존 CI는 default build/test, all-features/native-skia test, studio WASM build, full renderer sweep을 이미 갖고 있습니다.
+- `ci.yml`에 `feature-matrix` job을 추가해 default lib, no-default-features lib, wasm32 lib check를 PR/push 경로에서 확인합니다.
+- native-skia screenshot regression은 기존 all-features job과 workflow_dispatch full renderer sweep 경로를 유지합니다.
 
 ---
 
