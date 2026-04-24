@@ -486,3 +486,21 @@ Add lightweight Cargo feature matrix checks to regular CI.
 - `cargo check --lib` passed.
 - `cargo check --no-default-features --lib` passed.
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
+
+## Current Batch: BUG-016 Text Detail Risk Status
+
+Close the remaining text decoration/space/symbol/equation risk after verifying the focused fixtures and cache regressions that now cover it.
+
+## Steps
+
+1. Done: verify Skia text feature fixture for underline/strike/emphasis, vertical text, superscript, and subscript.
+2. Done: verify skipped tab leader replay.
+3. Done: verify equation SVG resource preference and repeated SVG fragment cache regression.
+4. Pending: update `RISK_REGISTER.md`, commit, and push only this status batch.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_text_feature_fixture_to_png -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_tab_leaders_for_skipped_tab_clusters -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_equation_prefers_interned_svg_resource_over_layout_fallback -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_keeps_repeated_resource_caches_bounded -- --quiet` passed.

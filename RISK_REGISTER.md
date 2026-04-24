@@ -680,7 +680,7 @@
 ### [BUG-016] 텍스트 장식, 공백, symbol/equation fallback 세부 동작이 취약함
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 검증 필요  
 **위치**: Skia underline/strike/emphasis, cluster skip, symbol SVG fragment, equation SVG fallback
 
@@ -702,7 +702,9 @@
 **진행 메모**:
 
 - Skia text replay가 tab cluster를 glyph로는 건너뛰더라도 `tab_leaders`를 별도 stroke로 렌더링하도록 수정했습니다.
-- underline/strike/emphasis 세부 위치 fixture와 symbol/equation SVG fragment cache/fallback 품질 검증은 아직 남아 있습니다.
+- native Skia text feature fixture가 underline/strike/emphasis, vertical text, superscript/subscript 조합을 렌더링합니다.
+- equation SVG resource 우선 사용 fixture와 repeated SVG resource/fragment cache regression으로 equation fallback/cache 위험을 고정했습니다.
+- symbol fragment도 Skia replay context의 SVG fragment cache를 통해 반복 rasterize를 피하도록 회귀 테스트로 확인했습니다.
 
 ---
 
