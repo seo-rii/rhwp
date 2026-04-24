@@ -1,13 +1,13 @@
 use skia_safe::{
-    paint::Cap, surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, Picture,
-    PictureRecorder, Point, Rect,
+    paint::Cap, surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Image, Paint, PathBuilder,
+    Picture, PictureRecorder, Point, Rect,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::paint::{
-    CacheHint, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerOutputOptions,
-    LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
+    CacheHint, ImageResourceId, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerOutputOptions,
+    LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena, SvgResourceId,
 };
 use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
 use crate::renderer::layer_renderer::{
@@ -20,7 +20,8 @@ use crate::renderer::{ArrowStyle, LineRenderType, LineStyle, UnderlineType};
 
 use super::equation_conv::render_equation;
 use super::image_conv::{
-    draw_image_bytes, draw_missing_image_placeholder, draw_svg_fragment, ImageSampling,
+    decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder, rasterize_svg_fragment,
+    ImageSampling,
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
@@ -216,11 +217,28 @@ fn draw_arrow_head(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct SvgResourceCacheKey {
+    resource_id: SvgResourceId,
+    width_bits: u32,
+    height_bits: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SvgFragmentCacheKey {
+    fragment: String,
+    width_bits: u32,
+    height_bits: u32,
+}
+
 struct SkiaReplayContext {
     profile: RenderProfile,
     output_options: LayerOutputOptions,
     scale: f64,
     cache_hints: Vec<CacheHint>,
+    image_cache: HashMap<ImageResourceId, Option<Image>>,
+    svg_resource_cache: HashMap<SvgResourceCacheKey, Option<Image>>,
+    svg_fragment_cache: HashMap<SvgFragmentCacheKey, Option<Image>>,
 }
 
 impl SkiaReplayContext {
@@ -230,6 +248,9 @@ impl SkiaReplayContext {
             output_options,
             scale,
             cache_hints: Vec::new(),
+            image_cache: HashMap::new(),
+            svg_resource_cache: HashMap::new(),
+            svg_fragment_cache: HashMap::new(),
         }
     }
 
@@ -263,6 +284,49 @@ impl SkiaReplayContext {
 
     fn clip_antialias(&self) -> bool {
         self.profile != RenderProfile::FastPreview || !self.has_cache_hint(CacheHint::PreferRaster)
+    }
+
+    fn image_for_resource(&mut self, resource_id: ImageResourceId, bytes: &[u8]) -> Option<Image> {
+        if let Some(image) = self.image_cache.get(&resource_id) {
+            return image.clone();
+        }
+        let image = decode_image_bytes(bytes);
+        self.image_cache.insert(resource_id, image.clone());
+        image
+    }
+
+    fn svg_image_for_resource(
+        &mut self,
+        resource_id: SvgResourceId,
+        fragment: &str,
+        width: f32,
+        height: f32,
+    ) -> Option<Image> {
+        let key = SvgResourceCacheKey {
+            resource_id,
+            width_bits: width.to_bits(),
+            height_bits: height.to_bits(),
+        };
+        if let Some(image) = self.svg_resource_cache.get(&key) {
+            return image.clone();
+        }
+        let image = rasterize_svg_fragment(fragment, width, height);
+        self.svg_resource_cache.insert(key, image.clone());
+        image
+    }
+
+    fn svg_image_for_fragment(&mut self, fragment: &str, width: f32, height: f32) -> Option<Image> {
+        let key = SvgFragmentCacheKey {
+            fragment: fragment.to_string(),
+            width_bits: width.to_bits(),
+            height_bits: height.to_bits(),
+        };
+        if let Some(image) = self.svg_fragment_cache.get(&key) {
+            return image.clone();
+        }
+        let image = rasterize_svg_fragment(fragment, width, height);
+        self.svg_fragment_cache.insert(key, image.clone());
+        image
     }
 }
 
@@ -466,7 +530,7 @@ impl SkiaLayerRenderer {
         canvas: &Canvas,
         op: &PaintOp,
         resources: &ResourceArena,
-        replay: &SkiaReplayContext,
+        replay: &mut SkiaReplayContext,
     ) {
         match op {
             PaintOp::PageBackground { bbox, background } => {
@@ -485,19 +549,29 @@ impl SkiaLayerRenderer {
                 }
                 if let Some(image) = &background.image {
                     if let Some(bytes) = resources.image_bytes(image.resource_id) {
-                        draw_image_bytes(
-                            canvas,
-                            bytes,
-                            bbox.x as f32,
-                            bbox.y as f32,
-                            bbox.width as f32,
-                            bbox.height as f32,
-                            Some(image.fill_mode),
-                            None,
-                            None,
-                            crate::model::image::ImageEffect::RealPic,
-                            replay.image_sampling(),
-                        );
+                        if let Some(decoded) = replay.image_for_resource(image.resource_id, bytes) {
+                            draw_decoded_image(
+                                canvas,
+                                &decoded,
+                                bbox.x as f32,
+                                bbox.y as f32,
+                                bbox.width as f32,
+                                bbox.height as f32,
+                                Some(image.fill_mode),
+                                None,
+                                None,
+                                crate::model::image::ImageEffect::RealPic,
+                                replay.image_sampling(),
+                            );
+                        } else {
+                            draw_missing_image_placeholder(
+                                canvas,
+                                bbox.x as f32,
+                                bbox.y as f32,
+                                bbox.width as f32,
+                                bbox.height as f32,
+                            );
+                        }
                     }
                 }
                 if let Some(border) = background.border_color {
@@ -825,19 +899,29 @@ impl SkiaLayerRenderer {
                 self.with_shape_transform(canvas, image.transform, Some(*bbox), |canvas| {
                     if let Some(resource_id) = image.resource_id {
                         if let Some(data) = resources.image_bytes(resource_id) {
-                            draw_image_bytes(
-                                canvas,
-                                data,
-                                bbox.x as f32,
-                                bbox.y as f32,
-                                bbox.width as f32,
-                                bbox.height as f32,
-                                image.fill_mode,
-                                image.original_size,
-                                image.crop,
-                                image.effect,
-                                replay.image_sampling(),
-                            );
+                            if let Some(decoded) = replay.image_for_resource(resource_id, data) {
+                                draw_decoded_image(
+                                    canvas,
+                                    &decoded,
+                                    bbox.x as f32,
+                                    bbox.y as f32,
+                                    bbox.width as f32,
+                                    bbox.height as f32,
+                                    image.fill_mode,
+                                    image.original_size,
+                                    image.crop,
+                                    image.effect,
+                                    replay.image_sampling(),
+                                );
+                            } else {
+                                draw_missing_image_placeholder(
+                                    canvas,
+                                    bbox.x as f32,
+                                    bbox.y as f32,
+                                    bbox.width as f32,
+                                    bbox.height as f32,
+                                );
+                            }
                         } else {
                             draw_missing_image_placeholder(
                                 canvas,
@@ -861,15 +945,27 @@ impl SkiaLayerRenderer {
             PaintOp::Equation { bbox, equation } => {
                 let mut rendered = false;
                 if let Some(svg_fragment) = resources.svg_fragment(equation.svg_resource_id) {
-                    rendered = draw_svg_fragment(
-                        canvas,
+                    if let Some(image) = replay.svg_image_for_resource(
+                        equation.svg_resource_id,
                         svg_fragment,
-                        bbox.x as f32,
-                        bbox.y as f32,
                         bbox.width as f32,
                         bbox.height as f32,
-                        replay.image_sampling(),
-                    );
+                    ) {
+                        draw_decoded_image(
+                            canvas,
+                            &image,
+                            bbox.x as f32,
+                            bbox.y as f32,
+                            bbox.width as f32,
+                            bbox.height as f32,
+                            Some(crate::model::style::ImageFillMode::FitToSize),
+                            None,
+                            None,
+                            crate::model::image::ImageEffect::RealPic,
+                            replay.image_sampling(),
+                        );
+                        rendered = true;
+                    }
                 }
                 if !rendered {
                     render_equation(
@@ -1159,7 +1255,7 @@ impl SkiaLayerRenderer {
         canvas: &Canvas,
         bbox: &BoundingBox,
         run: &LayerTextRunPaint,
-        replay: &SkiaReplayContext,
+        replay: &mut SkiaReplayContext,
     ) {
         let base_font_size = if run.style.font_size > 0.0 {
             run.style.font_size
@@ -1321,12 +1417,12 @@ impl SkiaLayerRenderer {
             );
         }
 
-        let draw_pass = |canvas: &Canvas,
-                         x_offset: f32,
-                         y_offset: f32,
-                         fill_color: u32,
-                         stroke_color: Option<u32>,
-                         stroke_width: f32| {
+        let mut draw_pass = |canvas: &Canvas,
+                             x_offset: f32,
+                             y_offset: f32,
+                             fill_color: u32,
+                             stroke_color: Option<u32>,
+                             stroke_width: f32| {
             let font_family = if render_style.font_family.is_empty() {
                 "sans-serif".to_string()
             } else {
@@ -1390,15 +1486,25 @@ impl SkiaLayerRenderer {
                         color,
                         cluster,
                     );
-                    draw_svg_fragment(
-                        canvas,
+                    if let Some(image) = replay.svg_image_for_fragment(
                         &svg_fragment,
-                        x,
-                        pass_y - render_style.font_size as f32,
                         cluster_width,
                         render_style.font_size as f32 * 1.4,
-                        ImageSampling::linear(),
-                    );
+                    ) {
+                        draw_decoded_image(
+                            canvas,
+                            &image,
+                            x,
+                            pass_y - render_style.font_size as f32,
+                            cluster_width,
+                            render_style.font_size as f32 * 1.4,
+                            Some(crate::model::style::ImageFillMode::FitToSize),
+                            None,
+                            None,
+                            crate::model::image::ImageEffect::RealPic,
+                            ImageSampling::linear(),
+                        );
+                    }
                     continue;
                 }
                 let font = make_font(&render_style, &self.font_mgr, cluster);
@@ -1782,8 +1888,8 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 mod tests {
     use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
     use crate::paint::{
-        CacheHint, ClipKind, LayerBuilder, LayerNode, LayerOutputOptions, LayerRectanglePaint,
-        LayerSemantic, PageLayerTree, PaintOp, RenderProfile,
+        CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerNode, LayerOutputOptions,
+        LayerRectanglePaint, LayerSemantic, PageLayerTree, PaintOp, RenderProfile, SvgResourceId,
     };
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
@@ -1949,6 +2055,56 @@ mod tests {
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
         renderer.render_png(&tree).expect("cached skia render");
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+    }
+
+    #[test]
+    fn replay_context_caches_decoded_image_resources() {
+        let mut source = tiny_skia::Pixmap::new(2, 2).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(0, 255, 0, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        let resource_id = ImageResourceId(7);
+
+        let first = replay
+            .image_for_resource(resource_id, &png)
+            .expect("first image decode");
+        let second = replay
+            .image_for_resource(resource_id, b"not an image")
+            .expect("cached image decode");
+
+        assert_eq!((first.width(), first.height()), (2, 2));
+        assert_eq!((second.width(), second.height()), (2, 2));
+        assert_eq!(replay.image_cache.len(), 1);
+    }
+
+    #[test]
+    fn replay_context_caches_rasterized_svg_resources() {
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        let resource_id = SvgResourceId(3);
+        let fragment = "<rect x=\"0\" y=\"0\" width=\"4\" height=\"4\" fill=\"#00ff00\"/>";
+
+        let first = replay
+            .svg_image_for_resource(resource_id, fragment, 4.0, 4.0)
+            .expect("first svg raster");
+        let second = replay
+            .svg_image_for_resource(resource_id, "<invalid", 4.0, 4.0)
+            .expect("cached svg raster");
+
+        assert_eq!((first.width(), first.height()), (4, 4));
+        assert_eq!((second.width(), second.height()), (4, 4));
+        assert_eq!(replay.svg_resource_cache.len(), 1);
+
+        replay
+            .svg_image_for_fragment(fragment, 4.0, 4.0)
+            .expect("fragment svg raster");
+        replay
+            .svg_image_for_fragment(fragment, 4.0, 4.0)
+            .expect("cached fragment svg raster");
+        assert_eq!(replay.svg_fragment_cache.len(), 1);
     }
 
     #[test]

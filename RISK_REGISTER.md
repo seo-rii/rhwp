@@ -738,7 +738,7 @@
 ### [PERF-001] 이미지/SVG/WMF/equation decode가 draw마다 반복됨
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: Skia `draw_image_bytes`, `decode_image`, `draw_svg_fragment`, WMF conversion
 
@@ -756,6 +756,13 @@
 - `SkiaReplayContext`에 `HashMap<ResourceId, skia_safe::Image>` cache를 둡니다.
 - SVG fragment도 `svg_resource_id + target_size + color/profile` 기준으로 cache합니다.
 - resource/performance regression test로 decode 횟수와 렌더 시간을 추적합니다.
+
+**완료 메모**:
+
+- Skia replay context에 이미지 리소스별 decoded `skia_safe::Image` cache를 추가했습니다.
+- WMF 리소스도 동일한 이미지 리소스 cache를 통하므로 WMF -> SVG -> PNG -> Skia decode 변환을 같은 replay 안에서 반복하지 않습니다.
+- 수식 SVG는 `svg_resource_id + target_size`, 텍스트 심볼 SVG fragment는 fragment 문자열 + target size 기준으로 raster cache를 적용했습니다.
+- cache 동작은 native Skia unit test로 고정했고, 반복 문서 벤치마크와 렌더 시간 회귀 기준은 [TEST-009]에서 계속 추적합니다.
 
 ---
 

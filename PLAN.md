@@ -266,3 +266,26 @@ Connect `CacheHint::StaticSubtree` to a native Skia `PictureRecorder` cache so t
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `rustfmt --check` passed for changed Rust files.
 - `git diff --check` passed for this batch's files.
+
+## Current Batch: PERF-001 Skia Resource Decode Cache
+
+Avoid repeated native Skia image/SVG raster decode work inside a single layer replay.
+
+## Steps
+
+1. Done: split image decode from image drawing so replay can draw already-decoded Skia images.
+2. Done: cache decoded image resources in `SkiaReplayContext`, including WMF resources after conversion.
+3. Done: cache rasterized equation SVG resources by `svg_resource_id` and target size.
+4. Done: cache generated text symbol SVG fragments by fragment content and target size.
+5. Done: add native Skia cache unit coverage.
+6. Done: run final formatting, wasm, and diff checks before committing this batch.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_caches_decoded_image_resources -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_caches_rasterized_svg_resources -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::image_conv::tests:: -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `git diff --check` passed for this batch's files.

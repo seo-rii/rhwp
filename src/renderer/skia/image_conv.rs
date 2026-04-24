@@ -53,19 +53,44 @@ pub fn draw_image_bytes(
     effect: ImageEffect,
     sampling: ImageSampling,
 ) {
-    if !x.is_finite()
-        || !y.is_finite()
-        || !width.is_finite()
-        || !height.is_finite()
-        || width <= 0.0
-        || height <= 0.0
-    {
+    if !is_valid_destination_rect(x, y, width, height) {
         return;
     }
-    let Some(image) = decode_image(bytes) else {
+    let Some(image) = decode_image_bytes(bytes) else {
         draw_missing_image_placeholder(canvas, x, y, width, height);
         return;
     };
+    draw_decoded_image(
+        canvas,
+        &image,
+        x,
+        y,
+        width,
+        height,
+        fill_mode,
+        original_size,
+        crop,
+        effect,
+        sampling,
+    );
+}
+
+pub fn draw_decoded_image(
+    canvas: &Canvas,
+    image: &Image,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    fill_mode: Option<ImageFillMode>,
+    original_size: Option<(f64, f64)>,
+    crop: Option<(i32, i32, i32, i32)>,
+    effect: ImageEffect,
+    sampling: ImageSampling,
+) {
+    if !is_valid_destination_rect(x, y, width, height) {
+        return;
+    }
     let dst = Rect::from_xywh(x, y, width, height);
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
@@ -102,7 +127,7 @@ pub fn draw_image_bytes(
     let draw_image_rect = |canvas: &Canvas, src: Option<Rect>, dst: Rect| {
         if let Some(src) = src.as_ref() {
             canvas.draw_image_rect_with_sampling_options(
-                &image,
+                image,
                 Some((src, SrcRectConstraint::Strict)),
                 dst,
                 sampling.options(),
@@ -110,7 +135,7 @@ pub fn draw_image_bytes(
             );
         } else {
             canvas.draw_image_rect_with_sampling_options(
-                &image,
+                image,
                 None,
                 dst,
                 sampling.options(),
@@ -221,6 +246,15 @@ pub fn draw_image_bytes(
     canvas.restore();
 }
 
+fn is_valid_destination_rect(x: f32, y: f32, width: f32, height: f32) -> bool {
+    x.is_finite()
+        && y.is_finite()
+        && width.is_finite()
+        && height.is_finite()
+        && width > 0.0
+        && height > 0.0
+}
+
 fn image_effect_filter(effect: ImageEffect) -> Option<skia_safe::ColorFilter> {
     match effect {
         ImageEffect::RealPic => None,
@@ -252,14 +286,23 @@ pub fn draw_svg_fragment(
     height: f32,
     sampling: ImageSampling,
 ) -> bool {
-    let Some(image) = decode_svg_fragment(svg_fragment, width, height) else {
+    let Some(image) = rasterize_svg_fragment(svg_fragment, width, height) else {
         return false;
     };
 
-    let dst = Rect::from_xywh(x, y, width, height);
-    let mut paint = Paint::default();
-    paint.set_anti_alias(true);
-    canvas.draw_image_rect_with_sampling_options(&image, None, dst, sampling.options(), &paint);
+    draw_decoded_image(
+        canvas,
+        &image,
+        x,
+        y,
+        width,
+        height,
+        Some(ImageFillMode::FitToSize),
+        None,
+        None,
+        ImageEffect::RealPic,
+        sampling,
+    );
     true
 }
 
@@ -289,7 +332,7 @@ fn resolve_image_placement(
     }
 }
 
-fn decode_image(bytes: &[u8]) -> Option<Image> {
+pub fn decode_image_bytes(bytes: &[u8]) -> Option<Image> {
     match detect_image_mime_type(bytes) {
         "image/x-wmf" => {
             let svg = crate::renderer::svg::convert_wmf_to_svg(bytes)?;
@@ -306,7 +349,7 @@ fn decode_image(bytes: &[u8]) -> Option<Image> {
     }
 }
 
-fn decode_svg_fragment(svg_fragment: &str, width: f32, height: f32) -> Option<Image> {
+pub fn rasterize_svg_fragment(svg_fragment: &str, width: f32, height: f32) -> Option<Image> {
     if width <= 0.0 || height <= 0.0 {
         return None;
     }
