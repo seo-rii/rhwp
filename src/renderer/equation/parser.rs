@@ -4,10 +4,10 @@
 
 use super::ast::*;
 use super::symbols::{
-    self, is_big_operator, is_function, is_structure_command,
-    lookup_symbol, lookup_function, DECORATIONS, FONT_STYLES,
+    self, is_big_operator, is_function, is_structure_command, lookup_function, lookup_symbol,
+    DECORATIONS, FONT_STYLES,
 };
-use super::tokenizer::{Token, TokenType, tokenize};
+use super::tokenizer::{tokenize, Token, TokenType};
 
 /// 수식 파서
 pub struct EqParser {
@@ -25,11 +25,17 @@ impl EqParser {
     }
 
     fn current_type(&self) -> TokenType {
-        self.tokens.get(self.pos).map(|t| t.ty).unwrap_or(TokenType::Eof)
+        self.tokens
+            .get(self.pos)
+            .map(|t| t.ty)
+            .unwrap_or(TokenType::Eof)
     }
 
     fn current_value(&self) -> &str {
-        self.tokens.get(self.pos).map(|t| t.value.as_str()).unwrap_or("")
+        self.tokens
+            .get(self.pos)
+            .map(|t| t.value.as_str())
+            .unwrap_or("")
     }
 
     fn at_end(&self) -> bool {
@@ -168,8 +174,7 @@ impl EqParser {
                 let group = self.parse_group();
                 self.try_parse_scripts(group)
             }
-            TokenType::LParen | TokenType::RParen |
-            TokenType::LBracket | TokenType::RBracket => {
+            TokenType::LParen | TokenType::RParen | TokenType::LBracket | TokenType::RBracket => {
                 self.pos += 1;
                 EqNode::Symbol(val)
             }
@@ -204,10 +209,22 @@ impl EqParser {
         }
 
         // 적분 기호 — nolimits: 큰 기호 + 일반 첨자 (BigOp이 아닌 MathSymbol로 처리)
-        if matches!(cu, "INT" | "INTEGRAL" | "SMALLINT" | "DINT" | "TINT"
-            | "OINT" | "SMALLOINT" | "ODINT" | "OTINT")
-        {
-            let symbol = lookup_symbol(cu).or_else(|| lookup_symbol(cmd)).unwrap_or("∫").to_string();
+        if matches!(
+            cu,
+            "INT"
+                | "INTEGRAL"
+                | "SMALLINT"
+                | "DINT"
+                | "TINT"
+                | "OINT"
+                | "SMALLOINT"
+                | "ODINT"
+                | "OTINT"
+        ) {
+            let symbol = lookup_symbol(cu)
+                .or_else(|| lookup_symbol(cmd))
+                .unwrap_or("∫")
+                .to_string();
             let node = EqNode::MathSymbol(symbol);
             return self.try_parse_scripts(node);
         }
@@ -539,9 +556,7 @@ impl EqParser {
                 break;
             }
             // Thin 공백(`) 뒤에 첨자가 바로 오는 경우 공백을 건너뛰기
-            if self.current_type() == TokenType::Whitespace
-                && self.current_value() == "`"
-            {
+            if self.current_type() == TokenType::Whitespace && self.current_value() == "`" {
                 let next_pos = self.pos + 1;
                 if next_pos < self.tokens.len() {
                     let next_ty = self.tokens[next_pos].ty;
@@ -603,7 +618,10 @@ impl EqParser {
                             lr_depth += 1;
                         } else if Self::cmd_eq(&t.value, "RIGHT") {
                             lr_depth -= 1;
-                        } else if Self::cmd_eq(&t.value, "OVER") && brace_depth == 0 && lr_depth == 0 {
+                        } else if Self::cmd_eq(&t.value, "OVER")
+                            && brace_depth == 0
+                            && lr_depth == 0
+                        {
                             found = Some(i);
                             break;
                         }
@@ -650,7 +668,9 @@ impl EqParser {
             if self.current_type() == TokenType::RBrace {
                 break;
             }
-            if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT") {
+            if self.current_type() == TokenType::Command
+                && Self::cmd_eq(self.current_value(), "RIGHT")
+            {
                 break;
             }
             after_nodes.push(self.parse_element());
@@ -867,7 +887,10 @@ impl EqParser {
             } else if self.current_type() == TokenType::Whitespace && self.current_value() == "&" {
                 // && (연속 &): 큰 탭 공간으로 조건 부분 분리
                 let mut amp_count = 0;
-                while self.pos < end && self.current_type() == TokenType::Whitespace && self.current_value() == "&" {
+                while self.pos < end
+                    && self.current_type() == TokenType::Whitespace
+                    && self.current_value() == "&"
+                {
                     amp_count += 1;
                     self.pos += 1;
                 }
@@ -938,7 +961,8 @@ impl EqParser {
             if self.current_type() == TokenType::Whitespace && self.current_value() == "#" {
                 // 새 행: 현재 행 완료
                 let left = EqNode::Row(current_left).simplify();
-                let right = current_right.map(|r| EqNode::Row(r).simplify())
+                let right = current_right
+                    .map(|r| EqNode::Row(r).simplify())
                     .unwrap_or(EqNode::Empty);
                 rows.push((left, right));
                 current_left = Vec::new();
@@ -948,7 +972,10 @@ impl EqParser {
                 // & 구분: 왼쪽→오른쪽 전환
                 // 연속 &&: 큰 탭 공간 (조건 부분 분리용)
                 let mut amp_count = 0;
-                while self.pos < end && self.current_type() == TokenType::Whitespace && self.current_value() == "&" {
+                while self.pos < end
+                    && self.current_type() == TokenType::Whitespace
+                    && self.current_value() == "&"
+                {
                     amp_count += 1;
                     self.pos += 1;
                 }
@@ -978,7 +1005,8 @@ impl EqParser {
         // 마지막 행 추가
         if !current_left.is_empty() || current_right.is_some() {
             let left = EqNode::Row(current_left).simplify();
-            let right = current_right.map(|r| EqNode::Row(r).simplify())
+            let right = current_right
+                .map(|r| EqNode::Row(r).simplify())
                 .unwrap_or(EqNode::Empty);
             rows.push((left, right));
         }
@@ -999,7 +1027,8 @@ impl EqParser {
         let body = self.parse_expression();
 
         // RIGHT 건너뛰기
-        if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT") {
+        if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT")
+        {
             self.pos += 1;
         }
 
@@ -1023,9 +1052,12 @@ impl EqParser {
         let val = self.current_value().to_string();
 
         match ty {
-            TokenType::LParen | TokenType::RParen |
-            TokenType::LBracket | TokenType::RBracket |
-            TokenType::LBrace | TokenType::RBrace => {
+            TokenType::LParen
+            | TokenType::RParen
+            | TokenType::LBracket
+            | TokenType::RBracket
+            | TokenType::LBrace
+            | TokenType::RBrace => {
                 self.pos += 1;
                 val
             }
@@ -1106,7 +1138,9 @@ impl EqParser {
         // 분수 뒤 나머지 요소
         let mut after_nodes = Vec::new();
         while self.pos < end && !self.at_end() {
-            if self.current_type() == TokenType::Command && Self::cmd_eq(self.current_value(), "RIGHT") {
+            if self.current_type() == TokenType::Command
+                && Self::cmd_eq(self.current_value(), "RIGHT")
+            {
                 break;
             }
             after_nodes.push(self.parse_element());
@@ -1168,8 +1202,8 @@ pub fn parse(script: &str) -> EqNode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::symbols::{DecoKind, FontStyleKind};
+    use super::*;
 
     #[test]
     fn test_simple_fraction() {
@@ -1334,7 +1368,8 @@ mod tests {
     #[test]
     fn test_sample_eq01_script() {
         // samples/eq-01.hwp의 첫 번째 수식
-        let script = "평점=입찰가격평가~배점한도 TIMES  LEFT ( {최저입찰가격} over {해당입찰가격} RIGHT )";
+        let script =
+            "평점=입찰가격평가~배점한도 TIMES  LEFT ( {최저입찰가격} over {해당입찰가격} RIGHT )";
         let ast = parse(script);
         // 파싱 실패 없이 AST 생성되면 성공
         match &ast {
@@ -1362,8 +1397,11 @@ mod tests {
         assert!(ast_str.contains("cos"), "cos가 있어야 함");
         assert!(ast_str.contains("Paren"), "Paren이 있어야 함");
         // Fraction{1,5}가 독립적으로 존재해야 함
-        assert!(ast_str.contains("Fraction { numer: Number(\"1\"), denom: Number(\"5\")"),
-            "Fraction{{1,5}}가 있어야 함: {}", ast_str);
+        assert!(
+            ast_str.contains("Fraction { numer: Number(\"1\"), denom: Number(\"5\")"),
+            "Fraction{{1,5}}가 있어야 함: {}",
+            ast_str
+        );
     }
 }
 
@@ -1377,7 +1415,11 @@ fn test_lim_fraction() {
     // lim_{h→0} 가 있어야 함
     assert!(ast_str.contains("Limit"), "Limit가 있어야 함: {}", ast_str);
     // Fraction이 있어야 함
-    assert!(ast_str.contains("Fraction"), "Fraction이 있어야 함: {}", ast_str);
+    assert!(
+        ast_str.contains("Fraction"),
+        "Fraction이 있어야 함: {}",
+        ast_str
+    );
 }
 
 #[cfg(test)]
@@ -1389,7 +1431,10 @@ fn test_bar_rm_it() {
     let ast_str = format!("{:?}", ast);
     assert!(ast_str.contains("Decoration"), "Decoration이 있어야 함");
     // }} 가 텍스트로 나오면 안 됨
-    assert!(!ast_str.contains(r#"Text("}")"#), "brace가 텍스트로 나오면 안 됨");
+    assert!(
+        !ast_str.contains(r#"Text("}")"#),
+        "brace가 텍스트로 나오면 안 됨"
+    );
 }
 
 #[cfg(test)]

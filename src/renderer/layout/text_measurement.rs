@@ -243,11 +243,13 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                     let tab_target = total + tab_width_px;
                     match tab_type {
                         1 => {
-                            let seg_w = measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             total = (tab_target - seg_w).max(total);
                         }
                         2 => {
-                            let seg_w = measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             total = (tab_target - seg_w / 2.0).max(total);
                         }
                         _ => {

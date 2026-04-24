@@ -1250,7 +1250,8 @@ impl LayoutEngine {
                     // HWPX에서 주입된 OOXML 차트 XML 직접 경로 (CFB 컨테이너 없음)
                     if content.extension == "ooxml_chart" {
                         if let Some(chart) = crate::ooxml_chart::OoxmlChart::parse(&content.data) {
-                            let svg_fragment = chart.render_svg(render_x, render_y, render_w, render_h);
+                            let svg_fragment =
+                                chart.render_svg(render_x, render_y, render_w, render_h);
                             let node_id = tree.next_id();
                             let node = RenderNode::new(
                                 node_id,
@@ -1264,37 +1265,79 @@ impl LayoutEngine {
                         }
                     }
                     if !rendered {
-                    if let Some(container) = crate::parser::ole_container::parse_ole_container(&content.data) {
-                        if let Some(ooxml_bytes) = container.ooxml_chart.as_ref() {
-                            if let Some(chart) = crate::ooxml_chart::OoxmlChart::parse(ooxml_bytes) {
-                                let svg_fragment = chart.render_svg(render_x, render_y, render_w, render_h);
-                                let node_id = tree.next_id();
-                                let node = RenderNode::new(
-                                    node_id,
-                                    RenderNodeType::RawSvg(crate::renderer::render_tree::RawSvgNode {
-                                        svg: svg_fragment,
-                                    }),
-                                    BoundingBox::new(render_x, render_y, render_w, render_h),
-                                );
-                                parent.children.push(node);
-                                rendered = true;
-                            }
-                        }
-
-                        // Task #195 단계 14: OOXML 차트 부재 시 EMF 네이티브 SVG 폴백
-                        if !rendered {
-                            if let Some(emf_bytes) = container.preview_emf.as_ref() {
-                                let render_rect = (
-                                    render_x as f32, render_y as f32,
-                                    render_w as f32, render_h as f32,
-                                );
-                                if let Ok(svg_fragment) = crate::emf::convert_to_svg(emf_bytes, render_rect) {
+                        if let Some(container) =
+                            crate::parser::ole_container::parse_ole_container(&content.data)
+                        {
+                            if let Some(ooxml_bytes) = container.ooxml_chart.as_ref() {
+                                if let Some(chart) =
+                                    crate::ooxml_chart::OoxmlChart::parse(ooxml_bytes)
+                                {
+                                    let svg_fragment =
+                                        chart.render_svg(render_x, render_y, render_w, render_h);
                                     let node_id = tree.next_id();
                                     let node = RenderNode::new(
                                         node_id,
-                                        RenderNodeType::RawSvg(crate::renderer::render_tree::RawSvgNode {
-                                            svg: svg_fragment,
-                                        }),
+                                        RenderNodeType::RawSvg(
+                                            crate::renderer::render_tree::RawSvgNode {
+                                                svg: svg_fragment,
+                                            },
+                                        ),
+                                        BoundingBox::new(render_x, render_y, render_w, render_h),
+                                    );
+                                    parent.children.push(node);
+                                    rendered = true;
+                                }
+                            }
+
+                            // Task #195 단계 14: OOXML 차트 부재 시 EMF 네이티브 SVG 폴백
+                            if !rendered {
+                                if let Some(emf_bytes) = container.preview_emf.as_ref() {
+                                    let render_rect = (
+                                        render_x as f32,
+                                        render_y as f32,
+                                        render_w as f32,
+                                        render_h as f32,
+                                    );
+                                    if let Ok(svg_fragment) =
+                                        crate::emf::convert_to_svg(emf_bytes, render_rect)
+                                    {
+                                        let node_id = tree.next_id();
+                                        let node = RenderNode::new(
+                                            node_id,
+                                            RenderNodeType::RawSvg(
+                                                crate::renderer::render_tree::RawSvgNode {
+                                                    svg: svg_fragment,
+                                                },
+                                            ),
+                                            BoundingBox::new(
+                                                render_x, render_y, render_w, render_h,
+                                            ),
+                                        );
+                                        parent.children.push(node);
+                                        rendered = true;
+                                    }
+                                }
+                            }
+
+                            // 네이티브 임베딩 이미지(BMP/PNG/JPEG/GIF) 폴백
+                            if !rendered {
+                                if let Some((kind, bytes)) = container.native_image.as_ref() {
+                                    use base64::Engine;
+                                    let b64 =
+                                        base64::engine::general_purpose::STANDARD.encode(bytes);
+                                    let href = format!("data:{};base64,{}", kind.mime(), b64);
+                                    let svg_fragment = format!(
+                                    "<image x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" preserveAspectRatio=\"xMidYMid meet\" xlink:href=\"{}\" href=\"{}\"/>",
+                                    render_x, render_y, render_w, render_h, href, href
+                                );
+                                    let node_id = tree.next_id();
+                                    let node = RenderNode::new(
+                                        node_id,
+                                        RenderNodeType::RawSvg(
+                                            crate::renderer::render_tree::RawSvgNode {
+                                                svg: svg_fragment,
+                                            },
+                                        ),
                                         BoundingBox::new(render_x, render_y, render_w, render_h),
                                     );
                                     parent.children.push(node);
@@ -1302,30 +1345,6 @@ impl LayoutEngine {
                                 }
                             }
                         }
-
-                        // 네이티브 임베딩 이미지(BMP/PNG/JPEG/GIF) 폴백
-                        if !rendered {
-                            if let Some((kind, bytes)) = container.native_image.as_ref() {
-                                use base64::Engine;
-                                let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-                                let href = format!("data:{};base64,{}", kind.mime(), b64);
-                                let svg_fragment = format!(
-                                    "<image x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" preserveAspectRatio=\"xMidYMid meet\" xlink:href=\"{}\" href=\"{}\"/>",
-                                    render_x, render_y, render_w, render_h, href, href
-                                );
-                                let node_id = tree.next_id();
-                                let node = RenderNode::new(
-                                    node_id,
-                                    RenderNodeType::RawSvg(crate::renderer::render_tree::RawSvgNode {
-                                        svg: svg_fragment,
-                                    }),
-                                    BoundingBox::new(render_x, render_y, render_w, render_h),
-                                );
-                                parent.children.push(node);
-                                rendered = true;
-                            }
-                        }
-                    }
                     } // !rendered (CFB path)
                 }
 
@@ -1335,11 +1354,13 @@ impl LayoutEngine {
                     let node_id = tree.next_id();
                     let node = RenderNode::new(
                         node_id,
-                        RenderNodeType::Placeholder(crate::renderer::render_tree::PlaceholderNode {
-                            fill_color: 0xFFF0F0F0,
-                            stroke_color: 0xFF707070,
-                            label,
-                        }),
+                        RenderNodeType::Placeholder(
+                            crate::renderer::render_tree::PlaceholderNode {
+                                fill_color: 0xFFF0F0F0,
+                                stroke_color: 0xFF707070,
+                                label,
+                            },
+                        ),
                         BoundingBox::new(render_x, render_y, render_w, render_h),
                     );
                     parent.children.push(node);

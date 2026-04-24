@@ -82,7 +82,11 @@ fn render_box(
             let text_y = y + lb.baseline;
             let esc = escape_xml(text);
             // 적분 기호: layout에서 BIG_OP_SCALE이 적용된 높이를 font-size로 사용
-            let fi = if super::layout::is_integral_symbol(text) { lb.height } else { fs };
+            let fi = if super::layout::is_integral_symbol(text) {
+                lb.height
+            } else {
+                fs
+            };
             svg.push_str(&format!(
                 "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\" fill=\"{}\"{}>{}</text>\n",
                 text_x, text_y, fi, color, EQ_FONT_FAMILY, esc,
