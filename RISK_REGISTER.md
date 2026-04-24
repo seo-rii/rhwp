@@ -652,7 +652,7 @@
 ### [BUG-015] Line dash scale과 shape opacity semantics가 불명확함
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 검증 필요  
 **위치**: Skia dash/stroke/fill paint
 
@@ -709,7 +709,7 @@
 ### [BUG-017] Image fill tile 계열의 dimension guard가 부족할 수 있음
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 검증 필요  
 **위치**: Skia `ImageFillMode` tile loop
 
@@ -729,6 +729,7 @@
 **완료 메모**:
 
 - Skia image draw에서 non-finite/invalid destination rect를 거르고 tile 반복 횟수 상한을 추가했습니다.
+- invalid destination rect regression test를 추가했습니다.
 
 ---
 

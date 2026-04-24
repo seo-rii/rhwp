@@ -442,4 +442,32 @@ mod tests {
             assert!(pixel.blue() > pixel.red());
         }
     }
+
+    #[test]
+    fn ignores_invalid_destination_rects() {
+        let mut surface = surfaces::raster_n32_premul((4, 4)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &red_top_blue_bottom_png(),
+            f32::NAN,
+            0.0,
+            4.0,
+            4.0,
+            Some(ImageFillMode::TileAll),
+            Some((4.0, 4.0)),
+            None,
+            ImageEffect::RealPic,
+            ImageSampling::nearest(),
+        );
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+
+        for pixel in pixmap.pixels() {
+            assert_eq!(pixel.alpha(), 0);
+        }
+    }
 }

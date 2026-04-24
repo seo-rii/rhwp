@@ -155,6 +155,15 @@ Render Skia tab leaders for skipped tab clusters using the legacy Canvas2D fill-
 - `rustfmt --check src/renderer/skia/renderer.rs` passed.
 - `git diff --check` passed for this batch's files.
 
+## Completed Batch: BUG-017 Image Tile Guard Status
+
+Add a native Skia regression for invalid image destination rects and close the stale `BUG-017` status; tile draw loops already guard invalid dimensions and cap repeated tile draws.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::image_conv::tests:: -- --quiet` passed.
+- `rustfmt --check src/renderer/skia/image_conv.rs` passed.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.
