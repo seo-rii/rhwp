@@ -290,6 +290,22 @@ Avoid repeated native Skia image/SVG raster decode work inside a single layer re
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `git diff --check` passed for this batch's files.
 
+## Current Batch: TEST-003 Skia Golden Ladder Status
+
+Close the stale Skia golden ladder risk after verifying the existing native screenshot ladder covers synthetic layer trees, layer SVG raster comparison, and actual HWP samples.
+
+## Steps
+
+1. Done: verify synthetic `PageLayerTree` -> native Skia PNG -> layer SVG raster comparison tests.
+2. Done: verify actual HWP sample screenshot regression for basic text and table samples.
+3. Done: document that broader Skia fixture specialization continues in TEST-004 through TEST-009.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_basic_text_sample -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_table_sample -- --quiet` passed.
+
 ## Current Batch: TEST-001 LayerBuilder Totality
 
 Make RenderNodeType lowering explicit so visual render nodes cannot silently pass through as empty groups.

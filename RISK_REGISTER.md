@@ -847,7 +847,7 @@
 ### [TEST-003] Skia golden test ladder가 필요함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: native Skia PNG tests, screenshot regression
 
@@ -860,6 +860,13 @@
 - 1단계: `PageLayerTree` fixture -> PNG snapshot.
 - 2단계: SVG layer rasterize 결과와 Skia PNG의 pixel/SSIM 비교.
 - 3단계: 실제 HWP sample 기반 end-to-end screenshot regression.
+
+**완료 메모**:
+
+- synthetic `PageLayerTree` fixture를 Skia PNG로 렌더하고 layer SVG raster와 비교하는 테스트가 있습니다.
+- Skia PNG와 layer SVG raster 비교는 exact, channel-tolerant, neighborhood-tolerant, ink-mask diff를 함께 계산합니다.
+- 실제 HWP sample 기반 end-to-end screenshot regression은 basic text/table/equation/image/drawing/corpus 테스트로 구성되어 있습니다.
+- focused native-Skia synthetic ladder와 basic/table HWP sample 테스트를 재검증했습니다.
 
 ---
 
