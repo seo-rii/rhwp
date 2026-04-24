@@ -86,6 +86,14 @@ Apply image crop source rectangles outside `fitToSize` so Skia, Canvas2D layer, 
 - `npm run build` passed in `rhwp-studio`.
 - `git diff --check` passed for this batch's files.
 
+## Completed Batch: BUG-003 Risk Status
+
+Close the stale `BUG-003` status in `RISK_REGISTER.md`; the Skia multi-line stroke renderer and regression test were already implemented.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_multi_line_type_as_separated_strokes -- --quiet` passed.
+
 ## Current Batch: ARCH-003 Layer Renderer Error/Options
 
 Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.

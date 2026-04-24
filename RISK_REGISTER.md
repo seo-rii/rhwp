@@ -310,7 +310,7 @@
 ### [BUG-003] LineRenderType이 Skia에서 단일 선으로 축소됨
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: `LineRenderType`, Skia line renderer
 
