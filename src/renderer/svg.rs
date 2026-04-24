@@ -777,6 +777,19 @@ impl SvgRenderer {
                         }
                     }
                 }
+                let effective_rotation = if run.is_vertical {
+                    run.rotation + 90.0
+                } else {
+                    run.rotation
+                };
+                if effective_rotation != 0.0 {
+                    let cx = node.bbox.x + node.bbox.width / 2.0;
+                    let cy = node.bbox.y + node.bbox.height / 2.0;
+                    self.output.push_str(&format!(
+                        "<g transform=\"rotate({},{},{})\">\n",
+                        effective_rotation, cx, cy
+                    ));
+                }
                 if let Some(ref overlap) = run.char_overlap {
                     // 글자겹침(CharOverlap) 렌더링: 각 문자에 테두리 도형 + 텍스트
                     self.draw_char_overlap(
@@ -788,40 +801,6 @@ impl SvgRenderer {
                         node.bbox.width,
                         node.bbox.height,
                     );
-                } else if run.rotation != 0.0 {
-                    // 회전 텍스트: bbox 중앙에 중앙 정렬 후 회전
-                    let cx = node.bbox.x + node.bbox.width / 2.0;
-                    let cy = node.bbox.y + node.bbox.height / 2.0;
-                    let color = color_to_svg(run.style.color);
-                    let font_size = if run.style.font_size > 0.0 {
-                        run.style.font_size
-                    } else {
-                        12.0
-                    };
-                    let font_family = Self::font_family_with_svg_fallbacks(&run.style.font_family);
-                    let mut attrs = format!("font-family=\"{}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
-                        escape_xml(&font_family), font_size, color);
-                    if run.style.bold {
-                        attrs.push_str(" font-weight=\"bold\"");
-                    }
-                    if run.style.italic {
-                        attrs.push_str(" font-style=\"italic\"");
-                    }
-                    for c in run.text.chars() {
-                        if c == ' ' {
-                            continue;
-                        }
-                        self.output.push_str(&format!(
-                            "<text x=\"{}\" y=\"{}\" {} transform=\"rotate({},{},{})\">{}</text>\n",
-                            cx,
-                            cy,
-                            attrs,
-                            run.rotation,
-                            cx,
-                            cy,
-                            escape_xml(&c.to_string()),
-                        ));
-                    }
                 } else {
                     self.draw_text(
                         &run.text,
@@ -888,6 +867,9 @@ impl SvgRenderer {
                             mark,
                         ));
                     }
+                }
+                if effective_rotation != 0.0 {
+                    self.output.push_str("</g>\n");
                 }
             }
             RenderNodeType::FootnoteMarker(marker) => {
@@ -1209,6 +1191,19 @@ impl SvgRenderer {
                 }
             }
         }
+        let effective_rotation = if run.is_vertical {
+            run.rotation + 90.0
+        } else {
+            run.rotation
+        };
+        if effective_rotation != 0.0 {
+            let cx = bbox.x + bbox.width / 2.0;
+            let cy = bbox.y + bbox.height / 2.0;
+            self.output.push_str(&format!(
+                "<g transform=\"rotate({},{},{})\">\n",
+                effective_rotation, cx, cy
+            ));
+        }
         if let Some(ref overlap) = run.char_overlap {
             self.draw_char_overlap(
                 &run.text,
@@ -1219,43 +1214,6 @@ impl SvgRenderer {
                 bbox.width,
                 bbox.height,
             );
-        } else if run.rotation != 0.0 {
-            let cx = bbox.x + bbox.width / 2.0;
-            let cy = bbox.y + bbox.height / 2.0;
-            let color = color_to_svg(run.style.color);
-            let font_size = if run.style.font_size > 0.0 {
-                run.style.font_size
-            } else {
-                12.0
-            };
-            let font_family = Self::font_family_with_svg_fallbacks(&run.style.font_family);
-            let mut attrs = format!(
-                "font-family=\"{}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"central\"",
-                escape_xml(&font_family),
-                font_size,
-                color
-            );
-            if run.style.bold {
-                attrs.push_str(" font-weight=\"bold\"");
-            }
-            if run.style.italic {
-                attrs.push_str(" font-style=\"italic\"");
-            }
-            for c in run.text.chars() {
-                if c == ' ' {
-                    continue;
-                }
-                self.output.push_str(&format!(
-                    "<text x=\"{}\" y=\"{}\" {} transform=\"rotate({},{},{})\">{}</text>\n",
-                    cx,
-                    cy,
-                    attrs,
-                    run.rotation,
-                    cx,
-                    cy,
-                    escape_xml(&c.to_string()),
-                ));
-            }
         } else {
             self.draw_text_with_positions(
                 &run.text,
@@ -1322,6 +1280,9 @@ impl SvgRenderer {
                     mark,
                 ));
             }
+        }
+        if effective_rotation != 0.0 {
+            self.output.push_str("</g>\n");
         }
     }
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
 
 #[test]
@@ -221,5 +222,81 @@ fn test_svg_double_line_preserves_dash_and_arrows() {
     assert!(
         output.contains("stroke-opacity=\"0\""),
         "central marker carrier should not add an extra visible stroke:\n{output}"
+    );
+}
+
+#[test]
+fn test_layer_svg_vertical_text_uses_effective_rotation() {
+    let bbox = BoundingBox::new(10.0, 15.0, 40.0, 20.0);
+    let root = LayerNode::leaf(
+        bbox,
+        Some(1),
+        vec![PaintOp::TextRun {
+            bbox,
+            run: LayerTextRunPaint {
+                text: "세로".to_string(),
+                style: TextStyle {
+                    font_size: 14.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 14.0, 28.0],
+                baseline: 16.0,
+                rotation: 0.0,
+                is_vertical: true,
+                char_overlap: None,
+                field_marker: Default::default(),
+                is_para_end: false,
+                is_line_break_end: false,
+            },
+        }],
+    );
+    let tree = PageLayerTree::new(80.0, 60.0, root);
+    let mut renderer = SvgRenderer::new();
+    renderer.render_layer_tree(&tree);
+
+    let output = renderer.output();
+    assert!(
+        output.contains("<g transform=\"rotate(90,30,25)\">"),
+        "vertical layer text should rotate around its bbox center:\n{output}"
+    );
+    assert!(output.contains(">세</text>"));
+    assert!(output.contains(">로</text>"));
+}
+
+#[test]
+fn test_legacy_svg_vertical_text_uses_effective_rotation() {
+    let mut tree = PageRenderTree::new(0, 80.0, 60.0);
+    tree.root.children.push(RenderNode::new(
+        1,
+        RenderNodeType::TextRun(TextRunNode {
+            text: "세로".to_string(),
+            style: TextStyle {
+                font_size: 14.0,
+                ..Default::default()
+            },
+            char_shape_id: None,
+            para_shape_id: None,
+            section_index: None,
+            para_index: None,
+            char_start: None,
+            cell_context: None,
+            is_para_end: false,
+            is_line_break_end: false,
+            rotation: 15.0,
+            is_vertical: true,
+            char_overlap: None,
+            border_fill_id: 0,
+            baseline: 16.0,
+            field_marker: Default::default(),
+        }),
+        BoundingBox::new(10.0, 15.0, 40.0, 20.0),
+    ));
+    let mut renderer = SvgRenderer::new();
+    renderer.render_tree(&tree);
+
+    let output = renderer.output();
+    assert!(
+        output.contains("<g transform=\"rotate(105,30,25)\">"),
+        "vertical legacy text should compose author rotation and vertical rotation:\n{output}"
     );
 }
