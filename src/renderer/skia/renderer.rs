@@ -2249,6 +2249,43 @@ mod tests {
     }
 
     #[test]
+    fn replay_context_keeps_repeated_resource_caches_bounded() {
+        let mut source = tiny_skia::Pixmap::new(2, 2).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(32, 96, 255, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        let image_resource_id = ImageResourceId(11);
+        let svg_resource_id = SvgResourceId(13);
+        let fragment = "<rect x=\"0\" y=\"0\" width=\"6\" height=\"6\" fill=\"#2040ff\"/>";
+
+        for index in 0..100 {
+            let bytes: &[u8] = if index == 0 { &png } else { b"not an image" };
+            let image = replay
+                .image_for_resource(image_resource_id, bytes)
+                .expect("repeated image resource should use cached decode");
+            assert_eq!((image.width(), image.height()), (2, 2));
+
+            let svg = if index == 0 { fragment } else { "<invalid" };
+            let svg_image = replay
+                .svg_image_for_resource(svg_resource_id, svg, 6.0, 6.0)
+                .expect("repeated svg resource should use cached raster");
+            assert_eq!((svg_image.width(), svg_image.height()), (6, 6));
+
+            let fragment_image = replay
+                .svg_image_for_fragment(fragment, 6.0, 6.0)
+                .expect("repeated svg fragment should use cached raster");
+            assert_eq!((fragment_image.width(), fragment_image.height()), (6, 6));
+        }
+
+        assert_eq!(replay.image_cache.len(), 1);
+        assert_eq!(replay.svg_resource_cache.len(), 1);
+        assert_eq!(replay.svg_fragment_cache.len(), 1);
+    }
+
+    #[test]
     fn render_raster_options_scale_surface_and_metadata() {
         let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 40.0, 20.0);
         tree.root.node_type = RenderNodeType::Page(PageNode {

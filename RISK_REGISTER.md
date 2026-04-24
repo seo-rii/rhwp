@@ -994,7 +994,7 @@
 ### [TEST-009] resource/performance regression이 필요함
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 제안  
 **위치**: performance benchmark, resource cache tests
 
@@ -1006,6 +1006,12 @@
 
 - 반복 이미지 100개, 반복 수식 100개, WMF 반복, 큰 페이지, 많은 glyph run, 긴 표 문서 benchmark를 추가합니다.
 - decoded image/SVG/equation cache 도입 후 회귀 기준으로 사용합니다.
+
+**완료 메모**:
+
+- native Skia replay context에 반복 resource cache regression을 추가했습니다.
+- 같은 image resource, SVG resource, SVG fragment를 100회 반복 조회해도 decoded/rasterized cache가 각각 1개 엔트리로 유지되는지 확인합니다.
+- 실제 렌더 시간 benchmark와 긴 표/많은 glyph run/WMF corpus 측정은 별도 성능 벤치 확장으로 남깁니다.
 
 ---
 

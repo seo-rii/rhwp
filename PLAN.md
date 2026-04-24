@@ -453,3 +453,19 @@ Add native Skia-vs-layer-SVG regression coverage for pattern and gradient mappin
 - `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_pattern_gradient_matrix -- --quiet` passed.
 - `cargo test --features native-skia --lib renderer::layout::integration_tests::tests::test_skia_screenshot_matches_layer_svg_for_synthetic_shapes -- --quiet` passed.
 - `cargo test --lib renderer::layout::integration_tests::tests::test_layer_svg_fixture_matrix_rasterizes_against_legacy -- --quiet` passed.
+
+## Current Batch: TEST-009 Resource Cache Regression
+
+Add repeated-resource regression coverage for native Skia decode/raster cache behavior.
+
+## Steps
+
+1. Done: add a repeated image/SVG resource cache test that simulates 100 repeated uses.
+2. Done: verify the focused native-Skia cache tests.
+3. Pending: run formatting, wasm, and diff checks.
+4. Pending: update `RISK_REGISTER.md`, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_keeps_repeated_resource_caches_bounded -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::replay_context_caches -- --quiet` passed.
