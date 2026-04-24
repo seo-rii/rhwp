@@ -160,7 +160,8 @@ mod tests {
     #[test]
     fn serialize_with_one_section_parses_back() {
         let mut doc = Document::default();
-        doc.sections.push(crate::model::document::Section::default());
+        doc.sections
+            .push(crate::model::document::Section::default());
         let bytes = serialize_hwpx(&doc).expect("serialize one-section");
         let parsed = parse_hwpx(&bytes).expect("parse back");
         assert_eq!(parsed.sections.len(), 1);
@@ -216,8 +217,11 @@ mod tests {
         std::io::Read::read_to_string(&mut sec0, &mut xml).expect("read");
         // Stage 2.3 (ref_mixed 기반): 혼합 콘텐츠 + tab 속성 포함
         assert!(
-            xml.contains(r#"<hp:t>A<hp:tab width="4000" leader="0" type="1"/>B<hp:lineBreak/>C</hp:t>"#),
-            "mixed content not rendered: {}", xml
+            xml.contains(
+                r#"<hp:t>A<hp:tab width="4000" leader="0" type="1"/>B<hp:lineBreak/>C</hp:t>"#
+            ),
+            "mixed content not rendered: {}",
+            xml
         );
     }
 
@@ -307,7 +311,8 @@ mod tests {
     #[test]
     fn hancom_required_files_present() {
         let mut doc = Document::default();
-        doc.sections.push(crate::model::document::Section::default());
+        doc.sections
+            .push(crate::model::document::Section::default());
         let bytes = serialize_hwpx(&doc).expect("serialize");
         // ZIP 파일 목록에 한컴 필수 11개가 모두 있는지 확인
         let cursor = std::io::Cursor::new(&bytes);
@@ -327,11 +332,7 @@ mod tests {
             "META-INF/manifest.xml",
         ];
         for r in &required {
-            assert!(
-                names.iter().any(|n| n == r),
-                "missing required file: {}",
-                r
-            );
+            assert!(names.iter().any(|n| n == r), "missing required file: {}", r);
         }
     }
 }

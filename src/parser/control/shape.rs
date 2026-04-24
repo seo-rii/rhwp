@@ -6,9 +6,10 @@ use super::parse_caption;
 use crate::model::control::Control;
 use crate::model::image::{ImageEffect, Picture};
 use crate::model::shape::{
-    ArcShape, Caption, CaptionDirection, ChartShape, ChartType, CommonObjAttr, CurveShape, DrawingObjAttr,
-    EllipseShape, GroupShape, HorzAlign, HorzRelTo, LineShape, OleDrawingAspect, OleShape, PolygonShape,
-    RectangleShape, ShapeComponentAttr, ShapeObject, TextWrap, VertAlign, VertRelTo,
+    ArcShape, Caption, CaptionDirection, ChartShape, ChartType, CommonObjAttr, CurveShape,
+    DrawingObjAttr, EllipseShape, GroupShape, HorzAlign, HorzRelTo, LineShape, OleDrawingAspect,
+    OleShape, PolygonShape, RectangleShape, ShapeComponentAttr, ShapeObject, TextWrap, VertAlign,
+    VertRelTo,
 };
 use crate::model::style::{Fill, ShapeBorderLine};
 use crate::model::Padding;
@@ -306,7 +307,11 @@ pub(crate) fn parse_gso_control(ctrl_data: &[u8], child_records: &[Record]) -> C
 /// 00 00 00 00   u32 reserved
 /// 00 00         u16 reserved/aspect
 /// ```
-pub(crate) fn parse_ole_shape(common: CommonObjAttr, drawing: DrawingObjAttr, tag_data: &[u8]) -> OleShape {
+pub(crate) fn parse_ole_shape(
+    common: CommonObjAttr,
+    drawing: DrawingObjAttr,
+    tag_data: &[u8],
+) -> OleShape {
     let mut ole = OleShape::default();
     ole.common = common;
     ole.drawing = drawing;
@@ -1037,11 +1042,11 @@ mod task195_tests {
     fn test_parse_ole_shape_minimal() {
         // 1.hwp 레이아웃 실측 기반: property(4) + extent_x(4) + extent_y(4) + bin_data_id(4)
         let mut data = Vec::new();
-        data.extend_from_slice(&1u32.to_le_bytes());       // property
-        data.extend_from_slice(&1000i32.to_le_bytes());    // extent_x
-        data.extend_from_slice(&2000i32.to_le_bytes());    // extent_y
-        data.extend_from_slice(&5u32.to_le_bytes());       // bin_data_id
-        data.extend_from_slice(&[0u8; 14]);                // padding
+        data.extend_from_slice(&1u32.to_le_bytes()); // property
+        data.extend_from_slice(&1000i32.to_le_bytes()); // extent_x
+        data.extend_from_slice(&2000i32.to_le_bytes()); // extent_y
+        data.extend_from_slice(&5u32.to_le_bytes()); // bin_data_id
+        data.extend_from_slice(&[0u8; 14]); // padding
 
         let ole = parse_ole_shape(CommonObjAttr::default(), DrawingObjAttr::default(), &data);
         assert_eq!(ole.extent_x, 1000);

@@ -1334,7 +1334,11 @@ fn serialize_group_child(
                 tag_id: tags::HWPTAG_SHAPE_COMPONENT,
                 level: comp_level,
                 size: 0,
-                data: serialize_drawing_shape_component(chart.drawing.shape_attr.ctrl_id, &chart.drawing, false),
+                data: serialize_drawing_shape_component(
+                    chart.drawing.shape_attr.ctrl_id,
+                    &chart.drawing,
+                    false,
+                ),
             });
             serialize_text_box_if_present(&chart.drawing, type_level, records);
             records.push(Record {
@@ -1350,7 +1354,11 @@ fn serialize_group_child(
                 tag_id: tags::HWPTAG_SHAPE_COMPONENT,
                 level: comp_level,
                 size: 0,
-                data: serialize_drawing_shape_component(ole.drawing.shape_attr.ctrl_id, &ole.drawing, false),
+                data: serialize_drawing_shape_component(
+                    ole.drawing.shape_attr.ctrl_id,
+                    &ole.drawing,
+                    false,
+                ),
             });
             serialize_text_box_if_present(&ole.drawing, type_level, records);
             records.push(Record {

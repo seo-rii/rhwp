@@ -172,7 +172,12 @@ mod tests {
             width: 12000,
             height: 8000,
             z_order: 7,
-            margin: Padding { left: 100, right: 200, top: 300, bottom: 400 },
+            margin: Padding {
+                left: 100,
+                right: 200,
+                top: 300,
+                bottom: 400,
+            },
             instance_id: 0xCAFEBABE,
             prevent_page_break: 0,
             treat_as_char: false,
@@ -258,6 +263,10 @@ mod tests {
         let bytes = serialize_common_obj_attr(&make_sample());
         // attr(4) + vert_off(4) + horz_off(4) + w(4) + h(4) + z(4)
         //  + margin(8) + inst(4) + prev(4) + desc_len(2) = 42
-        assert!(bytes.len() >= 42, "예상 42바이트 이상, 실제={}", bytes.len());
+        assert!(
+            bytes.len() >= 42,
+            "예상 42바이트 이상, 실제={}",
+            bytes.len()
+        );
     }
 }

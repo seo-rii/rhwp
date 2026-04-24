@@ -132,9 +132,10 @@ fn insert_section_def_control(section: &mut Section, report: &mut AdapterReport)
     if already_has_section_def {
         return;
     }
-    first_para
-        .controls
-        .insert(0, Control::SectionDef(Box::new(section.section_def.clone())));
+    first_para.controls.insert(
+        0,
+        Control::SectionDef(Box::new(section.section_def.clone())),
+    );
     report.section_def_controls_inserted += 1;
 }
 
@@ -237,7 +238,10 @@ mod tests {
     fn hwp_source_no_op_via_filter() {
         let mut doc = Document::default();
         let report = convert_if_hwpx_source(&mut doc, FileFormat::Hwp);
-        assert_eq!(report.skipped_reason.as_deref(), Some("source_format != Hwpx"));
+        assert_eq!(
+            report.skipped_reason.as_deref(),
+            Some("source_format != Hwpx")
+        );
     }
 
     #[test]
@@ -304,7 +308,10 @@ mod tests {
 
         // 한컴 파서 해석 (parser/control.rs:371) 와 일치:
         let recovered_apply_inner_margin = (list_attr >> 16) & 0x01 != 0;
-        assert!(recovered_apply_inner_margin, "재파싱 시 apply_inner_margin 회복");
+        assert!(
+            recovered_apply_inner_margin,
+            "재파싱 시 apply_inner_margin 회복"
+        );
     }
 
     #[test]

@@ -17,7 +17,6 @@
 
 pub mod bin_data;
 pub mod body_text;
-pub mod ole_container;
 pub mod byte_reader;
 pub mod cfb_reader;
 pub mod control;
@@ -25,6 +24,7 @@ pub mod crypto;
 pub mod doc_info;
 pub mod header;
 pub mod hwpx;
+pub mod ole_container;
 pub mod record;
 pub mod tags;
 

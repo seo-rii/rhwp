@@ -34,8 +34,7 @@ const PARA_CLOSE: &str = "</hp:p></hs:sec>";
 
 // 템플릿 내 첫 <hp:p> 태그의 실제 문자열 (id="3121190098" 랜덤 해시 포함).
 // 템플릿은 정적이므로 이 문자열이 고정 위치에 있음이 보장됨.
-const TEMPLATE_FIRST_P_TAG: &str =
-    r#"<hp:p id="3121190098" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">"#;
+const TEMPLATE_FIRST_P_TAG: &str = r#"<hp:p id="3121190098" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">"#;
 // 템플릿 내 <hp:run charPrIDRef="0"> 직후에 TEXT_SLOT 이 오는 패턴.
 const TEMPLATE_RUN_BEFORE_TEXT: &str = r#"<hp:run charPrIDRef="0"><hp:t/>"#;
 
@@ -108,8 +107,16 @@ pub fn write_section(
 /// `id` 는 문단 순서 기반(0, 1, 2, ...)로 할당한다. 한컴 샘플은 랜덤 해시도 쓰지만
 /// 파서는 id 를 무시하므로 순차값으로 충분.
 fn render_hp_p_open(p: &Paragraph, id: u32) -> String {
-    let page_break = if matches!(p.column_type, ColumnBreakType::Page) { 1 } else { 0 };
-    let column_break = if matches!(p.column_type, ColumnBreakType::Column) { 1 } else { 0 };
+    let page_break = if matches!(p.column_type, ColumnBreakType::Page) {
+        1
+    } else {
+        0
+    };
+    let column_break = if matches!(p.column_type, ColumnBreakType::Column) {
+        1
+    } else {
+        0
+    };
     format!(
         r#"<hp:p id="{}" paraPrIDRef="{}" styleIDRef="{}" pageBreak="{}" columnBreak="{}" merged="0">"#,
         id, p.para_shape_id, p.style_id, page_break, column_break,
@@ -206,7 +213,11 @@ fn next_vert_cursor_from_ir(segs: &[LineSeg], vert_start: u32) -> u32 {
         // vertical_pos 는 섹션 시작 기준 절대값일 수도, 문단 기준 상대값일 수도 있음.
         // 현재 rhwp 는 섹션 절대값이므로 그대로 + lh 로 다음 커서 산출.
         let next = (last.vertical_pos as i64) + (last.line_height.max(0) as i64);
-        if next > vert_start as i64 { next as u32 } else { vert_start + VERT_STEP }
+        if next > vert_start as i64 {
+            next as u32
+        } else {
+            vert_start + VERT_STEP
+        }
     } else {
         vert_start + VERT_STEP
     }
@@ -260,7 +271,9 @@ fn push_lineseg_static(out: &mut String, textpos: u32, vertpos: u32) {
 }
 
 fn replace_first_linesegs(xml: &str, new_inner: &str) -> String {
-    let open = xml.find(LINESEG_SLOT_OPEN).expect("template has linesegarray");
+    let open = xml
+        .find(LINESEG_SLOT_OPEN)
+        .expect("template has linesegarray");
     let inner_start = open + LINESEG_SLOT_OPEN.len();
     let close_rel = xml[inner_start..]
         .find(LINESEG_SLOT_CLOSE)
@@ -328,7 +341,8 @@ mod tests {
         assert!(
             xml.contains(r#"<hp:run charPrIDRef="42"><hp:t>hello</hp:t>"#),
             "first run must use char_shape_id 42, xml excerpt around <hp:t>: {:?}",
-            xml.find("<hp:t>").map(|i| &xml[i.saturating_sub(50)..(i + 50).min(xml.len())])
+            xml.find("<hp:t>")
+                .map(|i| &xml[i.saturating_sub(50)..(i + 50).min(xml.len())])
         );
     }
 
@@ -366,11 +380,17 @@ mod tests {
     fn additional_paragraphs_use_their_own_char_shape() {
         let mut p1 = Paragraph::default();
         p1.text = "first".to_string();
-        p1.char_shapes.push(CharShapeRef { start_pos: 0, char_shape_id: 5 });
+        p1.char_shapes.push(CharShapeRef {
+            start_pos: 0,
+            char_shape_id: 5,
+        });
         let mut p2 = Paragraph::default();
         p2.text = "second".to_string();
         p2.para_shape_id = 2;
-        p2.char_shapes.push(CharShapeRef { start_pos: 0, char_shape_id: 6 });
+        p2.char_shapes.push(CharShapeRef {
+            start_pos: 0,
+            char_shape_id: 6,
+        });
         let mut section = Section::default();
         section.paragraphs.push(p1);
         section.paragraphs.push(p2);
@@ -418,7 +438,10 @@ mod tests {
     fn task177_multiple_linesegs_preserved_in_order() {
         let mut para = Paragraph::default();
         para.text = "three\nlines\nhere".to_string();
-        for (i, (tp, vp, lh)) in [(0u32, 0i32, 1000), (6, 1500, 1200), (12, 3100, 1100)].iter().enumerate() {
+        for (i, (tp, vp, lh)) in [(0u32, 0i32, 1000), (6, 1500, 1200), (12, 3100, 1100)]
+            .iter()
+            .enumerate()
+        {
             let _ = i;
             para.line_segs.push(LineSeg {
                 text_start: *tp,
@@ -477,6 +500,9 @@ mod tests {
         let xml = String::from_utf8(write_section(&section, &doc, 0, &ctx).unwrap()).unwrap();
         // IR 에 1개만 있으므로 lineseg 도 1개만 출력 (rhwp 는 원본 보존)
         assert_eq!(xml.matches("<hp:lineseg ").count(), 1);
-        assert!(xml.contains(r#"vertsize="2000""#), "IR value 2000 must be used, not fallback 1000");
+        assert!(
+            xml.contains(r#"vertsize="2000""#),
+            "IR value 2000 must be used, not fallback 1000"
+        );
     }
 }
