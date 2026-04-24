@@ -36,5 +36,7 @@ pub use paint_op::{
     LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PaintBounds, PaintOp,
 };
 pub use profile::RenderProfile;
-pub use resources::{ImageResourceId, ResourceArena, SvgResourceId};
+pub use resources::{
+    image_resource_key, svg_resource_key, ImageResourceId, ResourceArena, SvgResourceId,
+};
 pub use schema::{LayerTreeSchema, LAYER_TREE_SCHEMA};

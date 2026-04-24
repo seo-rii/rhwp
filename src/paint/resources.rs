@@ -6,6 +6,8 @@ pub struct ImageResourceId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SvgResourceId(pub usize);
 
+pub const RESOURCE_KEY_ALGORITHM: &str = "fnv1a64";
+
 /// 레이어 replay가 공유하는 바이너리/문자열 자원 저장소.
 ///
 /// 내부 IR과 WASM object export에서 큰 payload를 handle로 참조해 backend와
@@ -106,9 +108,23 @@ fn resource_hash(bytes: impl AsRef<[u8]>) -> u64 {
     hash
 }
 
+pub fn image_resource_key(byte_len: usize, hash: u64) -> String {
+    resource_key("img", byte_len, hash)
+}
+
+pub fn svg_resource_key(byte_len: usize, hash: u64) -> String {
+    resource_key("svg", byte_len, hash)
+}
+
+fn resource_key(kind: &str, byte_len: usize, hash: u64) -> String {
+    format!("{kind}:{RESOURCE_KEY_ALGORITHM}:{byte_len}:{hash:016x}")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ImageResourceId, ResourceArena, SvgResourceId};
+    use super::{
+        image_resource_key, svg_resource_key, ImageResourceId, ResourceArena, SvgResourceId,
+    };
 
     #[test]
     fn interns_duplicate_resources_once() {
@@ -138,6 +154,18 @@ mod tests {
         assert_eq!(
             arena.svg_resources().collect::<Vec<_>>(),
             vec![(SvgResourceId(0), "<svg/>")]
+        );
+    }
+
+    #[test]
+    fn resource_keys_include_kind_algorithm_length_and_hash() {
+        assert_eq!(
+            image_resource_key(4, 0xbe7a_5e77_5165_785d),
+            "img:fnv1a64:4:be7a5e775165785d"
+        );
+        assert_eq!(
+            svg_resource_key(6, 0x0123_4567_89ab_cdef),
+            "svg:fnv1a64:6:0123456789abcdef"
         );
     }
 }

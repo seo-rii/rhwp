@@ -8,8 +8,8 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp,
-    LAYER_TREE_SCHEMA,
+    image_resource_key, svg_resource_key, CacheHint, ClipKind, LayerNode, LayerNodeKind,
+    LayerSemantic, PageLayerTree, PaintOp, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -98,9 +98,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let image_keys = Array::new();
     for (id, bytes) in tree.resources.image_resources() {
         if let Some(hash) = tree.resources.image_hash(id) {
-            let hash = format!("{hash:016x}");
-            let key = resource_key(bytes.len(), &hash);
-            image_hashes.set(id.0 as u32, JsValue::from_str(&hash));
+            let hash_hex = format!("{hash:016x}");
+            let key = image_resource_key(bytes.len(), hash);
+            image_hashes.set(id.0 as u32, JsValue::from_str(&hash_hex));
             image_keys.set(id.0 as u32, JsValue::from_str(&key));
             if !hints.known_image_keys.contains(&key) {
                 images.set(id.0 as u32, Uint8Array::from(bytes).into());
@@ -118,9 +118,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let svg_keys = Array::new();
     for (id, svg) in tree.resources.svg_resources() {
         if let Some(hash) = tree.resources.svg_hash(id) {
-            let hash = format!("{hash:016x}");
-            let key = resource_key(svg.len(), &hash);
-            svg_hashes.set(id.0 as u32, JsValue::from_str(&hash));
+            let hash_hex = format!("{hash:016x}");
+            let key = svg_resource_key(svg.len(), hash);
+            svg_hashes.set(id.0 as u32, JsValue::from_str(&hash_hex));
             svg_keys.set(id.0 as u32, JsValue::from_str(&key));
             if !hints.known_svg_keys.contains(&key) {
                 svg_fragments.set(id.0 as u32, JsValue::from_str(svg));
@@ -145,10 +145,6 @@ fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
         .iter()
         .filter_map(|item| item.as_string())
         .collect()
-}
-
-fn resource_key(byte_len: usize, hash: &str) -> String {
-    format!("r1:{byte_len}:{hash}")
 }
 
 fn layer_node_to_value(node: &LayerNode) -> JsValue {

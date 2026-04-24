@@ -38,7 +38,8 @@ export class LayerResourceStore {
     this.importedImagePayloads += 1;
     this.importedImagePayloadBytes += bytes.byteLength;
     const resourceHash = contentHash ?? this.hashBytes(bytes);
-    const key = resourceKey ?? `${bytes.byteLength}:${resourceHash}`;
+    const key = resourceKey
+      ?? this.makeResourceKey('img', contentHash ? 'fnv1a64' : 'fnv1a32', bytes.byteLength, resourceHash);
     const candidates = this.imageLookup.get(key);
     if (candidates) {
       for (const candidate of candidates) {
@@ -63,11 +64,13 @@ export class LayerResourceStore {
   }
 
   internSvg(fragment: string, contentHash?: string, resourceKey?: string): number {
-    const byteLength = new TextEncoder().encode(fragment).byteLength;
+    const encoded = new TextEncoder().encode(fragment);
+    const byteLength = encoded.byteLength;
     this.importedSvgPayloads += 1;
     this.importedSvgPayloadBytes += byteLength;
-    const resourceHash = contentHash ?? fragment;
-    const key = resourceKey ?? `${byteLength}:${resourceHash}`;
+    const resourceHash = contentHash ?? this.hashBytes(encoded);
+    const key = resourceKey
+      ?? this.makeResourceKey('svg', contentHash ? 'fnv1a64' : 'fnv1a32', byteLength, resourceHash);
     const candidates = this.svgLookup.get(key);
     if (candidates) {
       for (const candidate of candidates) {
@@ -151,6 +154,15 @@ export class LayerResourceStore {
       hash = Math.imul(hash, 0x01000193);
     }
     return (hash >>> 0).toString(16);
+  }
+
+  private makeResourceKey(
+    kind: 'img' | 'svg',
+    algorithm: 'fnv1a64' | 'fnv1a32',
+    byteLength: number,
+    hash: string,
+  ): string {
+    return `${kind}:${algorithm}:${byteLength}:${hash}`;
   }
 
   private bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
