@@ -7,7 +7,10 @@ use crate::paint::{
     LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
 };
 use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
-use crate::renderer::layer_renderer::{LayerRasterRenderer, RasterRenderOptions};
+use crate::renderer::layer_renderer::{
+    LayerRasterRenderer, LayerRenderError, LayerRenderResult, RasterOutputFormat,
+    RasterRenderOptions, RasterRenderOutput,
+};
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::{ArrowStyle, LineRenderType, LineStyle, UnderlineType};
@@ -28,23 +31,43 @@ pub struct SkiaLayerRenderer {
 
 const MAX_RASTER_DIMENSION: i32 = 16_384;
 
-fn raster_dimension(length: f64, max_dimension: i32) -> Result<i32, String> {
+fn raster_dimension(length: f64, scale: f64, max_dimension: i32) -> LayerRenderResult<i32> {
     if !length.is_finite() {
-        return Err(format!("non-finite raster dimension: {length}"));
+        return Err(LayerRenderError::invalid_options(format!(
+            "non-finite raster dimension: {length}"
+        )));
     }
     if length <= 0.0 {
-        return Err(format!("non-positive raster dimension: {length}"));
+        return Err(LayerRenderError::invalid_options(format!(
+            "non-positive raster dimension: {length}"
+        )));
     }
-    let rounded = length.round();
+    if !scale.is_finite() {
+        return Err(LayerRenderError::invalid_options(format!(
+            "non-finite raster scale: {scale}"
+        )));
+    }
+    if scale <= 0.0 {
+        return Err(LayerRenderError::invalid_options(format!(
+            "non-positive raster scale: {scale}"
+        )));
+    }
+    let scaled = length * scale;
+    if !scaled.is_finite() {
+        return Err(LayerRenderError::invalid_options(format!(
+            "non-finite scaled raster dimension: {scaled}"
+        )));
+    }
+    let rounded = scaled.round();
     if max_dimension <= 0 {
-        return Err(format!(
-            "non-positive max raster dimension: {max_dimension}"
-        ));
+        return Err(LayerRenderError::invalid_options(format!(
+            "non-positive max raster dimension: {max_dimension}",
+        )));
     }
     if rounded > f64::from(max_dimension) {
-        return Err(format!(
+        return Err(LayerRenderError::invalid_options(format!(
             "raster dimension {rounded} exceeds max {max_dimension}"
-        ));
+        )));
     }
     Ok(rounded.max(1.0) as i32)
 }
@@ -244,7 +267,7 @@ impl SkiaLayerRenderer {
         }
     }
 
-    pub fn render_png(&self, tree: &PageLayerTree) -> Result<Vec<u8>, String> {
+    pub fn render_png(&self, tree: &PageLayerTree) -> LayerRenderResult<Vec<u8>> {
         self.render_png_with_options(tree, RasterRenderOptions::default())
     }
 
@@ -252,11 +275,32 @@ impl SkiaLayerRenderer {
         &self,
         tree: &PageLayerTree,
         options: RasterRenderOptions,
-    ) -> Result<Vec<u8>, String> {
-        let width = raster_dimension(tree.page_width, options.max_dimension)?;
-        let height = raster_dimension(tree.page_height, options.max_dimension)?;
+    ) -> LayerRenderResult<Vec<u8>> {
+        self.render_raster_with_options(tree, options)
+            .map(|output| output.bytes)
+    }
+
+    pub fn render_raster_with_options(
+        &self,
+        tree: &PageLayerTree,
+        options: RasterRenderOptions,
+    ) -> LayerRenderResult<RasterRenderOutput> {
+        if let Some(dpi) = options.dpi {
+            if !dpi.is_finite() || dpi <= 0.0 {
+                return Err(LayerRenderError::invalid_options(format!(
+                    "invalid raster dpi: {dpi}"
+                )));
+            }
+        }
+        if options.format != RasterOutputFormat::Png {
+            return Err(LayerRenderError::invalid_options(
+                "Skia raster renderer currently supports PNG output",
+            ));
+        }
+        let width = raster_dimension(tree.page_width, options.scale, options.max_dimension)?;
+        let height = raster_dimension(tree.page_height, options.scale, options.max_dimension)?;
         let mut surface = surfaces::raster_n32_premul((width, height))
-            .ok_or_else(|| "Skia raster surface 생성 실패".to_string())?;
+            .ok_or_else(|| LayerRenderError::surface_creation("Skia raster surface 생성 실패"))?;
         let canvas = surface.canvas();
         let clear_color = if let Some(color) = options.background_color {
             colorref_to_skia(color, 1.0)
@@ -266,13 +310,23 @@ impl SkiaLayerRenderer {
             Color::WHITE
         };
         canvas.clear(clear_color);
+        if options.scale != 1.0 {
+            canvas.scale((options.scale as f32, options.scale as f32));
+        }
         let mut replay = SkiaReplayContext::new(tree.profile, tree.output_options);
         self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
         let image = surface.image_snapshot();
         let data = image
             .encode(None, EncodedImageFormat::PNG, None)
-            .ok_or_else(|| "Skia PNG 인코딩 실패".to_string())?;
-        Ok(data.as_bytes().to_vec())
+            .ok_or_else(|| LayerRenderError::encoding("Skia PNG 인코딩 실패"))?;
+        Ok(RasterRenderOutput {
+            bytes: data.as_bytes().to_vec(),
+            format: RasterOutputFormat::Png,
+            width,
+            height,
+            dpi: options.dpi,
+            color_space: options.color_space,
+        })
     }
 
     fn render_node(
@@ -1573,12 +1627,12 @@ impl SkiaLayerRenderer {
 }
 
 impl LayerRasterRenderer for SkiaLayerRenderer {
-    fn render_png_with_options(
+    fn render_raster(
         &self,
         tree: &PageLayerTree,
         options: RasterRenderOptions,
-    ) -> Result<Vec<u8>, String> {
-        SkiaLayerRenderer::render_png_with_options(self, tree, options)
+    ) -> LayerRenderResult<RasterRenderOutput> {
+        SkiaLayerRenderer::render_raster_with_options(self, tree, options)
     }
 }
 
@@ -1587,6 +1641,7 @@ mod tests {
     use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
     use crate::paint::{CacheHint, LayerBuilder, LayerOutputOptions, RenderProfile};
     use crate::renderer::composer::CharOverlapInfo;
+    use crate::renderer::layer_renderer::RasterRenderOptions;
     use crate::renderer::render_tree::{
         BoundingBox, PageNode, RectangleNode, RenderNode, RenderNodeType, TextRunNode,
     };
@@ -1625,6 +1680,35 @@ mod tests {
     }
 
     #[test]
+    fn render_raster_options_scale_surface_and_metadata() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 40.0, 20.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 40.0,
+            height: 20.0,
+            section_index: 0,
+        });
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let renderer = SkiaLayerRenderer::new();
+        let output = renderer
+            .render_raster_with_options(
+                &layer_tree,
+                RasterRenderOptions {
+                    scale: 2.0,
+                    dpi: Some(144.0),
+                    ..Default::default()
+                },
+            )
+            .expect("scaled skia raster render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+
+        assert_eq!((output.width, output.height), (80, 40));
+        assert_eq!((pixmap.width(), pixmap.height()), (80, 40));
+        assert_eq!(output.dpi, Some(144.0));
+    }
+
+    #[test]
     fn rounds_surface_size_like_svg_rasterization() {
         let mut tree =
             crate::renderer::render_tree::PageRenderTree::new(0, 793.7066666666667, 1122.48);
@@ -1658,10 +1742,12 @@ mod tests {
 
     #[test]
     fn rejects_invalid_raster_dimensions() {
-        assert!(raster_dimension(f64::NAN, 16_384).is_err());
-        assert!(raster_dimension(0.0, 16_384).is_err());
-        assert!(raster_dimension(16_385.0, 16_384).is_err());
-        assert_eq!(raster_dimension(12.4, 16_384), Ok(12));
+        assert!(raster_dimension(f64::NAN, 1.0, 16_384).is_err());
+        assert!(raster_dimension(0.0, 1.0, 16_384).is_err());
+        assert!(raster_dimension(10.0, f64::NAN, 16_384).is_err());
+        assert!(raster_dimension(10.0, 0.0, 16_384).is_err());
+        assert!(raster_dimension(8_193.0, 2.0, 16_384).is_err());
+        assert_eq!(raster_dimension(12.4, 2.0, 16_384), Ok(25));
     }
 
     #[test]

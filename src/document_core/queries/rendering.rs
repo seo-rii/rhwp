@@ -99,7 +99,7 @@ impl DocumentCore {
         );
         renderer
             .render_page(&layer_tree)
-            .map_err(HwpError::RenderError)?;
+            .map_err(|err| HwpError::RenderError(err.to_string()))?;
         Ok(renderer.output().to_string())
     }
 
@@ -108,7 +108,8 @@ impl DocumentCore {
         let layer_tree =
             self.build_page_layer_tree_for_output(page_num, RenderProfile::HighQuality)?;
         let renderer = SkiaLayerRenderer::new();
-        LayerRasterRenderer::render_png(&renderer, &layer_tree).map_err(HwpError::RenderError)
+        LayerRasterRenderer::render_png(&renderer, &layer_tree)
+            .map_err(|err| HwpError::RenderError(err.to_string()))
     }
 
     /// SVG 렌더링 (폰트 임베딩 옵션 포함)
@@ -137,7 +138,7 @@ impl DocumentCore {
             );
             layer_renderer
                 .render_page(&layer_tree)
-                .map_err(HwpError::RenderError)?;
+                .map_err(|err| HwpError::RenderError(err.to_string()))?;
 
             let mut collector = SvgRenderer::new();
             self.configure_svg_renderer(&mut collector);

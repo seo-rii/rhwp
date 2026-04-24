@@ -1,6 +1,6 @@
 use crate::paint::PageLayerTree;
 
-use super::layer_renderer::LayerRenderer;
+use super::layer_renderer::{LayerRenderResult, LayerRenderer};
 use super::render_tree::{BoundingBox, PageRenderTree, RenderNode, RenderNodeType};
 use super::svg::SvgRenderer;
 
@@ -33,7 +33,7 @@ impl SvgLayerRenderer {
 }
 
 impl LayerRenderer for SvgLayerRenderer {
-    fn render_page(&mut self, tree: &PageLayerTree) -> Result<(), String> {
+    fn render_page(&mut self, tree: &PageLayerTree) -> LayerRenderResult<()> {
         self.renderer.render_layer_tree(tree);
         Ok(())
     }

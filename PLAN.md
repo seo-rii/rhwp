@@ -63,3 +63,24 @@ Give layer backends the same output-option context used by legacy renderers, the
 - `cargo test --lib -- --quiet` passed: 974 passed, 1 ignored.
 - `rustfmt --check` passed for changed Rust files.
 - `git diff --check` passed for this batch's files.
+
+## Current Batch: ARCH-003 Layer Renderer Error/Options
+
+Replace stringly layer render errors with a structured error type and make raster rendering expose an extensible output API without removing the existing PNG convenience path.
+
+## Steps
+
+1. Done: add `LayerRenderError` and `LayerRenderResult` to the layer renderer contract.
+2. Done: add scale, DPI, color space, format, and output metadata to raster options/output.
+3. Done: route Skia PNG rendering through the generic raster output path.
+4. Done: map typed layer render errors back into `HwpError::RenderError` at document API boundaries.
+5. Done: verify focused native-Skia tests, lib tests, formatting, and diff checks.
+6. Done: update `RISK_REGISTER.md`, commit, and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo test --lib -- --quiet` passed: 974 passed, 1 ignored.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `rustfmt --check` passed for changed Rust files.
+- `git diff --check` passed for this batch's files.

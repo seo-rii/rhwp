@@ -41,6 +41,7 @@
 - layer cache key에 profile과 주요 출력 옵션을 포함했다.
 - WASM `renderPageToCanvas`가 `PageLayerTree`를 만든 뒤 `WebCanvasRenderer`의 layer replay 경로로 렌더링하도록 전환했다.
 - `PageLayerTree`에 출력 옵션을 실어 JSON/JS/TypeScript export로 전달하고, Skia text run이 paragraph/control mark 옵션을 반영하도록 했다.
+- layer renderer API에 typed render error와 scale/DPI/color-space/output metadata를 추가했다.
 
 ---
 
@@ -102,7 +103,7 @@
 ### [ARCH-003] LayerRenderer와 LayerRasterRenderer API가 실패와 출력 옵션을 표현하지 못함
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: `LayerRenderer::render_page`, `LayerRasterRenderer::render_png`
 
@@ -121,11 +122,12 @@
 - `LayerRenderer::render_page`를 `Result<(), RenderError>`로 바꿉니다.
 - `LayerRasterRenderer`에는 `RenderSurfaceOptions` 또는 `RasterRenderOptions`를 도입하고, scale/DPI/background/color space/output format을 명시합니다.
 
-**진행 메모**:
+**완료 메모**:
 
-- `LayerRenderer::render_page`는 `Result<(), String>`을 반환하도록 바뀌었습니다.
-- `LayerRasterRenderer`에는 `RasterRenderOptions`가 추가되어 max dimension, transparent clear, background color를 표현합니다.
-- custom `RenderError`, scale/DPI/color space/output format 확장은 아직 남아 있습니다.
+- `LayerRenderer::render_page`는 `LayerRenderResult<()>`를 반환하고, backend 실패는 `LayerRenderError`로 전달합니다.
+- `LayerRasterRenderer`에는 `render_raster` entrypoint와 `RasterRenderOutput`이 추가되어 bytes와 함께 format, surface size, DPI, color space metadata를 반환합니다.
+- 기존 `render_png`/`render_png_with_options` 편의 API는 유지하되, 내부적으로 generic raster output 경로를 타도록 정리했습니다.
+- `RasterRenderOptions`는 max dimension, scale, DPI, transparent clear, background color, color space, output format을 표현합니다.
 
 ---
 
