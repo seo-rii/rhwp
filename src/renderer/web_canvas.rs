@@ -16,15 +16,20 @@ use super::composer::{decode_pua_overlap_number, pua_to_display_text, CharOverla
 #[cfg(target_arch = "wasm32")]
 use super::layout::{compute_char_positions, split_into_clusters};
 use super::render_tree::{
-    BoundingBox, FormObjectNode, PageRenderTree, RenderNode, RenderNodeType, ShapeTransform,
+    BoundingBox, EllipseNode, EquationNode, FootnoteMarkerNode, FormObjectNode, ImageNode,
+    LineNode, PageBackgroundImage, PageBackgroundNode, PageRenderTree, PathNode, RectangleNode,
+    RenderNode, RenderNodeType, ShapeTransform, TextRunNode,
 };
 use super::{
     GradientFillInfo, LineStyle, PathCommand, PatternFillInfo, Renderer, ShapeStyle, StrokeDash,
     TextStyle,
 };
 use crate::model::control::FormType;
+use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::model::style::UnderlineType;
+#[cfg(target_arch = "wasm32")]
+use crate::paint::{ClipKind, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
 
 // 이미지 캐시: data 해시 → HtmlImageElement
 // WASM 단일 스레드이므로 thread_local 안전
@@ -173,6 +178,184 @@ impl WebCanvasRenderer {
     /// 렌더 트리를 Canvas에 렌더링
     pub fn render_tree(&mut self, tree: &PageRenderTree) {
         self.render_node(&tree.root);
+    }
+
+    /// 레이어 트리를 Canvas에 렌더링
+    pub fn render_layer_tree(&mut self, tree: &PageLayerTree) {
+        self.begin_page(tree.page_width, tree.page_height);
+        self.render_layer_node(&tree.root, &tree.resources);
+        self.end_page();
+    }
+
+    fn render_layer_node(&mut self, node: &crate::paint::LayerNode, resources: &ResourceArena) {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    self.render_layer_node(child, resources);
+                }
+            }
+            LayerNodeKind::ClipRect {
+                clip,
+                child,
+                clip_kind,
+            } => {
+                self.ctx.save();
+                self.ctx.begin_path();
+                let right_pad = match clip_kind {
+                    ClipKind::Body | ClipKind::TableCell => 4.0,
+                    ClipKind::Generic => 0.0,
+                };
+                self.ctx
+                    .rect(clip.x, clip.y, clip.width + right_pad, clip.height);
+                self.ctx.clip();
+                self.render_layer_node(child, resources);
+                self.ctx.restore();
+            }
+            LayerNodeKind::Leaf { ops, .. } => {
+                let source_node_id = node.source_node_id.unwrap_or(0);
+                for op in ops {
+                    let render_node_type = match op {
+                        PaintOp::PageBackground { background, .. } => {
+                            RenderNodeType::PageBackground(PageBackgroundNode {
+                                background_color: background.background_color,
+                                border_color: background.border_color,
+                                border_width: background.border_width,
+                                gradient: background.gradient.clone(),
+                                image: background.image.as_ref().and_then(|image| {
+                                    resources.image_bytes(image.resource_id).map(|bytes| {
+                                        PageBackgroundImage {
+                                            data: bytes.to_vec(),
+                                            fill_mode: image.fill_mode,
+                                        }
+                                    })
+                                }),
+                            })
+                        }
+                        PaintOp::TextRun { run, .. } => RenderNodeType::TextRun(TextRunNode {
+                            text: run.text.clone(),
+                            style: run.style.clone(),
+                            char_shape_id: None,
+                            para_shape_id: None,
+                            section_index: None,
+                            para_index: None,
+                            char_start: None,
+                            cell_context: None,
+                            is_para_end: run.is_para_end,
+                            is_line_break_end: run.is_line_break_end,
+                            rotation: run.rotation,
+                            is_vertical: run.is_vertical,
+                            char_overlap: run.char_overlap.clone(),
+                            border_fill_id: 0,
+                            baseline: run.baseline,
+                            field_marker: run.field_marker,
+                        }),
+                        PaintOp::FootnoteMarker { marker, .. } => {
+                            RenderNodeType::FootnoteMarker(FootnoteMarkerNode {
+                                number: 0,
+                                text: marker.text.clone(),
+                                base_font_size: marker.base_font_size,
+                                font_family: marker.font_family.clone(),
+                                color: marker.color,
+                                section_index: 0,
+                                para_index: 0,
+                                control_index: 0,
+                            })
+                        }
+                        PaintOp::Line { line, .. } => RenderNodeType::Line(LineNode {
+                            x1: line.x1,
+                            y1: line.y1,
+                            x2: line.x2,
+                            y2: line.y2,
+                            style: line.style.clone(),
+                            section_index: None,
+                            para_index: None,
+                            control_index: None,
+                            transform: line.transform,
+                        }),
+                        PaintOp::Rectangle { rect, .. } => {
+                            RenderNodeType::Rectangle(RectangleNode {
+                                corner_radius: rect.corner_radius,
+                                style: rect.style.clone(),
+                                gradient: rect.gradient.clone(),
+                                section_index: None,
+                                para_index: None,
+                                control_index: None,
+                                transform: rect.transform,
+                            })
+                        }
+                        PaintOp::Ellipse { ellipse, .. } => RenderNodeType::Ellipse(EllipseNode {
+                            style: ellipse.style.clone(),
+                            gradient: ellipse.gradient.clone(),
+                            section_index: None,
+                            para_index: None,
+                            control_index: None,
+                            transform: ellipse.transform,
+                        }),
+                        PaintOp::Path { path, .. } => RenderNodeType::Path(PathNode {
+                            commands: path.commands.clone(),
+                            style: path.style.clone(),
+                            gradient: path.gradient.clone(),
+                            section_index: None,
+                            para_index: None,
+                            control_index: None,
+                            transform: path.transform,
+                            connector_endpoints: path.connector_endpoints,
+                            line_style: path.line_style.clone(),
+                        }),
+                        PaintOp::Image { image, .. } => RenderNodeType::Image(ImageNode {
+                            bin_data_id: 0,
+                            data: image.resource_id.and_then(|id| {
+                                resources.image_bytes(id).map(|bytes| bytes.to_vec())
+                            }),
+                            section_index: None,
+                            para_index: None,
+                            control_index: None,
+                            fill_mode: image.fill_mode,
+                            original_size: image.original_size,
+                            transform: image.transform,
+                            crop: image.crop,
+                            effect: image.effect,
+                        }),
+                        PaintOp::Equation { equation, .. } => {
+                            RenderNodeType::Equation(EquationNode {
+                                svg_content: resources
+                                    .svg_fragment(equation.svg_resource_id)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                layout_box: equation.layout_box.clone(),
+                                color_str: equation.color_str.clone(),
+                                color: equation.color,
+                                font_size: equation.font_size,
+                                section_index: None,
+                                para_index: None,
+                                control_index: None,
+                                cell_index: None,
+                                cell_para_index: None,
+                            })
+                        }
+                        PaintOp::FormObject { form, .. } => {
+                            RenderNodeType::FormObject(FormObjectNode {
+                                form_type: form.form_type,
+                                caption: form.caption.clone(),
+                                text: form.text.clone(),
+                                fore_color: form.fore_color.clone(),
+                                back_color: form.back_color.clone(),
+                                value: form.value,
+                                enabled: form.enabled,
+                                section_index: 0,
+                                para_index: 0,
+                                control_index: 0,
+                                name: String::new(),
+                                cell_location: None,
+                            })
+                        }
+                    };
+                    let render_node =
+                        RenderNode::new(source_node_id, render_node_type, op.bounds());
+                    self.render_node(&render_node);
+                }
+            }
+        }
     }
 
     /// 개별 노드 렌더링
@@ -386,6 +569,7 @@ impl WebCanvasRenderer {
                         img.fill_mode,
                         img.original_size,
                         img.crop,
+                        img.effect,
                     );
                 }
             }
@@ -2341,7 +2525,22 @@ impl WebCanvasRenderer {
         fill_mode: Option<ImageFillMode>,
         original_size: Option<(f64, f64)>,
         crop: Option<(i32, i32, i32, i32)>,
+        effect: ImageEffect,
     ) {
+        let filter = match effect {
+            ImageEffect::GrayScale | ImageEffect::Pattern8x8 => Some("grayscale(1)"),
+            ImageEffect::BlackWhite => Some("grayscale(1) contrast(3200%)"),
+            ImageEffect::RealPic => None,
+        };
+        let previous_filter = filter.and_then(|filter| {
+            let previous = js_sys::Reflect::get(&self.ctx, &JsValue::from_str("filter")).ok();
+            let _ = js_sys::Reflect::set(
+                &self.ctx,
+                &JsValue::from_str("filter"),
+                &JsValue::from_str(filter),
+            );
+            previous
+        });
         let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
         match mode {
             ImageFillMode::FitToSize | ImageFillMode::None => {
@@ -2372,6 +2571,13 @@ impl WebCanvasRenderer {
                                 bbox.width,
                                 bbox.height,
                             );
+                            if let Some(previous_filter) = &previous_filter {
+                                let _ = js_sys::Reflect::set(
+                                    &self.ctx,
+                                    &JsValue::from_str("filter"),
+                                    &previous_filter,
+                                );
+                            }
                             return;
                         }
                     }
@@ -2388,6 +2594,13 @@ impl WebCanvasRenderer {
                         None => {
                             // 크기 파싱 실패 시 전체 채우기로 폴백
                             self.draw_image(data, bbox.x, bbox.y, bbox.width, bbox.height);
+                            if let Some(previous_filter) = &previous_filter {
+                                let _ = js_sys::Reflect::set(
+                                    &self.ctx,
+                                    &JsValue::from_str("filter"),
+                                    &previous_filter,
+                                );
+                            }
                             return;
                         }
                     }
@@ -2476,6 +2689,9 @@ impl WebCanvasRenderer {
 
                 self.ctx.restore();
             }
+        }
+        if let Some(previous_filter) = &previous_filter {
+            let _ = js_sys::Reflect::set(&self.ctx, &JsValue::from_str("filter"), &previous_filter);
         }
     }
 }

@@ -49,7 +49,7 @@ impl HwpDocument {
         use crate::renderer::web_canvas::WebCanvasRenderer;
 
         let tree = self
-            .build_page_tree_cached(page_num)
+            .build_page_layer_tree_for_output(page_num, RenderProfile::Screen)
             .map_err(|e| JsValue::from(e))?;
 
         // scale 정규화: 0 이하 또는 NaN이면 1.0, 최소 0.25 최대 12.0
@@ -62,24 +62,23 @@ impl HwpDocument {
 
         // 최대 캔버스 크기 가드 (16384px)
         let max_dim = 16384.0;
-        let scale =
-            if tree.root.bbox.width * scale > max_dim || tree.root.bbox.height * scale > max_dim {
-                (max_dim / tree.root.bbox.width)
-                    .min(max_dim / tree.root.bbox.height)
-                    .min(scale)
-            } else {
-                scale
-            };
+        let scale = if tree.page_width * scale > max_dim || tree.page_height * scale > max_dim {
+            (max_dim / tree.page_width)
+                .min(max_dim / tree.page_height)
+                .min(scale)
+        } else {
+            scale
+        };
 
         // 캔버스 크기 = 페이지 크기 × scale
-        canvas.set_width((tree.root.bbox.width * scale) as u32);
-        canvas.set_height((tree.root.bbox.height * scale) as u32);
+        canvas.set_width((tree.page_width * scale) as u32);
+        canvas.set_height((tree.page_height * scale) as u32);
 
         let mut renderer = WebCanvasRenderer::new(canvas)?;
         renderer.show_paragraph_marks = self.show_paragraph_marks;
         renderer.show_control_codes = self.show_control_codes;
         renderer.set_scale(scale);
-        renderer.render_tree(&tree);
+        renderer.render_layer_tree(&tree);
         Ok(())
     }
 

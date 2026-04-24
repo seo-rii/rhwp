@@ -39,6 +39,7 @@
 - Skia line/path transform bbox, line type, connector arrow, image effect/crop, page background layering, raster dimension guard를 1차 수정했다.
 - Canvas2D layer, CanvasKit, SVG, Skia의 image crop 축 계산을 맞추고 image effect 전달을 추가했다.
 - layer cache key에 profile과 주요 출력 옵션을 포함했다.
+- WASM `renderPageToCanvas`가 `PageLayerTree`를 만든 뒤 `WebCanvasRenderer`의 layer replay 경로로 렌더링하도록 전환했다.
 
 ---
 
@@ -47,7 +48,7 @@
 ### [ARCH-001] Canvas2D 실렌더 경로가 레이어 IR을 우회함
 
 **심각도**: 높음  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 확인  
 **위치**: WASM `renderPageToCanvas`, `build_page_tree_cached()`, `WebCanvasRenderer.render_tree()`, layer export API
 
@@ -65,6 +66,11 @@
 
 - `CanvasLayerRenderer` 또는 JS-side layer replayer를 만들고, `renderPageToCanvas`도 기본적으로 `build_page_layer_tree_for_output()`을 타게 합니다.
 - 기존 Canvas2D direct renderer는 fallback/debug 용도로 남깁니다.
+
+**완료 메모**:
+
+- WASM `renderPageToCanvas`가 `build_page_layer_tree_for_output(page_num, RenderProfile::Screen)`을 사용하도록 전환했습니다.
+- `WebCanvasRenderer`에는 `PageLayerTree` replay entrypoint를 추가했고, 기존 `PageRenderTree` direct renderer는 debug/fallback 경로로 유지합니다.
 
 ---
 
