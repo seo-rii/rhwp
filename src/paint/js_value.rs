@@ -884,3 +884,255 @@ fn field_marker_str(value: FieldMarkerType) -> &'static str {
         FieldMarkerType::ShapeMarker(_) => "shapeMarker",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    use crate::paint::{
+        LayerEquationPaint, LayerImagePaint, LayerOutputOptions, LayerTextRunPaint, ResourceArena,
+    };
+    use crate::renderer::render_tree::BoundingBox;
+
+    #[wasm_bindgen_test]
+    fn exports_json_and_js_value_schema_parity() {
+        let image_bytes = vec![1, 2, 3, 4, 5, 6];
+        let svg_fragment = "<text x=\"0\" y=\"12\">x</text>".to_string();
+        let tree = layer_tree_fixture(&image_bytes, &svg_fragment);
+
+        let json_value = js_sys::JSON::parse(&tree.to_json())
+            .unwrap_or_else(|_| panic!("failed to parse layer JSON export"));
+        let js_value = page_layer_tree_to_js_value(&tree);
+
+        assert_same_number(&json_value, &js_value, "schemaVersion");
+        assert_same_number(&json_value, &js_value, "resourceTableVersion");
+        assert_same_string(&json_value, &js_value, "unit");
+        assert_same_string(&json_value, &js_value, "coordinateSystem");
+        assert_same_number(&json_value, &js_value, "pageWidth");
+        assert_same_number(&json_value, &js_value, "pageHeight");
+        assert_same_string(&json_value, &js_value, "profile");
+
+        let json_options = prop(&json_value, "outputOptions");
+        let js_options = prop(&js_value, "outputOptions");
+        for property in [
+            "showParagraphMarks",
+            "showControlCodes",
+            "showTransparentBorders",
+            "clipEnabled",
+            "debugOverlay",
+        ] {
+            assert_same_bool(&json_options, &js_options, property);
+        }
+
+        let json_root = prop(&json_value, "root");
+        let js_root = prop(&js_value, "root");
+        assert_same_string(&json_root, &js_root, "kind");
+        assert_same_string(&json_root, &js_root, "cacheHint");
+
+        let json_ops = Array::from(&prop(&json_root, "ops"));
+        let js_ops = Array::from(&prop(&js_root, "ops"));
+        assert_eq!(json_ops.length(), 3);
+        assert_eq!(json_ops.length(), js_ops.length());
+
+        let json_text = json_ops.get(0);
+        let js_text = js_ops.get(0);
+        assert_same_string(&json_text, &js_text, "type");
+        assert_same_string(&json_text, &js_text, "text");
+        assert_same_string(&json_text, &js_text, "fieldMarker");
+        assert_same_number(&json_text, &js_text, "shapeMarkerIndex");
+        assert_same_bool(&json_text, &js_text, "isParaEnd");
+        assert_same_bool(&json_text, &js_text, "isLineBreakEnd");
+
+        let json_image = json_ops.get(1);
+        let js_image = js_ops.get(1);
+        assert_same_string(&json_image, &js_image, "type");
+        assert_same_string(&json_image, &js_image, "fillMode");
+        assert_same_string(&json_image, &js_image, "effect");
+        assert_eq!(number_prop(&js_image, "resourceId"), 0.0);
+        assert_same_number(&prop(&json_image, "crop"), &prop(&js_image, "crop"), "top");
+        assert_same_number(
+            &prop(&json_image, "crop"),
+            &prop(&js_image, "crop"),
+            "bottom",
+        );
+
+        let json_equation = json_ops.get(2);
+        let js_equation = js_ops.get(2);
+        assert_same_string(&json_equation, &js_equation, "type");
+        assert_eq!(string_prop(&json_equation, "svgContent"), svg_fragment);
+        assert_eq!(number_prop(&js_equation, "svgResourceId"), 0.0);
+
+        let resources = prop(&js_value, "resources");
+        let images = Array::from(&prop(&resources, "images"));
+        let image_hashes = Array::from(&prop(&resources, "imageHashes"));
+        let image_keys = Array::from(&prop(&resources, "imageKeys"));
+        let svg_fragments = Array::from(&prop(&resources, "svgFragments"));
+        let svg_hashes = Array::from(&prop(&resources, "svgHashes"));
+        let svg_keys = Array::from(&prop(&resources, "svgKeys"));
+
+        let image_digest = resource_digest_hex(&image_bytes);
+        let image_key = image_resource_key(image_bytes.len(), &image_digest);
+        let svg_digest = resource_digest_hex(&svg_fragment);
+        let svg_key = svg_resource_key(svg_fragment.len(), &svg_digest);
+
+        assert_eq!(
+            Uint8Array::new(&images.get(0)).length(),
+            image_bytes.len() as u32
+        );
+        assert_eq!(string_value(&image_hashes.get(0)), image_digest);
+        assert_eq!(string_value(&image_keys.get(0)), image_key);
+        assert_eq!(string_value(&svg_fragments.get(0)), svg_fragment);
+        assert_eq!(string_value(&svg_hashes.get(0)), svg_digest);
+        assert_eq!(string_value(&svg_keys.get(0)), svg_key);
+    }
+
+    #[wasm_bindgen_test]
+    fn resource_hints_keep_stable_keys_while_omitting_known_payloads() {
+        let image_bytes = vec![9, 8, 7, 6];
+        let svg_fragment = "<path d=\"M0 0L4 4\"/>".to_string();
+        let tree = layer_tree_fixture(&image_bytes, &svg_fragment);
+
+        let image_digest = resource_digest_hex(&image_bytes);
+        let image_key = image_resource_key(image_bytes.len(), &image_digest);
+        let svg_digest = resource_digest_hex(&svg_fragment);
+        let svg_key = svg_resource_key(svg_fragment.len(), &svg_digest);
+
+        let known_image_keys = Array::new();
+        known_image_keys.push(&JsValue::from_str(&image_key));
+        let known_svg_keys = Array::new();
+        known_svg_keys.push(&JsValue::from_str(&svg_key));
+        let hints = LayerResourceExportHints::from_js_values(
+            &known_image_keys.into(),
+            &known_svg_keys.into(),
+        );
+
+        let hinted_value = page_layer_tree_to_js_value_with_resource_hints(&tree, &hints);
+        let resources = prop(&hinted_value, "resources");
+        let images = Array::from(&prop(&resources, "images"));
+        let image_hashes = Array::from(&prop(&resources, "imageHashes"));
+        let image_keys = Array::from(&prop(&resources, "imageKeys"));
+        let svg_fragments = Array::from(&prop(&resources, "svgFragments"));
+        let svg_hashes = Array::from(&prop(&resources, "svgHashes"));
+        let svg_keys = Array::from(&prop(&resources, "svgKeys"));
+
+        assert_eq!(images.length(), 0);
+        assert_eq!(svg_fragments.length(), 0);
+        assert_eq!(string_value(&image_hashes.get(0)), image_digest);
+        assert_eq!(string_value(&image_keys.get(0)), image_key);
+        assert_eq!(string_value(&svg_hashes.get(0)), svg_digest);
+        assert_eq!(string_value(&svg_keys.get(0)), svg_key);
+    }
+
+    fn layer_tree_fixture(image_bytes: &[u8], svg_fragment: &str) -> PageLayerTree {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(image_bytes);
+        let svg_id = resources.intern_svg_fragment(svg_fragment);
+
+        PageLayerTree::with_resources(
+            120.0,
+            80.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 120.0, 80.0),
+                None,
+                vec![
+                    PaintOp::TextRun {
+                        bbox: BoundingBox::new(8.0, 10.0, 80.0, 16.0),
+                        run: LayerTextRunPaint {
+                            text: "marker".to_string(),
+                            style: TextStyle {
+                                font_family: "Noto Sans KR".to_string(),
+                                font_size: 12.0,
+                                color: 0x00112233,
+                                ..Default::default()
+                            },
+                            positions: vec![0.0, 7.0, 14.0, 21.0, 28.0, 35.0, 42.0],
+                            is_para_end: true,
+                            is_line_break_end: true,
+                            rotation: 15.0,
+                            is_vertical: true,
+                            char_overlap: None,
+                            baseline: 11.0,
+                            field_marker: FieldMarkerType::ShapeMarker(4),
+                        },
+                    },
+                    PaintOp::Image {
+                        bbox: BoundingBox::new(12.0, 28.0, 24.0, 20.0),
+                        image: LayerImagePaint {
+                            resource_id: Some(image_id),
+                            fill_mode: Some(ImageFillMode::Center),
+                            original_size: Some((32.0, 24.0)),
+                            crop: Some((1, 2, 31, 22)),
+                            effect: ImageEffect::BlackWhite,
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                    PaintOp::Equation {
+                        bbox: BoundingBox::new(40.0, 52.0, 24.0, 16.0),
+                        equation: LayerEquationPaint {
+                            svg_resource_id: svg_id,
+                            layout_box: LayoutBox {
+                                x: 0.0,
+                                y: 0.0,
+                                width: 24.0,
+                                height: 16.0,
+                                baseline: 12.0,
+                                kind: LayoutKind::Text("x".to_string()),
+                            },
+                            color_str: "#112233".to_string(),
+                            color: 0x00332211,
+                            font_size: 14.0,
+                        },
+                    },
+                ],
+            ),
+            resources,
+        )
+        .with_output_options(LayerOutputOptions {
+            show_paragraph_marks: true,
+            show_control_codes: true,
+            show_transparent_borders: true,
+            clip_enabled: false,
+            debug_overlay: true,
+        })
+    }
+
+    fn prop(value: &JsValue, name: &str) -> JsValue {
+        Reflect::get(value, &JsValue::from_str(name))
+            .unwrap_or_else(|_| panic!("failed to read JS property {name}"))
+    }
+
+    fn number_prop(value: &JsValue, name: &str) -> f64 {
+        prop(value, name)
+            .as_f64()
+            .unwrap_or_else(|| panic!("JS property {name} is not a number"))
+    }
+
+    fn string_prop(value: &JsValue, name: &str) -> String {
+        string_value(&prop(value, name))
+    }
+
+    fn string_value(value: &JsValue) -> String {
+        value
+            .as_string()
+            .unwrap_or_else(|| panic!("JS value is not a string"))
+    }
+
+    fn bool_prop(value: &JsValue, name: &str) -> bool {
+        prop(value, name)
+            .as_bool()
+            .unwrap_or_else(|| panic!("JS property {name} is not a bool"))
+    }
+
+    fn assert_same_number(left: &JsValue, right: &JsValue, name: &str) {
+        assert_eq!(number_prop(left, name), number_prop(right, name), "{name}");
+    }
+
+    fn assert_same_string(left: &JsValue, right: &JsValue, name: &str) {
+        assert_eq!(string_prop(left, name), string_prop(right, name), "{name}");
+    }
+
+    fn assert_same_bool(left: &JsValue, right: &JsValue, name: &str) {
+        assert_eq!(bool_prop(left, name), bool_prop(right, name), "{name}");
+    }
+}

@@ -266,7 +266,7 @@ pub(crate) use utils::{
     layout_rect_to_bbox, resolve_numbering_id,
 };
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod integration_tests;
 #[cfg(test)]
 mod tests;

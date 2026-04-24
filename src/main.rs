@@ -1,7 +1,14 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::env;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -31,6 +38,7 @@ fn main() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn print_help() {
     println!("rhwp v{} - HWP 파일 뷰어", rhwp::version());
     println!();
@@ -87,6 +95,7 @@ fn print_help() {
     println!("  -V, --version   버전 표시");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn export_svg(args: &[String]) {
     if args.is_empty() {
         eprintln!("오류: HWP 파일 경로를 지정해주세요.");
@@ -276,6 +285,7 @@ fn export_svg(args: &[String]) {
 }
 
 /// SVG에 1mm 격자 오버레이를 삽입한다.
+#[cfg(not(target_arch = "wasm32"))]
 fn insert_grid_overlay(svg: &str) -> String {
     let (width, height) = extract_svg_dimensions(svg);
     let grid_size = 96.0 / 25.4;
@@ -308,6 +318,7 @@ fn insert_grid_overlay(svg: &str) -> String {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extract_svg_dimensions(svg: &str) -> (f64, f64) {
     if let Some(vb_start) = svg.find("viewBox=\"") {
         let vb = &svg[vb_start + 9..];
@@ -326,6 +337,7 @@ fn extract_svg_dimensions(svg: &str) -> (f64, f64) {
     (width, height)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extract_attr_f64(svg: &str, attr: &str) -> Option<f64> {
     let pattern = format!("{attr}=\"");
     if let Some(start) = svg.find(&pattern) {
@@ -337,6 +349,7 @@ fn extract_attr_f64(svg: &str, attr: &str) -> Option<f64> {
     None
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn export_png(args: &[String]) {
     #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-skia")))]
     {
@@ -471,6 +484,7 @@ fn export_png(args: &[String]) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn export_pdf(args: &[String]) {
     if args.is_empty() {
         eprintln!("오류: HWP 파일 경로를 지정해주세요.");
@@ -597,6 +611,7 @@ fn export_pdf(args: &[String]) {
     println!("PDF 내보내기 완료");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn show_info(args: &[String]) {
     if args.is_empty() {
         eprintln!("오류: HWP 파일 경로를 지정해주세요.");
@@ -858,15 +873,18 @@ fn show_info(args: &[String]) {
 }
 
 /// HWPUNIT(u32)을 mm로 변환
+#[cfg(not(target_arch = "wasm32"))]
 fn hu_to_mm(hu: u32) -> f64 {
     hu as f64 * 25.4 / 7200.0
 }
 
 /// HWPUNIT(i32)을 mm로 변환
+#[cfg(not(target_arch = "wasm32"))]
 fn hu_to_mm_i(hu: i32) -> f64 {
     hu as f64 * 25.4 / 7200.0
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn dump_pages(args: &[String]) {
     if args.is_empty() {
         eprintln!("사용법: rhwp dump-pages <파일.hwp> [-p <페이지번호>]");
@@ -913,6 +931,7 @@ fn dump_pages(args: &[String]) {
     print!("{}", doc.dump_page_items(target_page));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn dump_controls(args: &[String]) {
     if args.is_empty() {
         eprintln!("오류: HWP 파일 경로를 지정해주세요.");
@@ -2070,6 +2089,7 @@ fn dump_controls(args: &[String]) {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn diag_document(args: &[String]) {
     if args.is_empty() {
         eprintln!("오류: HWP 파일 경로를 지정해주세요.");
@@ -2192,6 +2212,7 @@ fn diag_document(args: &[String]) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn convert_hwp(args: &[String]) {
     if args.len() < 2 {
         eprintln!("오류: 입력 파일과 출력 파일 경로를 지정해주세요.");
@@ -2254,6 +2275,7 @@ fn convert_hwp(args: &[String]) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn dump_raw_records(args: &[String]) {
     if args.is_empty() {
         eprintln!("사용법: rhwp dump-records <파일.hwp>");
@@ -2344,6 +2366,7 @@ fn dump_raw_records(args: &[String]) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn test_shape_roundtrip(args: &[String]) {
     let input = if args.is_empty() {
         "saved/g555-s.hwp"
@@ -2411,6 +2434,7 @@ fn test_shape_roundtrip(args: &[String]) {
 }
 
 /// 캡션 방향별 테스트: 4개 이미지에 각각 Bottom/Top/Left/Right 캡션을 설정하고 SVG 출력
+#[cfg(not(target_arch = "wasm32"))]
 fn test_caption(args: &[String]) {
     if args.is_empty() {
         eprintln!("사용법: rhwp test-caption <파일.hwp>");
@@ -2490,6 +2514,7 @@ fn test_caption(args: &[String]) {
     println!("완료");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn gen_table(args: &[String]) {
     let rows: u16 = args.first().and_then(|s| s.parse().ok()).unwrap_or(1000);
     let cols: u16 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(6);
@@ -2576,6 +2601,7 @@ fn gen_table(args: &[String]) {
     println!("저장 완료: {} ({}행 × {}열)", output, rows, cols);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn test_field_roundtrip(args: &[String]) {
     let input = args
         .first()
@@ -2644,6 +2670,7 @@ fn test_field_roundtrip(args: &[String]) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn ir_diff(args: &[String]) {
     if args.len() < 2 {
         eprintln!("사용법: rhwp ir-diff <파일A> <파일B> [-s <구역>] [-p <문단>]");
@@ -2986,6 +3013,7 @@ fn ir_diff(args: &[String]) {
     println!("\n=== 비교 완료: 차이 {} 건 ===", total_diffs);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extract_thumbnail(args: &[String]) {
     if args.is_empty() {
         eprintln!("사용법: rhwp thumbnail <파일.hwp> [옵션]");

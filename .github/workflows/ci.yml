@@ -228,6 +228,9 @@ jobs:
       - name: Verify WASM API contract
         run: python3 scripts/check_wasm_api_contract.py --require-generated --pkg pkg
 
+      - name: Run WASM layer schema tests
+        run: wasm-pack test --node --lib
+
       - name: Build studio
         working-directory: rhwp-studio
         run: npm run build
