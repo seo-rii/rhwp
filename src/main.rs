@@ -341,7 +341,9 @@ fn export_png(args: &[String]) {
     #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-skia")))]
     {
         let _ = args;
-        eprintln!("오류: export-png는 non-wasm + native-skia feature 빌드에서만 사용할 수 있습니다.");
+        eprintln!(
+            "오류: export-png는 non-wasm + native-skia feature 빌드에서만 사용할 수 있습니다."
+        );
         eprintln!("예시: cargo run --features native-skia --bin rhwp -- export-png sample.hwp");
         std::process::exit(2);
     }
@@ -1269,7 +1271,8 @@ fn dump_controls(args: &[String]) {
                     s.extent_y,
                     s.drawing_aspect,
                     match &s.preview {
-                        Some(preview) => format!("{:?} ({} bytes)", preview.format, preview.bytes.len()),
+                        Some(preview) =>
+                            format!("{:?} ({} bytes)", preview.format, preview.bytes.len()),
                         None => "(없음)".to_string(),
                     }
                 );

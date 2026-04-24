@@ -5,16 +5,16 @@
 use wasm_bindgen::prelude::*;
 
 pub mod document_core;
+pub mod emf;
 pub mod error;
 pub mod model;
+pub mod ooxml_chart;
 pub mod paint;
 pub mod parser;
 pub mod renderer;
 pub mod serializer;
 pub mod wasm_api;
 pub mod wmf;
-pub mod emf;
-pub mod ooxml_chart;
 
 pub use document_core::DocumentCore;
 pub use error::HwpError;
