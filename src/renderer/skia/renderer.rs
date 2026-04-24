@@ -1560,15 +1560,7 @@ impl SkiaLayerRenderer {
                     }
                     let font = make_font(&render_style, &self.font_mgr, cluster);
                     let x = bbox.x + char_positions[*char_idx];
-                    let glyphs = font.text_to_glyphs_vec(cluster);
-                    let mut glyph_positions = vec![Point::default(); glyphs.len()];
-                    font.get_pos(&glyphs, &mut glyph_positions, Some(Point::new(x as f32, y)));
-                    for (glyph_id, glyph_position) in glyphs.into_iter().zip(glyph_positions) {
-                        if let Some(path) = font.get_path(glyph_id) {
-                            let path = path.with_offset((glyph_position.x, glyph_position.y));
-                            canvas.draw_path(&path, &paint);
-                        }
-                    }
+                    canvas.draw_str(cluster, (x as f32, y), &font, &paint);
                 }
             }
         }
@@ -2223,6 +2215,50 @@ mod tests {
             .count();
 
         assert!(ink_pixels > 20, "expected visible char overlap ink");
+    }
+
+    #[test]
+    fn renders_plain_text_run_to_png() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "Plain text".to_string(),
+                style: TextStyle {
+                    font_size: 22.0,
+                    color: 0x00000000,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 26.0,
+                field_marker: Default::default(),
+            }),
+            BoundingBox::new(10.0, 12.0, 90.0, 32.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let renderer = SkiaLayerRenderer::new();
+        let png = renderer.render_png(&layer_tree).expect("plain text render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+        let ink_pixels = pixmap
+            .pixels()
+            .iter()
+            .filter(|pixel| pixel.alpha() > 0)
+            .count();
+
+        assert!(ink_pixels > 20, "expected visible plain text ink");
     }
 
     #[test]

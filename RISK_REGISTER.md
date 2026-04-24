@@ -769,7 +769,7 @@
 ### [PERF-002] 일반 텍스트까지 glyph path로 그리면 성능과 hinting이 나빠질 수 있음
 
 **심각도**: 중간  
-**상태**: 열림  
+**상태**: 완료
 **근거 수준**: 검증 필요  
 **위치**: Skia text glyph path renderer
 
@@ -784,6 +784,12 @@
 **권장 조치**:
 
 - 일반 텍스트는 TextBlob/Paragraph 경로를 사용하고, outline/shadow/emboss 등 path가 필요한 경우에만 glyph path를 사용합니다.
+
+**완료 메모**:
+
+- 효과가 없는 일반 Skia TextRun replay는 glyph path 생성 대신 `canvas.draw_str`로 그리도록 전환했습니다.
+- outline/emboss/engrave/shadow처럼 기존 path 기반 효과가 필요한 경로는 유지했습니다.
+- plain TextRun native Skia smoke test를 추가해 일반 텍스트가 계속 PNG에 렌더링되는지 확인했습니다.
 
 ---
 

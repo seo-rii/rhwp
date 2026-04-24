@@ -289,3 +289,22 @@ Avoid repeated native Skia image/SVG raster decode work inside a single layer re
 - `cargo fmt --check` passed.
 - `cargo check --target wasm32-unknown-unknown --lib` passed.
 - `git diff --check` passed for this batch's files.
+
+## Current Batch: PERF-002 Skia Plain Text Draw
+
+Use Skia's normal text draw path for plain TextRun replay instead of turning every glyph into a path.
+
+## Steps
+
+1. Done: keep path rendering for outline, shadow, emboss, and engrave text effects.
+2. Done: switch effect-free TextRun clusters from glyph path drawing to `canvas.draw_str`.
+3. Done: add a native Skia smoke test for plain TextRun PNG output.
+4. Done: run final formatting, wasm, and diff checks before committing this batch.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_plain_text_run_to_png -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `git diff --check` passed for this batch's files.
