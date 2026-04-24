@@ -9,6 +9,7 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp,
+    LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -43,10 +44,22 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     hints: &LayerResourceExportHints,
 ) -> JsValue {
     let value = Object::new();
-    set_number(&value, "schemaVersion", 1.0);
-    set_number(&value, "resourceTableVersion", 1.0);
-    set_string(&value, "unit", "px");
-    set_string(&value, "coordinateSystem", "page-top-left-y-down");
+    set_number(
+        &value,
+        "schemaVersion",
+        LAYER_TREE_SCHEMA.schema_version as f64,
+    );
+    set_number(
+        &value,
+        "resourceTableVersion",
+        LAYER_TREE_SCHEMA.resource_table_version as f64,
+    );
+    set_string(&value, "unit", LAYER_TREE_SCHEMA.unit);
+    set_string(
+        &value,
+        "coordinateSystem",
+        LAYER_TREE_SCHEMA.coordinate_system,
+    );
     set_number(&value, "pageWidth", tree.page_width);
     set_number(&value, "pageHeight", tree.page_height);
     set_string(&value, "profile", tree.profile.as_str());

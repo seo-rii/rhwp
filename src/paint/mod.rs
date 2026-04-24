@@ -23,6 +23,7 @@ pub mod layer_tree;
 pub mod paint_op;
 pub mod profile;
 pub mod resources;
+pub mod schema;
 
 pub use builder::LayerBuilder;
 pub use layer_tree::{
@@ -36,3 +37,4 @@ pub use paint_op::{
 };
 pub use profile::RenderProfile;
 pub use resources::{ImageResourceId, ResourceArena, SvgResourceId};
+pub use schema::{LayerTreeSchema, LAYER_TREE_SCHEMA};

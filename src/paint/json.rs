@@ -8,7 +8,7 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerTextRunPaint, PageLayerTree,
-    PaintOp, ResourceArena,
+    PaintOp, ResourceArena, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -25,7 +25,11 @@ impl PageLayerTree {
         buf.push('{');
         let _ = write!(
             buf,
-            "\"schemaVersion\":1,\"resourceTableVersion\":1,\"unit\":\"px\",\"coordinateSystem\":\"page-top-left-y-down\",\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"root\":",
+            "\"schemaVersion\":{},\"resourceTableVersion\":{},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"root\":",
+            LAYER_TREE_SCHEMA.schema_version,
+            LAYER_TREE_SCHEMA.resource_table_version,
+            json_escape(LAYER_TREE_SCHEMA.unit),
+            json_escape(LAYER_TREE_SCHEMA.coordinate_system),
             self.page_width,
             self.page_height,
             json_escape(self.profile.as_str()),
@@ -963,8 +967,32 @@ mod tests {
     use crate::paint::{
         CacheHint, ClipKind, LayerEquationPaint, LayerImagePaint, LayerLinePaint, LayerNode,
         LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PageLayerTree,
-        ResourceArena,
+        ResourceArena, LAYER_TREE_SCHEMA,
     };
+
+    #[test]
+    fn serializes_schema_metadata_from_shared_contract() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![]),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains(&format!(
+            "\"schemaVersion\":{}",
+            LAYER_TREE_SCHEMA.schema_version
+        )));
+        assert!(json.contains(&format!(
+            "\"resourceTableVersion\":{}",
+            LAYER_TREE_SCHEMA.resource_table_version
+        )));
+        assert!(json.contains(&format!("\"unit\":\"{}\"", LAYER_TREE_SCHEMA.unit)));
+        assert!(json.contains(&format!(
+            "\"coordinateSystem\":\"{}\"",
+            LAYER_TREE_SCHEMA.coordinate_system
+        )));
+    }
 
     #[test]
     fn serializes_text_and_shape_ops_for_browser_replay() {
