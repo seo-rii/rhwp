@@ -4,6 +4,26 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: ARCH-009 WebCanvas TextRun PaintOp Replay
+
+Reduce the WebCanvas layer adapter for text by drawing layer `TextRun` payloads directly and sharing the legacy text drawing body instead of rebuilding a temporary `TextRunNode`.
+
+## Steps
+
+1. Done: replay `PaintOp::TextRun` directly from layer payloads.
+2. Done: share text body drawing between direct layer replay and legacy render-node replay.
+3. Done: keep lowered layer control marks as the only marker source in layer replay.
+4. Done: verify wasm/default/native checks and Studio build.
+
+## Verification
+
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo check --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: ARCH-009 WebCanvas Shape PaintOp Replay
 
 Reduce another slice of the WebCanvas layer adapter by replaying shape `PaintOp`s directly instead of rebuilding temporary legacy `RenderNodeType` wrappers.

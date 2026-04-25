@@ -334,6 +334,18 @@ impl WebCanvasRenderer {
                             }
                             continue;
                         }
+                        PaintOp::TextRun { bbox, run } => {
+                            self.draw_text_run_contents(
+                                bbox,
+                                &run.text,
+                                &run.style,
+                                run.char_overlap.as_ref(),
+                                run.rotation,
+                                run.baseline,
+                            );
+                            self.draw_layer_text_control_marks(bbox, run);
+                            continue;
+                        }
                         _ => {}
                     }
                     let render_node_type = match op {
@@ -486,6 +498,63 @@ impl WebCanvasRenderer {
         }
     }
 
+    fn draw_text_run_contents(
+        &mut self,
+        bbox: &BoundingBox,
+        text: &str,
+        style: &TextStyle,
+        char_overlap: Option<&CharOverlapInfo>,
+        rotation: f64,
+        baseline: f64,
+    ) {
+        if let Some(overlap) = char_overlap {
+            self.draw_char_overlap(
+                text,
+                style,
+                overlap,
+                bbox.x,
+                bbox.y,
+                bbox.width,
+                bbox.height,
+            );
+            return;
+        }
+
+        if rotation == 0.0 {
+            self.draw_text(text, bbox.x, bbox.y + baseline, style);
+            return;
+        }
+
+        let cx = bbox.x + bbox.width / 2.0;
+        let cy = bbox.y + bbox.height / 2.0;
+        let font_weight = if style.bold { "bold " } else { "" };
+        let font_style_str = if style.italic { "italic " } else { "" };
+        let font_size = if style.font_size > 0.0 {
+            style.font_size
+        } else {
+            12.0
+        };
+        let font_family = if style.font_family.is_empty() {
+            "sans-serif".to_string()
+        } else {
+            let fallback = super::generic_fallback(&style.font_family);
+            format!("\"{}\" , {}", style.font_family, fallback)
+        };
+        let font = format!(
+            "{}{}{:.3}px {}",
+            font_style_str, font_weight, font_size, font_family
+        );
+        self.ctx.set_font(&font);
+        self.ctx.set_fill_style_str(&color_to_css(style.color));
+        self.ctx.save();
+        let _ = self.ctx.translate(cx, cy);
+        let _ = self.ctx.rotate(rotation * std::f64::consts::PI / 180.0);
+        self.ctx.set_text_align("center");
+        self.ctx.set_text_baseline("middle");
+        let _ = self.ctx.fill_text(text, 0.0, 0.0);
+        self.ctx.restore();
+    }
+
     /// 개별 노드 렌더링
     fn render_node(&mut self, node: &RenderNode) {
         if !node.visible {
@@ -532,60 +601,14 @@ impl WebCanvasRenderer {
                 }
             }
             RenderNodeType::TextRun(run) => {
-                // 글자겹침(CharOverlap): 도형 + 텍스트를 Canvas로 렌더링
-                if let Some(ref overlap) = run.char_overlap {
-                    self.draw_char_overlap(
-                        &run.text,
-                        &run.style,
-                        overlap,
-                        node.bbox.x,
-                        node.bbox.y,
-                        node.bbox.width,
-                        node.bbox.height,
-                    );
-                } else {
-                    let rotation = run.rotation;
-                    if rotation == 0.0 {
-                        self.draw_text(
-                            &run.text,
-                            node.bbox.x,
-                            node.bbox.y + run.baseline,
-                            &run.style,
-                        );
-                    } else {
-                        // 회전 텍스트: bbox 중앙 기준으로 중앙 정렬 후 회전
-                        let cx = node.bbox.x + node.bbox.width / 2.0;
-                        let cy = node.bbox.y + node.bbox.height / 2.0;
-                        // 폰트 설정
-                        let font_weight = if run.style.bold { "bold " } else { "" };
-                        let font_style_str = if run.style.italic { "italic " } else { "" };
-                        let font_size = if run.style.font_size > 0.0 {
-                            run.style.font_size
-                        } else {
-                            12.0
-                        };
-                        let font_family = if run.style.font_family.is_empty() {
-                            "sans-serif".to_string()
-                        } else {
-                            let fallback = super::generic_fallback(&run.style.font_family);
-                            format!("\"{}\" , {}", run.style.font_family, fallback)
-                        };
-                        let font = format!(
-                            "{}{}{:.3}px {}",
-                            font_style_str, font_weight, font_size, font_family
-                        );
-                        self.ctx.set_font(&font);
-                        self.ctx.set_fill_style_str(&color_to_css(run.style.color));
-                        self.ctx.save();
-                        let _ = self.ctx.translate(cx, cy);
-                        let _ = self.ctx.rotate(rotation * std::f64::consts::PI / 180.0);
-                        // 중앙 정렬로 글리프를 원점에 배치 → 회전 후 bbox 중앙에 위치
-                        self.ctx.set_text_align("center");
-                        self.ctx.set_text_baseline("middle");
-                        let _ = self.ctx.fill_text(&run.text, 0.0, 0.0);
-                        self.ctx.restore();
-                    }
-                }
+                self.draw_text_run_contents(
+                    &node.bbox,
+                    &run.text,
+                    &run.style,
+                    run.char_overlap.as_ref(),
+                    run.rotation,
+                    run.baseline,
+                );
                 if self.show_paragraph_marks || self.show_control_codes {
                     let is_marker = !matches!(
                         run.field_marker,
