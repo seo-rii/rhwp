@@ -63,8 +63,8 @@ impl StaticPictureCache {
     }
 
     fn insert(&mut self, key: u64, picture: Picture) {
-        if self.entries.contains_key(&key) {
-            self.entries.insert(key, picture);
+        if let Some(cached_picture) = self.entries.get_mut(&key) {
+            *cached_picture = picture;
             self.touch(key);
             return;
         }

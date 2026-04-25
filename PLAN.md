@@ -4,6 +4,23 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Native Skia Clippy CI
+
+Fix the CI-only Rust 1.95 clippy warning in the bounded Skia static picture cache.
+
+## Steps
+
+1. Done: inspect the failed All Features / Native Skia job log.
+2. Done: replace the `contains_key` plus `insert` cache update with a direct mutable lookup.
+3. Done: rerun the all-targets/all-features clippy command used by CI.
+4. Done: commit and push only this CI fix batch's files.
+
+## Verification
+
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Completed Batch: Nested Body Overflow Replay
 
 Make layer lowering catch body overflow controls nested below structural groups, then lock it with a focused fixture.
