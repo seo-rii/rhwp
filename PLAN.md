@@ -4,6 +4,28 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Clip Enabled Layer Semantics
+
+Make `clipEnabled` a real layer output semantic instead of metadata-only state.
+
+## Steps
+
+1. Done: make `LayerOutputOptions::default()` preserve the document viewer default of clipping enabled.
+2. Done: make `LayerBuilder` omit Body/TableCell clip layers when clipping is disabled.
+3. Done: make Rust and browser layer replayers skip defensive `ClipRect` nodes when `clipEnabled` is false.
+4. Done: verify focused Rust/wasm/Studio checks.
+5. Done: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --lib clip_disabled -- --quiet` passed.
+- `cargo test --lib paint::builder::tests:: -- --quiet` passed.
+- `cargo test --features native-skia --lib output_options_can_disable_clip_rect_replay -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: Native Skia Clippy CI
 
 Fix the CI-only Rust 1.95 clippy warning in the bounded Skia static picture cache.

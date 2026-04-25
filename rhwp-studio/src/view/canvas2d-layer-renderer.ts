@@ -53,6 +53,7 @@ export class Canvas2DLayerRenderer {
   private lastScale = 1;
   private currentResources: PageLayerTree['resources'] | null = null;
   private currentResourceTableId: number | null = null;
+  private currentClipEnabled = true;
   private rerenderScheduled = false;
   private asyncResourceReadyCallback: (() => void) | null = null;
 
@@ -71,6 +72,7 @@ export class Canvas2DLayerRenderer {
     this.lastRenderedTree = tree;
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
+    this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
     if (this.currentResourceTableId !== (tree.resources?.tableId ?? null)) {
       this.clearResourceImageCaches();
     }
@@ -110,6 +112,10 @@ export class Canvas2DLayerRenderer {
   }
 
   private renderClipNode(ctx: CanvasRenderingContext2D, node: LayerClipNode): void {
+    if (!this.currentClipEnabled) {
+      this.renderNode(ctx, node.child);
+      return;
+    }
     this.currentClipStack.push({
       bounds: node.clip,
       kind: node.clipKind,
@@ -1104,6 +1110,7 @@ export class Canvas2DLayerRenderer {
     this.domImageCache.clear();
     this.patternCache.clear();
     this.currentClipStack.length = 0;
+    this.currentClipEnabled = true;
     this.lastRenderedTree = null;
     this.lastTargetCanvas = null;
     this.currentResources = null;

@@ -47,14 +47,15 @@ impl DocumentCore {
         tree: &PageRenderTree,
         profile: RenderProfile,
     ) -> PageLayerTree {
-        let mut builder = LayerBuilder::new(profile);
-        builder.build(tree).with_output_options(LayerOutputOptions {
+        let output_options = LayerOutputOptions {
             show_paragraph_marks: self.show_paragraph_marks,
             show_control_codes: self.show_control_codes,
             show_transparent_borders: self.show_transparent_borders,
             clip_enabled: self.clip_enabled,
             debug_overlay: self.debug_overlay,
-        })
+        };
+        let mut builder = LayerBuilder::new(profile).with_output_options(output_options);
+        builder.build(tree)
     }
 
     fn resolve_layer_render_profile(&self, default_profile: RenderProfile) -> RenderProfile {

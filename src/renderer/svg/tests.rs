@@ -1,5 +1,5 @@
 use super::*;
-use crate::paint::LayerOutputOptions;
+use crate::paint::{LayerOutputOptions, LayerRectanglePaint};
 use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
 
@@ -343,5 +343,48 @@ fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
     assert!(
         output.contains("\u{21B5}"),
         "layer outputOptions should enable paragraph end marks:\n{output}"
+    );
+}
+
+#[test]
+fn test_layer_svg_clip_disabled_replays_child_without_clip_path() {
+    let child = LayerNode::leaf(
+        BoundingBox::new(30.0, 10.0, 10.0, 10.0),
+        Some(2),
+        vec![PaintOp::Rectangle {
+            bbox: BoundingBox::new(30.0, 10.0, 10.0, 10.0),
+            rect: LayerRectanglePaint {
+                corner_radius: 0.0,
+                style: ShapeStyle {
+                    fill_color: Some(0x000000),
+                    ..Default::default()
+                },
+                gradient: None,
+                transform: Default::default(),
+            },
+        }],
+    );
+    let root = LayerNode::clip_rect(
+        BoundingBox::new(0.0, 0.0, 40.0, 30.0),
+        Some(1),
+        BoundingBox::new(0.0, 0.0, 20.0, 30.0),
+        child,
+        ClipKind::Body,
+    );
+    let tree = PageLayerTree::new(40.0, 30.0, root).with_output_options(LayerOutputOptions {
+        clip_enabled: false,
+        ..Default::default()
+    });
+    let mut renderer = SvgRenderer::new();
+    renderer.render_layer_tree(&tree);
+
+    let output = renderer.output();
+    assert!(
+        !output.contains("<clipPath"),
+        "clip must be skipped:\n{output}"
+    );
+    assert!(
+        output.contains("<rect"),
+        "clip-disabled replay should still render the child:\n{output}"
     );
 }

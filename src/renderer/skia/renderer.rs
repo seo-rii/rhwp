@@ -579,6 +579,10 @@ impl SkiaLayerRenderer {
                 clip_policy,
                 ..
             } => {
+                if !replay.output_options.clip_enabled {
+                    self.render_node(canvas, child, resources, replay);
+                    return;
+                }
                 canvas.save();
                 canvas.clip_rect(
                     Rect::from_xywh(
@@ -2048,6 +2052,49 @@ mod tests {
             pixmap.pixels()[10 * width + 17].alpha(),
             0,
             "body clip should still reject pixels beyond the slop"
+        );
+    }
+
+    #[test]
+    fn output_options_can_disable_clip_rect_replay() {
+        let rect_bounds = BoundingBox::new(8.0, 8.0, 8.0, 4.0);
+        let leaf = LayerNode::leaf(
+            rect_bounds,
+            None,
+            vec![PaintOp::Rectangle {
+                bbox: rect_bounds,
+                rect: LayerRectanglePaint {
+                    corner_radius: 0.0,
+                    style: ShapeStyle {
+                        fill_color: Some(0x000000),
+                        ..Default::default()
+                    },
+                    gradient: None,
+                    transform: Default::default(),
+                },
+            }],
+        );
+        let root = LayerNode::clip_rect(
+            BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            None,
+            BoundingBox::new(0.0, 0.0, 4.0, 20.0),
+            leaf,
+            ClipKind::Generic,
+        );
+        let tree = PageLayerTree::new(20.0, 20.0, root).with_output_options(LayerOutputOptions {
+            clip_enabled: false,
+            ..Default::default()
+        });
+        let renderer = SkiaLayerRenderer::new();
+        let png = renderer
+            .render_png(&tree)
+            .expect("skia clip-disabled render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+        let width = pixmap.width() as usize;
+
+        assert!(
+            pixmap.pixels()[10 * width + 10].alpha() > 0,
+            "clip-disabled replay should render pixels outside the ClipRect"
         );
     }
 

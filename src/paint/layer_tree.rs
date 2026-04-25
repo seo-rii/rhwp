@@ -83,13 +83,25 @@ impl PageLayerTree {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LayerOutputOptions {
     pub show_paragraph_marks: bool,
     pub show_control_codes: bool,
     pub show_transparent_borders: bool,
     pub clip_enabled: bool,
     pub debug_overlay: bool,
+}
+
+impl Default for LayerOutputOptions {
+    fn default() -> Self {
+        Self {
+            show_paragraph_marks: false,
+            show_control_codes: false,
+            show_transparent_borders: false,
+            clip_enabled: true,
+            debug_overlay: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

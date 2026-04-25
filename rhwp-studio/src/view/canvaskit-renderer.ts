@@ -80,6 +80,7 @@ export class CanvasKitLayerRenderer {
   private textBlobCacheMisses = 0;
   private readonly currentClipStack: OverlayClip[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
+  private currentClipEnabled = true;
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
@@ -131,6 +132,8 @@ export class CanvasKitLayerRenderer {
     this.currentProfile = tree.profile;
     this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
     this.resourceCache.setResources(tree.resources);
+    this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
+    this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
 
     const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
@@ -254,6 +257,10 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerClipNode,
   ): void {
+    if (!this.currentClipEnabled) {
+      this.renderNode(canvas, node.child);
+      return;
+    }
     const clip = this.overlayClipForNode(node);
     this.currentClipStack.push(clip);
     canvas.save();
@@ -1698,6 +1705,9 @@ export class CanvasKitLayerRenderer {
       }
     }
     if (node.kind === 'clipRect') {
+      if (!this.currentClipEnabled) {
+        return this.hasFallbackOverlayNode(node.child);
+      }
       this.currentClipStack.push(this.overlayClipForNode(node));
       try {
         return this.hasFallbackOverlayNode(node.child);
@@ -1754,6 +1764,10 @@ export class CanvasKitLayerRenderer {
       return;
     }
     if (node.kind === 'clipRect') {
+      if (!this.currentClipEnabled) {
+        this.renderFallbackOverlayNode(ctx, node.child);
+        return;
+      }
       this.currentClipStack.push(this.overlayClipForNode(node));
       this.renderFallbackOverlayNode(ctx, node.child);
       this.currentClipStack.pop();
@@ -2942,6 +2956,7 @@ export class CanvasKitLayerRenderer {
     this.asyncResourceReadyCallback = null;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
+    this.currentClipEnabled = true;
 
     for (const blob of this.textBlobCache.values()) {
       blob.delete();

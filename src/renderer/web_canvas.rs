@@ -147,6 +147,8 @@ pub struct WebCanvasRenderer {
     pub show_paragraph_marks: bool,
     /// 조판부호 표시 여부
     pub show_control_codes: bool,
+    /// 레이어 ClipRect 적용 여부
+    clip_enabled: bool,
     /// 줌 스케일 (1.0 = 100%)
     scale: f64,
 }
@@ -166,6 +168,7 @@ impl WebCanvasRenderer {
             height: canvas.height() as f64,
             show_paragraph_marks: false,
             show_control_codes: false,
+            clip_enabled: true,
             scale: 1.0,
         })
     }
@@ -184,6 +187,7 @@ impl WebCanvasRenderer {
     pub fn render_layer_tree(&mut self, tree: &PageLayerTree) {
         self.show_paragraph_marks = tree.output_options.show_paragraph_marks;
         self.show_control_codes = tree.output_options.show_control_codes;
+        self.clip_enabled = tree.output_options.clip_enabled;
         self.begin_page(tree.page_width, tree.page_height);
         self.render_layer_node(&tree.root, &tree.resources);
         self.end_page();
@@ -202,6 +206,10 @@ impl WebCanvasRenderer {
                 clip_policy,
                 ..
             } => {
+                if !self.clip_enabled {
+                    self.render_layer_node(child, resources);
+                    return;
+                }
                 self.ctx.save();
                 self.ctx.begin_path();
                 self.ctx.rect(

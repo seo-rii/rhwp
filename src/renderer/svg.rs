@@ -58,6 +58,8 @@ pub struct SvgRenderer {
     pub show_control_codes: bool,
     /// 디버그 오버레이 표시 여부
     pub debug_overlay: bool,
+    /// 레이어 ClipRect 적용 여부
+    clip_enabled: bool,
     /// 디버그 오버레이용: 문단별 경계 수집 (pi → bbox)
     overlay_para_bounds: std::collections::HashMap<usize, OverlayBounds>,
     /// 디버그 오버레이용: 표 경계 수집
@@ -111,6 +113,7 @@ impl SvgRenderer {
             show_paragraph_marks: false,
             show_control_codes: false,
             debug_overlay: false,
+            clip_enabled: true,
             overlay_para_bounds: std::collections::HashMap::new(),
             overlay_table_bounds: Vec::new(),
             overlay_skip_depth: 0,
@@ -144,6 +147,7 @@ impl SvgRenderer {
         self.show_paragraph_marks = tree.output_options.show_paragraph_marks;
         self.show_control_codes = tree.output_options.show_control_codes;
         self.debug_overlay = tree.output_options.debug_overlay;
+        self.clip_enabled = tree.output_options.clip_enabled;
         self.begin_page(tree.page_width, tree.page_height);
         self.render_layer_node(&tree.root, &tree.resources);
         self.end_page();
@@ -164,6 +168,10 @@ impl SvgRenderer {
                 clip_kind,
                 clip_policy,
             } => {
+                if !self.clip_enabled {
+                    self.render_layer_node(child, resources);
+                    return;
+                }
                 let clip_id = match clip_kind {
                     ClipKind::Body => format!(
                         "body-clip-{}",

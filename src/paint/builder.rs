@@ -1,5 +1,6 @@
 use crate::paint::layer_tree::{
-    CacheHint, ClipKind, LayerNode, LayerSemantic, LayerSemanticRole, PageLayerTree,
+    CacheHint, ClipKind, LayerNode, LayerOutputOptions, LayerSemantic, LayerSemanticRole,
+    PageLayerTree,
 };
 use crate::paint::paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
@@ -16,6 +17,7 @@ pub struct LayerBuilder {
     profile: RenderProfile,
     resources: ResourceArena,
     page_width: f64,
+    output_options: LayerOutputOptions,
 }
 
 impl LayerBuilder {
@@ -24,7 +26,13 @@ impl LayerBuilder {
             profile,
             resources: ResourceArena::default(),
             page_width: 0.0,
+            output_options: LayerOutputOptions::default(),
         }
+    }
+
+    pub fn with_output_options(mut self, output_options: LayerOutputOptions) -> Self {
+        self.output_options = output_options;
+        self
     }
 
     pub fn build(&mut self, tree: &PageRenderTree) -> PageLayerTree {
@@ -50,6 +58,7 @@ impl LayerBuilder {
             std::mem::take(&mut self.resources),
             self.profile,
         )
+        .with_output_options(self.output_options)
     }
 
     fn build_children(&mut self, node: &RenderNode) -> Vec<LayerNode> {
@@ -237,7 +246,7 @@ impl LayerBuilder {
             }
             RenderNodeType::Body {
                 clip_rect: Some(clip),
-            } => {
+            } if self.output_options.clip_enabled => {
                 let children = self.build_children(node);
                 let child = LayerNode::group(
                     node.bbox,
@@ -298,7 +307,7 @@ impl LayerBuilder {
                     ))
                 }
             }
-            RenderNodeType::TableCell(cell) if cell.clip => {
+            RenderNodeType::TableCell(cell) if cell.clip && self.output_options.clip_enabled => {
                 let child = LayerNode::group(
                     node.bbox,
                     Some(node.id),
@@ -641,6 +650,119 @@ mod tests {
                     }
                     other => panic!("expected clip rect, got {other:?}"),
                 }
+            }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn layer_output_options_default_keeps_clipping_enabled() {
+        let output_options = LayerOutputOptions::default();
+
+        assert!(!output_options.show_paragraph_marks);
+        assert!(!output_options.show_control_codes);
+        assert!(!output_options.show_transparent_borders);
+        assert!(output_options.clip_enabled);
+        assert!(!output_options.debug_overlay);
+    }
+
+    #[test]
+    fn clip_disabled_lowers_body_as_unclipped_group_without_overflow_replay() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 800.0,
+            height: 600.0,
+            section_index: 0,
+        });
+        let mut body = RenderNode::new(
+            1,
+            RenderNodeType::Body {
+                clip_rect: Some(BoundingBox::new(100.0, 20.0, 600.0, 400.0)),
+            },
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        let mut column = RenderNode::new(
+            2,
+            RenderNodeType::Column(0),
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        column.children.push(RenderNode::new(
+            3,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    fill_color: Some(0x000000),
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(720.0, 40.0, 80.0, 40.0),
+        ));
+        body.children.push(column);
+        tree.root.children.push(body);
+
+        let mut builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                clip_enabled: false,
+                ..Default::default()
+            });
+        let layer_tree = builder.build(&tree);
+
+        assert!(!layer_tree.output_options.clip_enabled);
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => {
+                assert_eq!(children.len(), 1);
+                assert_eq!(children[0].semantic.role, LayerSemanticRole::Body);
+                match &children[0].kind {
+                    LayerNodeKind::Group { children, .. } => {
+                        assert_eq!(
+                            children.len(),
+                            1,
+                            "clip-disabled body should not add overflow replay"
+                        );
+                        assert!(matches!(&children[0].kind, LayerNodeKind::Group { .. }));
+                    }
+                    other => panic!("expected unclipped body group, got {other:?}"),
+                }
+            }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn clip_disabled_lowers_table_cell_as_unclipped_group() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.children.push(RenderNode::new(
+            10,
+            RenderNodeType::TableCell(TableCellNode {
+                col: 0,
+                row: 0,
+                col_span: 1,
+                row_span: 1,
+                border_fill_id: 0,
+                text_direction: 0,
+                clip: true,
+                model_cell_index: None,
+            }),
+            BoundingBox::new(100.0, 200.0, 150.0, 80.0),
+        ));
+
+        let mut builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                clip_enabled: false,
+                ..Default::default()
+            });
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => {
+                assert_eq!(children.len(), 1);
+                assert_eq!(children[0].semantic.role, LayerSemanticRole::TableCell);
+                assert!(
+                    matches!(&children[0].kind, LayerNodeKind::Group { .. }),
+                    "clip-disabled table cell should lower as an unclipped group"
+                );
             }
             other => panic!("expected root group, got {other:?}"),
         }
