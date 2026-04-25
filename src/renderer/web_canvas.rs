@@ -17,8 +17,8 @@ use super::composer::{decode_pua_overlap_number, pua_to_display_text, CharOverla
 use super::layout::{compute_char_positions, split_into_clusters};
 use super::render_tree::{
     BoundingBox, EllipseNode, EquationNode, FootnoteMarkerNode, FormObjectNode, ImageNode,
-    LineNode, PageBackgroundImage, PageBackgroundNode, PageRenderTree, PathNode, RectangleNode,
-    RenderNode, RenderNodeType, ShapeTransform, TextRunNode,
+    LineNode, PageRenderTree, PathNode, RectangleNode, RenderNode, RenderNodeType, ShapeTransform,
+    TextRunNode,
 };
 use super::{
     GradientFillInfo, LineStyle, PathCommand, PatternFillInfo, Renderer, ShapeStyle, StrokeDash,
@@ -225,23 +225,61 @@ impl WebCanvasRenderer {
             LayerNodeKind::Leaf { ops, .. } => {
                 let source_node_id = node.source_node_id.unwrap_or(0);
                 for op in ops {
-                    let render_node_type = match op {
-                        PaintOp::PageBackground { background, .. } => {
-                            RenderNodeType::PageBackground(PageBackgroundNode {
-                                background_color: background.background_color,
-                                border_color: background.border_color,
-                                border_width: background.border_width,
-                                gradient: background.gradient.clone(),
-                                image: background.image.as_ref().and_then(|image| {
-                                    resources.image_bytes(image.resource_id).map(|bytes| {
-                                        PageBackgroundImage {
-                                            data: bytes.to_vec(),
-                                            fill_mode: image.fill_mode,
-                                        }
-                                    })
-                                }),
-                            })
+                    match op {
+                        PaintOp::PageBackground {
+                            bbox, background, ..
+                        } => {
+                            if let Some(color) = background.background_color {
+                                self.ctx.set_fill_style_str(&color_to_css(color));
+                                self.ctx.fill_rect(bbox.x, bbox.y, bbox.width, bbox.height);
+                            }
+                            if let Some(grad) = &background.gradient {
+                                if self.apply_gradient_fill(
+                                    grad,
+                                    bbox.x,
+                                    bbox.y,
+                                    bbox.width,
+                                    bbox.height,
+                                ) {
+                                    self.ctx.fill_rect(bbox.x, bbox.y, bbox.width, bbox.height);
+                                }
+                            }
+                            if let Some(image) = &background.image {
+                                if let Some(bytes) = resources.image_bytes(image.resource_id) {
+                                    self.draw_image(bytes, bbox.x, bbox.y, bbox.width, bbox.height);
+                                }
+                            }
+                            continue;
                         }
+                        PaintOp::Image { bbox, image } => {
+                            self.open_shape_transform(&image.transform, bbox);
+                            if let Some(id) = image.resource_id {
+                                if let Some(bytes) = resources.image_bytes(id) {
+                                    self.draw_image_with_fill_mode(
+                                        bytes,
+                                        bbox,
+                                        image.fill_mode,
+                                        image.original_size,
+                                        image.crop,
+                                        image.effect,
+                                    );
+                                }
+                            }
+                            if image.transform.has_transform() {
+                                self.ctx.restore();
+                            }
+                            if self.show_control_codes {
+                                let fs = 10.0;
+                                self.ctx.set_fill_style_str("#CC3333");
+                                self.ctx.set_font(&format!("{:.3}px sans-serif", fs));
+                                let _ = self.ctx.fill_text("[그림]", bbox.x, bbox.y + fs);
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    let render_node_type = match op {
+                        PaintOp::PageBackground { .. } => continue,
                         PaintOp::TextRun { run, .. } => RenderNodeType::TextRun(TextRunNode {
                             text: run.text.clone(),
                             style: run.style.clone(),
@@ -313,20 +351,7 @@ impl WebCanvasRenderer {
                             connector_endpoints: path.connector_endpoints,
                             line_style: path.line_style.clone(),
                         }),
-                        PaintOp::Image { image, .. } => RenderNodeType::Image(ImageNode {
-                            bin_data_id: 0,
-                            data: image.resource_id.and_then(|id| {
-                                resources.image_bytes(id).map(|bytes| bytes.to_vec())
-                            }),
-                            section_index: None,
-                            para_index: None,
-                            control_index: None,
-                            fill_mode: image.fill_mode,
-                            original_size: image.original_size,
-                            transform: image.transform,
-                            crop: image.crop,
-                            effect: image.effect,
-                        }),
+                        PaintOp::Image { .. } => continue,
                         PaintOp::Equation { equation, .. } => {
                             RenderNodeType::Equation(EquationNode {
                                 svg_content: resources

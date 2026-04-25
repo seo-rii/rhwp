@@ -4,6 +4,26 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: ARCH-009 WebCanvas Image Resource Replay
+
+Reduce the legacy-adapter cost in WebCanvas layer replay by rendering layer image resources directly from `ResourceArena` bytes instead of rebuilding temporary `ImageNode`/`PageBackgroundImage` values with copied buffers.
+
+## Steps
+
+1. Done: replay `PaintOp::Image` directly through `draw_image_with_fill_mode` with borrowed resource bytes.
+2. Done: replay page background images directly through `draw_image` with borrowed resource bytes.
+3. Done: verify wasm/default/native checks and Studio build.
+4. Done: update risk notes and prepare the batch for commit/push.
+
+## Verification
+
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo check --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: BUG-018 Vertical Text Rotation Semantics
 
 Align replay backends with the layout-owned vertical glyph orientation model. The layout already emits one vertical `TextRun` per glyph and stores any required glyph rotation in `TextRunNode::rotation`, so layer/legacy replayers should use that explicit rotation instead of adding an implicit `+90` whenever `is_vertical` is set.
