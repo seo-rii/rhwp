@@ -1,6 +1,7 @@
 use super::*;
 use crate::model::document::{Document, Section};
 use crate::model::paragraph::{LineSeg, Paragraph};
+use crate::paint::RenderProfile;
 
 #[test]
 fn test_create_empty_document() {
@@ -117,6 +118,74 @@ fn test_fallback_font() {
     assert_eq!(doc.get_fallback_font(), DEFAULT_FALLBACK_FONT);
     doc.set_fallback_font("/custom/font.ttf");
     assert_eq!(doc.get_fallback_font(), "/custom/font.ttf");
+}
+
+#[test]
+fn test_debug_overlay_uses_layer_cache_key_without_clearing_page_tree_cache() {
+    let mut doc = HwpDocument::create_empty();
+
+    doc.get_page_layer_tree_native(0)
+        .expect("initial layer tree should render");
+    let page_cache_len = doc.page_tree_cache.borrow().len();
+    assert!(
+        page_cache_len > 0 && doc.page_tree_cache.borrow()[0].is_some(),
+        "initial layer tree render should populate the page tree cache"
+    );
+    assert!(
+        doc.page_layer_tree_cache.borrow().contains_key(
+            &crate::document_core::PageLayerTreeCacheKey {
+                page_num: 0,
+                profile: RenderProfile::Screen,
+                show_paragraph_marks: false,
+                show_control_codes: false,
+                show_transparent_borders: false,
+                clip_enabled: true,
+                debug_overlay: false,
+            }
+        ),
+        "initial layer tree render should cache the non-debug layer tree"
+    );
+
+    doc.set_debug_overlay(true);
+    assert_eq!(
+        doc.page_tree_cache.borrow().len(),
+        page_cache_len,
+        "debug overlay toggling is a layer/render option and must not clear page tree cache"
+    );
+
+    let debug_tree = doc
+        .get_page_layer_tree_native(0)
+        .expect("debug layer tree should render");
+    assert!(
+        debug_tree.contains("\"debugOverlay\":true"),
+        "debug overlay option should be exported through layer output options"
+    );
+
+    let layer_cache = doc.page_layer_tree_cache.borrow();
+    assert!(
+        layer_cache.contains_key(&crate::document_core::PageLayerTreeCacheKey {
+            page_num: 0,
+            profile: RenderProfile::Screen,
+            show_paragraph_marks: false,
+            show_control_codes: false,
+            show_transparent_borders: false,
+            clip_enabled: true,
+            debug_overlay: false,
+        }),
+        "non-debug layer cache entry should remain available"
+    );
+    assert!(
+        layer_cache.contains_key(&crate::document_core::PageLayerTreeCacheKey {
+            page_num: 0,
+            profile: RenderProfile::Screen,
+            show_paragraph_marks: false,
+            show_control_codes: false,
+            show_transparent_borders: false,
+            clip_enabled: true,
+            debug_overlay: true,
+        }),
+        "debug overlay should use a distinct layer cache key"
+    );
 }
 
 #[test]

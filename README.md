@@ -160,6 +160,8 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 #### Rendering backend boundary
 - Canonical render path: `PageRenderTree` is lowered to `PageLayerTree`, then SVG layer, Canvas2D layer, CanvasKit, and native Skia replay the same layer tree.
 - Browser `renderPageToCanvas` uses the layered Canvas2D replay path. Legacy direct Canvas/SVG/HTML renderers remain compatibility and debug paths.
+- `renderPageCanvas` is a legacy/native command-count helper for compatibility and diagnostics; it is not the canonical browser canvas renderer. Use `renderPageToCanvas` or the layer export APIs for public viewer rendering.
+- `renderPageSvg` currently keeps the legacy SVG path as the default compatibility output. Set `RHWP_RENDER_PATH=layer-svg` in native/test environments to exercise the layered SVG replay path until the SVG default switch is made explicit.
 - New visual semantics should be lowered into `paint::PaintOp` or shared layer policy first, then replayed by each backend. Backend-only behavior is treated as a parity risk.
 - Public layer export: JS value export with profile/resource-key support is the preferred frontend API for large documents. JSON string export is kept for debug, snapshots, and schema regression checks.
 - Layer schema exports include version, unit, coordinate system, profile, output options, and resource-table metadata so frontends can reject incompatible IR safely.

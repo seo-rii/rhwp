@@ -13,6 +13,44 @@ use crate::paint::RenderProfile;
 
 use super::HwpDocument;
 
+const MAX_CANVAS_DIMENSION: f64 = 16384.0;
+
+fn normalize_canvas_scale(
+    page_width: f64,
+    page_height: f64,
+    requested_scale: f64,
+) -> Result<f64, &'static str> {
+    if !page_width.is_finite()
+        || !page_height.is_finite()
+        || page_width <= 0.0
+        || page_height <= 0.0
+    {
+        return Err("invalid page dimensions");
+    }
+
+    let scale = if requested_scale <= 0.0 || !requested_scale.is_finite() {
+        1.0
+    } else {
+        requested_scale.clamp(0.25, 12.0)
+    };
+
+    let scaled_width = page_width * scale;
+    let scaled_height = page_height * scale;
+    if !scaled_width.is_finite() || !scaled_height.is_finite() {
+        return Ok((MAX_CANVAS_DIMENSION / page_width)
+            .min(MAX_CANVAS_DIMENSION / page_height)
+            .min(scale));
+    }
+
+    if scaled_width > MAX_CANVAS_DIMENSION || scaled_height > MAX_CANVAS_DIMENSION {
+        Ok((MAX_CANVAS_DIMENSION / page_width)
+            .min(MAX_CANVAS_DIMENSION / page_height)
+            .min(scale))
+    } else {
+        Ok(scale)
+    }
+}
+
 #[wasm_bindgen]
 impl HwpDocument {
     /// 특정 페이지를 SVG 문자열로 렌더링한다.
@@ -52,27 +90,16 @@ impl HwpDocument {
             .build_page_layer_tree_for_output(page_num, RenderProfile::Screen)
             .map_err(|e| JsValue::from(e))?;
 
-        // scale 정규화: 0 이하 또는 NaN이면 1.0, 최소 0.25 최대 12.0
-        // (zoom 3.0 × DPR 4.0 = 12.0 지원)
-        let scale = if scale <= 0.0 || scale.is_nan() {
-            1.0
-        } else {
-            scale.clamp(0.25, 12.0)
-        };
-
-        // 최대 캔버스 크기 가드 (16384px)
-        let max_dim = 16384.0;
-        let scale = if tree.page_width * scale > max_dim || tree.page_height * scale > max_dim {
-            (max_dim / tree.page_width)
-                .min(max_dim / tree.page_height)
-                .min(scale)
-        } else {
-            scale
-        };
+        let scale = normalize_canvas_scale(tree.page_width, tree.page_height, scale)
+            .map_err(JsValue::from_str)?;
 
         // 캔버스 크기 = 페이지 크기 × scale
-        canvas.set_width((tree.page_width * scale) as u32);
-        canvas.set_height((tree.page_height * scale) as u32);
+        canvas.set_width((tree.page_width * scale).max(1.0).min(MAX_CANVAS_DIMENSION) as u32);
+        canvas.set_height(
+            (tree.page_height * scale)
+                .max(1.0)
+                .min(MAX_CANVAS_DIMENSION) as u32,
+        );
 
         let mut renderer = WebCanvasRenderer::new(canvas)?;
         renderer.show_paragraph_marks = self.show_paragraph_marks;
@@ -175,5 +202,42 @@ impl HwpDocument {
     pub fn get_page_control_layout(&self, page_num: u32) -> Result<String, JsValue> {
         self.get_page_control_layout_native(page_num)
             .map_err(|e| e.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_canvas_scale;
+
+    #[test]
+    fn normalize_canvas_scale_rejects_invalid_page_dimensions() {
+        for (width, height) in [
+            (0.0, 100.0),
+            (100.0, 0.0),
+            (-1.0, 100.0),
+            (100.0, -1.0),
+            (f64::NAN, 100.0),
+            (100.0, f64::NAN),
+            (f64::INFINITY, 100.0),
+            (100.0, f64::INFINITY),
+        ] {
+            assert!(
+                normalize_canvas_scale(width, height, 1.0).is_err(),
+                "invalid page dimensions must fail: {width} x {height}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_canvas_scale_clamps_request_and_canvas_extent() {
+        assert_eq!(normalize_canvas_scale(100.0, 100.0, 0.0), Ok(1.0));
+        assert_eq!(normalize_canvas_scale(100.0, 100.0, f64::NAN), Ok(1.0));
+        assert_eq!(normalize_canvas_scale(100.0, 100.0, f64::INFINITY), Ok(1.0));
+        assert_eq!(normalize_canvas_scale(100.0, 100.0, 0.1), Ok(0.25));
+        assert_eq!(normalize_canvas_scale(100.0, 100.0, 20.0), Ok(12.0));
+
+        let scale = normalize_canvas_scale(20_000.0, 10_000.0, 1.0)
+            .expect("large finite page should be scaled down");
+        assert!((scale - (16_384.0 / 20_000.0)).abs() < f64::EPSILON);
     }
 }

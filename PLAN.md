@@ -4,6 +4,26 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Latest Layer Review Guards
+
+Close the first small items from the latest review before moving into heavier backend parity work.
+
+## Steps
+
+1. Done: add finite positive page dimension validation to WASM `renderPageToCanvas`.
+2. Done: lock the debug overlay cache behavior with a regression test.
+3. Done: document the current SVG legacy/layer boundary and legacy `renderPageCanvas` command-count API.
+4. Done: verify focused tests, WASM lib check, formatting, and diff whitespace.
+5. Done: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --lib wasm_api::render::tests:: -- --quiet` passed.
+- `cargo test --lib wasm_api::tests::test_debug_overlay_uses_layer_cache_key_without_clearing_page_tree_cache -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo fmt --check` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Completed Batch: ARCH-001
 
 `renderPageToCanvas` should use the canonical `PageRenderTree -> PageLayerTree -> backend replay` path instead of sending `PageRenderTree` directly to `WebCanvasRenderer`.
