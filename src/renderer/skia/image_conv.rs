@@ -1,7 +1,7 @@
 use resvg::{tiny_skia, usvg};
 use skia_safe::{
-    canvas::SrcRectConstraint, color_filters, Canvas, Data, FilterMode, Image, MipmapMode, Paint,
-    Rect, SamplingOptions,
+    canvas::SrcRectConstraint, color_filters, image::RequiredProperties, Canvas, Data, FilterMode,
+    IRect, Image, Matrix, MipmapMode, Paint, Rect, SamplingOptions, TileMode,
 };
 
 use crate::model::image::ImageEffect;
@@ -180,6 +180,83 @@ pub fn draw_decoded_image(
             | ImageFillMode::TileVertLeft
             | ImageFillMode::TileVertRight
     ) {
+        let shader_image = crop_src
+            .and_then(|src| {
+                let left = src.left.floor().max(0.0) as i32;
+                let top = src.top.floor().max(0.0) as i32;
+                let right = src.right.ceil().min(decoded_width) as i32;
+                let bottom = src.bottom.ceil().min(decoded_height) as i32;
+                if right <= left || bottom <= top {
+                    return None;
+                }
+                image.make_subset(
+                    None,
+                    IRect::from_xywh(left, top, right - left, bottom - top),
+                    RequiredProperties::default(),
+                )
+            })
+            .unwrap_or_else(|| image.clone());
+        let shader_source_width = shader_image.width() as f32;
+        let shader_source_height = shader_image.height() as f32;
+        let draw_tiled_shader = |tile_rect: Rect, origin_x: f32, origin_y: f32| -> bool {
+            if shader_source_width <= 0.0 || shader_source_height <= 0.0 {
+                return false;
+            }
+            let scale_x = shader_source_width / image_width;
+            let scale_y = shader_source_height / image_height;
+            if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
+                return false;
+            }
+            let local_matrix = Matrix::scale_translate(
+                (scale_x, scale_y),
+                (-origin_x * scale_x, -origin_y * scale_y),
+            );
+            let Some(shader) = shader_image.to_shader(
+                Some((TileMode::Repeat, TileMode::Repeat)),
+                sampling.options(),
+                Some(&local_matrix),
+            ) else {
+                return false;
+            };
+            let mut shader_paint = paint.clone();
+            shader_paint.set_shader(shader);
+            canvas.draw_rect(tile_rect, &shader_paint);
+            true
+        };
+
+        if matches!(mode, ImageFillMode::TileAll) && draw_tiled_shader(dst, x, y) {
+            canvas.restore();
+            return;
+        }
+        if matches!(
+            mode,
+            ImageFillMode::TileHorzTop | ImageFillMode::TileHorzBottom
+        ) {
+            let tile_y = if matches!(mode, ImageFillMode::TileHorzTop) {
+                y
+            } else {
+                y + height - image_height
+            };
+            if draw_tiled_shader(Rect::from_xywh(x, tile_y, width, image_height), x, tile_y) {
+                canvas.restore();
+                return;
+            }
+        }
+        if matches!(
+            mode,
+            ImageFillMode::TileVertLeft | ImageFillMode::TileVertRight
+        ) {
+            let tile_x = if matches!(mode, ImageFillMode::TileVertLeft) {
+                x
+            } else {
+                x + width - image_width
+            };
+            if draw_tiled_shader(Rect::from_xywh(tile_x, y, image_width, height), tile_x, y) {
+                canvas.restore();
+                return;
+            }
+        }
+
         const MAX_TILE_DRAWS: usize = 4096;
         let mut tile_draws = 0usize;
         if matches!(mode, ImageFillMode::TileAll) {
@@ -484,6 +561,41 @@ mod tests {
         for pixel in pixmap.pixels() {
             assert!(pixel.blue() > pixel.red());
         }
+    }
+
+    #[test]
+    fn tiled_fill_covers_large_area_beyond_draw_cap() {
+        let mut source = tiny_skia::Pixmap::new(1, 1).expect("source pixmap");
+        source.pixels_mut()[0] =
+            tiny_skia::PremultipliedColorU8::from_rgba(0, 255, 0, 255).unwrap();
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((128, 128)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            128.0,
+            128.0,
+            Some(ImageFillMode::TileAll),
+            Some((1.0, 1.0)),
+            None,
+            ImageEffect::RealPic,
+            ImageSampling::nearest(),
+        );
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let bottom_right = pixmap.pixels()[127 * 128 + 127];
+
+        assert!(
+            bottom_right.green() > 200 && bottom_right.alpha() == 255,
+            "shader tile replay should cover pixels beyond the old capped loop area"
+        );
     }
 
     #[test]

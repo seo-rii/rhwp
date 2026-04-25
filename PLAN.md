@@ -4,6 +4,24 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Skia Tile Shader Replay
+
+Avoid visible truncation when tiled image fill would exceed the defensive draw cap.
+
+## Steps
+
+1. Done: use Skia image shader repeat for tile fill modes before falling back to capped loops.
+2. Done: preserve crop and original-size scaling semantics in shader replay.
+3. Done: add a large tiled image regression that reaches beyond the old loop cap.
+4. Done: verify native Skia image tests and formatting.
+5. Done: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::image_conv::tests:: -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Completed Batch: Latest Layer Review Guards
 
 Close the first small items from the latest review before moving into heavier backend parity work.
