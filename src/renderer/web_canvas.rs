@@ -15,11 +15,7 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 use super::composer::{decode_pua_overlap_number, pua_to_display_text, CharOverlapInfo};
 #[cfg(target_arch = "wasm32")]
 use super::layout::{compute_char_positions, split_into_clusters};
-use super::render_tree::{
-    BoundingBox, EllipseNode, EquationNode, FootnoteMarkerNode, FormObjectNode, ImageNode,
-    LineNode, PageRenderTree, PathNode, RectangleNode, RenderNode, RenderNodeType, ShapeTransform,
-    TextRunNode,
-};
+use super::render_tree::{BoundingBox, PageRenderTree, RenderNode, RenderNodeType, ShapeTransform};
 use super::{
     GradientFillInfo, LineStyle, PathCommand, PatternFillInfo, Renderer, ShapeStyle, StrokeDash,
     TextStyle,
@@ -29,7 +25,7 @@ use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::model::style::UnderlineType;
 #[cfg(target_arch = "wasm32")]
-use crate::paint::{LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
+use crate::paint::{LayerFormObjectPaint, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
 
 // 이미지 캐시: data 해시 → HtmlImageElement
 // WASM 단일 스레드이므로 thread_local 안전
@@ -223,7 +219,6 @@ impl WebCanvasRenderer {
                 self.ctx.restore();
             }
             LayerNodeKind::Leaf { ops, .. } => {
-                let source_node_id = node.source_node_id.unwrap_or(0);
                 for op in ops {
                     match op {
                         PaintOp::PageBackground {
@@ -346,131 +341,39 @@ impl WebCanvasRenderer {
                             self.draw_layer_text_control_marks(bbox, run);
                             continue;
                         }
-                        _ => {}
-                    }
-                    let render_node_type = match op {
-                        PaintOp::PageBackground { .. } => continue,
-                        PaintOp::TextRun { run, .. } => RenderNodeType::TextRun(TextRunNode {
-                            text: run.text.clone(),
-                            style: run.style.clone(),
-                            char_shape_id: None,
-                            para_shape_id: None,
-                            section_index: None,
-                            para_index: None,
-                            char_start: None,
-                            cell_context: None,
-                            is_para_end: false,
-                            is_line_break_end: false,
-                            rotation: run.rotation,
-                            is_vertical: run.is_vertical,
-                            char_overlap: run.char_overlap.clone(),
-                            border_fill_id: 0,
-                            baseline: run.baseline,
-                            field_marker: run.field_marker,
-                        }),
-                        PaintOp::FootnoteMarker { marker, .. } => {
-                            RenderNodeType::FootnoteMarker(FootnoteMarkerNode {
-                                number: 0,
-                                text: marker.text.clone(),
-                                base_font_size: marker.base_font_size,
-                                font_family: marker.font_family.clone(),
-                                color: marker.color,
-                                section_index: 0,
-                                para_index: 0,
-                                control_index: 0,
-                            })
+                        PaintOp::FootnoteMarker { bbox, marker } => {
+                            self.draw_footnote_marker_contents(
+                                bbox,
+                                &marker.text,
+                                marker.base_font_size,
+                                &marker.font_family,
+                                marker.color,
+                            );
+                            continue;
                         }
-                        PaintOp::Line { line, .. } => RenderNodeType::Line(LineNode {
-                            x1: line.x1,
-                            y1: line.y1,
-                            x2: line.x2,
-                            y2: line.y2,
-                            style: line.style.clone(),
-                            section_index: None,
-                            para_index: None,
-                            control_index: None,
-                            transform: line.transform,
-                        }),
-                        PaintOp::Rectangle { rect, .. } => {
-                            RenderNodeType::Rectangle(RectangleNode {
-                                corner_radius: rect.corner_radius,
-                                style: rect.style.clone(),
-                                gradient: rect.gradient.clone(),
-                                section_index: None,
-                                para_index: None,
-                                control_index: None,
-                                transform: rect.transform,
-                            })
+                        PaintOp::Equation { bbox, equation } => {
+                            self.ctx.save();
+                            super::equation::canvas_render::render_equation_canvas(
+                                &self.ctx,
+                                &equation.layout_box,
+                                bbox.x,
+                                bbox.y,
+                                &equation.color_str,
+                                equation.font_size,
+                            );
+                            self.ctx.restore();
+                            if self.show_control_codes {
+                                let fs = 10.0;
+                                self.ctx.set_fill_style_str("#CC3333");
+                                self.ctx.set_font(&format!("{:.3}px sans-serif", fs));
+                                let _ = self.ctx.fill_text("[수식]", bbox.x, bbox.y + fs);
+                            }
+                            continue;
                         }
-                        PaintOp::Ellipse { ellipse, .. } => RenderNodeType::Ellipse(EllipseNode {
-                            style: ellipse.style.clone(),
-                            gradient: ellipse.gradient.clone(),
-                            section_index: None,
-                            para_index: None,
-                            control_index: None,
-                            transform: ellipse.transform,
-                        }),
-                        PaintOp::Path { path, .. } => RenderNodeType::Path(PathNode {
-                            commands: path.commands.clone(),
-                            style: path.style.clone(),
-                            gradient: path.gradient.clone(),
-                            section_index: None,
-                            para_index: None,
-                            control_index: None,
-                            transform: path.transform,
-                            connector_endpoints: path.connector_endpoints,
-                            line_style: path.line_style.clone(),
-                        }),
-                        PaintOp::Image { .. } => continue,
-                        PaintOp::Equation { equation, .. } => {
-                            RenderNodeType::Equation(EquationNode {
-                                svg_content: resources
-                                    .svg_fragment(equation.svg_resource_id)
-                                    .unwrap_or_default()
-                                    .to_string(),
-                                layout_box: equation.layout_box.clone(),
-                                color_str: equation.color_str.clone(),
-                                color: equation.color,
-                                font_size: equation.font_size,
-                                section_index: None,
-                                para_index: None,
-                                control_index: None,
-                                cell_index: None,
-                                cell_para_index: None,
-                            })
+                        PaintOp::FormObject { bbox, form } => {
+                            self.render_form_object(form, bbox);
+                            continue;
                         }
-                        PaintOp::FormObject { form, .. } => {
-                            RenderNodeType::FormObject(FormObjectNode {
-                                form_type: form.form_type,
-                                caption: form.caption.clone(),
-                                text: form.text.clone(),
-                                fore_color: form.fore_color.clone(),
-                                back_color: form.back_color.clone(),
-                                value: form.value,
-                                enabled: form.enabled,
-                                section_index: 0,
-                                para_index: 0,
-                                control_index: 0,
-                                name: String::new(),
-                                cell_location: None,
-                            })
-                        }
-                    };
-                    let render_node =
-                        RenderNode::new(source_node_id, render_node_type, op.bounds());
-                    if matches!(op, PaintOp::TextRun { .. }) {
-                        let show_paragraph_marks = self.show_paragraph_marks;
-                        let show_control_codes = self.show_control_codes;
-                        self.show_paragraph_marks = false;
-                        self.show_control_codes = false;
-                        self.render_node(&render_node);
-                        self.show_paragraph_marks = show_paragraph_marks;
-                        self.show_control_codes = show_control_codes;
-                    } else {
-                        self.render_node(&render_node);
-                    }
-                    if let PaintOp::TextRun { bbox, run } = op {
-                        self.draw_layer_text_control_marks(bbox, run);
                     }
                 }
             }
@@ -553,6 +456,22 @@ impl WebCanvasRenderer {
         self.ctx.set_text_baseline("middle");
         let _ = self.ctx.fill_text(text, 0.0, 0.0);
         self.ctx.restore();
+    }
+
+    fn draw_footnote_marker_contents(
+        &self,
+        bbox: &BoundingBox,
+        text: &str,
+        base_font_size: f64,
+        font_family: &str,
+        color: u32,
+    ) {
+        let sup_size = (base_font_size * 0.55).max(7.0);
+        let font = format!("{:.1}px {}", sup_size, font_family);
+        self.ctx.set_font(&font);
+        self.ctx.set_fill_style_str(&color_to_css(color));
+        let y = bbox.y + bbox.height * 0.4;
+        let _ = self.ctx.fill_text(text, bbox.x, y);
     }
 
     /// 개별 노드 렌더링
@@ -770,17 +689,25 @@ impl WebCanvasRenderer {
                 self.ctx.restore();
             }
             RenderNodeType::FormObject(form) => {
-                self.render_form_object(form, &node.bbox);
+                let form = LayerFormObjectPaint {
+                    form_type: form.form_type,
+                    caption: form.caption.clone(),
+                    text: form.text.clone(),
+                    fore_color: form.fore_color.clone(),
+                    back_color: form.back_color.clone(),
+                    value: form.value,
+                    enabled: form.enabled,
+                };
+                self.render_form_object(&form, &node.bbox);
             }
             RenderNodeType::FootnoteMarker(marker) => {
-                // 위첨자 렌더링: 작은 글씨 + 위로 올림
-                let sup_size = (marker.base_font_size * 0.55).max(7.0);
-                let font = format!("{:.1}px {}", sup_size, marker.font_family);
-                self.ctx.set_font(&font);
-                self.ctx.set_fill_style_str(&color_to_css(marker.color));
-                // 위첨자 y: bbox 상단 + baseline의 40% (일반 텍스트 ~80%보다 높음)
-                let y = node.bbox.y + node.bbox.height * 0.4;
-                let _ = self.ctx.fill_text(&marker.text, node.bbox.x, y);
+                self.draw_footnote_marker_contents(
+                    &node.bbox,
+                    &marker.text,
+                    marker.base_font_size,
+                    &marker.font_family,
+                    marker.color,
+                );
             }
             _ => {
                 // 구조 노드(Header, Footer, Column 등)는 자식만 렌더링
@@ -1533,7 +1460,7 @@ impl WebCanvasRenderer {
         }
     }
 
-    fn render_form_object(&self, form: &FormObjectNode, bbox: &super::render_tree::BoundingBox) {
+    fn render_form_object(&self, form: &LayerFormObjectPaint, bbox: &BoundingBox) {
         let x = bbox.x;
         let y = bbox.y;
         let w = bbox.width;

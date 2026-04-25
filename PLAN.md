@@ -4,6 +4,28 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: ARCH-009 WebCanvas Remaining Leaf PaintOp Replay
+
+Remove the remaining WebCanvas leaf PaintOp adapter path by replaying equation, footnote marker, and form object payloads directly.
+
+## Steps
+
+1. Done: replay `PaintOp::Equation` directly from `LayerEquationPaint`.
+2. Done: replay `PaintOp::FootnoteMarker` directly while sharing the legacy marker drawing body.
+3. Done: replay `PaintOp::FormObject` directly through the existing form object drawing body.
+4. Done: preserve the existing `[수식]` control-code label in direct layer replay.
+5. Done: verify wasm/default/native checks and Studio build.
+6. Done: commit and push the batch if checks pass.
+
+## Verification
+
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo check --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: ARCH-009 WebCanvas TextRun PaintOp Replay
 
 Reduce the WebCanvas layer adapter for text by drawing layer `TextRun` payloads directly and sharing the legacy text drawing body instead of rebuilding a temporary `TextRunNode`.
