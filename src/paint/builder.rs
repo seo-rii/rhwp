@@ -250,24 +250,17 @@ impl LayerBuilder {
                     LayerNode::clip_rect(node.bbox, Some(node.id), *clip, child, ClipKind::Body);
                 let body_left = clip.x;
                 let body_right = clip.x + clip.width;
-                let overflow_children: Vec<LayerNode> = node
-                    .children
-                    .iter()
-                    .flat_map(|column| column.children.iter())
-                    .filter(|child| {
-                        !matches!(
-                            child.node_type,
-                            RenderNodeType::TextLine(_)
-                                | RenderNodeType::Column(_)
-                                | RenderNodeType::FootnoteArea
-                                | RenderNodeType::Header
-                                | RenderNodeType::Footer
-                                | RenderNodeType::MasterPage
-                                | RenderNodeType::Page(_)
-                                | RenderNodeType::Body { .. }
-                        ) && (child.bbox.x < body_left
-                            || child.bbox.x + child.bbox.width > body_right)
-                    })
+                let mut overflow_nodes = Vec::new();
+                for column in &node.children {
+                    self.collect_body_overflow_nodes(
+                        column,
+                        body_left,
+                        body_right,
+                        &mut overflow_nodes,
+                    );
+                }
+                let overflow_children: Vec<LayerNode> = overflow_nodes
+                    .into_iter()
                     .filter_map(|child| self.build_node(child))
                     .collect();
 
@@ -553,6 +546,49 @@ impl LayerBuilder {
             _ => LayerSemantic::default(),
         }
     }
+
+    fn collect_body_overflow_nodes<'a>(
+        &self,
+        node: &'a RenderNode,
+        body_left: f64,
+        body_right: f64,
+        out: &mut Vec<&'a RenderNode>,
+    ) {
+        if matches!(
+            node.node_type,
+            RenderNodeType::TextLine(_)
+                | RenderNodeType::TextRun(_)
+                | RenderNodeType::FootnoteMarker(_)
+                | RenderNodeType::FootnoteArea
+                | RenderNodeType::Header
+                | RenderNodeType::Footer
+                | RenderNodeType::MasterPage
+                | RenderNodeType::Page(_)
+                | RenderNodeType::Body { .. }
+        ) {
+            return;
+        }
+
+        let is_structural = matches!(
+            node.node_type,
+            RenderNodeType::Column(_)
+                | RenderNodeType::Group(_)
+                | RenderNodeType::TextBox
+                | RenderNodeType::Table(_)
+                | RenderNodeType::TableCell(_)
+        );
+        let overflows = node.bbox.x < body_left || node.bbox.x + node.bbox.width > body_right;
+        if overflows && !matches!(node.node_type, RenderNodeType::Column(_)) {
+            out.push(node);
+            return;
+        }
+
+        if is_structural {
+            for child in &node.children {
+                self.collect_body_overflow_nodes(child, body_left, body_right, out);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -560,8 +596,8 @@ mod tests {
     use super::*;
     use crate::paint::LayerNodeKind;
     use crate::renderer::render_tree::{
-        BoundingBox, PageBackgroundNode, PageNode, RectangleNode, RenderNode, RenderNodeType,
-        TableCellNode, TableNode, TextLineNode,
+        BoundingBox, GroupNode, PageBackgroundNode, PageNode, RectangleNode, RenderNode,
+        RenderNodeType, TableCellNode, TableNode, TextLineNode,
     };
     use crate::renderer::render_tree::{EquationNode, ImageNode};
     use crate::renderer::ShapeStyle;
@@ -670,6 +706,83 @@ mod tests {
                             assert_eq!(clip.y, 20.0);
                             assert_eq!(clip.height, 400.0);
                         }
+                        other => panic!("expected overflow clip rect, got {other:?}"),
+                    }
+                }
+                other => panic!("expected body group with overflow replay, got {other:?}"),
+            },
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_nested_body_horizontal_overflow_controls() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 800.0,
+            height: 600.0,
+            section_index: 0,
+        });
+        let mut body = RenderNode::new(
+            1,
+            RenderNodeType::Body {
+                clip_rect: Some(BoundingBox::new(100.0, 20.0, 600.0, 400.0)),
+            },
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        let mut column = RenderNode::new(
+            2,
+            RenderNodeType::Column(0),
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        let mut group = RenderNode::new(
+            3,
+            RenderNodeType::Group(GroupNode {
+                section_index: None,
+                para_index: None,
+                control_index: None,
+            }),
+            BoundingBox::new(120.0, 40.0, 120.0, 80.0),
+        );
+        group.children.push(RenderNode::new(
+            4,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    fill_color: Some(0x000000),
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(720.0, 48.0, 40.0, 32.0),
+        ));
+        column.children.push(group);
+        body.children.push(column);
+        tree.root.children.push(body);
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => match &children[0].kind {
+                LayerNodeKind::Group { children, .. } => {
+                    assert_eq!(children.len(), 2);
+                    match &children[1].kind {
+                        LayerNodeKind::ClipRect { child, .. } => match &child.kind {
+                            LayerNodeKind::Group { children, .. } => {
+                                assert_eq!(
+                                    children.len(),
+                                    1,
+                                    "nested overflow control should be replayed once"
+                                );
+                                assert!(
+                                    matches!(&children[0].kind, LayerNodeKind::Leaf { .. }),
+                                    "overflow replay should contain the nested rectangle leaf"
+                                );
+                            }
+                            other => panic!("expected overflow group, got {other:?}"),
+                        },
                         other => panic!("expected overflow clip rect, got {other:?}"),
                     }
                 }

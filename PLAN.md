@@ -4,6 +4,24 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Nested Body Overflow Replay
+
+Make layer lowering catch body overflow controls nested below structural groups, then lock it with a focused fixture.
+
+## Steps
+
+1. Done: recurse through structural body descendants when collecting horizontal overflow controls.
+2. Done: keep text line/text run descendants out of overflow replay.
+3. Done: add a nested group overflow lowering test.
+4. Done: verify focused paint builder tests and formatting.
+5. Done: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --lib paint::builder::tests::lowers_ -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Completed Batch: Skia Static Picture Cache Bound
 
 Keep static subtree picture caching useful without allowing the renderer-local cache to grow without limit.
