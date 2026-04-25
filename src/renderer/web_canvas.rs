@@ -276,6 +276,64 @@ impl WebCanvasRenderer {
                             }
                             continue;
                         }
+                        PaintOp::Line { bbox, line } => {
+                            self.open_shape_transform(&line.transform, bbox);
+                            self.draw_line(line.x1, line.y1, line.x2, line.y2, &line.style);
+                            if line.transform.has_transform() {
+                                self.ctx.restore();
+                            }
+                            continue;
+                        }
+                        PaintOp::Rectangle { bbox, rect } => {
+                            self.open_shape_transform(&rect.transform, bbox);
+                            self.draw_rect_with_gradient(
+                                bbox.x,
+                                bbox.y,
+                                bbox.width,
+                                bbox.height,
+                                rect.corner_radius,
+                                &rect.style,
+                                rect.gradient.as_deref(),
+                            );
+                            if rect.transform.has_transform() {
+                                self.ctx.restore();
+                            }
+                            continue;
+                        }
+                        PaintOp::Ellipse { bbox, ellipse } => {
+                            self.open_shape_transform(&ellipse.transform, bbox);
+                            let cx = bbox.x + bbox.width / 2.0;
+                            let cy = bbox.y + bbox.height / 2.0;
+                            self.draw_ellipse_with_gradient(
+                                cx,
+                                cy,
+                                bbox.width / 2.0,
+                                bbox.height / 2.0,
+                                &ellipse.style,
+                                ellipse.gradient.as_deref(),
+                            );
+                            if ellipse.transform.has_transform() {
+                                self.ctx.restore();
+                            }
+                            continue;
+                        }
+                        PaintOp::Path { bbox, path } => {
+                            self.open_shape_transform(&path.transform, bbox);
+                            self.draw_path_with_gradient(
+                                &path.commands,
+                                &path.style,
+                                path.gradient.as_deref(),
+                            );
+                            self.draw_path_connector_arrows(
+                                &path.commands,
+                                path.line_style.as_ref(),
+                                path.connector_endpoints,
+                            );
+                            if path.transform.has_transform() {
+                                self.ctx.restore();
+                            }
+                            continue;
+                        }
                         _ => {}
                     }
                     let render_node_type = match op {
@@ -649,93 +707,11 @@ impl WebCanvasRenderer {
             RenderNodeType::Path(path) => {
                 self.open_shape_transform(&path.transform, &node.bbox);
                 self.draw_path_with_gradient(&path.commands, &path.style, path.gradient.as_deref());
-                // 연결선 화살표: 경로의 시작/끝 접선 방향 사용
-                if let (Some(ref ls), Some((x1, y1, x2, y2))) =
-                    (&path.line_style, path.connector_endpoints)
-                {
-                    let color = color_to_css(ls.color);
-                    let width = ls.width;
-                    let cmds = &path.commands;
-                    let len = ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
-                        .sqrt()
-                        .max(1.0);
-                    // 시작 화살표: 시작점과 다른 첫 번째 점 방향
-                    if ls.start_arrow != super::ArrowStyle::None {
-                        let (dx, dy) = {
-                            let mut found = (x1 - x2, y1 - y2);
-                            for cmd in cmds.iter().skip(1) {
-                                let (px, py) = match cmd {
-                                    super::PathCommand::LineTo(px, py) => (*px, *py),
-                                    super::PathCommand::CurveTo(cx, cy, _, _, _, _) => (*cx, *cy),
-                                    _ => continue,
-                                };
-                                if (x1 - px).abs() > 0.5 || (y1 - py).abs() > 0.5 {
-                                    found = (x1 - px, y1 - py);
-                                    break;
-                                }
-                            }
-                            found
-                        };
-                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                        let (aw, ah) = calc_arrow_dims(width, len, ls.start_arrow_size);
-                        draw_arrow_head(
-                            &self.ctx,
-                            x1,
-                            y1,
-                            dx / d,
-                            dy / d,
-                            aw,
-                            ah,
-                            &ls.start_arrow,
-                            &color,
-                            width,
-                        );
-                    }
-                    // 끝 화살표: 끝점과 다른 마지막 점 → 끝점 방향
-                    if ls.end_arrow != super::ArrowStyle::None {
-                        let (dx, dy) = {
-                            let mut pts: Vec<(f64, f64)> = Vec::new();
-                            for cmd in cmds.iter() {
-                                match cmd {
-                                    super::PathCommand::MoveTo(px, py)
-                                    | super::PathCommand::LineTo(px, py) => {
-                                        pts.push((*px, *py));
-                                    }
-                                    super::PathCommand::CurveTo(_, _, cx, cy, ex, ey) => {
-                                        pts.push((*cx, *cy));
-                                        pts.push((*ex, *ey));
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            // 끝점과 다른 점을 역순으로 찾음
-                            let mut found = (x2 - x1, y2 - y1);
-                            for i in (0..pts.len()).rev() {
-                                let ddx = x2 - pts[i].0;
-                                let ddy = y2 - pts[i].1;
-                                if ddx.abs() > 0.5 || ddy.abs() > 0.5 {
-                                    found = (x2 - pts[i].0, y2 - pts[i].1);
-                                    break;
-                                }
-                            }
-                            found
-                        };
-                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                        let (aw, ah) = calc_arrow_dims(width, len, ls.end_arrow_size);
-                        draw_arrow_head(
-                            &self.ctx,
-                            x2,
-                            y2,
-                            dx / d,
-                            dy / d,
-                            aw,
-                            ah,
-                            &ls.end_arrow,
-                            &color,
-                            width,
-                        );
-                    }
-                }
+                self.draw_path_connector_arrows(
+                    &path.commands,
+                    path.line_style.as_ref(),
+                    path.connector_endpoints,
+                );
             }
             RenderNodeType::Body {
                 clip_rect: Some(cr),
@@ -1408,6 +1384,100 @@ impl WebCanvasRenderer {
             self.ctx.set_shadow_offset_x(0.0);
             self.ctx.set_shadow_offset_y(0.0);
             self.ctx.set_shadow_blur(0.0);
+        }
+    }
+
+    fn draw_path_connector_arrows(
+        &self,
+        commands: &[PathCommand],
+        line_style: Option<&LineStyle>,
+        connector_endpoints: Option<(f64, f64, f64, f64)>,
+    ) {
+        let Some(ls) = line_style else {
+            return;
+        };
+        let Some((x1, y1, x2, y2)) = connector_endpoints else {
+            return;
+        };
+
+        let color = color_to_css(ls.color);
+        let width = ls.width;
+        let len = ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
+            .sqrt()
+            .max(1.0);
+
+        if ls.start_arrow != super::ArrowStyle::None {
+            let (dx, dy) = {
+                let mut found = (x1 - x2, y1 - y2);
+                for cmd in commands.iter().skip(1) {
+                    let (px, py) = match cmd {
+                        PathCommand::LineTo(px, py) => (*px, *py),
+                        PathCommand::CurveTo(cx, cy, _, _, _, _) => (*cx, *cy),
+                        _ => continue,
+                    };
+                    if (x1 - px).abs() > 0.5 || (y1 - py).abs() > 0.5 {
+                        found = (x1 - px, y1 - py);
+                        break;
+                    }
+                }
+                found
+            };
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let (aw, ah) = calc_arrow_dims(width, len, ls.start_arrow_size);
+            draw_arrow_head(
+                &self.ctx,
+                x1,
+                y1,
+                dx / d,
+                dy / d,
+                aw,
+                ah,
+                &ls.start_arrow,
+                &color,
+                width,
+            );
+        }
+
+        if ls.end_arrow != super::ArrowStyle::None {
+            let (dx, dy) = {
+                let mut points: Vec<(f64, f64)> = Vec::new();
+                for cmd in commands {
+                    match cmd {
+                        PathCommand::MoveTo(px, py) | PathCommand::LineTo(px, py) => {
+                            points.push((*px, *py));
+                        }
+                        PathCommand::CurveTo(_, _, cx, cy, ex, ey) => {
+                            points.push((*cx, *cy));
+                            points.push((*ex, *ey));
+                        }
+                        _ => {}
+                    }
+                }
+                let mut found = (x2 - x1, y2 - y1);
+                for i in (0..points.len()).rev() {
+                    let ddx = x2 - points[i].0;
+                    let ddy = y2 - points[i].1;
+                    if ddx.abs() > 0.5 || ddy.abs() > 0.5 {
+                        found = (ddx, ddy);
+                        break;
+                    }
+                }
+                found
+            };
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let (aw, ah) = calc_arrow_dims(width, len, ls.end_arrow_size);
+            draw_arrow_head(
+                &self.ctx,
+                x2,
+                y2,
+                dx / d,
+                dy / d,
+                aw,
+                ah,
+                &ls.end_arrow,
+                &color,
+                width,
+            );
         }
     }
 

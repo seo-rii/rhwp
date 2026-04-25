@@ -4,6 +4,26 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: ARCH-009 WebCanvas Shape PaintOp Replay
+
+Reduce another slice of the WebCanvas layer adapter by replaying shape `PaintOp`s directly instead of rebuilding temporary legacy `RenderNodeType` wrappers.
+
+## Steps
+
+1. Done: replay `PaintOp::Line`, `PaintOp::Rectangle`, `PaintOp::Ellipse`, and `PaintOp::Path` directly from layer payloads.
+2. Done: share connector-arrow drawing between legacy path replay and direct PaintOp path replay.
+3. Done: verify wasm/default/native checks and Studio build.
+4. Done: commit and push the batch if checks pass.
+
+## Verification
+
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo check --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: ARCH-009 WebCanvas Image Resource Replay
 
 Reduce the legacy-adapter cost in WebCanvas layer replay by rendering layer image resources directly from `ResourceArena` bytes instead of rebuilding temporary `ImageNode`/`PageBackgroundImage` values with copied buffers.
