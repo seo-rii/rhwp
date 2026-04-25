@@ -4,6 +4,31 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: ARCH-010 Layer Option Metadata
+
+Clarify which layer options are build-time metadata, debug display metadata, and replay semantics while preserving the existing `outputOptions` compatibility field.
+
+## Steps
+
+1. Done: document `LayerOutputOptions` field semantics in the paint IR.
+2. Done: add canonical JSON/JS `buildOptions.showTransparentBorders` metadata.
+3. Done: add canonical JSON/JS `debugOptions.debugOverlay` metadata.
+4. Done: keep existing `outputOptions` fields for compatibility with current consumers.
+5. Done: update Studio TypeScript layer tree types.
+6. Done: verify focused schema tests, Rust/wasm checks, Studio build, clippy, and formatting.
+7. Pending: commit and push this batch if checks pass.
+
+## Verification
+
+- `cargo test --lib serializes_output_options_for_backend_replay -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo check --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `wasm-pack test --node --lib` passed: 2 passed.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: ARCH-009 WebCanvas Remaining Leaf PaintOp Replay
 
 Remove the remaining WebCanvas leaf PaintOp adapter path by replaying equation, footnote marker, and form object payloads directly.

@@ -90,6 +90,20 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         tree.output_options.debug_overlay,
     );
     set_value(&value, "outputOptions", output_options.into());
+    let build_options = Object::new();
+    set_bool(
+        &build_options,
+        "showTransparentBorders",
+        tree.output_options.show_transparent_borders,
+    );
+    set_value(&value, "buildOptions", build_options.into());
+    let debug_options = Object::new();
+    set_bool(
+        &debug_options,
+        "debugOverlay",
+        tree.output_options.debug_overlay,
+    );
+    set_value(&value, "debugOptions", debug_options.into());
     set_value(&value, "root", layer_node_to_value(&tree.root));
 
     let resources = Object::new();
@@ -940,6 +954,16 @@ mod tests {
         ] {
             assert_same_bool(&json_options, &js_options, property);
         }
+        let json_build_options = prop(&json_value, "buildOptions");
+        let js_build_options = prop(&js_value, "buildOptions");
+        assert_same_bool(
+            &json_build_options,
+            &js_build_options,
+            "showTransparentBorders",
+        );
+        let json_debug_options = prop(&json_value, "debugOptions");
+        let js_debug_options = prop(&js_value, "debugOptions");
+        assert_same_bool(&json_debug_options, &js_debug_options, "debugOverlay");
 
         let json_root = prop(&json_value, "root");
         let js_root = prop(&js_value, "root");

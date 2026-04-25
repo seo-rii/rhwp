@@ -52,6 +52,12 @@ export interface PageLayerTree {
     clipEnabled?: boolean;
     debugOverlay?: boolean;
   };
+  buildOptions?: {
+    showTransparentBorders?: boolean;
+  };
+  debugOptions?: {
+    debugOverlay?: boolean;
+  };
   resources?: LayerResources;
   root: LayerNode;
 }

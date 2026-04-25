@@ -85,10 +85,18 @@ impl PageLayerTree {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LayerOutputOptions {
+    /// Lowers visible paragraph-end marks into text control mark payloads.
     pub show_paragraph_marks: bool,
+    /// Lowers visible control-code marks and object labels into layer payloads.
     pub show_control_codes: bool,
+    /// RenderTree/layout build option. Exported for cache keys and schema context;
+    /// replayers should consume the already-lowered transparent border paint ops.
     pub show_transparent_borders: bool,
+    /// Layer build/replay option. Builders omit Body/TableCell ClipRect nodes when false;
+    /// replayers also skip defensive ClipRect nodes when present in older trees.
     pub clip_enabled: bool,
+    /// Debug display option. Currently consumed by debug-capable replayers and exported
+    /// separately as debugOptions for frontend/runtime feature gating.
     pub debug_overlay: bool,
 }
 

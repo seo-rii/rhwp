@@ -25,7 +25,7 @@ impl PageLayerTree {
         buf.push('{');
         let _ = write!(
             buf,
-            "\"schemaVersion\":{},\"resourceTableVersion\":{},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"root\":",
+            "\"schemaVersion\":{},\"resourceTableVersion\":{},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"buildOptions\":{{\"showTransparentBorders\":{}}},\"debugOptions\":{{\"debugOverlay\":{}}},\"root\":",
             LAYER_TREE_SCHEMA.schema_version,
             LAYER_TREE_SCHEMA.resource_table_version,
             json_escape(LAYER_TREE_SCHEMA.unit),
@@ -37,6 +37,8 @@ impl PageLayerTree {
             self.output_options.show_control_codes,
             self.output_options.show_transparent_borders,
             self.output_options.clip_enabled,
+            self.output_options.debug_overlay,
+            self.output_options.show_transparent_borders,
             self.output_options.debug_overlay,
         );
         self.root.write_json(&mut buf, &self.resources);
@@ -1392,6 +1394,8 @@ mod tests {
         assert!(json.contains("\"showTransparentBorders\":true"));
         assert!(json.contains("\"clipEnabled\":false"));
         assert!(json.contains("\"debugOverlay\":true"));
+        assert!(json.contains("\"buildOptions\":{\"showTransparentBorders\":true}"));
+        assert!(json.contains("\"debugOptions\":{\"debugOverlay\":true}"));
     }
 }
 
