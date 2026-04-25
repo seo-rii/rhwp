@@ -1,6 +1,6 @@
 use skia_safe::{
     paint::Cap, surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Image, Paint, PathBuilder,
-    Picture, PictureRecorder, Point, Rect,
+    Picture, PictureRecorder, Point, Rect, Shaper,
 };
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -31,6 +31,7 @@ use super::path_conv::to_skia_path;
 
 pub struct SkiaLayerRenderer {
     font_mgr: FontMgr,
+    text_shaper: Shaper,
     static_picture_cache: RefCell<StaticPictureCache>,
 }
 
@@ -408,8 +409,11 @@ impl SkiaReplayContext {
 
 impl SkiaLayerRenderer {
     pub fn new() -> Self {
+        let font_mgr = FontMgr::default();
+        let text_shaper = Shaper::new(Some(font_mgr.clone()));
         Self {
-            font_mgr: FontMgr::default(),
+            font_mgr,
+            text_shaper,
             static_picture_cache: RefCell::new(StaticPictureCache::new(
                 MAX_STATIC_PICTURE_CACHE_ENTRIES,
             )),
@@ -1478,6 +1482,47 @@ impl SkiaLayerRenderer {
         }
 
         let paint = make_text_paint(&render_style);
+        let shape_text_blob = |cluster: &str, font: &skia_safe::Font| {
+            if cluster.is_empty() {
+                return None;
+            }
+            let mut has_rtl = false;
+            let needs_shaping = cluster.chars().any(|ch| {
+                let codepoint = u32::from(ch);
+                if matches!(
+                    codepoint,
+                    0x0590..=0x08FF
+                        | 0xFB1D..=0xFDFF
+                        | 0xFE70..=0xFEFF
+                        | 0x10800..=0x10FFF
+                        | 0x1E800..=0x1EFFF
+                ) {
+                    has_rtl = true;
+                    return true;
+                }
+                matches!(
+                    codepoint,
+                    0x0300..=0x036F
+                        | 0x0900..=0x0DFF
+                        | 0x0E00..=0x0E7F
+                        | 0x1780..=0x17FF
+                        | 0x1AB0..=0x1AFF
+                        | 0x1DC0..=0x1DFF
+                        | 0x200C..=0x200D
+                        | 0x20D0..=0x20FF
+                        | 0xFE00..=0xFE0F
+                        | 0xFE20..=0xFE2F
+                        | 0x1F1E6..=0x1FAFF
+                        | 0xE0100..=0xE01EF
+                )
+            });
+            if !needs_shaping {
+                return None;
+            }
+            self.text_shaper
+                .shape_text_blob(cluster, font, !has_rtl, 1_000_000.0, Point::default())
+                .map(|(blob, _)| blob)
+        };
         let clusters = split_into_clusters(&run.text);
         let metrics_font = make_font(&render_style, &self.font_mgr, &run.text);
         let char_positions = &run.positions;
@@ -1590,15 +1635,22 @@ impl SkiaLayerRenderer {
                     continue;
                 }
                 let font = make_font(&render_style, &self.font_mgr, cluster);
-                let glyphs = font.text_to_glyphs_vec(cluster);
-                let mut glyph_positions = vec![Point::default(); glyphs.len()];
-                font.get_pos(&glyphs, &mut glyph_positions, Some(Point::new(x, pass_y)));
-                for (glyph_id, glyph_position) in glyphs.into_iter().zip(glyph_positions) {
-                    if let Some(path) = font.get_path(glyph_id) {
-                        let path = path.with_offset((glyph_position.x, glyph_position.y));
-                        canvas.draw_path(&path, &fill_paint);
-                        if stroke_color.is_some() {
-                            canvas.draw_path(&path, &stroke_paint);
+                if let Some(blob) = shape_text_blob(cluster, &font) {
+                    canvas.draw_text_blob(&blob, (x, pass_y), &fill_paint);
+                    if stroke_color.is_some() {
+                        canvas.draw_text_blob(&blob, (x, pass_y), &stroke_paint);
+                    }
+                } else {
+                    let glyphs = font.text_to_glyphs_vec(cluster);
+                    let mut glyph_positions = vec![Point::default(); glyphs.len()];
+                    font.get_pos(&glyphs, &mut glyph_positions, Some(Point::new(x, pass_y)));
+                    for (glyph_id, glyph_position) in glyphs.into_iter().zip(glyph_positions) {
+                        if let Some(path) = font.get_path(glyph_id) {
+                            let path = path.with_offset((glyph_position.x, glyph_position.y));
+                            canvas.draw_path(&path, &fill_paint);
+                            if stroke_color.is_some() {
+                                canvas.draw_path(&path, &stroke_paint);
+                            }
                         }
                     }
                 }
@@ -1642,7 +1694,11 @@ impl SkiaLayerRenderer {
                     }
                     let font = make_font(&render_style, &self.font_mgr, cluster);
                     let x = bbox.x + char_positions[*char_idx];
-                    canvas.draw_str(cluster, (x as f32, y), &font, &paint);
+                    if let Some(blob) = shape_text_blob(cluster, &font) {
+                        canvas.draw_text_blob(&blob, (x as f32, y), &paint);
+                    } else {
+                        canvas.draw_str(cluster, (x as f32, y), &font, &paint);
+                    }
                 }
             }
         }
@@ -1924,7 +1980,7 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 #[cfg(test)]
 mod tests {
     use super::{
-        raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext,
+        make_font, raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext,
         MAX_STATIC_PICTURE_CACHE_ENTRIES,
     };
     use crate::model::style::UnderlineType;
@@ -1943,6 +1999,7 @@ mod tests {
         TextStyle,
     };
     use resvg::tiny_skia;
+    use skia_safe::Point;
 
     #[test]
     fn renders_basic_rect_to_png() {
@@ -2576,6 +2633,74 @@ mod tests {
             .count();
 
         assert!(ink_pixels > 20, "expected visible plain text ink");
+    }
+
+    #[test]
+    fn skia_shaper_builds_blob_for_complex_text() {
+        let renderer = SkiaLayerRenderer::new();
+        let text = "office 👩\u{200d}💻 العربية 한글";
+        let style = TextStyle {
+            font_family: "sans-serif".to_string(),
+            font_size: 20.0,
+            ..Default::default()
+        };
+        let font = make_font(&style, &renderer.font_mgr, text);
+
+        assert!(
+            renderer
+                .text_shaper
+                .shape_text_blob(text, &font, false, 1_000_000.0, Point::default())
+                .is_some(),
+            "native Skia textlayout shaper should produce a TextBlob for complex text"
+        );
+    }
+
+    #[test]
+    fn renders_complex_shaped_text_run_to_png() {
+        let text = "office 👩\u{200d}💻 العربية 한글";
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 260.0, 70.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: text.to_string(),
+                style: TextStyle {
+                    font_family: "sans-serif".to_string(),
+                    font_size: 20.0,
+                    color: 0x00000000,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 30.0,
+                field_marker: Default::default(),
+            }),
+            BoundingBox::new(10.0, 14.0, 240.0, 36.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let renderer = SkiaLayerRenderer::new();
+        let png = renderer
+            .render_png(&layer_tree)
+            .expect("complex shaped text render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+        let ink_pixels = pixmap
+            .pixels()
+            .iter()
+            .filter(|pixel| pixel.alpha() > 0)
+            .count();
+
+        assert!(ink_pixels > 20, "expected visible complex text ink");
     }
 
     #[test]

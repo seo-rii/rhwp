@@ -4,6 +4,29 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: BUG-002 Skia Shaped TextBlob Replay
+
+Move native Skia text replay a step closer to real shaping by enabling Skia textlayout and drawing complex text clusters through shaped `TextBlob`s while preserving the existing stable path for simple text.
+
+## Steps
+
+1. Done: enable the `skia-safe/textlayout` feature for the `native-skia` build.
+2. Done: initialize a reusable Skia `Shaper` in `SkiaLayerRenderer`.
+3. Done: use shaped `TextBlob` replay for ZWJ/emoji, combining, RTL, and complex-script clusters with fallback to the previous draw path for simple text.
+4. Done: verify focused native Skia tests and broader checks.
+5. Done: update risk notes and prepare the batch for commit/push.
+
+## Verification
+
+- `cargo test --features native-skia --lib skia_shaper_builds_blob_for_complex_text -- --quiet` passed.
+- `cargo test --features native-skia --lib renders_complex_shaped_text_run_to_png -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed.
+- `cargo test --features native-skia --lib -- --quiet` passed: 1050 passed, 2 ignored.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` passed.
+
 ## Completed Batch: Text Control Mark Lowering
 
 Lower visible whitespace/paragraph/line-break marks once in `LayerBuilder` so layer backends replay an explicit payload instead of recomputing marker semantics from `TextRun` flags and output options.
