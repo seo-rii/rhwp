@@ -4,6 +4,29 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: BUG-018 Vertical Text Rotation Semantics
+
+Align replay backends with the layout-owned vertical glyph orientation model. The layout already emits one vertical `TextRun` per glyph and stores any required glyph rotation in `TextRunNode::rotation`, so layer/legacy replayers should use that explicit rotation instead of adding an implicit `+90` whenever `is_vertical` is set.
+
+## Steps
+
+1. Done: remove implicit vertical `+90` composition from Rust/Studio layer and legacy replay paths.
+2. Done: update SVG regressions to prove `is_vertical` does not add extra rotation.
+3. Done: verify Rust, WASM, Studio TypeScript, formatting, and diff whitespace before committing.
+4. Done: update risk notes and prepare the batch for commit/push.
+
+## Verification
+
+- `cargo test --lib test_layer_svg_vertical_text_uses_explicit_rotation_only -- --quiet` passed.
+- `cargo test --lib test_legacy_svg_vertical_text_uses_explicit_rotation_only -- --quiet` passed.
+- `cargo test --lib renderer::svg::tests:: -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::renders_text_feature_fixture_to_png -- --quiet` passed.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: BUG-002 Skia Shaped TextBlob Replay
 
 Move native Skia text replay a step closer to real shaping by enabling Skia textlayout and drawing complex text clusters through shaped `TextBlob`s while preserving the existing stable path for simple text.

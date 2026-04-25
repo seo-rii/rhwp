@@ -682,11 +682,7 @@ impl SkiaLayerRenderer {
                 }
             }
             PaintOp::TextRun { bbox, run } => {
-                let rotation = if run.is_vertical {
-                    run.rotation + 90.0
-                } else {
-                    run.rotation
-                };
+                let rotation = run.rotation;
                 if rotation != 0.0 {
                     let cx = (bbox.x + bbox.width / 2.0) as f32;
                     let cy = (bbox.y + bbox.height / 2.0) as f32;

@@ -229,7 +229,7 @@ fn test_svg_double_line_preserves_dash_and_arrows() {
 }
 
 #[test]
-fn test_layer_svg_vertical_text_uses_effective_rotation() {
+fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
     let bbox = BoundingBox::new(10.0, 15.0, 40.0, 20.0);
     let root = LayerNode::leaf(
         bbox,
@@ -245,7 +245,7 @@ fn test_layer_svg_vertical_text_uses_effective_rotation() {
                 positions: vec![0.0, 14.0, 28.0],
                 control_marks: Vec::new(),
                 baseline: 16.0,
-                rotation: 0.0,
+                rotation: 90.0,
                 is_vertical: true,
                 char_overlap: None,
                 field_marker: Default::default(),
@@ -261,14 +261,18 @@ fn test_layer_svg_vertical_text_uses_effective_rotation() {
     let output = renderer.output();
     assert!(
         output.contains("<g transform=\"rotate(90,30,25)\">"),
-        "vertical layer text should rotate around its bbox center:\n{output}"
+        "vertical layer text should use the layout-provided rotation around its bbox center:\n{output}"
+    );
+    assert!(
+        !output.contains("rotate(180"),
+        "vertical layer text should not add another 90 degrees on top of run.rotation:\n{output}"
     );
     assert!(output.contains(">세</text>"));
     assert!(output.contains(">로</text>"));
 }
 
 #[test]
-fn test_legacy_svg_vertical_text_uses_effective_rotation() {
+fn test_legacy_svg_vertical_text_uses_explicit_rotation_only() {
     let mut tree = PageRenderTree::new(0, 80.0, 60.0);
     tree.root.children.push(RenderNode::new(
         1,
@@ -300,8 +304,12 @@ fn test_legacy_svg_vertical_text_uses_effective_rotation() {
 
     let output = renderer.output();
     assert!(
-        output.contains("<g transform=\"rotate(105,30,25)\">"),
-        "vertical legacy text should compose author rotation and vertical rotation:\n{output}"
+        output.contains("<g transform=\"rotate(15,30,25)\">"),
+        "vertical legacy text should use TextRunNode::rotation without implicit vertical rotation:\n{output}"
+    );
+    assert!(
+        !output.contains("rotate(105"),
+        "vertical legacy text should not add another 90 degrees on top of run.rotation:\n{output}"
     );
 }
 

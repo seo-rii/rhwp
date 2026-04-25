@@ -461,11 +461,7 @@ impl WebCanvasRenderer {
                         node.bbox.height,
                     );
                 } else {
-                    let rotation = if run.is_vertical {
-                        run.rotation + 90.0
-                    } else {
-                        run.rotation
-                    };
+                    let rotation = run.rotation;
                     if rotation == 0.0 {
                         self.draw_text(
                             &run.text,

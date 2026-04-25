@@ -696,7 +696,7 @@ export class CanvasKitLayerRenderer {
       }
     };
 
-    const textRotation = op.isVertical ? op.rotation + 90 : op.rotation;
+    const textRotation = op.rotation;
     if (textRotation !== 0) {
       const cx = op.bbox.x + op.bbox.width / 2;
       const cy = op.bbox.y + op.bbox.height / 2;
@@ -2393,7 +2393,7 @@ export class CanvasKitLayerRenderer {
     ctx.save();
     ctx.font = baseFont;
     ctx.textBaseline = 'alphabetic';
-    const textRotation = op.isVertical ? op.rotation + 90 : op.rotation;
+    const textRotation = op.rotation;
     if (textRotation !== 0) {
       const cx = op.bbox.x + op.bbox.width / 2;
       const cy = op.bbox.y + op.bbox.height / 2;

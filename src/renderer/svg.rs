@@ -788,11 +788,7 @@ impl SvgRenderer {
                         }
                     }
                 }
-                let effective_rotation = if run.is_vertical {
-                    run.rotation + 90.0
-                } else {
-                    run.rotation
-                };
+                let effective_rotation = run.rotation;
                 if effective_rotation != 0.0 {
                     let cx = node.bbox.x + node.bbox.width / 2.0;
                     let cy = node.bbox.y + node.bbox.height / 2.0;
@@ -1202,11 +1198,7 @@ impl SvgRenderer {
                 }
             }
         }
-        let effective_rotation = if run.is_vertical {
-            run.rotation + 90.0
-        } else {
-            run.rotation
-        };
+        let effective_rotation = run.rotation;
         if effective_rotation != 0.0 {
             let cx = bbox.x + bbox.width / 2.0;
             let cy = bbox.y + bbox.height / 2.0;
