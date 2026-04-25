@@ -259,6 +259,9 @@ fn paint_op_to_value(op: &PaintOp) -> JsValue {
                 "positions",
                 array_to_value(run.positions.iter().copied().map(JsValue::from_f64)),
             );
+            if !run.control_marks.is_empty() {
+                set_value(&value, "controlMarks", text_control_marks_to_value(run));
+            }
             set_string(&value, "fieldMarker", field_marker_str(run.field_marker));
             set_bool(&value, "isParaEnd", run.is_para_end);
             set_bool(&value, "isLineBreakEnd", run.is_line_break_end);
@@ -723,6 +726,18 @@ fn array_to_value(values: impl IntoIterator<Item = JsValue>) -> JsValue {
     array.into()
 }
 
+fn text_control_marks_to_value(run: &crate::paint::LayerTextRunPaint) -> JsValue {
+    array_to_value(run.control_marks.iter().map(|mark| {
+        let value = Object::new();
+        set_string(&value, "kind", mark.kind.as_str());
+        set_string(&value, "text", mark.kind.glyph());
+        set_number(&value, "x", mark.x);
+        set_number(&value, "y", mark.y);
+        set_number(&value, "fontSize", mark.font_size);
+        value.into()
+    }))
+}
+
 fn set_value(object: &Object, key: &str, value: JsValue) {
     Reflect::set(object, &JsValue::from_str(key), &value).expect("js object property set failed");
 }
@@ -891,7 +906,8 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test;
 
     use crate::paint::{
-        LayerEquationPaint, LayerImagePaint, LayerOutputOptions, LayerTextRunPaint, ResourceArena,
+        LayerEquationPaint, LayerImagePaint, LayerOutputOptions, LayerTextControlMark,
+        LayerTextControlMarkKind, LayerTextRunPaint, ResourceArena,
     };
     use crate::renderer::render_tree::BoundingBox;
 
@@ -943,6 +959,14 @@ mod tests {
         assert_same_number(&json_text, &js_text, "shapeMarkerIndex");
         assert_same_bool(&json_text, &js_text, "isParaEnd");
         assert_same_bool(&json_text, &js_text, "isLineBreakEnd");
+        let json_marks = Array::from(&prop(&json_text, "controlMarks"));
+        let js_marks = Array::from(&prop(&js_text, "controlMarks"));
+        assert_eq!(json_marks.length(), 1);
+        assert_eq!(json_marks.length(), js_marks.length());
+        assert_same_string(&json_marks.get(0), &js_marks.get(0), "kind");
+        assert_same_string(&json_marks.get(0), &js_marks.get(0), "text");
+        assert_same_number(&json_marks.get(0), &js_marks.get(0), "x");
+        assert_same_number(&json_marks.get(0), &js_marks.get(0), "fontSize");
 
         let json_image = json_ops.get(1);
         let js_image = js_ops.get(1);
@@ -1047,6 +1071,12 @@ mod tests {
                                 ..Default::default()
                             },
                             positions: vec![0.0, 7.0, 14.0, 21.0, 28.0, 35.0, 42.0],
+                            control_marks: vec![LayerTextControlMark {
+                                kind: LayerTextControlMarkKind::LineBreakEnd,
+                                x: 80.0,
+                                y: 0.0,
+                                font_size: 12.0,
+                            }],
                             is_para_end: true,
                             is_line_break_end: true,
                             rotation: 15.0,

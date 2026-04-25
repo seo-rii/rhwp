@@ -251,8 +251,8 @@ impl WebCanvasRenderer {
                             para_index: None,
                             char_start: None,
                             cell_context: None,
-                            is_para_end: run.is_para_end,
-                            is_line_break_end: run.is_line_break_end,
+                            is_para_end: false,
+                            is_line_break_end: false,
                             rotation: run.rotation,
                             is_vertical: run.is_vertical,
                             char_overlap: run.char_overlap.clone(),
@@ -363,9 +363,43 @@ impl WebCanvasRenderer {
                     };
                     let render_node =
                         RenderNode::new(source_node_id, render_node_type, op.bounds());
-                    self.render_node(&render_node);
+                    if matches!(op, PaintOp::TextRun { .. }) {
+                        let show_paragraph_marks = self.show_paragraph_marks;
+                        let show_control_codes = self.show_control_codes;
+                        self.show_paragraph_marks = false;
+                        self.show_control_codes = false;
+                        self.render_node(&render_node);
+                        self.show_paragraph_marks = show_paragraph_marks;
+                        self.show_control_codes = show_control_codes;
+                    } else {
+                        self.render_node(&render_node);
+                    }
+                    if let PaintOp::TextRun { bbox, run } = op {
+                        self.draw_layer_text_control_marks(bbox, run);
+                    }
                 }
             }
+        }
+    }
+
+    fn draw_layer_text_control_marks(
+        &self,
+        bbox: &BoundingBox,
+        run: &crate::paint::LayerTextRunPaint,
+    ) {
+        if run.control_marks.is_empty() {
+            return;
+        }
+
+        self.ctx.set_fill_style_str("#4A90D9");
+        for mark in &run.control_marks {
+            self.ctx
+                .set_font(&format!("{:.3}px sans-serif", mark.font_size));
+            let _ = self.ctx.fill_text(
+                mark.kind.glyph(),
+                bbox.x + mark.x,
+                bbox.y + run.baseline + mark.y,
+            );
         }
     }
 

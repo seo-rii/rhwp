@@ -1764,62 +1764,25 @@ impl SkiaLayerRenderer {
             }
         }
 
-        if replay.output_options.show_paragraph_marks || replay.output_options.show_control_codes {
-            let is_marker = !matches!(
-                run.field_marker,
-                crate::renderer::render_tree::FieldMarkerType::None
-            );
+        if !run.control_marks.is_empty() {
             let mut marker_paint = Paint::default();
             marker_paint.set_anti_alias(true);
             marker_paint.set_color(Color::from_argb(255, 0x4A, 0x90, 0xD9));
 
-            if !run.text.is_empty() && !is_marker {
-                let mark_font_size = (base_font_size * 0.5).max(1.0);
+            for mark in &run.control_marks {
                 let marker_style = crate::renderer::TextStyle {
                     font_family: "sans-serif".to_string(),
-                    font_size: mark_font_size,
+                    font_size: mark.font_size,
                     ..Default::default()
                 };
-                let marker_font = make_font(&marker_style, &self.font_mgr, "∨→");
-                for (index, ch) in run.text.chars().enumerate() {
-                    if ch == ' ' {
-                        let current_x = bbox.x
-                            + char_positions
-                                .get(index)
-                                .copied()
-                                .unwrap_or(text_width as f64);
-                        let next_x = if index + 1 < char_positions.len() {
-                            bbox.x + char_positions[index + 1]
-                        } else {
-                            bbox.x + bbox.width
-                        };
-                        let mid_x = (current_x + next_x) / 2.0 - mark_font_size * 0.25;
-                        canvas.draw_str("∨", (mid_x as f32, y), &marker_font, &marker_paint);
-                    } else if ch == '\t' {
-                        let current_x = bbox.x
-                            + char_positions
-                                .get(index)
-                                .copied()
-                                .unwrap_or(text_width as f64);
-                        canvas.draw_str("→", (current_x as f32, y), &marker_font, &marker_paint);
-                    }
-                }
-            }
-
-            if run.is_para_end || run.is_line_break_end {
-                let marker_style = crate::renderer::TextStyle {
-                    font_family: "sans-serif".to_string(),
-                    font_size: base_font_size,
-                    ..Default::default()
-                };
-                let mark = if run.is_line_break_end { "↓" } else { "↵" };
-                let marker_font = make_font(&marker_style, &self.font_mgr, mark);
-                let mark_x = if run.text.is_empty() {
-                    bbox.x
-                } else {
-                    bbox.x + bbox.width
-                };
-                canvas.draw_str(mark, (mark_x as f32, y), &marker_font, &marker_paint);
+                let glyph = mark.kind.glyph();
+                let marker_font = make_font(&marker_style, &self.font_mgr, glyph);
+                canvas.draw_str(
+                    glyph,
+                    ((bbox.x + mark.x) as f32, y + mark.y as f32),
+                    &marker_font,
+                    &marker_paint,
+                );
             }
         }
     }
@@ -2810,11 +2773,13 @@ mod tests {
 
         let mut builder = LayerBuilder::new(RenderProfile::Screen);
         let base_tree = builder.build(&tree);
-        let marked_tree = base_tree.clone().with_output_options(LayerOutputOptions {
-            show_paragraph_marks: true,
-            show_control_codes: true,
-            ..Default::default()
-        });
+        let mut marked_builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                show_paragraph_marks: true,
+                show_control_codes: true,
+                ..Default::default()
+            });
+        let marked_tree = marked_builder.build(&tree);
         let renderer = SkiaLayerRenderer::new();
         let base_png = renderer.render_png(&base_tree).expect("base skia render");
         let marked_png = renderer
@@ -2865,11 +2830,13 @@ mod tests {
 
         let mut builder = LayerBuilder::new(RenderProfile::Screen);
         let base_tree = builder.build(&tree);
-        let marked_tree = base_tree.clone().with_output_options(LayerOutputOptions {
-            show_paragraph_marks: true,
-            show_control_codes: true,
-            ..Default::default()
-        });
+        let mut marked_builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                show_paragraph_marks: true,
+                show_control_codes: true,
+                ..Default::default()
+            });
+        let marked_tree = marked_builder.build(&tree);
         let renderer = SkiaLayerRenderer::new();
         let base_png = renderer.render_png(&base_tree).expect("base skia render");
         let marked_png = renderer
@@ -2920,11 +2887,13 @@ mod tests {
 
         let mut builder = LayerBuilder::new(RenderProfile::Screen);
         let base_tree = builder.build(&tree);
-        let marked_tree = base_tree.clone().with_output_options(LayerOutputOptions {
-            show_paragraph_marks: true,
-            show_control_codes: true,
-            ..Default::default()
-        });
+        let mut marked_builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                show_paragraph_marks: true,
+                show_control_codes: true,
+                ..Default::default()
+            });
+        let marked_tree = marked_builder.build(&tree);
         let renderer = SkiaLayerRenderer::new();
         let base_png = renderer.render_png(&base_tree).expect("base skia render");
         let marked_png = renderer

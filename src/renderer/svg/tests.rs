@@ -1,5 +1,7 @@
 use super::*;
-use crate::paint::{LayerOutputOptions, LayerRectanglePaint};
+use crate::paint::{
+    LayerOutputOptions, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+};
 use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
 
@@ -241,6 +243,7 @@ fn test_layer_svg_vertical_text_uses_effective_rotation() {
                     ..Default::default()
                 },
                 positions: vec![0.0, 14.0, 28.0],
+                control_marks: Vec::new(),
                 baseline: 16.0,
                 rotation: 0.0,
                 is_vertical: true,
@@ -317,6 +320,20 @@ fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
                     ..Default::default()
                 },
                 positions: vec![0.0, 8.0, 16.0, 24.0],
+                control_marks: vec![
+                    LayerTextControlMark {
+                        kind: LayerTextControlMarkKind::Space,
+                        x: 10.0,
+                        y: 0.0,
+                        font_size: 7.0,
+                    },
+                    LayerTextControlMark {
+                        kind: LayerTextControlMarkKind::ParagraphEnd,
+                        x: 40.0,
+                        y: 0.0,
+                        font_size: 14.0,
+                    },
+                ],
                 baseline: 16.0,
                 rotation: 0.0,
                 is_vertical: false,

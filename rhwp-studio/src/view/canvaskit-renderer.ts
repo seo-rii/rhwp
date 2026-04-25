@@ -685,35 +685,10 @@ export class CanvasKitLayerRenderer {
         strikePaint.delete();
       }
 
-      const outputOptions = this.lastRenderedTree?.outputOptions;
-      if (outputOptions?.showParagraphMarks || outputOptions?.showControlCodes) {
-        const fieldMarker = op.fieldMarker ?? 'none';
-        if (op.text && fieldMarker === 'none') {
-          const markFontSize = Math.max(op.style.fontSize * 0.5, 1);
-          const markObjects = this.makeTextObjects('Noto Sans KR', markFontSize, false, false, '#4A90D9');
-          const chars = Array.from(op.text);
-          for (const [index, ch] of chars.entries()) {
-            if (ch === ' ') {
-              const currentX = originX + (op.positions[index] ?? textWidth);
-              const nextX = index + 1 < op.positions.length
-                ? originX + op.positions[index + 1]
-                : originX + op.bbox.width;
-              const midX = (currentX + nextX) / 2 - markFontSize * 0.25;
-              canvas.drawText('∨', midX, originY, markObjects.paint, markObjects.font);
-            } else if (ch === '\t') {
-              const currentX = originX + (op.positions[index] ?? textWidth);
-              canvas.drawText('→', currentX, originY, markObjects.paint, markObjects.font);
-            }
-          }
-          markObjects.paint.delete();
-          markObjects.font.delete();
-          markObjects.typeface.delete();
-        }
-        if (op.isParaEnd || op.isLineBreakEnd) {
-          const markObjects = this.makeTextObjects('Noto Sans KR', op.style.fontSize, false, false, '#4A90D9');
-          const mark = op.isLineBreakEnd ? '↓' : '↵';
-          const markX = op.text ? originX + op.bbox.width : originX;
-          canvas.drawText(mark, markX, originY, markObjects.paint, markObjects.font);
+      if (op.controlMarks?.length) {
+        for (const mark of op.controlMarks) {
+          const markObjects = this.makeTextObjects('Noto Sans KR', mark.fontSize, false, false, '#4A90D9');
+          canvas.drawText(mark.text, originX + mark.x, originY + mark.y, markObjects.paint, markObjects.font);
           markObjects.paint.delete();
           markObjects.font.delete();
           markObjects.typeface.delete();
@@ -2404,34 +2379,12 @@ export class CanvasKitLayerRenderer {
         ctx.restore();
       }
 
-      const outputOptions = this.lastRenderedTree?.outputOptions;
-      if (outputOptions?.showParagraphMarks || outputOptions?.showControlCodes) {
-        const fieldMarker = op.fieldMarker ?? 'none';
+      if (op.controlMarks?.length) {
         ctx.save();
         ctx.fillStyle = '#4A90D9';
-        if (op.text && fieldMarker === 'none') {
-          const markFontSize = Math.max(fontSize * 0.5, 1);
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', markFontSize, false, false);
-          const chars = Array.from(op.text);
-          for (const [index, ch] of chars.entries()) {
-            if (ch === ' ') {
-              const currentX = originX + (op.positions[index] ?? textWidth);
-              const nextX = index + 1 < op.positions.length
-                ? originX + op.positions[index + 1]
-                : originX + op.bbox.width;
-              const midX = (currentX + nextX) / 2 - markFontSize * 0.25;
-              ctx.fillText('∨', midX, originY);
-            } else if (ch === '\t') {
-              const currentX = originX + (op.positions[index] ?? textWidth);
-              ctx.fillText('→', currentX, originY);
-            }
-          }
-        }
-        if (op.isParaEnd || op.isLineBreakEnd) {
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', fontSize, false, false);
-          const mark = op.isLineBreakEnd ? '↓' : '↵';
-          const markX = op.text ? originX + op.bbox.width : originX;
-          ctx.fillText(mark, markX, originY);
+        for (const mark of op.controlMarks) {
+          this.setCanvasTextFont(ctx, 'Noto Sans KR', mark.fontSize, false, false);
+          ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
         }
         ctx.restore();
       }

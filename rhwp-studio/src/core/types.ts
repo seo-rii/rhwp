@@ -169,6 +169,14 @@ export interface LayerTabLeader {
   fillType: number;
 }
 
+export interface LayerTextControlMark {
+  kind: 'space' | 'tab' | 'paragraphEnd' | 'lineBreakEnd';
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+}
+
 export interface LayerShapeShadow {
   shadowType: number;
   color: string;
@@ -254,6 +262,7 @@ export interface LayerTextRunOp {
   isLineBreakEnd?: boolean;
   style: LayerTextStyle;
   positions: number[];
+  controlMarks?: LayerTextControlMark[];
   tabLeaders?: LayerTabLeader[];
 }
 

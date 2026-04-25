@@ -190,6 +190,10 @@ impl PaintOp {
                 write_text_style(buf, &run.style);
                 buf.push_str(",\"positions\":");
                 write_text_positions(buf, run);
+                if !run.control_marks.is_empty() {
+                    buf.push_str(",\"controlMarks\":");
+                    write_text_control_marks(buf, run);
+                }
                 let _ = write!(
                     buf,
                     ",\"fieldMarker\":{},\"isParaEnd\":{},\"isLineBreakEnd\":{}",
@@ -450,6 +454,25 @@ fn write_text_positions(buf: &mut String, run: &LayerTextRunPaint) {
             buf.push(',');
         }
         let _ = write!(buf, "{:.6}", position);
+    }
+    buf.push(']');
+}
+
+fn write_text_control_marks(buf: &mut String, run: &LayerTextRunPaint) {
+    buf.push('[');
+    for (idx, mark) in run.control_marks.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(
+            buf,
+            "{{\"kind\":{},\"text\":{},\"x\":{:.6},\"y\":{:.6},\"fontSize\":{:.6}}}",
+            json_escape(mark.kind.as_str()),
+            json_escape(mark.kind.glyph()),
+            mark.x,
+            mark.y,
+            mark.font_size,
+        );
     }
     buf.push(']');
 }
@@ -966,8 +989,9 @@ mod tests {
     use crate::model::image::ImageEffect;
     use crate::paint::{
         CacheHint, ClipKind, LayerEquationPaint, LayerImagePaint, LayerLinePaint, LayerNode,
-        LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PageLayerTree,
-        ResourceArena, LAYER_TREE_SCHEMA,
+        LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerTextControlMark,
+        LayerTextControlMarkKind, LayerTextRunPaint, PageLayerTree, ResourceArena,
+        LAYER_TREE_SCHEMA,
     };
 
     #[test]
@@ -1010,6 +1034,12 @@ mod tests {
                     ..Default::default()
                 },
                 positions: vec![0.0, 16.0, 24.0],
+                control_marks: vec![LayerTextControlMark {
+                    kind: LayerTextControlMarkKind::ParagraphEnd,
+                    x: 80.0,
+                    y: 0.0,
+                    font_size: 16.0,
+                }],
                 is_para_end: false,
                 is_line_break_end: false,
                 rotation: 0.0,
@@ -1076,6 +1106,7 @@ mod tests {
         assert!(json.contains("\"showParagraphMarks\":false"));
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
+        assert!(json.contains("\"controlMarks\":[{\"kind\":\"paragraphEnd\",\"text\":\"↵\",\"x\":80.000000,\"y\":0.000000,\"fontSize\":16.000000}]"));
         assert!(json.contains("\"fieldMarker\":\"none\""));
         assert!(json.contains("\"isParaEnd\":false"));
         assert!(json.contains("\"isLineBreakEnd\":false"));

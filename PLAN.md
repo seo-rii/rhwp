@@ -4,6 +4,29 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Text Control Mark Lowering
+
+Lower visible whitespace/paragraph/line-break marks once in `LayerBuilder` so layer backends replay an explicit payload instead of recomputing marker semantics from `TextRun` flags and output options.
+
+## Steps
+
+1. Done: add lowered control mark payload to `LayerTextRunPaint` and JSON/JS/TypeScript exports.
+2. Done: switch Rust/browser layer backends to draw lowered marks.
+3. Done: add focused lowering/export/backend regressions.
+4. Done: verify local checks before commit.
+
+## Verification
+
+- `cargo test --lib lowers_text_control_marks_from_output_options -- --quiet` passed.
+- `cargo test --lib serializes_text_and_shape_ops_for_browser_replay -- --quiet` passed.
+- `cargo test --lib test_layer_svg_output_options_enable_marks_without_renderer_config -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::output_options -- --quiet` passed.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: Skia Text Marker Fixtures
 
 Lock the remaining `BUG-001` marker behavior that is implemented but lightly covered in native Skia replay.

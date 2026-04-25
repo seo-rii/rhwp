@@ -33,7 +33,8 @@ pub use layer_tree::{
 pub use paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PaintBounds, PaintOp,
+    LayerPathPaint, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+    LayerTextRunPaint, PaintBounds, PaintOp,
 };
 pub use profile::RenderProfile;
 pub use resources::{

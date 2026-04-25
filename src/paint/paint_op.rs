@@ -71,6 +71,7 @@ pub struct LayerTextRunPaint {
     pub text: String,
     pub style: TextStyle,
     pub positions: Vec<f64>,
+    pub control_marks: Vec<LayerTextControlMark>,
     pub baseline: f64,
     pub rotation: f64,
     pub is_vertical: bool,
@@ -78,6 +79,44 @@ pub struct LayerTextRunPaint {
     pub field_marker: FieldMarkerType,
     pub is_para_end: bool,
     pub is_line_break_end: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerTextControlMarkKind {
+    Space,
+    Tab,
+    ParagraphEnd,
+    LineBreakEnd,
+}
+
+impl LayerTextControlMarkKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Space => "space",
+            Self::Tab => "tab",
+            Self::ParagraphEnd => "paragraphEnd",
+            Self::LineBreakEnd => "lineBreakEnd",
+        }
+    }
+
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Self::Space => "\u{2228}",
+            Self::Tab => "\u{2192}",
+            Self::ParagraphEnd => "\u{21B5}",
+            Self::LineBreakEnd => "\u{2193}",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LayerTextControlMark {
+    pub kind: LayerTextControlMarkKind,
+    /// X offset relative to the rendered text origin.
+    pub x: f64,
+    /// Y offset relative to the rendered text baseline.
+    pub y: f64,
+    pub font_size: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -208,7 +247,7 @@ impl PaintOp {
             PaintOp::PageBackground { background, .. } => {
                 expand(logical, background.border_width.max(0.0) * 0.5)
             }
-            PaintOp::TextRun { run, .. } => {
+            PaintOp::TextRun { bbox, run } => {
                 let style = &run.style;
                 let mut amount = 0.0_f64;
                 if style.underline != UnderlineType::None || style.strikethrough {
@@ -239,6 +278,15 @@ impl PaintOp {
                                 .max(style.font_size * 0.1),
                         ),
                     );
+                }
+                for mark in &run.control_marks {
+                    let mark_box = BoundingBox::new(
+                        bbox.x + mark.x,
+                        bbox.y + run.baseline + mark.y - mark.font_size,
+                        mark.font_size,
+                        mark.font_size * 1.2,
+                    );
+                    visual = union(visual, mark_box);
                 }
                 visual
             }
@@ -370,6 +418,7 @@ mod tests {
                     ..Default::default()
                 },
                 positions: vec![0.0, 10.0, 20.0, 30.0],
+                control_marks: Vec::new(),
                 baseline: 14.0,
                 rotation: 0.0,
                 is_vertical: false,

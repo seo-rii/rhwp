@@ -1234,63 +1234,14 @@ impl SvgRenderer {
                 Some(&run.positions),
             );
         }
-        if self.show_paragraph_marks || self.show_control_codes {
-            let is_marker = !matches!(
-                run.field_marker,
-                crate::renderer::render_tree::FieldMarkerType::None
-            );
-            let font_size = if run.style.font_size > 0.0 {
-                run.style.font_size
-            } else {
-                12.0
-            };
-            if !run.text.is_empty() && !is_marker {
-                let mark_font_size = font_size * 0.5;
-                for (i, c) in run.text.chars().enumerate() {
-                    if c == ' ' {
-                        let cx = bbox.x + run.positions[i];
-                        let next_x = if i + 1 < run.positions.len() {
-                            bbox.x + run.positions[i + 1]
-                        } else {
-                            bbox.x + bbox.width
-                        };
-                        let mid_x = (cx + next_x) / 2.0 - mark_font_size * 0.25;
-                        self.output.push_str(&format!(
-                            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">\u{2228}</text>\n",
-                            mid_x,
-                            bbox.y + run.baseline,
-                            mark_font_size,
-                        ));
-                    } else if c == '\t' {
-                        let cx = bbox.x + run.positions[i];
-                        self.output.push_str(&format!(
-                            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">\u{2192}</text>\n",
-                            cx,
-                            bbox.y + run.baseline,
-                            mark_font_size,
-                        ));
-                    }
-                }
-            }
-            if run.is_para_end || run.is_line_break_end {
-                let mark_x = if run.text.is_empty() {
-                    bbox.x
-                } else {
-                    bbox.x + bbox.width
-                };
-                let mark = if run.is_line_break_end {
-                    "\u{2193}"
-                } else {
-                    "\u{21B5}"
-                };
-                self.output.push_str(&format!(
-                    "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">{}</text>\n",
-                    mark_x,
-                    bbox.y + run.baseline,
-                    font_size,
-                    mark,
-                ));
-            }
+        for mark in &run.control_marks {
+            self.output.push_str(&format!(
+                "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">{}</text>\n",
+                bbox.x + mark.x,
+                bbox.y + run.baseline + mark.y,
+                mark.font_size,
+                mark.kind.glyph(),
+            ));
         }
         if effective_rotation != 0.0 {
             self.output.push_str("</g>\n");

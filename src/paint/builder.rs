@@ -5,12 +5,15 @@ use crate::paint::layer_tree::{
 use crate::paint::paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerRectanglePaint, LayerTextRunPaint, PaintOp,
+    LayerPathPaint, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+    LayerTextRunPaint, PaintOp,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
 use crate::renderer::layout::compute_char_positions;
-use crate::renderer::render_tree::{PageRenderTree, RenderNode, RenderNodeType};
+use crate::renderer::render_tree::{
+    FieldMarkerType, PageRenderTree, RenderNode, RenderNodeType, TextRunNode,
+};
 
 /// semantic render tree를 visual layer tree로 내린다.
 pub struct LayerBuilder {
@@ -68,6 +71,73 @@ impl LayerBuilder {
             .collect()
     }
 
+    fn build_text_control_marks(
+        &self,
+        run: &TextRunNode,
+        bbox: crate::renderer::render_tree::BoundingBox,
+        positions: &[f64],
+    ) -> Vec<LayerTextControlMark> {
+        if !(self.output_options.show_paragraph_marks || self.output_options.show_control_codes) {
+            return Vec::new();
+        }
+
+        let font_size = if run.style.font_size > 0.0 {
+            run.style.font_size
+        } else {
+            12.0
+        };
+        let mut marks = Vec::new();
+        let is_field_marker = !matches!(run.field_marker, FieldMarkerType::None);
+        if !run.text.is_empty() && !is_field_marker {
+            let mark_font_size = (font_size * 0.5).max(1.0);
+            for (index, ch) in run.text.chars().enumerate() {
+                match ch {
+                    ' ' => {
+                        let current_x = positions
+                            .get(index)
+                            .copied()
+                            .unwrap_or_else(|| positions.last().copied().unwrap_or(0.0));
+                        let next_x = positions.get(index + 1).copied().unwrap_or(bbox.width);
+                        marks.push(LayerTextControlMark {
+                            kind: LayerTextControlMarkKind::Space,
+                            x: (current_x + next_x) / 2.0 - mark_font_size * 0.25,
+                            y: 0.0,
+                            font_size: mark_font_size,
+                        });
+                    }
+                    '\t' => {
+                        let x = positions
+                            .get(index)
+                            .copied()
+                            .unwrap_or_else(|| positions.last().copied().unwrap_or(0.0));
+                        marks.push(LayerTextControlMark {
+                            kind: LayerTextControlMarkKind::Tab,
+                            x,
+                            y: 0.0,
+                            font_size: mark_font_size,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if run.is_para_end || run.is_line_break_end {
+            marks.push(LayerTextControlMark {
+                kind: if run.is_line_break_end {
+                    LayerTextControlMarkKind::LineBreakEnd
+                } else {
+                    LayerTextControlMarkKind::ParagraphEnd
+                },
+                x: if run.text.is_empty() { 0.0 } else { bbox.width },
+                y: 0.0,
+                font_size,
+            });
+        }
+
+        marks
+    }
+
     fn build_node(&mut self, node: &RenderNode) -> Option<LayerNode> {
         if !node.visible {
             return None;
@@ -84,24 +154,29 @@ impl LayerBuilder {
                     },
                 ))
             }
-            RenderNodeType::TextRun(run) => Some(self.build_paint_node(
-                node,
-                PaintOp::TextRun {
-                    bbox: node.bbox,
-                    run: LayerTextRunPaint {
-                        text: run.text.clone(),
-                        style: run.style.clone(),
-                        positions: compute_char_positions(&run.text, &run.style),
-                        baseline: run.baseline,
-                        rotation: run.rotation,
-                        is_vertical: run.is_vertical,
-                        char_overlap: run.char_overlap.clone(),
-                        field_marker: run.field_marker,
-                        is_para_end: run.is_para_end,
-                        is_line_break_end: run.is_line_break_end,
+            RenderNodeType::TextRun(run) => {
+                let positions = compute_char_positions(&run.text, &run.style);
+                let control_marks = self.build_text_control_marks(run, node.bbox, &positions);
+                Some(self.build_paint_node(
+                    node,
+                    PaintOp::TextRun {
+                        bbox: node.bbox,
+                        run: LayerTextRunPaint {
+                            text: run.text.clone(),
+                            style: run.style.clone(),
+                            positions,
+                            control_marks,
+                            baseline: run.baseline,
+                            rotation: run.rotation,
+                            is_vertical: run.is_vertical,
+                            char_overlap: run.char_overlap.clone(),
+                            field_marker: run.field_marker,
+                            is_para_end: run.is_para_end,
+                            is_line_break_end: run.is_line_break_end,
+                        },
                     },
-                },
-            )),
+                ))
+            }
             RenderNodeType::FootnoteMarker(marker) => Some(self.build_paint_node(
                 node,
                 PaintOp::FootnoteMarker {
@@ -198,6 +273,7 @@ impl LayerBuilder {
                     run: LayerTextRunPaint {
                         text: placeholder.label.clone(),
                         positions: compute_char_positions(&placeholder.label, &text_style),
+                        control_marks: Vec::new(),
                         style: text_style,
                         baseline: font_size,
                         rotation: 0.0,
@@ -605,8 +681,8 @@ mod tests {
     use super::*;
     use crate::paint::LayerNodeKind;
     use crate::renderer::render_tree::{
-        BoundingBox, GroupNode, PageBackgroundNode, PageNode, RectangleNode, RenderNode,
-        RenderNodeType, TableCellNode, TableNode, TextLineNode,
+        BoundingBox, FieldMarkerType, GroupNode, PageBackgroundNode, PageNode, RectangleNode,
+        RenderNode, RenderNodeType, TableCellNode, TableNode, TextLineNode, TextRunNode,
     };
     use crate::renderer::render_tree::{EquationNode, ImageNode};
     use crate::renderer::ShapeStyle;
@@ -968,6 +1044,66 @@ mod tests {
                     other => panic!("expected clip rect, got {other:?}"),
                 }
             }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_text_control_marks_from_output_options() {
+        let mut tree = PageRenderTree::new(0, 200.0, 80.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "a b\t".to_string(),
+                style: crate::renderer::TextStyle {
+                    font_size: 20.0,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: true,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 18.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            BoundingBox::new(10.0, 12.0, 90.0, 24.0),
+        ));
+
+        let mut builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                show_paragraph_marks: true,
+                show_control_codes: true,
+                ..Default::default()
+            });
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => match &children[0].kind {
+                LayerNodeKind::Leaf { ops, .. } => match &ops[0] {
+                    PaintOp::TextRun { run, .. } => {
+                        let kinds: Vec<_> =
+                            run.control_marks.iter().map(|mark| mark.kind).collect();
+                        assert_eq!(
+                            kinds,
+                            vec![
+                                LayerTextControlMarkKind::Space,
+                                LayerTextControlMarkKind::Tab,
+                                LayerTextControlMarkKind::ParagraphEnd,
+                            ]
+                        );
+                    }
+                    other => panic!("expected text run op, got {other:?}"),
+                },
+                other => panic!("expected text leaf, got {other:?}"),
+            },
             other => panic!("expected root group, got {other:?}"),
         }
     }
