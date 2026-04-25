@@ -3,7 +3,7 @@ use skia_safe::{
     Picture, PictureRecorder, Point, Rect,
 };
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::paint::{
     CacheHint, ImageResourceId, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerOutputOptions,
@@ -31,10 +31,67 @@ use super::path_conv::to_skia_path;
 
 pub struct SkiaLayerRenderer {
     font_mgr: FontMgr,
-    static_picture_cache: RefCell<HashMap<u64, Picture>>,
+    static_picture_cache: RefCell<StaticPictureCache>,
 }
 
 const MAX_RASTER_DIMENSION: i32 = 16_384;
+const MAX_STATIC_PICTURE_CACHE_ENTRIES: usize = 64;
+
+struct StaticPictureCache {
+    entries: HashMap<u64, Picture>,
+    order: VecDeque<u64>,
+    max_entries: usize,
+}
+
+impl StaticPictureCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+            max_entries,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn get(&mut self, key: u64) -> Option<Picture> {
+        let picture = self.entries.get(&key).cloned()?;
+        self.touch(key);
+        Some(picture)
+    }
+
+    fn insert(&mut self, key: u64, picture: Picture) {
+        if self.entries.contains_key(&key) {
+            self.entries.insert(key, picture);
+            self.touch(key);
+            return;
+        }
+
+        while self.max_entries > 0 && self.entries.len() >= self.max_entries {
+            let Some(evicted_key) = self.order.pop_front() else {
+                self.entries.clear();
+                break;
+            };
+            self.entries.remove(&evicted_key);
+        }
+
+        if self.max_entries == 0 {
+            return;
+        }
+
+        self.entries.insert(key, picture);
+        self.order.push_back(key);
+    }
+
+    fn touch(&mut self, key: u64) {
+        if let Some(index) = self.order.iter().position(|cached_key| *cached_key == key) {
+            self.order.remove(index);
+        }
+        self.order.push_back(key);
+    }
+}
 
 fn raster_dimension(length: f64, scale: f64, max_dimension: i32) -> LayerRenderResult<i32> {
     if !length.is_finite() {
@@ -353,7 +410,9 @@ impl SkiaLayerRenderer {
     pub fn new() -> Self {
         Self {
             font_mgr: FontMgr::default(),
-            static_picture_cache: RefCell::new(HashMap::new()),
+            static_picture_cache: RefCell::new(StaticPictureCache::new(
+                MAX_STATIC_PICTURE_CACHE_ENTRIES,
+            )),
         }
     }
 
@@ -481,8 +540,8 @@ impl SkiaLayerRenderer {
                             mix(&mut cache_key, &hash.to_le_bytes());
                         }
                     }
-                    if let Some(picture) = self.static_picture_cache.borrow().get(&cache_key) {
-                        canvas.draw_picture(picture, None, None);
+                    if let Some(picture) = self.static_picture_cache.borrow_mut().get(cache_key) {
+                        canvas.draw_picture(&picture, None, None);
                         return;
                     }
 
@@ -1897,7 +1956,10 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::{raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext};
+    use super::{
+        raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext,
+        MAX_STATIC_PICTURE_CACHE_ENTRIES,
+    };
     use crate::model::style::UnderlineType;
     use crate::paint::{
         CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerNode, LayerOutputOptions,
@@ -2215,6 +2277,46 @@ mod tests {
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
         renderer.render_png(&tree).expect("cached skia render");
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+    }
+
+    #[test]
+    fn static_subtree_picture_cache_evicts_old_entries() {
+        let renderer = SkiaLayerRenderer::new();
+
+        for index in 0..(MAX_STATIC_PICTURE_CACHE_ENTRIES + 2) {
+            let rect_bounds = BoundingBox::new(5.0, 5.0, 20.0, 10.0);
+            let leaf = LayerNode::leaf(
+                rect_bounds,
+                Some(index as u32 + 10),
+                vec![PaintOp::Rectangle {
+                    bbox: rect_bounds,
+                    rect: LayerRectanglePaint {
+                        corner_radius: 0.0,
+                        style: ShapeStyle {
+                            fill_color: Some(0x00AA00 + index as u32),
+                            ..Default::default()
+                        },
+                        gradient: None,
+                        transform: Default::default(),
+                    },
+                }],
+            );
+            let root = LayerNode::group(
+                BoundingBox::new(0.0, 0.0, 40.0, 20.0),
+                Some(index as u32 + 1),
+                vec![leaf],
+                CacheHint::StaticSubtree,
+                LayerSemantic::default(),
+            );
+            let tree = PageLayerTree::new(40.0, 20.0, root);
+            renderer.render_png(&tree).expect("skia render");
+        }
+
+        assert_eq!(
+            renderer.static_picture_cache.borrow().len(),
+            MAX_STATIC_PICTURE_CACHE_ENTRIES,
+            "static subtree picture cache should stay bounded"
+        );
     }
 
     #[test]

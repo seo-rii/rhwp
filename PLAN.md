@@ -4,6 +4,24 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Skia Static Picture Cache Bound
+
+Keep static subtree picture caching useful without allowing the renderer-local cache to grow without limit.
+
+## Steps
+
+1. Done: wrap the static picture cache in a bounded LRU structure.
+2. Done: preserve existing static subtree cache hit behavior.
+3. Done: add a regression that renders more static subtrees than the cache limit.
+4. Done: verify native Skia renderer tests and formatting.
+5. Done: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::static_subtree -- --quiet` passed.
+- `cargo fmt --check` passed.
+- `git diff --check` passed for this batch's files.
+
 ## Completed Batch: Skia Tile Shader Replay
 
 Avoid visible truncation when tiled image fill would exceed the defensive draw cap.
