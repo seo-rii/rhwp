@@ -2834,6 +2834,120 @@ mod tests {
     }
 
     #[test]
+    fn output_options_enable_line_break_mark() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "line".to_string(),
+                style: TextStyle {
+                    font_size: 22.0,
+                    color: 0x00000000,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: true,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 26.0,
+                field_marker: Default::default(),
+            }),
+            BoundingBox::new(10.0, 12.0, 70.0, 32.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let base_tree = builder.build(&tree);
+        let marked_tree = base_tree.clone().with_output_options(LayerOutputOptions {
+            show_paragraph_marks: true,
+            show_control_codes: true,
+            ..Default::default()
+        });
+        let renderer = SkiaLayerRenderer::new();
+        let base_png = renderer.render_png(&base_tree).expect("base skia render");
+        let marked_png = renderer
+            .render_png(&marked_tree)
+            .expect("marked skia render");
+        let base = tiny_skia::Pixmap::decode_png(&base_png).expect("base decode");
+        let marked = tiny_skia::Pixmap::decode_png(&marked_png).expect("marked decode");
+        let count_ink = |pixmap: &tiny_skia::Pixmap| {
+            pixmap
+                .pixels()
+                .iter()
+                .filter(|pixel| pixel.alpha() > 0)
+                .count()
+        };
+
+        assert!(count_ink(&marked) > count_ink(&base));
+    }
+
+    #[test]
+    fn field_marker_runs_do_not_gain_space_marks() {
+        let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "a b".to_string(),
+                style: TextStyle {
+                    font_size: 22.0,
+                    color: 0x00000000,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 26.0,
+                field_marker: crate::renderer::render_tree::FieldMarkerType::FieldBegin,
+            }),
+            BoundingBox::new(10.0, 12.0, 70.0, 32.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let base_tree = builder.build(&tree);
+        let marked_tree = base_tree.clone().with_output_options(LayerOutputOptions {
+            show_paragraph_marks: true,
+            show_control_codes: true,
+            ..Default::default()
+        });
+        let renderer = SkiaLayerRenderer::new();
+        let base_png = renderer.render_png(&base_tree).expect("base skia render");
+        let marked_png = renderer
+            .render_png(&marked_tree)
+            .expect("marked skia render");
+        let base = tiny_skia::Pixmap::decode_png(&base_png).expect("base decode");
+        let marked = tiny_skia::Pixmap::decode_png(&marked_png).expect("marked decode");
+        let count_ink = |pixmap: &tiny_skia::Pixmap| {
+            pixmap
+                .pixels()
+                .iter()
+                .filter(|pixel| pixel.alpha() > 0)
+                .count()
+        };
+
+        assert_eq!(
+            count_ink(&marked),
+            count_ink(&base),
+            "field marker TextRuns should not receive extra visible space marks"
+        );
+    }
+
+    #[test]
     fn renders_tab_leaders_for_skipped_tab_clusters() {
         let render_with_leaders = |tab_leaders| {
             let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);

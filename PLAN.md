@@ -4,6 +4,24 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: Skia Text Marker Fixtures
+
+Lock the remaining `BUG-001` marker behavior that is implemented but lightly covered in native Skia replay.
+
+## Steps
+
+1. Done: add focused native Skia regressions for line-break marks and field marker TextRuns.
+2. Done: verify focused native Skia tests, formatting, and diff whitespace.
+3. Done: commit and push only this batch's files.
+
+## Verification
+
+- `cargo test --features native-skia --lib output_options_enable_line_break_mark -- --quiet` passed.
+- `cargo test --features native-skia --lib field_marker_runs_do_not_gain_space_marks -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::output_options -- --quiet` passed.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: Clip Enabled Layer Semantics
 
 Make `clipEnabled` a real layer output semantic instead of metadata-only state.
