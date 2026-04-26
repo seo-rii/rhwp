@@ -182,11 +182,12 @@ impl PaintOp {
                 write_bbox(buf, *bbox);
                 let _ = write!(
                     buf,
-                    ",\"text\":{},\"baseline\":{:.6},\"rotation\":{:.6},\"isVertical\":{}",
+                    ",\"text\":{},\"baseline\":{:.6},\"rotation\":{:.6},\"isVertical\":{},\"orientation\":{}",
                     json_escape(&run.text),
                     run.baseline,
                     run.rotation,
                     run.is_vertical,
+                    json_escape(run.orientation.as_str()),
                 );
                 buf.push_str(",\"style\":");
                 write_text_style(buf, &run.style);
@@ -992,8 +993,8 @@ mod tests {
     use crate::paint::{
         CacheHint, ClipKind, LayerEquationPaint, LayerImagePaint, LayerLinePaint, LayerNode,
         LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerTextControlMark,
-        LayerTextControlMarkKind, LayerTextRunPaint, PageLayerTree, ResourceArena,
-        LAYER_TREE_SCHEMA,
+        LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
+        ResourceArena, LAYER_TREE_SCHEMA,
     };
 
     #[test]
@@ -1046,6 +1047,7 @@ mod tests {
                 is_line_break_end: false,
                 rotation: 0.0,
                 is_vertical: false,
+                orientation: LayerTextOrientation::Horizontal,
                 char_overlap: None,
                 baseline: 13.0,
                 field_marker: Default::default(),
@@ -1109,6 +1111,7 @@ mod tests {
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"controlMarks\":[{\"kind\":\"paragraphEnd\",\"text\":\"↵\",\"x\":80.000000,\"y\":0.000000,\"fontSize\":16.000000}]"));
+        assert!(json.contains("\"orientation\":\"horizontal\""));
         assert!(json.contains("\"fieldMarker\":\"none\""));
         assert!(json.contains("\"isParaEnd\":false"));
         assert!(json.contains("\"isLineBreakEnd\":false"));

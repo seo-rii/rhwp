@@ -1,6 +1,7 @@
 use super::*;
 use crate::paint::{
     LayerOutputOptions, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+    LayerTextOrientation,
 };
 use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
@@ -247,6 +248,7 @@ fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
                 baseline: 16.0,
                 rotation: 90.0,
                 is_vertical: true,
+                orientation: LayerTextOrientation::VerticalSideways,
                 char_overlap: None,
                 field_marker: Default::default(),
                 is_para_end: false,
@@ -345,6 +347,7 @@ fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
                 baseline: 16.0,
                 rotation: 0.0,
                 is_vertical: false,
+                orientation: LayerTextOrientation::Horizontal,
                 char_overlap: None,
                 field_marker: Default::default(),
                 is_para_end: true,

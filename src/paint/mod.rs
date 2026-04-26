@@ -34,7 +34,7 @@ pub use paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
     LayerPathPaint, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextRunPaint, PaintBounds, PaintOp,
+    LayerTextOrientation, LayerTextRunPaint, PaintBounds, PaintOp,
 };
 pub use profile::RenderProfile;
 pub use resources::{

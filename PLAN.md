@@ -4,6 +4,32 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: BUG-018 Explicit Vertical Text Orientation
+
+Make vertical text orientation an explicit layer metadata field so JSON/JS consumers can distinguish horizontal text, upright vertical glyphs, and sideways vertical glyphs without inferring from `isVertical` plus rotation.
+
+## Steps
+
+1. Done: add `LayerTextOrientation` to the paint IR.
+2. Done: derive orientation from layout-provided `is_vertical` and `rotation` during lowering.
+3. Done: export `orientation` through JSON, JS value, and Studio TypeScript types.
+4. Done: verify focused lowering/export tests and broader checks.
+5. Pending: update risk notes, commit, push, and watch CI.
+
+## Verification
+
+- `cargo test --lib lowers_vertical_text_orientation_from_layout_rotation -- --quiet` passed.
+- `cargo test --lib serializes_text_and_shape_ops_for_browser_replay -- --quiet` passed.
+- `cargo test --lib test_layer_svg_vertical_text_uses_explicit_rotation_only -- --quiet` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo check --lib` passed.
+- `wasm-pack test --node --lib` passed: 2 passed.
+- `npm run build` passed in `rhwp-studio`.
+- `cargo test --lib -- --quiet` passed: 999 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
+
 ## Completed Batch: BUG-002 Skia Complex Text Span Shaping
 
 Avoid shaping Arabic, emoji ZWJ, combining-mark, and other context-sensitive text one display cluster at a time. Group adjacent shaping-sensitive clusters into a single Skia `TextBlob` replay span while keeping the direct text path for simple text.

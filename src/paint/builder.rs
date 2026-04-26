@@ -6,7 +6,7 @@ use crate::paint::paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
     LayerPathPaint, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextRunPaint, PaintOp,
+    LayerTextOrientation, LayerTextRunPaint, PaintOp,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
@@ -169,6 +169,10 @@ impl LayerBuilder {
                             baseline: run.baseline,
                             rotation: run.rotation,
                             is_vertical: run.is_vertical,
+                            orientation: LayerTextOrientation::from_run(
+                                run.is_vertical,
+                                run.rotation,
+                            ),
                             char_overlap: run.char_overlap.clone(),
                             field_marker: run.field_marker,
                             is_para_end: run.is_para_end,
@@ -278,6 +282,7 @@ impl LayerBuilder {
                         baseline: font_size,
                         rotation: 0.0,
                         is_vertical: false,
+                        orientation: LayerTextOrientation::Horizontal,
                         char_overlap: None,
                         field_marker: Default::default(),
                         is_para_end: false,
@@ -685,7 +690,7 @@ mod tests {
         RenderNode, RenderNodeType, TableCellNode, TableNode, TextLineNode, TextRunNode,
     };
     use crate::renderer::render_tree::{EquationNode, ImageNode};
-    use crate::renderer::ShapeStyle;
+    use crate::renderer::{ShapeStyle, TextStyle};
 
     #[test]
     fn builds_body_clip_layer() {
@@ -1715,6 +1720,52 @@ mod tests {
                 assert!(children[0].bounds.width > 60.0);
                 assert!(children[0].bounds.height > 30.0);
             }
+            other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_vertical_text_orientation_from_layout_rotation() {
+        let mut tree = PageRenderTree::new(0, 200.0, 100.0);
+        tree.root.children.push(RenderNode::new(
+            30,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_size: 16.0,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 90.0,
+                is_vertical: true,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 16.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            BoundingBox::new(20.0, 10.0, 20.0, 24.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => match &children[0].kind {
+                LayerNodeKind::Leaf { ops, .. } => match &ops[0] {
+                    PaintOp::TextRun { run, .. } => {
+                        assert_eq!(run.orientation, LayerTextOrientation::VerticalSideways);
+                    }
+                    other => panic!("expected text op, got {other:?}"),
+                },
+                other => panic!("expected text leaf, got {other:?}"),
+            },
             other => panic!("expected root group, got {other:?}"),
         }
     }

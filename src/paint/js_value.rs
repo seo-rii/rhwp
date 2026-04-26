@@ -267,6 +267,7 @@ fn paint_op_to_value(op: &PaintOp) -> JsValue {
             set_number(&value, "baseline", run.baseline);
             set_number(&value, "rotation", run.rotation);
             set_bool(&value, "isVertical", run.is_vertical);
+            set_string(&value, "orientation", run.orientation.as_str());
             set_value(&value, "style", text_style_to_value(&run.style));
             set_value(
                 &value,
@@ -921,7 +922,7 @@ mod tests {
 
     use crate::paint::{
         LayerEquationPaint, LayerImagePaint, LayerOutputOptions, LayerTextControlMark,
-        LayerTextControlMarkKind, LayerTextRunPaint, ResourceArena,
+        LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint, ResourceArena,
     };
     use crate::renderer::render_tree::BoundingBox;
 
@@ -980,6 +981,7 @@ mod tests {
         assert_same_string(&json_text, &js_text, "type");
         assert_same_string(&json_text, &js_text, "text");
         assert_same_string(&json_text, &js_text, "fieldMarker");
+        assert_same_string(&json_text, &js_text, "orientation");
         assert_same_number(&json_text, &js_text, "shapeMarkerIndex");
         assert_same_bool(&json_text, &js_text, "isParaEnd");
         assert_same_bool(&json_text, &js_text, "isLineBreakEnd");
@@ -1105,6 +1107,7 @@ mod tests {
                             is_line_break_end: true,
                             rotation: 15.0,
                             is_vertical: true,
+                            orientation: LayerTextOrientation::VerticalSideways,
                             char_overlap: None,
                             baseline: 11.0,
                             field_marker: FieldMarkerType::ShapeMarker(4),

@@ -75,10 +75,38 @@ pub struct LayerTextRunPaint {
     pub baseline: f64,
     pub rotation: f64,
     pub is_vertical: bool,
+    pub orientation: LayerTextOrientation,
     pub char_overlap: Option<CharOverlapInfo>,
     pub field_marker: FieldMarkerType,
     pub is_para_end: bool,
     pub is_line_break_end: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerTextOrientation {
+    Horizontal,
+    VerticalUpright,
+    VerticalSideways,
+}
+
+impl LayerTextOrientation {
+    pub fn from_run(is_vertical: bool, rotation: f64) -> Self {
+        if !is_vertical {
+            Self::Horizontal
+        } else if rotation.abs() > f64::EPSILON {
+            Self::VerticalSideways
+        } else {
+            Self::VerticalUpright
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Horizontal => "horizontal",
+            Self::VerticalUpright => "vertical-upright",
+            Self::VerticalSideways => "vertical-sideways",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -422,6 +450,7 @@ mod tests {
                 baseline: 14.0,
                 rotation: 0.0,
                 is_vertical: false,
+                orientation: LayerTextOrientation::Horizontal,
                 char_overlap: None,
                 field_marker: Default::default(),
                 is_para_end: false,

@@ -262,6 +262,7 @@ export interface LayerTextRunOp {
   baseline: number;
   rotation: number;
   isVertical: boolean;
+  orientation?: 'horizontal' | 'vertical-upright' | 'vertical-sideways';
   fieldMarker?: 'none' | 'fieldBegin' | 'fieldEnd' | 'fieldBeginEnd' | 'shapeMarker';
   shapeMarkerIndex?: number;
   isParaEnd?: boolean;
