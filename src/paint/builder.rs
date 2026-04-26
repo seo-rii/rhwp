@@ -667,16 +667,17 @@ impl LayerBuilder {
                 | RenderNodeType::Table(_)
                 | RenderNodeType::TableCell(_)
         );
-        let overflows = node.bbox.x < body_left || node.bbox.x + node.bbox.width > body_right;
-        if overflows && !matches!(node.node_type, RenderNodeType::Column(_)) {
-            out.push(node);
-            return;
-        }
 
         if is_structural {
             for child in &node.children {
                 self.collect_body_overflow_nodes(child, body_left, body_right, out);
             }
+            return;
+        }
+
+        let overflows = node.bbox.x < body_left || node.bbox.x + node.bbox.width > body_right;
+        if overflows {
+            out.push(node);
         }
     }
 }
@@ -946,10 +947,22 @@ mod tests {
                 para_index: None,
                 control_index: None,
             }),
-            BoundingBox::new(120.0, 40.0, 120.0, 80.0),
+            BoundingBox::new(120.0, 40.0, 640.0, 80.0),
         );
         group.children.push(RenderNode::new(
             4,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    fill_color: Some(0x000000),
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(180.0, 48.0, 40.0, 32.0),
+        ));
+        group.children.push(RenderNode::new(
+            5,
             RenderNodeType::Rectangle(RectangleNode::new(
                 0.0,
                 ShapeStyle {
@@ -981,7 +994,12 @@ mod tests {
                                 );
                                 assert!(
                                     matches!(&children[0].kind, LayerNodeKind::Leaf { .. }),
-                                    "overflow replay should contain the nested rectangle leaf"
+                                    "overflow replay should contain only the nested overflow leaf"
+                                );
+                                assert_eq!(
+                                    children[0].source_node_id,
+                                    Some(5),
+                                    "structural group overflow should not replay its non-overflow child"
                                 );
                             }
                             other => panic!("expected overflow group, got {other:?}"),

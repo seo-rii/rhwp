@@ -4,7 +4,29 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
-## Current Batch: PERF-003 Skia Static Subtree Cache Key
+## Current Batch: TEST-013 Nested Overflow Replay
+
+Prevent Body horizontal overflow replay from re-rendering an entire structural group when only one nested leaf overflows the body clip.
+
+## Steps
+
+1. Done: make `collect_body_overflow_nodes` recurse into structural nodes before selecting overflow leaves.
+2. Done: extend the nested overflow fixture with an in-body rectangle plus a right-overflow rectangle inside the same overwide group.
+3. Done: assert the overflow replay group contains only the overflow leaf, not the whole structural group.
+4. Done: run broad checks before commit.
+5. Pending: commit, push, and watch CI.
+
+## Verification
+
+- `cargo test --lib lowers_nested_body_horizontal_overflow_controls -- --quiet` passed.
+- `cargo test --features native-skia --lib test_skia_screenshot_matches_layer_svg_for_synthetic_clip_overflow -- --quiet` passed.
+- `cargo check --lib` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo test --lib -- --quiet` passed: 999 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
+## Completed Batch: PERF-003 Skia Static Subtree Cache Key
 
 Narrow native Skia static picture cache keys so unrelated image/SVG resources do not perturb cache reuse, and remove the allocated full-node debug string from key construction.
 
@@ -15,7 +37,7 @@ Narrow native Skia static picture cache keys so unrelated image/SVG resources do
 3. Done: keep the existing bounded LRU static picture cache behavior.
 4. Done: add a native Skia regression proving unreferenced resources do not create a new cache entry.
 5. Done: run broad checks before commit.
-6. Pending: commit, push, and watch CI.
+6. Done: commit, push, and watch CI.
 
 ## Verification
 
