@@ -1945,6 +1945,145 @@ mod tests {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
     #[test]
+    fn test_skia_screenshot_matches_layer_svg_for_synthetic_text_marks() {
+        use crate::paint::{LayerBuilder, LayerOutputOptions, RenderProfile};
+        use crate::renderer::composer::CharOverlapInfo;
+        use crate::renderer::render_tree::{
+            BoundingBox, FieldMarkerType, PageBackgroundNode, PageNode, PageRenderTree, RenderNode,
+            RenderNodeType, TextRunNode,
+        };
+        use crate::renderer::TextStyle;
+
+        let mut tree = PageRenderTree::new(0, 220.0, 120.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 220.0,
+            height: 120.0,
+            section_index: 0,
+        });
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::PageBackground(PageBackgroundNode {
+                background_color: Some(0x00FFFFFF),
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: None,
+            }),
+            BoundingBox::new(0.0, 0.0, 220.0, 120.0),
+        ));
+
+        let mut next_id = 2;
+        let mut push_text = |tree: &mut PageRenderTree,
+                             text: &str,
+                             bbox: BoundingBox,
+                             style: TextStyle,
+                             baseline: f64,
+                             is_para_end: bool,
+                             is_line_break_end: bool,
+                             char_overlap: Option<CharOverlapInfo>,
+                             field_marker: FieldMarkerType| {
+            tree.root.children.push(RenderNode::new(
+                next_id,
+                RenderNodeType::TextRun(TextRunNode {
+                    text: text.to_string(),
+                    style,
+                    char_shape_id: None,
+                    para_shape_id: None,
+                    section_index: None,
+                    para_index: None,
+                    char_start: None,
+                    cell_context: None,
+                    is_para_end,
+                    is_line_break_end,
+                    rotation: 0.0,
+                    is_vertical: false,
+                    char_overlap,
+                    border_fill_id: 0,
+                    baseline,
+                    field_marker,
+                }),
+                bbox,
+            ));
+            next_id += 1;
+        };
+
+        push_text(
+            &mut tree,
+            "a b\tc",
+            BoundingBox::new(12.0, 16.0, 90.0, 28.0),
+            TextStyle {
+                font_size: 18.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            22.0,
+            true,
+            false,
+            None,
+            FieldMarkerType::None,
+        );
+        push_text(
+            &mut tree,
+            "12",
+            BoundingBox::new(126.0, 12.0, 32.0, 32.0),
+            TextStyle {
+                font_size: 24.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            24.0,
+            false,
+            false,
+            Some(CharOverlapInfo {
+                border_type: 1,
+                inner_char_size: 80,
+            }),
+            FieldMarkerType::None,
+        );
+        push_text(
+            &mut tree,
+            "[누름틀 시작]",
+            BoundingBox::new(16.0, 66.0, 86.0, 24.0),
+            TextStyle {
+                font_size: 11.0,
+                color: 0x0066CC,
+                ..Default::default()
+            },
+            17.0,
+            false,
+            false,
+            None,
+            FieldMarkerType::FieldBegin,
+        );
+        push_text(
+            &mut tree,
+            "line",
+            BoundingBox::new(124.0, 62.0, 56.0, 28.0),
+            TextStyle {
+                font_size: 18.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            22.0,
+            false,
+            true,
+            None,
+            FieldMarkerType::None,
+        );
+
+        let mut builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                show_paragraph_marks: true,
+                show_control_codes: true,
+                ..Default::default()
+            });
+        let layer_tree = builder.build(&tree);
+        assert_skia_layer_tree_matches_svg("synthetic-text-marks", &layer_tree);
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    #[test]
     fn test_skia_clip_enabled_toggle_changes_table_cell_visibility() {
         use crate::paint::{LayerBuilder, LayerOutputOptions, RenderProfile};
         use crate::renderer::render_tree::{
@@ -2027,6 +2166,8 @@ mod tests {
         let Some(core) = load_document("samples/lseg-01-basic.hwp") else {
             return;
         };
+        let _guard = lock_render_path_env();
+        std::env::remove_var("RHWP_RENDER_PROFILE");
 
         assert!(
             core.page_tree_cache.borrow().is_empty(),
@@ -2056,6 +2197,7 @@ mod tests {
             }),
             "기본 레이어 트리 조회는 screen profile 캐시를 채워야 함"
         );
+        std::env::remove_var("RHWP_RENDER_PROFILE");
     }
 
     #[test]
