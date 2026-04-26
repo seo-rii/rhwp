@@ -4,6 +4,30 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Completed Batch: BUG-002 Skia Complex Text Span Shaping
+
+Avoid shaping Arabic, emoji ZWJ, combining-mark, and other context-sensitive text one display cluster at a time. Group adjacent shaping-sensitive clusters into a single Skia `TextBlob` replay span while keeping the direct text path for simple text.
+
+## Steps
+
+1. Done: detect shaping-sensitive adjacent clusters and draw them as one shaped span.
+2. Done: keep symbol SVG replay and whitespace handling outside shaped spans.
+3. Done: verify focused native Skia text tests and broader checks.
+4. Pending: update risk notes, commit, push, and watch CI.
+
+## Verification
+
+- `cargo test --features native-skia --lib renders_complex_shaped_text_run_to_png -- --quiet` passed.
+- `cargo test --features native-skia --lib skia_shaper_builds_blob_for_complex_text -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests:: -- --quiet` passed: 23 passed.
+- `cargo check --features native-skia --lib` passed.
+- `cargo check --lib` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo test --lib -- --quiet` passed: 998 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
+
 ## Completed Batch: ARCH-010 Layer Option Metadata
 
 Clarify which layer options are build-time metadata, debug display metadata, and replay semantics while preserving the existing `outputOptions` compatibility field.

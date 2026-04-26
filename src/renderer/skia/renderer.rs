@@ -25,7 +25,7 @@ use super::image_conv::{
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
-    make_stroke_paint, make_text_paint,
+    make_stroke_paint,
 };
 use super::path_conv::to_skia_path;
 
@@ -1477,13 +1477,9 @@ impl SkiaLayerRenderer {
             return;
         }
 
-        let paint = make_text_paint(&render_style);
-        let shape_text_blob = |cluster: &str, font: &skia_safe::Font| {
-            if cluster.is_empty() {
-                return None;
-            }
+        let shaping_profile = |text: &str| {
             let mut has_rtl = false;
-            let needs_shaping = cluster.chars().any(|ch| {
+            let needs_shaping = text.chars().any(|ch| {
                 let codepoint = u32::from(ch);
                 if matches!(
                     codepoint,
@@ -1512,11 +1508,18 @@ impl SkiaLayerRenderer {
                         | 0xE0100..=0xE01EF
                 )
             });
+            (needs_shaping, has_rtl)
+        };
+        let shape_text_blob = |text: &str, font: &skia_safe::Font| {
+            if text.is_empty() {
+                return None;
+            }
+            let (needs_shaping, has_rtl) = shaping_profile(text);
             if !needs_shaping {
                 return None;
             }
             self.text_shaper
-                .shape_text_blob(cluster, font, !has_rtl, 1_000_000.0, Point::default())
+                .shape_text_blob(text, font, !has_rtl, 1_000_000.0, Point::default())
                 .map(|(blob, _)| blob)
         };
         let clusters = split_into_clusters(&run.text);
@@ -1545,7 +1548,8 @@ impl SkiaLayerRenderer {
                              y_offset: f32,
                              fill_color: u32,
                              stroke_color: Option<u32>,
-                             stroke_width: f32| {
+                             stroke_width: f32,
+                             prefer_direct_text: bool| {
             let font_family = if render_style.font_family.is_empty() {
                 "sans-serif".to_string()
             } else {
@@ -1571,13 +1575,10 @@ impl SkiaLayerRenderer {
                 stroke_paint.set_color(colorref_to_skia(stroke_color, 1.0));
             }
 
-            for (char_idx, cluster) in &clusters {
-                if cluster == " " || cluster == "\t" || cluster == "\u{2007}" {
-                    continue;
-                }
-                let x = bbox.x as f32 + char_positions[*char_idx] as f32 + x_offset;
-                let pass_y = y + y_offset;
-                let is_symbol_cluster = cluster.chars().count() == 1
+            let is_space_cluster =
+                |cluster: &str| cluster == " " || cluster == "\t" || cluster == "\u{2007}";
+            let is_symbol_cluster = |cluster: &str| {
+                cluster.chars().count() == 1
                     && cluster.chars().all(|ch| {
                         matches!(
                             ch,
@@ -1586,8 +1587,46 @@ impl SkiaLayerRenderer {
                                 | '\u{2460}'..='\u{24FF}'
                                 | '\u{2500}'..='\u{27BF}'
                         )
-                    });
-                if is_symbol_cluster {
+                    })
+            };
+            let next_needs_shaping = |index: usize| {
+                clusters.get(index + 1).is_some_and(|(_, next_cluster)| {
+                    !is_space_cluster(next_cluster)
+                        && !is_symbol_cluster(next_cluster)
+                        && shaping_profile(next_cluster).0
+                })
+            };
+            let draw_glyph_paths = |canvas: &Canvas,
+                                    text: &str,
+                                    font: &skia_safe::Font,
+                                    x: f32,
+                                    pass_y: f32,
+                                    fill_paint: &Paint,
+                                    stroke_paint: &Paint| {
+                let glyphs = font.text_to_glyphs_vec(text);
+                let mut glyph_positions = vec![Point::default(); glyphs.len()];
+                font.get_pos(&glyphs, &mut glyph_positions, Some(Point::new(x, pass_y)));
+                for (glyph_id, glyph_position) in glyphs.into_iter().zip(glyph_positions) {
+                    if let Some(path) = font.get_path(glyph_id) {
+                        let path = path.with_offset((glyph_position.x, glyph_position.y));
+                        canvas.draw_path(&path, fill_paint);
+                        if stroke_color.is_some() {
+                            canvas.draw_path(&path, stroke_paint);
+                        }
+                    }
+                }
+            };
+
+            let mut cluster_index = 0;
+            while cluster_index < clusters.len() {
+                let (char_idx, cluster) = &clusters[cluster_index];
+                if cluster == " " || cluster == "\t" || cluster == "\u{2007}" {
+                    cluster_index += 1;
+                    continue;
+                }
+                let x = bbox.x as f32 + char_positions[*char_idx] as f32 + x_offset;
+                let pass_y = y + y_offset;
+                if is_symbol_cluster(cluster) {
                     let next_x = char_positions
                         .get(*char_idx + 1)
                         .copied()
@@ -1628,28 +1667,73 @@ impl SkiaLayerRenderer {
                             ImageSampling::linear(),
                         );
                     }
+                    cluster_index += 1;
                     continue;
                 }
+
+                let (cluster_needs_shaping, _) = shaping_profile(cluster);
+                if cluster_needs_shaping || next_needs_shaping(cluster_index) {
+                    let mut shaped_text = String::new();
+                    let mut end_index = cluster_index;
+                    while end_index < clusters.len() {
+                        let segment = &clusters[end_index].1;
+                        if is_space_cluster(segment) || is_symbol_cluster(segment) {
+                            break;
+                        }
+                        let segment_needs_shaping = shaping_profile(segment).0;
+                        if end_index != cluster_index
+                            && !segment_needs_shaping
+                            && !next_needs_shaping(end_index)
+                        {
+                            break;
+                        }
+                        shaped_text.push_str(segment);
+                        end_index += 1;
+                    }
+
+                    let font = make_font(&render_style, &self.font_mgr, &shaped_text);
+                    if let Some(blob) = shape_text_blob(&shaped_text, &font) {
+                        canvas.draw_text_blob(&blob, (x, pass_y), &fill_paint);
+                        if stroke_color.is_some() {
+                            canvas.draw_text_blob(&blob, (x, pass_y), &stroke_paint);
+                        }
+                    } else if prefer_direct_text && stroke_color.is_none() {
+                        canvas.draw_str(&shaped_text, (x, pass_y), &font, &fill_paint);
+                    } else {
+                        draw_glyph_paths(
+                            canvas,
+                            &shaped_text,
+                            &font,
+                            x,
+                            pass_y,
+                            &fill_paint,
+                            &stroke_paint,
+                        );
+                    }
+                    cluster_index = end_index.max(cluster_index + 1);
+                    continue;
+                }
+
                 let font = make_font(&render_style, &self.font_mgr, cluster);
                 if let Some(blob) = shape_text_blob(cluster, &font) {
                     canvas.draw_text_blob(&blob, (x, pass_y), &fill_paint);
                     if stroke_color.is_some() {
                         canvas.draw_text_blob(&blob, (x, pass_y), &stroke_paint);
                     }
+                } else if prefer_direct_text && stroke_color.is_none() {
+                    canvas.draw_str(cluster, (x, pass_y), &font, &fill_paint);
                 } else {
-                    let glyphs = font.text_to_glyphs_vec(cluster);
-                    let mut glyph_positions = vec![Point::default(); glyphs.len()];
-                    font.get_pos(&glyphs, &mut glyph_positions, Some(Point::new(x, pass_y)));
-                    for (glyph_id, glyph_position) in glyphs.into_iter().zip(glyph_positions) {
-                        if let Some(path) = font.get_path(glyph_id) {
-                            let path = path.with_offset((glyph_position.x, glyph_position.y));
-                            canvas.draw_path(&path, &fill_paint);
-                            if stroke_color.is_some() {
-                                canvas.draw_path(&path, &stroke_paint);
-                            }
-                        }
-                    }
+                    draw_glyph_paths(
+                        canvas,
+                        cluster,
+                        &font,
+                        x,
+                        pass_y,
+                        &fill_paint,
+                        &stroke_paint,
+                    );
                 }
+                cluster_index += 1;
             }
         };
 
@@ -1660,9 +1744,9 @@ impl SkiaLayerRenderer {
             } else {
                 (0x0080_8080, 0x00FF_FFFF)
             };
-            draw_pass(canvas, -offset, -offset, first_color, None, 0.0);
-            draw_pass(canvas, offset, offset, second_color, None, 0.0);
-            draw_pass(canvas, 0.0, 0.0, run.style.color, None, 0.0);
+            draw_pass(canvas, -offset, -offset, first_color, None, 0.0, false);
+            draw_pass(canvas, offset, offset, second_color, None, 0.0, false);
+            draw_pass(canvas, 0.0, 0.0, run.style.color, None, 0.0, false);
         } else {
             if run.style.shadow_type > 0 {
                 draw_pass(
@@ -1672,6 +1756,7 @@ impl SkiaLayerRenderer {
                     run.style.shadow_color,
                     None,
                     0.0,
+                    false,
                 );
             }
             if run.style.outline_type > 0 {
@@ -1682,20 +1767,10 @@ impl SkiaLayerRenderer {
                     0x00FF_FFFF,
                     Some(run.style.color),
                     (render_style.font_size as f32 / 25.0).max(0.5),
+                    false,
                 );
             } else {
-                for (char_idx, cluster) in &clusters {
-                    if cluster == " " || cluster == "\t" {
-                        continue;
-                    }
-                    let font = make_font(&render_style, &self.font_mgr, cluster);
-                    let x = bbox.x + char_positions[*char_idx];
-                    if let Some(blob) = shape_text_blob(cluster, &font) {
-                        canvas.draw_text_blob(&blob, (x as f32, y), &paint);
-                    } else {
-                        canvas.draw_str(cluster, (x as f32, y), &font, &paint);
-                    }
-                }
+                draw_pass(canvas, 0.0, 0.0, run.style.color, None, 0.0, true);
             }
         }
 
