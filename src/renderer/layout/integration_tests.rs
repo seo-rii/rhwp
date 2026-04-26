@@ -1943,6 +1943,85 @@ mod tests {
         assert_skia_layer_tree_matches_svg("synthetic-clip-overflow", &layer_tree);
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    #[test]
+    fn test_skia_clip_enabled_toggle_changes_table_cell_visibility() {
+        use crate::paint::{LayerBuilder, LayerOutputOptions, RenderProfile};
+        use crate::renderer::render_tree::{
+            BoundingBox, PageNode, PageRenderTree, RectangleNode, RenderNode, RenderNodeType,
+            TableCellNode,
+        };
+        use crate::renderer::skia::SkiaLayerRenderer;
+        use crate::renderer::ShapeStyle;
+
+        let build_tree = |clip_enabled| {
+            let mut tree = PageRenderTree::new(0, 80.0, 50.0);
+            tree.root.node_type = RenderNodeType::Page(PageNode {
+                page_index: 0,
+                width: 80.0,
+                height: 50.0,
+                section_index: 0,
+            });
+            let mut cell = RenderNode::new(
+                10,
+                RenderNodeType::TableCell(TableCellNode {
+                    col: 0,
+                    row: 0,
+                    col_span: 1,
+                    row_span: 1,
+                    border_fill_id: 0,
+                    text_direction: 0,
+                    clip: true,
+                    model_cell_index: None,
+                }),
+                BoundingBox::new(10.0, 10.0, 30.0, 28.0),
+            );
+            cell.children.push(RenderNode::new(
+                11,
+                RenderNodeType::Rectangle(RectangleNode::new(
+                    0.0,
+                    ShapeStyle {
+                        fill_color: Some(0x00000000),
+                        ..Default::default()
+                    },
+                    None,
+                )),
+                BoundingBox::new(45.0, 18.0, 18.0, 12.0),
+            ));
+            tree.root.children.push(cell);
+
+            LayerBuilder::new(RenderProfile::Screen)
+                .with_output_options(LayerOutputOptions {
+                    clip_enabled,
+                    ..Default::default()
+                })
+                .build(&tree)
+        };
+
+        let renderer = SkiaLayerRenderer::new();
+        let clipped_png = renderer
+            .render_png(&build_tree(true))
+            .expect("clip-enabled skia render");
+        let unclipped_png = renderer
+            .render_png(&build_tree(false))
+            .expect("clip-disabled skia render");
+        let clipped = tiny_skia::Pixmap::decode_png(&clipped_png).expect("clip enabled png decode");
+        let unclipped =
+            tiny_skia::Pixmap::decode_png(&unclipped_png).expect("clip disabled png decode");
+        let width = clipped.width() as usize;
+        let probe = 24 * width + 54;
+
+        assert_eq!(
+            clipped.pixels()[probe].alpha(),
+            0,
+            "clip-enabled table cell should hide pixels beyond the cell clip"
+        );
+        assert!(
+            unclipped.pixels()[probe].alpha() > 0,
+            "clip-disabled table cell should render pixels beyond the cell clip"
+        );
+    }
+
     #[test]
     fn test_get_page_layer_tree_native_populates_page_tree_cache() {
         let Some(core) = load_document("samples/lseg-01-basic.hwp") else {

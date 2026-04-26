@@ -4,7 +4,28 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
-## Current Batch: TEST-013 Nested Overflow Replay
+## Current Batch: TEST-015 Clip Enabled Toggle Fixture
+
+Add a native Skia layer fixture that renders the same table-cell scene with `clip_enabled` on and off, proving the replay option changes visible pixels outside the clip.
+
+## Steps
+
+1. Done: build a synthetic clipped TableCell scene with a child rectangle outside the cell clip.
+2. Done: render the scene through native Skia with `clip_enabled=true` and `clip_enabled=false`.
+3. Done: assert the outside probe pixel is clipped only when the option is enabled.
+4. Done: run broad checks before commit.
+5. Pending: commit, push, and watch CI.
+
+## Verification
+
+- `cargo test --features native-skia --lib test_skia_clip_enabled_toggle_changes_table_cell_visibility -- --quiet` passed.
+- `cargo check --lib` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo test --lib -- --quiet` passed: 999 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
+## Completed Batch: TEST-013 Nested Overflow Replay
 
 Prevent Body horizontal overflow replay from re-rendering an entire structural group when only one nested leaf overflows the body clip.
 
@@ -14,7 +35,7 @@ Prevent Body horizontal overflow replay from re-rendering an entire structural g
 2. Done: extend the nested overflow fixture with an in-body rectangle plus a right-overflow rectangle inside the same overwide group.
 3. Done: assert the overflow replay group contains only the overflow leaf, not the whole structural group.
 4. Done: run broad checks before commit.
-5. Pending: commit, push, and watch CI.
+5. Done: commit, push, and watch CI.
 
 ## Verification
 
