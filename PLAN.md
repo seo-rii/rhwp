@@ -4,6 +4,30 @@
 
 Work through `RISK_REGISTER.md` in order, committing and pushing completed batches on the current `skia` branch.
 
+## Current Batch: PERF-003 Skia Static Subtree Cache Key
+
+Narrow native Skia static picture cache keys so unrelated image/SVG resources do not perturb cache reuse, and remove the allocated full-node debug string from key construction.
+
+## Steps
+
+1. Done: replace `format!("{node:?}")` cache fingerprinting with structured `LayerNode`/`PaintOp` field hashing.
+2. Done: mix image/SVG resource hashes only at the paint ops that actually reference those resources.
+3. Done: keep the existing bounded LRU static picture cache behavior.
+4. Done: add a native Skia regression proving unreferenced resources do not create a new cache entry.
+5. Done: run broad checks before commit.
+6. Pending: commit, push, and watch CI.
+
+## Verification
+
+- `cargo test --features native-skia --lib static_picture_cache_ignores_unreferenced_resources -- --quiet` passed.
+- `cargo test --features native-skia --lib renderer::skia::renderer::tests::static_ -- --quiet` passed: 3 passed.
+- `cargo check --features native-skia --lib` passed.
+- `cargo check --target wasm32-unknown-unknown --lib` passed.
+- `cargo check --lib` passed.
+- `cargo test --lib -- --quiet` passed: 999 passed, 1 ignored.
+- `cargo clippy --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --check` and `git diff --check` passed.
+
 ## Completed Batch: BUG-018 Explicit Vertical Text Orientation
 
 Make vertical text orientation an explicit layer metadata field so JSON/JS consumers can distinguish horizontal text, upright vertical glyphs, and sideways vertical glyphs without inferring from `isVertical` plus rotation.
@@ -14,7 +38,7 @@ Make vertical text orientation an explicit layer metadata field so JSON/JS consu
 2. Done: derive orientation from layout-provided `is_vertical` and `rotation` during lowering.
 3. Done: export `orientation` through JSON, JS value, and Studio TypeScript types.
 4. Done: verify focused lowering/export tests and broader checks.
-5. Pending: update risk notes, commit, push, and watch CI.
+5. Done: update risk notes, commit, push, and watch CI.
 
 ## Verification
 

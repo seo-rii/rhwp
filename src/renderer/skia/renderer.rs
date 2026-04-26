@@ -5,9 +5,14 @@ use skia_safe::{
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 
+use crate::model::control::FormType;
+use crate::model::image::ImageEffect;
+use crate::model::style::ImageFillMode;
 use crate::paint::{
-    CacheHint, ImageResourceId, LayerFormObjectPaint, LayerNode, LayerNodeKind, LayerOutputOptions,
-    LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena, SvgResourceId,
+    CacheHint, ClipKind, ClipPolicy, ImageResourceId, LayerFormObjectPaint, LayerNode,
+    LayerNodeKind, LayerOutputOptions, LayerSemantic, LayerSemanticRole, LayerTextControlMarkKind,
+    LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
+    SvgResourceId,
 };
 use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
 use crate::renderer::layer_renderer::{
@@ -15,8 +20,11 @@ use crate::renderer::layer_renderer::{
     RasterRenderOptions, RasterRenderOutput,
 };
 use crate::renderer::layout::split_into_clusters;
-use crate::renderer::render_tree::BoundingBox;
-use crate::renderer::{ArrowStyle, LineRenderType, UnderlineType};
+use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
+use crate::renderer::{
+    ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, ShapeStyle, StrokeDash,
+    TabLeaderInfo, TabStop, TextStyle, UnderlineType,
+};
 
 use super::equation_conv::render_equation;
 use super::image_conv::{
@@ -91,6 +99,689 @@ impl StaticPictureCache {
             self.order.remove(index);
         }
         self.order.push_back(key);
+    }
+}
+
+struct StaticSubtreeCacheKey {
+    hash: u64,
+}
+
+impl StaticSubtreeCacheKey {
+    fn new() -> Self {
+        Self {
+            hash: 0xcbf2_9ce4_8422_2325,
+        }
+    }
+
+    fn finish(self) -> u64 {
+        self.hash
+    }
+
+    fn mix_bytes(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.hash ^= u64::from(*byte);
+            self.hash = self.hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+
+    fn mix_bool(&mut self, value: bool) {
+        self.mix_bytes(&[value as u8]);
+    }
+
+    fn mix_u8(&mut self, value: u8) {
+        self.mix_bytes(&[value]);
+    }
+
+    fn mix_u16(&mut self, value: u16) {
+        self.mix_bytes(&value.to_le_bytes());
+    }
+
+    fn mix_i16(&mut self, value: i16) {
+        self.mix_bytes(&value.to_le_bytes());
+    }
+
+    fn mix_u32(&mut self, value: u32) {
+        self.mix_bytes(&value.to_le_bytes());
+    }
+
+    fn mix_i32(&mut self, value: i32) {
+        self.mix_bytes(&value.to_le_bytes());
+    }
+
+    fn mix_usize(&mut self, value: usize) {
+        self.mix_bytes(&value.to_le_bytes());
+    }
+
+    fn mix_u64(&mut self, value: u64) {
+        self.mix_bytes(&value.to_le_bytes());
+    }
+
+    fn mix_f64(&mut self, value: f64) {
+        self.mix_u64(value.to_bits());
+    }
+
+    fn mix_str(&mut self, value: &str) {
+        self.mix_usize(value.len());
+        self.mix_bytes(value.as_bytes());
+    }
+
+    fn mix_option_u32(&mut self, value: Option<u32>) {
+        match value {
+            Some(value) => {
+                self.mix_bool(true);
+                self.mix_u32(value);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_option_usize(&mut self, value: Option<usize>) {
+        match value {
+            Some(value) => {
+                self.mix_bool(true);
+                self.mix_usize(value);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_option_u16(&mut self, value: Option<u16>) {
+        match value {
+            Some(value) => {
+                self.mix_bool(true);
+                self.mix_u16(value);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_bbox(&mut self, bbox: &BoundingBox) {
+        self.mix_f64(bbox.x);
+        self.mix_f64(bbox.y);
+        self.mix_f64(bbox.width);
+        self.mix_f64(bbox.height);
+    }
+
+    fn mix_transform(&mut self, transform: &ShapeTransform) {
+        self.mix_f64(transform.rotation);
+        self.mix_bool(transform.horz_flip);
+        self.mix_bool(transform.vert_flip);
+    }
+
+    fn mix_output_options(&mut self, output_options: &LayerOutputOptions) {
+        self.mix_bool(output_options.show_paragraph_marks);
+        self.mix_bool(output_options.show_control_codes);
+        self.mix_bool(output_options.show_transparent_borders);
+        self.mix_bool(output_options.clip_enabled);
+        self.mix_bool(output_options.debug_overlay);
+    }
+
+    fn mix_semantic(&mut self, semantic: &LayerSemantic) {
+        self.mix_u8(match semantic.role {
+            LayerSemanticRole::Generic => 0,
+            LayerSemanticRole::Page => 1,
+            LayerSemanticRole::MasterPage => 2,
+            LayerSemanticRole::Header => 3,
+            LayerSemanticRole::Footer => 4,
+            LayerSemanticRole::Body => 5,
+            LayerSemanticRole::Column => 6,
+            LayerSemanticRole::FootnoteArea => 7,
+            LayerSemanticRole::TextLine => 8,
+            LayerSemanticRole::Table => 9,
+            LayerSemanticRole::TableCell => 10,
+            LayerSemanticRole::TextBox => 11,
+            LayerSemanticRole::Group => 12,
+        });
+        self.mix_option_usize(semantic.section_index);
+        self.mix_option_u16(semantic.column_index);
+        self.mix_option_usize(semantic.para_index);
+        self.mix_option_usize(semantic.control_index);
+        self.mix_option_u16(semantic.row_count);
+        self.mix_option_u16(semantic.col_count);
+    }
+
+    fn mix_clip_kind(&mut self, clip_kind: ClipKind) {
+        self.mix_u8(match clip_kind {
+            ClipKind::Body => 0,
+            ClipKind::TableCell => 1,
+            ClipKind::Generic => 2,
+        });
+    }
+
+    fn mix_clip_policy(&mut self, clip_policy: &ClipPolicy) {
+        self.mix_f64(clip_policy.right_overflow_slop);
+        self.mix_bool(clip_policy.allow_horizontal_overflow_controls);
+    }
+
+    fn mix_cache_hint(&mut self, cache_hint: CacheHint) {
+        self.mix_u8(match cache_hint {
+            CacheHint::None => 0,
+            CacheHint::StaticSubtree => 1,
+            CacheHint::PreferRaster => 2,
+            CacheHint::PreferVectorRecording => 3,
+        });
+    }
+
+    fn mix_layer_node(&mut self, node: &LayerNode, resources: &ResourceArena) {
+        self.mix_bbox(&node.bounds);
+        self.mix_option_u32(node.source_node_id);
+        self.mix_semantic(&node.semantic);
+        match &node.kind {
+            LayerNodeKind::Group {
+                children,
+                cache_hint,
+            } => {
+                self.mix_u8(0);
+                self.mix_cache_hint(*cache_hint);
+                self.mix_usize(children.len());
+                for child in children {
+                    self.mix_layer_node(child, resources);
+                }
+            }
+            LayerNodeKind::ClipRect {
+                clip,
+                child,
+                clip_kind,
+                clip_policy,
+            } => {
+                self.mix_u8(1);
+                self.mix_bbox(clip);
+                self.mix_clip_kind(*clip_kind);
+                self.mix_clip_policy(clip_policy);
+                self.mix_layer_node(child, resources);
+            }
+            LayerNodeKind::Leaf { ops, cache_hint } => {
+                self.mix_u8(2);
+                self.mix_cache_hint(*cache_hint);
+                self.mix_usize(ops.len());
+                for op in ops {
+                    self.mix_paint_op(op, resources);
+                }
+            }
+        }
+    }
+
+    fn mix_paint_op(&mut self, op: &PaintOp, resources: &ResourceArena) {
+        match op {
+            PaintOp::PageBackground { bbox, background } => {
+                self.mix_u8(0);
+                self.mix_bbox(bbox);
+                self.mix_option_u32(background.background_color);
+                self.mix_option_u32(background.border_color);
+                self.mix_f64(background.border_width);
+                self.mix_gradient(background.gradient.as_deref());
+                match &background.image {
+                    Some(image) => {
+                        self.mix_bool(true);
+                        self.mix_image_fill_mode(image.fill_mode);
+                        self.mix_image_resource(resources, Some(image.resource_id));
+                    }
+                    None => self.mix_bool(false),
+                }
+            }
+            PaintOp::TextRun { bbox, run } => {
+                self.mix_u8(1);
+                self.mix_bbox(bbox);
+                self.mix_text_run(run);
+            }
+            PaintOp::FootnoteMarker { bbox, marker } => {
+                self.mix_u8(2);
+                self.mix_bbox(bbox);
+                self.mix_str(&marker.text);
+                self.mix_str(&marker.font_family);
+                self.mix_f64(marker.base_font_size);
+                self.mix_u32(marker.color);
+            }
+            PaintOp::Line { bbox, line } => {
+                self.mix_u8(3);
+                self.mix_bbox(bbox);
+                self.mix_f64(line.x1);
+                self.mix_f64(line.y1);
+                self.mix_f64(line.x2);
+                self.mix_f64(line.y2);
+                self.mix_line_style(&line.style);
+                self.mix_transform(&line.transform);
+            }
+            PaintOp::Rectangle { bbox, rect } => {
+                self.mix_u8(4);
+                self.mix_bbox(bbox);
+                self.mix_f64(rect.corner_radius);
+                self.mix_shape_style(&rect.style);
+                self.mix_gradient(rect.gradient.as_deref());
+                self.mix_transform(&rect.transform);
+            }
+            PaintOp::Ellipse { bbox, ellipse } => {
+                self.mix_u8(5);
+                self.mix_bbox(bbox);
+                self.mix_shape_style(&ellipse.style);
+                self.mix_gradient(ellipse.gradient.as_deref());
+                self.mix_transform(&ellipse.transform);
+            }
+            PaintOp::Path { bbox, path } => {
+                self.mix_u8(6);
+                self.mix_bbox(bbox);
+                self.mix_usize(path.commands.len());
+                for command in &path.commands {
+                    self.mix_path_command(command);
+                }
+                self.mix_shape_style(&path.style);
+                self.mix_gradient(path.gradient.as_deref());
+                self.mix_transform(&path.transform);
+                match path.connector_endpoints {
+                    Some((x1, y1, x2, y2)) => {
+                        self.mix_bool(true);
+                        self.mix_f64(x1);
+                        self.mix_f64(y1);
+                        self.mix_f64(x2);
+                        self.mix_f64(y2);
+                    }
+                    None => self.mix_bool(false),
+                }
+                match &path.line_style {
+                    Some(line_style) => {
+                        self.mix_bool(true);
+                        self.mix_line_style(line_style);
+                    }
+                    None => self.mix_bool(false),
+                }
+            }
+            PaintOp::Image { bbox, image } => {
+                self.mix_u8(7);
+                self.mix_bbox(bbox);
+                self.mix_image_resource(resources, image.resource_id);
+                match image.fill_mode {
+                    Some(fill_mode) => {
+                        self.mix_bool(true);
+                        self.mix_image_fill_mode(fill_mode);
+                    }
+                    None => self.mix_bool(false),
+                }
+                match image.original_size {
+                    Some((width, height)) => {
+                        self.mix_bool(true);
+                        self.mix_f64(width);
+                        self.mix_f64(height);
+                    }
+                    None => self.mix_bool(false),
+                }
+                match image.crop {
+                    Some((left, top, right, bottom)) => {
+                        self.mix_bool(true);
+                        self.mix_i32(left);
+                        self.mix_i32(top);
+                        self.mix_i32(right);
+                        self.mix_i32(bottom);
+                    }
+                    None => self.mix_bool(false),
+                }
+                self.mix_image_effect(image.effect);
+                self.mix_transform(&image.transform);
+            }
+            PaintOp::Equation { bbox, equation } => {
+                self.mix_u8(8);
+                self.mix_bbox(bbox);
+                self.mix_svg_resource(resources, equation.svg_resource_id);
+                self.mix_f64(equation.layout_box.x);
+                self.mix_f64(equation.layout_box.y);
+                self.mix_f64(equation.layout_box.width);
+                self.mix_f64(equation.layout_box.height);
+                self.mix_f64(equation.layout_box.baseline);
+                self.mix_str(&equation.color_str);
+                self.mix_u32(equation.color);
+                self.mix_f64(equation.font_size);
+            }
+            PaintOp::FormObject { bbox, form } => {
+                self.mix_u8(9);
+                self.mix_bbox(bbox);
+                self.mix_form_type(form.form_type);
+                self.mix_str(&form.caption);
+                self.mix_str(&form.text);
+                self.mix_str(&form.fore_color);
+                self.mix_str(&form.back_color);
+                self.mix_i32(form.value);
+                self.mix_bool(form.enabled);
+            }
+        }
+    }
+
+    fn mix_text_run(&mut self, run: &LayerTextRunPaint) {
+        self.mix_str(&run.text);
+        self.mix_text_style(&run.style);
+        self.mix_usize(run.positions.len());
+        for position in &run.positions {
+            self.mix_f64(*position);
+        }
+        self.mix_usize(run.control_marks.len());
+        for mark in &run.control_marks {
+            self.mix_text_control_mark_kind(mark.kind);
+            self.mix_f64(mark.x);
+            self.mix_f64(mark.y);
+            self.mix_f64(mark.font_size);
+        }
+        self.mix_f64(run.baseline);
+        self.mix_f64(run.rotation);
+        self.mix_bool(run.is_vertical);
+        self.mix_text_orientation(run.orientation);
+        match &run.char_overlap {
+            Some(char_overlap) => {
+                self.mix_bool(true);
+                self.mix_u8(char_overlap.border_type);
+                self.mix_u8(char_overlap.inner_char_size as u8);
+            }
+            None => self.mix_bool(false),
+        }
+        self.mix_field_marker(run.field_marker);
+        self.mix_bool(run.is_para_end);
+        self.mix_bool(run.is_line_break_end);
+    }
+
+    fn mix_text_style(&mut self, style: &TextStyle) {
+        self.mix_str(&style.font_family);
+        self.mix_f64(style.font_size);
+        self.mix_u32(style.color);
+        self.mix_bool(style.bold);
+        self.mix_bool(style.italic);
+        self.mix_underline(style.underline);
+        self.mix_bool(style.strikethrough);
+        self.mix_f64(style.letter_spacing);
+        self.mix_f64(style.ratio);
+        self.mix_f64(style.default_tab_width);
+        self.mix_usize(style.tab_stops.len());
+        for tab_stop in &style.tab_stops {
+            self.mix_tab_stop(tab_stop);
+        }
+        self.mix_bool(style.auto_tab_right);
+        self.mix_f64(style.available_width);
+        self.mix_f64(style.line_x_offset);
+        self.mix_usize(style.tab_leaders.len());
+        for tab_leader in &style.tab_leaders {
+            self.mix_tab_leader(tab_leader);
+        }
+        self.mix_usize(style.inline_tabs.len());
+        for inline_tab in &style.inline_tabs {
+            for value in inline_tab {
+                self.mix_u16(*value);
+            }
+        }
+        self.mix_f64(style.extra_word_spacing);
+        self.mix_f64(style.extra_char_spacing);
+        self.mix_u8(style.outline_type);
+        self.mix_u8(style.shadow_type);
+        self.mix_u32(style.shadow_color);
+        self.mix_f64(style.shadow_offset_x);
+        self.mix_f64(style.shadow_offset_y);
+        self.mix_bool(style.emboss);
+        self.mix_bool(style.engrave);
+        self.mix_bool(style.superscript);
+        self.mix_bool(style.subscript);
+        self.mix_u8(style.emphasis_dot);
+        self.mix_u8(style.underline_shape);
+        self.mix_u8(style.strike_shape);
+        self.mix_u32(style.underline_color);
+        self.mix_u32(style.strike_color);
+        self.mix_u32(style.shade_color);
+    }
+
+    fn mix_tab_stop(&mut self, tab_stop: &TabStop) {
+        self.mix_f64(tab_stop.position);
+        self.mix_u8(tab_stop.tab_type);
+        self.mix_u8(tab_stop.fill_type);
+    }
+
+    fn mix_tab_leader(&mut self, tab_leader: &TabLeaderInfo) {
+        self.mix_f64(tab_leader.start_x);
+        self.mix_f64(tab_leader.end_x);
+        self.mix_u8(tab_leader.fill_type);
+    }
+
+    fn mix_shape_style(&mut self, style: &ShapeStyle) {
+        self.mix_option_u32(style.fill_color);
+        match &style.pattern {
+            Some(pattern) => {
+                self.mix_bool(true);
+                self.mix_i32(pattern.pattern_type);
+                self.mix_u32(pattern.pattern_color);
+                self.mix_u32(pattern.background_color);
+            }
+            None => self.mix_bool(false),
+        }
+        self.mix_option_u32(style.stroke_color);
+        self.mix_f64(style.stroke_width);
+        self.mix_stroke_dash(style.stroke_dash);
+        self.mix_f64(style.opacity);
+        self.mix_shadow(style.shadow.as_ref());
+    }
+
+    fn mix_shadow(&mut self, shadow: Option<&crate::renderer::ShadowStyle>) {
+        match shadow {
+            Some(shadow) => {
+                self.mix_bool(true);
+                self.mix_u32(shadow.shadow_type);
+                self.mix_u32(shadow.color);
+                self.mix_f64(shadow.offset_x);
+                self.mix_f64(shadow.offset_y);
+                self.mix_u8(shadow.alpha);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_line_style(&mut self, style: &LineStyle) {
+        self.mix_u32(style.color);
+        self.mix_f64(style.width);
+        self.mix_stroke_dash(style.dash);
+        self.mix_line_render_type(style.line_type);
+        self.mix_arrow_style(style.start_arrow);
+        self.mix_arrow_style(style.end_arrow);
+        self.mix_u8(style.start_arrow_size);
+        self.mix_u8(style.end_arrow_size);
+        self.mix_shadow(style.shadow.as_ref());
+    }
+
+    fn mix_gradient(&mut self, gradient: Option<&GradientFillInfo>) {
+        match gradient {
+            Some(gradient) => {
+                self.mix_bool(true);
+                self.mix_i16(gradient.gradient_type);
+                self.mix_i16(gradient.angle);
+                self.mix_i16(gradient.center_x);
+                self.mix_i16(gradient.center_y);
+                self.mix_usize(gradient.colors.len());
+                for color in &gradient.colors {
+                    self.mix_u32(*color);
+                }
+                self.mix_usize(gradient.positions.len());
+                for position in &gradient.positions {
+                    self.mix_f64(*position);
+                }
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_path_command(&mut self, command: &PathCommand) {
+        match command {
+            PathCommand::MoveTo(x, y) => {
+                self.mix_u8(0);
+                self.mix_f64(*x);
+                self.mix_f64(*y);
+            }
+            PathCommand::LineTo(x, y) => {
+                self.mix_u8(1);
+                self.mix_f64(*x);
+                self.mix_f64(*y);
+            }
+            PathCommand::CurveTo(x1, y1, x2, y2, x3, y3) => {
+                self.mix_u8(2);
+                self.mix_f64(*x1);
+                self.mix_f64(*y1);
+                self.mix_f64(*x2);
+                self.mix_f64(*y2);
+                self.mix_f64(*x3);
+                self.mix_f64(*y3);
+            }
+            PathCommand::ArcTo(rx, ry, x_rotation, large_arc, sweep, x, y) => {
+                self.mix_u8(3);
+                self.mix_f64(*rx);
+                self.mix_f64(*ry);
+                self.mix_f64(*x_rotation);
+                self.mix_bool(*large_arc);
+                self.mix_bool(*sweep);
+                self.mix_f64(*x);
+                self.mix_f64(*y);
+            }
+            PathCommand::ClosePath => self.mix_u8(4),
+        }
+    }
+
+    fn mix_image_resource(
+        &mut self,
+        resources: &ResourceArena,
+        resource_id: Option<ImageResourceId>,
+    ) {
+        match resource_id.and_then(|id| resources.image_bytes(id).map(|bytes| (id, bytes))) {
+            Some((id, bytes)) => {
+                self.mix_bool(true);
+                self.mix_usize(bytes.len());
+                match resources.image_hash(id) {
+                    Some(hash) => {
+                        self.mix_bool(true);
+                        self.mix_u64(hash);
+                    }
+                    None => self.mix_bool(false),
+                }
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_svg_resource(&mut self, resources: &ResourceArena, resource_id: SvgResourceId) {
+        match resources.svg_fragment(resource_id) {
+            Some(fragment) => {
+                self.mix_bool(true);
+                self.mix_usize(fragment.len());
+                match resources.svg_hash(resource_id) {
+                    Some(hash) => {
+                        self.mix_bool(true);
+                        self.mix_u64(hash);
+                    }
+                    None => self.mix_bool(false),
+                }
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_text_control_mark_kind(&mut self, kind: LayerTextControlMarkKind) {
+        self.mix_u8(match kind {
+            LayerTextControlMarkKind::Space => 0,
+            LayerTextControlMarkKind::Tab => 1,
+            LayerTextControlMarkKind::ParagraphEnd => 2,
+            LayerTextControlMarkKind::LineBreakEnd => 3,
+        });
+    }
+
+    fn mix_text_orientation(&mut self, orientation: LayerTextOrientation) {
+        self.mix_u8(match orientation {
+            LayerTextOrientation::Horizontal => 0,
+            LayerTextOrientation::VerticalUpright => 1,
+            LayerTextOrientation::VerticalSideways => 2,
+        });
+    }
+
+    fn mix_field_marker(&mut self, field_marker: FieldMarkerType) {
+        match field_marker {
+            FieldMarkerType::None => self.mix_u8(0),
+            FieldMarkerType::FieldBegin => self.mix_u8(1),
+            FieldMarkerType::FieldEnd => self.mix_u8(2),
+            FieldMarkerType::FieldBeginEnd => self.mix_u8(3),
+            FieldMarkerType::ShapeMarker(index) => {
+                self.mix_u8(4);
+                self.mix_usize(index);
+            }
+        }
+    }
+
+    fn mix_underline(&mut self, underline: UnderlineType) {
+        self.mix_u8(match underline {
+            UnderlineType::None => 0,
+            UnderlineType::Bottom => 1,
+            UnderlineType::Top => 2,
+        });
+    }
+
+    fn mix_stroke_dash(&mut self, dash: StrokeDash) {
+        self.mix_u8(match dash {
+            StrokeDash::Solid => 0,
+            StrokeDash::Dash => 1,
+            StrokeDash::Dot => 2,
+            StrokeDash::DashDot => 3,
+            StrokeDash::DashDotDot => 4,
+        });
+    }
+
+    fn mix_line_render_type(&mut self, line_type: LineRenderType) {
+        self.mix_u8(match line_type {
+            LineRenderType::Single => 0,
+            LineRenderType::Double => 1,
+            LineRenderType::ThinThickDouble => 2,
+            LineRenderType::ThickThinDouble => 3,
+            LineRenderType::ThinThickThinTriple => 4,
+        });
+    }
+
+    fn mix_arrow_style(&mut self, arrow_style: ArrowStyle) {
+        self.mix_u8(match arrow_style {
+            ArrowStyle::None => 0,
+            ArrowStyle::Arrow => 1,
+            ArrowStyle::ConcaveArrow => 2,
+            ArrowStyle::OpenDiamond => 3,
+            ArrowStyle::OpenCircle => 4,
+            ArrowStyle::OpenSquare => 5,
+            ArrowStyle::Diamond => 6,
+            ArrowStyle::Circle => 7,
+            ArrowStyle::Square => 8,
+        });
+    }
+
+    fn mix_image_fill_mode(&mut self, fill_mode: ImageFillMode) {
+        self.mix_u8(match fill_mode {
+            ImageFillMode::TileAll => 0,
+            ImageFillMode::TileHorzTop => 1,
+            ImageFillMode::TileHorzBottom => 2,
+            ImageFillMode::TileVertLeft => 3,
+            ImageFillMode::TileVertRight => 4,
+            ImageFillMode::FitToSize => 5,
+            ImageFillMode::Center => 6,
+            ImageFillMode::CenterTop => 7,
+            ImageFillMode::CenterBottom => 8,
+            ImageFillMode::LeftCenter => 9,
+            ImageFillMode::LeftTop => 10,
+            ImageFillMode::LeftBottom => 11,
+            ImageFillMode::RightCenter => 12,
+            ImageFillMode::RightTop => 13,
+            ImageFillMode::RightBottom => 14,
+            ImageFillMode::None => 15,
+        });
+    }
+
+    fn mix_image_effect(&mut self, effect: ImageEffect) {
+        self.mix_u8(match effect {
+            ImageEffect::RealPic => 0,
+            ImageEffect::GrayScale => 1,
+            ImageEffect::BlackWhite => 2,
+            ImageEffect::Pattern8x8 => 3,
+        });
+    }
+
+    fn mix_form_type(&mut self, form_type: FormType) {
+        self.mix_u8(match form_type {
+            FormType::PushButton => 0,
+            FormType::CheckBox => 1,
+            FormType::ComboBox => 2,
+            FormType::RadioButton => 3,
+            FormType::Edit => 4,
+        });
     }
 }
 
@@ -502,48 +1193,12 @@ impl SkiaLayerRenderer {
                     && node.bounds.width.is_finite()
                     && node.bounds.height.is_finite()
                 {
-                    let mut cache_key = 0xcbf29ce484222325u64;
-                    let mix = |key: &mut u64, bytes: &[u8]| {
-                        for byte in bytes {
-                            *key ^= u64::from(*byte);
-                            *key = key.wrapping_mul(0x100000001b3);
-                        }
-                    };
-                    mix(&mut cache_key, replay.profile.as_str().as_bytes());
-                    mix(
-                        &mut cache_key,
-                        &[
-                            replay.output_options.show_paragraph_marks as u8,
-                            replay.output_options.show_control_codes as u8,
-                            replay.output_options.show_transparent_borders as u8,
-                            replay.output_options.clip_enabled as u8,
-                            replay.output_options.debug_overlay as u8,
-                        ],
-                    );
-                    mix(&mut cache_key, &replay.scale.to_bits().to_le_bytes());
-                    match node.source_node_id {
-                        Some(source_node_id) => mix(&mut cache_key, &source_node_id.to_le_bytes()),
-                        None => mix(&mut cache_key, &[0xff]),
-                    }
-                    mix(&mut cache_key, &node.bounds.x.to_bits().to_le_bytes());
-                    mix(&mut cache_key, &node.bounds.y.to_bits().to_le_bytes());
-                    mix(&mut cache_key, &node.bounds.width.to_bits().to_le_bytes());
-                    mix(&mut cache_key, &node.bounds.height.to_bits().to_le_bytes());
-                    mix(&mut cache_key, format!("{node:?}").as_bytes());
-                    for (id, bytes) in resources.image_resources() {
-                        mix(&mut cache_key, &id.0.to_le_bytes());
-                        mix(&mut cache_key, &bytes.len().to_le_bytes());
-                        if let Some(hash) = resources.image_hash(id) {
-                            mix(&mut cache_key, &hash.to_le_bytes());
-                        }
-                    }
-                    for (id, fragment) in resources.svg_resources() {
-                        mix(&mut cache_key, &id.0.to_le_bytes());
-                        mix(&mut cache_key, &fragment.len().to_le_bytes());
-                        if let Some(hash) = resources.svg_hash(id) {
-                            mix(&mut cache_key, &hash.to_le_bytes());
-                        }
-                    }
+                    let mut cache_key = StaticSubtreeCacheKey::new();
+                    cache_key.mix_str(replay.profile.as_str());
+                    cache_key.mix_output_options(&replay.output_options);
+                    cache_key.mix_f64(replay.scale);
+                    cache_key.mix_layer_node(node, resources);
+                    let cache_key = cache_key.finish();
                     if let Some(picture) = self.static_picture_cache.borrow_mut().get(cache_key) {
                         canvas.draw_picture(&picture, None, None);
                         return;
@@ -2057,7 +2712,8 @@ mod tests {
     use crate::model::style::UnderlineType;
     use crate::paint::{
         CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerNode, LayerOutputOptions,
-        LayerRectanglePaint, LayerSemantic, PageLayerTree, PaintOp, RenderProfile, SvgResourceId,
+        LayerRectanglePaint, LayerSemantic, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
+        SvgResourceId,
     };
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
@@ -2415,6 +3071,54 @@ mod tests {
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
         renderer.render_png(&tree).expect("cached skia render");
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+    }
+
+    #[test]
+    fn static_picture_cache_ignores_unreferenced_resources() {
+        let rect_bounds = BoundingBox::new(5.0, 5.0, 20.0, 10.0);
+        let leaf = LayerNode::leaf(
+            rect_bounds,
+            Some(2),
+            vec![PaintOp::Rectangle {
+                bbox: rect_bounds,
+                rect: LayerRectanglePaint {
+                    corner_radius: 0.0,
+                    style: ShapeStyle {
+                        fill_color: Some(0x00AA00),
+                        ..Default::default()
+                    },
+                    gradient: None,
+                    transform: Default::default(),
+                },
+            }],
+        );
+        let root = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, 40.0, 20.0),
+            Some(1),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        let mut resources_a = ResourceArena::default();
+        resources_a.intern_image_bytes(b"unreferenced image A");
+        resources_a.intern_svg_fragment("<rect width=\"10\" height=\"10\"/>");
+        let mut resources_b = ResourceArena::default();
+        resources_b.intern_image_bytes(b"unreferenced image B with different bytes");
+        resources_b.intern_svg_fragment("<circle r=\"5\"/>");
+        let tree_a = PageLayerTree::with_resources(40.0, 20.0, root.clone(), resources_a);
+        let tree_b = PageLayerTree::with_resources(40.0, 20.0, root, resources_b);
+        let renderer = SkiaLayerRenderer::new();
+
+        renderer.render_png(&tree_a).expect("first skia render");
+        assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+        renderer
+            .render_png(&tree_b)
+            .expect("unreferenced resources should not miss");
+        assert_eq!(
+            renderer.static_picture_cache.borrow().len(),
+            1,
+            "static subtree cache key should ignore resources not referenced by the subtree"
+        );
     }
 
     #[test]
