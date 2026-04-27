@@ -59,6 +59,20 @@ impl HwpDocument {
         self.render_page_svg_native(page_num).map_err(|e| e.into())
     }
 
+    /// 특정 페이지를 legacy SVG 렌더러로 렌더링한다.
+    #[wasm_bindgen(js_name = renderPageSvgLegacy)]
+    pub fn render_page_svg_legacy(&self, page_num: u32) -> Result<String, JsValue> {
+        self.render_page_svg_legacy_native(page_num)
+            .map_err(|e| e.into())
+    }
+
+    /// 특정 페이지를 PageLayerTree 기반 SVG replay 경로로 렌더링한다.
+    #[wasm_bindgen(js_name = renderPageSvgLayer)]
+    pub fn render_page_svg_layer(&self, page_num: u32) -> Result<String, JsValue> {
+        self.render_page_svg_layer_native(page_num)
+            .map_err(|e| e.into())
+    }
+
     /// 특정 페이지를 HTML 문자열로 렌더링한다.
     #[wasm_bindgen(js_name = renderPageHtml)]
     pub fn render_page_html(&self, page_num: u32) -> Result<String, JsValue> {

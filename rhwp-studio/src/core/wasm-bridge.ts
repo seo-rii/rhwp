@@ -208,6 +208,22 @@ export class WasmBridge {
     return this.doc.renderPageSvg(pageNum);
   }
 
+  renderPageSvgLegacy(pageNum: number): string {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const doc = this.doc as any;
+    return typeof doc.renderPageSvgLegacy === 'function'
+      ? doc.renderPageSvgLegacy(pageNum)
+      : this.doc.renderPageSvg(pageNum);
+  }
+
+  renderPageSvgLayer(pageNum: number): string {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const doc = this.doc as any;
+    return typeof doc.renderPageSvgLayer === 'function'
+      ? doc.renderPageSvgLayer(pageNum)
+      : this.doc.renderPageSvg(pageNum);
+  }
+
   getPageLayerTree(pageNum: number, profile: LayerRenderProfile = 'screen'): PageLayerTree {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     const doc = this.doc as any;

@@ -2335,4 +2335,56 @@ mod tests {
             "font-embed 경로도 layer-svg 선택을 존중해야 함"
         );
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_explicit_svg_render_paths_are_env_independent() {
+        let Some(core) = load_document("samples/lseg-01-basic.hwp") else {
+            return;
+        };
+        let _guard = lock_render_path_env();
+        std::env::remove_var("RHWP_RENDER_PATH");
+
+        let legacy = core
+            .render_page_svg_legacy_native(0)
+            .expect("legacy SVG 렌더 실패");
+        let default = core.render_page_svg_native(0).expect("기본 SVG 렌더 실패");
+
+        std::env::set_var("RHWP_RENDER_PATH", "layer-svg");
+        let layer = core
+            .render_page_svg_layer_native(0)
+            .expect("layer SVG 렌더 실패");
+        let env_layer = core
+            .render_page_svg_native(0)
+            .expect("환경 선택 SVG 렌더 실패");
+        let explicit_legacy = core
+            .render_page_svg_legacy_native(0)
+            .expect("명시 legacy SVG 렌더 실패");
+
+        std::env::remove_var("RHWP_RENDER_PATH");
+
+        let normalize_svg = |svg: String| {
+            svg.lines()
+                .map(str::trim_end)
+                .filter(|line| !line.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        assert_eq!(
+            normalize_svg(default),
+            normalize_svg(legacy.clone()),
+            "기본 render_page_svg_native는 호환성을 위해 legacy SVG를 유지해야 함"
+        );
+        assert_eq!(
+            normalize_svg(env_layer),
+            normalize_svg(layer),
+            "RHWP_RENDER_PATH=layer-svg는 layer SVG 경로를 선택해야 함"
+        );
+        assert_eq!(
+            normalize_svg(explicit_legacy),
+            normalize_svg(legacy),
+            "명시 legacy API는 환경 변수와 무관하게 legacy 경로를 유지해야 함"
+        );
+    }
 }
