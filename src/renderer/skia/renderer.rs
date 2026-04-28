@@ -45,19 +45,36 @@ pub struct SkiaLayerRenderer {
 
 const MAX_RASTER_DIMENSION: i32 = 16_384;
 const MAX_STATIC_PICTURE_CACHE_ENTRIES: usize = 64;
+const MAX_STATIC_PICTURE_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
 struct StaticPictureCache {
-    entries: HashMap<u64, Picture>,
+    entries: HashMap<u64, StaticPictureCacheEntry>,
     order: VecDeque<u64>,
     max_entries: usize,
+    max_approx_bytes: usize,
+    approx_bytes: usize,
+}
+
+struct StaticPictureCacheEntry {
+    picture: Picture,
+    fingerprint: u64,
+    approx_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StaticPictureCacheKey {
+    hash: u64,
+    fingerprint: u64,
 }
 
 impl StaticPictureCache {
-    fn new(max_entries: usize) -> Self {
+    fn new(max_entries: usize, max_approx_bytes: usize) -> Self {
         Self {
             entries: HashMap::new(),
             order: VecDeque::new(),
             max_entries,
+            max_approx_bytes,
+            approx_bytes: 0,
         }
     }
 
@@ -65,33 +82,56 @@ impl StaticPictureCache {
         self.entries.len()
     }
 
-    fn get(&mut self, key: u64) -> Option<Picture> {
-        let picture = self.entries.get(&key).cloned()?;
-        self.touch(key);
+    fn approx_bytes(&self) -> usize {
+        self.approx_bytes
+    }
+
+    fn get(&mut self, key: StaticPictureCacheKey) -> Option<Picture> {
+        let entry = self.entries.get(&key.hash)?;
+        if entry.fingerprint != key.fingerprint {
+            return None;
+        }
+        let picture = entry.picture.clone();
+        self.touch(key.hash);
         Some(picture)
     }
 
-    fn insert(&mut self, key: u64, picture: Picture) {
-        if let Some(cached_picture) = self.entries.get_mut(&key) {
-            *cached_picture = picture;
-            self.touch(key);
+    fn insert(&mut self, key: StaticPictureCacheKey, picture: Picture, approx_bytes: usize) {
+        if self.max_entries == 0
+            || self.max_approx_bytes == 0
+            || approx_bytes > self.max_approx_bytes
+        {
             return;
         }
 
-        while self.max_entries > 0 && self.entries.len() >= self.max_entries {
+        if let Some(entry) = self.entries.remove(&key.hash) {
+            self.approx_bytes = self.approx_bytes.saturating_sub(entry.approx_bytes);
+        }
+        self.order.retain(|cached_key| *cached_key != key.hash);
+
+        while self.entries.len() >= self.max_entries
+            || self.approx_bytes.saturating_add(approx_bytes) > self.max_approx_bytes
+        {
             let Some(evicted_key) = self.order.pop_front() else {
                 self.entries.clear();
+                self.approx_bytes = 0;
                 break;
             };
-            self.entries.remove(&evicted_key);
+            if let Some(entry) = self.entries.remove(&evicted_key) {
+                self.approx_bytes = self.approx_bytes.saturating_sub(entry.approx_bytes);
+            }
         }
 
-        if self.max_entries == 0 {
-            return;
-        }
-
-        self.entries.insert(key, picture);
-        self.order.push_back(key);
+        self.entries.insert(
+            key.hash,
+            StaticPictureCacheEntry {
+                picture,
+                fingerprint: key.fingerprint,
+                approx_bytes,
+            },
+        );
+        self.approx_bytes = self.approx_bytes.saturating_add(approx_bytes);
+        self.order.push_back(key.hash);
     }
 
     fn touch(&mut self, key: u64) {
@@ -104,23 +144,33 @@ impl StaticPictureCache {
 
 struct StaticSubtreeCacheKey {
     hash: u64,
+    fingerprint: u64,
 }
 
 impl StaticSubtreeCacheKey {
     fn new() -> Self {
         Self {
             hash: 0xcbf2_9ce4_8422_2325,
+            fingerprint: 0x6c62_272e_07bb_0142,
         }
     }
 
-    fn finish(self) -> u64 {
-        self.hash
+    fn finish(self) -> StaticPictureCacheKey {
+        StaticPictureCacheKey {
+            hash: self.hash,
+            fingerprint: self.fingerprint,
+        }
     }
 
     fn mix_bytes(&mut self, bytes: &[u8]) {
         for byte in bytes {
             self.hash ^= u64::from(*byte);
             self.hash = self.hash.wrapping_mul(0x0000_0100_0000_01b3);
+            self.fingerprint ^= u64::from(*byte).wrapping_add(0x9e37_79b9_7f4a_7c15);
+            self.fingerprint = self
+                .fingerprint
+                .rotate_left(7)
+                .wrapping_mul(0x517c_c1b7_2722_0a95);
         }
     }
 
@@ -1107,6 +1157,7 @@ impl SkiaLayerRenderer {
             text_shaper,
             static_picture_cache: RefCell::new(StaticPictureCache::new(
                 MAX_STATIC_PICTURE_CACHE_ENTRIES,
+                MAX_STATIC_PICTURE_CACHE_BYTES,
             )),
         }
     }
@@ -1219,9 +1270,20 @@ impl SkiaLayerRenderer {
                     replay.pop_cache_hint();
                     if let Some(picture) = recorder.finish_recording_as_picture(Some(&cull_rect)) {
                         canvas.draw_picture(&picture, None, None);
-                        self.static_picture_cache
-                            .borrow_mut()
-                            .insert(cache_key, picture);
+                        let scaled_width = (node.bounds.width * replay.scale).abs().ceil();
+                        let scaled_height = (node.bounds.height * replay.scale).abs().ceil();
+                        let approx_bytes = if scaled_width.is_finite() && scaled_height.is_finite()
+                        {
+                            (scaled_width.max(1.0) * scaled_height.max(1.0) * 4.0)
+                                .min(usize::MAX as f64) as usize
+                        } else {
+                            MAX_STATIC_PICTURE_CACHE_BYTES.saturating_add(1)
+                        };
+                        self.static_picture_cache.borrow_mut().insert(
+                            cache_key,
+                            picture,
+                            approx_bytes,
+                        );
                         return;
                     }
                 }
@@ -2707,7 +2769,7 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 mod tests {
     use super::{
         make_font, raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext,
-        MAX_STATIC_PICTURE_CACHE_ENTRIES,
+        StaticPictureCache, StaticPictureCacheKey, MAX_STATIC_PICTURE_CACHE_ENTRIES,
     };
     use crate::model::style::UnderlineType;
     use crate::paint::{
@@ -2726,7 +2788,7 @@ mod tests {
         TextStyle,
     };
     use resvg::tiny_skia;
-    use skia_safe::Point;
+    use skia_safe::{Color, Paint, PictureRecorder, Point, Rect};
 
     #[test]
     fn renders_basic_rect_to_png() {
@@ -3158,6 +3220,59 @@ mod tests {
             renderer.static_picture_cache.borrow().len(),
             MAX_STATIC_PICTURE_CACHE_ENTRIES,
             "static subtree picture cache should stay bounded"
+        );
+    }
+
+    #[test]
+    fn static_picture_cache_uses_byte_budget_and_fingerprint() {
+        let mut recorder = PictureRecorder::new();
+        let canvas = recorder.begin_recording(Rect::from_xywh(0.0, 0.0, 4.0, 4.0), true);
+        let mut paint = Paint::default();
+        paint.set_color(Color::from_argb(255, 0, 255, 0));
+        canvas.draw_rect(Rect::from_xywh(0.0, 0.0, 4.0, 4.0), &paint);
+        let picture = recorder
+            .finish_recording_as_picture(Some(&Rect::from_xywh(0.0, 0.0, 4.0, 4.0)))
+            .expect("picture");
+
+        let key_a = StaticPictureCacheKey {
+            hash: 7,
+            fingerprint: 11,
+        };
+        let key_b = StaticPictureCacheKey {
+            hash: 7,
+            fingerprint: 12,
+        };
+        let key_c = StaticPictureCacheKey {
+            hash: 8,
+            fingerprint: 13,
+        };
+        let mut cache = StaticPictureCache::new(4, 1_000);
+
+        cache.insert(key_a, picture.clone(), 600);
+        assert!(cache.get(key_a).is_some());
+        assert!(
+            cache.get(key_b).is_none(),
+            "same hash with a different fingerprint must not reuse a cached picture"
+        );
+
+        cache.insert(key_c, picture.clone(), 600);
+        assert_eq!(cache.len(), 1);
+        assert!(cache.approx_bytes() <= 1_000);
+        assert!(cache.get(key_a).is_none());
+        assert!(cache.get(key_c).is_some());
+
+        cache.insert(
+            StaticPictureCacheKey {
+                hash: 9,
+                fingerprint: 14,
+            },
+            picture,
+            1_001,
+        );
+        assert_eq!(
+            cache.len(),
+            1,
+            "entries larger than the byte budget should be skipped"
         );
     }
 
