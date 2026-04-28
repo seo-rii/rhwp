@@ -277,6 +277,9 @@ fn paint_op_to_value(op: &PaintOp) -> JsValue {
             if !run.control_marks.is_empty() {
                 set_value(&value, "controlMarks", text_control_marks_to_value(run));
             }
+            if let Some(overlap) = &run.char_overlap {
+                set_value(&value, "charOverlap", char_overlap_to_value(overlap));
+            }
             set_string(&value, "fieldMarker", field_marker_str(run.field_marker));
             set_bool(&value, "isParaEnd", run.is_para_end);
             set_bool(&value, "isLineBreakEnd", run.is_line_break_end);
@@ -753,6 +756,13 @@ fn text_control_marks_to_value(run: &crate::paint::LayerTextRunPaint) -> JsValue
     }))
 }
 
+fn char_overlap_to_value(overlap: &crate::renderer::composer::CharOverlapInfo) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "borderType", overlap.border_type as f64);
+    set_number(&value, "innerCharSize", overlap.inner_char_size as f64);
+    value.into()
+}
+
 fn set_value(object: &Object, key: &str, value: JsValue) {
     Reflect::set(object, &JsValue::from_str(key), &value).expect("js object property set failed");
 }
@@ -924,6 +934,7 @@ mod tests {
         LayerEquationPaint, LayerImagePaint, LayerOutputOptions, LayerTextControlMark,
         LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint, ResourceArena,
     };
+    use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::render_tree::BoundingBox;
 
     #[wasm_bindgen_test]
@@ -985,6 +996,16 @@ mod tests {
         assert_same_number(&json_text, &js_text, "shapeMarkerIndex");
         assert_same_bool(&json_text, &js_text, "isParaEnd");
         assert_same_bool(&json_text, &js_text, "isLineBreakEnd");
+        assert_same_number(
+            &prop(&json_text, "charOverlap"),
+            &prop(&js_text, "charOverlap"),
+            "borderType",
+        );
+        assert_same_number(
+            &prop(&json_text, "charOverlap"),
+            &prop(&js_text, "charOverlap"),
+            "innerCharSize",
+        );
         let json_marks = Array::from(&prop(&json_text, "controlMarks"));
         let js_marks = Array::from(&prop(&js_text, "controlMarks"));
         assert_eq!(json_marks.length(), 1);
@@ -1108,7 +1129,10 @@ mod tests {
                             rotation: 15.0,
                             is_vertical: true,
                             orientation: LayerTextOrientation::VerticalSideways,
-                            char_overlap: None,
+                            char_overlap: Some(CharOverlapInfo {
+                                border_type: 3,
+                                inner_char_size: 85,
+                            }),
                             baseline: 11.0,
                             field_marker: FieldMarkerType::ShapeMarker(4),
                         },

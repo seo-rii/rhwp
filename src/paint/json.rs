@@ -197,6 +197,10 @@ impl PaintOp {
                     buf.push_str(",\"controlMarks\":");
                     write_text_control_marks(buf, run);
                 }
+                if let Some(overlap) = &run.char_overlap {
+                    buf.push_str(",\"charOverlap\":");
+                    write_char_overlap(buf, overlap);
+                }
                 let _ = write!(
                     buf,
                     ",\"fieldMarker\":{},\"isParaEnd\":{},\"isLineBreakEnd\":{}",
@@ -478,6 +482,14 @@ fn write_text_control_marks(buf: &mut String, run: &LayerTextRunPaint) {
         );
     }
     buf.push(']');
+}
+
+fn write_char_overlap(buf: &mut String, overlap: &crate::renderer::composer::CharOverlapInfo) {
+    let _ = write!(
+        buf,
+        "{{\"borderType\":{},\"innerCharSize\":{}}}",
+        overlap.border_type, overlap.inner_char_size,
+    );
 }
 
 fn write_tab_leaders(buf: &mut String, leaders: &[TabLeaderInfo]) {
@@ -996,6 +1008,7 @@ mod tests {
         LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
         ResourceArena, LAYER_TREE_SCHEMA,
     };
+    use crate::renderer::composer::CharOverlapInfo;
 
     #[test]
     fn serializes_schema_metadata_from_shared_contract() {
@@ -1048,7 +1061,10 @@ mod tests {
                 rotation: 0.0,
                 is_vertical: false,
                 orientation: LayerTextOrientation::Horizontal,
-                char_overlap: None,
+                char_overlap: Some(CharOverlapInfo {
+                    border_type: 1,
+                    inner_char_size: 90,
+                }),
                 baseline: 13.0,
                 field_marker: Default::default(),
             },
@@ -1111,6 +1127,7 @@ mod tests {
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"controlMarks\":[{\"kind\":\"paragraphEnd\",\"text\":\"↵\",\"x\":80.000000,\"y\":0.000000,\"fontSize\":16.000000}]"));
+        assert!(json.contains("\"charOverlap\":{\"borderType\":1,\"innerCharSize\":90}"));
         assert!(json.contains("\"orientation\":\"horizontal\""));
         assert!(json.contains("\"fieldMarker\":\"none\""));
         assert!(json.contains("\"isParaEnd\":false"));
