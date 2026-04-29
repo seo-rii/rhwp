@@ -1,6 +1,7 @@
 import type {
   LayerBounds,
   LayerEquationLayoutBox,
+  LayerImageOp,
   LayerPathCommand,
   LayerPatternFill,
   LayerTextControlMark,
@@ -9,6 +10,9 @@ import type {
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
+
+export type LayerCanvasImageSource = HTMLImageElement | HTMLCanvasElement;
+export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, HTMLCanvasElement>>;
 
 export function decodeBase64(base64: string): Uint8Array {
   const binary = window.atob(base64);
@@ -65,6 +69,85 @@ export function inferImageMime(bytes: Uint8Array): string {
     return 'image/webp';
   }
   return 'image/png';
+}
+
+export function layerCanvasImageSourceSize(image: LayerCanvasImageSource): { width: number; height: number } {
+  if ('naturalWidth' in image) {
+    return {
+      width: image.naturalWidth || image.width,
+      height: image.naturalHeight || image.height,
+    };
+  }
+  return {
+    width: image.width,
+    height: image.height,
+  };
+}
+
+export function applyLayerImageEffect(
+  image: LayerCanvasImageSource,
+  effect: LayerImageOp['effect'] | undefined,
+  cache?: LayerImageEffectCache,
+): LayerCanvasImageSource {
+  if (!effect || effect === 'realPic') {
+    return image;
+  }
+
+  const { width, height } = layerCanvasImageSourceSize(image);
+  if (
+    !Number.isFinite(width)
+    || !Number.isFinite(height)
+    || width <= 0
+    || height <= 0
+  ) {
+    return image;
+  }
+
+  const canvasWidth = Math.max(1, Math.round(width));
+  const canvasHeight = Math.max(1, Math.round(height));
+  const cachedByEffect = cache?.get(image);
+  const cached = cachedByEffect?.get(effect);
+  if (cached && cached.width === canvasWidth && cached.height === canvasHeight) {
+    return cached;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return image;
+  }
+
+  let pixels: ImageData;
+  try {
+    ctx.drawImage(image, 0, 0, canvasWidth, canvasHeight);
+    pixels = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+  } catch {
+    return image;
+  }
+
+  const data = pixels.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const luma = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+    const value = effect === 'blackWhite'
+      ? (luma >= 128 ? 255 : 0)
+      : luma;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  ctx.putImageData(pixels, 0, 0);
+
+  if (cache) {
+    const nextByEffect = cachedByEffect ?? new Map<string, HTMLCanvasElement>();
+    nextByEffect.set(effect, canvas);
+    if (!cachedByEffect) {
+      cache.set(image, nextByEffect);
+    }
+  }
+
+  return canvas;
 }
 
 export function buildCanvasTextFont(

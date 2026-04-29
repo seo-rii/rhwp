@@ -33,12 +33,16 @@ import type {
 import {
   allowsTextControlMark,
   angleToCanvasCoords,
+  applyLayerImageEffect,
   buildCanvasTextFont,
   calculateArrowDimensions,
   computePathPaintBounds,
   decodePuaOverlapNumber,
   drawCanvas2DCharOverlap,
   isHalfwidthScaledCluster,
+  layerCanvasImageSourceSize,
+  type LayerCanvasImageSource,
+  type LayerImageEffectCache,
   puaToDisplayText,
   renderEquationLayoutBox,
   splitIntoClusters,
@@ -77,6 +81,7 @@ export class CanvasKitLayerRenderer {
   private readonly equationSvgDomImageCache: Map<string, HTMLImageElement>;
   private readonly equationSvgImageCache: Map<string, Image>;
   private readonly patternImageCache: Map<string, Image | null>;
+  private readonly overlayImageEffectCache: LayerImageEffectCache = new WeakMap();
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new CanvasKitStaticPictureCache();
   private readonly textBlobCache = new Map<string, TextBlob>();
@@ -1945,24 +1950,8 @@ export class CanvasKitLayerRenderer {
     }
 
     this.withCanvasOverlayTransform(ctx, op.bbox, op.transform, () => {
-      const previousFilter = ctx.filter;
-      try {
-        switch (op.effect) {
-          case 'grayScale':
-          case 'pattern8x8':
-            ctx.filter = 'grayscale(1)';
-            break;
-          case 'blackWhite':
-            ctx.filter = 'grayscale(1) contrast(3200%)';
-            break;
-          default:
-            ctx.filter = 'none';
-            break;
-        }
-        this.drawDomImage(ctx, image, op.bbox, op.fillMode, op.originalSize, op.crop);
-      } finally {
-        ctx.filter = previousFilter;
-      }
+      const source = applyLayerImageEffect(image, op.effect, this.overlayImageEffectCache);
+      this.drawDomImage(ctx, source, op.bbox, op.fillMode, op.originalSize, op.crop);
     });
   }
 
@@ -2208,14 +2197,13 @@ export class CanvasKitLayerRenderer {
 
   private drawDomImage(
     ctx: CanvasRenderingContext2D,
-    image: HTMLImageElement,
+    image: LayerCanvasImageSource,
     bbox: LayerBounds,
     fillMode = 'fitToSize',
     originalSize?: { width: number; height: number },
     crop?: { left: number; top: number; right: number; bottom: number },
   ): void {
-    const imageWidth = image.naturalWidth || image.width;
-    const imageHeight = image.naturalHeight || image.height;
+    const { width: imageWidth, height: imageHeight } = layerCanvasImageSourceSize(image);
     if (!imageWidth || !imageHeight) {
       return;
     }
