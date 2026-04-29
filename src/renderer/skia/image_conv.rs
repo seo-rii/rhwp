@@ -40,6 +40,11 @@ impl ImageSampling {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ImageDrawDiagnostics {
+    pub tile_fallback_cap_hits: usize,
+}
+
 pub fn draw_image_bytes(
     canvas: &Canvas,
     bytes: &[u8],
@@ -52,13 +57,13 @@ pub fn draw_image_bytes(
     crop: Option<(i32, i32, i32, i32)>,
     effect: ImageEffect,
     sampling: ImageSampling,
-) {
+) -> ImageDrawDiagnostics {
     if !is_valid_destination_rect(x, y, width, height) {
-        return;
+        return ImageDrawDiagnostics::default();
     }
     let Some(image) = decode_image_bytes(bytes) else {
         draw_missing_image_placeholder(canvas, x, y, width, height);
-        return;
+        return ImageDrawDiagnostics::default();
     };
     draw_decoded_image(
         canvas,
@@ -72,7 +77,7 @@ pub fn draw_image_bytes(
         crop,
         effect,
         sampling,
-    );
+    )
 }
 
 pub fn draw_decoded_image(
@@ -87,9 +92,40 @@ pub fn draw_decoded_image(
     crop: Option<(i32, i32, i32, i32)>,
     effect: ImageEffect,
     sampling: ImageSampling,
-) {
+) -> ImageDrawDiagnostics {
+    draw_decoded_image_impl(
+        canvas,
+        image,
+        x,
+        y,
+        width,
+        height,
+        fill_mode,
+        original_size,
+        crop,
+        effect,
+        sampling,
+        true,
+    )
+}
+
+fn draw_decoded_image_impl(
+    canvas: &Canvas,
+    image: &Image,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    fill_mode: Option<ImageFillMode>,
+    original_size: Option<(f64, f64)>,
+    crop: Option<(i32, i32, i32, i32)>,
+    effect: ImageEffect,
+    sampling: ImageSampling,
+    allow_shader_tiling: bool,
+) -> ImageDrawDiagnostics {
+    let mut diagnostics = ImageDrawDiagnostics::default();
     if !is_valid_destination_rect(x, y, width, height) {
-        return;
+        return diagnostics;
     }
     let dst = Rect::from_xywh(x, y, width, height);
     let mut paint = Paint::default();
@@ -147,11 +183,11 @@ pub fn draw_decoded_image(
     if matches!(mode, ImageFillMode::FitToSize | ImageFillMode::None) {
         if let Some(src) = crop_src {
             draw_image_rect(canvas, Some(src), dst);
-            return;
+            return diagnostics;
         }
 
         draw_image_rect(canvas, None, dst);
-        return;
+        return diagnostics;
     }
 
     let image_width = original_size
@@ -166,7 +202,7 @@ pub fn draw_decoded_image(
         || image_height <= 0.0
     {
         draw_missing_image_placeholder(canvas, x, y, width, height);
-        return;
+        return diagnostics;
     }
 
     canvas.save();
@@ -224,9 +260,12 @@ pub fn draw_decoded_image(
             true
         };
 
-        if matches!(mode, ImageFillMode::TileAll) && draw_tiled_shader(dst, x, y) {
+        if allow_shader_tiling
+            && matches!(mode, ImageFillMode::TileAll)
+            && draw_tiled_shader(dst, x, y)
+        {
             canvas.restore();
-            return;
+            return diagnostics;
         }
         if matches!(
             mode,
@@ -237,9 +276,11 @@ pub fn draw_decoded_image(
             } else {
                 y + height - image_height
             };
-            if draw_tiled_shader(Rect::from_xywh(x, tile_y, width, image_height), x, tile_y) {
+            if allow_shader_tiling
+                && draw_tiled_shader(Rect::from_xywh(x, tile_y, width, image_height), x, tile_y)
+            {
                 canvas.restore();
-                return;
+                return diagnostics;
             }
         }
         if matches!(
@@ -251,19 +292,30 @@ pub fn draw_decoded_image(
             } else {
                 x + width - image_width
             };
-            if draw_tiled_shader(Rect::from_xywh(tile_x, y, image_width, height), tile_x, y) {
+            if allow_shader_tiling
+                && draw_tiled_shader(Rect::from_xywh(tile_x, y, image_width, height), tile_x, y)
+            {
                 canvas.restore();
-                return;
+                return diagnostics;
             }
         }
 
         const MAX_TILE_DRAWS: usize = 4096;
         let mut tile_draws = 0usize;
+        let mut cap_hit = false;
         if matches!(mode, ImageFillMode::TileAll) {
             let mut tile_y = y;
-            while tile_y < y + height && tile_draws < MAX_TILE_DRAWS {
+            while tile_y < y + height {
+                if tile_draws >= MAX_TILE_DRAWS {
+                    cap_hit = true;
+                    break;
+                }
                 let mut tile_x = x;
-                while tile_x < x + width && tile_draws < MAX_TILE_DRAWS {
+                while tile_x < x + width {
+                    if tile_draws >= MAX_TILE_DRAWS {
+                        cap_hit = true;
+                        break;
+                    }
                     draw_image_rect(
                         canvas,
                         crop_src,
@@ -284,7 +336,11 @@ pub fn draw_decoded_image(
                 y + height - image_height
             };
             let mut tile_x = x;
-            while tile_x < x + width && tile_draws < MAX_TILE_DRAWS {
+            while tile_x < x + width {
+                if tile_draws >= MAX_TILE_DRAWS {
+                    cap_hit = true;
+                    break;
+                }
                 draw_image_rect(
                     canvas,
                     crop_src,
@@ -300,7 +356,11 @@ pub fn draw_decoded_image(
                 x + width - image_width
             };
             let mut tile_y = y;
-            while tile_y < y + height && tile_draws < MAX_TILE_DRAWS {
+            while tile_y < y + height {
+                if tile_draws >= MAX_TILE_DRAWS {
+                    cap_hit = true;
+                    break;
+                }
                 draw_image_rect(
                     canvas,
                     crop_src,
@@ -309,6 +369,10 @@ pub fn draw_decoded_image(
                 tile_draws += 1;
                 tile_y += image_height.max(1.0);
             }
+        }
+        if cap_hit {
+            diagnostics.tile_fallback_cap_hits =
+                diagnostics.tile_fallback_cap_hits.saturating_add(1);
         }
     } else {
         let (image_x, image_y) =
@@ -321,6 +385,37 @@ pub fn draw_decoded_image(
     }
 
     canvas.restore();
+    diagnostics
+}
+
+#[cfg(test)]
+fn draw_decoded_image_without_shader_for_test(
+    canvas: &Canvas,
+    image: &Image,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    fill_mode: Option<ImageFillMode>,
+    original_size: Option<(f64, f64)>,
+    crop: Option<(i32, i32, i32, i32)>,
+    effect: ImageEffect,
+    sampling: ImageSampling,
+) -> ImageDrawDiagnostics {
+    draw_decoded_image_impl(
+        canvas,
+        image,
+        x,
+        y,
+        width,
+        height,
+        fill_mode,
+        original_size,
+        crop,
+        effect,
+        sampling,
+        false,
+    )
 }
 
 fn is_valid_destination_rect(x: f32, y: f32, width: f32, height: f32) -> bool {
@@ -596,6 +691,31 @@ mod tests {
             bottom_right.green() > 200 && bottom_right.alpha() == 255,
             "shader tile replay should cover pixels beyond the old capped loop area"
         );
+    }
+
+    #[test]
+    fn manual_tile_fallback_reports_cap_hits() {
+        let mut source_surface = surfaces::raster_n32_premul((1, 1)).expect("source image surface");
+        source_surface.canvas().clear(Color::BLACK);
+        let image = source_surface.image_snapshot();
+        let mut target_surface = surfaces::raster_n32_premul((16, 16)).expect("target surface");
+        target_surface.canvas().clear(Color::TRANSPARENT);
+
+        let diagnostics = draw_decoded_image_without_shader_for_test(
+            target_surface.canvas(),
+            &image,
+            0.0,
+            0.0,
+            5000.0,
+            1.0,
+            Some(ImageFillMode::TileAll),
+            Some((1.0, 1.0)),
+            None,
+            ImageEffect::RealPic,
+            ImageSampling::nearest(),
+        );
+
+        assert_eq!(diagnostics.tile_fallback_cap_hits, 1);
     }
 
     #[test]

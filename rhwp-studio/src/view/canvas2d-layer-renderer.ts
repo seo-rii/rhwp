@@ -23,12 +23,14 @@ import type {
   PageLayerTree,
 } from '@/core/types';
 import {
+  allowsTextControlMark,
   angleToCanvasCoords,
   buildCanvasTextFont,
   calculateArrowDimensions,
   computePathPaintBounds,
   createPatternTileCanvas,
   decodeBase64,
+  drawCanvas2DCharOverlap,
   encodeBase64,
   inferImageMime,
   isHalfwidthScaledCluster,
@@ -54,6 +56,8 @@ export class Canvas2DLayerRenderer {
   private currentResources: PageLayerTree['resources'] | null = null;
   private currentResourceTableId: number | null = null;
   private currentClipEnabled = true;
+  private currentShowParagraphMarks = false;
+  private currentShowControlCodes = false;
   private rerenderScheduled = false;
   private asyncResourceReadyCallback: (() => void) | null = null;
 
@@ -73,6 +77,8 @@ export class Canvas2DLayerRenderer {
     this.lastTargetCanvas = targetCanvas;
     this.lastScale = scale;
     this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
+    this.currentShowParagraphMarks = tree.outputOptions?.showParagraphMarks ?? false;
+    this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;
     if (this.currentResourceTableId !== (tree.resources?.tableId ?? null)) {
       this.clearResourceImageCaches();
     }
@@ -263,6 +269,32 @@ export class Canvas2DLayerRenderer {
 
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = op.positions.at(-1) ?? 0;
+      const drawControlMarks = () => {
+        if (!op.controlMarks?.length) {
+          return;
+        }
+        ctx.save();
+        ctx.fillStyle = '#4A90D9';
+        for (const mark of op.controlMarks) {
+          if (!allowsTextControlMark(
+            this.currentShowParagraphMarks,
+            this.currentShowControlCodes,
+            mark.kind,
+          )) {
+            continue;
+          }
+          this.setCanvasTextFont(ctx, 'Noto Sans KR', mark.fontSize, false, false);
+          ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
+        }
+        ctx.restore();
+      };
+
+      if (op.charOverlap) {
+        drawCanvas2DCharOverlap(ctx, op, originX, originY);
+        drawControlMarks();
+        return;
+      }
+
       if (textWidth > 0 && shadeColor !== '#ffffff') {
         ctx.save();
         ctx.fillStyle = shadeColor;
@@ -393,15 +425,7 @@ export class Canvas2DLayerRenderer {
         ctx.restore();
       }
 
-      if (op.controlMarks?.length) {
-        ctx.save();
-        ctx.fillStyle = '#4A90D9';
-        for (const mark of op.controlMarks) {
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', mark.fontSize, false, false);
-          ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
-        }
-        ctx.restore();
-      }
+      drawControlMarks();
     };
 
     ctx.save();

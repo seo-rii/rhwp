@@ -58,6 +58,10 @@ export interface PageLayerTree {
   debugOptions?: {
     debugOverlay?: boolean;
   };
+  debugCapabilities?: {
+    overlayPaint?: boolean;
+    semanticBounds?: boolean;
+  };
   resources?: LayerResources;
   root: LayerNode;
 }
@@ -183,6 +187,11 @@ export interface LayerTextControlMark {
   fontSize: number;
 }
 
+export interface LayerCharOverlap {
+  borderType: number;
+  innerCharSize: number;
+}
+
 export interface LayerShapeShadow {
   shadowType: number;
   color: string;
@@ -270,6 +279,7 @@ export interface LayerTextRunOp {
   style: LayerTextStyle;
   positions: number[];
   controlMarks?: LayerTextControlMark[];
+  charOverlap?: LayerCharOverlap;
   tabLeaders?: LayerTabLeader[];
 }
 

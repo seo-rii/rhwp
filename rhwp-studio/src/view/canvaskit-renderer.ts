@@ -31,11 +31,15 @@ import type {
   PageLayerTree,
 } from '@/core/types';
 import {
+  allowsTextControlMark,
   angleToCanvasCoords,
   buildCanvasTextFont,
   calculateArrowDimensions,
   computePathPaintBounds,
+  decodePuaOverlapNumber,
+  drawCanvas2DCharOverlap,
   isHalfwidthScaledCluster,
+  puaToDisplayText,
   renderEquationLayoutBox,
   splitIntoClusters,
   startsWithInvalidControl,
@@ -81,6 +85,8 @@ export class CanvasKitLayerRenderer {
   private readonly currentClipStack: OverlayClip[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private currentClipEnabled = true;
+  private currentShowParagraphMarks = false;
+  private currentShowControlCodes = false;
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
   private lastScale = 1;
@@ -133,6 +139,8 @@ export class CanvasKitLayerRenderer {
     this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
     this.resourceCache.setResources(tree.resources);
     this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
+    this.currentShowParagraphMarks = tree.outputOptions?.showParagraphMarks ?? false;
+    this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
 
@@ -517,6 +525,122 @@ export class CanvasKitLayerRenderer {
     }
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = op.positions.at(-1) ?? 0;
+      const drawControlMarks = () => {
+        if (!op.controlMarks?.length) {
+          return;
+        }
+        for (const mark of op.controlMarks) {
+          if (!allowsTextControlMark(
+            this.currentShowParagraphMarks,
+            this.currentShowControlCodes,
+            mark.kind,
+          )) {
+            continue;
+          }
+          const markObjects = this.makeTextObjects('Noto Sans KR', mark.fontSize, false, false, '#4A90D9');
+          canvas.drawText(mark.text, originX + mark.x, originY + mark.y, markObjects.paint, markObjects.font);
+          markObjects.paint.delete();
+          markObjects.font.delete();
+          markObjects.typeface.delete();
+        }
+      };
+
+      if (op.charOverlap) {
+        const chars = Array.from(op.text);
+        if (chars.length) {
+          const decodedNumber = decodePuaOverlapNumber(chars);
+          const fontSize = op.style.fontSize || 12;
+          const sizeRatio = op.charOverlap.innerCharSize > 0
+            ? op.charOverlap.innerCharSize / 100
+            : 1;
+          const innerFontSize = fontSize * sizeRatio;
+          const boxSize = fontSize;
+          const bboxY = originY - op.baseline;
+          const cy = bboxY + op.bbox.height - boxSize / 2;
+          const drawOverlapCell = (
+            display: string,
+            cx: number,
+            targetTextWidth?: number,
+          ) => {
+            const borderType = targetTextWidth !== undefined && op.charOverlap?.borderType === 0
+              ? 1
+              : op.charOverlap?.borderType ?? 0;
+            const isReversed = borderType === 2 || borderType === 4;
+            const isCircle = borderType === 1 || borderType === 2;
+            const isRect = borderType === 3 || borderType === 4;
+
+            if (isCircle || isRect) {
+              const fillPaint = isReversed ? this.makePaint('#000000', 'fill') : null;
+              const strokePaint = this.makePaint('#000000', 'stroke');
+              strokePaint.setStrokeWidth(0.8);
+              if (isCircle) {
+                if (fillPaint) {
+                  canvas.drawCircle(cx, cy, boxSize / 2, fillPaint);
+                }
+                canvas.drawCircle(cx, cy, boxSize / 2, strokePaint);
+              } else {
+                const rect = this.canvasKit.XYWHRect(
+                  cx - boxSize / 2,
+                  cy - boxSize / 2,
+                  boxSize,
+                  boxSize,
+                );
+                if (fillPaint) {
+                  canvas.drawRect(rect, fillPaint);
+                }
+                canvas.drawRect(rect, strokePaint);
+              }
+              fillPaint?.delete();
+              strokePaint.delete();
+            }
+
+            const textObjects = this.makeTextObjects(
+              op.style.fontFamily,
+              innerFontSize,
+              op.style.bold,
+              op.style.italic,
+              isReversed ? '#FFFFFF' : op.style.color,
+            );
+            const glyphIds = textObjects.font.getGlyphIDs(display);
+            const glyphWidths = textObjects.font.getGlyphWidths(glyphIds) ?? [];
+            const measuredWidth = glyphWidths.reduce((sum, width) => sum + width, 0);
+            let drawWidth = measuredWidth;
+            if (targetTextWidth !== undefined && targetTextWidth > 0 && measuredWidth > 0) {
+              const scaleX = Math.min(1, targetTextWidth / measuredWidth);
+              textObjects.font.setScaleX(scaleX);
+              drawWidth = measuredWidth * scaleX;
+            }
+            const textY = (targetTextWidth !== undefined ? cy - fontSize * 0.08 : cy)
+              + innerFontSize * 0.35;
+            canvas.drawText(
+              display,
+              cx - Math.max(drawWidth, 1) / 2,
+              textY,
+              textObjects.paint,
+              textObjects.font,
+            );
+            textObjects.paint.delete();
+            textObjects.font.delete();
+            textObjects.typeface.delete();
+          };
+
+          if (decodedNumber !== null) {
+            drawOverlapCell(decodedNumber, originX + boxSize / 2, boxSize * 0.9);
+          } else {
+            const charAdvance = chars.length > 1 ? op.bbox.width / chars.length : boxSize;
+            chars.forEach((ch, index) => {
+              const cp = ch.codePointAt(0) ?? 0;
+              const display = cp >= 0x2460 && cp <= 0x2473
+                ? String(cp - 0x2460 + 1)
+                : puaToDisplayText(ch) ?? ch;
+              drawOverlapCell(display, originX + index * charAdvance + boxSize / 2);
+            });
+          }
+        }
+        drawControlMarks();
+        return;
+      }
+
       if (textWidth > 0 && shadeColor !== '#ffffff') {
         const shadePaint = this.makePaint(shadeColor, 'fill');
         canvas.drawRect(
@@ -685,15 +809,7 @@ export class CanvasKitLayerRenderer {
         strikePaint.delete();
       }
 
-      if (op.controlMarks?.length) {
-        for (const mark of op.controlMarks) {
-          const markObjects = this.makeTextObjects('Noto Sans KR', mark.fontSize, false, false, '#4A90D9');
-          canvas.drawText(mark.text, originX + mark.x, originY + mark.y, markObjects.paint, markObjects.font);
-          markObjects.paint.delete();
-          markObjects.font.delete();
-          markObjects.typeface.delete();
-        }
-      }
+      drawControlMarks();
     };
 
     const textRotation = op.rotation;
@@ -2255,6 +2371,32 @@ export class CanvasKitLayerRenderer {
     });
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = op.positions.at(-1) ?? 0;
+      const drawControlMarks = () => {
+        if (!op.controlMarks?.length) {
+          return;
+        }
+        ctx.save();
+        ctx.fillStyle = '#4A90D9';
+        for (const mark of op.controlMarks) {
+          if (!allowsTextControlMark(
+            this.currentShowParagraphMarks,
+            this.currentShowControlCodes,
+            mark.kind,
+          )) {
+            continue;
+          }
+          this.setCanvasTextFont(ctx, 'Noto Sans KR', mark.fontSize, false, false);
+          ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
+        }
+        ctx.restore();
+      };
+
+      if (op.charOverlap) {
+        drawCanvas2DCharOverlap(ctx, op, originX, originY);
+        drawControlMarks();
+        return;
+      }
+
       if (textWidth > 0 && shadeColor !== '#ffffff') {
         ctx.save();
         ctx.fillStyle = shadeColor;
@@ -2379,15 +2521,7 @@ export class CanvasKitLayerRenderer {
         ctx.restore();
       }
 
-      if (op.controlMarks?.length) {
-        ctx.save();
-        ctx.fillStyle = '#4A90D9';
-        for (const mark of op.controlMarks) {
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', mark.fontSize, false, false);
-          ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
-        }
-        ctx.restore();
-      }
+      drawControlMarks();
     };
 
     ctx.save();

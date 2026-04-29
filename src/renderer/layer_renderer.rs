@@ -127,6 +127,12 @@ pub struct RasterRenderOutput {
     pub height: i32,
     pub dpi: Option<f64>,
     pub color_space: RasterColorSpace,
+    pub diagnostics: LayerRenderDiagnostics,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LayerRenderDiagnostics {
+    pub tile_fallback_cap_hits: usize,
 }
 
 /// visual layer tree를 raster 결과로 직접 내보내는 backend 계약.

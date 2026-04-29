@@ -1954,11 +1954,11 @@ mod tests {
         };
         use crate::renderer::TextStyle;
 
-        let mut tree = PageRenderTree::new(0, 220.0, 120.0);
+        let mut tree = PageRenderTree::new(0, 240.0, 160.0);
         tree.root.node_type = RenderNodeType::Page(PageNode {
             page_index: 0,
-            width: 220.0,
-            height: 120.0,
+            width: 240.0,
+            height: 160.0,
             section_index: 0,
         });
         tree.root.children.push(RenderNode::new(
@@ -1970,7 +1970,7 @@ mod tests {
                 gradient: None,
                 image: None,
             }),
-            BoundingBox::new(0.0, 0.0, 220.0, 120.0),
+            BoundingBox::new(0.0, 0.0, 240.0, 160.0),
         ));
 
         let mut next_id = 2;
@@ -1981,6 +1981,8 @@ mod tests {
                              baseline: f64,
                              is_para_end: bool,
                              is_line_break_end: bool,
+                             rotation: f64,
+                             is_vertical: bool,
                              char_overlap: Option<CharOverlapInfo>,
                              field_marker: FieldMarkerType| {
             tree.root.children.push(RenderNode::new(
@@ -1996,8 +1998,8 @@ mod tests {
                     cell_context: None,
                     is_para_end,
                     is_line_break_end,
-                    rotation: 0.0,
-                    is_vertical: false,
+                    rotation,
+                    is_vertical,
                     char_overlap,
                     border_fill_id: 0,
                     baseline,
@@ -2020,6 +2022,8 @@ mod tests {
             22.0,
             true,
             false,
+            0.0,
+            false,
             None,
             FieldMarkerType::None,
         );
@@ -2034,6 +2038,8 @@ mod tests {
             },
             24.0,
             false,
+            false,
+            0.0,
             false,
             Some(CharOverlapInfo {
                 border_type: 1,
@@ -2053,6 +2059,8 @@ mod tests {
             17.0,
             false,
             false,
+            0.0,
+            false,
             None,
             FieldMarkerType::FieldBegin,
         );
@@ -2067,6 +2075,42 @@ mod tests {
             },
             22.0,
             false,
+            true,
+            0.0,
+            false,
+            None,
+            FieldMarkerType::None,
+        );
+        push_text(
+            &mut tree,
+            "rot",
+            BoundingBox::new(18.0, 108.0, 58.0, 26.0),
+            TextStyle {
+                font_size: 16.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            20.0,
+            true,
+            false,
+            25.0,
+            false,
+            None,
+            FieldMarkerType::None,
+        );
+        push_text(
+            &mut tree,
+            "vert",
+            BoundingBox::new(128.0, 104.0, 58.0, 28.0),
+            TextStyle {
+                font_size: 16.0,
+                color: 0x00000000,
+                ..Default::default()
+            },
+            20.0,
+            false,
+            true,
+            90.0,
             true,
             None,
             FieldMarkerType::None,

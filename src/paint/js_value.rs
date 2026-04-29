@@ -104,6 +104,10 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         tree.output_options.debug_overlay,
     );
     set_value(&value, "debugOptions", debug_options.into());
+    let debug_capabilities = Object::new();
+    set_bool(&debug_capabilities, "overlayPaint", false);
+    set_bool(&debug_capabilities, "semanticBounds", true);
+    set_value(&value, "debugCapabilities", debug_capabilities.into());
     set_value(&value, "root", layer_node_to_value(&tree.root));
 
     let resources = Object::new();
@@ -976,6 +980,18 @@ mod tests {
         let json_debug_options = prop(&json_value, "debugOptions");
         let js_debug_options = prop(&js_value, "debugOptions");
         assert_same_bool(&json_debug_options, &js_debug_options, "debugOverlay");
+        let json_debug_capabilities = prop(&json_value, "debugCapabilities");
+        let js_debug_capabilities = prop(&js_value, "debugCapabilities");
+        assert_same_bool(
+            &json_debug_capabilities,
+            &js_debug_capabilities,
+            "overlayPaint",
+        );
+        assert_same_bool(
+            &json_debug_capabilities,
+            &js_debug_capabilities,
+            "semanticBounds",
+        );
 
         let json_root = prop(&json_value, "root");
         let js_root = prop(&js_value, "root");

@@ -16,8 +16,8 @@ use crate::paint::{
 };
 use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
 use crate::renderer::layer_renderer::{
-    LayerRasterRenderer, LayerRenderError, LayerRenderResult, RasterOutputFormat,
-    RasterRenderOptions, RasterRenderOutput,
+    LayerRasterRenderer, LayerRenderDiagnostics, LayerRenderError, LayerRenderResult,
+    RasterOutputFormat, RasterRenderOptions, RasterRenderOutput,
 };
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
@@ -29,7 +29,7 @@ use crate::renderer::{
 use super::equation_conv::render_equation;
 use super::image_conv::{
     decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder, rasterize_svg_fragment,
-    ImageSampling,
+    ImageDrawDiagnostics, ImageSampling,
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
@@ -1042,6 +1042,7 @@ struct SkiaReplayContext {
     profile: RenderProfile,
     output_options: LayerOutputOptions,
     scale: f64,
+    diagnostics: LayerRenderDiagnostics,
     cache_hints: Vec<CacheHint>,
     image_cache: HashMap<ImageResourceId, Option<Image>>,
     svg_resource_cache: HashMap<SvgResourceCacheKey, Option<Image>>,
@@ -1054,6 +1055,7 @@ impl SkiaReplayContext {
             profile,
             output_options,
             scale,
+            diagnostics: LayerRenderDiagnostics::default(),
             cache_hints: Vec::new(),
             image_cache: HashMap::new(),
             svg_resource_cache: HashMap::new(),
@@ -1067,6 +1069,13 @@ impl SkiaReplayContext {
 
     fn pop_cache_hint(&mut self) {
         self.cache_hints.pop();
+    }
+
+    fn record_image_draw(&mut self, diagnostics: ImageDrawDiagnostics) {
+        self.diagnostics.tile_fallback_cap_hits = self
+            .diagnostics
+            .tile_fallback_cap_hits
+            .saturating_add(diagnostics.tile_fallback_cap_hits);
     }
 
     fn has_cache_hint(&self, cache_hint: CacheHint) -> bool {
@@ -1221,6 +1230,7 @@ impl SkiaLayerRenderer {
             height,
             dpi: options.dpi,
             color_space: options.color_space,
+            diagnostics: replay.diagnostics,
         })
     }
 
@@ -1353,7 +1363,7 @@ impl SkiaLayerRenderer {
                 if let Some(image) = &background.image {
                     if let Some(bytes) = resources.image_bytes(image.resource_id) {
                         if let Some(decoded) = replay.image_for_resource(image.resource_id, bytes) {
-                            draw_decoded_image(
+                            let diagnostics = draw_decoded_image(
                                 canvas,
                                 &decoded,
                                 bbox.x as f32,
@@ -1366,6 +1376,7 @@ impl SkiaLayerRenderer {
                                 crate::model::image::ImageEffect::RealPic,
                                 replay.image_sampling(),
                             );
+                            replay.record_image_draw(diagnostics);
                         } else {
                             draw_missing_image_placeholder(
                                 canvas,
@@ -1699,7 +1710,7 @@ impl SkiaLayerRenderer {
                     if let Some(resource_id) = image.resource_id {
                         if let Some(data) = resources.image_bytes(resource_id) {
                             if let Some(decoded) = replay.image_for_resource(resource_id, data) {
-                                draw_decoded_image(
+                                let diagnostics = draw_decoded_image(
                                     canvas,
                                     &decoded,
                                     bbox.x as f32,
@@ -1712,6 +1723,7 @@ impl SkiaLayerRenderer {
                                     image.effect,
                                     replay.image_sampling(),
                                 );
+                                replay.record_image_draw(diagnostics);
                             } else {
                                 draw_missing_image_placeholder(
                                     canvas,
@@ -1750,7 +1762,7 @@ impl SkiaLayerRenderer {
                         bbox.width as f32,
                         bbox.height as f32,
                     ) {
-                        draw_decoded_image(
+                        let diagnostics = draw_decoded_image(
                             canvas,
                             &image,
                             bbox.x as f32,
@@ -1763,6 +1775,7 @@ impl SkiaLayerRenderer {
                             crate::model::image::ImageEffect::RealPic,
                             replay.image_sampling(),
                         );
+                        replay.record_image_draw(diagnostics);
                         rendered = true;
                     }
                 }
@@ -2370,7 +2383,7 @@ impl SkiaLayerRenderer {
                         cluster_width,
                         render_style.font_size as f32 * 1.4,
                     ) {
-                        draw_decoded_image(
+                        let diagnostics = draw_decoded_image(
                             canvas,
                             &image,
                             x,
@@ -2383,6 +2396,7 @@ impl SkiaLayerRenderer {
                             crate::model::image::ImageEffect::RealPic,
                             ImageSampling::linear(),
                         );
+                        replay.record_image_draw(diagnostics);
                     }
                     cluster_index += 1;
                     continue;
@@ -2614,6 +2628,9 @@ impl SkiaLayerRenderer {
             marker_paint.set_color(Color::from_argb(255, 0x4A, 0x90, 0xD9));
 
             for mark in &run.control_marks {
+                if !replay.output_options.allows_text_control_mark(mark.kind) {
+                    continue;
+                }
                 let marker_style = crate::renderer::TextStyle {
                     font_family: "sans-serif".to_string(),
                     font_size: mark.font_size,

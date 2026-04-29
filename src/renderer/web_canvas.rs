@@ -24,8 +24,11 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::model::style::UnderlineType;
+use crate::paint::LayerTextControlMarkKind;
 #[cfg(target_arch = "wasm32")]
-use crate::paint::{LayerFormObjectPaint, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
+use crate::paint::{
+    LayerFormObjectPaint, LayerNodeKind, LayerOutputOptions, PageLayerTree, PaintOp, ResourceArena,
+};
 
 // 이미지 캐시: data 해시 → HtmlImageElement
 // WASM 단일 스레드이므로 thread_local 안전
@@ -385,12 +388,34 @@ impl WebCanvasRenderer {
         bbox: &BoundingBox,
         run: &crate::paint::LayerTextRunPaint,
     ) {
-        if run.control_marks.is_empty() {
+        let output_options = LayerOutputOptions {
+            show_paragraph_marks: self.show_paragraph_marks,
+            show_control_codes: self.show_control_codes,
+            ..Default::default()
+        };
+        if !run
+            .control_marks
+            .iter()
+            .any(|mark| output_options.allows_text_control_mark(mark.kind))
+        {
             return;
+        }
+
+        let rotated = run.rotation != 0.0;
+        if rotated {
+            let cx = bbox.x + bbox.width / 2.0;
+            let cy = bbox.y + bbox.height / 2.0;
+            self.ctx.save();
+            let _ = self.ctx.translate(cx, cy);
+            let _ = self.ctx.rotate(run.rotation * std::f64::consts::PI / 180.0);
+            let _ = self.ctx.translate(-cx, -cy);
         }
 
         self.ctx.set_fill_style_str("#4A90D9");
         for mark in &run.control_marks {
+            if !output_options.allows_text_control_mark(mark.kind) {
+                continue;
+            }
             self.ctx
                 .set_font(&format!("{:.3}px sans-serif", mark.font_size));
             let _ = self.ctx.fill_text(
@@ -398,6 +423,10 @@ impl WebCanvasRenderer {
                 bbox.x + mark.x,
                 bbox.y + run.baseline + mark.y,
             );
+        }
+
+        if rotated {
+            self.ctx.restore();
         }
     }
 
@@ -411,6 +440,15 @@ impl WebCanvasRenderer {
         baseline: f64,
     ) {
         if let Some(overlap) = char_overlap {
+            let rotated = rotation != 0.0;
+            if rotated {
+                let cx = bbox.x + bbox.width / 2.0;
+                let cy = bbox.y + bbox.height / 2.0;
+                self.ctx.save();
+                let _ = self.ctx.translate(cx, cy);
+                let _ = self.ctx.rotate(rotation * std::f64::consts::PI / 180.0);
+                let _ = self.ctx.translate(-cx, -cy);
+            }
             self.draw_char_overlap(
                 text,
                 style,
@@ -420,6 +458,9 @@ impl WebCanvasRenderer {
                 bbox.width,
                 bbox.height,
             );
+            if rotated {
+                self.ctx.restore();
+            }
             return;
         }
 
@@ -2992,5 +3033,28 @@ mod tests {
         assert_eq!(color_to_css(0x00FF0000), "#0000ff"); // 파랑
         assert_eq!(color_to_css(0x00FFFFFF), "#ffffff"); // 흰색
         assert_eq!(color_to_css(0x00000000), "#000000"); // 검정
+    }
+
+    #[test]
+    fn text_control_mark_gating_matches_output_options() {
+        let paragraph_only = crate::paint::LayerOutputOptions {
+            show_paragraph_marks: true,
+            show_control_codes: false,
+            ..Default::default()
+        };
+        assert!(paragraph_only.allows_text_control_mark(LayerTextControlMarkKind::ParagraphEnd));
+        assert!(!paragraph_only.allows_text_control_mark(LayerTextControlMarkKind::Space));
+        assert!(!paragraph_only.allows_text_control_mark(LayerTextControlMarkKind::Tab));
+        assert!(!paragraph_only.allows_text_control_mark(LayerTextControlMarkKind::LineBreakEnd));
+
+        let controls_only = crate::paint::LayerOutputOptions {
+            show_paragraph_marks: false,
+            show_control_codes: true,
+            ..Default::default()
+        };
+        assert!(!controls_only.allows_text_control_mark(LayerTextControlMarkKind::ParagraphEnd));
+        assert!(controls_only.allows_text_control_mark(LayerTextControlMarkKind::Space));
+        assert!(controls_only.allows_text_control_mark(LayerTextControlMarkKind::Tab));
+        assert!(controls_only.allows_text_control_mark(LayerTextControlMarkKind::LineBreakEnd));
     }
 }

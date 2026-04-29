@@ -1227,6 +1227,14 @@ impl SvgRenderer {
             );
         }
         for mark in &run.control_marks {
+            let output_options = crate::paint::LayerOutputOptions {
+                show_paragraph_marks: self.show_paragraph_marks,
+                show_control_codes: self.show_control_codes,
+                ..Default::default()
+            };
+            if !output_options.allows_text_control_mark(mark.kind) {
+                continue;
+            }
             self.output.push_str(&format!(
                 "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">{}</text>\n",
                 bbox.x + mark.x,

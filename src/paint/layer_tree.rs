@@ -1,4 +1,4 @@
-use crate::paint::paint_op::PaintOp;
+use crate::paint::paint_op::{LayerTextControlMarkKind, PaintOp};
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
 use crate::renderer::render_tree::{BoundingBox, NodeId};
@@ -108,6 +108,17 @@ impl Default for LayerOutputOptions {
             show_transparent_borders: false,
             clip_enabled: true,
             debug_overlay: false,
+        }
+    }
+}
+
+impl LayerOutputOptions {
+    pub fn allows_text_control_mark(self, kind: LayerTextControlMarkKind) -> bool {
+        match kind {
+            LayerTextControlMarkKind::ParagraphEnd => self.show_paragraph_marks,
+            LayerTextControlMarkKind::Space
+            | LayerTextControlMarkKind::Tab
+            | LayerTextControlMarkKind::LineBreakEnd => self.show_control_codes,
         }
     }
 }

@@ -3,6 +3,8 @@ import type {
   LayerEquationLayoutBox,
   LayerPathCommand,
   LayerPatternFill,
+  LayerTextControlMark,
+  LayerTextRunOp,
 } from '@/core/types';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
@@ -95,6 +97,163 @@ export function startsWithInvalidControl(text: string): boolean {
 export function isHalfwidthScaledCluster(text: string): boolean {
   const code = text.codePointAt(0) ?? 0;
   return (code >= 0x2018 && code <= 0x2027) || code === 0x00b7;
+}
+
+export function allowsTextControlMark(
+  showParagraphMarks: boolean,
+  showControlCodes: boolean,
+  kind: LayerTextControlMark['kind'],
+): boolean {
+  switch (kind) {
+    case 'paragraphEnd':
+      return showParagraphMarks;
+    case 'space':
+    case 'tab':
+    case 'lineBreakEnd':
+      return showControlCodes;
+  }
+}
+
+function puaOverlapDigit(ch: string): [number, number] | null {
+  const cp = ch.codePointAt(0) ?? 0;
+  if (cp >= 0xF0289 && cp <= 0xF0291) {
+    return [0, cp - 0xF0288];
+  }
+  if (cp >= 0xF0292 && cp <= 0xF029B) {
+    return [1, cp - 0xF0292];
+  }
+  if (cp >= 0xF0491 && cp <= 0xF0499) {
+    return [0, cp - 0xF0490];
+  }
+  if (cp >= 0xF049A && cp <= 0xF04A3) {
+    return [1, cp - 0xF049A];
+  }
+  if (cp >= 0xF04A4 && cp <= 0xF04AD) {
+    return [2, cp - 0xF04A4];
+  }
+  return null;
+}
+
+export function decodePuaOverlapNumber(chars: string[]): string | null {
+  if (!chars.length) {
+    return null;
+  }
+  const groups: Array<[number, number]> = [];
+  for (const ch of chars) {
+    const digit = puaOverlapDigit(ch);
+    if (!digit) {
+      return null;
+    }
+    groups.push(digit);
+  }
+  groups.sort(([left], [right]) => left - right);
+  return groups.map(([, digit]) => String.fromCharCode(0x30 + digit)).join('');
+}
+
+export function puaToDisplayText(ch: string): string | null {
+  const cp = ch.codePointAt(0) ?? 0;
+  if (cp >= 0xF02B1 && cp <= 0xF02C4) {
+    return String(cp - 0xF02B0);
+  }
+  if (cp >= 0xF02CE && cp <= 0xF02E1) {
+    return String(cp - 0xF02CD);
+  }
+  return null;
+}
+
+export function drawCanvas2DCharOverlap(
+  ctx: CanvasRenderingContext2D,
+  op: LayerTextRunOp,
+  originX: number,
+  originY: number,
+): void {
+  if (!op.charOverlap) {
+    return;
+  }
+  const chars = Array.from(op.text);
+  if (!chars.length) {
+    return;
+  }
+
+  const fontSize = op.style.fontSize || 12;
+  const decodedNumber = decodePuaOverlapNumber(chars);
+  const sizeRatio = op.charOverlap.innerCharSize > 0
+    ? op.charOverlap.innerCharSize / 100
+    : 1;
+  const innerFontSize = fontSize * sizeRatio;
+  const font = buildCanvasTextFont(
+    op.style.fontFamily,
+    innerFontSize,
+    op.style.bold,
+    op.style.italic,
+  );
+  const boxSize = fontSize;
+  const bboxY = originY - op.baseline;
+  const cy = bboxY + op.bbox.height - boxSize / 2;
+
+  const drawOverlapCell = (display: string, cx: number, targetTextWidth?: number) => {
+    const borderType = targetTextWidth !== undefined && op.charOverlap?.borderType === 0
+      ? 1
+      : op.charOverlap?.borderType ?? 0;
+    const isReversed = borderType === 2 || borderType === 4;
+    const isCircle = borderType === 1 || borderType === 2;
+    const isRect = borderType === 3 || borderType === 4;
+
+    if (isCircle) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, boxSize / 2, 0, Math.PI * 2);
+      if (isReversed) {
+        ctx.fillStyle = '#000000';
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    } else if (isRect) {
+      const rx = cx - boxSize / 2;
+      const ry = cy - boxSize / 2;
+      if (isReversed) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(rx, ry, boxSize, boxSize);
+      }
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(rx, ry, boxSize, boxSize);
+    }
+
+    ctx.font = font;
+    ctx.fillStyle = isReversed ? '#FFFFFF' : op.style.color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const scaleX = targetTextWidth !== undefined && targetTextWidth > 1
+      ? Math.min(1, targetTextWidth / Math.max(ctx.measureText(display).width, 1))
+      : 1;
+    const textY = targetTextWidth !== undefined ? cy - fontSize * 0.08 : cy;
+    if (scaleX < 1) {
+      ctx.save();
+      ctx.translate(cx, textY);
+      ctx.scale(scaleX, 1);
+      ctx.fillText(display, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.fillText(display, cx, textY);
+    }
+  };
+
+  ctx.save();
+  if (decodedNumber !== null) {
+    drawOverlapCell(decodedNumber, originX + boxSize / 2, boxSize * 0.9);
+  } else {
+    const charAdvance = chars.length > 1 ? op.bbox.width / chars.length : boxSize;
+    chars.forEach((ch, index) => {
+      const cp = ch.codePointAt(0) ?? 0;
+      const display = cp >= 0x2460 && cp <= 0x2473
+        ? String(cp - 0x2460 + 1)
+        : puaToDisplayText(ch) ?? ch;
+      drawOverlapCell(display, originX + index * charAdvance + boxSize / 2);
+    });
+  }
+  ctx.restore();
 }
 
 export function angleToCanvasCoords(
