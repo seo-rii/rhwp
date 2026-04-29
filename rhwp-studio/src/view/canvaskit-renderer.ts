@@ -1,5 +1,5 @@
 import CanvasKitInit from 'canvaskit-wasm';
-import type { CanvasKit, ColorFilter, Font, Image, Paint, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, Font, Image, Paint, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import type { CanvasKitRenderMode } from '@/view/render-backend';
@@ -2592,173 +2592,148 @@ export class CanvasKitLayerRenderer {
     crop?: { left: number; top: number; right: number; bottom: number },
     effect: LayerImageOp['effect'] = 'realPic',
   ): void {
-    const image = this.resourceCache.image(resourceId, base64);
+    const usesImageEffect = !!effect && effect !== 'realPic';
+    const image = this.resourceCache.imageWithEffect(resourceId, base64, effect);
     if (!image) return;
-    let colorFilter: ColorFilter | null = null;
-    switch (effect) {
-      case 'grayScale':
-      case 'pattern8x8':
-        colorFilter = this.canvasKit.ColorFilter.MakeMatrix([
-          0.299, 0.587, 0.114, 0, 0,
-          0.299, 0.587, 0.114, 0, 0,
-          0.299, 0.587, 0.114, 0, 0,
-          0, 0, 0, 1, 0,
-        ]);
-        break;
-      case 'blackWhite':
-        colorFilter = this.canvasKit.ColorFilter.MakeMatrix([
-          9.568, 18.784, 3.648, 0, -4096,
-          9.568, 18.784, 3.648, 0, -4096,
-          9.568, 18.784, 3.648, 0, -4096,
-          0, 0, 0, 1, 0,
-        ]);
-        break;
+
+    const sourceWidth = image.width();
+    const sourceHeight = image.height();
+    if (
+      !Number.isFinite(sourceWidth)
+      || !Number.isFinite(sourceHeight)
+      || sourceWidth <= 0
+      || sourceHeight <= 0
+      || !Number.isFinite(bbox.x)
+      || !Number.isFinite(bbox.y)
+      || !Number.isFinite(bbox.width)
+      || !Number.isFinite(bbox.height)
+      || bbox.width <= 0
+      || bbox.height <= 0
+    ) {
+      return;
+    }
+    const cropSource = crop
+      ? (() => {
+        const scaleX = crop.right / sourceWidth;
+        const scaleY = crop.bottom / sourceHeight;
+        if (scaleX <= 0 || scaleY <= 0) {
+          return null;
+        }
+        const srcX = crop.left / scaleX;
+        const srcY = crop.top / scaleY;
+        const srcW = (crop.right - crop.left) / scaleX;
+        const srcH = (crop.bottom - crop.top) / scaleY;
+        const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - sourceWidth) > 1 || Math.abs(srcH - sourceHeight) > 1;
+        return isCropped && srcW > 0 && srcH > 0
+          ? { x: srcX, y: srcY, width: srcW, height: srcH }
+          : null;
+      })()
+      : null;
+    const drawImageRect = (
+      srcX: number,
+      srcY: number,
+      srcW: number,
+      srcH: number,
+      dstX: number,
+      dstY: number,
+      dstW: number,
+      dstH: number,
+    ) => {
+      if (
+        !Number.isFinite(srcX)
+        || !Number.isFinite(srcY)
+        || !Number.isFinite(srcW)
+        || !Number.isFinite(srcH)
+        || !Number.isFinite(dstX)
+        || !Number.isFinite(dstY)
+        || !Number.isFinite(dstW)
+        || !Number.isFinite(dstH)
+        || srcW <= 0
+        || srcH <= 0
+        || dstW <= 0
+        || dstH <= 0
+      ) {
+        return;
+      }
+      const useMipmaps =
+        !usesImageEffect
+        && this.currentProfile !== 'fast-preview'
+        && !this.hasActiveCacheHint('preferRaster')
+        && (
+          this.renderMode === 'compat'
+          || this.currentProfile === 'print'
+          || this.currentProfile === 'high-quality'
+        )
+        && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
+      const sampledImage = useMipmaps ? this.resourceCache.image(resourceId, base64, true) ?? image : image;
+      const paint = new this.canvasKit.Paint();
+      canvas.drawImageRectOptions(
+        sampledImage,
+        this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
+        this.canvasKit.XYWHRect(dstX, dstY, dstW, dstH),
+        this.canvasKit.FilterMode.Linear,
+        useMipmaps ? this.canvasKit.MipmapMode.Linear : this.canvasKit.MipmapMode.None,
+        paint,
+      );
+      paint.delete();
+    };
+    const drawImage = (dstX: number, dstY: number, dstW: number, dstH: number) => {
+      if (cropSource) {
+        drawImageRect(cropSource.x, cropSource.y, cropSource.width, cropSource.height, dstX, dstY, dstW, dstH);
+        return;
+      }
+      drawImageRect(0, 0, sourceWidth, sourceHeight, dstX, dstY, dstW, dstH);
+    };
+
+    if (fillMode === 'fitToSize' || fillMode === 'none') {
+      drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
+      return;
     }
 
-    try {
-      const sourceWidth = image.width();
-      const sourceHeight = image.height();
-      if (
-        !Number.isFinite(sourceWidth)
-        || !Number.isFinite(sourceHeight)
-        || sourceWidth <= 0
-        || sourceHeight <= 0
-        || !Number.isFinite(bbox.x)
-        || !Number.isFinite(bbox.y)
-        || !Number.isFinite(bbox.width)
-        || !Number.isFinite(bbox.height)
-        || bbox.width <= 0
-        || bbox.height <= 0
-      ) {
-        return;
-      }
-      const cropSource = crop
-        ? (() => {
-          const scaleX = crop.right / sourceWidth;
-          const scaleY = crop.bottom / sourceHeight;
-          if (scaleX <= 0 || scaleY <= 0) {
-            return null;
-          }
-          const srcX = crop.left / scaleX;
-          const srcY = crop.top / scaleY;
-          const srcW = (crop.right - crop.left) / scaleX;
-          const srcH = (crop.bottom - crop.top) / scaleY;
-          const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - sourceWidth) > 1 || Math.abs(srcH - sourceHeight) > 1;
-          return isCropped && srcW > 0 && srcH > 0
-            ? { x: srcX, y: srcY, width: srcW, height: srcH }
-            : null;
-        })()
-        : null;
-      const drawImageRect = (
-        srcX: number,
-        srcY: number,
-        srcW: number,
-        srcH: number,
-        dstX: number,
-        dstY: number,
-        dstW: number,
-        dstH: number,
-      ) => {
-        if (
-          !Number.isFinite(srcX)
-          || !Number.isFinite(srcY)
-          || !Number.isFinite(srcW)
-          || !Number.isFinite(srcH)
-          || !Number.isFinite(dstX)
-          || !Number.isFinite(dstY)
-          || !Number.isFinite(dstW)
-          || !Number.isFinite(dstH)
-          || srcW <= 0
-          || srcH <= 0
-          || dstW <= 0
-          || dstH <= 0
-        ) {
-          return;
-        }
-        const useMipmaps =
-          this.currentProfile !== 'fast-preview'
-          && !this.hasActiveCacheHint('preferRaster')
-          && (
-            this.renderMode === 'compat'
-            || this.currentProfile === 'print'
-            || this.currentProfile === 'high-quality'
-          )
-          && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
-        const sampledImage = useMipmaps ? this.resourceCache.image(resourceId, base64, true) ?? image : image;
-        const paint = new this.canvasKit.Paint();
-        if (colorFilter) {
-          paint.setColorFilter(colorFilter);
-        }
-        canvas.drawImageRectOptions(
-          sampledImage,
-          this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
-          this.canvasKit.XYWHRect(dstX, dstY, dstW, dstH),
-          this.canvasKit.FilterMode.Linear,
-          useMipmaps ? this.canvasKit.MipmapMode.Linear : this.canvasKit.MipmapMode.None,
-          paint,
-        );
-        paint.delete();
-      };
-      const drawImage = (dstX: number, dstY: number, dstW: number, dstH: number) => {
-        if (cropSource) {
-          drawImageRect(cropSource.x, cropSource.y, cropSource.width, cropSource.height, dstX, dstY, dstW, dstH);
-          return;
-        }
-        drawImageRect(0, 0, sourceWidth, sourceHeight, dstX, dstY, dstW, dstH);
-      };
+    let imageWidth = originalSize?.width ?? sourceWidth;
+    let imageHeight = originalSize?.height ?? sourceHeight;
+    if (
+      !Number.isFinite(imageWidth)
+      || !Number.isFinite(imageHeight)
+      || imageWidth <= 0
+      || imageHeight <= 0
+    ) {
+      imageWidth = sourceWidth;
+      imageHeight = sourceHeight;
+    }
+    const { x, y } = this.resolveImagePlacement(fillMode, bbox, imageWidth, imageHeight);
 
-      if (fillMode === 'fitToSize' || fillMode === 'none') {
-        drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
-        return;
-      }
+    canvas.save();
+    canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
 
-      let imageWidth = originalSize?.width ?? sourceWidth;
-      let imageHeight = originalSize?.height ?? sourceHeight;
-      if (
-        !Number.isFinite(imageWidth)
-        || !Number.isFinite(imageHeight)
-        || imageWidth <= 0
-        || imageHeight <= 0
-      ) {
-        imageWidth = sourceWidth;
-        imageHeight = sourceHeight;
-      }
-      const { x, y } = this.resolveImagePlacement(fillMode, bbox, imageWidth, imageHeight);
-
-      canvas.save();
-      canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
-
-      if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
-        const maxTileDraws = 4096;
-        let tileDraws = 0;
-        if (fillMode === 'tileAll') {
-          for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
-            for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
-              drawImage(tx, ty, imageWidth, imageHeight);
-              tileDraws += 1;
-            }
-          }
-        } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
-          const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - imageHeight;
+    if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
+      const maxTileDraws = 4096;
+      let tileDraws = 0;
+      if (fillMode === 'tileAll') {
+        for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
           for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
             drawImage(tx, ty, imageWidth, imageHeight);
             tileDraws += 1;
           }
-        } else {
-          const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - imageWidth;
-          for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
-            drawImage(tx, ty, imageWidth, imageHeight);
-            tileDraws += 1;
-          }
+        }
+      } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
+        const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - imageHeight;
+        for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
+          drawImage(tx, ty, imageWidth, imageHeight);
+          tileDraws += 1;
         }
       } else {
-        drawImage(x, y, imageWidth, imageHeight);
+        const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - imageWidth;
+        for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
+          drawImage(tx, ty, imageWidth, imageHeight);
+          tileDraws += 1;
+        }
       }
-
-      canvas.restore();
-    } finally {
-      colorFilter?.delete();
+    } else {
+      drawImage(x, y, imageWidth, imageHeight);
     }
+
+    canvas.restore();
   }
 
   private resolveImagePlacement(fillMode: string, bbox: LayerBounds, imageWidth: number, imageHeight: number): { x: number; y: number } {
