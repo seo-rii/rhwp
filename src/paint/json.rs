@@ -25,7 +25,7 @@ impl PageLayerTree {
         buf.push('{');
         let _ = write!(
             buf,
-            "\"schemaVersion\":{},\"resourceTableVersion\":{},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"buildOptions\":{{\"showTransparentBorders\":{}}},\"debugOptions\":{{\"debugOverlay\":{}}},\"debugCapabilities\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"root\":",
+            "\"schemaVersion\":{},\"resourceTableVersion\":{},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"buildOptions\":{{\"showTransparentBorders\":{}}},\"debugOptions\":{{\"debugOverlay\":{}}},\"debugCapabilities\":{{\"overlayPaint\":false,\"semanticBounds\":true,\"genericLayerExport\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"backends\":{{\"svgLayer\":{{\"overlayPaint\":true,\"semanticBounds\":true}},\"canvas2d\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"canvaskit\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"nativeSkia\":{{\"overlayPaint\":false,\"semanticBounds\":true}}}}}},\"root\":",
             LAYER_TREE_SCHEMA.schema_version,
             LAYER_TREE_SCHEMA.resource_table_version,
             json_escape(LAYER_TREE_SCHEMA.unit),
@@ -1417,8 +1417,12 @@ mod tests {
         assert!(json.contains("\"buildOptions\":{\"showTransparentBorders\":true}"));
         assert!(json.contains("\"debugOptions\":{\"debugOverlay\":true}"));
         assert!(
-            json.contains("\"debugCapabilities\":{\"overlayPaint\":false,\"semanticBounds\":true}")
+            json.contains("\"debugCapabilities\":{\"overlayPaint\":false,\"semanticBounds\":true")
         );
+        assert!(json
+            .contains("\"genericLayerExport\":{\"overlayPaint\":false,\"semanticBounds\":true}"));
+        assert!(json.contains("\"svgLayer\":{\"overlayPaint\":true,\"semanticBounds\":true}"));
+        assert!(json.contains("\"nativeSkia\":{\"overlayPaint\":false,\"semanticBounds\":true}"));
     }
 }
 

@@ -107,6 +107,20 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let debug_capabilities = Object::new();
     set_bool(&debug_capabilities, "overlayPaint", false);
     set_bool(&debug_capabilities, "semanticBounds", true);
+    let generic_layer_export = Object::new();
+    set_bool(&generic_layer_export, "overlayPaint", false);
+    set_bool(&generic_layer_export, "semanticBounds", true);
+    set_value(
+        &debug_capabilities,
+        "genericLayerExport",
+        generic_layer_export.into(),
+    );
+    let backends = Object::new();
+    set_debug_backend_capability(&backends, "svgLayer", true);
+    set_debug_backend_capability(&backends, "canvas2d", false);
+    set_debug_backend_capability(&backends, "canvaskit", false);
+    set_debug_backend_capability(&backends, "nativeSkia", false);
+    set_value(&debug_capabilities, "backends", backends.into());
     set_value(&value, "debugCapabilities", debug_capabilities.into());
     set_value(&value, "root", layer_node_to_value(&tree.root));
 
@@ -155,6 +169,13 @@ fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
         .iter()
         .filter_map(|item| item.as_string())
         .collect()
+}
+
+fn set_debug_backend_capability(backends: &Object, name: &str, overlay_paint: bool) {
+    let capability = Object::new();
+    set_bool(&capability, "overlayPaint", overlay_paint);
+    set_bool(&capability, "semanticBounds", true);
+    set_value(backends, name, capability.into());
 }
 
 fn layer_node_to_value(node: &LayerNode) -> JsValue {
@@ -992,6 +1013,18 @@ mod tests {
             &js_debug_capabilities,
             "semanticBounds",
         );
+        let json_generic_debug = prop(&json_debug_capabilities, "genericLayerExport");
+        let js_generic_debug = prop(&js_debug_capabilities, "genericLayerExport");
+        assert_same_bool(&json_generic_debug, &js_generic_debug, "overlayPaint");
+        assert_same_bool(&json_generic_debug, &js_generic_debug, "semanticBounds");
+        let json_debug_backends = prop(&json_debug_capabilities, "backends");
+        let js_debug_backends = prop(&js_debug_capabilities, "backends");
+        for backend in ["svgLayer", "canvas2d", "canvaskit", "nativeSkia"] {
+            let json_backend = prop(&json_debug_backends, backend);
+            let js_backend = prop(&js_debug_backends, backend);
+            assert_same_bool(&json_backend, &js_backend, "overlayPaint");
+            assert_same_bool(&json_backend, &js_backend, "semanticBounds");
+        }
 
         let json_root = prop(&json_value, "root");
         let js_root = prop(&js_value, "root");

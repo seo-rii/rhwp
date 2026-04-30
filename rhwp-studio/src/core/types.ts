@@ -61,6 +61,28 @@ export interface PageLayerTree {
   debugCapabilities?: {
     overlayPaint?: boolean;
     semanticBounds?: boolean;
+    genericLayerExport?: {
+      overlayPaint?: boolean;
+      semanticBounds?: boolean;
+    };
+    backends?: {
+      svgLayer?: {
+        overlayPaint?: boolean;
+        semanticBounds?: boolean;
+      };
+      canvas2d?: {
+        overlayPaint?: boolean;
+        semanticBounds?: boolean;
+      };
+      canvaskit?: {
+        overlayPaint?: boolean;
+        semanticBounds?: boolean;
+      };
+      nativeSkia?: {
+        overlayPaint?: boolean;
+        semanticBounds?: boolean;
+      };
+    };
   };
   resources?: LayerResources;
   root: LayerNode;
