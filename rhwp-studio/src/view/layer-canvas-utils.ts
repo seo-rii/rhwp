@@ -14,6 +14,17 @@ const EQUATION_BIG_OP_SCALE = 1.5;
 export type LayerCanvasImageSource = HTMLImageElement | HTMLCanvasElement;
 export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, HTMLCanvasElement>>;
 
+const ORDERED_DITHER_8X8 = [
+  0, 48, 12, 60, 3, 51, 15, 63,
+  32, 16, 44, 28, 35, 19, 47, 31,
+  8, 56, 4, 52, 11, 59, 7, 55,
+  40, 24, 36, 20, 43, 27, 39, 23,
+  2, 50, 14, 62, 1, 49, 13, 61,
+  34, 18, 46, 30, 33, 17, 45, 29,
+  10, 58, 6, 54, 9, 57, 5, 53,
+  42, 26, 38, 22, 41, 25, 37, 21,
+] as const;
+
 export function decodeBase64(base64: string): Uint8Array {
   const binary = window.atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -130,9 +141,16 @@ export function applyLayerImageEffect(
   const data = pixels.data;
   for (let index = 0; index < data.length; index += 4) {
     const luma = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
-    const value = effect === 'blackWhite'
-      ? (luma >= 128 ? 255 : 0)
-      : luma;
+    let value = luma;
+    if (effect === 'blackWhite') {
+      value = luma >= 128 ? 255 : 0;
+    } else if (effect === 'pattern8x8') {
+      const pixel = index / 4;
+      const x = pixel % canvasWidth;
+      const y = Math.floor(pixel / canvasWidth);
+      const threshold = Math.round(((ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)] + 0.5) * 255) / 64);
+      value = luma > threshold ? 255 : 0;
+    }
     data[index] = value;
     data[index + 1] = value;
     data[index + 2] = value;

@@ -1,7 +1,8 @@
 use resvg::{tiny_skia, usvg};
 use skia_safe::{
-    canvas::SrcRectConstraint, color_filters, image::RequiredProperties, Canvas, Data, FilterMode,
-    IRect, Image, Matrix, MipmapMode, Paint, Rect, SamplingOptions, TileMode,
+    canvas::SrcRectConstraint, color_filters, image::RequiredProperties, Canvas, Data,
+    EncodedImageFormat, FilterMode, IRect, Image, Matrix, MipmapMode, Paint, Rect, SamplingOptions,
+    TileMode,
 };
 
 use crate::model::image::ImageEffect;
@@ -44,6 +45,12 @@ impl ImageSampling {
 pub struct ImageDrawDiagnostics {
     pub tile_fallback_cap_hits: usize,
 }
+
+const ORDERED_DITHER_8X8: [u8; 64] = [
+    0, 48, 12, 60, 3, 51, 15, 63, 32, 16, 44, 28, 35, 19, 47, 31, 8, 56, 4, 52, 11, 59, 7, 55, 40,
+    24, 36, 20, 43, 27, 39, 23, 2, 50, 14, 62, 1, 49, 13, 61, 34, 18, 46, 30, 33, 17, 45, 29, 10,
+    58, 6, 54, 9, 57, 5, 53, 42, 26, 38, 22, 41, 25, 37, 21,
+];
 
 pub fn draw_image_bytes(
     canvas: &Canvas,
@@ -127,10 +134,21 @@ fn draw_decoded_image_impl(
     if !is_valid_destination_rect(x, y, width, height) {
         return diagnostics;
     }
+    let dithered_image = if effect == ImageEffect::Pattern8x8 {
+        pattern8x8_dither_image(image)
+    } else {
+        None
+    };
+    let image = dithered_image.as_ref().unwrap_or(image);
+    let filter_effect = if dithered_image.is_some() {
+        ImageEffect::RealPic
+    } else {
+        effect
+    };
     let dst = Rect::from_xywh(x, y, width, height);
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
-    if let Some(color_filter) = image_effect_filter(effect) {
+    if let Some(color_filter) = image_effect_filter(filter_effect) {
         paint.set_color_filter(color_filter);
     }
     let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
@@ -436,6 +454,37 @@ fn image_effect_filter(effect: ImageEffect) -> Option<skia_safe::ColorFilter> {
     }
 }
 
+fn ordered_dither_8x8_threshold(x: usize, y: usize) -> u8 {
+    let matrix = ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)] as u16;
+    (((matrix * 2 + 1) * 255) / 128) as u8
+}
+
+fn luma_u8(red: u8, green: u8, blue: u8) -> u8 {
+    (red as f32 * 0.299 + green as f32 * 0.587 + blue as f32 * 0.114).round() as u8
+}
+
+fn pattern8x8_dither_image(image: &Image) -> Option<Image> {
+    let encoded = image.encode(None, EncodedImageFormat::PNG, None)?;
+    let mut pixmap = tiny_skia::Pixmap::decode_png(encoded.as_bytes()).ok()?;
+    let width = pixmap.width() as usize;
+    for y in 0..pixmap.height() as usize {
+        for x in 0..width {
+            let index = y * width + x;
+            let pixel = pixmap.pixels()[index];
+            let luma = luma_u8(pixel.red(), pixel.green(), pixel.blue());
+            let value = if luma > ordered_dither_8x8_threshold(x, y) {
+                255
+            } else {
+                0
+            };
+            pixmap.pixels_mut()[index] =
+                tiny_skia::PremultipliedColorU8::from_rgba(value, value, value, pixel.alpha())?;
+        }
+    }
+    let png = pixmap.encode_png().ok()?;
+    Image::from_encoded(Data::new_copy(&png))
+}
+
 fn grayscale_filter(scale: f32, translate: f32) -> skia_safe::ColorFilter {
     let r = 0.299 * scale;
     let g = 0.587 * scale;
@@ -716,6 +765,58 @@ mod tests {
         );
 
         assert_eq!(diagnostics.tile_fallback_cap_hits, 1);
+    }
+
+    #[test]
+    fn pattern8x8_effect_uses_ordered_dither() {
+        let mut source = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(128, 128, 128, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((8, 8)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            8.0,
+            8.0,
+            Some(ImageFillMode::FitToSize),
+            Some((8.0, 8.0)),
+            None,
+            ImageEffect::Pattern8x8,
+            ImageSampling::nearest(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let mut dark = 0usize;
+        let mut light = 0usize;
+        for pixel in pixmap.pixels() {
+            if pixel.red() < 32 {
+                dark += 1;
+            } else if pixel.red() > 223 {
+                light += 1;
+            }
+        }
+
+        assert!(dark > 0, "ordered dither should produce dark pixels");
+        assert!(light > 0, "ordered dither should produce light pixels");
+        assert_eq!(
+            dark + light,
+            64,
+            "pattern8x8 should not fall back to intermediate grayscale pixels"
+        );
+        assert!(
+            pixmap.pixels()[0].red() > 223 && pixmap.pixels()[1].red() < 32,
+            "the first Bayer row should alternate around mid-gray"
+        );
     }
 
     #[test]
