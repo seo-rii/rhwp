@@ -52,6 +52,31 @@ const ORDERED_DITHER_8X8: [u8; 64] = [
     58, 6, 54, 9, 57, 5, 53, 42, 26, 38, 22, 41, 25, 37, 21,
 ];
 
+#[cfg(test)]
+thread_local! {
+    static FORCE_MANUAL_TILE_FALLBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) fn with_manual_tile_fallback_for_test<T>(draw: impl FnOnce() -> T) -> T {
+    FORCE_MANUAL_TILE_FALLBACK.with(|flag| {
+        let previous = flag.replace(true);
+        let result = draw();
+        flag.set(previous);
+        result
+    })
+}
+
+#[cfg(test)]
+fn manual_tile_fallback_forced_for_test() -> bool {
+    FORCE_MANUAL_TILE_FALLBACK.with(std::cell::Cell::get)
+}
+
+#[cfg(not(test))]
+fn manual_tile_fallback_forced_for_test() -> bool {
+    false
+}
+
 pub fn draw_image_bytes(
     canvas: &Canvas,
     bytes: &[u8],
@@ -279,6 +304,7 @@ fn draw_decoded_image_impl(
         };
 
         if allow_shader_tiling
+            && !manual_tile_fallback_forced_for_test()
             && matches!(mode, ImageFillMode::TileAll)
             && draw_tiled_shader(dst, x, y)
         {
@@ -295,6 +321,7 @@ fn draw_decoded_image_impl(
                 y + height - image_height
             };
             if allow_shader_tiling
+                && !manual_tile_fallback_forced_for_test()
                 && draw_tiled_shader(Rect::from_xywh(x, tile_y, width, image_height), x, tile_y)
             {
                 canvas.restore();
@@ -311,6 +338,7 @@ fn draw_decoded_image_impl(
                 x + width - image_width
             };
             if allow_shader_tiling
+                && !manual_tile_fallback_forced_for_test()
                 && draw_tiled_shader(Rect::from_xywh(tile_x, y, image_width, height), tile_x, y)
             {
                 canvas.restore();

@@ -2790,9 +2790,9 @@ mod tests {
     };
     use crate::model::style::UnderlineType;
     use crate::paint::{
-        CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerNode, LayerOutputOptions,
-        LayerRectanglePaint, LayerSemantic, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
-        SvgResourceId,
+        CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerImagePaint, LayerNode,
+        LayerOutputOptions, LayerRectanglePaint, LayerSemantic, PageLayerTree, PaintOp,
+        RenderProfile, ResourceArena, SvgResourceId,
     };
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
@@ -2836,6 +2836,47 @@ mod tests {
         let png = renderer.render_png(&layer_tree).expect("skia png render");
         assert!(!png.is_empty());
         assert_eq!(&png[0..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn raster_output_accumulates_tile_fallback_diagnostics() {
+        use crate::model::image::ImageEffect;
+        use crate::model::style::ImageFillMode;
+        use crate::renderer::skia::image_conv::with_manual_tile_fallback_for_test;
+
+        let mut pixmap = tiny_skia::Pixmap::new(1, 1).expect("source pixmap");
+        pixmap.pixels_mut()[0] = tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 0, 255).unwrap();
+        let image_bytes = pixmap.encode_png().expect("source png");
+        let mut resources = ResourceArena::default();
+        let resource_id = resources.intern_image_bytes(&image_bytes);
+        let tree = PageLayerTree::with_resources(
+            5000.0,
+            1.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 5000.0, 1.0),
+                None,
+                vec![PaintOp::Image {
+                    bbox: BoundingBox::new(0.0, 0.0, 5000.0, 1.0),
+                    image: LayerImagePaint {
+                        resource_id: Some(resource_id),
+                        fill_mode: Some(ImageFillMode::TileAll),
+                        original_size: Some((1.0, 1.0)),
+                        crop: None,
+                        effect: ImageEffect::RealPic,
+                        transform: ShapeTransform::default(),
+                    },
+                }],
+            ),
+            resources,
+        );
+        let renderer = SkiaLayerRenderer::new();
+        let output = with_manual_tile_fallback_for_test(|| {
+            renderer
+                .render_raster_with_options(&tree, RasterRenderOptions::default())
+                .expect("render raster")
+        });
+
+        assert_eq!(output.diagnostics.tile_fallback_cap_hits, 1);
     }
 
     #[test]
