@@ -1,10 +1,15 @@
 import {
   assert,
+  comparePngBuffers,
   loadApp,
   loadHwpFile,
   runTest,
   setTestCase,
 } from './helpers.mjs';
+
+function pngBufferFromDataUrl(dataUrl) {
+  return Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
+}
 
 runTest('Renderer lifecycle', async ({ page }) => {
   setTestCase('page-layer-cache-eviction');
@@ -367,6 +372,131 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(resourceReuseProbe.distinctResourceObjects, `resource tables differ by object=${JSON.stringify(resourceReuseProbe)}`);
   assert(resourceReuseProbe.imageCacheSize === 1, `resource cache keeps one decoded image=${JSON.stringify(resourceReuseProbe)}`);
   assert(resourceReuseProbe.reusedImageObject, `resource cache reuses image across pages=${JSON.stringify(resourceReuseProbe)}`);
+
+  setTestCase('image-effect-crop-preprocess-parity');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const imageEffectCropProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 64;
+    sourceCanvas.height = 64;
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) {
+      return { error: 'source canvas unavailable' };
+    }
+    for (let y = 0; y < sourceCanvas.height; y += 1) {
+      for (let x = 0; x < sourceCanvas.width; x += 1) {
+        sourceCtx.fillStyle = `rgb(${(x * 4) & 255}, ${(y * 4) & 255}, ${((x + y) * 2) & 255})`;
+        sourceCtx.fillRect(x, y, 1, 1);
+      }
+    }
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const tree = {
+      pageWidth: 8,
+      pageHeight: 8,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 991,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1,
+        bounds: { x: 0, y: 0, width: 8, height: 8 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'image',
+          bbox: { x: 0, y: 0, width: 8, height: 8 },
+          base64,
+          fillMode: 'fitToSize',
+          effect: 'pattern8x8',
+          originalSize: { width: 64, height: 64 },
+          crop: { left: 56, top: 56, right: 64, bottom: 64 },
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+        }],
+      },
+    };
+
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const renderWithDiagnostics = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 8;
+      canvas.height = 8;
+      document.body.appendChild(canvas);
+      const before = renderer.getImageEffectDiagnostics();
+      let after = before;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        renderer.renderPage(tree, canvas, 1);
+        await nextFrame();
+        after = renderer.getImageEffectDiagnostics();
+        if (after.preprocessedPixels > before.preprocessedPixels) {
+          break;
+        }
+      }
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return {
+        png,
+        diagnostics: {
+          cacheHits: after.cacheHits - before.cacheHits,
+          cacheMisses: after.cacheMisses - before.cacheMisses,
+          preprocessFailures: after.preprocessFailures - before.preprocessFailures,
+          fallbackToOriginal: after.fallbackToOriginal - before.fallbackToOriginal,
+          preprocessedPixels: after.preprocessedPixels - before.preprocessedPixels,
+        },
+      };
+    };
+
+    const canvas2d = await renderWithDiagnostics(canvas2dRenderer);
+    const canvaskit = await renderWithDiagnostics(canvaskitRenderer);
+    return { canvas2d, canvaskit };
+  });
+
+  assert(!imageEffectCropProbe.error, imageEffectCropProbe.error || 'image effect crop probe available');
+  assert(
+    imageEffectCropProbe.canvas2d.diagnostics.preprocessedPixels === 64,
+    `canvas2d crop-aware effect pixels=${JSON.stringify(imageEffectCropProbe.canvas2d.diagnostics)}`,
+  );
+  assert(
+    imageEffectCropProbe.canvaskit.diagnostics.preprocessedPixels === 64,
+    `canvaskit crop-aware effect pixels=${JSON.stringify(imageEffectCropProbe.canvaskit.diagnostics)}`,
+  );
+  assert(
+    imageEffectCropProbe.canvas2d.diagnostics.preprocessFailures === 0
+      && imageEffectCropProbe.canvaskit.diagnostics.preprocessFailures === 0,
+    `image effect preprocessing failures=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  const imageEffectCropDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(imageEffectCropProbe.canvas2d.png),
+    pngBufferFromDataUrl(imageEffectCropProbe.canvaskit.png),
+    {
+      diffName: 'image-effect-crop-preprocess-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    imageEffectCropDiff.passed,
+    `image effect crop parity exact=${imageEffectCropDiff.exactDiffPixels}, tolerant=${imageEffectCropDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectCropDiff.maxChannelDelta}`,
+  );
 
   setTestCase('canvaskit-dispose');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');

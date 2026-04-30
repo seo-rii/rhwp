@@ -28,6 +28,7 @@ import {
   applyLayerImageEffect,
   buildCanvasTextFont,
   calculateArrowDimensions,
+  canPreprocessCroppedLayerImageEffect,
   computePathPaintBounds,
   createPatternTileCanvas,
   decodeBase64,
@@ -36,6 +37,7 @@ import {
   inferImageMime,
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
+  resolveLayerImageCropSource,
   type LayerCanvasImageSource,
   type LayerImageEffectDiagnostics,
   type LayerImageEffectCache,
@@ -773,13 +775,25 @@ export class Canvas2DLayerRenderer {
     }
 
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
+      const { width: imageWidth, height: imageHeight } = layerCanvasImageSourceSize(image);
+      const effectCropSource = canPreprocessCroppedLayerImageEffect(op.fillMode)
+        ? resolveLayerImageCropSource(imageWidth, imageHeight, op.crop)
+        : null;
       const source = applyLayerImageEffect(
         image,
         op.effect,
         this.imageEffectCache,
         this.imageEffectDiagnostics,
+        effectCropSource,
       );
-      this.drawDomImage(ctx, source, op.bbox, op.fillMode, op.originalSize, op.crop);
+      this.drawDomImage(
+        ctx,
+        source,
+        op.bbox,
+        op.fillMode,
+        op.originalSize,
+        source !== image && effectCropSource ? undefined : op.crop,
+      );
     });
   }
 
@@ -971,23 +985,7 @@ export class Canvas2DLayerRenderer {
     ) {
       return;
     }
-    const cropSource = crop
-      ? (() => {
-        const scaleX = crop.right / imageWidth;
-        const scaleY = crop.bottom / imageHeight;
-        if (scaleX <= 0 || scaleY <= 0) {
-          return null;
-        }
-        const srcX = crop.left / scaleX;
-        const srcY = crop.top / scaleY;
-        const srcW = (crop.right - crop.left) / scaleX;
-        const srcH = (crop.bottom - crop.top) / scaleY;
-        const isCropped = srcX > 0.5 || srcY > 0.5 || Math.abs(srcW - imageWidth) > 1 || Math.abs(srcH - imageHeight) > 1;
-        return isCropped && srcW > 0 && srcH > 0
-          ? { x: srcX, y: srcY, width: srcW, height: srcH }
-          : null;
-      })()
-      : null;
+    const cropSource = resolveLayerImageCropSource(imageWidth, imageHeight, crop);
     const drawImage = (x: number, y: number, width: number, height: number) => {
       if (
         !Number.isFinite(x)

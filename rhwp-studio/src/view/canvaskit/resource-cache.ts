@@ -9,6 +9,7 @@ import {
   rasterizePatternTileToPngBytes,
   type LayerImageEffectDiagnostics,
   type LayerImageEffectCache,
+  type LayerImageEffectSourceRect,
 } from '../layer-canvas-utils';
 
 export class CanvasKitResourceCache {
@@ -99,6 +100,7 @@ export class CanvasKitResourceCache {
     resourceId?: number,
     base64?: string,
     effect: LayerImageOp['effect'] = 'realPic',
+    sourceRect?: LayerImageEffectSourceRect | null,
   ): CanvasKitImage | null {
     if (!effect || effect === 'realPic') {
       return this.image(resourceId, base64);
@@ -109,7 +111,10 @@ export class CanvasKitResourceCache {
       return null;
     }
 
-    const effectCacheKey = `${cacheKey}:effect:${effect}`;
+    const sourceRectKey = sourceRect
+      ? `:src:${sourceRect.x.toFixed(3)}:${sourceRect.y.toFixed(3)}:${sourceRect.width.toFixed(3)}:${sourceRect.height.toFixed(3)}`
+      : '';
+    const effectCacheKey = `${cacheKey}:effect:${effect}${sourceRectKey}`;
     const cached = this.imageEffectCache.get(effectCacheKey);
     if (cached) {
       this.imageEffectDiagnostics.cacheHits += 1;
@@ -126,6 +131,7 @@ export class CanvasKitResourceCache {
       effect,
       this.imageEffectSourceCache,
       this.imageEffectDiagnostics,
+      sourceRect,
     );
     if (source === domImage) {
       return this.image(resourceId, base64);

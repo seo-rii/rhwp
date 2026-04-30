@@ -13,6 +13,7 @@ const EQUATION_BIG_OP_SCALE = 1.5;
 
 export type LayerCanvasImageSource = HTMLImageElement | HTMLCanvasElement;
 export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, HTMLCanvasElement>>;
+export type LayerImageEffectSourceRect = { x: number; y: number; width: number; height: number };
 export type LayerImageEffectDiagnostics = {
   cacheHits: number;
   cacheMisses: number;
@@ -102,11 +103,71 @@ export function layerCanvasImageSourceSize(image: LayerCanvasImageSource): { wid
   };
 }
 
+export function resolveLayerImageCropSource(
+  imageWidth: number,
+  imageHeight: number,
+  crop?: LayerImageOp['crop'],
+): LayerImageEffectSourceRect | null {
+  if (!crop) {
+    return null;
+  }
+  if (
+    !Number.isFinite(imageWidth)
+    || !Number.isFinite(imageHeight)
+    || imageWidth <= 0
+    || imageHeight <= 0
+    || !Number.isFinite(crop.left)
+    || !Number.isFinite(crop.top)
+    || !Number.isFinite(crop.right)
+    || !Number.isFinite(crop.bottom)
+  ) {
+    return null;
+  }
+
+  const scaleX = crop.right / imageWidth;
+  const scaleY = crop.bottom / imageHeight;
+  if (scaleX <= 0 || scaleY <= 0) {
+    return null;
+  }
+
+  const srcX = crop.left / scaleX;
+  const srcY = crop.top / scaleY;
+  const srcW = (crop.right - crop.left) / scaleX;
+  const srcH = (crop.bottom - crop.top) / scaleY;
+  const isCropped = srcX > 0.5
+    || srcY > 0.5
+    || Math.abs(srcW - imageWidth) > 1
+    || Math.abs(srcH - imageHeight) > 1;
+
+  return isCropped && srcW > 0 && srcH > 0
+    ? { x: srcX, y: srcY, width: srcW, height: srcH }
+    : null;
+}
+
+export function canPreprocessCroppedLayerImageEffect(fillMode = 'fitToSize'): boolean {
+  return fillMode === 'fitToSize' || fillMode === 'none';
+}
+
+function imageEffectCacheKey(effect: NonNullable<LayerImageOp['effect']>, sourceRect?: LayerImageEffectSourceRect | null): string {
+  if (!sourceRect) {
+    return effect;
+  }
+  return [
+    effect,
+    'src',
+    sourceRect.x.toFixed(3),
+    sourceRect.y.toFixed(3),
+    sourceRect.width.toFixed(3),
+    sourceRect.height.toFixed(3),
+  ].join(':');
+}
+
 export function applyLayerImageEffect(
   image: LayerCanvasImageSource,
   effect: LayerImageOp['effect'] | undefined,
   cache?: LayerImageEffectCache,
   diagnostics?: LayerImageEffectDiagnostics,
+  sourceRect?: LayerImageEffectSourceRect | null,
 ): LayerCanvasImageSource {
   if (!effect || effect === 'realPic') {
     return image;
@@ -126,10 +187,30 @@ export function applyLayerImageEffect(
     return image;
   }
 
-  const canvasWidth = Math.max(1, Math.round(width));
-  const canvasHeight = Math.max(1, Math.round(height));
+  const sx = sourceRect?.x ?? 0;
+  const sy = sourceRect?.y ?? 0;
+  const sw = sourceRect?.width ?? width;
+  const sh = sourceRect?.height ?? height;
+  if (
+    !Number.isFinite(sx)
+    || !Number.isFinite(sy)
+    || !Number.isFinite(sw)
+    || !Number.isFinite(sh)
+    || sw <= 0
+    || sh <= 0
+  ) {
+    if (diagnostics) {
+      diagnostics.preprocessFailures += 1;
+      diagnostics.fallbackToOriginal += 1;
+    }
+    return image;
+  }
+
+  const canvasWidth = Math.max(1, Math.round(sw));
+  const canvasHeight = Math.max(1, Math.round(sh));
+  const cacheKey = imageEffectCacheKey(effect, sourceRect);
   const cachedByEffect = cache?.get(image);
-  const cached = cachedByEffect?.get(effect);
+  const cached = cachedByEffect?.get(cacheKey);
   if (cached && cached.width === canvasWidth && cached.height === canvasHeight) {
     if (diagnostics) {
       diagnostics.cacheHits += 1;
@@ -154,7 +235,7 @@ export function applyLayerImageEffect(
 
   let pixels: ImageData;
   try {
-    ctx.drawImage(image, 0, 0, canvasWidth, canvasHeight);
+    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, canvasWidth, canvasHeight);
     pixels = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
   } catch {
     if (diagnostics) {
@@ -188,7 +269,7 @@ export function applyLayerImageEffect(
 
   if (cache) {
     const nextByEffect = cachedByEffect ?? new Map<string, HTMLCanvasElement>();
-    nextByEffect.set(effect, canvas);
+    nextByEffect.set(cacheKey, canvas);
     if (!cachedByEffect) {
       cache.set(image, nextByEffect);
     }
