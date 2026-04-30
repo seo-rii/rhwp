@@ -1954,11 +1954,11 @@ mod tests {
         };
         use crate::renderer::TextStyle;
 
-        let mut tree = PageRenderTree::new(0, 240.0, 160.0);
+        let mut tree = PageRenderTree::new(0, 240.0, 210.0);
         tree.root.node_type = RenderNodeType::Page(PageNode {
             page_index: 0,
             width: 240.0,
-            height: 160.0,
+            height: 210.0,
             section_index: 0,
         });
         tree.root.children.push(RenderNode::new(
@@ -1970,7 +1970,7 @@ mod tests {
                 gradient: None,
                 image: None,
             }),
-            BoundingBox::new(0.0, 0.0, 240.0, 160.0),
+            BoundingBox::new(0.0, 0.0, 240.0, 210.0),
         ));
 
         let mut next_id = 2;
@@ -2066,6 +2066,24 @@ mod tests {
         );
         push_text(
             &mut tree,
+            "[누름틀 끝]\t",
+            BoundingBox::new(16.0, 88.0, 92.0, 24.0),
+            TextStyle {
+                font_size: 11.0,
+                color: 0x0066CC,
+                underline: crate::model::style::UnderlineType::Bottom,
+                ..Default::default()
+            },
+            17.0,
+            true,
+            false,
+            0.0,
+            false,
+            None,
+            FieldMarkerType::FieldEnd,
+        );
+        push_text(
+            &mut tree,
             "line",
             BoundingBox::new(124.0, 62.0, 56.0, 28.0),
             TextStyle {
@@ -2080,6 +2098,40 @@ mod tests {
             false,
             None,
             FieldMarkerType::None,
+        );
+        push_text(
+            &mut tree,
+            "[빈 누름틀]",
+            BoundingBox::new(16.0, 144.0, 92.0, 24.0),
+            TextStyle {
+                font_size: 11.0,
+                color: 0x0066CC,
+                ..Default::default()
+            },
+            17.0,
+            false,
+            false,
+            15.0,
+            false,
+            None,
+            FieldMarkerType::FieldBeginEnd,
+        );
+        push_text(
+            &mut tree,
+            "[개체]",
+            BoundingBox::new(132.0, 144.0, 58.0, 24.0),
+            TextStyle {
+                font_size: 11.0,
+                color: 0x0066CC,
+                ..Default::default()
+            },
+            17.0,
+            false,
+            false,
+            0.0,
+            false,
+            None,
+            FieldMarkerType::ShapeMarker(7),
         );
         push_text(
             &mut tree,
