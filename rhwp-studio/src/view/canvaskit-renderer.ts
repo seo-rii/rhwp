@@ -91,6 +91,8 @@ export class CanvasKitLayerRenderer {
     preprocessFailures: 0,
     fallbackToOriginal: 0,
     preprocessedPixels: 0,
+    preprocessTimeMs: 0,
+    maxPreprocessTimeMs: 0,
   };
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new CanvasKitStaticPictureCache();
@@ -201,6 +203,12 @@ export class CanvasKitLayerRenderer {
         + this.overlayImageEffectDiagnostics.fallbackToOriginal,
       preprocessedPixels: resourceDiagnostics.preprocessedPixels
         + this.overlayImageEffectDiagnostics.preprocessedPixels,
+      preprocessTimeMs: resourceDiagnostics.preprocessTimeMs
+        + this.overlayImageEffectDiagnostics.preprocessTimeMs,
+      maxPreprocessTimeMs: Math.max(
+        resourceDiagnostics.maxPreprocessTimeMs,
+        this.overlayImageEffectDiagnostics.maxPreprocessTimeMs,
+      ),
     };
   }
 

@@ -628,6 +628,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
           preprocessFailures: after.preprocessFailures - before.preprocessFailures,
           fallbackToOriginal: after.fallbackToOriginal - before.fallbackToOriginal,
           preprocessedPixels: after.preprocessedPixels - before.preprocessedPixels,
+          preprocessTimeMs: after.preprocessTimeMs - before.preprocessTimeMs,
+          maxPreprocessTimeMs: after.maxPreprocessTimeMs,
         },
       };
     };
@@ -650,6 +652,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
     imageEffectCropProbe.canvas2d.diagnostics.preprocessFailures === 0
       && imageEffectCropProbe.canvaskit.diagnostics.preprocessFailures === 0,
     `image effect preprocessing failures=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  assert(
+    imageEffectCropProbe.canvas2d.diagnostics.preprocessTimeMs >= 0
+      && imageEffectCropProbe.canvaskit.diagnostics.preprocessTimeMs >= 0
+      && imageEffectCropProbe.canvas2d.diagnostics.maxPreprocessTimeMs >= 0
+      && imageEffectCropProbe.canvaskit.diagnostics.maxPreprocessTimeMs >= 0,
+    `image effect preprocessing timing diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
   );
   const imageEffectCropDiff = await comparePngBuffers(
     pngBufferFromDataUrl(imageEffectCropProbe.canvas2d.png),

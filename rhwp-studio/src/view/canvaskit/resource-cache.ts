@@ -27,6 +27,8 @@ export class CanvasKitResourceCache {
     preprocessFailures: 0,
     fallbackToOriginal: 0,
     preprocessedPixels: 0,
+    preprocessTimeMs: 0,
+    maxPreprocessTimeMs: 0,
   };
 
   private resources: PageLayerTree['resources'] | null = null;

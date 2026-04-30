@@ -20,6 +20,8 @@ export type LayerImageEffectDiagnostics = {
   preprocessFailures: number;
   fallbackToOriginal: number;
   preprocessedPixels: number;
+  preprocessTimeMs: number;
+  maxPreprocessTimeMs: number;
 };
 
 const ORDERED_DITHER_8X8 = [
@@ -220,6 +222,7 @@ export function applyLayerImageEffect(
   if (diagnostics) {
     diagnostics.cacheMisses += 1;
   }
+  const preprocessStartMs = typeof performance !== 'undefined' ? performance.now() : 0;
 
   const canvas = document.createElement('canvas');
   canvas.width = canvasWidth;
@@ -264,7 +267,12 @@ export function applyLayerImageEffect(
   }
   ctx.putImageData(pixels, 0, 0);
   if (diagnostics) {
+    const elapsedMs = typeof performance !== 'undefined'
+      ? Math.max(0, performance.now() - preprocessStartMs)
+      : 0;
     diagnostics.preprocessedPixels += canvasWidth * canvasHeight;
+    diagnostics.preprocessTimeMs += elapsedMs;
+    diagnostics.maxPreprocessTimeMs = Math.max(diagnostics.maxPreprocessTimeMs, elapsedMs);
   }
 
   if (cache) {
