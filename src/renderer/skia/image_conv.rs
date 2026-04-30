@@ -159,13 +159,13 @@ fn draw_decoded_image_impl(
     if !is_valid_destination_rect(x, y, width, height) {
         return diagnostics;
     }
-    let dithered_image = if effect == ImageEffect::Pattern8x8 {
-        pattern8x8_dither_image(image)
-    } else {
-        None
+    let preprocessed_image = match effect {
+        ImageEffect::BlackWhite => blackwhite_threshold_image(image),
+        ImageEffect::Pattern8x8 => pattern8x8_dither_image(image),
+        _ => None,
     };
-    let image = dithered_image.as_ref().unwrap_or(image);
-    let filter_effect = if dithered_image.is_some() {
+    let image = preprocessed_image.as_ref().unwrap_or(image);
+    let filter_effect = if preprocessed_image.is_some() {
         ImageEffect::RealPic
     } else {
         effect
@@ -492,6 +492,23 @@ fn luma_u8(red: u8, green: u8, blue: u8) -> u8 {
 }
 
 fn pattern8x8_dither_image(image: &Image) -> Option<Image> {
+    luma_preprocessed_image(image, |x, y, luma| {
+        if luma > ordered_dither_8x8_threshold(x, y) {
+            255
+        } else {
+            0
+        }
+    })
+}
+
+fn blackwhite_threshold_image(image: &Image) -> Option<Image> {
+    luma_preprocessed_image(image, |_, _, luma| if luma >= 128 { 255 } else { 0 })
+}
+
+fn luma_preprocessed_image(
+    image: &Image,
+    mut map_luma: impl FnMut(usize, usize, u8) -> u8,
+) -> Option<Image> {
     let encoded = image.encode(None, EncodedImageFormat::PNG, None)?;
     let mut pixmap = tiny_skia::Pixmap::decode_png(encoded.as_bytes()).ok()?;
     let width = pixmap.width() as usize;
@@ -500,11 +517,7 @@ fn pattern8x8_dither_image(image: &Image) -> Option<Image> {
             let index = y * width + x;
             let pixel = pixmap.pixels()[index];
             let luma = luma_u8(pixel.red(), pixel.green(), pixel.blue());
-            let value = if luma > ordered_dither_8x8_threshold(x, y) {
-                255
-            } else {
-                0
-            };
+            let value = map_luma(x, y, luma);
             pixmap.pixels_mut()[index] =
                 tiny_skia::PremultipliedColorU8::from_rgba(value, value, value, pixel.alpha())?;
         }
@@ -844,6 +857,47 @@ mod tests {
         assert!(
             pixmap.pixels()[0].red() > 223 && pixmap.pixels()[1].red() < 32,
             "the first Bayer row should alternate around mid-gray"
+        );
+    }
+
+    #[test]
+    fn blackwhite_effect_uses_midpoint_threshold() {
+        let mut source = tiny_skia::Pixmap::new(2, 1).expect("source pixmap");
+        source.pixels_mut()[0] =
+            tiny_skia::PremultipliedColorU8::from_rgba(127, 127, 127, 255).unwrap();
+        source.pixels_mut()[1] =
+            tiny_skia::PremultipliedColorU8::from_rgba(128, 128, 128, 255).unwrap();
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((2, 1)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            2.0,
+            1.0,
+            Some(ImageFillMode::FitToSize),
+            Some((2.0, 1.0)),
+            None,
+            ImageEffect::BlackWhite,
+            ImageSampling::nearest(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+
+        assert!(
+            pixmap.pixels()[0].red() < 32,
+            "luma below 128 should become black"
+        );
+        assert!(
+            pixmap.pixels()[1].red() > 223,
+            "luma at 128 should become white"
         );
     }
 
