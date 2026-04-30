@@ -1797,7 +1797,7 @@ mod tests {
             BoundingBox::new(104.0, 86.0, 160.0, 58.0),
         ));
 
-        let mut transparent_over_background = ImageNode::new(0, Some(transparent_png));
+        let mut transparent_over_background = ImageNode::new(0, Some(transparent_png.clone()));
         transparent_over_background.fill_mode = Some(ImageFillMode::FitToSize);
         transparent_over_background.transform = ShapeTransform::default();
         transparent_over_background.effect = ImageEffect::RealPic;
@@ -1805,6 +1805,17 @@ mod tests {
             7,
             RenderNodeType::Image(transparent_over_background),
             BoundingBox::new(16.0, 164.0, 56.0, 40.0),
+        ));
+
+        let mut transparent_pattern = ImageNode::new(0, Some(transparent_png));
+        transparent_pattern.fill_mode = Some(ImageFillMode::FitToSize);
+        transparent_pattern.crop = Some((8 * 75, 8 * 75, 32 * 75, 32 * 75));
+        transparent_pattern.transform = ShapeTransform::default();
+        transparent_pattern.effect = ImageEffect::Pattern8x8;
+        tree.root.children.push(RenderNode::new(
+            10,
+            RenderNodeType::Image(transparent_pattern),
+            BoundingBox::new(76.0, 164.0, 26.0, 40.0),
         ));
 
         let mut transformed = ImageNode::new(0, Some(png_bytes));
