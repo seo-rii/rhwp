@@ -20,6 +20,8 @@ export type LayerImageEffectDiagnostics = {
   preprocessFailures: number;
   fallbackToOriginal: number;
   preprocessedPixels: number;
+  preprocessedBytes: number;
+  maxPreprocessedBytes: number;
   preprocessTimeMs: number;
   maxPreprocessTimeMs: number;
 };
@@ -270,7 +272,10 @@ export function applyLayerImageEffect(
     const elapsedMs = typeof performance !== 'undefined'
       ? Math.max(0, performance.now() - preprocessStartMs)
       : 0;
+    const processedBytes = canvasWidth * canvasHeight * 4;
     diagnostics.preprocessedPixels += canvasWidth * canvasHeight;
+    diagnostics.preprocessedBytes += processedBytes;
+    diagnostics.maxPreprocessedBytes = Math.max(diagnostics.maxPreprocessedBytes, processedBytes);
     diagnostics.preprocessTimeMs += elapsedMs;
     diagnostics.maxPreprocessTimeMs = Math.max(diagnostics.maxPreprocessTimeMs, elapsedMs);
   }

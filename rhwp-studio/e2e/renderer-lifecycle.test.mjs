@@ -628,6 +628,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
           preprocessFailures: after.preprocessFailures - before.preprocessFailures,
           fallbackToOriginal: after.fallbackToOriginal - before.fallbackToOriginal,
           preprocessedPixels: after.preprocessedPixels - before.preprocessedPixels,
+          preprocessedBytes: after.preprocessedBytes - before.preprocessedBytes,
+          maxPreprocessedBytes: after.maxPreprocessedBytes,
           preprocessTimeMs: after.preprocessTimeMs - before.preprocessTimeMs,
           maxPreprocessTimeMs: after.maxPreprocessTimeMs,
         },
@@ -647,6 +649,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     imageEffectCropProbe.canvaskit.diagnostics.preprocessedPixels === 64,
     `canvaskit crop-aware effect pixels=${JSON.stringify(imageEffectCropProbe.canvaskit.diagnostics)}`,
+  );
+  assert(
+    imageEffectCropProbe.canvas2d.diagnostics.preprocessedBytes === 256
+      && imageEffectCropProbe.canvaskit.diagnostics.preprocessedBytes === 256
+      && imageEffectCropProbe.canvas2d.diagnostics.maxPreprocessedBytes === 256
+      && imageEffectCropProbe.canvaskit.diagnostics.maxPreprocessedBytes === 256,
+    `image effect crop-aware effect bytes=${JSON.stringify(imageEffectCropProbe)}`,
   );
   assert(
     imageEffectCropProbe.canvas2d.diagnostics.preprocessFailures === 0

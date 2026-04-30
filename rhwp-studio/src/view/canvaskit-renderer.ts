@@ -91,6 +91,8 @@ export class CanvasKitLayerRenderer {
     preprocessFailures: 0,
     fallbackToOriginal: 0,
     preprocessedPixels: 0,
+    preprocessedBytes: 0,
+    maxPreprocessedBytes: 0,
     preprocessTimeMs: 0,
     maxPreprocessTimeMs: 0,
   };
@@ -203,6 +205,12 @@ export class CanvasKitLayerRenderer {
         + this.overlayImageEffectDiagnostics.fallbackToOriginal,
       preprocessedPixels: resourceDiagnostics.preprocessedPixels
         + this.overlayImageEffectDiagnostics.preprocessedPixels,
+      preprocessedBytes: resourceDiagnostics.preprocessedBytes
+        + this.overlayImageEffectDiagnostics.preprocessedBytes,
+      maxPreprocessedBytes: Math.max(
+        resourceDiagnostics.maxPreprocessedBytes,
+        this.overlayImageEffectDiagnostics.maxPreprocessedBytes,
+      ),
       preprocessTimeMs: resourceDiagnostics.preprocessTimeMs
         + this.overlayImageEffectDiagnostics.preprocessTimeMs,
       maxPreprocessTimeMs: Math.max(
