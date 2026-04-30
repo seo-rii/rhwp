@@ -373,6 +373,172 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(resourceReuseProbe.imageCacheSize === 1, `resource cache keeps one decoded image=${JSON.stringify(resourceReuseProbe)}`);
   assert(resourceReuseProbe.reusedImageObject, `resource cache reuses image across pages=${JSON.stringify(resourceReuseProbe)}`);
 
+  setTestCase('field-marker-browser-parity');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=compat');
+  const fieldMarkerProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+
+    const style = (color, underline = 'bottom') => ({
+      fontFamily: 'Arial',
+      fontSize: 14,
+      color,
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline,
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: color,
+      strikeColor: color,
+      shadeColor: '#ffffff',
+    });
+    const positions = (text, advance = 8) => Array.from(
+      { length: text.length + 1 },
+      (_, index) => index * advance,
+    );
+    const textRun = ({
+      text,
+      x,
+      y,
+      width,
+      fieldMarker,
+      shapeMarkerIndex,
+      color,
+      rotation = 0,
+    }) => ({
+      type: 'textRun',
+      bbox: { x, y, width, height: 24 },
+      text,
+      baseline: 17,
+      rotation,
+      isVertical: false,
+      orientation: 'horizontal',
+      fieldMarker,
+      shapeMarkerIndex,
+      isParaEnd: false,
+      isLineBreakEnd: false,
+      style: style(color),
+      positions: positions(text),
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const tree = {
+      pageWidth: 220,
+      pageHeight: 110,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: true,
+        showControlCodes: true,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 992,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 10,
+        bounds: { x: 0, y: 0, width: 220, height: 110 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 220, height: 110 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          textRun({
+            text: 'FIELD BEGIN',
+            x: 10,
+            y: 14,
+            width: 96,
+            fieldMarker: 'fieldBegin',
+            color: '#cc6600',
+          }),
+          textRun({
+            text: 'FIELD END',
+            x: 10,
+            y: 46,
+            width: 80,
+            fieldMarker: 'fieldEnd',
+            color: '#cc6600',
+            rotation: 10,
+          }),
+          textRun({
+            text: 'FIELD BOTH',
+            x: 122,
+            y: 14,
+            width: 88,
+            fieldMarker: 'fieldBeginEnd',
+            color: '#cc6600',
+          }),
+          textRun({
+            text: 'SHAPE 7',
+            x: 122,
+            y: 46,
+            width: 70,
+            fieldMarker: 'shapeMarker',
+            shapeMarkerIndex: 7,
+            color: '#ff0000',
+            rotation: -8,
+          }),
+        ],
+      },
+    };
+
+    const render = (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 220;
+      canvas.height = 110;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+
+    return {
+      canvas2d: render(canvas2dRenderer),
+      canvaskit: render(canvaskitRenderer),
+    };
+  });
+
+  assert(!fieldMarkerProbe.error, fieldMarkerProbe.error || 'field marker browser probe available');
+  const fieldMarkerDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(fieldMarkerProbe.canvas2d),
+    pngBufferFromDataUrl(fieldMarkerProbe.canvaskit),
+    {
+      diffName: 'field-marker-browser-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    fieldMarkerDiff.passed,
+    `field marker browser parity exact=${fieldMarkerDiff.exactDiffPixels}, tolerant=${fieldMarkerDiff.rawTolerantDiffPixels}, max_channel_delta=${fieldMarkerDiff.maxChannelDelta}`,
+  );
+
   setTestCase('image-effect-crop-preprocess-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const imageEffectCropProbe = await page.evaluate(async () => {
