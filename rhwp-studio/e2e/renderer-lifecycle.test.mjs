@@ -558,7 +558,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
     for (let y = 0; y < sourceCanvas.height; y += 1) {
       for (let x = 0; x < sourceCanvas.width; x += 1) {
-        sourceCtx.fillStyle = `rgb(${(x * 4) & 255}, ${(y * 4) & 255}, ${((x + y) * 2) & 255})`;
+        const alpha = (((x + y) % 8) + 1) / 8;
+        sourceCtx.fillStyle = `rgba(${(x * 4) & 255}, ${(y * 4) & 255}, ${((x + y) * 2) & 255}, ${alpha})`;
         sourceCtx.fillRect(x, y, 1, 1);
       }
     }
