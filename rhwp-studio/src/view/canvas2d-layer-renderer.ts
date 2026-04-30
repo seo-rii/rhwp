@@ -37,6 +37,7 @@ import {
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
   type LayerCanvasImageSource,
+  type LayerImageEffectDiagnostics,
   type LayerImageEffectCache,
   renderEquationLayoutBox,
   splitIntoClusters,
@@ -54,6 +55,13 @@ export class Canvas2DLayerRenderer {
   private readonly currentClipStack: OverlayClip[] = [];
   private readonly domImageCache = new Map<string, HTMLImageElement>();
   private readonly imageEffectCache: LayerImageEffectCache = new WeakMap();
+  private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
+    cacheHits: 0,
+    cacheMisses: 0,
+    preprocessFailures: 0,
+    fallbackToOriginal: 0,
+    preprocessedPixels: 0,
+  };
   private readonly patternCache = new Map<string, CanvasPattern | null>();
   private lastRenderedTree: PageLayerTree | null = null;
   private lastTargetCanvas: HTMLCanvasElement | null = null;
@@ -104,6 +112,10 @@ export class Canvas2DLayerRenderer {
 
   setAsyncResourceReadyCallback(callback: (() => void) | null): void {
     this.asyncResourceReadyCallback = callback;
+  }
+
+  getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
+    return { ...this.imageEffectDiagnostics };
   }
 
   private renderNode(ctx: CanvasRenderingContext2D, node: LayerNode): void {
@@ -761,7 +773,12 @@ export class Canvas2DLayerRenderer {
     }
 
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
-      const source = applyLayerImageEffect(image, op.effect, this.imageEffectCache);
+      const source = applyLayerImageEffect(
+        image,
+        op.effect,
+        this.imageEffectCache,
+        this.imageEffectDiagnostics,
+      );
       this.drawDomImage(ctx, source, op.bbox, op.fillMode, op.originalSize, op.crop);
     });
   }

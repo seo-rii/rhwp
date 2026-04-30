@@ -7,6 +7,7 @@ import {
   encodeBase64,
   inferImageMime,
   rasterizePatternTileToPngBytes,
+  type LayerImageEffectDiagnostics,
   type LayerImageEffectCache,
 } from '../layer-canvas-utils';
 
@@ -19,6 +20,13 @@ export class CanvasKitResourceCache {
   readonly equationSvgImageCache = new Map<string, CanvasKitImage>();
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
   private readonly imageEffectSourceCache: LayerImageEffectCache = new WeakMap();
+  private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
+    cacheHits: 0,
+    cacheMisses: 0,
+    preprocessFailures: 0,
+    fallbackToOriginal: 0,
+    preprocessedPixels: 0,
+  };
 
   private resources: PageLayerTree['resources'] | null = null;
   private resourceTableId: number | null = null;
@@ -104,6 +112,7 @@ export class CanvasKitResourceCache {
     const effectCacheKey = `${cacheKey}:effect:${effect}`;
     const cached = this.imageEffectCache.get(effectCacheKey);
     if (cached) {
+      this.imageEffectDiagnostics.cacheHits += 1;
       return cached;
     }
 
@@ -112,17 +121,27 @@ export class CanvasKitResourceCache {
       return null;
     }
 
-    const source = applyLayerImageEffect(domImage, effect, this.imageEffectSourceCache);
+    const source = applyLayerImageEffect(
+      domImage,
+      effect,
+      this.imageEffectSourceCache,
+      this.imageEffectDiagnostics,
+    );
     if (source === domImage) {
       return this.image(resourceId, base64);
     }
 
     const image = this.canvasKit.MakeImageFromCanvasImageSource(source);
     if (!image) {
+      this.imageEffectDiagnostics.fallbackToOriginal += 1;
       return this.image(resourceId, base64);
     }
     this.imageEffectCache.set(effectCacheKey, image);
     return image;
+  }
+
+  getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
+    return { ...this.imageEffectDiagnostics };
   }
 
   domImage(resourceId?: number, base64?: string): HTMLImageElement | null {

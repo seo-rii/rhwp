@@ -42,6 +42,7 @@ import {
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
   type LayerCanvasImageSource,
+  type LayerImageEffectDiagnostics,
   type LayerImageEffectCache,
   puaToDisplayText,
   renderEquationLayoutBox,
@@ -82,6 +83,13 @@ export class CanvasKitLayerRenderer {
   private readonly equationSvgImageCache: Map<string, Image>;
   private readonly patternImageCache: Map<string, Image | null>;
   private readonly overlayImageEffectCache: LayerImageEffectCache = new WeakMap();
+  private readonly overlayImageEffectDiagnostics: LayerImageEffectDiagnostics = {
+    cacheHits: 0,
+    cacheMisses: 0,
+    preprocessFailures: 0,
+    fallbackToOriginal: 0,
+    preprocessedPixels: 0,
+  };
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new CanvasKitStaticPictureCache();
   private readonly textBlobCache = new Map<string, TextBlob>();
@@ -178,6 +186,20 @@ export class CanvasKitLayerRenderer {
 
   setAsyncResourceReadyCallback(callback: (() => void) | null): void {
     this.asyncResourceReadyCallback = callback;
+  }
+
+  getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
+    const resourceDiagnostics = this.resourceCache.getImageEffectDiagnostics();
+    return {
+      cacheHits: resourceDiagnostics.cacheHits + this.overlayImageEffectDiagnostics.cacheHits,
+      cacheMisses: resourceDiagnostics.cacheMisses + this.overlayImageEffectDiagnostics.cacheMisses,
+      preprocessFailures: resourceDiagnostics.preprocessFailures
+        + this.overlayImageEffectDiagnostics.preprocessFailures,
+      fallbackToOriginal: resourceDiagnostics.fallbackToOriginal
+        + this.overlayImageEffectDiagnostics.fallbackToOriginal,
+      preprocessedPixels: resourceDiagnostics.preprocessedPixels
+        + this.overlayImageEffectDiagnostics.preprocessedPixels,
+    };
   }
 
   private renderSurface(surface: Surface, tree: PageLayerTree, scale: number): void {
@@ -1950,7 +1972,12 @@ export class CanvasKitLayerRenderer {
     }
 
     this.withCanvasOverlayTransform(ctx, op.bbox, op.transform, () => {
-      const source = applyLayerImageEffect(image, op.effect, this.overlayImageEffectCache);
+      const source = applyLayerImageEffect(
+        image,
+        op.effect,
+        this.overlayImageEffectCache,
+        this.overlayImageEffectDiagnostics,
+      );
       this.drawDomImage(ctx, source, op.bbox, op.fillMode, op.originalSize, op.crop);
     });
   }

@@ -13,6 +13,13 @@ const EQUATION_BIG_OP_SCALE = 1.5;
 
 export type LayerCanvasImageSource = HTMLImageElement | HTMLCanvasElement;
 export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, HTMLCanvasElement>>;
+export type LayerImageEffectDiagnostics = {
+  cacheHits: number;
+  cacheMisses: number;
+  preprocessFailures: number;
+  fallbackToOriginal: number;
+  preprocessedPixels: number;
+};
 
 const ORDERED_DITHER_8X8 = [
   0, 48, 12, 60, 3, 51, 15, 63,
@@ -99,6 +106,7 @@ export function applyLayerImageEffect(
   image: LayerCanvasImageSource,
   effect: LayerImageOp['effect'] | undefined,
   cache?: LayerImageEffectCache,
+  diagnostics?: LayerImageEffectDiagnostics,
 ): LayerCanvasImageSource {
   if (!effect || effect === 'realPic') {
     return image;
@@ -111,6 +119,10 @@ export function applyLayerImageEffect(
     || width <= 0
     || height <= 0
   ) {
+    if (diagnostics) {
+      diagnostics.preprocessFailures += 1;
+      diagnostics.fallbackToOriginal += 1;
+    }
     return image;
   }
 
@@ -119,7 +131,13 @@ export function applyLayerImageEffect(
   const cachedByEffect = cache?.get(image);
   const cached = cachedByEffect?.get(effect);
   if (cached && cached.width === canvasWidth && cached.height === canvasHeight) {
+    if (diagnostics) {
+      diagnostics.cacheHits += 1;
+    }
     return cached;
+  }
+  if (diagnostics) {
+    diagnostics.cacheMisses += 1;
   }
 
   const canvas = document.createElement('canvas');
@@ -127,6 +145,10 @@ export function applyLayerImageEffect(
   canvas.height = canvasHeight;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) {
+    if (diagnostics) {
+      diagnostics.preprocessFailures += 1;
+      diagnostics.fallbackToOriginal += 1;
+    }
     return image;
   }
 
@@ -135,6 +157,10 @@ export function applyLayerImageEffect(
     ctx.drawImage(image, 0, 0, canvasWidth, canvasHeight);
     pixels = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
   } catch {
+    if (diagnostics) {
+      diagnostics.preprocessFailures += 1;
+      diagnostics.fallbackToOriginal += 1;
+    }
     return image;
   }
 
@@ -156,6 +182,9 @@ export function applyLayerImageEffect(
     data[index + 2] = value;
   }
   ctx.putImageData(pixels, 0, 0);
+  if (diagnostics) {
+    diagnostics.preprocessedPixels += canvasWidth * canvasHeight;
+  }
 
   if (cache) {
     const nextByEffect = cachedByEffect ?? new Map<string, HTMLCanvasElement>();
