@@ -812,7 +812,7 @@ mod tests {
     fn pattern8x8_effect_uses_ordered_dither() {
         let mut source = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
         for pixel in source.pixels_mut() {
-            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(128, 128, 128, 255).unwrap();
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
         }
         let png = source.encode_png().expect("source png");
 
@@ -837,27 +837,38 @@ mod tests {
             .encode(None, EncodedImageFormat::PNG, None)
             .expect("render png");
         let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
-        let mut dark = 0usize;
-        let mut light = 0usize;
-        for pixel in pixmap.pixels() {
-            if pixel.red() < 32 {
-                dark += 1;
-            } else if pixel.red() > 223 {
-                light += 1;
+        let expected = [
+            [255, 0, 255, 0, 255, 0, 255, 0],
+            [0, 255, 0, 255, 0, 255, 0, 255],
+            [255, 0, 255, 0, 255, 0, 255, 0],
+            [0, 255, 0, 255, 0, 255, 0, 255],
+            [255, 0, 255, 0, 255, 0, 255, 0],
+            [0, 255, 0, 255, 0, 255, 0, 255],
+            [255, 0, 255, 0, 255, 0, 255, 0],
+            [0, 255, 0, 255, 0, 255, 0, 255],
+        ];
+        for (y, row) in expected.iter().enumerate() {
+            for (x, expected_value) in row.iter().enumerate() {
+                let pixel = pixmap.pixels()[y * 8 + x];
+                if *expected_value == 0 {
+                    assert!(
+                        pixel.red() < 32 && pixel.green() < 32 && pixel.blue() < 32,
+                        "expected dark Bayer pixel at ({x},{y}), got #{:02x}{:02x}{:02x}",
+                        pixel.red(),
+                        pixel.green(),
+                        pixel.blue()
+                    );
+                } else {
+                    assert!(
+                        pixel.red() > 223 && pixel.green() > 223 && pixel.blue() > 223,
+                        "expected light Bayer pixel at ({x},{y}), got #{:02x}{:02x}{:02x}",
+                        pixel.red(),
+                        pixel.green(),
+                        pixel.blue()
+                    );
+                }
             }
         }
-
-        assert!(dark > 0, "ordered dither should produce dark pixels");
-        assert!(light > 0, "ordered dither should produce light pixels");
-        assert_eq!(
-            dark + light,
-            64,
-            "pattern8x8 should not fall back to intermediate grayscale pixels"
-        );
-        assert!(
-            pixmap.pixels()[0].red() > 223 && pixmap.pixels()[1].red() < 32,
-            "the first Bayer row should alternate around mid-gray"
-        );
     }
 
     #[test]

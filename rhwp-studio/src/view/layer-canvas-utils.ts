@@ -272,7 +272,8 @@ export function applyLayerImageEffect(
       const pixel = index / 4;
       const x = pixel % canvasWidth;
       const y = Math.floor(pixel / canvasWidth);
-      const threshold = Math.round(((ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)] + 0.5) * 255) / 64);
+      const matrix = ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)];
+      const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
       value = luma > threshold ? 255 : 0;
     }
     data[index] = value;

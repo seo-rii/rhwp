@@ -6,9 +6,47 @@ import {
   runTest,
   setTestCase,
 } from './helpers.mjs';
+import { PNG } from 'pngjs';
+
+const ORDERED_DITHER_8X8 = [
+  0, 48, 12, 60, 3, 51, 15, 63,
+  32, 16, 44, 28, 35, 19, 47, 31,
+  8, 56, 4, 52, 11, 59, 7, 55,
+  40, 24, 36, 20, 43, 27, 39, 23,
+  2, 50, 14, 62, 1, 49, 13, 61,
+  34, 18, 46, 30, 33, 17, 45, 29,
+  10, 58, 6, 54, 9, 57, 5, 53,
+  42, 26, 38, 22, 41, 25, 37, 21,
+];
 
 function pngBufferFromDataUrl(dataUrl) {
   return Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
+}
+
+function expectedPattern8x8Value(luma, x, y) {
+  const matrix = ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)];
+  const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
+  return luma > threshold ? 255 : 0;
+}
+
+function countPatternReferenceMismatches(dataUrl, luma) {
+  const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+  let mismatches = 0;
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const expected = expectedPattern8x8Value(luma, x, y);
+      const offset = (y * png.width + x) * 4;
+      if (
+        png.data[offset] !== expected
+        || png.data[offset + 1] !== expected
+        || png.data[offset + 2] !== expected
+        || png.data[offset + 3] !== 255
+      ) {
+        mismatches += 1;
+      }
+    }
+  }
+  return mismatches;
 }
 
 runTest('Renderer lifecycle', async ({ page }) => {
@@ -539,8 +577,120 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `field marker browser parity exact=${fieldMarkerDiff.exactDiffPixels}, tolerant=${fieldMarkerDiff.rawTolerantDiffPixels}, max_channel_delta=${fieldMarkerDiff.maxChannelDelta}`,
   );
 
-  setTestCase('image-effect-crop-preprocess-parity');
+  setTestCase('image-effect-pattern-reference');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const imageEffectReferenceProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 8;
+    sourceCanvas.height = 8;
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) {
+      return { error: 'source canvas unavailable' };
+    }
+    sourceCtx.fillStyle = 'rgb(126, 126, 126)';
+    sourceCtx.fillRect(0, 0, 8, 8);
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const tree = {
+      pageWidth: 8,
+      pageHeight: 8,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 992,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1,
+        bounds: { x: 0, y: 0, width: 8, height: 8 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'image',
+          bbox: { x: 0, y: 0, width: 8, height: 8 },
+          base64,
+          fillMode: 'fitToSize',
+          effect: 'pattern8x8',
+          originalSize: { width: 8, height: 8 },
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+        }],
+      },
+    };
+
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 8;
+      canvas.height = 8;
+      document.body.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        renderer.renderPage(tree, canvas, 1);
+        await nextFrame();
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let hasInk = false;
+        for (let index = 3; index < pixels.length; index += 4) {
+          if (pixels[index] > 0) {
+            hasInk = true;
+            break;
+          }
+        }
+        if (hasInk) {
+          break;
+        }
+      }
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+
+  assert(!imageEffectReferenceProbe.error, imageEffectReferenceProbe.error || 'image effect reference probe available');
+  const imageEffectReferenceDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(imageEffectReferenceProbe.canvas2d),
+    pngBufferFromDataUrl(imageEffectReferenceProbe.canvaskit),
+    {
+      diffName: 'image-effect-pattern-reference-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    imageEffectReferenceDiff.passed,
+    `image effect reference parity exact=${imageEffectReferenceDiff.exactDiffPixels}, tolerant=${imageEffectReferenceDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectReferenceDiff.maxChannelDelta}`,
+  );
+  assert(
+    countPatternReferenceMismatches(imageEffectReferenceProbe.canvas2d, 126) === 0
+      && countPatternReferenceMismatches(imageEffectReferenceProbe.canvaskit, 126) === 0,
+    'image effect Pattern8x8 reference table matches browser renderers',
+  );
+
+  setTestCase('image-effect-crop-preprocess-parity');
   const imageEffectCropProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
