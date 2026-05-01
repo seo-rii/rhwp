@@ -11,8 +11,9 @@ import type {
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
 
-export type LayerCanvasImageSource = HTMLImageElement | HTMLCanvasElement;
-export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, HTMLCanvasElement>>;
+export type LayerCanvasImageEffectSource = HTMLCanvasElement | OffscreenCanvas;
+export type LayerCanvasImageSource = HTMLImageElement | LayerCanvasImageEffectSource;
+export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, LayerCanvasImageEffectSource>>;
 export type LayerImageEffectSourceRect = { x: number; y: number; width: number; height: number };
 export type LayerImageEffectDiagnostics = {
   cacheHits: number;
@@ -24,6 +25,8 @@ export type LayerImageEffectDiagnostics = {
   maxPreprocessedBytes: number;
   preprocessTimeMs: number;
   maxPreprocessTimeMs: number;
+  heapDeltaBytes: number;
+  maxHeapDeltaBytes: number;
 };
 
 const ORDERED_DITHER_8X8 = [
@@ -225,8 +228,14 @@ export function applyLayerImageEffect(
     diagnostics.cacheMisses += 1;
   }
   const preprocessStartMs = typeof performance !== 'undefined' ? performance.now() : 0;
+  const performanceWithMemory = typeof performance !== 'undefined'
+    ? performance as Performance & { memory?: { usedJSHeapSize?: number } }
+    : null;
+  const heapBeforeBytes = performanceWithMemory?.memory?.usedJSHeapSize;
 
-  const canvas = document.createElement('canvas');
+  const canvas = typeof OffscreenCanvas !== 'undefined'
+    ? new OffscreenCanvas(canvasWidth, canvasHeight)
+    : document.createElement('canvas');
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -278,10 +287,16 @@ export function applyLayerImageEffect(
     diagnostics.maxPreprocessedBytes = Math.max(diagnostics.maxPreprocessedBytes, processedBytes);
     diagnostics.preprocessTimeMs += elapsedMs;
     diagnostics.maxPreprocessTimeMs = Math.max(diagnostics.maxPreprocessTimeMs, elapsedMs);
+    const heapAfterBytes = performanceWithMemory?.memory?.usedJSHeapSize;
+    if (Number.isFinite(heapBeforeBytes) && Number.isFinite(heapAfterBytes)) {
+      const heapDeltaBytes = Math.max(0, (heapAfterBytes ?? 0) - (heapBeforeBytes ?? 0));
+      diagnostics.heapDeltaBytes += heapDeltaBytes;
+      diagnostics.maxHeapDeltaBytes = Math.max(diagnostics.maxHeapDeltaBytes, heapDeltaBytes);
+    }
   }
 
   if (cache) {
-    const nextByEffect = cachedByEffect ?? new Map<string, HTMLCanvasElement>();
+    const nextByEffect = cachedByEffect ?? new Map<string, LayerCanvasImageEffectSource>();
     nextByEffect.set(cacheKey, canvas);
     if (!cachedByEffect) {
       cache.set(image, nextByEffect);

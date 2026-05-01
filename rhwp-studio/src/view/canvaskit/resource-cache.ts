@@ -31,6 +31,8 @@ export class CanvasKitResourceCache {
     maxPreprocessedBytes: 0,
     preprocessTimeMs: 0,
     maxPreprocessTimeMs: 0,
+    heapDeltaBytes: 0,
+    maxHeapDeltaBytes: 0,
   };
 
   private resources: PageLayerTree['resources'] | null = null;
