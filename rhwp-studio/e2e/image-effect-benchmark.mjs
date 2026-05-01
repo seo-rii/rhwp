@@ -23,6 +23,15 @@ const iterations = Math.max(
 );
 const outputPath = process.env.RHWP_IMAGE_EFFECT_BENCH_OUTPUT
   ?? '../output/e2e/image-effect-benchmark.json';
+const workerRecommendationThresholdMs = Math.max(
+  0,
+  Number.parseFloat(process.env.RHWP_IMAGE_EFFECT_WORKER_THRESHOLD_MS ?? '200') || 200,
+);
+const workerRecommendationThresholdBytes = Math.max(
+  0,
+  Number.parseInt(process.env.RHWP_IMAGE_EFFECT_WORKER_THRESHOLD_BYTES ?? String(16 * 1024 * 1024), 10)
+    || 16 * 1024 * 1024,
+);
 
 function roundMetric(value) {
   return typeof value === 'number' && Number.isFinite(value)
@@ -31,18 +40,29 @@ function roundMetric(value) {
 }
 
 function summarizeResult(result) {
+  const workerRecommended = result.elapsedMs >= workerRecommendationThresholdMs
+    || result.diagnostics.maxPreprocessedBytes >= workerRecommendationThresholdBytes;
   return {
     ...result,
     setupMs: roundMetric(result.setupMs),
     elapsedMs: roundMetric(result.elapsedMs),
     preprocessTimeMs: roundMetric(result.diagnostics.preprocessTimeMs),
     maxPreprocessTimeMs: roundMetric(result.diagnostics.maxPreprocessTimeMs),
+    workerRecommended,
+    workerRecommendationReasons: [
+      result.elapsedMs >= workerRecommendationThresholdMs ? 'elapsed-ms' : null,
+      result.diagnostics.maxPreprocessedBytes >= workerRecommendationThresholdBytes ? 'preprocessed-bytes' : null,
+    ].filter(Boolean),
   };
 }
 
 console.log('=== Image Effect Preprocessing Benchmark ===');
 console.log(`  iterations=${iterations}`);
 console.log(`  cases=${DEFAULT_CASES.map((caseInfo) => caseInfo.name).join(', ')}`);
+console.log(
+  `  worker-thresholds=${workerRecommendationThresholdMs}ms, `
+  + `${workerRecommendationThresholdBytes} bytes`,
+);
 
 const browser = await launchBrowser();
 const page = await createPage(browser, 1280, 900);
@@ -166,6 +186,8 @@ try {
     userAgent: benchmark.userAgent,
     offscreenCanvasAvailable: benchmark.offscreenCanvasAvailable,
     performanceMemoryAvailable: benchmark.performanceMemoryAvailable,
+    workerRecommendationThresholdMs,
+    workerRecommendationThresholdBytes,
     results: benchmark.results.map(summarizeResult),
   };
 
@@ -180,7 +202,8 @@ try {
       + `pixels=${result.diagnostics.preprocessedPixels}, `
       + `bytes=${result.diagnostics.preprocessedBytes}, `
       + `offscreen=${result.diagnostics.offscreenCanvasPreprocesses}, `
-      + `html=${result.diagnostics.htmlCanvasPreprocesses}`,
+      + `html=${result.diagnostics.htmlCanvasPreprocesses}, `
+      + `workerRecommended=${result.workerRecommended}`,
     );
   }
   console.log(`  output=${outputPath}`);
