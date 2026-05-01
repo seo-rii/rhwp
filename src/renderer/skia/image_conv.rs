@@ -694,6 +694,35 @@ mod tests {
     use super::*;
     use skia_safe::{surfaces, Color, EncodedImageFormat};
 
+    fn pattern8x8_reference_fixture() -> (u8, [[u8; 8]; 8]) {
+        let raw = include_str!("../../../tests/fixtures/image_effect_pattern8x8_luma126.txt");
+        let mut luma = None;
+        let mut rows = [[0u8; 8]; 8];
+        let mut row_count = 0usize;
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if let Some(comment) = trimmed.strip_prefix('#') {
+                if let Some(value) = comment.trim().strip_prefix("luma=") {
+                    luma = value.parse::<u8>().ok();
+                }
+                continue;
+            }
+            assert!(row_count < 8, "too many Pattern8x8 reference rows");
+            let values: Vec<u8> = trimmed
+                .split_whitespace()
+                .map(|value| value.parse::<u8>().expect("Pattern8x8 reference value"))
+                .collect();
+            assert_eq!(values.len(), 8, "Pattern8x8 reference row width");
+            rows[row_count].copy_from_slice(&values);
+            row_count += 1;
+        }
+        assert_eq!(row_count, 8, "Pattern8x8 reference row count");
+        (luma.expect("Pattern8x8 reference luma"), rows)
+    }
+
     fn red_top_blue_bottom_png() -> Vec<u8> {
         let mut source = tiny_skia::Pixmap::new(2, 2).expect("source pixmap");
         source.pixels_mut()[0] =
@@ -810,9 +839,16 @@ mod tests {
 
     #[test]
     fn pattern8x8_effect_uses_ordered_dither() {
+        let (fixture_luma, expected) = pattern8x8_reference_fixture();
         let mut source = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
         for pixel in source.pixels_mut() {
-            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(
+                fixture_luma,
+                fixture_luma,
+                fixture_luma,
+                255,
+            )
+            .unwrap();
         }
         let png = source.encode_png().expect("source png");
 
@@ -837,16 +873,6 @@ mod tests {
             .encode(None, EncodedImageFormat::PNG, None)
             .expect("render png");
         let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
-        let expected = [
-            [255, 0, 255, 0, 255, 0, 255, 0],
-            [0, 255, 0, 255, 0, 255, 0, 255],
-            [255, 0, 255, 0, 255, 0, 255, 0],
-            [0, 255, 0, 255, 0, 255, 0, 255],
-            [255, 0, 255, 0, 255, 0, 255, 0],
-            [0, 255, 0, 255, 0, 255, 0, 255],
-            [255, 0, 255, 0, 255, 0, 255, 0],
-            [0, 255, 0, 255, 0, 255, 0, 255],
-        ];
         for (y, row) in expected.iter().enumerate() {
             for (x, expected_value) in row.iter().enumerate() {
                 let pixel = pixmap.pixels()[y * 8 + x];

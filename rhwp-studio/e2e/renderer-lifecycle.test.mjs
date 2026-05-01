@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import {
   assert,
   comparePngBuffers,
@@ -8,6 +12,9 @@ import {
 } from './helpers.mjs';
 import { PNG } from 'pngjs';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const RHWP_ROOT = path.resolve(__dirname, '..', '..');
+const PATTERN_REFERENCE_FIXTURE = loadPatternReferenceFixture();
 const ORDERED_DITHER_8X8 = [
   0, 48, 12, 60, 3, 51, 15, 63,
   32, 16, 44, 28, 35, 19, 47, 31,
@@ -23,18 +30,45 @@ function pngBufferFromDataUrl(dataUrl) {
   return Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
 }
 
+function loadPatternReferenceFixture() {
+  const raw = fs.readFileSync(
+    path.join(RHWP_ROOT, 'tests', 'fixtures', 'image_effect_pattern8x8_luma126.txt'),
+    'utf8',
+  );
+  const rows = [];
+  let luma = null;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (trimmed.startsWith('#')) {
+      const match = trimmed.match(/luma=(\d+)/);
+      if (match) {
+        luma = Number.parseInt(match[1], 10);
+      }
+      continue;
+    }
+    rows.push(trimmed.split(/\s+/).map((value) => Number.parseInt(value, 10)));
+  }
+  if (!Number.isInteger(luma) || rows.length !== 8 || rows.some((row) => row.length !== 8)) {
+    throw new Error('invalid Pattern8x8 reference fixture');
+  }
+  return { luma, rows };
+}
+
 function expectedPattern8x8Value(luma, x, y) {
   const matrix = ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)];
   const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
   return luma > threshold ? 255 : 0;
 }
 
-function countPatternReferenceMismatches(dataUrl, luma) {
+function countPatternReferenceMismatches(dataUrl, reference) {
   const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
   let mismatches = 0;
   for (let y = 0; y < png.height; y += 1) {
     for (let x = 0; x < png.width; x += 1) {
-      const expected = expectedPattern8x8Value(luma, x, y);
+      const expected = reference.rows[y]?.[x] ?? expectedPattern8x8Value(reference.luma, x, y);
       const offset = (y * png.width + x) * 4;
       if (
         png.data[offset] !== expected
@@ -579,7 +613,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
   setTestCase('image-effect-pattern-reference');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
-  const imageEffectReferenceProbe = await page.evaluate(async () => {
+  const imageEffectReferenceProbe = await page.evaluate(async ({ luma }) => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
@@ -594,7 +628,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     if (!sourceCtx) {
       return { error: 'source canvas unavailable' };
     }
-    sourceCtx.fillStyle = 'rgb(126, 126, 126)';
+    sourceCtx.fillStyle = `rgb(${luma}, ${luma}, ${luma})`;
     sourceCtx.fillRect(0, 0, 8, 8);
     const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
     const tree = {
@@ -668,7 +702,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       canvas2d: await render(canvas2dRenderer),
       canvaskit: await render(canvaskitRenderer),
     };
-  });
+  }, { luma: PATTERN_REFERENCE_FIXTURE.luma });
 
   assert(!imageEffectReferenceProbe.error, imageEffectReferenceProbe.error || 'image effect reference probe available');
   const imageEffectReferenceDiff = await comparePngBuffers(
@@ -685,8 +719,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `image effect reference parity exact=${imageEffectReferenceDiff.exactDiffPixels}, tolerant=${imageEffectReferenceDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectReferenceDiff.maxChannelDelta}`,
   );
   assert(
-    countPatternReferenceMismatches(imageEffectReferenceProbe.canvas2d, 126) === 0
-      && countPatternReferenceMismatches(imageEffectReferenceProbe.canvaskit, 126) === 0,
+    countPatternReferenceMismatches(imageEffectReferenceProbe.canvas2d, PATTERN_REFERENCE_FIXTURE) === 0
+      && countPatternReferenceMismatches(imageEffectReferenceProbe.canvaskit, PATTERN_REFERENCE_FIXTURE) === 0,
     'image effect Pattern8x8 reference table matches browser renderers',
   );
 
