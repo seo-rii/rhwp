@@ -2722,7 +2722,7 @@ export class CanvasKitLayerRenderer {
         sampledImage,
         this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
         this.canvasKit.XYWHRect(dstX, dstY, dstW, dstH),
-        this.canvasKit.FilterMode.Linear,
+        usesImageEffect ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
         useMipmaps ? this.canvasKit.MipmapMode.Linear : this.canvasKit.MipmapMode.None,
         paint,
       );

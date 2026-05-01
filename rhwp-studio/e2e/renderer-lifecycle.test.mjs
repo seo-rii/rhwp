@@ -565,8 +565,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
     const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
     const tree = {
-      pageWidth: 8,
-      pageHeight: 8,
+      pageWidth: 16,
+      pageHeight: 16,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: false,
@@ -587,11 +587,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1,
-        bounds: { x: 0, y: 0, width: 8, height: 8 },
+        bounds: { x: 0, y: 0, width: 16, height: 16 },
         cacheHint: 'none',
         ops: [{
           type: 'image',
-          bbox: { x: 0, y: 0, width: 8, height: 8 },
+          bbox: { x: 0, y: 0, width: 16, height: 16 },
           base64,
           fillMode: 'fitToSize',
           effect: 'pattern8x8',
@@ -605,8 +605,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const renderWithDiagnostics = async (renderer) => {
       const canvas = document.createElement('canvas');
-      canvas.width = 8;
-      canvas.height = 8;
+      canvas.width = 16;
+      canvas.height = 16;
       document.body.appendChild(canvas);
       const before = renderer.getImageEffectDiagnostics();
       let after = before;
