@@ -27,6 +27,8 @@ export type LayerImageEffectDiagnostics = {
   maxPreprocessTimeMs: number;
   heapDeltaBytes: number;
   maxHeapDeltaBytes: number;
+  offscreenCanvasPreprocesses: number;
+  htmlCanvasPreprocesses: number;
 };
 
 const ORDERED_DITHER_8X8 = [
@@ -233,7 +235,8 @@ export function applyLayerImageEffect(
     : null;
   const heapBeforeBytes = performanceWithMemory?.memory?.usedJSHeapSize;
 
-  const canvas = typeof OffscreenCanvas !== 'undefined'
+  const usesOffscreenCanvas = typeof OffscreenCanvas !== 'undefined';
+  const canvas = usesOffscreenCanvas
     ? new OffscreenCanvas(canvasWidth, canvasHeight)
     : document.createElement('canvas');
   canvas.width = canvasWidth;
@@ -287,6 +290,11 @@ export function applyLayerImageEffect(
     diagnostics.maxPreprocessedBytes = Math.max(diagnostics.maxPreprocessedBytes, processedBytes);
     diagnostics.preprocessTimeMs += elapsedMs;
     diagnostics.maxPreprocessTimeMs = Math.max(diagnostics.maxPreprocessTimeMs, elapsedMs);
+    if (usesOffscreenCanvas) {
+      diagnostics.offscreenCanvasPreprocesses += 1;
+    } else {
+      diagnostics.htmlCanvasPreprocesses += 1;
+    }
     const heapAfterBytes = performanceWithMemory?.memory?.usedJSHeapSize;
     if (Number.isFinite(heapBeforeBytes) && Number.isFinite(heapAfterBytes)) {
       const heapDeltaBytes = Math.max(0, (heapAfterBytes ?? 0) - (heapBeforeBytes ?? 0));

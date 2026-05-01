@@ -69,6 +69,8 @@ export class Canvas2DLayerRenderer {
     maxPreprocessTimeMs: 0,
     heapDeltaBytes: 0,
     maxHeapDeltaBytes: 0,
+    offscreenCanvasPreprocesses: 0,
+    htmlCanvasPreprocesses: 0,
   };
   private readonly patternCache = new Map<string, CanvasPattern | null>();
   private lastRenderedTree: PageLayerTree | null = null;

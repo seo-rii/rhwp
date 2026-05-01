@@ -634,6 +634,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
           maxPreprocessTimeMs: after.maxPreprocessTimeMs,
           heapDeltaBytes: after.heapDeltaBytes - before.heapDeltaBytes,
           maxHeapDeltaBytes: after.maxHeapDeltaBytes,
+          offscreenCanvasPreprocesses: after.offscreenCanvasPreprocesses - before.offscreenCanvasPreprocesses,
+          htmlCanvasPreprocesses: after.htmlCanvasPreprocesses - before.htmlCanvasPreprocesses,
         },
       };
     };
@@ -677,6 +679,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && imageEffectCropProbe.canvas2d.diagnostics.maxHeapDeltaBytes >= 0
       && imageEffectCropProbe.canvaskit.diagnostics.maxHeapDeltaBytes >= 0,
     `image effect heap diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  assert(
+    imageEffectCropProbe.canvas2d.diagnostics.offscreenCanvasPreprocesses
+      + imageEffectCropProbe.canvas2d.diagnostics.htmlCanvasPreprocesses === 1
+      && imageEffectCropProbe.canvaskit.diagnostics.offscreenCanvasPreprocesses
+      + imageEffectCropProbe.canvaskit.diagnostics.htmlCanvasPreprocesses === 1,
+    `image effect preprocessing canvas backend diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
   );
   const imageEffectCropDiff = await comparePngBuffers(
     pngBufferFromDataUrl(imageEffectCropProbe.canvas2d.png),

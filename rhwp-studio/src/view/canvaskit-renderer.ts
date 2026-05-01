@@ -97,6 +97,8 @@ export class CanvasKitLayerRenderer {
     maxPreprocessTimeMs: 0,
     heapDeltaBytes: 0,
     maxHeapDeltaBytes: 0,
+    offscreenCanvasPreprocesses: 0,
+    htmlCanvasPreprocesses: 0,
   };
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new CanvasKitStaticPictureCache();
@@ -225,6 +227,10 @@ export class CanvasKitLayerRenderer {
         resourceDiagnostics.maxHeapDeltaBytes,
         this.overlayImageEffectDiagnostics.maxHeapDeltaBytes,
       ),
+      offscreenCanvasPreprocesses: resourceDiagnostics.offscreenCanvasPreprocesses
+        + this.overlayImageEffectDiagnostics.offscreenCanvasPreprocesses,
+      htmlCanvasPreprocesses: resourceDiagnostics.htmlCanvasPreprocesses
+        + this.overlayImageEffectDiagnostics.htmlCanvasPreprocesses,
     };
   }
 
