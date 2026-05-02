@@ -149,14 +149,28 @@ export class Canvas2DLayerRenderer {
       this.renderNode(ctx, node.child);
       return;
     }
-    this.currentClipStack.push({
+    const clip = {
       bounds: node.clip,
       kind: node.clipKind,
       rightOverflowSlop: node.clipPolicy?.rightOverflowSlop ?? (node.clipKind === 'body' || node.clipKind === 'tableCell' ? 4 : 0),
       allowHorizontalOverflowControls: node.clipPolicy?.allowHorizontalOverflowControls ?? (node.clipKind === 'body'),
-    });
-    this.renderNode(ctx, node.child);
-    this.currentClipStack.pop();
+    };
+    this.currentClipStack.push(clip);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(
+      node.clip.x,
+      node.clip.y,
+      node.clip.width + clip.rightOverflowSlop,
+      node.clip.height,
+    );
+    ctx.clip();
+    try {
+      this.renderNode(ctx, node.child);
+    } finally {
+      ctx.restore();
+      this.currentClipStack.pop();
+    }
   }
 
   private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {

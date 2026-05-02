@@ -217,6 +217,8 @@ export function applyLayerImageEffect(
 
   const canvasWidth = Math.max(1, Math.round(sw));
   const canvasHeight = Math.max(1, Math.round(sh));
+  const patternPhaseX = Math.floor(sx);
+  const patternPhaseY = Math.floor(sy);
   const cacheKey = imageEffectCacheKey(effect, sourceRect);
   const cachedByEffect = cache?.get(image);
   const cached = cachedByEffect?.get(cacheKey);
@@ -272,7 +274,7 @@ export function applyLayerImageEffect(
       const pixel = index / 4;
       const x = pixel % canvasWidth;
       const y = Math.floor(pixel / canvasWidth);
-      const matrix = ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)];
+      const matrix = ORDERED_DITHER_8X8[((y + patternPhaseY) & 7) * 8 + ((x + patternPhaseX) & 7)];
       const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
       value = luma > threshold ? 255 : 0;
     }

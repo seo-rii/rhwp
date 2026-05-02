@@ -63,12 +63,14 @@ function expectedPattern8x8Value(luma, x, y) {
   return luma > threshold ? 255 : 0;
 }
 
-function countPatternReferenceMismatches(dataUrl, reference) {
+function countPatternReferenceMismatches(dataUrl, reference, phaseX = 0, phaseY = 0) {
   const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
   let mismatches = 0;
   for (let y = 0; y < png.height; y += 1) {
     for (let x = 0; x < png.width; x += 1) {
-      const expected = reference.rows[y]?.[x] ?? expectedPattern8x8Value(reference.luma, x, y);
+      const expected = phaseX === 0 && phaseY === 0
+        ? reference.rows[y]?.[x] ?? expectedPattern8x8Value(reference.luma, x, y)
+        : expectedPattern8x8Value(reference.luma, x + phaseX, y + phaseY);
       const offset = (y * png.width + x) * 4;
       if (
         png.data[offset] !== expected
@@ -81,6 +83,25 @@ function countPatternReferenceMismatches(dataUrl, reference) {
     }
   }
   return mismatches;
+}
+
+function pixelAt(dataUrl, x, y) {
+  const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+  const offset = (y * png.width + x) * 4;
+  return {
+    red: png.data[offset],
+    green: png.data[offset + 1],
+    blue: png.data[offset + 2],
+    alpha: png.data[offset + 3],
+  };
+}
+
+function isOpaqueRed(pixel) {
+  return pixel.red > 220 && pixel.green < 40 && pixel.blue < 40 && pixel.alpha > 220;
+}
+
+function isTransparent(pixel) {
+  return pixel.alpha < 8;
 }
 
 runTest('Renderer lifecycle', async ({ page }) => {
@@ -611,6 +632,132 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `field marker browser parity exact=${fieldMarkerDiff.exactDiffPixels}, tolerant=${fieldMarkerDiff.rawTolerantDiffPixels}, max_channel_delta=${fieldMarkerDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-clip-scope-parity');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const clipScopeProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+
+    const makeTree = (clipEnabled) => ({
+      pageWidth: 24,
+      pageHeight: 12,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: clipEnabled ? 996 : 997,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'clipRect',
+        sourceNodeId: 1,
+        bounds: { x: 0, y: 0, width: 24, height: 12 },
+        clip: { x: 0, y: 0, width: 8, height: 8 },
+        clipKind: 'generic',
+        clipPolicy: {
+          rightOverflowSlop: 0,
+          allowHorizontalOverflowControls: false,
+        },
+        child: {
+          kind: 'leaf',
+          sourceNodeId: 2,
+          bounds: { x: 0, y: 0, width: 24, height: 12 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'rectangle',
+            bbox: { x: 0, y: 0, width: 24, height: 12 },
+            cornerRadius: 0,
+            style: {
+              fillColor: '#ff0000',
+              strokeColor: null,
+              strokeWidth: 0,
+              strokeDash: 'solid',
+              opacity: 1,
+            },
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          }],
+        },
+      },
+    });
+
+    const render = (renderer, tree) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 24;
+      canvas.height = 12;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+
+    const enabledTree = makeTree(true);
+    const disabledTree = makeTree(false);
+    return {
+      enabled: {
+        canvas2d: render(canvas2dRenderer, enabledTree),
+        canvaskit: render(canvaskitRenderer, enabledTree),
+      },
+      disabled: {
+        canvas2d: render(canvas2dRenderer, disabledTree),
+        canvaskit: render(canvaskitRenderer, disabledTree),
+      },
+    };
+  });
+
+  assert(!clipScopeProbe.error, clipScopeProbe.error || 'clip scope probe available');
+  const clipEnabledDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.enabled.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.enabled.canvaskit),
+    {
+      diffName: 'canvas-layer-clip-enabled-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    clipEnabledDiff.passed,
+    `clip enabled parity exact=${clipEnabledDiff.exactDiffPixels}, tolerant=${clipEnabledDiff.rawTolerantDiffPixels}, max_channel_delta=${clipEnabledDiff.maxChannelDelta}`,
+  );
+  const clipDisabledDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.disabled.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.disabled.canvaskit),
+    {
+      diffName: 'canvas-layer-clip-disabled-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    clipDisabledDiff.passed,
+    `clip disabled parity exact=${clipDisabledDiff.exactDiffPixels}, tolerant=${clipDisabledDiff.rawTolerantDiffPixels}, max_channel_delta=${clipDisabledDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.enabled.canvas2d, 4, 4))
+      && isTransparent(pixelAt(clipScopeProbe.enabled.canvas2d, 10, 4))
+      && isTransparent(pixelAt(clipScopeProbe.enabled.canvas2d, 4, 10)),
+    'Canvas2D clip enabled constrains child drawing to the ClipRect',
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.disabled.canvas2d, 10, 4))
+      && isOpaqueRed(pixelAt(clipScopeProbe.disabled.canvas2d, 4, 10)),
+    'Canvas2D clip disabled replays the unclipped child',
+  );
+
   setTestCase('image-effect-pattern-reference');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const imageEffectReferenceProbe = await page.evaluate(async ({ luma }) => {
@@ -722,6 +869,65 @@ runTest('Renderer lifecycle', async ({ page }) => {
     countPatternReferenceMismatches(imageEffectReferenceProbe.canvas2d, PATTERN_REFERENCE_FIXTURE) === 0
       && countPatternReferenceMismatches(imageEffectReferenceProbe.canvaskit, PATTERN_REFERENCE_FIXTURE) === 0,
     'image effect Pattern8x8 reference table matches browser renderers',
+  );
+
+  setTestCase('image-effect-pattern-crop-phase');
+  const imageEffectCropPhaseProbe = await page.evaluate(async ({ luma }) => {
+    const { applyLayerImageEffect } = await import('/src/view/layer-canvas-utils.ts');
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 16;
+    sourceCanvas.height = 16;
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) {
+      return { error: 'source canvas unavailable' };
+    }
+    sourceCtx.fillStyle = `rgb(${luma}, ${luma}, ${luma})`;
+    sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    const diagnostics = {
+      cacheHits: 0,
+      cacheMisses: 0,
+      preprocessFailures: 0,
+      fallbackToOriginal: 0,
+      preprocessedPixels: 0,
+      preprocessedBytes: 0,
+      maxPreprocessedBytes: 0,
+      preprocessTimeMs: 0,
+      maxPreprocessTimeMs: 0,
+      heapDeltaBytes: 0,
+      maxHeapDeltaBytes: 0,
+      offscreenCanvasPreprocesses: 0,
+      htmlCanvasPreprocesses: 0,
+    };
+    const output = applyLayerImageEffect(
+      sourceCanvas,
+      'pattern8x8',
+      new WeakMap(),
+      diagnostics,
+      { x: 3, y: 5, width: 8, height: 8 },
+    );
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return { error: 'target canvas unavailable' };
+    }
+    ctx.drawImage(output, 0, 0);
+    return {
+      png: canvas.toDataURL('image/png'),
+      diagnostics,
+    };
+  }, { luma: PATTERN_REFERENCE_FIXTURE.luma });
+
+  assert(!imageEffectCropPhaseProbe.error, imageEffectCropPhaseProbe.error || 'image effect crop phase probe available');
+  assert(
+    imageEffectCropPhaseProbe.diagnostics.preprocessedPixels === 64
+      && imageEffectCropPhaseProbe.diagnostics.preprocessFailures === 0,
+    `image effect crop phase diagnostics=${JSON.stringify(imageEffectCropPhaseProbe.diagnostics)}`,
+  );
+  assert(
+    countPatternReferenceMismatches(imageEffectCropPhaseProbe.png, PATTERN_REFERENCE_FIXTURE, 3, 5) === 0,
+    'Pattern8x8 crop preprocessing preserves full-image Bayer phase',
   );
 
   setTestCase('image-effect-crop-preprocess-parity');

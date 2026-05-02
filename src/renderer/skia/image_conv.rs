@@ -170,6 +170,13 @@ fn draw_decoded_image_impl(
     } else {
         effect
     };
+    let sampling = if preprocessed_image.is_some()
+        && matches!(effect, ImageEffect::BlackWhite | ImageEffect::Pattern8x8)
+    {
+        ImageSampling::nearest()
+    } else {
+        sampling
+    };
     let dst = Rect::from_xywh(x, y, width, height);
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
@@ -894,6 +901,108 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn pattern8x8_effect_preserves_full_image_phase_for_crop_offsets() {
+        let (fixture_luma, _) = pattern8x8_reference_fixture();
+        let mut source = tiny_skia::Pixmap::new(16, 16).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(
+                fixture_luma,
+                fixture_luma,
+                fixture_luma,
+                255,
+            )
+            .unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let image = decode_image_bytes(&png).expect("decode image");
+        let dithered = pattern8x8_dither_image(&image).expect("dithered image");
+        let encoded = dithered
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(encoded.as_bytes()).expect("decode render");
+
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let source_x = x + 3;
+                let source_y = y + 5;
+                let expected = if fixture_luma > ordered_dither_8x8_threshold(source_x, source_y) {
+                    255
+                } else {
+                    0
+                };
+                let pixel = pixmap.pixels()[source_y * 16 + source_x];
+                if expected == 0 {
+                    assert!(
+                        pixel.red() < 32 && pixel.green() < 32 && pixel.blue() < 32,
+                        "expected dark Bayer crop-phase pixel at ({source_x},{source_y}), got #{:02x}{:02x}{:02x}",
+                        pixel.red(),
+                        pixel.green(),
+                        pixel.blue()
+                    );
+                } else {
+                    assert!(
+                        pixel.red() > 223 && pixel.green() > 223 && pixel.blue() > 223,
+                        "expected light Bayer crop-phase pixel at ({source_x},{source_y}), got #{:02x}{:02x}{:02x}",
+                        pixel.red(),
+                        pixel.green(),
+                        pixel.blue()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn binary_image_effect_uses_nearest_sampling_when_scaled() {
+        let (fixture_luma, _) = pattern8x8_reference_fixture();
+        let mut source = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(
+                fixture_luma,
+                fixture_luma,
+                fixture_luma,
+                255,
+            )
+            .unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((16, 16)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            16.0,
+            16.0,
+            Some(ImageFillMode::FitToSize),
+            Some((8.0, 8.0)),
+            None,
+            ImageEffect::Pattern8x8,
+            ImageSampling::linear(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+
+        for (index, pixel) in pixmap.pixels().iter().enumerate() {
+            assert!(
+                (pixel.red() < 32 || pixel.red() > 223)
+                    && (pixel.green() < 32 || pixel.green() > 223)
+                    && (pixel.blue() < 32 || pixel.blue() > 223),
+                "binary Pattern8x8 scaled pixel should remain binary at index {index}, got #{:02x}{:02x}{:02x}",
+                pixel.red(),
+                pixel.green(),
+                pixel.blue()
+            );
         }
     }
 
