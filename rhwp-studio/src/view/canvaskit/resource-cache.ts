@@ -7,6 +7,7 @@ import {
   encodeBase64,
   inferImageMime,
   rasterizePatternTileToPngBytes,
+  resetLayerImageEffectDiagnostics,
   type LayerImageEffectDiagnostics,
   type LayerImageEffectCache,
   type LayerImageEffectSourceRect,
@@ -156,6 +157,10 @@ export class CanvasKitResourceCache {
 
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
     return { ...this.imageEffectDiagnostics };
+  }
+
+  resetImageEffectDiagnostics(): void {
+    resetLayerImageEffectDiagnostics(this.imageEffectDiagnostics);
   }
 
   domImage(resourceId?: number, base64?: string): HTMLImageElement | null {

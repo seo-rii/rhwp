@@ -1032,7 +1032,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
     const canvas2d = await renderWithDiagnostics(canvas2dRenderer);
     const canvaskit = await renderWithDiagnostics(canvaskitRenderer);
-    return { canvas2d, canvaskit };
+    canvas2dRenderer.resetImageEffectDiagnostics();
+    canvaskitRenderer.resetImageEffectDiagnostics();
+    return {
+      canvas2d,
+      canvaskit,
+      afterReset: {
+        canvas2d: canvas2dRenderer.getImageEffectDiagnostics(),
+        canvaskit: canvaskitRenderer.getImageEffectDiagnostics(),
+      },
+    };
   });
 
   assert(!imageEffectCropProbe.error, imageEffectCropProbe.error || 'image effect crop probe available');
@@ -1076,6 +1085,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && imageEffectCropProbe.canvaskit.diagnostics.offscreenCanvasPreprocesses
       + imageEffectCropProbe.canvaskit.diagnostics.htmlCanvasPreprocesses === 1,
     `image effect preprocessing canvas backend diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  assert(
+    imageEffectCropProbe.afterReset.canvas2d.preprocessedPixels === 0
+      && imageEffectCropProbe.afterReset.canvas2d.preprocessTimeMs === 0
+      && imageEffectCropProbe.afterReset.canvaskit.preprocessedPixels === 0
+      && imageEffectCropProbe.afterReset.canvaskit.preprocessTimeMs === 0,
+    `image effect diagnostics reset=${JSON.stringify(imageEffectCropProbe.afterReset)}`,
   );
   const imageEffectCropDiff = await comparePngBuffers(
     pngBufferFromDataUrl(imageEffectCropProbe.canvas2d.png),

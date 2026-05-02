@@ -42,6 +42,7 @@ import {
   drawCanvas2DCharOverlap,
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
+  resetLayerImageEffectDiagnostics,
   resolveLayerImageCropSource,
   type LayerCanvasImageSource,
   type LayerImageEffectDiagnostics,
@@ -232,6 +233,11 @@ export class CanvasKitLayerRenderer {
       htmlCanvasPreprocesses: resourceDiagnostics.htmlCanvasPreprocesses
         + this.overlayImageEffectDiagnostics.htmlCanvasPreprocesses,
     };
+  }
+
+  resetImageEffectDiagnostics(): void {
+    this.resourceCache.resetImageEffectDiagnostics();
+    resetLayerImageEffectDiagnostics(this.overlayImageEffectDiagnostics);
   }
 
   private renderSurface(surface: Surface, tree: PageLayerTree, scale: number): void {

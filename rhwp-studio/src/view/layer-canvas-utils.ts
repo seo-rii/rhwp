@@ -31,6 +31,22 @@ export type LayerImageEffectDiagnostics = {
   htmlCanvasPreprocesses: number;
 };
 
+export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDiagnostics): void {
+  diagnostics.cacheHits = 0;
+  diagnostics.cacheMisses = 0;
+  diagnostics.preprocessFailures = 0;
+  diagnostics.fallbackToOriginal = 0;
+  diagnostics.preprocessedPixels = 0;
+  diagnostics.preprocessedBytes = 0;
+  diagnostics.maxPreprocessedBytes = 0;
+  diagnostics.preprocessTimeMs = 0;
+  diagnostics.maxPreprocessTimeMs = 0;
+  diagnostics.heapDeltaBytes = 0;
+  diagnostics.maxHeapDeltaBytes = 0;
+  diagnostics.offscreenCanvasPreprocesses = 0;
+  diagnostics.htmlCanvasPreprocesses = 0;
+}
+
 const ORDERED_DITHER_8X8 = [
   0, 48, 12, 60, 3, 51, 15, 63,
   32, 16, 44, 28, 35, 19, 47, 31,

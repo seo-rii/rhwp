@@ -37,6 +37,7 @@ import {
   inferImageMime,
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
+  resetLayerImageEffectDiagnostics,
   resolveLayerImageCropSource,
   type LayerCanvasImageSource,
   type LayerImageEffectDiagnostics,
@@ -126,6 +127,10 @@ export class Canvas2DLayerRenderer {
 
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
     return { ...this.imageEffectDiagnostics };
+  }
+
+  resetImageEffectDiagnostics(): void {
+    resetLayerImageEffectDiagnostics(this.imageEffectDiagnostics);
   }
 
   private renderNode(ctx: CanvasRenderingContext2D, node: LayerNode): void {
