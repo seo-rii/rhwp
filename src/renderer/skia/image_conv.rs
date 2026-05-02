@@ -44,6 +44,8 @@ impl ImageSampling {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ImageDrawDiagnostics {
     pub tile_fallback_cap_hits: usize,
+    pub image_effect_preprocess_failures: usize,
+    pub image_effect_fallback_to_filter: usize,
 }
 
 const ORDERED_DITHER_8X8: [u8; 64] = [
@@ -159,11 +161,17 @@ fn draw_decoded_image_impl(
     if !is_valid_destination_rect(x, y, width, height) {
         return diagnostics;
     }
-    let preprocessed_image = match effect {
-        ImageEffect::BlackWhite => blackwhite_threshold_image(image),
-        ImageEffect::Pattern8x8 => pattern8x8_dither_image(image),
-        _ => None,
-    };
+    let effect_needs_preprocessing =
+        matches!(effect, ImageEffect::BlackWhite | ImageEffect::Pattern8x8);
+    let preprocessed_image = preprocess_binary_image_effect(image, effect);
+    if effect_needs_preprocessing && preprocessed_image.is_none() {
+        diagnostics.image_effect_preprocess_failures = diagnostics
+            .image_effect_preprocess_failures
+            .saturating_add(1);
+        diagnostics.image_effect_fallback_to_filter = diagnostics
+            .image_effect_fallback_to_filter
+            .saturating_add(1);
+    }
     let image = preprocessed_image.as_ref().unwrap_or(image);
     let filter_effect = if preprocessed_image.is_some() {
         ImageEffect::RealPic
@@ -486,6 +494,14 @@ fn image_effect_filter(effect: ImageEffect) -> Option<skia_safe::ColorFilter> {
         ImageEffect::GrayScale => Some(grayscale_filter(1.0, 0.0)),
         ImageEffect::BlackWhite => Some(grayscale_filter(255.0, -127.5)),
         ImageEffect::Pattern8x8 => Some(grayscale_filter(1.0, 0.0)),
+    }
+}
+
+pub(crate) fn preprocess_binary_image_effect(image: &Image, effect: ImageEffect) -> Option<Image> {
+    match effect {
+        ImageEffect::BlackWhite => blackwhite_threshold_image(image),
+        ImageEffect::Pattern8x8 => pattern8x8_dither_image(image),
+        _ => None,
     }
 }
 

@@ -133,6 +133,8 @@ pub struct RasterRenderOutput {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LayerRenderDiagnostics {
     pub tile_fallback_cap_hits: usize,
+    pub image_effect_preprocess_failures: usize,
+    pub image_effect_fallback_to_filter: usize,
 }
 
 /// visual layer tree를 raster 결과로 직접 내보내는 backend 계약.

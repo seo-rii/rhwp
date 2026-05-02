@@ -28,8 +28,8 @@ use crate::renderer::{
 
 use super::equation_conv::render_equation;
 use super::image_conv::{
-    decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder, rasterize_svg_fragment,
-    ImageDrawDiagnostics, ImageSampling,
+    decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder,
+    preprocess_binary_image_effect, rasterize_svg_fragment, ImageDrawDiagnostics, ImageSampling,
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
@@ -1023,6 +1023,12 @@ struct SvgResourceCacheKey {
     height_bits: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct ImageEffectResourceCacheKey {
+    resource_id: ImageResourceId,
+    effect_code: u8,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct SvgFragmentCacheKey {
     fragment: String,
@@ -1045,6 +1051,7 @@ struct SkiaReplayContext {
     diagnostics: LayerRenderDiagnostics,
     cache_hints: Vec<CacheHint>,
     image_cache: HashMap<ImageResourceId, Option<Image>>,
+    image_effect_cache: HashMap<ImageEffectResourceCacheKey, Option<Image>>,
     svg_resource_cache: HashMap<SvgResourceCacheKey, Option<Image>>,
     svg_fragment_cache: HashMap<SvgFragmentCacheKey, Option<Image>>,
 }
@@ -1058,6 +1065,7 @@ impl SkiaReplayContext {
             diagnostics: LayerRenderDiagnostics::default(),
             cache_hints: Vec::new(),
             image_cache: HashMap::new(),
+            image_effect_cache: HashMap::new(),
             svg_resource_cache: HashMap::new(),
             svg_fragment_cache: HashMap::new(),
         }
@@ -1076,6 +1084,14 @@ impl SkiaReplayContext {
             .diagnostics
             .tile_fallback_cap_hits
             .saturating_add(diagnostics.tile_fallback_cap_hits);
+        self.diagnostics.image_effect_preprocess_failures = self
+            .diagnostics
+            .image_effect_preprocess_failures
+            .saturating_add(diagnostics.image_effect_preprocess_failures);
+        self.diagnostics.image_effect_fallback_to_filter = self
+            .diagnostics
+            .image_effect_fallback_to_filter
+            .saturating_add(diagnostics.image_effect_fallback_to_filter);
     }
 
     fn has_cache_hint(&self, cache_hint: CacheHint) -> bool {
@@ -1119,6 +1135,29 @@ impl SkiaReplayContext {
         }
         let image = decode_image_bytes(bytes);
         self.image_cache.insert(resource_id, image.clone());
+        image
+    }
+
+    fn binary_effect_image_for_resource(
+        &mut self,
+        resource_id: ImageResourceId,
+        image: &Image,
+        effect: ImageEffect,
+    ) -> Option<Image> {
+        let effect_code = match effect {
+            ImageEffect::BlackWhite => 1,
+            ImageEffect::Pattern8x8 => 2,
+            _ => return None,
+        };
+        let key = ImageEffectResourceCacheKey {
+            resource_id,
+            effect_code,
+        };
+        if let Some(image) = self.image_effect_cache.get(&key) {
+            return image.clone();
+        }
+        let image = preprocess_binary_image_effect(image, effect);
+        self.image_effect_cache.insert(key, image.clone());
         image
     }
 
@@ -1710,9 +1749,21 @@ impl SkiaLayerRenderer {
                     if let Some(resource_id) = image.resource_id {
                         if let Some(data) = resources.image_bytes(resource_id) {
                             if let Some(decoded) = replay.image_for_resource(resource_id, data) {
+                                let binary_effect_image = replay.binary_effect_image_for_resource(
+                                    resource_id,
+                                    &decoded,
+                                    image.effect,
+                                );
+                                let (draw_image, effect, sampling) = if let Some(effect_image) =
+                                    binary_effect_image.as_ref()
+                                {
+                                    (effect_image, ImageEffect::RealPic, ImageSampling::nearest())
+                                } else {
+                                    (&decoded, image.effect, replay.image_sampling())
+                                };
                                 let diagnostics = draw_decoded_image(
                                     canvas,
-                                    &decoded,
+                                    draw_image,
                                     bbox.x as f32,
                                     bbox.y as f32,
                                     bbox.width as f32,
@@ -1720,8 +1771,8 @@ impl SkiaLayerRenderer {
                                     image.fill_mode,
                                     image.original_size,
                                     image.crop,
-                                    image.effect,
-                                    replay.image_sampling(),
+                                    effect,
+                                    sampling,
                                 );
                                 replay.record_image_draw(diagnostics);
                             } else {
@@ -2788,6 +2839,7 @@ mod tests {
         make_font, raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext,
         StaticPictureCache, StaticPictureCacheKey, MAX_STATIC_PICTURE_CACHE_ENTRIES,
     };
+    use crate::model::image::ImageEffect;
     use crate::model::style::UnderlineType;
     use crate::paint::{
         CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerImagePaint, LayerNode,
@@ -3355,6 +3407,37 @@ mod tests {
         assert_eq!((first.width(), first.height()), (2, 2));
         assert_eq!((second.width(), second.height()), (2, 2));
         assert_eq!(replay.image_cache.len(), 1);
+    }
+
+    #[test]
+    fn replay_context_caches_preprocessed_binary_image_effects() {
+        let mut source = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        let resource_id = ImageResourceId(17);
+        let decoded = replay
+            .image_for_resource(resource_id, &png)
+            .expect("image decode");
+
+        let first = replay
+            .binary_effect_image_for_resource(resource_id, &decoded, ImageEffect::Pattern8x8)
+            .expect("first effect preprocess");
+        let second = replay
+            .binary_effect_image_for_resource(resource_id, &decoded, ImageEffect::Pattern8x8)
+            .expect("cached effect preprocess");
+        let passthrough =
+            replay.binary_effect_image_for_resource(resource_id, &decoded, ImageEffect::GrayScale);
+
+        assert_eq!((first.width(), first.height()), (8, 8));
+        assert_eq!((second.width(), second.height()), (8, 8));
+        assert!(passthrough.is_none());
+        assert_eq!(replay.image_effect_cache.len(), 1);
+        assert_eq!(replay.diagnostics.image_effect_preprocess_failures, 0);
+        assert_eq!(replay.diagnostics.image_effect_fallback_to_filter, 0);
     }
 
     #[test]
