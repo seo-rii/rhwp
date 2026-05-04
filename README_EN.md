@@ -181,6 +181,7 @@ See the [roadmap document](mydocs/eng/report/rhwp-milestone.md) for details.
 - `renderPageCanvas` is a legacy/native command-count helper for compatibility and diagnostics; it is not the canonical browser canvas renderer. Use `renderPageToCanvas` or the layer export APIs for public viewer rendering.
 - `renderPageSvg` currently keeps the legacy SVG path as the default compatibility output. Use `renderPageSvgLegacy` or `renderPageSvgLayer` when the caller needs an explicit SVG path; native/test code may still set `RHWP_RENDER_PATH=layer-svg` to route the compatibility method through layer SVG.
 - Debug overlay rendering is currently implemented by SVG layer/debug SVG paths. Canvas2D, CanvasKit, and native Skia currently receive `debugOptions.debugOverlay` as feature-gating metadata and do not draw overlay paint; layer exports expose generic and backend-specific `debugCapabilities` so external consumers can gate overlay UI without guessing backend support.
+- Field marker metadata (`fieldMarker`) is exported for layer consumers. Field marker visible text is lowered as normal text runs; backend-specific visual marker behavior should be checked through fixture parity rather than inferred from metadata alone.
 - New visual semantics should be lowered into `paint::PaintOp` or shared layer policy first, then replayed by each backend. Backend-only behavior is treated as a parity risk.
 - Public layer export: JS value export with profile/resource-key support is the preferred frontend API for large documents. JSON string export is kept for debug, snapshots, and schema regression checks.
 - Layer schema exports include version, unit, coordinate system, profile, output options, and resource-table metadata so frontends can reject incompatible IR safely.
@@ -193,6 +194,8 @@ See the [roadmap document](mydocs/eng/report/rhwp-milestone.md) for details.
 | `renderPageSvg` | legacy compatibility default | optional | `renderPageSvgLayer` selects layer SVG explicitly; `renderPageSvgLegacy` keeps legacy output explicit. |
 | Native Skia PNG | screenshot/print raster path | yes | Uses `RasterRenderOptions`, decoded resource caches, and layer replay. |
 | Debug overlay | debug-only | partial | SVG layer/debug SVG: supported. Canvas2D, CanvasKit, native Skia: metadata only, no overlay paint today. |
+| Field marker metadata | document/layer semantic | yes | JSON/JS export preserves `fieldMarker`; Canvas2D, CanvasKit, SVG layer, and native Skia consume the lowered visible text run. |
+| Field marker visual paint | diagnostic/editing display | fixture-gated | Synthetic browser and SVG-vs-Skia fixtures cover begin/end/begin-end/shape markers; actual HWP corpus parity remains a regression target. |
 
 ### Web Editor
 - Text editing (insert, delete, undo/redo)

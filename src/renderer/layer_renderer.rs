@@ -135,6 +135,11 @@ pub struct LayerRenderDiagnostics {
     pub tile_fallback_cap_hits: usize,
     pub image_effect_preprocess_failures: usize,
     pub image_effect_fallback_to_filter: usize,
+    pub image_effect_cache_hits: usize,
+    pub image_effect_cache_misses: usize,
+    pub image_effect_cache_evictions: usize,
+    pub image_effect_preprocessed_bytes: usize,
+    pub image_effect_cache_approx_bytes: usize,
 }
 
 /// visual layer tree를 raster 결과로 직접 내보내는 backend 계약.

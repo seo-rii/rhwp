@@ -707,6 +707,119 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
     const enabledTree = makeTree(true);
     const disabledTree = makeTree(false);
+    const bodySlopTree = {
+      pageWidth: 18,
+      pageHeight: 8,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 998,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'clipRect',
+        sourceNodeId: 3,
+        bounds: { x: 0, y: 0, width: 18, height: 8 },
+        clip: { x: 0, y: 0, width: 8, height: 8 },
+        clipKind: 'body',
+        clipPolicy: {
+          rightOverflowSlop: 4,
+          allowHorizontalOverflowControls: true,
+        },
+        child: {
+          kind: 'leaf',
+          sourceNodeId: 4,
+          bounds: { x: 0, y: 0, width: 18, height: 8 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'rectangle',
+            bbox: { x: 0, y: 0, width: 18, height: 8 },
+            cornerRadius: 0,
+            style: {
+              fillColor: '#ff0000',
+              strokeColor: null,
+              strokeWidth: 0,
+              strokeDash: 'solid',
+              opacity: 1,
+            },
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          }],
+        },
+      },
+    };
+    const nestedClipTree = {
+      pageWidth: 16,
+      pageHeight: 10,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 999,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'clipRect',
+        sourceNodeId: 5,
+        bounds: { x: 0, y: 0, width: 16, height: 10 },
+        clip: { x: 0, y: 0, width: 8, height: 8 },
+        clipKind: 'body',
+        clipPolicy: {
+          rightOverflowSlop: 4,
+          allowHorizontalOverflowControls: true,
+        },
+        child: {
+          kind: 'clipRect',
+          sourceNodeId: 6,
+          bounds: { x: 0, y: 0, width: 16, height: 10 },
+          clip: { x: 2, y: 2, width: 4, height: 4 },
+          clipKind: 'generic',
+          clipPolicy: {
+            rightOverflowSlop: 0,
+            allowHorizontalOverflowControls: false,
+          },
+          child: {
+            kind: 'leaf',
+            sourceNodeId: 7,
+            bounds: { x: 0, y: 0, width: 16, height: 10 },
+            cacheHint: 'none',
+            ops: [{
+              type: 'rectangle',
+              bbox: { x: 0, y: 0, width: 16, height: 10 },
+              cornerRadius: 0,
+              style: {
+                fillColor: '#ff0000',
+                strokeColor: null,
+                strokeWidth: 0,
+                strokeDash: 'solid',
+                opacity: 1,
+              },
+              transform: { rotation: 0, horzFlip: false, vertFlip: false },
+            }],
+          },
+        },
+      },
+    };
     return {
       enabled: {
         canvas2d: render(canvas2dRenderer, enabledTree),
@@ -715,6 +828,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       disabled: {
         canvas2d: render(canvas2dRenderer, disabledTree),
         canvaskit: render(canvaskitRenderer, disabledTree),
+      },
+      bodySlop: {
+        canvas2d: render(canvas2dRenderer, bodySlopTree),
+        canvaskit: render(canvaskitRenderer, bodySlopTree),
+      },
+      nestedClip: {
+        canvas2d: render(canvas2dRenderer, nestedClipTree),
+        canvaskit: render(canvaskitRenderer, nestedClipTree),
       },
     };
   });
@@ -756,6 +877,43 @@ runTest('Renderer lifecycle', async ({ page }) => {
     isOpaqueRed(pixelAt(clipScopeProbe.disabled.canvas2d, 10, 4))
       && isOpaqueRed(pixelAt(clipScopeProbe.disabled.canvas2d, 4, 10)),
     'Canvas2D clip disabled replays the unclipped child',
+  );
+  const bodySlopDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.bodySlop.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.bodySlop.canvaskit),
+    {
+      diffName: 'canvas-layer-body-slop-clip-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    bodySlopDiff.passed,
+    `body slop clip parity exact=${bodySlopDiff.exactDiffPixels}, tolerant=${bodySlopDiff.rawTolerantDiffPixels}, max_channel_delta=${bodySlopDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.bodySlop.canvas2d, 11, 4))
+      && isTransparent(pixelAt(clipScopeProbe.bodySlop.canvas2d, 13, 4)),
+    'Canvas2D body clip applies rightOverflowSlop and still clips past the slop',
+  );
+  const nestedClipDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.nestedClip.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.nestedClip.canvaskit),
+    {
+      diffName: 'canvas-layer-nested-clip-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    nestedClipDiff.passed,
+    `nested clip parity exact=${nestedClipDiff.exactDiffPixels}, tolerant=${nestedClipDiff.rawTolerantDiffPixels}, max_channel_delta=${nestedClipDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.nestedClip.canvas2d, 3, 3))
+      && isTransparent(pixelAt(clipScopeProbe.nestedClip.canvas2d, 9, 3))
+      && isTransparent(pixelAt(clipScopeProbe.nestedClip.canvas2d, 3, 7)),
+    'Canvas2D nested clip intersects inner generic clip with outer body clip',
   );
 
   setTestCase('image-effect-pattern-reference');
@@ -883,52 +1041,69 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
     sourceCtx.fillStyle = `rgb(${luma}, ${luma}, ${luma})`;
     sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-    const diagnostics = {
-      cacheHits: 0,
-      cacheMisses: 0,
-      preprocessFailures: 0,
-      fallbackToOriginal: 0,
-      preprocessedPixels: 0,
-      preprocessedBytes: 0,
-      maxPreprocessedBytes: 0,
-      preprocessTimeMs: 0,
-      maxPreprocessTimeMs: 0,
-      heapDeltaBytes: 0,
-      maxHeapDeltaBytes: 0,
-      offscreenCanvasPreprocesses: 0,
-      htmlCanvasPreprocesses: 0,
-    };
-    const output = applyLayerImageEffect(
-      sourceCanvas,
-      'pattern8x8',
-      new WeakMap(),
-      diagnostics,
+    const sourceRects = [
       { x: 3, y: 5, width: 8, height: 8 },
-    );
-    const canvas = document.createElement('canvas');
-    canvas.width = 8;
-    canvas.height = 8;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return { error: 'target canvas unavailable' };
+      { x: 7, y: 7, width: 8, height: 8 },
+      { x: 8, y: 8, width: 8, height: 8 },
+    ];
+    const results = [];
+    for (const sourceRect of sourceRects) {
+      const diagnostics = {
+        cacheHits: 0,
+        cacheMisses: 0,
+        preprocessFailures: 0,
+        fallbackToOriginal: 0,
+        preprocessedPixels: 0,
+        preprocessedBytes: 0,
+        maxPreprocessedBytes: 0,
+        preprocessTimeMs: 0,
+        maxPreprocessTimeMs: 0,
+        heapDeltaBytes: 0,
+        maxHeapDeltaBytes: 0,
+        offscreenCanvasPreprocesses: 0,
+        htmlCanvasPreprocesses: 0,
+      };
+      const output = applyLayerImageEffect(
+        sourceCanvas,
+        'pattern8x8',
+        new WeakMap(),
+        diagnostics,
+        sourceRect,
+      );
+      const canvas = document.createElement('canvas');
+      canvas.width = 8;
+      canvas.height = 8;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      ctx.drawImage(output, 0, 0);
+      results.push({
+        sourceRect,
+        png: canvas.toDataURL('image/png'),
+        diagnostics,
+      });
     }
-    ctx.drawImage(output, 0, 0);
-    return {
-      png: canvas.toDataURL('image/png'),
-      diagnostics,
-    };
+    return { results };
   }, { luma: PATTERN_REFERENCE_FIXTURE.luma });
 
   assert(!imageEffectCropPhaseProbe.error, imageEffectCropPhaseProbe.error || 'image effect crop phase probe available');
-  assert(
-    imageEffectCropPhaseProbe.diagnostics.preprocessedPixels === 64
-      && imageEffectCropPhaseProbe.diagnostics.preprocessFailures === 0,
-    `image effect crop phase diagnostics=${JSON.stringify(imageEffectCropPhaseProbe.diagnostics)}`,
-  );
-  assert(
-    countPatternReferenceMismatches(imageEffectCropPhaseProbe.png, PATTERN_REFERENCE_FIXTURE, 3, 5) === 0,
-    'Pattern8x8 crop preprocessing preserves full-image Bayer phase',
-  );
+  for (const result of imageEffectCropPhaseProbe.results) {
+    assert(
+      result.diagnostics.preprocessedPixels === 64
+        && result.diagnostics.preprocessFailures === 0,
+      `image effect crop phase diagnostics=${JSON.stringify(result)}`,
+    );
+    assert(
+      countPatternReferenceMismatches(
+        result.png,
+        PATTERN_REFERENCE_FIXTURE,
+        result.sourceRect.x,
+        result.sourceRect.y,
+      ) === 0,
+      `Pattern8x8 crop preprocessing preserves full-image Bayer phase for ${JSON.stringify(result.sourceRect)}`,
+    );
+  }
 
   setTestCase('image-effect-crop-preprocess-parity');
   const imageEffectCropProbe = await page.evaluate(async () => {

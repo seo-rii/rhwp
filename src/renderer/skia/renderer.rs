@@ -29,7 +29,8 @@ use crate::renderer::{
 use super::equation_conv::render_equation;
 use super::image_conv::{
     decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder,
-    preprocess_binary_image_effect, rasterize_svg_fragment, ImageDrawDiagnostics, ImageSampling,
+    image_approx_rgba_bytes, preprocess_binary_image_effect, rasterize_svg_fragment,
+    ImageDrawDiagnostics, ImageSampling,
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
@@ -46,6 +47,8 @@ pub struct SkiaLayerRenderer {
 const MAX_RASTER_DIMENSION: i32 = 16_384;
 const MAX_STATIC_PICTURE_CACHE_ENTRIES: usize = 64;
 const MAX_STATIC_PICTURE_CACHE_BYTES: usize = 32 * 1024 * 1024;
+const MAX_IMAGE_EFFECT_CACHE_ENTRIES: usize = 64;
+const MAX_IMAGE_EFFECT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
 struct StaticPictureCache {
     entries: HashMap<u64, StaticPictureCacheEntry>,
@@ -1029,6 +1032,11 @@ struct ImageEffectResourceCacheKey {
     effect_code: u8,
 }
 
+struct ImageEffectCacheEntry {
+    image: Option<Image>,
+    approx_bytes: usize,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct SvgFragmentCacheKey {
     fragment: String,
@@ -1051,7 +1059,11 @@ struct SkiaReplayContext {
     diagnostics: LayerRenderDiagnostics,
     cache_hints: Vec<CacheHint>,
     image_cache: HashMap<ImageResourceId, Option<Image>>,
-    image_effect_cache: HashMap<ImageEffectResourceCacheKey, Option<Image>>,
+    image_effect_cache: HashMap<ImageEffectResourceCacheKey, ImageEffectCacheEntry>,
+    image_effect_cache_order: VecDeque<ImageEffectResourceCacheKey>,
+    image_effect_cache_approx_bytes: usize,
+    max_image_effect_cache_entries: usize,
+    max_image_effect_cache_bytes: usize,
     svg_resource_cache: HashMap<SvgResourceCacheKey, Option<Image>>,
     svg_fragment_cache: HashMap<SvgFragmentCacheKey, Option<Image>>,
 }
@@ -1066,6 +1078,10 @@ impl SkiaReplayContext {
             cache_hints: Vec::new(),
             image_cache: HashMap::new(),
             image_effect_cache: HashMap::new(),
+            image_effect_cache_order: VecDeque::new(),
+            image_effect_cache_approx_bytes: 0,
+            max_image_effect_cache_entries: MAX_IMAGE_EFFECT_CACHE_ENTRIES,
+            max_image_effect_cache_bytes: MAX_IMAGE_EFFECT_CACHE_BYTES,
             svg_resource_cache: HashMap::new(),
             svg_fragment_cache: HashMap::new(),
         }
@@ -1092,6 +1108,10 @@ impl SkiaReplayContext {
             .diagnostics
             .image_effect_fallback_to_filter
             .saturating_add(diagnostics.image_effect_fallback_to_filter);
+        self.diagnostics.image_effect_preprocessed_bytes = self
+            .diagnostics
+            .image_effect_preprocessed_bytes
+            .saturating_add(diagnostics.image_effect_preprocessed_bytes);
     }
 
     fn has_cache_hint(&self, cache_hint: CacheHint) -> bool {
@@ -1153,11 +1173,70 @@ impl SkiaReplayContext {
             resource_id,
             effect_code,
         };
-        if let Some(image) = self.image_effect_cache.get(&key) {
-            return image.clone();
+        if let Some(entry) = self.image_effect_cache.get(&key) {
+            let image = entry.image.clone();
+            self.diagnostics.image_effect_cache_hits =
+                self.diagnostics.image_effect_cache_hits.saturating_add(1);
+            if let Some(index) = self
+                .image_effect_cache_order
+                .iter()
+                .position(|cached_key| *cached_key == key)
+            {
+                self.image_effect_cache_order.remove(index);
+            }
+            self.image_effect_cache_order.push_back(key);
+            self.diagnostics.image_effect_cache_approx_bytes = self.image_effect_cache_approx_bytes;
+            return image;
         }
+
+        self.diagnostics.image_effect_cache_misses =
+            self.diagnostics.image_effect_cache_misses.saturating_add(1);
         let image = preprocess_binary_image_effect(image, effect);
-        self.image_effect_cache.insert(key, image.clone());
+        let approx_bytes = image.as_ref().map(image_approx_rgba_bytes).unwrap_or(0);
+        self.diagnostics.image_effect_preprocessed_bytes = self
+            .diagnostics
+            .image_effect_preprocessed_bytes
+            .saturating_add(approx_bytes);
+
+        if self.max_image_effect_cache_entries > 0
+            && self.max_image_effect_cache_bytes > 0
+            && approx_bytes <= self.max_image_effect_cache_bytes
+        {
+            while self.image_effect_cache.len() >= self.max_image_effect_cache_entries
+                || self
+                    .image_effect_cache_approx_bytes
+                    .saturating_add(approx_bytes)
+                    > self.max_image_effect_cache_bytes
+            {
+                let Some(evicted_key) = self.image_effect_cache_order.pop_front() else {
+                    self.image_effect_cache.clear();
+                    self.image_effect_cache_approx_bytes = 0;
+                    break;
+                };
+                if let Some(evicted) = self.image_effect_cache.remove(&evicted_key) {
+                    self.image_effect_cache_approx_bytes = self
+                        .image_effect_cache_approx_bytes
+                        .saturating_sub(evicted.approx_bytes);
+                    self.diagnostics.image_effect_cache_evictions = self
+                        .diagnostics
+                        .image_effect_cache_evictions
+                        .saturating_add(1);
+                }
+            }
+
+            self.image_effect_cache.insert(
+                key,
+                ImageEffectCacheEntry {
+                    image: image.clone(),
+                    approx_bytes,
+                },
+            );
+            self.image_effect_cache_order.push_back(key);
+            self.image_effect_cache_approx_bytes = self
+                .image_effect_cache_approx_bytes
+                .saturating_add(approx_bytes);
+        }
+        self.diagnostics.image_effect_cache_approx_bytes = self.image_effect_cache_approx_bytes;
         image
     }
 
@@ -2836,8 +2915,9 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 #[cfg(test)]
 mod tests {
     use super::{
-        make_font, raster_dimension, ImageSampling, SkiaLayerRenderer, SkiaReplayContext,
-        StaticPictureCache, StaticPictureCacheKey, MAX_STATIC_PICTURE_CACHE_ENTRIES,
+        make_font, raster_dimension, ImageEffectResourceCacheKey, ImageSampling, SkiaLayerRenderer,
+        SkiaReplayContext, StaticPictureCache, StaticPictureCacheKey,
+        MAX_STATIC_PICTURE_CACHE_ENTRIES,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::UnderlineType;
@@ -3436,8 +3516,100 @@ mod tests {
         assert_eq!((second.width(), second.height()), (8, 8));
         assert!(passthrough.is_none());
         assert_eq!(replay.image_effect_cache.len(), 1);
+        assert_eq!(replay.diagnostics.image_effect_cache_hits, 1);
+        assert_eq!(replay.diagnostics.image_effect_cache_misses, 1);
+        assert_eq!(replay.diagnostics.image_effect_cache_evictions, 0);
+        assert_eq!(
+            replay.diagnostics.image_effect_preprocessed_bytes,
+            8 * 8 * 4
+        );
+        assert_eq!(
+            replay.diagnostics.image_effect_cache_approx_bytes,
+            8 * 8 * 4
+        );
         assert_eq!(replay.diagnostics.image_effect_preprocess_failures, 0);
         assert_eq!(replay.diagnostics.image_effect_fallback_to_filter, 0);
+    }
+
+    #[test]
+    fn replay_context_skips_binary_image_effect_cache_when_over_budget() {
+        let mut source = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        replay.max_image_effect_cache_bytes = 8;
+        let resource_id = ImageResourceId(18);
+        let decoded = replay
+            .image_for_resource(resource_id, &png)
+            .expect("image decode");
+
+        replay
+            .binary_effect_image_for_resource(resource_id, &decoded, ImageEffect::Pattern8x8)
+            .expect("first effect preprocess");
+        replay
+            .binary_effect_image_for_resource(resource_id, &decoded, ImageEffect::Pattern8x8)
+            .expect("second effect preprocess");
+
+        assert!(replay.image_effect_cache.is_empty());
+        assert_eq!(replay.diagnostics.image_effect_cache_hits, 0);
+        assert_eq!(replay.diagnostics.image_effect_cache_misses, 2);
+        assert_eq!(
+            replay.diagnostics.image_effect_preprocessed_bytes,
+            2 * 8 * 8 * 4
+        );
+        assert_eq!(replay.diagnostics.image_effect_cache_approx_bytes, 0);
+    }
+
+    #[test]
+    fn replay_context_evicts_binary_image_effect_cache_by_entry_limit() {
+        let mut source = tiny_skia::Pixmap::new(4, 4).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        replay.max_image_effect_cache_entries = 1;
+        let first_resource_id = ImageResourceId(19);
+        let second_resource_id = ImageResourceId(20);
+        let first_decoded = replay
+            .image_for_resource(first_resource_id, &png)
+            .expect("first image decode");
+        let second_decoded = replay
+            .image_for_resource(second_resource_id, &png)
+            .expect("second image decode");
+
+        replay
+            .binary_effect_image_for_resource(
+                first_resource_id,
+                &first_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("first effect preprocess");
+        replay
+            .binary_effect_image_for_resource(
+                second_resource_id,
+                &second_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("second effect preprocess");
+
+        assert_eq!(replay.image_effect_cache.len(), 1);
+        assert!(replay
+            .image_effect_cache
+            .contains_key(&ImageEffectResourceCacheKey {
+                resource_id: second_resource_id,
+                effect_code: 2,
+            }));
+        assert_eq!(replay.diagnostics.image_effect_cache_misses, 2);
+        assert_eq!(replay.diagnostics.image_effect_cache_evictions, 1);
+        assert_eq!(
+            replay.diagnostics.image_effect_cache_approx_bytes,
+            4 * 4 * 4
+        );
     }
 
     #[test]

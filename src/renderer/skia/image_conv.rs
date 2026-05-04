@@ -46,6 +46,7 @@ pub struct ImageDrawDiagnostics {
     pub tile_fallback_cap_hits: usize,
     pub image_effect_preprocess_failures: usize,
     pub image_effect_fallback_to_filter: usize,
+    pub image_effect_preprocessed_bytes: usize,
 }
 
 const ORDERED_DITHER_8X8: [u8; 64] = [
@@ -143,6 +144,12 @@ pub fn draw_decoded_image(
     )
 }
 
+pub(crate) fn image_approx_rgba_bytes(image: &Image) -> usize {
+    let width = usize::try_from(image.width().max(0)).unwrap_or(0);
+    let height = usize::try_from(image.height().max(0)).unwrap_or(0);
+    width.saturating_mul(height).saturating_mul(4)
+}
+
 fn draw_decoded_image_impl(
     canvas: &Canvas,
     image: &Image,
@@ -171,6 +178,11 @@ fn draw_decoded_image_impl(
         diagnostics.image_effect_fallback_to_filter = diagnostics
             .image_effect_fallback_to_filter
             .saturating_add(1);
+    }
+    if let Some(preprocessed_image) = preprocessed_image.as_ref() {
+        diagnostics.image_effect_preprocessed_bytes = diagnostics
+            .image_effect_preprocessed_bytes
+            .saturating_add(image_approx_rgba_bytes(preprocessed_image));
     }
     let image = preprocessed_image.as_ref().unwrap_or(image);
     let filter_effect = if preprocessed_image.is_some() {
@@ -941,32 +953,35 @@ mod tests {
             .expect("render png");
         let pixmap = tiny_skia::Pixmap::decode_png(encoded.as_bytes()).expect("decode render");
 
-        for y in 0..8usize {
-            for x in 0..8usize {
-                let source_x = x + 3;
-                let source_y = y + 5;
-                let expected = if fixture_luma > ordered_dither_8x8_threshold(source_x, source_y) {
-                    255
-                } else {
-                    0
-                };
-                let pixel = pixmap.pixels()[source_y * 16 + source_x];
-                if expected == 0 {
-                    assert!(
-                        pixel.red() < 32 && pixel.green() < 32 && pixel.blue() < 32,
-                        "expected dark Bayer crop-phase pixel at ({source_x},{source_y}), got #{:02x}{:02x}{:02x}",
-                        pixel.red(),
-                        pixel.green(),
-                        pixel.blue()
-                    );
-                } else {
-                    assert!(
-                        pixel.red() > 223 && pixel.green() > 223 && pixel.blue() > 223,
-                        "expected light Bayer crop-phase pixel at ({source_x},{source_y}), got #{:02x}{:02x}{:02x}",
-                        pixel.red(),
-                        pixel.green(),
-                        pixel.blue()
-                    );
+        for (phase_x, phase_y) in [(3usize, 5usize), (7, 7), (8, 8)] {
+            for y in 0..8usize {
+                for x in 0..8usize {
+                    let source_x = x + phase_x;
+                    let source_y = y + phase_y;
+                    let expected =
+                        if fixture_luma > ordered_dither_8x8_threshold(source_x, source_y) {
+                            255
+                        } else {
+                            0
+                        };
+                    let pixel = pixmap.pixels()[source_y * 16 + source_x];
+                    if expected == 0 {
+                        assert!(
+                            pixel.red() < 32 && pixel.green() < 32 && pixel.blue() < 32,
+                            "expected dark Bayer crop-phase pixel at ({source_x},{source_y}), got #{:02x}{:02x}{:02x}",
+                            pixel.red(),
+                            pixel.green(),
+                            pixel.blue()
+                        );
+                    } else {
+                        assert!(
+                            pixel.red() > 223 && pixel.green() > 223 && pixel.blue() > 223,
+                            "expected light Bayer crop-phase pixel at ({source_x},{source_y}), got #{:02x}{:02x}{:02x}",
+                            pixel.red(),
+                            pixel.green(),
+                            pixel.blue()
+                        );
+                    }
                 }
             }
         }
