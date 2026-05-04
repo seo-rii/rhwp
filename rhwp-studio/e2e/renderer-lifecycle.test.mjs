@@ -758,6 +758,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     };
+    const tableCellSlopTree = {
+      ...bodySlopTree,
+      resources: {
+        ...bodySlopTree.resources,
+        tableId: 1000,
+      },
+      root: {
+        ...bodySlopTree.root,
+        sourceNodeId: 8,
+        clipKind: 'tableCell',
+        child: {
+          ...bodySlopTree.root.child,
+          sourceNodeId: 9,
+        },
+      },
+    };
     const nestedClipTree = {
       pageWidth: 16,
       pageHeight: 10,
@@ -820,6 +836,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     };
+    const nestedClipDisabledTree = {
+      ...nestedClipTree,
+      outputOptions: {
+        ...nestedClipTree.outputOptions,
+        clipEnabled: false,
+      },
+      resources: {
+        ...nestedClipTree.resources,
+        tableId: 1001,
+      },
+    };
     return {
       enabled: {
         canvas2d: render(canvas2dRenderer, enabledTree),
@@ -833,9 +860,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
         canvas2d: render(canvas2dRenderer, bodySlopTree),
         canvaskit: render(canvaskitRenderer, bodySlopTree),
       },
+      tableCellSlop: {
+        canvas2d: render(canvas2dRenderer, tableCellSlopTree),
+        canvaskit: render(canvaskitRenderer, tableCellSlopTree),
+      },
       nestedClip: {
         canvas2d: render(canvas2dRenderer, nestedClipTree),
         canvaskit: render(canvaskitRenderer, nestedClipTree),
+      },
+      nestedClipDisabled: {
+        canvas2d: render(canvas2dRenderer, nestedClipDisabledTree),
+        canvaskit: render(canvaskitRenderer, nestedClipDisabledTree),
       },
     };
   });
@@ -896,6 +931,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && isTransparent(pixelAt(clipScopeProbe.bodySlop.canvas2d, 13, 4)),
     'Canvas2D body clip applies rightOverflowSlop and still clips past the slop',
   );
+  const tableCellSlopDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.tableCellSlop.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.tableCellSlop.canvaskit),
+    {
+      diffName: 'canvas-layer-table-cell-slop-clip-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    tableCellSlopDiff.passed,
+    `table cell slop clip parity exact=${tableCellSlopDiff.exactDiffPixels}, tolerant=${tableCellSlopDiff.rawTolerantDiffPixels}, max_channel_delta=${tableCellSlopDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.tableCellSlop.canvas2d, 11, 4))
+      && isTransparent(pixelAt(clipScopeProbe.tableCellSlop.canvas2d, 13, 4)),
+    'Canvas2D table cell clip applies rightOverflowSlop and still clips past the slop',
+  );
   const nestedClipDiff = await comparePngBuffers(
     pngBufferFromDataUrl(clipScopeProbe.nestedClip.canvas2d),
     pngBufferFromDataUrl(clipScopeProbe.nestedClip.canvaskit),
@@ -914,6 +967,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && isTransparent(pixelAt(clipScopeProbe.nestedClip.canvas2d, 9, 3))
       && isTransparent(pixelAt(clipScopeProbe.nestedClip.canvas2d, 3, 7)),
     'Canvas2D nested clip intersects inner generic clip with outer body clip',
+  );
+  const nestedClipDisabledDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.nestedClipDisabled.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.nestedClipDisabled.canvaskit),
+    {
+      diffName: 'canvas-layer-nested-clip-disabled-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    nestedClipDisabledDiff.passed,
+    `nested clip disabled parity exact=${nestedClipDisabledDiff.exactDiffPixels}, tolerant=${nestedClipDisabledDiff.rawTolerantDiffPixels}, max_channel_delta=${nestedClipDisabledDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.nestedClipDisabled.canvas2d, 9, 3))
+      && isOpaqueRed(pixelAt(clipScopeProbe.nestedClipDisabled.canvas2d, 3, 7)),
+    'Canvas2D clipEnabled=false disables nested clip scopes',
   );
 
   setTestCase('image-effect-pattern-reference');
