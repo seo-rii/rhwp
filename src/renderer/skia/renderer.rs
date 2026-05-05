@@ -3012,6 +3012,56 @@ mod tests {
     }
 
     #[test]
+    fn raster_output_accumulates_binary_image_effect_cache_diagnostics() {
+        use crate::model::style::ImageFillMode;
+
+        let mut pixmap = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
+        for pixel in pixmap.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+        }
+        let image_bytes = pixmap.encode_png().expect("source png");
+        let mut resources = ResourceArena::default();
+        let resource_id = resources.intern_image_bytes(&image_bytes);
+        let image_op = |x: f64| PaintOp::Image {
+            bbox: BoundingBox::new(x, 0.0, 8.0, 8.0),
+            image: LayerImagePaint {
+                resource_id: Some(resource_id),
+                fill_mode: Some(ImageFillMode::FitToSize),
+                original_size: Some((8.0, 8.0)),
+                crop: None,
+                effect: ImageEffect::Pattern8x8,
+                transform: ShapeTransform::default(),
+            },
+        };
+        let tree = PageLayerTree::with_resources(
+            16.0,
+            8.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 16.0, 8.0),
+                None,
+                vec![image_op(0.0), image_op(8.0)],
+            ),
+            resources,
+        );
+        let renderer = SkiaLayerRenderer::new();
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("render raster");
+
+        assert_eq!(output.diagnostics.image_effect_cache_misses, 1);
+        assert_eq!(output.diagnostics.image_effect_cache_hits, 1);
+        assert_eq!(output.diagnostics.image_effect_cache_evictions, 0);
+        assert_eq!(
+            output.diagnostics.image_effect_preprocessed_bytes,
+            8 * 8 * 4
+        );
+        assert_eq!(
+            output.diagnostics.image_effect_cache_approx_bytes,
+            8 * 8 * 4
+        );
+    }
+
+    #[test]
     fn body_clip_policy_allows_right_overflow_slop() {
         let rect_bounds = BoundingBox::new(8.0, 8.0, 8.0, 4.0);
         let leaf = LayerNode::leaf(
