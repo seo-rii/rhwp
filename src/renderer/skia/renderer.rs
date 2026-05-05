@@ -3727,6 +3727,64 @@ mod tests {
     }
 
     #[test]
+    fn replay_context_evicts_binary_image_effect_cache_by_byte_budget() {
+        let mut source = tiny_skia::Pixmap::new(4, 4).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        replay.max_image_effect_cache_entries = 8;
+        replay.max_image_effect_cache_bytes = 4 * 4 * 4 + 8;
+        let first_resource_id = ImageResourceId(21);
+        let second_resource_id = ImageResourceId(22);
+        let first_decoded = replay
+            .image_for_resource(first_resource_id, &png)
+            .expect("first image decode");
+        let second_decoded = replay
+            .image_for_resource(second_resource_id, &png)
+            .expect("second image decode");
+
+        replay
+            .binary_effect_image_for_resource(
+                first_resource_id,
+                &first_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("first effect preprocess");
+        replay
+            .binary_effect_image_for_resource(
+                second_resource_id,
+                &second_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("second effect preprocess");
+
+        assert_eq!(replay.image_effect_cache.len(), 1);
+        assert!(replay
+            .image_effect_cache
+            .contains_key(&ImageEffectResourceCacheKey {
+                resource_id: second_resource_id,
+                effect_code: 2,
+            }));
+        assert_eq!(replay.diagnostics.image_effect_cache_misses, 2);
+        assert_eq!(replay.diagnostics.image_effect_cache_evictions, 1);
+        assert_eq!(
+            replay.diagnostics.image_effect_preprocessed_bytes,
+            2 * 4 * 4 * 4
+        );
+        assert_eq!(
+            replay.diagnostics.image_effect_cache_approx_bytes,
+            4 * 4 * 4
+        );
+        assert!(
+            replay.diagnostics.image_effect_cache_approx_bytes
+                <= replay.max_image_effect_cache_bytes
+        );
+    }
+
+    #[test]
     fn replay_context_caches_rasterized_svg_resources() {
         let mut replay =
             SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);

@@ -1790,7 +1790,7 @@ mod tests {
         tiled.crop = Some((5 * 75, 4 * 75, 30 * 75, 26 * 75));
         tiled.original_size = Some((20.0, 15.0));
         tiled.transform = ShapeTransform::default();
-        tiled.effect = ImageEffect::RealPic;
+        tiled.effect = ImageEffect::Pattern8x8;
         tree.root.children.push(RenderNode::new(
             6,
             RenderNodeType::Image(tiled),

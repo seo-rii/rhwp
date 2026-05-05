@@ -898,6 +898,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     };
+    const cachedGroupClipTree = {
+      ...rotatedClipTree,
+      resources: {
+        ...rotatedClipTree.resources,
+        tableId: 1003,
+      },
+      root: {
+        ...rotatedClipTree.root,
+        sourceNodeId: 12,
+        child: {
+          kind: 'group',
+          sourceNodeId: 13,
+          semantic: { role: 'group' },
+          bounds: { x: 0, y: 0, width: 24, height: 16 },
+          cacheHint: 'staticSubtree',
+          children: [{
+            ...rotatedClipTree.root.child,
+            sourceNodeId: 14,
+          }],
+        },
+      },
+    };
     return {
       enabled: {
         canvas2d: render(canvas2dRenderer, enabledTree),
@@ -926,6 +948,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       rotatedClip: {
         canvas2d: render(canvas2dRenderer, rotatedClipTree),
         canvaskit: render(canvaskitRenderer, rotatedClipTree),
+      },
+      cachedGroupClip: {
+        canvas2d: render(canvas2dRenderer, cachedGroupClipTree),
+        canvaskit: render(canvaskitRenderer, cachedGroupClipTree),
       },
     };
   });
@@ -1059,6 +1085,25 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && isTransparent(pixelAt(clipScopeProbe.rotatedClip.canvas2d, 10, 1))
       && isTransparent(pixelAt(clipScopeProbe.rotatedClip.canvas2d, 3, 5)),
     'Canvas2D clip constrains a rotated child in device clip space',
+  );
+  const cachedGroupClipDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.cachedGroupClip.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.cachedGroupClip.canvaskit),
+    {
+      diffName: 'canvas-layer-cached-group-clip-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    cachedGroupClipDiff.passed,
+    `cached group clip parity exact=${cachedGroupClipDiff.exactDiffPixels}, tolerant=${cachedGroupClipDiff.rawTolerantDiffPixels}, max_channel_delta=${cachedGroupClipDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.cachedGroupClip.canvas2d, 10, 3))
+      && isTransparent(pixelAt(clipScopeProbe.cachedGroupClip.canvas2d, 10, 1))
+      && isTransparent(pixelAt(clipScopeProbe.cachedGroupClip.canvas2d, 3, 5)),
+    'Canvas2D clip constrains a static group child with a transformed op',
   );
 
   setTestCase('image-effect-pattern-reference');
@@ -1318,6 +1363,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       canvas.width = 16;
       canvas.height = 16;
       document.body.appendChild(canvas);
+      renderer.resetImageEffectDiagnostics();
       const before = renderer.getImageEffectDiagnostics();
       let after = before;
       for (let attempt = 0; attempt < 8; attempt += 1) {
