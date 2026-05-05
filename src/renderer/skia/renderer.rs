@@ -99,12 +99,17 @@ impl StaticPictureCache {
         Some(picture)
     }
 
-    fn insert(&mut self, key: StaticPictureCacheKey, picture: Picture, approx_bytes: usize) {
+    fn insert(
+        &mut self,
+        key: StaticPictureCacheKey,
+        picture: Picture,
+        approx_bytes: usize,
+    ) -> usize {
         if self.max_entries == 0
             || self.max_approx_bytes == 0
             || approx_bytes > self.max_approx_bytes
         {
-            return;
+            return 0;
         }
 
         if let Some(entry) = self.entries.remove(&key.hash) {
@@ -112,16 +117,19 @@ impl StaticPictureCache {
         }
         self.order.retain(|cached_key| *cached_key != key.hash);
 
+        let mut evictions = 0usize;
         while self.entries.len() >= self.max_entries
             || self.approx_bytes.saturating_add(approx_bytes) > self.max_approx_bytes
         {
             let Some(evicted_key) = self.order.pop_front() else {
+                evictions = evictions.saturating_add(self.entries.len());
                 self.entries.clear();
                 self.approx_bytes = 0;
                 break;
             };
             if let Some(entry) = self.entries.remove(&evicted_key) {
                 self.approx_bytes = self.approx_bytes.saturating_sub(entry.approx_bytes);
+                evictions = evictions.saturating_add(1);
             }
         }
 
@@ -135,6 +143,7 @@ impl StaticPictureCache {
         );
         self.approx_bytes = self.approx_bytes.saturating_add(approx_bytes);
         self.order.push_back(key.hash);
+        evictions
     }
 
     fn touch(&mut self, key: u64) {
@@ -1405,10 +1414,24 @@ impl SkiaLayerRenderer {
                     cache_key.mix_f64(replay.scale);
                     cache_key.mix_layer_node(node, resources);
                     let cache_key = cache_key.finish();
-                    if let Some(picture) = self.static_picture_cache.borrow_mut().get(cache_key) {
+                    if let Some((picture, approx_bytes)) = {
+                        let mut cache = self.static_picture_cache.borrow_mut();
+                        cache
+                            .get(cache_key)
+                            .map(|picture| (picture, cache.approx_bytes()))
+                    } {
+                        replay.diagnostics.static_picture_cache_hits = replay
+                            .diagnostics
+                            .static_picture_cache_hits
+                            .saturating_add(1);
+                        replay.diagnostics.static_picture_cache_approx_bytes = approx_bytes;
                         canvas.draw_picture(&picture, None, None);
                         return;
                     }
+                    replay.diagnostics.static_picture_cache_misses = replay
+                        .diagnostics
+                        .static_picture_cache_misses
+                        .saturating_add(1);
 
                     let cull_rect = Rect::from_xywh(
                         node.bounds.x as f32,
@@ -1434,11 +1457,16 @@ impl SkiaLayerRenderer {
                         } else {
                             MAX_STATIC_PICTURE_CACHE_BYTES.saturating_add(1)
                         };
-                        self.static_picture_cache.borrow_mut().insert(
-                            cache_key,
-                            picture,
-                            approx_bytes,
-                        );
+                        let (evictions, cache_bytes) = {
+                            let mut cache = self.static_picture_cache.borrow_mut();
+                            let evictions = cache.insert(cache_key, picture, approx_bytes);
+                            (evictions, cache.approx_bytes())
+                        };
+                        replay.diagnostics.static_picture_cache_evictions = replay
+                            .diagnostics
+                            .static_picture_cache_evictions
+                            .saturating_add(evictions);
+                        replay.diagnostics.static_picture_cache_approx_bytes = cache_bytes;
                         return;
                     }
                 }
@@ -2944,14 +2972,16 @@ mod tests {
     use super::{
         make_font, raster_dimension, ImageEffectResourceCacheKey, ImageSampling, SkiaLayerRenderer,
         SkiaReplayContext, StaticPictureCache, StaticPictureCacheKey, MAX_IMAGE_EFFECT_CACHE_BYTES,
-        MAX_IMAGE_EFFECT_CACHE_ENTRIES, MAX_STATIC_PICTURE_CACHE_ENTRIES,
+        MAX_IMAGE_EFFECT_CACHE_ENTRIES, MAX_STATIC_PICTURE_CACHE_BYTES,
+        MAX_STATIC_PICTURE_CACHE_ENTRIES,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::UnderlineType;
     use crate::paint::{
         CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerImagePaint, LayerNode,
-        LayerOutputOptions, LayerRectanglePaint, LayerSemantic, PageLayerTree, PaintOp,
-        RenderProfile, ResourceArena, SvgResourceId,
+        LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerSemantic,
+        LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile,
+        ResourceArena, SvgResourceId,
     };
     use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::layer_renderer::RasterRenderOptions;
@@ -3584,6 +3614,301 @@ mod tests {
     }
 
     #[test]
+    fn static_subtree_picture_cache_respects_distinct_external_clip_scopes() {
+        let rect_bounds = BoundingBox::new(2.0, 4.0, 28.0, 12.0);
+        let leaf = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 32.0, 20.0),
+            Some(3),
+            vec![PaintOp::Rectangle {
+                bbox: rect_bounds,
+                rect: LayerRectanglePaint {
+                    corner_radius: 0.0,
+                    style: ShapeStyle {
+                        fill_color: Some(0x000000),
+                        ..Default::default()
+                    },
+                    gradient: None,
+                    transform: Default::default(),
+                },
+            }],
+        );
+        let static_group = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, 32.0, 20.0),
+            Some(2),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        let root = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, 32.0, 20.0),
+            None,
+            vec![
+                LayerNode::clip_rect(
+                    BoundingBox::new(0.0, 0.0, 32.0, 20.0),
+                    Some(10),
+                    BoundingBox::new(2.0, 4.0, 8.0, 12.0),
+                    static_group.clone(),
+                    ClipKind::Generic,
+                ),
+                LayerNode::clip_rect(
+                    BoundingBox::new(0.0, 0.0, 32.0, 20.0),
+                    Some(11),
+                    BoundingBox::new(22.0, 4.0, 8.0, 12.0),
+                    static_group,
+                    ClipKind::Generic,
+                ),
+            ],
+            CacheHint::None,
+            LayerSemantic::default(),
+        );
+        let tree = PageLayerTree::new(32.0, 20.0, root);
+        let renderer = SkiaLayerRenderer::new();
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("render clipped static subtrees");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let width = pixmap.width() as usize;
+
+        assert_eq!(output.diagnostics.static_picture_cache_misses, 1);
+        assert_eq!(output.diagnostics.static_picture_cache_hits, 1);
+        assert!(
+            output.diagnostics.static_picture_cache_approx_bytes > 0,
+            "static picture cache should report retained approximate bytes"
+        );
+        assert!(
+            pixmap.pixels()[10 * width + 5].alpha() > 0,
+            "first external clip should reveal the shared static subtree"
+        );
+        assert!(
+            pixmap.pixels()[10 * width + 25].alpha() > 0,
+            "second external clip should replay the cached subtree under its own clip"
+        );
+        assert_eq!(
+            pixmap.pixels()[10 * width + 16].alpha(),
+            0,
+            "cached subtree replay must not leak between external clip scopes"
+        );
+    }
+
+    #[test]
+    fn raster_output_reports_static_picture_cache_hit_miss_diagnostics() {
+        let rect_bounds = BoundingBox::new(5.0, 5.0, 20.0, 10.0);
+        let leaf = LayerNode::leaf(
+            rect_bounds,
+            Some(2),
+            vec![PaintOp::Rectangle {
+                bbox: rect_bounds,
+                rect: LayerRectanglePaint {
+                    corner_radius: 0.0,
+                    style: ShapeStyle {
+                        fill_color: Some(0x00AA00),
+                        ..Default::default()
+                    },
+                    gradient: None,
+                    transform: Default::default(),
+                },
+            }],
+        );
+        let root = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, 40.0, 20.0),
+            Some(1),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        let tree = PageLayerTree::new(40.0, 20.0, root);
+        let renderer = SkiaLayerRenderer::new();
+
+        let first = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("first static cache render");
+        assert_eq!(first.diagnostics.static_picture_cache_misses, 1);
+        assert_eq!(first.diagnostics.static_picture_cache_hits, 0);
+        assert_eq!(first.diagnostics.static_picture_cache_evictions, 0);
+        assert!(first.diagnostics.static_picture_cache_approx_bytes > 0);
+
+        let second = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("second static cache render");
+        assert_eq!(second.diagnostics.static_picture_cache_misses, 0);
+        assert_eq!(second.diagnostics.static_picture_cache_hits, 1);
+        assert_eq!(second.diagnostics.static_picture_cache_evictions, 0);
+        assert_eq!(
+            second.diagnostics.static_picture_cache_approx_bytes,
+            first.diagnostics.static_picture_cache_approx_bytes
+        );
+    }
+
+    #[test]
+    fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
+        use crate::model::style::ImageFillMode;
+
+        let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("source pixmap");
+        for pixel in pixmap.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(64, 160, 224, 255).unwrap();
+        }
+        let image_bytes = pixmap.encode_png().expect("source png");
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&image_bytes);
+        let image_bbox = BoundingBox::new(2.0, 2.0, 8.0, 8.0);
+        let path_bbox = BoundingBox::new(12.0, 3.0, 18.0, 10.0);
+        let text_bbox = BoundingBox::new(2.0, 13.0, 30.0, 10.0);
+        let leaf = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 36.0, 26.0),
+            Some(3),
+            vec![
+                PaintOp::Image {
+                    bbox: image_bbox,
+                    image: LayerImagePaint {
+                        resource_id: Some(image_id),
+                        fill_mode: Some(ImageFillMode::FitToSize),
+                        original_size: Some((4.0, 4.0)),
+                        crop: None,
+                        effect: ImageEffect::RealPic,
+                        transform: ShapeTransform::default(),
+                    },
+                },
+                PaintOp::Path {
+                    bbox: path_bbox,
+                    path: LayerPathPaint {
+                        commands: vec![
+                            PathCommand::MoveTo(12.0, 12.0),
+                            PathCommand::LineTo(21.0, 3.0),
+                            PathCommand::LineTo(30.0, 12.0),
+                        ],
+                        style: ShapeStyle {
+                            fill_color: None,
+                            stroke_color: Some(0x000000),
+                            stroke_width: 1.5,
+                            ..Default::default()
+                        },
+                        gradient: None,
+                        transform: Default::default(),
+                        connector_endpoints: None,
+                        line_style: None,
+                    },
+                },
+                PaintOp::TextRun {
+                    bbox: text_bbox,
+                    run: LayerTextRunPaint {
+                        text: "Skia".to_string(),
+                        style: TextStyle {
+                            font_size: 8.0,
+                            color: 0x00000000,
+                            ..Default::default()
+                        },
+                        positions: vec![0.0, 4.0, 8.0, 12.0],
+                        control_marks: Vec::new(),
+                        baseline: 8.0,
+                        rotation: 0.0,
+                        is_vertical: false,
+                        orientation: LayerTextOrientation::Horizontal,
+                        char_overlap: None,
+                        field_marker: Default::default(),
+                        is_para_end: false,
+                        is_line_break_end: false,
+                    },
+                },
+            ],
+        );
+        let root = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, 36.0, 26.0),
+            Some(2),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        let tree = PageLayerTree::with_resources(36.0, 26.0, root, resources);
+        let renderer = SkiaLayerRenderer::new();
+
+        let first = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("first mixed static render");
+        let second = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("cached mixed static render");
+        let first_pixmap = tiny_skia::Pixmap::decode_png(&first.bytes).expect("first png decode");
+        let second_pixmap =
+            tiny_skia::Pixmap::decode_png(&second.bytes).expect("second png decode");
+
+        assert_eq!(first.diagnostics.static_picture_cache_misses, 1);
+        assert_eq!(second.diagnostics.static_picture_cache_hits, 1);
+        assert_eq!(
+            first_pixmap.data(),
+            second_pixmap.data(),
+            "mixed static subtree payloads should replay identically from cache"
+        );
+        assert!(
+            first_pixmap
+                .pixels()
+                .iter()
+                .filter(|pixel| pixel.alpha() > 0)
+                .count()
+                > 40,
+            "image, path, and text static subtree fixture should produce visible ink"
+        );
+    }
+
+    #[test]
+    fn raster_output_reports_static_picture_cache_eviction_diagnostics() {
+        let mut children = Vec::new();
+        for index in 0..(MAX_STATIC_PICTURE_CACHE_ENTRIES + 1) {
+            let x = index as f64;
+            let rect_bounds = BoundingBox::new(x, 0.0, 1.0, 1.0);
+            let leaf = LayerNode::leaf(
+                rect_bounds,
+                Some(index as u32 + 100),
+                vec![PaintOp::Rectangle {
+                    bbox: rect_bounds,
+                    rect: LayerRectanglePaint {
+                        corner_radius: 0.0,
+                        style: ShapeStyle {
+                            fill_color: Some(0x000001 + index as u32),
+                            ..Default::default()
+                        },
+                        gradient: None,
+                        transform: Default::default(),
+                    },
+                }],
+            );
+            children.push(LayerNode::group(
+                BoundingBox::new(x, 0.0, 1.0, 1.0),
+                Some(index as u32 + 1),
+                vec![leaf],
+                CacheHint::StaticSubtree,
+                LayerSemantic::default(),
+            ));
+        }
+        let page_width = (MAX_STATIC_PICTURE_CACHE_ENTRIES + 1) as f64;
+        let root = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, page_width, 1.0),
+            None,
+            children,
+            CacheHint::None,
+            LayerSemantic::default(),
+        );
+        let tree = PageLayerTree::new(page_width, 1.0, root);
+        let renderer = SkiaLayerRenderer::new();
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("static cache pressure render");
+
+        assert_eq!(
+            output.diagnostics.static_picture_cache_misses,
+            MAX_STATIC_PICTURE_CACHE_ENTRIES + 1
+        );
+        assert_eq!(output.diagnostics.static_picture_cache_hits, 0);
+        assert_eq!(output.diagnostics.static_picture_cache_evictions, 1);
+        assert_eq!(
+            renderer.static_picture_cache.borrow().len(),
+            MAX_STATIC_PICTURE_CACHE_ENTRIES
+        );
+        assert!(
+            output.diagnostics.static_picture_cache_approx_bytes <= MAX_STATIC_PICTURE_CACHE_BYTES
+        );
+    }
+
+    #[test]
     fn static_picture_cache_ignores_unreferenced_resources() {
         let rect_bounds = BoundingBox::new(5.0, 5.0, 20.0, 10.0);
         let leaf = LayerNode::leaf(
@@ -3926,6 +4251,82 @@ mod tests {
             replay.diagnostics.image_effect_cache_approx_bytes
                 <= replay.max_image_effect_cache_bytes
         );
+    }
+
+    #[test]
+    fn replay_context_uses_lru_order_for_binary_image_effect_cache() {
+        let mut source = tiny_skia::Pixmap::new(2, 2).expect("source pixmap");
+        for pixel in source.pixels_mut() {
+            *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+        }
+        let png = source.encode_png().expect("source png");
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        replay.max_image_effect_cache_entries = 2;
+        replay.max_image_effect_cache_bytes = 2 * 2 * 2 * 4;
+        let first_resource_id = ImageResourceId(31);
+        let second_resource_id = ImageResourceId(32);
+        let third_resource_id = ImageResourceId(33);
+        let first_decoded = replay
+            .image_for_resource(first_resource_id, &png)
+            .expect("first image decode");
+        let second_decoded = replay
+            .image_for_resource(second_resource_id, &png)
+            .expect("second image decode");
+        let third_decoded = replay
+            .image_for_resource(third_resource_id, &png)
+            .expect("third image decode");
+
+        replay
+            .binary_effect_image_for_resource(
+                first_resource_id,
+                &first_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("first effect preprocess");
+        replay
+            .binary_effect_image_for_resource(
+                second_resource_id,
+                &second_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("second effect preprocess");
+        replay
+            .binary_effect_image_for_resource(
+                first_resource_id,
+                &first_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("first effect cache hit");
+        replay
+            .binary_effect_image_for_resource(
+                third_resource_id,
+                &third_decoded,
+                ImageEffect::Pattern8x8,
+            )
+            .expect("third effect preprocess");
+
+        assert!(replay
+            .image_effect_cache
+            .contains_key(&ImageEffectResourceCacheKey {
+                resource_id: first_resource_id,
+                effect_code: 2,
+            }));
+        assert!(!replay
+            .image_effect_cache
+            .contains_key(&ImageEffectResourceCacheKey {
+                resource_id: second_resource_id,
+                effect_code: 2,
+            }));
+        assert!(replay
+            .image_effect_cache
+            .contains_key(&ImageEffectResourceCacheKey {
+                resource_id: third_resource_id,
+                effect_code: 2,
+            }));
+        assert_eq!(replay.diagnostics.image_effect_cache_hits, 1);
+        assert_eq!(replay.diagnostics.image_effect_cache_misses, 3);
+        assert_eq!(replay.diagnostics.image_effect_cache_evictions, 1);
     }
 
     #[test]

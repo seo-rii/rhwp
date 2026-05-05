@@ -138,12 +138,18 @@ pub struct LayerRenderDiagnostics {
     pub image_effect_cache_hits: usize,
     pub image_effect_cache_misses: usize,
     pub image_effect_cache_evictions: usize,
+    pub static_picture_cache_hits: usize,
+    pub static_picture_cache_misses: usize,
+    pub static_picture_cache_evictions: usize,
     /// Approximate RGBA bytes processed while producing image-effect intermediates.
     /// This is diagnostic accounting, not allocator-reported memory.
     pub image_effect_preprocessed_bytes: usize,
     /// Approximate RGBA bytes retained by image-effect caches after rendering.
     /// Skia/browser backends may allocate additional backing-store overhead.
     pub image_effect_cache_approx_bytes: usize,
+    /// Approximate RGBA bytes retained by static picture caches after rendering.
+    /// This is derived from cached subtree bounds, not Skia allocator telemetry.
+    pub static_picture_cache_approx_bytes: usize,
 }
 
 /// visual layer tree를 raster 결과로 직접 내보내는 backend 계약.
