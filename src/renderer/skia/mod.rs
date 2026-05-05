@@ -10,5 +10,6 @@ pub mod path_conv;
 pub mod renderer;
 pub(crate) mod replay_context;
 pub(crate) mod replay_policy;
+pub(crate) mod text_replay;
 
 pub use renderer::SkiaLayerRenderer;
