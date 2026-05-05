@@ -1028,6 +1028,9 @@ struct SvgResourceCacheKey {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct ImageEffectResourceCacheKey {
+    // Native binary effect preprocessing is full-image and preserves the
+    // source-image dither phase. A future crop-local path must include the
+    // source rect and phase policy here.
     resource_id: ImageResourceId,
     effect_code: u8,
 }
@@ -2916,8 +2919,8 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 mod tests {
     use super::{
         make_font, raster_dimension, ImageEffectResourceCacheKey, ImageSampling, SkiaLayerRenderer,
-        SkiaReplayContext, StaticPictureCache, StaticPictureCacheKey,
-        MAX_STATIC_PICTURE_CACHE_ENTRIES,
+        SkiaReplayContext, StaticPictureCache, StaticPictureCacheKey, MAX_IMAGE_EFFECT_CACHE_BYTES,
+        MAX_IMAGE_EFFECT_CACHE_ENTRIES, MAX_STATIC_PICTURE_CACHE_ENTRIES,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::UnderlineType;
@@ -3059,6 +3062,67 @@ mod tests {
             output.diagnostics.image_effect_cache_approx_bytes,
             8 * 8 * 4
         );
+    }
+
+    #[test]
+    fn raster_output_accumulates_binary_image_effect_cache_eviction_diagnostics() {
+        use crate::model::style::ImageFillMode;
+
+        let resource_count = MAX_IMAGE_EFFECT_CACHE_ENTRIES + 1;
+        let mut resources = ResourceArena::default();
+        let mut ops = Vec::with_capacity(resource_count);
+        for index in 0..resource_count {
+            let mut pixmap = tiny_skia::Pixmap::new(1, 1).expect("source pixmap");
+            pixmap.pixels_mut()[0] = tiny_skia::PremultipliedColorU8::from_rgba(
+                (index.wrapping_mul(3) & 0xff) as u8,
+                (index.wrapping_mul(5) & 0xff) as u8,
+                (index.wrapping_mul(7) & 0xff) as u8,
+                255,
+            )
+            .unwrap();
+            let image_bytes = pixmap.encode_png().expect("source png");
+            let resource_id = resources.intern_image_bytes(&image_bytes);
+            let x = index as f64;
+            ops.push(PaintOp::Image {
+                bbox: BoundingBox::new(x, 0.0, 1.0, 1.0),
+                image: LayerImagePaint {
+                    resource_id: Some(resource_id),
+                    fill_mode: Some(ImageFillMode::FitToSize),
+                    original_size: Some((1.0, 1.0)),
+                    crop: None,
+                    effect: ImageEffect::Pattern8x8,
+                    transform: ShapeTransform::default(),
+                },
+            });
+        }
+
+        let tree = PageLayerTree::with_resources(
+            resource_count as f64,
+            1.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, resource_count as f64, 1.0),
+                None,
+                ops,
+            ),
+            resources,
+        );
+        let renderer = SkiaLayerRenderer::new();
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("render raster");
+
+        assert_eq!(output.diagnostics.image_effect_cache_misses, resource_count);
+        assert_eq!(output.diagnostics.image_effect_cache_hits, 0);
+        assert_eq!(output.diagnostics.image_effect_cache_evictions, 1);
+        assert_eq!(
+            output.diagnostics.image_effect_preprocessed_bytes,
+            resource_count * 4
+        );
+        assert_eq!(
+            output.diagnostics.image_effect_cache_approx_bytes,
+            MAX_IMAGE_EFFECT_CACHE_ENTRIES * 4
+        );
+        assert!(output.diagnostics.image_effect_cache_approx_bytes <= MAX_IMAGE_EFFECT_CACHE_BYTES);
     }
 
     #[test]

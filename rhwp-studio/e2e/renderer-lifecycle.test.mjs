@@ -847,6 +847,57 @@ runTest('Renderer lifecycle', async ({ page }) => {
         tableId: 1001,
       },
     };
+    const rotatedClipTree = {
+      pageWidth: 24,
+      pageHeight: 16,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1002,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'clipRect',
+        sourceNodeId: 10,
+        bounds: { x: 0, y: 0, width: 24, height: 16 },
+        clip: { x: 4, y: 2, width: 12, height: 10 },
+        clipKind: 'generic',
+        clipPolicy: {
+          rightOverflowSlop: 0,
+          allowHorizontalOverflowControls: false,
+        },
+        child: {
+          kind: 'leaf',
+          sourceNodeId: 11,
+          bounds: { x: 0, y: 0, width: 24, height: 16 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'rectangle',
+            bbox: { x: 2, y: 2, width: 16, height: 6 },
+            cornerRadius: 0,
+            style: {
+              fillColor: '#ff0000',
+              strokeColor: null,
+              strokeWidth: 0,
+              strokeDash: 'solid',
+              opacity: 1,
+            },
+            transform: { rotation: 90, horzFlip: false, vertFlip: false },
+          }],
+        },
+      },
+    };
     return {
       enabled: {
         canvas2d: render(canvas2dRenderer, enabledTree),
@@ -871,6 +922,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nestedClipDisabled: {
         canvas2d: render(canvas2dRenderer, nestedClipDisabledTree),
         canvaskit: render(canvaskitRenderer, nestedClipDisabledTree),
+      },
+      rotatedClip: {
+        canvas2d: render(canvas2dRenderer, rotatedClipTree),
+        canvaskit: render(canvaskitRenderer, rotatedClipTree),
       },
     };
   });
@@ -985,6 +1040,25 @@ runTest('Renderer lifecycle', async ({ page }) => {
     isOpaqueRed(pixelAt(clipScopeProbe.nestedClipDisabled.canvas2d, 9, 3))
       && isOpaqueRed(pixelAt(clipScopeProbe.nestedClipDisabled.canvas2d, 3, 7)),
     'Canvas2D clipEnabled=false disables nested clip scopes',
+  );
+  const rotatedClipDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.rotatedClip.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.rotatedClip.canvaskit),
+    {
+      diffName: 'canvas-layer-rotated-clip-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    rotatedClipDiff.passed,
+    `rotated clip parity exact=${rotatedClipDiff.exactDiffPixels}, tolerant=${rotatedClipDiff.rawTolerantDiffPixels}, max_channel_delta=${rotatedClipDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.rotatedClip.canvas2d, 10, 3))
+      && isTransparent(pixelAt(clipScopeProbe.rotatedClip.canvas2d, 10, 1))
+      && isTransparent(pixelAt(clipScopeProbe.rotatedClip.canvas2d, 3, 5)),
+    'Canvas2D clip constrains a rotated child in device clip space',
   );
 
   setTestCase('image-effect-pattern-reference');
@@ -1239,7 +1313,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
 
     const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const renderWithDiagnostics = async (renderer) => {
+    const renderWithDiagnostics = async (renderer, renderTree = tree) => {
       const canvas = document.createElement('canvas');
       canvas.width = 16;
       canvas.height = 16;
@@ -1247,7 +1321,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const before = renderer.getImageEffectDiagnostics();
       let after = before;
       for (let attempt = 0; attempt < 8; attempt += 1) {
-        renderer.renderPage(tree, canvas, 1);
+        renderer.renderPage(renderTree, canvas, 1);
         await nextFrame();
         after = renderer.getImageEffectDiagnostics();
         if (after.preprocessedPixels > before.preprocessedPixels) {
@@ -1278,11 +1352,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
     const canvas2d = await renderWithDiagnostics(canvas2dRenderer);
     const canvaskit = await renderWithDiagnostics(canvaskitRenderer);
+    const tileTree = {
+      ...tree,
+      resources: {
+        ...tree.resources,
+        tableId: 992,
+      },
+      root: {
+        ...tree.root,
+        ops: [{
+          ...tree.root.ops[0],
+          fillMode: 'tileAll',
+          originalSize: { width: 8, height: 8 },
+        }],
+      },
+    };
+    const tileCanvas2d = await renderWithDiagnostics(canvas2dRenderer, tileTree);
+    const tileCanvaskit = await renderWithDiagnostics(canvaskitRenderer, tileTree);
     canvas2dRenderer.resetImageEffectDiagnostics();
     canvaskitRenderer.resetImageEffectDiagnostics();
     return {
       canvas2d,
       canvaskit,
+      tileCanvas2d,
+      tileCanvaskit,
       afterReset: {
         canvas2d: canvas2dRenderer.getImageEffectDiagnostics(),
         canvaskit: canvaskitRenderer.getImageEffectDiagnostics(),
@@ -1351,6 +1444,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     imageEffectCropDiff.passed,
     `image effect crop parity exact=${imageEffectCropDiff.exactDiffPixels}, tolerant=${imageEffectCropDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectCropDiff.maxChannelDelta}`,
+  );
+  assert(
+    imageEffectCropProbe.tileCanvas2d.diagnostics.preprocessedPixels === 4096
+      && imageEffectCropProbe.tileCanvaskit.diagnostics.preprocessedPixels === 4096,
+    `image effect tile+crop preprocessing pixels=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  const imageEffectTileCropDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(imageEffectCropProbe.tileCanvas2d.png),
+    pngBufferFromDataUrl(imageEffectCropProbe.tileCanvaskit.png),
+    {
+      diffName: 'image-effect-tile-crop-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    imageEffectTileCropDiff.passed,
+    `image effect tile+crop parity exact=${imageEffectTileCropDiff.exactDiffPixels}, tolerant=${imageEffectTileCropDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectTileCropDiff.maxChannelDelta}`,
   );
 
   setTestCase('canvaskit-dispose');
