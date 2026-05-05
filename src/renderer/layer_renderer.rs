@@ -138,7 +138,11 @@ pub struct LayerRenderDiagnostics {
     pub image_effect_cache_hits: usize,
     pub image_effect_cache_misses: usize,
     pub image_effect_cache_evictions: usize,
+    /// Approximate RGBA bytes processed while producing image-effect intermediates.
+    /// This is diagnostic accounting, not allocator-reported memory.
     pub image_effect_preprocessed_bytes: usize,
+    /// Approximate RGBA bytes retained by image-effect caches after rendering.
+    /// Skia/browser backends may allocate additional backing-store overhead.
     pub image_effect_cache_approx_bytes: usize,
 }
 

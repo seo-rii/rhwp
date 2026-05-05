@@ -1310,6 +1310,15 @@ impl SkiaLayerRenderer {
         tree: &PageLayerTree,
         options: RasterRenderOptions,
     ) -> LayerRenderResult<RasterRenderOutput> {
+        self.render_raster_with_replay_config(tree, options, |_| {})
+    }
+
+    fn render_raster_with_replay_config(
+        &self,
+        tree: &PageLayerTree,
+        options: RasterRenderOptions,
+        configure_replay: impl FnOnce(&mut SkiaReplayContext),
+    ) -> LayerRenderResult<RasterRenderOutput> {
         if let Some(dpi) = options.dpi {
             if !dpi.is_finite() || dpi <= 0.0 {
                 return Err(LayerRenderError::invalid_options(format!(
@@ -1339,6 +1348,7 @@ impl SkiaLayerRenderer {
             canvas.scale((options.scale as f32, options.scale as f32));
         }
         let mut replay = SkiaReplayContext::new(tree.profile, tree.output_options, options.scale);
+        configure_replay(&mut replay);
         self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
         let image = surface.image_snapshot();
         let data = image
@@ -1352,6 +1362,20 @@ impl SkiaLayerRenderer {
             dpi: options.dpi,
             color_space: options.color_space,
             diagnostics: replay.diagnostics,
+        })
+    }
+
+    #[cfg(test)]
+    fn render_raster_with_image_effect_cache_limits_for_test(
+        &self,
+        tree: &PageLayerTree,
+        options: RasterRenderOptions,
+        max_entries: usize,
+        max_bytes: usize,
+    ) -> LayerRenderResult<RasterRenderOutput> {
+        self.render_raster_with_replay_config(tree, options, |replay| {
+            replay.max_image_effect_cache_entries = max_entries;
+            replay.max_image_effect_cache_bytes = max_bytes;
         })
     }
 
@@ -3126,6 +3150,61 @@ mod tests {
     }
 
     #[test]
+    fn raster_output_accumulates_binary_image_effect_cache_byte_budget_diagnostics() {
+        use crate::model::style::ImageFillMode;
+
+        let mut resources = ResourceArena::default();
+        let mut ops = Vec::new();
+        for (index, value) in [96_u8, 160_u8].into_iter().enumerate() {
+            let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("source pixmap");
+            for pixel in pixmap.pixels_mut() {
+                *pixel = tiny_skia::PremultipliedColorU8::from_rgba(value, 126, 224, 255).unwrap();
+            }
+            let image_bytes = pixmap.encode_png().expect("source png");
+            let resource_id = resources.intern_image_bytes(&image_bytes);
+            ops.push(PaintOp::Image {
+                bbox: BoundingBox::new(index as f64 * 4.0, 0.0, 4.0, 4.0),
+                image: LayerImagePaint {
+                    resource_id: Some(resource_id),
+                    fill_mode: Some(ImageFillMode::FitToSize),
+                    original_size: Some((4.0, 4.0)),
+                    crop: None,
+                    effect: ImageEffect::Pattern8x8,
+                    transform: ShapeTransform::default(),
+                },
+            });
+        }
+        let tree = PageLayerTree::with_resources(
+            8.0,
+            4.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 8.0, 4.0), None, ops),
+            resources,
+        );
+        let renderer = SkiaLayerRenderer::new();
+        let output = renderer
+            .render_raster_with_image_effect_cache_limits_for_test(
+                &tree,
+                RasterRenderOptions::default(),
+                8,
+                4 * 4 * 4 + 8,
+            )
+            .expect("render raster with constrained effect cache");
+
+        assert_eq!(output.diagnostics.image_effect_cache_misses, 2);
+        assert_eq!(output.diagnostics.image_effect_cache_hits, 0);
+        assert_eq!(output.diagnostics.image_effect_cache_evictions, 1);
+        assert_eq!(
+            output.diagnostics.image_effect_preprocessed_bytes,
+            2 * 4 * 4 * 4
+        );
+        assert_eq!(
+            output.diagnostics.image_effect_cache_approx_bytes,
+            4 * 4 * 4
+        );
+        assert!(output.diagnostics.image_effect_cache_approx_bytes <= 4 * 4 * 4 + 8);
+    }
+
+    #[test]
     fn body_clip_policy_allows_right_overflow_slop() {
         let rect_bounds = BoundingBox::new(8.0, 8.0, 8.0, 4.0);
         let leaf = LayerNode::leaf(
@@ -3437,6 +3516,71 @@ mod tests {
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
         renderer.render_png(&tree).expect("cached skia render");
         assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+    }
+
+    #[test]
+    fn static_subtree_picture_cache_preserves_clip_for_transformed_child() {
+        let rect_bounds = BoundingBox::new(4.0, 4.0, 20.0, 10.0);
+        let leaf = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 32.0, 24.0),
+            Some(3),
+            vec![PaintOp::Rectangle {
+                bbox: rect_bounds,
+                rect: LayerRectanglePaint {
+                    corner_radius: 0.0,
+                    style: ShapeStyle {
+                        fill_color: Some(0x000000),
+                        ..Default::default()
+                    },
+                    gradient: None,
+                    transform: ShapeTransform {
+                        rotation: 25.0,
+                        horz_flip: false,
+                        vert_flip: false,
+                    },
+                },
+            }],
+        );
+        let cached_group = LayerNode::group(
+            BoundingBox::new(0.0, 0.0, 32.0, 24.0),
+            Some(2),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        let root = LayerNode::clip_rect(
+            BoundingBox::new(0.0, 0.0, 32.0, 24.0),
+            Some(1),
+            BoundingBox::new(6.0, 4.0, 14.0, 14.0),
+            cached_group,
+            ClipKind::Generic,
+        );
+        let tree = PageLayerTree::new(32.0, 24.0, root);
+        let renderer = SkiaLayerRenderer::new();
+
+        let first_png = renderer.render_png(&tree).expect("first clipped render");
+        assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+        let second_png = renderer.render_png(&tree).expect("cached clipped render");
+        assert_eq!(renderer.static_picture_cache.borrow().len(), 1);
+
+        let first = tiny_skia::Pixmap::decode_png(&first_png).expect("first png decode");
+        let second = tiny_skia::Pixmap::decode_png(&second_png).expect("second png decode");
+        assert_eq!(
+            first.data(),
+            second.data(),
+            "static picture cache hit should preserve clip output"
+        );
+
+        let width = first.width() as usize;
+        assert!(
+            first.pixels()[9 * width + 14].alpha() > 0,
+            "transformed child should remain visible inside the clip"
+        );
+        assert_eq!(
+            first.pixels()[9 * width + 22].alpha(),
+            0,
+            "static subtree replay must not leak transformed child pixels outside the clip"
+        );
     }
 
     #[test]

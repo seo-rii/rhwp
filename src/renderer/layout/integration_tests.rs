@@ -1721,11 +1721,11 @@ mod tests {
             .encode_png()
             .expect("blackwhite synthetic png 인코딩 실패");
 
-        let mut tree = PageRenderTree::new(0, 280.0, 220.0);
+        let mut tree = PageRenderTree::new(0, 280.0, 260.0);
         tree.root.node_type = RenderNodeType::Page(PageNode {
             page_index: 0,
             width: 280.0,
-            height: 220.0,
+            height: 260.0,
             section_index: 0,
         });
         tree.root.children.push(RenderNode::new(
@@ -1737,7 +1737,7 @@ mod tests {
                 gradient: None,
                 image: None,
             }),
-            BoundingBox::new(0.0, 0.0, 280.0, 220.0),
+            BoundingBox::new(0.0, 0.0, 280.0, 260.0),
         ));
 
         let mut crop_x = ImageNode::new(0, Some(png_bytes.clone()));
@@ -1818,7 +1818,7 @@ mod tests {
             BoundingBox::new(76.0, 164.0, 26.0, 40.0),
         ));
 
-        let mut transformed = ImageNode::new(0, Some(png_bytes));
+        let mut transformed = ImageNode::new(0, Some(png_bytes.clone()));
         transformed.fill_mode = Some(ImageFillMode::FitToSize);
         transformed.crop = Some((0, 0, 36 * 75, 26 * 75));
         transformed.transform = ShapeTransform {
@@ -1841,6 +1841,18 @@ mod tests {
             9,
             RenderNodeType::Image(blackwhite),
             BoundingBox::new(216.0, 164.0, 48.0, 34.0),
+        ));
+
+        let mut tiled_realpic = ImageNode::new(0, Some(png_bytes.clone()));
+        tiled_realpic.fill_mode = Some(ImageFillMode::TileAll);
+        tiled_realpic.crop = Some((4 * 75, 3 * 75, 28 * 75, 24 * 75));
+        tiled_realpic.original_size = Some((18.0, 14.0));
+        tiled_realpic.transform = ShapeTransform::default();
+        tiled_realpic.effect = ImageEffect::RealPic;
+        tree.root.children.push(RenderNode::new(
+            11,
+            RenderNodeType::Image(tiled_realpic),
+            BoundingBox::new(16.0, 214.0, 112.0, 34.0),
         ));
 
         let mut builder = LayerBuilder::new(RenderProfile::Screen);
