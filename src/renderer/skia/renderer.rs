@@ -5,6 +5,7 @@ use skia_safe::{
 use std::collections::HashMap;
 
 use crate::error::HwpError;
+use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::ColorRef;
 use crate::paint::{LayerNode, LayerNodeKind, PageLayerTree, PaintOp};
@@ -755,7 +756,254 @@ impl SkiaLayerRenderer {
                             canvas.restore();
                         }
                         PaintOp::FormObject { bbox, form } => {
-                            draw_placeholder(*bbox, form.caption.as_str());
+                            if bbox.width <= 0.0 || bbox.height <= 0.0 {
+                                continue;
+                            }
+                            let parse_css = |value: &str, fallback: Color| {
+                                if let Some(hex) = value.strip_prefix('#') {
+                                    if hex.len() == 6 {
+                                        let parsed = (
+                                            u8::from_str_radix(&hex[0..2], 16),
+                                            u8::from_str_radix(&hex[2..4], 16),
+                                            u8::from_str_radix(&hex[4..6], 16),
+                                        );
+                                        if let (Ok(r), Ok(g), Ok(b)) = parsed {
+                                            return Color::from_argb(255, r, g, b);
+                                        }
+                                    }
+                                }
+                                fallback
+                            };
+                            let rect = Rect::from_xywh(
+                                bbox.x as f32,
+                                bbox.y as f32,
+                                bbox.width as f32,
+                                bbox.height as f32,
+                            );
+                            let control_back = parse_css(&form.back_color, Color::WHITE);
+                            let control_text = if form.enabled {
+                                parse_css(&form.fore_color, Color::BLACK)
+                            } else {
+                                Color::from_argb(255, 128, 128, 128)
+                            };
+                            let border_color = if form.enabled {
+                                Color::from_argb(255, 160, 160, 160)
+                            } else {
+                                Color::from_argb(255, 190, 190, 190)
+                            };
+                            let draw_label = |text: &str, x: f32, baseline: f32, font_size: f32| {
+                                if text.is_empty() {
+                                    return;
+                                }
+                                let mut font = Font::default();
+                                font.set_size(font_size);
+                                font.set_edging(font::Edging::AntiAlias);
+                                let mut paint = Paint::default();
+                                paint.set_anti_alias(true);
+                                paint.set_color(control_text);
+                                canvas.draw_str(text, (x, baseline), &font, &paint);
+                            };
+
+                            match form.form_type {
+                                FormType::PushButton => {
+                                    let mut fill = Paint::default();
+                                    fill.set_anti_alias(true);
+                                    fill.set_style(paint::Style::Fill);
+                                    fill.set_color(if form.back_color.is_empty() {
+                                        Color::from_argb(255, 208, 208, 208)
+                                    } else {
+                                        control_back
+                                    });
+                                    canvas.draw_rect(rect, &fill);
+
+                                    let mut stroke = Paint::default();
+                                    stroke.set_anti_alias(true);
+                                    stroke.set_style(paint::Style::Stroke);
+                                    stroke.set_stroke_width(0.5);
+                                    stroke.set_color(border_color);
+                                    canvas.draw_rect(rect, &stroke);
+
+                                    let font_size = (bbox.height * 0.55).clamp(7.0, 12.0) as f32;
+                                    let text_width =
+                                        form.caption.chars().count() as f32 * font_size * 0.55;
+                                    draw_label(
+                                        &form.caption,
+                                        bbox.x as f32 + bbox.width as f32 / 2.0 - text_width / 2.0,
+                                        bbox.y as f32 + bbox.height as f32 / 2.0 + font_size * 0.35,
+                                        font_size,
+                                    );
+                                }
+                                FormType::CheckBox => {
+                                    let box_size = (bbox.height * 0.7).min(13.0) as f32;
+                                    let box_x = bbox.x as f32 + 2.0;
+                                    let box_y =
+                                        bbox.y as f32 + (bbox.height as f32 - box_size) / 2.0;
+                                    let box_rect =
+                                        Rect::from_xywh(box_x, box_y, box_size, box_size);
+
+                                    let mut fill = Paint::default();
+                                    fill.set_anti_alias(true);
+                                    fill.set_style(paint::Style::Fill);
+                                    fill.set_color(control_back);
+                                    canvas.draw_rect(box_rect, &fill);
+
+                                    let mut stroke = Paint::default();
+                                    stroke.set_anti_alias(true);
+                                    stroke.set_style(paint::Style::Stroke);
+                                    stroke.set_stroke_width(0.8);
+                                    stroke.set_color(border_color);
+                                    canvas.draw_rect(box_rect, &stroke);
+
+                                    if form.value != 0 {
+                                        let mut check = PathBuilder::new();
+                                        check.move_to((
+                                            box_x + box_size * 0.2,
+                                            box_y + box_size * 0.55,
+                                        ));
+                                        check.line_to((
+                                            box_x + box_size * 0.45,
+                                            box_y + box_size * 0.8,
+                                        ));
+                                        check.line_to((
+                                            box_x + box_size * 0.85,
+                                            box_y + box_size * 0.2,
+                                        ));
+                                        let mut mark = Paint::default();
+                                        mark.set_anti_alias(true);
+                                        mark.set_style(paint::Style::Stroke);
+                                        mark.set_stroke_width(1.5);
+                                        mark.set_color(control_text);
+                                        canvas.draw_path(&check.detach(), &mark);
+                                    }
+
+                                    let font_size = (bbox.height * 0.55).clamp(7.0, 12.0) as f32;
+                                    draw_label(
+                                        &form.caption,
+                                        box_x + box_size + 3.0,
+                                        bbox.y as f32 + bbox.height as f32 / 2.0 + font_size * 0.35,
+                                        font_size,
+                                    );
+                                }
+                                FormType::RadioButton => {
+                                    let radius = (bbox.height * 0.3).min(6.5) as f32;
+                                    let cx = bbox.x as f32 + 2.0 + radius;
+                                    let cy = bbox.y as f32 + bbox.height as f32 / 2.0;
+
+                                    let mut fill = Paint::default();
+                                    fill.set_anti_alias(true);
+                                    fill.set_style(paint::Style::Fill);
+                                    fill.set_color(control_back);
+                                    canvas.draw_circle((cx, cy), radius, &fill);
+
+                                    let mut stroke = Paint::default();
+                                    stroke.set_anti_alias(true);
+                                    stroke.set_style(paint::Style::Stroke);
+                                    stroke.set_stroke_width(0.8);
+                                    stroke.set_color(border_color);
+                                    canvas.draw_circle((cx, cy), radius, &stroke);
+
+                                    if form.value != 0 {
+                                        let mut dot = Paint::default();
+                                        dot.set_anti_alias(true);
+                                        dot.set_style(paint::Style::Fill);
+                                        dot.set_color(control_text);
+                                        canvas.draw_circle((cx, cy), radius * 0.5, &dot);
+                                    }
+
+                                    let font_size = (bbox.height * 0.55).clamp(7.0, 12.0) as f32;
+                                    draw_label(
+                                        &form.caption,
+                                        cx + radius + 3.0,
+                                        bbox.y as f32 + bbox.height as f32 / 2.0 + font_size * 0.35,
+                                        font_size,
+                                    );
+                                }
+                                FormType::ComboBox => {
+                                    let button_width = (bbox.height * 0.8).min(16.0) as f32;
+                                    let mut fill = Paint::default();
+                                    fill.set_anti_alias(true);
+                                    fill.set_style(paint::Style::Fill);
+                                    fill.set_color(control_back);
+                                    canvas.draw_rect(rect, &fill);
+
+                                    let mut stroke = Paint::default();
+                                    stroke.set_anti_alias(true);
+                                    stroke.set_style(paint::Style::Stroke);
+                                    stroke.set_stroke_width(0.8);
+                                    stroke.set_color(border_color);
+                                    canvas.draw_rect(rect, &stroke);
+
+                                    let button_rect = Rect::from_xywh(
+                                        bbox.x as f32 + bbox.width as f32 - button_width,
+                                        bbox.y as f32,
+                                        button_width,
+                                        bbox.height as f32,
+                                    );
+                                    let mut button_fill = Paint::default();
+                                    button_fill.set_anti_alias(true);
+                                    button_fill.set_style(paint::Style::Fill);
+                                    button_fill.set_color(Color::from_argb(255, 224, 224, 224));
+                                    canvas.draw_rect(button_rect, &button_fill);
+
+                                    let mut button_stroke = Paint::default();
+                                    button_stroke.set_anti_alias(true);
+                                    button_stroke.set_style(paint::Style::Stroke);
+                                    button_stroke.set_stroke_width(0.5);
+                                    button_stroke.set_color(border_color);
+                                    canvas.draw_rect(button_rect, &button_stroke);
+
+                                    let arrow_cx =
+                                        bbox.x as f32 + bbox.width as f32 - button_width / 2.0;
+                                    let arrow_cy = bbox.y as f32 + bbox.height as f32 / 2.0;
+                                    let arrow_size = (bbox.height * 0.2).min(4.0) as f32;
+                                    let mut arrow = PathBuilder::new();
+                                    arrow.move_to((
+                                        arrow_cx - arrow_size,
+                                        arrow_cy - arrow_size * 0.5,
+                                    ));
+                                    arrow.line_to((
+                                        arrow_cx + arrow_size,
+                                        arrow_cy - arrow_size * 0.5,
+                                    ));
+                                    arrow.line_to((arrow_cx, arrow_cy + arrow_size * 0.5));
+                                    arrow.close();
+                                    let mut arrow_paint = Paint::default();
+                                    arrow_paint.set_anti_alias(true);
+                                    arrow_paint.set_style(paint::Style::Fill);
+                                    arrow_paint.set_color(control_text);
+                                    canvas.draw_path(&arrow.detach(), &arrow_paint);
+
+                                    let font_size = (bbox.height * 0.55).clamp(7.0, 12.0) as f32;
+                                    draw_label(
+                                        &form.text,
+                                        bbox.x as f32 + 3.0,
+                                        bbox.y as f32 + bbox.height as f32 / 2.0 + font_size * 0.35,
+                                        font_size,
+                                    );
+                                }
+                                FormType::Edit => {
+                                    let mut fill = Paint::default();
+                                    fill.set_anti_alias(true);
+                                    fill.set_style(paint::Style::Fill);
+                                    fill.set_color(control_back);
+                                    canvas.draw_rect(rect, &fill);
+
+                                    let mut stroke = Paint::default();
+                                    stroke.set_anti_alias(true);
+                                    stroke.set_style(paint::Style::Stroke);
+                                    stroke.set_stroke_width(0.8);
+                                    stroke.set_color(border_color);
+                                    canvas.draw_rect(rect, &stroke);
+
+                                    let font_size = (bbox.height * 0.55).clamp(7.0, 12.0) as f32;
+                                    draw_label(
+                                        &form.text,
+                                        bbox.x as f32 + 3.0,
+                                        bbox.y as f32 + bbox.height as f32 / 2.0 + font_size * 0.35,
+                                        font_size,
+                                    );
+                                }
+                            }
                         }
                         PaintOp::Placeholder { bbox, placeholder } => {
                             draw_placeholder(*bbox, placeholder.label.as_str());
@@ -1759,6 +2007,71 @@ mod tests {
             .count();
 
         assert_eq!(red_ink, 0, "raw SVG replay must not load file hrefs");
+    }
+
+    #[test]
+    fn renders_form_objects_as_native_controls() {
+        let form = |form_type, caption: &str, text: &str, value| FormObjectNode {
+            form_type,
+            caption: caption.to_string(),
+            text: text.to_string(),
+            fore_color: "#000000".to_string(),
+            back_color: "#ffffff".to_string(),
+            value,
+            enabled: true,
+            section_index: 0,
+            para_index: 0,
+            control_index: 0,
+            name: caption.to_string(),
+            cell_location: None,
+        };
+        let tree = PageLayerTree::new(
+            150.0,
+            72.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 150.0, 72.0),
+                None,
+                vec![
+                    PaintOp::FormObject {
+                        bbox: BoundingBox::new(4.0, 4.0, 42.0, 18.0),
+                        form: form(FormType::PushButton, "OK", "", 0),
+                    },
+                    PaintOp::FormObject {
+                        bbox: BoundingBox::new(54.0, 4.0, 42.0, 18.0),
+                        form: form(FormType::CheckBox, "C", "", 1),
+                    },
+                    PaintOp::FormObject {
+                        bbox: BoundingBox::new(104.0, 4.0, 42.0, 18.0),
+                        form: form(FormType::RadioButton, "R", "", 1),
+                    },
+                    PaintOp::FormObject {
+                        bbox: BoundingBox::new(4.0, 34.0, 66.0, 20.0),
+                        form: form(FormType::ComboBox, "", "One", 0),
+                    },
+                    PaintOp::FormObject {
+                        bbox: BoundingBox::new(82.0, 34.0, 64.0, 20.0),
+                        form: form(FormType::Edit, "", "Edit", 0),
+                    },
+                ],
+            ),
+        );
+        let output = SkiaLayerRenderer::new()
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("render form controls");
+        let image = decode_rgba(&output.bytes);
+        let dark_ink = image
+            .pixels()
+            .filter(|pixel| pixel[0] < 80 && pixel[1] < 80 && pixel[2] < 80 && pixel[3] > 0)
+            .count();
+
+        assert!(
+            count_ink(&image) > 2_000,
+            "form controls should render filled control surfaces"
+        );
+        assert!(
+            dark_ink > 20,
+            "selected and labeled form controls should render dark ink"
+        );
     }
 
     #[test]

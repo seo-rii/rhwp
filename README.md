@@ -220,8 +220,9 @@ v0.7.x 배포 주기 누적 외부 기여자: [@ahnbu](https://github.com/ahnbu)
 - P5 adds native Skia equation replay from `EquationNode.layout_box`, so equations are no longer placeholder boxes in the PNG path.
 - P5 replays the existing equation layout tree directly; it does not add CanvasKit equation replay or native form replay.
 - P6 adds native Skia `RawSvg` fragment rasterization through `resvg`, with external file href loading disabled.
+- P7 adds native Skia form object replay for push button, checkbox, radio button, combo box, and edit controls.
 - CI covers the native Skia path with `cargo test --features native-skia skia --lib`; the feature is not available on `wasm32` targets.
-- The initial native Skia path is a PNG raster backend with core image/equation/raw-svg replay; CanvasKit, resource interning/cache, complex text shaping, advanced image parity, and native form replay stay as follow-up work.
+- The initial native Skia path is a PNG raster backend with core image/equation/raw-svg/form replay; CanvasKit, resource interning/cache, complex text shaping, and advanced image parity stay as follow-up work.
 - C ABI export is intentionally left for a later PR.
 - `ResourceArena` is reserved in `PageLayerTree`; binary resource interning is not implemented yet.
 - This phase establishes the frontend/backend boundary for later CanvasKit and fuller native Skia backends.
