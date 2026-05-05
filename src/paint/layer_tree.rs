@@ -20,14 +20,12 @@ pub struct PageLayerTree {
 }
 
 impl PageLayerTree {
+    pub fn builder(page_width: f64, page_height: f64, root: LayerNode) -> PageLayerTreeBuilder {
+        PageLayerTreeBuilder::new(page_width, page_height, root)
+    }
+
     pub fn new(page_width: f64, page_height: f64, root: LayerNode) -> Self {
-        Self::with_resources_and_profile(
-            page_width,
-            page_height,
-            root,
-            ResourceArena::default(),
-            RenderProfile::default(),
-        )
+        Self::builder(page_width, page_height, root).build()
     }
 
     pub fn with_resources(
@@ -36,13 +34,9 @@ impl PageLayerTree {
         root: LayerNode,
         resources: ResourceArena,
     ) -> Self {
-        Self::with_resources_and_profile(
-            page_width,
-            page_height,
-            root,
-            resources,
-            RenderProfile::default(),
-        )
+        Self::builder(page_width, page_height, root)
+            .resources(resources)
+            .build()
     }
 
     pub fn with_profile(
@@ -51,13 +45,9 @@ impl PageLayerTree {
         root: LayerNode,
         profile: RenderProfile,
     ) -> Self {
-        Self::with_resources_and_profile(
-            page_width,
-            page_height,
-            root,
-            ResourceArena::default(),
-            profile,
-        )
+        Self::builder(page_width, page_height, root)
+            .profile(profile)
+            .build()
     }
 
     pub fn with_resources_and_profile(
@@ -67,19 +57,64 @@ impl PageLayerTree {
         resources: ResourceArena,
         profile: RenderProfile,
     ) -> Self {
-        Self {
-            page_width,
-            page_height,
-            profile,
-            output_options: LayerOutputOptions::default(),
-            root,
-            resources,
-        }
+        Self::builder(page_width, page_height, root)
+            .resources(resources)
+            .profile(profile)
+            .build()
     }
 
     pub fn with_output_options(mut self, output_options: LayerOutputOptions) -> Self {
         self.output_options = output_options;
         self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PageLayerTreeBuilder {
+    page_width: f64,
+    page_height: f64,
+    profile: RenderProfile,
+    output_options: LayerOutputOptions,
+    root: LayerNode,
+    resources: ResourceArena,
+}
+
+impl PageLayerTreeBuilder {
+    pub fn new(page_width: f64, page_height: f64, root: LayerNode) -> Self {
+        Self {
+            page_width,
+            page_height,
+            profile: RenderProfile::default(),
+            output_options: LayerOutputOptions::default(),
+            root,
+            resources: ResourceArena::default(),
+        }
+    }
+
+    pub fn resources(mut self, resources: ResourceArena) -> Self {
+        self.resources = resources;
+        self
+    }
+
+    pub fn profile(mut self, profile: RenderProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    pub fn output_options(mut self, output_options: LayerOutputOptions) -> Self {
+        self.output_options = output_options;
+        self
+    }
+
+    pub fn build(self) -> PageLayerTree {
+        PageLayerTree {
+            page_width: self.page_width,
+            page_height: self.page_height,
+            profile: self.profile,
+            output_options: self.output_options,
+            root: self.root,
+            resources: self.resources,
+        }
     }
 }
 

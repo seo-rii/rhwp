@@ -54,14 +54,11 @@ impl LayerBuilder {
             LayerSemantic::role(LayerSemanticRole::Page),
         );
 
-        PageLayerTree::with_resources_and_profile(
-            page_width,
-            page_height,
-            root,
-            std::mem::take(&mut self.resources),
-            self.profile,
-        )
-        .with_output_options(self.output_options)
+        PageLayerTree::builder(page_width, page_height, root)
+            .resources(std::mem::take(&mut self.resources))
+            .profile(self.profile)
+            .output_options(self.output_options)
+            .build()
     }
 
     fn build_children(&mut self, node: &RenderNode) -> Vec<LayerNode> {

@@ -50,27 +50,26 @@ const MAX_STATIC_PICTURE_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_IMAGE_EFFECT_CACHE_ENTRIES: usize = 64;
 const MAX_IMAGE_EFFECT_CACHE_BYTES: usize = 32 * 1024 * 1024;
 
-struct StaticPictureCache {
-    entries: HashMap<u64, StaticPictureCacheEntry>,
-    order: VecDeque<u64>,
+struct BoundedLruCache<K, V>
+where
+    K: Copy + Eq + std::hash::Hash,
+{
+    entries: HashMap<K, BoundedLruCacheEntry<V>>,
+    order: VecDeque<K>,
     max_entries: usize,
     max_approx_bytes: usize,
     approx_bytes: usize,
 }
 
-struct StaticPictureCacheEntry {
-    picture: Picture,
-    fingerprint: u64,
+struct BoundedLruCacheEntry<V> {
+    value: V,
     approx_bytes: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct StaticPictureCacheKey {
-    hash: u64,
-    fingerprint: u64,
-}
-
-impl StaticPictureCache {
+impl<K, V> BoundedLruCache<K, V>
+where
+    K: Copy + Eq + std::hash::Hash,
+{
     fn new(max_entries: usize, max_approx_bytes: usize) -> Self {
         Self {
             entries: HashMap::new(),
@@ -85,18 +84,160 @@ impl StaticPictureCache {
         self.entries.len()
     }
 
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn contains_key(&self, key: &K) -> bool {
+        self.entries.contains_key(key)
+    }
+
     fn approx_bytes(&self) -> usize {
         self.approx_bytes
     }
 
-    fn get(&mut self, key: StaticPictureCacheKey) -> Option<Picture> {
-        let entry = self.entries.get(&key.hash)?;
-        if entry.fingerprint != key.fingerprint {
+    fn set_limits(&mut self, max_entries: usize, max_approx_bytes: usize) -> usize {
+        self.max_entries = max_entries;
+        self.max_approx_bytes = max_approx_bytes;
+        self.enforce_limits()
+    }
+
+    fn get_cloned(&mut self, key: K) -> Option<V>
+    where
+        V: Clone,
+    {
+        self.get_cloned_if(key, |_| true)
+    }
+
+    fn get_cloned_if(&mut self, key: K, predicate: impl FnOnce(&V) -> bool) -> Option<V>
+    where
+        V: Clone,
+    {
+        let entry = self.entries.get(&key)?;
+        if !predicate(&entry.value) {
             return None;
         }
-        let picture = entry.picture.clone();
-        self.touch(key.hash);
-        Some(picture)
+        let value = entry.value.clone();
+        self.touch(key);
+        Some(value)
+    }
+
+    fn insert(&mut self, key: K, value: V, approx_bytes: usize) -> usize {
+        if self.max_entries == 0
+            || self.max_approx_bytes == 0
+            || approx_bytes > self.max_approx_bytes
+        {
+            return 0;
+        }
+
+        if let Some(entry) = self.entries.remove(&key) {
+            self.approx_bytes = self.approx_bytes.saturating_sub(entry.approx_bytes);
+        }
+        self.order.retain(|cached_key| *cached_key != key);
+
+        let mut evictions = self.enforce_room_for(approx_bytes);
+        self.entries.insert(
+            key,
+            BoundedLruCacheEntry {
+                value,
+                approx_bytes,
+            },
+        );
+        self.approx_bytes = self.approx_bytes.saturating_add(approx_bytes);
+        self.order.push_back(key);
+        evictions = evictions.saturating_add(self.enforce_limits());
+        evictions
+    }
+
+    fn enforce_room_for(&mut self, approx_bytes: usize) -> usize {
+        let mut evictions = 0usize;
+        while self.entries.len() >= self.max_entries
+            || self.approx_bytes.saturating_add(approx_bytes) > self.max_approx_bytes
+        {
+            evictions = evictions.saturating_add(self.pop_lru());
+            if self.order.is_empty() && self.entries.is_empty() {
+                break;
+            }
+        }
+        evictions
+    }
+
+    fn enforce_limits(&mut self) -> usize {
+        if self.max_entries == 0 || self.max_approx_bytes == 0 {
+            let evictions = self.entries.len();
+            self.entries.clear();
+            self.order.clear();
+            self.approx_bytes = 0;
+            return evictions;
+        }
+
+        let mut evictions = 0usize;
+        while self.entries.len() > self.max_entries || self.approx_bytes > self.max_approx_bytes {
+            let before_len = self.entries.len();
+            evictions = evictions.saturating_add(self.pop_lru());
+            if self.entries.len() == before_len {
+                break;
+            }
+        }
+        evictions
+    }
+
+    fn pop_lru(&mut self) -> usize {
+        while let Some(evicted_key) = self.order.pop_front() {
+            if let Some(entry) = self.entries.remove(&evicted_key) {
+                self.approx_bytes = self.approx_bytes.saturating_sub(entry.approx_bytes);
+                return 1;
+            }
+        }
+        let evictions = self.entries.len();
+        self.entries.clear();
+        self.approx_bytes = 0;
+        evictions
+    }
+
+    fn touch(&mut self, key: K) {
+        if let Some(index) = self.order.iter().position(|cached_key| *cached_key == key) {
+            self.order.remove(index);
+        }
+        self.order.push_back(key);
+    }
+}
+
+struct StaticPictureCache {
+    cache: BoundedLruCache<u64, StaticPictureCacheEntry>,
+}
+
+#[derive(Clone)]
+struct StaticPictureCacheEntry {
+    picture: Picture,
+    fingerprint: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StaticPictureCacheKey {
+    hash: u64,
+    fingerprint: u64,
+}
+
+impl StaticPictureCache {
+    fn new(max_entries: usize, max_approx_bytes: usize) -> Self {
+        Self {
+            cache: BoundedLruCache::new(max_entries, max_approx_bytes),
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.cache.len()
+    }
+
+    fn approx_bytes(&self) -> usize {
+        self.cache.approx_bytes()
+    }
+
+    fn get(&mut self, key: StaticPictureCacheKey) -> Option<Picture> {
+        self.cache
+            .get_cloned_if(key.hash, |entry| entry.fingerprint == key.fingerprint)
+            .map(|entry| entry.picture)
     }
 
     fn insert(
@@ -105,52 +246,14 @@ impl StaticPictureCache {
         picture: Picture,
         approx_bytes: usize,
     ) -> usize {
-        if self.max_entries == 0
-            || self.max_approx_bytes == 0
-            || approx_bytes > self.max_approx_bytes
-        {
-            return 0;
-        }
-
-        if let Some(entry) = self.entries.remove(&key.hash) {
-            self.approx_bytes = self.approx_bytes.saturating_sub(entry.approx_bytes);
-        }
-        self.order.retain(|cached_key| *cached_key != key.hash);
-
-        let mut evictions = 0usize;
-        while self.entries.len() >= self.max_entries
-            || self.approx_bytes.saturating_add(approx_bytes) > self.max_approx_bytes
-        {
-            let Some(evicted_key) = self.order.pop_front() else {
-                evictions = evictions.saturating_add(self.entries.len());
-                self.entries.clear();
-                self.approx_bytes = 0;
-                break;
-            };
-            if let Some(entry) = self.entries.remove(&evicted_key) {
-                self.approx_bytes = self.approx_bytes.saturating_sub(entry.approx_bytes);
-                evictions = evictions.saturating_add(1);
-            }
-        }
-
-        self.entries.insert(
+        self.cache.insert(
             key.hash,
             StaticPictureCacheEntry {
                 picture,
                 fingerprint: key.fingerprint,
-                approx_bytes,
             },
-        );
-        self.approx_bytes = self.approx_bytes.saturating_add(approx_bytes);
-        self.order.push_back(key.hash);
-        evictions
-    }
-
-    fn touch(&mut self, key: u64) {
-        if let Some(index) = self.order.iter().position(|cached_key| *cached_key == key) {
-            self.order.remove(index);
-        }
-        self.order.push_back(key);
+            approx_bytes,
+        )
     }
 }
 
@@ -1044,14 +1147,15 @@ struct ImageEffectResourceCacheKey {
     effect_code: u8,
 }
 
+#[derive(Clone)]
 struct ImageEffectCacheEntry {
     image: Option<Image>,
-    approx_bytes: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct SvgFragmentCacheKey {
-    fragment: String,
+    fragment_hash: u64,
+    fragment_len: usize,
     width_bits: u32,
     height_bits: u32,
 }
@@ -1064,18 +1168,48 @@ struct SkiaReplayPolicy {
     prefer_direct_text: bool,
 }
 
+impl SkiaReplayPolicy {
+    fn for_state(profile: RenderProfile, prefer_raster: bool, prefer_vector: bool) -> Self {
+        let image_sampling = if profile == RenderProfile::FastPreview || prefer_raster {
+            ImageSampling::nearest()
+        } else if matches!(profile, RenderProfile::Print | RenderProfile::HighQuality)
+            || prefer_vector
+        {
+            ImageSampling::linear_mipmap()
+        } else {
+            ImageSampling::linear()
+        };
+
+        Self {
+            image_sampling,
+            vector_antialias: profile != RenderProfile::FastPreview || !prefer_raster,
+            clip_antialias: profile != RenderProfile::FastPreview || !prefer_raster,
+            prefer_direct_text: true,
+        }
+    }
+}
+
+fn stable_hash_bytes(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
 struct SkiaReplayContext {
     profile: RenderProfile,
     output_options: LayerOutputOptions,
     scale: f64,
+    replay_policy: SkiaReplayPolicy,
     diagnostics: LayerRenderDiagnostics,
     cache_hints: Vec<CacheHint>,
     image_cache: HashMap<ImageResourceId, Option<Image>>,
-    image_effect_cache: HashMap<ImageEffectResourceCacheKey, ImageEffectCacheEntry>,
-    image_effect_cache_order: VecDeque<ImageEffectResourceCacheKey>,
-    image_effect_cache_approx_bytes: usize,
-    max_image_effect_cache_entries: usize,
-    max_image_effect_cache_bytes: usize,
+    image_effect_cache: BoundedLruCache<ImageEffectResourceCacheKey, ImageEffectCacheEntry>,
     svg_resource_cache: HashMap<SvgResourceCacheKey, Option<Image>>,
     svg_fragment_cache: HashMap<SvgFragmentCacheKey, Option<Image>>,
 }
@@ -1086,25 +1220,38 @@ impl SkiaReplayContext {
             profile,
             output_options,
             scale,
+            replay_policy: SkiaReplayPolicy::for_state(profile, false, false),
             diagnostics: LayerRenderDiagnostics::default(),
             cache_hints: Vec::new(),
             image_cache: HashMap::new(),
-            image_effect_cache: HashMap::new(),
-            image_effect_cache_order: VecDeque::new(),
-            image_effect_cache_approx_bytes: 0,
-            max_image_effect_cache_entries: MAX_IMAGE_EFFECT_CACHE_ENTRIES,
-            max_image_effect_cache_bytes: MAX_IMAGE_EFFECT_CACHE_BYTES,
+            image_effect_cache: BoundedLruCache::new(
+                MAX_IMAGE_EFFECT_CACHE_ENTRIES,
+                MAX_IMAGE_EFFECT_CACHE_BYTES,
+            ),
             svg_resource_cache: HashMap::new(),
             svg_fragment_cache: HashMap::new(),
         }
     }
 
+    fn set_image_effect_cache_limits(&mut self, max_entries: usize, max_approx_bytes: usize) {
+        let evictions = self
+            .image_effect_cache
+            .set_limits(max_entries, max_approx_bytes);
+        self.diagnostics.image_effect_cache_evictions = self
+            .diagnostics
+            .image_effect_cache_evictions
+            .saturating_add(evictions);
+        self.diagnostics.image_effect_cache_approx_bytes = self.image_effect_cache.approx_bytes();
+    }
+
     fn push_cache_hint(&mut self, cache_hint: CacheHint) {
         self.cache_hints.push(cache_hint);
+        self.refresh_replay_policy();
     }
 
     fn pop_cache_hint(&mut self) {
         self.cache_hints.pop();
+        self.refresh_replay_policy();
     }
 
     fn record_image_draw(&mut self, diagnostics: ImageDrawDiagnostics) {
@@ -1131,34 +1278,23 @@ impl SkiaReplayContext {
     }
 
     fn replay_policy(&self) -> SkiaReplayPolicy {
-        let prefer_raster = self.has_cache_hint(CacheHint::PreferRaster);
-        let prefer_vector = self.has_cache_hint(CacheHint::PreferVectorRecording);
-        let image_sampling = if self.profile == RenderProfile::FastPreview || prefer_raster {
-            ImageSampling::nearest()
-        } else if matches!(
-            self.profile,
-            RenderProfile::Print | RenderProfile::HighQuality
-        ) || prefer_vector
-        {
-            ImageSampling::linear_mipmap()
-        } else {
-            ImageSampling::linear()
-        };
+        self.replay_policy
+    }
 
-        SkiaReplayPolicy {
-            image_sampling,
-            vector_antialias: self.profile != RenderProfile::FastPreview || !prefer_raster,
-            clip_antialias: self.profile != RenderProfile::FastPreview || !prefer_raster,
-            prefer_direct_text: true,
-        }
+    fn refresh_replay_policy(&mut self) {
+        self.replay_policy = SkiaReplayPolicy::for_state(
+            self.profile,
+            self.has_cache_hint(CacheHint::PreferRaster),
+            self.has_cache_hint(CacheHint::PreferVectorRecording),
+        );
     }
 
     fn image_sampling(&self) -> ImageSampling {
-        self.replay_policy().image_sampling
+        self.replay_policy.image_sampling
     }
 
     fn clip_antialias(&self) -> bool {
-        self.replay_policy().clip_antialias
+        self.replay_policy.clip_antialias
     }
 
     fn image_for_resource(&mut self, resource_id: ImageResourceId, bytes: &[u8]) -> Option<Image> {
@@ -1185,19 +1321,12 @@ impl SkiaReplayContext {
             resource_id,
             effect_code,
         };
-        if let Some(entry) = self.image_effect_cache.get(&key) {
-            let image = entry.image.clone();
+        if let Some(entry) = self.image_effect_cache.get_cloned(key) {
+            let image = entry.image;
             self.diagnostics.image_effect_cache_hits =
                 self.diagnostics.image_effect_cache_hits.saturating_add(1);
-            if let Some(index) = self
-                .image_effect_cache_order
-                .iter()
-                .position(|cached_key| *cached_key == key)
-            {
-                self.image_effect_cache_order.remove(index);
-            }
-            self.image_effect_cache_order.push_back(key);
-            self.diagnostics.image_effect_cache_approx_bytes = self.image_effect_cache_approx_bytes;
+            self.diagnostics.image_effect_cache_approx_bytes =
+                self.image_effect_cache.approx_bytes();
             return image;
         }
 
@@ -1210,45 +1339,18 @@ impl SkiaReplayContext {
             .image_effect_preprocessed_bytes
             .saturating_add(approx_bytes);
 
-        if self.max_image_effect_cache_entries > 0
-            && self.max_image_effect_cache_bytes > 0
-            && approx_bytes <= self.max_image_effect_cache_bytes
-        {
-            while self.image_effect_cache.len() >= self.max_image_effect_cache_entries
-                || self
-                    .image_effect_cache_approx_bytes
-                    .saturating_add(approx_bytes)
-                    > self.max_image_effect_cache_bytes
-            {
-                let Some(evicted_key) = self.image_effect_cache_order.pop_front() else {
-                    self.image_effect_cache.clear();
-                    self.image_effect_cache_approx_bytes = 0;
-                    break;
-                };
-                if let Some(evicted) = self.image_effect_cache.remove(&evicted_key) {
-                    self.image_effect_cache_approx_bytes = self
-                        .image_effect_cache_approx_bytes
-                        .saturating_sub(evicted.approx_bytes);
-                    self.diagnostics.image_effect_cache_evictions = self
-                        .diagnostics
-                        .image_effect_cache_evictions
-                        .saturating_add(1);
-                }
-            }
-
-            self.image_effect_cache.insert(
-                key,
-                ImageEffectCacheEntry {
-                    image: image.clone(),
-                    approx_bytes,
-                },
-            );
-            self.image_effect_cache_order.push_back(key);
-            self.image_effect_cache_approx_bytes = self
-                .image_effect_cache_approx_bytes
-                .saturating_add(approx_bytes);
-        }
-        self.diagnostics.image_effect_cache_approx_bytes = self.image_effect_cache_approx_bytes;
+        let evictions = self.image_effect_cache.insert(
+            key,
+            ImageEffectCacheEntry {
+                image: image.clone(),
+            },
+            approx_bytes,
+        );
+        self.diagnostics.image_effect_cache_evictions = self
+            .diagnostics
+            .image_effect_cache_evictions
+            .saturating_add(evictions);
+        self.diagnostics.image_effect_cache_approx_bytes = self.image_effect_cache.approx_bytes();
         image
     }
 
@@ -1274,7 +1376,8 @@ impl SkiaReplayContext {
 
     fn svg_image_for_fragment(&mut self, fragment: &str, width: f32, height: f32) -> Option<Image> {
         let key = SvgFragmentCacheKey {
-            fragment: fragment.to_string(),
+            fragment_hash: stable_hash_bytes(fragment.as_bytes()),
+            fragment_len: fragment.len(),
             width_bits: width.to_bits(),
             height_bits: height.to_bits(),
         };
@@ -1383,8 +1486,7 @@ impl SkiaLayerRenderer {
         max_bytes: usize,
     ) -> LayerRenderResult<RasterRenderOutput> {
         self.render_raster_with_replay_config(tree, options, |replay| {
-            replay.max_image_effect_cache_entries = max_entries;
-            replay.max_image_effect_cache_bytes = max_bytes;
+            replay.set_image_effect_cache_limits(max_entries, max_bytes);
         })
     }
 
@@ -4123,7 +4225,7 @@ mod tests {
         let png = source.encode_png().expect("source png");
         let mut replay =
             SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
-        replay.max_image_effect_cache_bytes = 8;
+        replay.set_image_effect_cache_limits(MAX_IMAGE_EFFECT_CACHE_ENTRIES, 8);
         let resource_id = ImageResourceId(18);
         let decoded = replay
             .image_for_resource(resource_id, &png)
@@ -4155,7 +4257,7 @@ mod tests {
         let png = source.encode_png().expect("source png");
         let mut replay =
             SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
-        replay.max_image_effect_cache_entries = 1;
+        replay.set_image_effect_cache_limits(1, MAX_IMAGE_EFFECT_CACHE_BYTES);
         let first_resource_id = ImageResourceId(19);
         let second_resource_id = ImageResourceId(20);
         let first_decoded = replay
@@ -4204,8 +4306,7 @@ mod tests {
         let png = source.encode_png().expect("source png");
         let mut replay =
             SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
-        replay.max_image_effect_cache_entries = 8;
-        replay.max_image_effect_cache_bytes = 4 * 4 * 4 + 8;
+        replay.set_image_effect_cache_limits(8, 4 * 4 * 4 + 8);
         let first_resource_id = ImageResourceId(21);
         let second_resource_id = ImageResourceId(22);
         let first_decoded = replay
@@ -4247,10 +4348,7 @@ mod tests {
             replay.diagnostics.image_effect_cache_approx_bytes,
             4 * 4 * 4
         );
-        assert!(
-            replay.diagnostics.image_effect_cache_approx_bytes
-                <= replay.max_image_effect_cache_bytes
-        );
+        assert!(replay.diagnostics.image_effect_cache_approx_bytes <= 4 * 4 * 4 + 8);
     }
 
     #[test]
@@ -4262,8 +4360,7 @@ mod tests {
         let png = source.encode_png().expect("source png");
         let mut replay =
             SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
-        replay.max_image_effect_cache_entries = 2;
-        replay.max_image_effect_cache_bytes = 2 * 2 * 2 * 4;
+        replay.set_image_effect_cache_limits(2, 2 * 2 * 2 * 4);
         let first_resource_id = ImageResourceId(31);
         let second_resource_id = ImageResourceId(32);
         let third_resource_id = ImageResourceId(33);
