@@ -38,6 +38,7 @@ use super::paint_conv::{
     make_stroke_paint,
 };
 use super::path_conv::to_skia_path;
+use super::replay_policy::SkiaReplayPolicy;
 
 pub struct SkiaLayerRenderer {
     font_mgr: FontMgr,
@@ -954,35 +955,6 @@ struct SvgFragmentCacheKey {
     height_bits: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct SkiaReplayPolicy {
-    image_sampling: ImageSampling,
-    vector_antialias: bool,
-    clip_antialias: bool,
-    prefer_direct_text: bool,
-}
-
-impl SkiaReplayPolicy {
-    fn for_state(profile: RenderProfile, prefer_raster: bool, prefer_vector: bool) -> Self {
-        let image_sampling = if profile == RenderProfile::FastPreview || prefer_raster {
-            ImageSampling::nearest()
-        } else if matches!(profile, RenderProfile::Print | RenderProfile::HighQuality)
-            || prefer_vector
-        {
-            ImageSampling::linear_mipmap()
-        } else {
-            ImageSampling::linear()
-        };
-
-        Self {
-            image_sampling,
-            vector_antialias: profile != RenderProfile::FastPreview || !prefer_raster,
-            clip_antialias: profile != RenderProfile::FastPreview || !prefer_raster,
-            prefer_direct_text: true,
-        }
-    }
-}
-
 fn stable_hash_bytes(bytes: &[u8]) -> u64 {
     const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
     const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -1067,20 +1039,12 @@ impl SkiaReplayContext {
             .saturating_add(diagnostics.image_effect_preprocessed_bytes);
     }
 
-    fn has_cache_hint(&self, cache_hint: CacheHint) -> bool {
-        self.cache_hints.contains(&cache_hint)
-    }
-
     fn replay_policy(&self) -> SkiaReplayPolicy {
         self.replay_policy
     }
 
     fn refresh_replay_policy(&mut self) {
-        self.replay_policy = SkiaReplayPolicy::for_state(
-            self.profile,
-            self.has_cache_hint(CacheHint::PreferRaster),
-            self.has_cache_hint(CacheHint::PreferVectorRecording),
-        );
+        self.replay_policy = SkiaReplayPolicy::from_cache_hints(self.profile, &self.cache_hints);
     }
 
     fn image_sampling(&self) -> ImageSampling {
