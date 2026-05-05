@@ -526,6 +526,10 @@ fn luma_u8(red: u8, green: u8, blue: u8) -> u8 {
     (red as f32 * 0.299 + green as f32 * 0.587 + blue as f32 * 0.114).round() as u8
 }
 
+fn premultiply_binary_channel(value: u8, alpha: u8) -> u8 {
+    ((u16::from(value) * u16::from(alpha) + 127) / 255) as u8
+}
+
 fn pattern8x8_dither_image(image: &Image) -> Option<Image> {
     luma_preprocessed_image(image, |x, y, luma| {
         if luma > ordered_dither_8x8_threshold(x, y) {
@@ -553,8 +557,13 @@ fn luma_preprocessed_image(
             let pixel = pixmap.pixels()[index];
             let luma = luma_u8(pixel.red(), pixel.green(), pixel.blue());
             let value = map_luma(x, y, luma);
-            pixmap.pixels_mut()[index] =
-                tiny_skia::PremultipliedColorU8::from_rgba(value, value, value, pixel.alpha())?;
+            let premultiplied = premultiply_binary_channel(value, pixel.alpha());
+            pixmap.pixels_mut()[index] = tiny_skia::PremultipliedColorU8::from_rgba(
+                premultiplied,
+                premultiplied,
+                premultiplied,
+                pixel.alpha(),
+            )?;
         }
     }
     let png = pixmap.encode_png().ok()?;
@@ -1038,6 +1047,63 @@ mod tests {
     }
 
     #[test]
+    fn pattern8x8_effect_preserves_alpha_when_scaled() {
+        let (fixture_luma, _) = pattern8x8_reference_fixture();
+        let alpha_for = |x: usize, y: usize| -> u8 { [0, 64, 128, 255][(x + y) & 3] };
+        let mut source = tiny_skia::Pixmap::new(4, 4).expect("source pixmap");
+        for y in 0..4usize {
+            for x in 0..4usize {
+                let alpha = alpha_for(x, y);
+                let channel = fixture_luma.min(alpha);
+                source.pixels_mut()[y * 4 + x] =
+                    tiny_skia::PremultipliedColorU8::from_rgba(channel, channel, channel, alpha)
+                        .unwrap();
+            }
+        }
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((8, 8)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            8.0,
+            8.0,
+            Some(ImageFillMode::FitToSize),
+            Some((4.0, 4.0)),
+            None,
+            ImageEffect::Pattern8x8,
+            ImageSampling::linear(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let expected_alpha = alpha_for(x / 2, y / 2);
+                let pixel = pixmap.pixels()[y * 8 + x];
+                assert_eq!(
+                    pixel.alpha(),
+                    expected_alpha,
+                    "scaled Pattern8x8 should preserve source alpha at ({x},{y})"
+                );
+                if expected_alpha == 255 {
+                    assert!(
+                        pixel.red() < 32 || pixel.red() > 223,
+                        "opaque scaled Pattern8x8 pixel should remain binary at ({x},{y}), got {}",
+                        pixel.red()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn blackwhite_effect_uses_midpoint_threshold() {
         let mut source = tiny_skia::Pixmap::new(2, 1).expect("source pixmap");
         source.pixels_mut()[0] =
@@ -1075,6 +1141,53 @@ mod tests {
         assert!(
             pixmap.pixels()[1].red() > 223,
             "luma at 128 should become white"
+        );
+    }
+
+    #[test]
+    fn blackwhite_effect_preserves_transparent_edge_alpha() {
+        let mut source = tiny_skia::Pixmap::new(2, 1).expect("source pixmap");
+        source.pixels_mut()[0] =
+            tiny_skia::PremultipliedColorU8::from_rgba(32, 32, 32, 64).unwrap();
+        source.pixels_mut()[1] =
+            tiny_skia::PremultipliedColorU8::from_rgba(192, 192, 192, 192).unwrap();
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((2, 1)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            2.0,
+            1.0,
+            Some(ImageFillMode::FitToSize),
+            Some((2.0, 1.0)),
+            None,
+            ImageEffect::BlackWhite,
+            ImageSampling::linear(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let dark_edge = pixmap.pixels()[0];
+        let light_edge = pixmap.pixels()[1];
+
+        assert_eq!(dark_edge.alpha(), 64);
+        assert_eq!(light_edge.alpha(), 192);
+        assert!(
+            dark_edge.red() < 8 && dark_edge.green() < 8 && dark_edge.blue() < 8,
+            "transparent blackWhite dark edge should stay black"
+        );
+        assert!(
+            u16::from(light_edge.red()) + 1 >= u16::from(light_edge.alpha())
+                && u16::from(light_edge.green()) + 1 >= u16::from(light_edge.alpha())
+                && u16::from(light_edge.blue()) + 1 >= u16::from(light_edge.alpha()),
+            "transparent blackWhite light edge should stay white in premultiplied form"
         );
     }
 
