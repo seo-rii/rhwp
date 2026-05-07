@@ -7,7 +7,8 @@ use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::equation::layout::LayoutBox;
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
-    ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, ShapeStyle, TextStyle,
+    ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, ShapeStyle,
+    TabLeaderInfo, TextStyle,
 };
 
 /// backend가 재생하는 leaf paint operation.
@@ -80,6 +81,70 @@ pub struct LayerTextRunPaint {
     pub field_marker: FieldMarkerType,
     pub is_para_end: bool,
     pub is_line_break_end: bool,
+}
+
+/// Paint-only projection of `TextStyle`.
+///
+/// Layout-only fields such as tab stops, available width, and spacing expansion
+/// are consumed before layer lowering and should not affect backend replay cache
+/// keys once text positions/control marks are explicit.
+#[derive(Debug, Clone)]
+pub struct PaintTextStyle {
+    pub font_family: String,
+    pub font_size: f64,
+    pub color: ColorRef,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: UnderlineType,
+    pub strikethrough: bool,
+    pub ratio: f64,
+    pub tab_leaders: Vec<TabLeaderInfo>,
+    pub outline_type: u8,
+    pub shadow_type: u8,
+    pub shadow_color: ColorRef,
+    pub shadow_offset_x: f64,
+    pub shadow_offset_y: f64,
+    pub emboss: bool,
+    pub engrave: bool,
+    pub superscript: bool,
+    pub subscript: bool,
+    pub emphasis_dot: u8,
+    pub underline_shape: u8,
+    pub strike_shape: u8,
+    pub underline_color: ColorRef,
+    pub strike_color: ColorRef,
+    pub shade_color: ColorRef,
+}
+
+impl From<&TextStyle> for PaintTextStyle {
+    fn from(style: &TextStyle) -> Self {
+        Self {
+            font_family: style.font_family.clone(),
+            font_size: style.font_size,
+            color: style.color,
+            bold: style.bold,
+            italic: style.italic,
+            underline: style.underline,
+            strikethrough: style.strikethrough,
+            ratio: style.ratio,
+            tab_leaders: style.tab_leaders.clone(),
+            outline_type: style.outline_type,
+            shadow_type: style.shadow_type,
+            shadow_color: style.shadow_color,
+            shadow_offset_x: style.shadow_offset_x,
+            shadow_offset_y: style.shadow_offset_y,
+            emboss: style.emboss,
+            engrave: style.engrave,
+            superscript: style.superscript,
+            subscript: style.subscript,
+            emphasis_dot: style.emphasis_dot,
+            underline_shape: style.underline_shape,
+            strike_shape: style.strike_shape,
+            underline_color: style.underline_color,
+            strike_color: style.strike_color,
+            shade_color: style.shade_color,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

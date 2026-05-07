@@ -5,10 +5,9 @@ use super::{
 use crate::model::image::ImageEffect;
 use crate::model::style::UnderlineType;
 use crate::paint::{
-    CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerImagePaint, LayerLinePaint,
-    LayerNode, LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerSemantic,
-    LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
-    SvgResourceId,
+    CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerImagePaint, LayerLinePaint, LayerNode,
+    LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerSemantic, LayerTextOrientation,
+    LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena, SvgResourceId,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::RasterRenderOptions;
@@ -18,6 +17,7 @@ use crate::renderer::render_tree::{
 };
 use crate::renderer::skia::cache::StaticPictureCache;
 use crate::renderer::skia::cache::StaticPictureCacheKey;
+use crate::renderer::skia::cache_key::StaticSubtreeCacheKey;
 use crate::renderer::skia::image_conv::ImageSampling;
 use crate::renderer::skia::replay_context::{
     ImageEffectResourceCacheKey, SkiaReplayContext, MAX_IMAGE_EFFECT_CACHE_BYTES,
@@ -25,7 +25,7 @@ use crate::renderer::skia::replay_context::{
 };
 use crate::renderer::{
     ArrowStyle, LineRenderType, LineStyle, PathCommand, ShapeStyle, StrokeDash, TabLeaderInfo,
-    TextStyle,
+    TabStop, TextStyle,
 };
 use resvg::tiny_skia;
 use skia_safe::{Color, Paint, PictureRecorder, Point, Rect};
@@ -1113,6 +1113,73 @@ fn static_subtree_picture_cache_evicts_old_entries() {
         MAX_STATIC_PICTURE_CACHE_ENTRIES,
         "static subtree picture cache should stay bounded"
     );
+}
+
+#[test]
+fn static_subtree_cache_key_uses_paint_text_style_projection() {
+    let bbox = BoundingBox::new(2.0, 2.0, 44.0, 16.0);
+    let make_node = |style: TextStyle| {
+        LayerNode::leaf_with_hint(
+            bbox,
+            Some(300),
+            vec![PaintOp::TextRun {
+                bbox,
+                run: LayerTextRunPaint {
+                    text: "Paint".to_string(),
+                    style,
+                    positions: vec![0.0, 8.0, 16.0, 24.0, 32.0, 40.0],
+                    control_marks: Vec::new(),
+                    baseline: 12.0,
+                    rotation: 0.0,
+                    is_vertical: false,
+                    orientation: LayerTextOrientation::Horizontal,
+                    char_overlap: None,
+                    field_marker: Default::default(),
+                    is_para_end: false,
+                    is_line_break_end: false,
+                },
+            }],
+            CacheHint::StaticSubtree,
+        )
+    };
+    let mut base_style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 12.0,
+        color: 0x00000000,
+        ..Default::default()
+    };
+    let mut layout_only_style = base_style.clone();
+    layout_only_style.letter_spacing = 3.0;
+    layout_only_style.default_tab_width = 42.0;
+    layout_only_style.tab_stops = vec![TabStop {
+        position: 24.0,
+        tab_type: 1,
+        fill_type: 2,
+    }];
+    layout_only_style.auto_tab_right = true;
+    layout_only_style.available_width = 180.0;
+    layout_only_style.line_x_offset = 9.0;
+    layout_only_style.inline_tabs = vec![[1, 2, 3, 4, 5, 6, 7]];
+    layout_only_style.extra_word_spacing = 2.0;
+    layout_only_style.extra_char_spacing = 1.0;
+
+    let resources = ResourceArena::default();
+    let mut base_key = StaticSubtreeCacheKey::new();
+    base_key.mix_layer_node(&make_node(base_style.clone()), &resources);
+    let mut layout_only_key = StaticSubtreeCacheKey::new();
+    layout_only_key.mix_layer_node(&make_node(layout_only_style), &resources);
+    let base_key = base_key.finish();
+    let layout_only_key = layout_only_key.finish();
+
+    assert_eq!(
+        base_key, layout_only_key,
+        "explicit layer text positions make layout-only TextStyle fields irrelevant to paint cache keys"
+    );
+
+    base_style.color = 0x000000ff;
+    let mut paint_key = StaticSubtreeCacheKey::new();
+    paint_key.mix_layer_node(&make_node(base_style), &resources);
+    assert_ne!(base_key, paint_key.finish());
 }
 
 #[test]
@@ -2314,7 +2381,9 @@ fn prefer_raster_fast_preview_disables_vector_antialias_for_lines() {
     let root = LayerNode::leaf_with_hint(bbox, None, vec![line], CacheHint::PreferRaster);
     let tree = PageLayerTree::with_profile(48.0, 36.0, root, RenderProfile::FastPreview);
     let renderer = SkiaLayerRenderer::new();
-    let png = renderer.render_png(&tree).expect("fast preview line render");
+    let png = renderer
+        .render_png(&tree)
+        .expect("fast preview line render");
     let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
     let partial_alpha_pixels = pixmap
         .pixels()

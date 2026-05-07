@@ -4,12 +4,12 @@ use crate::model::style::ImageFillMode;
 use crate::paint::{
     CacheHint, ClipKind, ClipPolicy, ImageResourceId, LayerNode, LayerNodeKind, LayerOutputOptions,
     LayerSemantic, LayerSemanticRole, LayerTextControlMarkKind, LayerTextOrientation,
-    LayerTextRunPaint, PaintOp, ResourceArena, SvgResourceId,
+    LayerTextRunPaint, PaintOp, PaintTextStyle, ResourceArena, SvgResourceId,
 };
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
     ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, ShapeStyle, StrokeDash,
-    TabLeaderInfo, TabStop, TextStyle, UnderlineType,
+    TabLeaderInfo, TextStyle, UnderlineType,
 };
 
 use super::cache::StaticPictureCacheKey;
@@ -398,6 +398,7 @@ impl StaticSubtreeCacheKey {
     }
 
     fn mix_text_style(&mut self, style: &TextStyle) {
+        let style = PaintTextStyle::from(style);
         self.mix_str(&style.font_family);
         self.mix_f64(style.font_size);
         self.mix_u32(style.color);
@@ -405,28 +406,11 @@ impl StaticSubtreeCacheKey {
         self.mix_bool(style.italic);
         self.mix_underline(style.underline);
         self.mix_bool(style.strikethrough);
-        self.mix_f64(style.letter_spacing);
         self.mix_f64(style.ratio);
-        self.mix_f64(style.default_tab_width);
-        self.mix_usize(style.tab_stops.len());
-        for tab_stop in &style.tab_stops {
-            self.mix_tab_stop(tab_stop);
-        }
-        self.mix_bool(style.auto_tab_right);
-        self.mix_f64(style.available_width);
-        self.mix_f64(style.line_x_offset);
         self.mix_usize(style.tab_leaders.len());
         for tab_leader in &style.tab_leaders {
             self.mix_tab_leader(tab_leader);
         }
-        self.mix_usize(style.inline_tabs.len());
-        for inline_tab in &style.inline_tabs {
-            for value in inline_tab {
-                self.mix_u16(*value);
-            }
-        }
-        self.mix_f64(style.extra_word_spacing);
-        self.mix_f64(style.extra_char_spacing);
         self.mix_u8(style.outline_type);
         self.mix_u8(style.shadow_type);
         self.mix_u32(style.shadow_color);
@@ -442,12 +426,6 @@ impl StaticSubtreeCacheKey {
         self.mix_u32(style.underline_color);
         self.mix_u32(style.strike_color);
         self.mix_u32(style.shade_color);
-    }
-
-    fn mix_tab_stop(&mut self, tab_stop: &TabStop) {
-        self.mix_f64(tab_stop.position);
-        self.mix_u8(tab_stop.tab_type);
-        self.mix_u8(tab_stop.fill_type);
     }
 
     fn mix_tab_leader(&mut self, tab_leader: &TabLeaderInfo) {
