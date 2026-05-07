@@ -105,6 +105,7 @@ fn draw_arrow_head(
     arrow_style: ArrowStyle,
     color: u32,
     stroke_width: f64,
+    antialias: bool,
 ) {
     let along_x = -dir_x;
     let along_y = -dir_y;
@@ -119,18 +120,18 @@ fn draw_arrow_head(
     };
 
     let mut fill = Paint::default();
-    fill.set_anti_alias(true);
+    fill.set_anti_alias(antialias);
     fill.set_style(skia_safe::paint::Style::Fill);
     fill.set_color(colorref_to_skia(color, 1.0));
 
     let mut stroke = Paint::default();
-    stroke.set_anti_alias(true);
+    stroke.set_anti_alias(antialias);
     stroke.set_style(skia_safe::paint::Style::Stroke);
     stroke.set_stroke_width((stroke_width * 0.3).max(0.5) as f32);
     stroke.set_color(colorref_to_skia(color, 1.0));
 
     let mut open_fill = Paint::default();
-    open_fill.set_anti_alias(true);
+    open_fill.set_anti_alias(antialias);
     open_fill.set_style(skia_safe::paint::Style::Fill);
     open_fill.set_color(Color::WHITE);
 
@@ -497,7 +498,7 @@ impl SkiaLayerRenderer {
                 }
                 if let Some(border) = background.border_color {
                     let mut paint = Paint::default();
-                    paint.set_anti_alias(true);
+                    paint.set_anti_alias(replay.vector_antialias());
                     paint.set_style(skia_safe::paint::Style::Stroke);
                     paint.set_stroke_width(if background.border_width > 0.0 {
                         background.border_width as f32
@@ -583,6 +584,7 @@ impl SkiaLayerRenderer {
                                 line.style.start_arrow,
                                 line.style.color,
                                 width,
+                                replay.vector_antialias(),
                             );
                             x1 += ux * arrow_w;
                             y1 += uy * arrow_w;
@@ -601,13 +603,15 @@ impl SkiaLayerRenderer {
                                 line.style.end_arrow,
                                 line.style.color,
                                 width,
+                                replay.vector_antialias(),
                             );
                             x2 -= ux * arrow_w;
                             y2 -= uy * arrow_w;
                         }
                     }
 
-                    let paint = make_line_paint(&line.style);
+                    let mut paint = make_line_paint(&line.style);
+                    paint.set_anti_alias(replay.vector_antialias());
                     match line.style.line_type {
                         LineRenderType::Double
                         | LineRenderType::ThickThinDouble
@@ -661,9 +665,10 @@ impl SkiaLayerRenderer {
                         bbox.width as f32,
                         bbox.height as f32,
                     );
-                    if let Some(fill) =
+                    if let Some(mut fill) =
                         make_fill_paint(sk_rect, &rect.style, rect.gradient.as_deref())
                     {
+                        fill.set_anti_alias(replay.vector_antialias());
                         if rect.corner_radius > 0.0 {
                             canvas.draw_round_rect(
                                 sk_rect,
@@ -675,7 +680,8 @@ impl SkiaLayerRenderer {
                             canvas.draw_rect(sk_rect, &fill);
                         }
                     }
-                    if let Some(stroke) = make_stroke_paint(&rect.style) {
+                    if let Some(mut stroke) = make_stroke_paint(&rect.style) {
+                        stroke.set_anti_alias(replay.vector_antialias());
                         if rect.corner_radius > 0.0 {
                             canvas.draw_round_rect(
                                 sk_rect,
@@ -697,12 +703,14 @@ impl SkiaLayerRenderer {
                         bbox.width as f32,
                         bbox.height as f32,
                     );
-                    if let Some(fill) =
+                    if let Some(mut fill) =
                         make_fill_paint(oval, &ellipse.style, ellipse.gradient.as_deref())
                     {
+                        fill.set_anti_alias(replay.vector_antialias());
                         canvas.draw_oval(oval, &fill);
                     }
-                    if let Some(stroke) = make_stroke_paint(&ellipse.style) {
+                    if let Some(mut stroke) = make_stroke_paint(&ellipse.style) {
+                        stroke.set_anti_alias(replay.vector_antialias());
                         canvas.draw_oval(oval, &stroke);
                     }
                 });
@@ -716,12 +724,14 @@ impl SkiaLayerRenderer {
                         bbox.width as f32,
                         bbox.height as f32,
                     );
-                    if let Some(fill) =
+                    if let Some(mut fill) =
                         make_fill_paint(path_bounds, &path.style, path.gradient.as_deref())
                     {
+                        fill.set_anti_alias(replay.vector_antialias());
                         canvas.draw_path(&sk_path, &fill);
                     }
-                    if let Some(stroke) = make_stroke_paint(&path.style) {
+                    if let Some(mut stroke) = make_stroke_paint(&path.style) {
+                        stroke.set_anti_alias(replay.vector_antialias());
                         canvas.draw_path(&sk_path, &stroke);
                     }
                     if let (Some(line_style), Some((x1, y1, x2, y2))) =
@@ -767,6 +777,7 @@ impl SkiaLayerRenderer {
                                 line_style.start_arrow,
                                 line_style.color,
                                 line_style.width.max(0.5),
+                                replay.vector_antialias(),
                             );
                         }
                         if line_style.end_arrow != ArrowStyle::None {
@@ -811,6 +822,7 @@ impl SkiaLayerRenderer {
                                 line_style.end_arrow,
                                 line_style.color,
                                 line_style.width.max(0.5),
+                                replay.vector_antialias(),
                             );
                         }
                     }

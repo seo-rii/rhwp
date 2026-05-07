@@ -153,6 +153,10 @@ impl SkiaReplayContext {
         self.replay_policy.clip_antialias
     }
 
+    pub(super) fn vector_antialias(&self) -> bool {
+        self.replay_policy.vector_antialias
+    }
+
     pub(super) fn prefer_direct_text(&self) -> bool {
         self.replay_policy.prefer_direct_text
     }

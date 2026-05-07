@@ -5,9 +5,10 @@ use super::{
 use crate::model::image::ImageEffect;
 use crate::model::style::UnderlineType;
 use crate::paint::{
-    CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerImagePaint, LayerNode,
-    LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerSemantic, LayerTextOrientation,
-    LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena, SvgResourceId,
+    CacheHint, ClipKind, ImageResourceId, LayerBuilder, LayerImagePaint, LayerLinePaint,
+    LayerNode, LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerSemantic,
+    LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintOp, RenderProfile, ResourceArena,
+    SvgResourceId,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::RasterRenderOptions;
@@ -2290,4 +2291,73 @@ fn consumes_profile_and_cache_hints_for_sampling_policy() {
     let vector_policy = vector.replay_policy();
     assert_eq!(vector_policy.image_sampling, ImageSampling::linear_mipmap());
     assert!(vector_policy.vector_antialias);
+}
+
+#[test]
+fn prefer_raster_fast_preview_disables_vector_antialias_for_lines() {
+    let bbox = BoundingBox::new(4.0, 4.0, 40.0, 28.0);
+    let line = PaintOp::Line {
+        bbox,
+        line: LayerLinePaint {
+            x1: 5.0,
+            y1: 7.0,
+            x2: 39.0,
+            y2: 25.0,
+            style: LineStyle {
+                color: 0x00000000,
+                width: 1.0,
+                ..Default::default()
+            },
+            transform: Default::default(),
+        },
+    };
+    let root = LayerNode::leaf_with_hint(bbox, None, vec![line], CacheHint::PreferRaster);
+    let tree = PageLayerTree::with_profile(48.0, 36.0, root, RenderProfile::FastPreview);
+    let renderer = SkiaLayerRenderer::new();
+    let png = renderer.render_png(&tree).expect("fast preview line render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let partial_alpha_pixels = pixmap
+        .pixels()
+        .iter()
+        .filter(|pixel| pixel.alpha() > 0 && pixel.alpha() < 255)
+        .count();
+
+    assert_eq!(
+        partial_alpha_pixels, 0,
+        "PreferRaster + FastPreview should use hard-edged vector replay"
+    );
+}
+
+#[test]
+fn screen_profile_keeps_vector_antialias_for_lines() {
+    let bbox = BoundingBox::new(4.0, 4.0, 40.0, 28.0);
+    let line = PaintOp::Line {
+        bbox,
+        line: LayerLinePaint {
+            x1: 5.0,
+            y1: 7.0,
+            x2: 39.0,
+            y2: 25.0,
+            style: LineStyle {
+                color: 0x00000000,
+                width: 1.0,
+                ..Default::default()
+            },
+            transform: Default::default(),
+        },
+    };
+    let tree = PageLayerTree::new(48.0, 36.0, LayerNode::leaf(bbox, None, vec![line]));
+    let renderer = SkiaLayerRenderer::new();
+    let png = renderer.render_png(&tree).expect("screen line render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let partial_alpha_pixels = pixmap
+        .pixels()
+        .iter()
+        .filter(|pixel| pixel.alpha() > 0 && pixel.alpha() < 255)
+        .count();
+
+    assert!(
+        partial_alpha_pixels > 0,
+        "screen vector replay should keep antialiased line edges"
+    );
 }
