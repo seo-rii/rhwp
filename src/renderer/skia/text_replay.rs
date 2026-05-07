@@ -206,6 +206,7 @@ impl SkiaLayerRenderer {
         let metrics_font = make_font(&render_style, &self.font_mgr, &run.text);
         let char_positions = &run.positions;
         let text_width = char_positions.last().copied().unwrap_or(0.0) as f32;
+        let prefer_direct_text = replay.prefer_direct_text();
         let shade_rgb = run.style.shade_color & 0x00FF_FFFF;
         if text_width > 0.0 && shade_rgb != 0x00FF_FFFF && shade_rgb != 0 {
             let mut shade_paint = Paint::default();
@@ -451,7 +452,15 @@ impl SkiaLayerRenderer {
                     false,
                 );
             } else {
-                draw_pass(canvas, 0.0, 0.0, run.style.color, None, 0.0, true);
+                draw_pass(
+                    canvas,
+                    0.0,
+                    0.0,
+                    run.style.color,
+                    None,
+                    0.0,
+                    prefer_direct_text,
+                );
             }
         }
 

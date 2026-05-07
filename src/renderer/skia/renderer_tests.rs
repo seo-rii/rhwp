@@ -29,6 +29,51 @@ use crate::renderer::{
 use resvg::tiny_skia;
 use skia_safe::{Color, Paint, PictureRecorder, Point, Rect};
 
+#[derive(Debug, Clone, Copy)]
+struct AlphaBounds {
+    min_x: u32,
+    min_y: u32,
+    max_x: u32,
+    max_y: u32,
+}
+
+impl AlphaBounds {
+    fn width(self) -> u32 {
+        self.max_x - self.min_x + 1
+    }
+
+    fn height(self) -> u32 {
+        self.max_y - self.min_y + 1
+    }
+}
+
+fn alpha_bounds(pixmap: &tiny_skia::Pixmap) -> Option<AlphaBounds> {
+    let width = pixmap.width();
+    let mut bounds: Option<AlphaBounds> = None;
+    for (index, pixel) in pixmap.pixels().iter().enumerate() {
+        if pixel.alpha() == 0 {
+            continue;
+        }
+        let x = index as u32 % width;
+        let y = index as u32 / width;
+        bounds = Some(match bounds {
+            Some(current) => AlphaBounds {
+                min_x: current.min_x.min(x),
+                min_y: current.min_y.min(y),
+                max_x: current.max_x.max(x),
+                max_y: current.max_y.max(y),
+            },
+            None => AlphaBounds {
+                min_x: x,
+                min_y: y,
+                max_x: x,
+                max_y: y,
+            },
+        });
+    }
+    bounds
+}
+
 #[test]
 fn renders_basic_rect_to_png() {
     let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 80.0);
@@ -931,11 +976,54 @@ fn raster_output_reports_static_picture_cache_eviction_diagnostics() {
     );
     assert_eq!(output.diagnostics.static_picture_cache_hits, 0);
     assert_eq!(output.diagnostics.static_picture_cache_evictions, 1);
+    assert_eq!(output.diagnostics.static_picture_cache_skipped_oversized, 0);
     assert_eq!(
         renderer.static_picture_cache.borrow().len(),
         MAX_STATIC_PICTURE_CACHE_ENTRIES
     );
     assert!(output.diagnostics.static_picture_cache_approx_bytes <= MAX_STATIC_PICTURE_CACHE_BYTES);
+}
+
+#[test]
+fn raster_output_reports_static_picture_cache_oversized_skips() {
+    let rect_bounds = BoundingBox::new(0.0, 0.0, 16.0, 16.0);
+    let leaf = LayerNode::leaf(
+        rect_bounds,
+        Some(200),
+        vec![PaintOp::Rectangle {
+            bbox: rect_bounds,
+            rect: LayerRectanglePaint {
+                corner_radius: 0.0,
+                style: ShapeStyle {
+                    fill_color: Some(0x0000AA00),
+                    ..Default::default()
+                },
+                gradient: None,
+                transform: Default::default(),
+            },
+        }],
+    );
+    let root = LayerNode::group(
+        rect_bounds,
+        Some(201),
+        vec![leaf],
+        CacheHint::StaticSubtree,
+        LayerSemantic::default(),
+    );
+    let tree = PageLayerTree::new(20.0, 20.0, root);
+    let renderer = SkiaLayerRenderer::new();
+    *renderer.static_picture_cache.borrow_mut() = StaticPictureCache::new(8, 8);
+
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("oversized static cache render");
+
+    assert_eq!(output.diagnostics.static_picture_cache_misses, 1);
+    assert_eq!(output.diagnostics.static_picture_cache_hits, 0);
+    assert_eq!(output.diagnostics.static_picture_cache_evictions, 0);
+    assert_eq!(output.diagnostics.static_picture_cache_skipped_oversized, 1);
+    assert_eq!(output.diagnostics.static_picture_cache_approx_bytes, 0);
+    assert_eq!(renderer.static_picture_cache.borrow().len(), 0);
 }
 
 #[test]
@@ -1051,20 +1139,24 @@ fn static_picture_cache_uses_byte_budget_and_fingerprint() {
     };
     let mut cache = StaticPictureCache::new(4, 1_000);
 
-    cache.insert(key_a, picture.clone(), 600);
+    let outcome = cache.insert(key_a, picture.clone(), 600);
+    assert_eq!(outcome.evictions, 0);
+    assert!(!outcome.skipped_oversized);
     assert!(cache.get(key_a).is_some());
     assert!(
         cache.get(key_b).is_none(),
         "same hash with a different fingerprint must not reuse a cached picture"
     );
 
-    cache.insert(key_c, picture.clone(), 600);
+    let outcome = cache.insert(key_c, picture.clone(), 600);
+    assert_eq!(outcome.evictions, 1);
+    assert!(!outcome.skipped_oversized);
     assert_eq!(cache.len(), 1);
     assert!(cache.approx_bytes() <= 1_000);
     assert!(cache.get(key_a).is_none());
     assert!(cache.get(key_c).is_some());
 
-    cache.insert(
+    let outcome = cache.insert(
         StaticPictureCacheKey {
             hash: 9,
             fingerprint: 14,
@@ -1072,6 +1164,8 @@ fn static_picture_cache_uses_byte_budget_and_fingerprint() {
         picture,
         1_001,
     );
+    assert_eq!(outcome.evictions, 0);
+    assert!(outcome.skipped_oversized);
     assert_eq!(
         cache.len(),
         1,
@@ -1169,6 +1263,7 @@ fn replay_context_skips_binary_image_effect_cache_when_over_budget() {
     assert!(replay.image_effect_cache.is_empty());
     assert_eq!(replay.diagnostics.image_effect_cache_hits, 0);
     assert_eq!(replay.diagnostics.image_effect_cache_misses, 2);
+    assert_eq!(replay.diagnostics.image_effect_cache_skipped_oversized, 2);
     assert_eq!(
         replay.diagnostics.image_effect_preprocessed_bytes,
         2 * 8 * 8 * 4
@@ -1807,6 +1902,108 @@ fn renders_text_feature_fixture_to_png() {
     assert!(
         ink_pixels > 500,
         "expected visible text feature fixture ink"
+    );
+}
+
+#[test]
+fn skia_vertical_sideways_uses_explicit_rotation_only() {
+    let bbox = BoundingBox::new(38.0, 34.0, 58.0, 24.0);
+    let tree = PageLayerTree::new(
+        140.0,
+        110.0,
+        LayerNode::leaf(
+            bbox,
+            None,
+            vec![PaintOp::TextRun {
+                bbox,
+                run: LayerTextRunPaint {
+                    text: "ABC".to_string(),
+                    style: TextStyle {
+                        font_family: "sans-serif".to_string(),
+                        font_size: 20.0,
+                        color: 0x00000000,
+                        ..Default::default()
+                    },
+                    positions: vec![0.0, 18.0, 36.0, 54.0],
+                    control_marks: Vec::new(),
+                    baseline: 20.0,
+                    rotation: 90.0,
+                    is_vertical: true,
+                    orientation: LayerTextOrientation::VerticalSideways,
+                    char_overlap: None,
+                    field_marker: Default::default(),
+                    is_para_end: false,
+                    is_line_break_end: false,
+                },
+            }],
+        ),
+    );
+
+    let renderer = SkiaLayerRenderer::new();
+    let png = renderer
+        .render_png(&tree)
+        .expect("vertical sideways text render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("vertical sideways ink");
+
+    assert!(
+        bounds.height() > bounds.width(),
+        "sideways vertical text must use the explicit 90 degree run rotation, got {bounds:?}"
+    );
+}
+
+#[test]
+fn skia_vertical_upright_uses_layout_glyph_positions() {
+    let first = BoundingBox::new(50.0, 18.0, 26.0, 26.0);
+    let second = BoundingBox::new(50.0, 52.0, 26.0, 26.0);
+    let make_run = |text: &str| LayerTextRunPaint {
+        text: text.to_string(),
+        style: TextStyle {
+            font_family: "sans-serif".to_string(),
+            font_size: 22.0,
+            color: 0x00000000,
+            ..Default::default()
+        },
+        positions: vec![0.0, 22.0],
+        control_marks: Vec::new(),
+        baseline: 22.0,
+        rotation: 0.0,
+        is_vertical: true,
+        orientation: LayerTextOrientation::VerticalUpright,
+        char_overlap: None,
+        field_marker: Default::default(),
+        is_para_end: false,
+        is_line_break_end: false,
+    };
+    let tree = PageLayerTree::new(
+        130.0,
+        110.0,
+        LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 130.0, 110.0),
+            None,
+            vec![
+                PaintOp::TextRun {
+                    bbox: first,
+                    run: make_run("가"),
+                },
+                PaintOp::TextRun {
+                    bbox: second,
+                    run: make_run("나"),
+                },
+            ],
+        ),
+    );
+
+    let renderer = SkiaLayerRenderer::new();
+    let png = renderer
+        .render_png(&tree)
+        .expect("vertical upright text render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("vertical upright ink");
+
+    assert!(
+        bounds.height() > bounds.width() * 2,
+        "upright vertical glyphs must follow layout-provided stacked bboxes, got {bounds:?}"
     );
 }
 

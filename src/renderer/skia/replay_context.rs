@@ -153,6 +153,10 @@ impl SkiaReplayContext {
         self.replay_policy.clip_antialias
     }
 
+    pub(super) fn prefer_direct_text(&self) -> bool {
+        self.replay_policy.prefer_direct_text
+    }
+
     pub(super) fn image_for_resource(
         &mut self,
         resource_id: ImageResourceId,
@@ -199,7 +203,7 @@ impl SkiaReplayContext {
             .image_effect_preprocessed_bytes
             .saturating_add(approx_bytes);
 
-        let evictions = self.image_effect_cache.insert(
+        let outcome = self.image_effect_cache.insert(
             key,
             ImageEffectCacheEntry {
                 image: image.clone(),
@@ -209,7 +213,13 @@ impl SkiaReplayContext {
         self.diagnostics.image_effect_cache_evictions = self
             .diagnostics
             .image_effect_cache_evictions
-            .saturating_add(evictions);
+            .saturating_add(outcome.evictions);
+        if outcome.skipped_oversized {
+            self.diagnostics.image_effect_cache_skipped_oversized = self
+                .diagnostics
+                .image_effect_cache_skipped_oversized
+                .saturating_add(1);
+        }
         self.diagnostics.image_effect_cache_approx_bytes = self.image_effect_cache.approx_bytes();
         image
     }

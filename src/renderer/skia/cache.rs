@@ -12,6 +12,12 @@ where
     approx_bytes: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct BoundedLruInsertOutcome {
+    pub(super) evictions: usize,
+    pub(super) skipped_oversized: bool,
+}
+
 struct BoundedLruCacheEntry<V> {
     value: V,
     approx_bytes: usize,
@@ -73,12 +79,20 @@ where
         Some(value)
     }
 
-    pub(super) fn insert(&mut self, key: K, value: V, approx_bytes: usize) -> usize {
+    pub(super) fn insert(
+        &mut self,
+        key: K,
+        value: V,
+        approx_bytes: usize,
+    ) -> BoundedLruInsertOutcome {
         if self.max_entries == 0
             || self.max_approx_bytes == 0
             || approx_bytes > self.max_approx_bytes
         {
-            return 0;
+            return BoundedLruInsertOutcome {
+                evictions: 0,
+                skipped_oversized: true,
+            };
         }
 
         if let Some(entry) = self.entries.remove(&key) {
@@ -97,7 +111,10 @@ where
         self.approx_bytes = self.approx_bytes.saturating_add(approx_bytes);
         self.order.push_back(key);
         evictions = evictions.saturating_add(self.enforce_limits());
-        evictions
+        BoundedLruInsertOutcome {
+            evictions,
+            skipped_oversized: false,
+        }
     }
 
     fn enforce_room_for(&mut self, approx_bytes: usize) -> usize {
@@ -196,7 +213,7 @@ impl StaticPictureCache {
         key: StaticPictureCacheKey,
         picture: Picture,
         approx_bytes: usize,
-    ) -> usize {
+    ) -> BoundedLruInsertOutcome {
         self.cache.insert(
             key.hash,
             StaticPictureCacheEntry {

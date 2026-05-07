@@ -385,15 +385,21 @@ impl SkiaLayerRenderer {
                         } else {
                             MAX_STATIC_PICTURE_CACHE_BYTES.saturating_add(1)
                         };
-                        let (evictions, cache_bytes) = {
+                        let (outcome, cache_bytes) = {
                             let mut cache = self.static_picture_cache.borrow_mut();
-                            let evictions = cache.insert(cache_key, picture, approx_bytes);
-                            (evictions, cache.approx_bytes())
+                            let outcome = cache.insert(cache_key, picture, approx_bytes);
+                            (outcome, cache.approx_bytes())
                         };
                         replay.diagnostics.static_picture_cache_evictions = replay
                             .diagnostics
                             .static_picture_cache_evictions
-                            .saturating_add(evictions);
+                            .saturating_add(outcome.evictions);
+                        if outcome.skipped_oversized {
+                            replay.diagnostics.static_picture_cache_skipped_oversized = replay
+                                .diagnostics
+                                .static_picture_cache_skipped_oversized
+                                .saturating_add(1);
+                        }
                         replay.diagnostics.static_picture_cache_approx_bytes = cache_bytes;
                         return;
                     }
@@ -511,6 +517,10 @@ impl SkiaLayerRenderer {
                 }
             }
             PaintOp::TextRun { bbox, run } => {
+                // Vertical layout is already lowered into positioned text runs:
+                // upright glyphs use their own bboxes and sideways glyphs carry
+                // explicit run.rotation. Keep Skia aligned with SVG by not adding
+                // another orientation-derived rotation here.
                 let rotation = run.rotation;
                 if rotation != 0.0 {
                     let cx = (bbox.x + bbox.width / 2.0) as f32;
