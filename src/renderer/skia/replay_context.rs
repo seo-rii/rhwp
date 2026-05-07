@@ -137,6 +137,22 @@ impl SkiaReplayContext {
             .saturating_add(diagnostics.image_effect_preprocessed_bytes);
     }
 
+    pub(super) fn record_layer_node_replay(&mut self) {
+        self.diagnostics.layer_nodes_replayed =
+            self.diagnostics.layer_nodes_replayed.saturating_add(1);
+    }
+
+    pub(super) fn record_paint_op_replay(&mut self) {
+        self.diagnostics.paint_ops_replayed = self.diagnostics.paint_ops_replayed.saturating_add(1);
+    }
+
+    pub(super) fn record_static_picture_recording(&mut self) {
+        self.diagnostics.static_picture_cache_recordings = self
+            .diagnostics
+            .static_picture_cache_recordings
+            .saturating_add(1);
+    }
+
     pub(super) fn replay_policy(&self) -> SkiaReplayPolicy {
         self.replay_policy
     }

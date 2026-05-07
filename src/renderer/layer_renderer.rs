@@ -132,6 +132,8 @@ pub struct RasterRenderOutput {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LayerRenderDiagnostics {
+    pub layer_nodes_replayed: usize,
+    pub paint_ops_replayed: usize,
     pub tile_fallback_cap_hits: usize,
     pub image_effect_preprocess_failures: usize,
     pub image_effect_fallback_to_filter: usize,
@@ -144,6 +146,7 @@ pub struct LayerRenderDiagnostics {
     pub static_picture_cache_evictions: usize,
     pub static_picture_cache_skipped_oversized: usize,
     pub static_picture_cache_fingerprint_mismatches: usize,
+    pub static_picture_cache_recordings: usize,
     /// Approximate RGBA bytes processed while producing image-effect intermediates.
     /// This is diagnostic accounting, not allocator-reported memory.
     pub image_effect_preprocessed_bytes: usize,

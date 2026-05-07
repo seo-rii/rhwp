@@ -324,6 +324,7 @@ impl SkiaLayerRenderer {
         resources: &ResourceArena,
         replay: &mut SkiaReplayContext,
     ) {
+        replay.record_layer_node_replay();
         match &node.kind {
             LayerNodeKind::Group {
                 children,
@@ -371,6 +372,7 @@ impl SkiaLayerRenderer {
                         .diagnostics
                         .static_picture_cache_misses
                         .saturating_add(1);
+                    replay.record_static_picture_recording();
 
                     let cull_rect = Rect::from_xywh(
                         node.bounds.x as f32,
@@ -463,6 +465,7 @@ impl SkiaLayerRenderer {
         resources: &ResourceArena,
         replay: &mut SkiaReplayContext,
     ) {
+        replay.record_paint_op_replay();
         match op {
             PaintOp::PageBackground { bbox, background } => {
                 let background_rect = Rect::from_xywh(

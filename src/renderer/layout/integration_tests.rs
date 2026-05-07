@@ -1720,6 +1720,22 @@ mod tests {
         let blackwhite_png = blackwhite_pixmap
             .encode_png()
             .expect("blackwhite synthetic png 인코딩 실패");
+        let mut alpha_gradient_pixmap =
+            tiny_skia::Pixmap::new(16, 16).expect("alpha gradient synthetic pixmap 생성 실패");
+        for y in 0..16usize {
+            for x in 0..16usize {
+                let alpha = 128 + (((x + y) * 5) % 96) as u8;
+                let red = (24 + x * 4) as u8;
+                let green = (32 + y * 4) as u8;
+                let blue = (96usize.saturating_sub((x + y) * 2)) as u8;
+                alpha_gradient_pixmap.pixels_mut()[y * 16 + x] =
+                    tiny_skia::PremultipliedColorU8::from_rgba(red, green, blue, alpha)
+                        .expect("alpha gradient pixel");
+            }
+        }
+        let alpha_gradient_png = alpha_gradient_pixmap
+            .encode_png()
+            .expect("alpha gradient synthetic png 인코딩 실패");
 
         let mut tree = PageRenderTree::new(0, 280.0, 260.0);
         tree.root.node_type = RenderNodeType::Page(PageNode {
@@ -1853,6 +1869,16 @@ mod tests {
             11,
             RenderNodeType::Image(tiled_realpic),
             BoundingBox::new(16.0, 214.0, 112.0, 34.0),
+        ));
+
+        let mut alpha_scaled_pattern = ImageNode::new(0, Some(alpha_gradient_png));
+        alpha_scaled_pattern.fill_mode = Some(ImageFillMode::FitToSize);
+        alpha_scaled_pattern.transform = ShapeTransform::default();
+        alpha_scaled_pattern.effect = ImageEffect::Pattern8x8;
+        tree.root.children.push(RenderNode::new(
+            12,
+            RenderNodeType::Image(alpha_scaled_pattern),
+            BoundingBox::new(148.0, 214.0, 64.0, 34.0),
         ));
 
         let mut builder = LayerBuilder::new(RenderProfile::Screen);

@@ -801,17 +801,23 @@ fn raster_output_reports_static_picture_cache_hit_miss_diagnostics() {
     let first = renderer
         .render_raster_with_options(&tree, RasterRenderOptions::default())
         .expect("first static cache render");
+    assert_eq!(first.diagnostics.layer_nodes_replayed, 2);
+    assert_eq!(first.diagnostics.paint_ops_replayed, 1);
     assert_eq!(first.diagnostics.static_picture_cache_misses, 1);
     assert_eq!(first.diagnostics.static_picture_cache_hits, 0);
     assert_eq!(first.diagnostics.static_picture_cache_evictions, 0);
+    assert_eq!(first.diagnostics.static_picture_cache_recordings, 1);
     assert!(first.diagnostics.static_picture_cache_approx_bytes > 0);
 
     let second = renderer
         .render_raster_with_options(&tree, RasterRenderOptions::default())
         .expect("second static cache render");
+    assert_eq!(second.diagnostics.layer_nodes_replayed, 1);
+    assert_eq!(second.diagnostics.paint_ops_replayed, 0);
     assert_eq!(second.diagnostics.static_picture_cache_misses, 0);
     assert_eq!(second.diagnostics.static_picture_cache_hits, 1);
     assert_eq!(second.diagnostics.static_picture_cache_evictions, 0);
+    assert_eq!(second.diagnostics.static_picture_cache_recordings, 0);
     assert_eq!(
         second.diagnostics.static_picture_cache_approx_bytes,
         first.diagnostics.static_picture_cache_approx_bytes
