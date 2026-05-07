@@ -543,10 +543,10 @@ impl StaticSubtreeCacheKey {
             Some((id, bytes)) => {
                 self.mix_bool(true);
                 self.mix_usize(bytes.len());
-                match resources.image_hash(id) {
-                    Some(hash) => {
+                match resources.image_fingerprint(id) {
+                    Some(fingerprint) => {
                         self.mix_bool(true);
-                        self.mix_u64(hash);
+                        self.mix_bytes(&fingerprint);
                     }
                     None => self.mix_bool(false),
                 }
@@ -560,10 +560,10 @@ impl StaticSubtreeCacheKey {
             Some(fragment) => {
                 self.mix_bool(true);
                 self.mix_usize(fragment.len());
-                match resources.svg_hash(resource_id) {
-                    Some(hash) => {
+                match resources.svg_fingerprint(resource_id) {
+                    Some(fingerprint) => {
                         self.mix_bool(true);
-                        self.mix_u64(hash);
+                        self.mix_bytes(&fingerprint);
                     }
                     None => self.mix_bool(false),
                 }

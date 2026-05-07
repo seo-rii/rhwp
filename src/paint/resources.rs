@@ -16,9 +16,11 @@ pub const RESOURCE_KEY_ALGORITHM: &str = "blake3";
 pub struct ResourceArena {
     image_bytes: Vec<Vec<u8>>,
     image_hashes: Vec<u64>,
+    image_fingerprints: Vec<[u8; 16]>,
     image_lookup: HashMap<u64, Vec<ImageResourceId>>,
     svg_fragments: Vec<String>,
     svg_hashes: Vec<u64>,
+    svg_fingerprints: Vec<[u8; 16]>,
     svg_lookup: HashMap<u64, Vec<SvgResourceId>>,
 }
 
@@ -36,6 +38,7 @@ impl ResourceArena {
         let id = ImageResourceId(self.image_bytes.len());
         self.image_bytes.push(bytes.to_vec());
         self.image_hashes.push(hash);
+        self.image_fingerprints.push(resource_fingerprint(bytes));
         self.image_lookup.entry(hash).or_default().push(id);
         id
     }
@@ -50,6 +53,10 @@ impl ResourceArena {
 
     pub fn image_hash(&self, id: ImageResourceId) -> Option<u64> {
         self.image_hashes.get(id.0).copied()
+    }
+
+    pub fn image_fingerprint(&self, id: ImageResourceId) -> Option<[u8; 16]> {
+        self.image_fingerprints.get(id.0).copied()
     }
 
     pub fn image_resources(&self) -> impl Iterator<Item = (ImageResourceId, &[u8])> + '_ {
@@ -72,6 +79,7 @@ impl ResourceArena {
         let id = SvgResourceId(self.svg_fragments.len());
         self.svg_fragments.push(svg.to_string());
         self.svg_hashes.push(hash);
+        self.svg_fingerprints.push(resource_fingerprint(svg));
         self.svg_lookup.entry(hash).or_default().push(id);
         id
     }
@@ -86,6 +94,10 @@ impl ResourceArena {
 
     pub fn svg_hash(&self, id: SvgResourceId) -> Option<u64> {
         self.svg_hashes.get(id.0).copied()
+    }
+
+    pub fn svg_fingerprint(&self, id: SvgResourceId) -> Option<[u8; 16]> {
+        self.svg_fingerprints.get(id.0).copied()
     }
 
     pub fn svg_resources(&self) -> impl Iterator<Item = (SvgResourceId, &str)> + '_ {
@@ -108,6 +120,13 @@ fn resource_hash(bytes: impl AsRef<[u8]>) -> u64 {
     hash
 }
 
+fn resource_fingerprint(bytes: impl AsRef<[u8]>) -> [u8; 16] {
+    let digest = blake3::hash(bytes.as_ref());
+    let mut fingerprint = [0; 16];
+    fingerprint.copy_from_slice(&digest.as_bytes()[..16]);
+    fingerprint
+}
+
 pub fn resource_digest_hex(bytes: impl AsRef<[u8]>) -> String {
     blake3::hash(bytes.as_ref()).to_hex().to_string()
 }
@@ -127,8 +146,8 @@ fn resource_key(kind: &str, byte_len: usize, digest: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        image_resource_key, resource_digest_hex, svg_resource_key, ImageResourceId, ResourceArena,
-        SvgResourceId,
+        image_resource_key, resource_digest_hex, resource_fingerprint, svg_resource_key,
+        ImageResourceId, ResourceArena, SvgResourceId,
     };
 
     #[test]
@@ -146,6 +165,10 @@ mod tests {
         assert_eq!(arena.image_hash(image_a), arena.image_hash(image_b));
         assert_eq!(arena.image_hash(image_a), Some(0xbe7a_5e77_5165_785d));
         assert_eq!(
+            arena.image_fingerprint(image_a),
+            Some(resource_fingerprint([1, 2, 3, 4]))
+        );
+        assert_eq!(
             arena.image_resources().collect::<Vec<_>>(),
             vec![(ImageResourceId(0), &[1, 2, 3, 4][..])]
         );
@@ -156,6 +179,10 @@ mod tests {
         assert_eq!(arena.svg_fragment(svg_a), Some("<svg/>"));
         assert_eq!(arena.svg_hash(svg_a), arena.svg_hash(svg_b));
         assert!(arena.svg_hash(svg_a).is_some());
+        assert_eq!(
+            arena.svg_fingerprint(svg_a),
+            Some(resource_fingerprint("<svg/>"))
+        );
         assert_eq!(
             arena.svg_resources().collect::<Vec<_>>(),
             vec![(SvgResourceId(0), "<svg/>")]
