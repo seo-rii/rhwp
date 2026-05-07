@@ -202,6 +202,10 @@ impl StaticPictureCache {
         self.cache.approx_bytes()
     }
 
+    pub(super) fn contains_hash(&self, hash: u64) -> bool {
+        self.cache.contains_key(&hash)
+    }
+
     pub(super) fn get(&mut self, key: StaticPictureCacheKey) -> Option<Picture> {
         self.cache
             .get_cloned_if(key.hash, |entry| entry.fingerprint == key.fingerprint)

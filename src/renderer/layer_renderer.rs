@@ -143,6 +143,7 @@ pub struct LayerRenderDiagnostics {
     pub static_picture_cache_misses: usize,
     pub static_picture_cache_evictions: usize,
     pub static_picture_cache_skipped_oversized: usize,
+    pub static_picture_cache_fingerprint_mismatches: usize,
     /// Approximate RGBA bytes processed while producing image-effect intermediates.
     /// This is diagnostic accounting, not allocator-reported memory.
     pub image_effect_preprocessed_bytes: usize,

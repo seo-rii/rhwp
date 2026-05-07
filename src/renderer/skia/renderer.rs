@@ -343,12 +343,14 @@ impl SkiaLayerRenderer {
                     cache_key.mix_f64(replay.scale);
                     cache_key.mix_layer_node(node, resources);
                     let cache_key = cache_key.finish();
-                    if let Some((picture, approx_bytes)) = {
+                    let lookup = {
                         let mut cache = self.static_picture_cache.borrow_mut();
-                        cache
-                            .get(cache_key)
-                            .map(|picture| (picture, cache.approx_bytes()))
-                    } {
+                        let had_hash = cache.contains_hash(cache_key.hash);
+                        let picture = cache.get(cache_key);
+                        (had_hash, picture, cache.approx_bytes())
+                    };
+                    let (had_hash, picture, approx_bytes) = lookup;
+                    if let Some(picture) = picture {
                         replay.diagnostics.static_picture_cache_hits = replay
                             .diagnostics
                             .static_picture_cache_hits
@@ -356,6 +358,14 @@ impl SkiaLayerRenderer {
                         replay.diagnostics.static_picture_cache_approx_bytes = approx_bytes;
                         canvas.draw_picture(&picture, None, None);
                         return;
+                    }
+                    if had_hash {
+                        replay
+                            .diagnostics
+                            .static_picture_cache_fingerprint_mismatches = replay
+                            .diagnostics
+                            .static_picture_cache_fingerprint_mismatches
+                            .saturating_add(1);
                     }
                     replay.diagnostics.static_picture_cache_misses = replay
                         .diagnostics

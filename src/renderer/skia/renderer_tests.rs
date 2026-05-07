@@ -819,6 +819,72 @@ fn raster_output_reports_static_picture_cache_hit_miss_diagnostics() {
 }
 
 #[test]
+fn raster_output_reports_static_picture_cache_fingerprint_mismatch() {
+    let rect_bounds = BoundingBox::new(5.0, 5.0, 20.0, 10.0);
+    let leaf = LayerNode::leaf(
+        rect_bounds,
+        Some(2),
+        vec![PaintOp::Rectangle {
+            bbox: rect_bounds,
+            rect: LayerRectanglePaint {
+                corner_radius: 0.0,
+                style: ShapeStyle {
+                    fill_color: Some(0x00AA00),
+                    ..Default::default()
+                },
+                gradient: None,
+                transform: Default::default(),
+            },
+        }],
+    );
+    let root = LayerNode::group(
+        BoundingBox::new(0.0, 0.0, 40.0, 20.0),
+        Some(1),
+        vec![leaf],
+        CacheHint::StaticSubtree,
+        LayerSemantic::default(),
+    );
+    let tree = PageLayerTree::new(40.0, 20.0, root);
+    let renderer = SkiaLayerRenderer::new();
+
+    let mut cache_key = StaticSubtreeCacheKey::new();
+    cache_key.mix_str(RenderProfile::Screen.as_str());
+    cache_key.mix_output_options(&LayerOutputOptions::default());
+    cache_key.mix_f64(1.0);
+    cache_key.mix_layer_node(&tree.root, &tree.resources);
+    let cache_key = cache_key.finish();
+
+    let mut recorder = PictureRecorder::new();
+    let canvas = recorder.begin_recording(Rect::from_xywh(0.0, 0.0, 4.0, 4.0), true);
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_argb(255, 255, 0, 0));
+    canvas.draw_rect(Rect::from_xywh(0.0, 0.0, 4.0, 4.0), &paint);
+    let stale_picture = recorder
+        .finish_recording_as_picture(Some(&Rect::from_xywh(0.0, 0.0, 4.0, 4.0)))
+        .expect("stale picture");
+    renderer.static_picture_cache.borrow_mut().insert(
+        StaticPictureCacheKey {
+            hash: cache_key.hash,
+            fingerprint: cache_key.fingerprint ^ 1,
+        },
+        stale_picture,
+        64,
+    );
+
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("static cache mismatch render");
+    assert_eq!(output.diagnostics.static_picture_cache_hits, 0);
+    assert_eq!(output.diagnostics.static_picture_cache_misses, 1);
+    assert_eq!(
+        output
+            .diagnostics
+            .static_picture_cache_fingerprint_mismatches,
+        1
+    );
+}
+
+#[test]
 fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
     use crate::model::style::ImageFillMode;
 
@@ -1214,6 +1280,10 @@ fn static_picture_cache_uses_byte_budget_and_fingerprint() {
     assert!(
         cache.get(key_b).is_none(),
         "same hash with a different fingerprint must not reuse a cached picture"
+    );
+    assert!(
+        cache.contains_hash(key_b.hash),
+        "fingerprint mismatch should remain observable before replacement"
     );
 
     let outcome = cache.insert(key_c, picture.clone(), 600);
