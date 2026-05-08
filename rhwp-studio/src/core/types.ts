@@ -298,6 +298,11 @@ export interface LayerTextRunOp {
   shapeMarkerIndex?: number;
   isParaEnd?: boolean;
   isLineBreakEnd?: boolean;
+  /**
+   * Paint-only text style projection for the schema migration path toward
+   * lower-level glyph replay. `style` remains for v1 compatibility.
+   */
+  paintStyle?: LayerTextStyle;
   style: LayerTextStyle;
   positions: number[];
   controlMarks?: LayerTextControlMark[];

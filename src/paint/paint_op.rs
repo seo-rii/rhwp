@@ -70,6 +70,12 @@ pub struct LayerFootnoteMarkerPaint {
 #[derive(Debug, Clone)]
 pub struct LayerTextRunPaint {
     pub text: String,
+    /// Compatibility text style carried by the transitional TextRun IR.
+    ///
+    /// Backend replay should treat `PaintTextStyle::from(&style)` as the
+    /// paint-visible contract. Layout-only fields in `TextStyle` are consumed
+    /// before layer lowering and should not affect paint cache keys or new
+    /// schema consumers.
     pub style: TextStyle,
     pub positions: Vec<f64>,
     pub control_marks: Vec<LayerTextControlMark>,
@@ -87,7 +93,7 @@ pub struct LayerTextRunPaint {
 ///
 /// Layout-only fields such as tab stops, available width, and spacing expansion
 /// are consumed before layer lowering and should not affect backend replay cache
-/// keys once text positions/control marks are explicit.
+/// keys or schema v2 consumers once text positions/control marks are explicit.
 #[derive(Debug, Clone)]
 pub struct PaintTextStyle {
     pub font_family: String,

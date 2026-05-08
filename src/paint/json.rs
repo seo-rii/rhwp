@@ -8,7 +8,7 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerTextRunPaint, PageLayerTree,
-    PaintOp, ResourceArena, LAYER_TREE_SCHEMA,
+    PaintOp, PaintTextStyle, ResourceArena, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -191,6 +191,8 @@ impl PaintOp {
                 );
                 buf.push_str(",\"style\":");
                 write_text_style(buf, &run.style);
+                buf.push_str(",\"paintStyle\":");
+                write_paint_text_style(buf, &PaintTextStyle::from(&run.style));
                 buf.push_str(",\"positions\":");
                 write_text_positions(buf, run);
                 if !run.control_marks.is_empty() {
@@ -425,6 +427,10 @@ fn write_bbox(buf: &mut String, bbox: BoundingBox) {
 }
 
 fn write_text_style(buf: &mut String, style: &TextStyle) {
+    write_paint_text_style(buf, &PaintTextStyle::from(style));
+}
+
+fn write_paint_text_style(buf: &mut String, style: &PaintTextStyle) {
     buf.push('{');
     let _ = write!(
         buf,
@@ -1126,13 +1132,16 @@ mod tests {
         assert!(json.contains("\"showParagraphMarks\":false"));
         assert!(json.contains("\"type\":\"textRun\""));
         assert!(json.contains(&positions_json));
+        assert!(json.contains("\"style\":{\"fontFamily\":\"Noto Sans KR\""));
+        assert!(json.contains("\"paintStyle\":{\"fontFamily\":\"Noto Sans KR\""));
+        assert!(!json.contains("\"availableWidth\""));
+        assert!(!json.contains("\"tabStops\""));
         assert!(json.contains("\"controlMarks\":[{\"kind\":\"paragraphEnd\",\"text\":\"↵\",\"x\":80.000000,\"y\":0.000000,\"fontSize\":16.000000}]"));
         assert!(json.contains("\"charOverlap\":{\"borderType\":1,\"innerCharSize\":90}"));
         assert!(json.contains("\"orientation\":\"horizontal\""));
         assert!(json.contains("\"fieldMarker\":\"none\""));
         assert!(json.contains("\"isParaEnd\":false"));
         assert!(json.contains("\"isLineBreakEnd\":false"));
-        assert!(json.contains("\"fontFamily\":\"Noto Sans KR\""));
         assert!(json.contains("\"type\":\"rectangle\""));
         assert!(json.contains("\"type\":\"equation\""));
         assert!(json.contains("\"svgContent\":\"<text x=\\\"0\\\" y=\\\"12\\\">x</text>\""));

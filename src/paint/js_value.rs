@@ -9,7 +9,7 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, LayerNode,
-    LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp, LAYER_TREE_SCHEMA,
+    LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp, PaintTextStyle, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -296,6 +296,11 @@ fn paint_op_to_value(op: &PaintOp) -> JsValue {
             set_value(&value, "style", text_style_to_value(&run.style));
             set_value(
                 &value,
+                "paintStyle",
+                paint_text_style_to_value(&PaintTextStyle::from(&run.style)),
+            );
+            set_value(
+                &value,
                 "positions",
                 array_to_value(run.positions.iter().copied().map(JsValue::from_f64)),
             );
@@ -440,6 +445,10 @@ fn bbox_to_value(bbox: BoundingBox) -> JsValue {
 }
 
 fn text_style_to_value(style: &TextStyle) -> JsValue {
+    paint_text_style_to_value(&PaintTextStyle::from(style))
+}
+
+fn paint_text_style_to_value(style: &PaintTextStyle) -> JsValue {
     let value = Object::new();
     set_string(&value, "fontFamily", &style.font_family);
     set_number(&value, "fontSize", style.font_size);
@@ -1045,6 +1054,13 @@ mod tests {
         assert_same_number(&json_text, &js_text, "shapeMarkerIndex");
         assert_same_bool(&json_text, &js_text, "isParaEnd");
         assert_same_bool(&json_text, &js_text, "isLineBreakEnd");
+        let json_paint_style = prop(&json_text, "paintStyle");
+        let js_paint_style = prop(&js_text, "paintStyle");
+        assert_same_string(&json_paint_style, &js_paint_style, "fontFamily");
+        assert_same_number(&json_paint_style, &js_paint_style, "fontSize");
+        assert_same_string(&json_paint_style, &js_paint_style, "color");
+        assert_same_bool(&json_paint_style, &js_paint_style, "bold");
+        assert_same_number(&json_paint_style, &js_paint_style, "ratio");
         assert_same_number(
             &prop(&json_text, "charOverlap"),
             &prop(&js_text, "charOverlap"),
