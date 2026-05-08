@@ -167,7 +167,7 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - Text runs are still the canonical source-backed text paint contract. Layer JSON/JS exports keep the v1-compatible `style` field, expose `paintStyle` as the paint-visible projection, and include a `textSources` table with per-TextRun `source` spans. This keeps browser/SVG string replay compatible while moving source identity, field markers, and paragraph/line-break boundaries toward the TextRun v2 contract required before optional lower-level `GlyphRun` replay.
 - New visual semantics should be lowered into `paint::PaintOp` or shared layer policy first, then replayed by each backend. Backend-only behavior is treated as a parity risk.
 - Public layer export: JS value export with profile/resource-key support is the preferred frontend API for large documents. JSON string export is kept for debug, snapshots, and schema regression checks.
-- Layer schema exports include version, unit, coordinate system, profile, output options, and resource-table metadata so frontends can reject incompatible IR safely.
+- Layer schema exports include version, unit, coordinate system, profile, output options, resource-table metadata, used/optional feature lists, and text variant metadata so frontends can reject incompatible IR safely and avoid double-painting future TextRun/GlyphRun alternatives.
 
 #### Backend support matrix
 | Backend/API | Default status | Layer IR path | Notes |

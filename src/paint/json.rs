@@ -46,6 +46,7 @@ impl PageLayerTree {
             .write_json(&mut buf, &self.resources, &mut text_source_state);
         buf.push_str(",\"textSources\":");
         write_text_source_entries(&mut buf, &self.root);
+        buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\"],\"optionalFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\"],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true}");
         buf.push('}');
         buf
     }
@@ -1184,6 +1185,9 @@ mod tests {
             "\"coordinateSystem\":\"{}\"",
             LAYER_TREE_SCHEMA.coordinate_system
         )));
+        assert!(json.contains("\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\"]"));
+        assert!(json.contains("\"optionalFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\"]"));
+        assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true}"));
     }
 
     #[test]

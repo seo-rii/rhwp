@@ -129,6 +129,36 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         layer_node_to_value(&tree.root, &mut text_source_state),
     );
     set_value(&value, "textSources", text_sources_to_value(&tree.root));
+    set_value(
+        &value,
+        "usedFeatures",
+        string_array_to_value(&["text.paintStyle", "text.sourceTable"]),
+    );
+    set_value(
+        &value,
+        "optionalFeatures",
+        string_array_to_value(&[
+            "fontResources",
+            "text.glyphRun",
+            "text.outlineGlyph",
+            "text.specialVisualOps",
+        ]),
+    );
+    let text_contract = Object::new();
+    set_string(&text_contract, "defaultVariant", "textRun");
+    set_value(
+        &text_contract,
+        "variants",
+        string_array_to_value(&["textRun"]),
+    );
+    set_bool(&text_contract, "sourceTextPreserved", true);
+    set_value(
+        &text_contract,
+        "clusterEncoding",
+        string_array_to_value(&["utf8", "utf16"]),
+    );
+    set_bool(&text_contract, "fallbackRequired", true);
+    set_value(&value, "text", text_contract.into());
 
     let resources = Object::new();
     let images = Array::new();
@@ -929,6 +959,10 @@ fn array_to_value(values: impl IntoIterator<Item = JsValue>) -> JsValue {
     array.into()
 }
 
+fn string_array_to_value(values: &[&str]) -> JsValue {
+    array_to_value(values.iter().map(|value| JsValue::from_str(value)))
+}
+
 fn text_control_marks_to_value(run: &crate::paint::LayerTextRunPaint) -> JsValue {
     array_to_value(run.control_marks.iter().map(|mark| {
         let value = Object::new();
@@ -1185,6 +1219,30 @@ mod tests {
             assert_same_bool(&json_backend, &js_backend, "overlayPaint");
             assert_same_bool(&json_backend, &js_backend, "semanticBounds");
         }
+        let json_used_features = Array::from(&prop(&json_value, "usedFeatures"));
+        let js_used_features = Array::from(&prop(&js_value, "usedFeatures"));
+        assert_eq!(json_used_features.length(), 2);
+        assert_eq!(json_used_features.length(), js_used_features.length());
+        assert_eq!(
+            string_value(&json_used_features.get(0)),
+            string_value(&js_used_features.get(0))
+        );
+        let json_optional_features = Array::from(&prop(&json_value, "optionalFeatures"));
+        let js_optional_features = Array::from(&prop(&js_value, "optionalFeatures"));
+        assert_eq!(json_optional_features.length(), 4);
+        assert_eq!(
+            json_optional_features.length(),
+            js_optional_features.length()
+        );
+        let json_text_contract = prop(&json_value, "text");
+        let js_text_contract = prop(&js_value, "text");
+        assert_same_string(&json_text_contract, &js_text_contract, "defaultVariant");
+        assert_same_bool(
+            &json_text_contract,
+            &js_text_contract,
+            "sourceTextPreserved",
+        );
+        assert_same_bool(&json_text_contract, &js_text_contract, "fallbackRequired");
 
         let json_root = prop(&json_value, "root");
         let js_root = prop(&js_value, "root");

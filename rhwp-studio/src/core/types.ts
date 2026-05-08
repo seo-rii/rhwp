@@ -90,9 +90,26 @@ export interface PageLayerTree {
    * still kept as the v1 replay projection for Canvas2D/SVG compatibility.
    */
   textSources?: LayerTextSourceEntry[];
+  usedFeatures?: LayerTreeFeature[];
+  optionalFeatures?: LayerTreeFeature[];
+  text?: {
+    defaultVariant?: 'textRun' | 'glyphRun' | 'outlineGlyph';
+    variants?: Array<'textRun' | 'glyphRun' | 'outlineGlyph'>;
+    sourceTextPreserved?: boolean;
+    clusterEncoding?: Array<'utf8' | 'utf16'>;
+    fallbackRequired?: boolean;
+  };
   resources?: LayerResources;
   root: LayerNode;
 }
+
+export type LayerTreeFeature =
+  | 'text.paintStyle'
+  | 'text.sourceTable'
+  | 'fontResources'
+  | 'text.glyphRun'
+  | 'text.outlineGlyph'
+  | 'text.specialVisualOps';
 
 export interface LayerResources {
   tableId: number;
