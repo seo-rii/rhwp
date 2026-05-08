@@ -26,7 +26,11 @@ Layer JSON/JS exports currently provide:
 - `TextRun.style`: v1-compatible style projection.
 - `TextRun.paintStyle`: paint-visible style projection.
 - `usedFeatures`: additive schema features used by this export.
-- `optionalFeatures`: known future-compatible text features.
+- `requiredFeatures`: features a consumer must understand for faithful replay.
+- `optionalFeatures`: features present in this export that have a complete
+  fallback path.
+- `knownFeatures`: producer-known future-compatible text features that are not
+  necessarily present in this export.
 - `text.defaultVariant`: currently `textRun`.
 - `text.variants`: emitted visual text variants.
 - `text.fallbackRequired`: true while `TextRun` remains the public fallback.
@@ -37,13 +41,29 @@ metadata as source annotations. Visible marks are still carried by existing
 
 ## Invariants
 
+- `schemaVersion` and `resourceTableVersion` remain integer major versions for
+  v1 compatibility. Additive changes use `schemaMinorVersion`,
+  `resourceTableMinorVersion`, feature arrays, and optional structured
+  `schema`/`resourceTable` mirrors.
+- `usedFeatures` means the export actually contains the feature.
+  `requiredFeatures` means a consumer should reject faithful replay if it does
+  not support the feature. Future producer capability belongs in `knownFeatures`,
+  not `optionalFeatures`.
 - A `TextRun` source span must identify the source text slice used for search,
   accessibility, debugging, and future editing hooks.
+- `TextSourceEntry.id` and `TextRun.source.id` are export-local dense ids. They
+  are valid only inside one layer tree export. Future cache, diff, editing, or
+  accessibility keys must use optional `stableSourceKey` plus source range and
+  document revision when available.
 - `TextRun.text` is a replay projection, not the long-term canonical identity.
 - Source ranges are UTF-8 byte ranges. UTF-16 ranges are exported for JS/DOM
   consumers when available.
 - Run positions remain v1 compatibility positions for now. TextRun v2 should
   replace them with typed cluster placements in run-local coordinates.
+- TextRun v2 cluster origins are run-local. The local baseline is y=0, and
+  `TextRunPlacement.run_to_page` maps the run into page coordinates. `PaintOp`
+  bounding boxes remain page-space conservative boxes for culling and v1
+  backend compatibility.
 - One text run should have homogeneous orientation. Mixed vertical text should
   be split by layout/lowering until per-glyph transforms are introduced.
 - Field marker metadata belongs to source annotations when visible marker text
@@ -51,6 +71,11 @@ metadata as source annotations. Visible marks are still carried by existing
 - Visible control marks, char overlap, tab leaders, and future decoration
   geometry should move into explicit paint ops before becoming required schema
   features.
+- Future TextRun/GlyphRun/outline alternatives must be tied together by an
+  explicit variant group or a `Text { variants }` container. Consumers must draw
+  at most one variant per group. Glyph outline alternatives must not be exported
+  as generic `Path` ops while TextRun fallback is also present, because old
+  consumers would double-paint them.
 
 ## Migration Phases
 
@@ -64,10 +89,10 @@ metadata as source annotations. Visible marks are still carried by existing
 6. Add font resources with portability state:
    `PortableBlob`, `ResolvedButNotEmbedded`, `SystemNameOnly`, or
    `UnresolvedFallback`.
-7. Add optional `GlyphRun` variants only when a portable font instance and
+7. Introduce a post-layout `TextShapeLowerer` skeleton that respects existing
+   layout positions and reports variant quality diagnostics.
+8. Add optional `GlyphRun` variants only when a portable font instance and
    source cluster mapping are available.
-8. Introduce a post-layout `TextShapeLowerer` that respects existing layout
-   positions and emits diagnostic or portable `GlyphRun` variants.
 9. Move shaping into layout only after line breaking, fallback metrics, vertical
    metrics, and regression fixtures are stable.
 
@@ -89,3 +114,4 @@ metadata as source annotations. Visible marks are still carried by existing
 - Letting Canvas2D/SVG depend on glyph-id replay.
 - Changing layout line breaking to shaped advances in the same step as export
   schema migration.
+- Treating system-name-only `GlyphRun` data as portable visual replay.

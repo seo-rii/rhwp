@@ -39,7 +39,17 @@ export interface LayerBounds {
 
 export interface PageLayerTree {
   schemaVersion?: number;
+  schemaMinorVersion?: number;
+  schema?: {
+    major: number;
+    minor: number;
+  };
   resourceTableVersion?: number;
+  resourceTableMinorVersion?: number;
+  resourceTable?: {
+    major: number;
+    minor: number;
+  };
   unit?: 'px';
   coordinateSystem?: 'page-top-left-y-down';
   pageWidth: number;
@@ -92,6 +102,8 @@ export interface PageLayerTree {
   textSources?: LayerTextSourceEntry[];
   usedFeatures?: LayerTreeFeature[];
   optionalFeatures?: LayerTreeFeature[];
+  knownFeatures?: LayerTreeFeature[];
+  requiredFeatures?: LayerTreeFeature[];
   text?: {
     defaultVariant?: 'textRun' | 'glyphRun' | 'outlineGlyph';
     variants?: Array<'textRun' | 'glyphRun' | 'outlineGlyph'>;
@@ -106,6 +118,8 @@ export interface PageLayerTree {
 export type LayerTreeFeature =
   | 'text.paintStyle'
   | 'text.sourceTable'
+  | 'text.sourceSpan'
+  | 'text.clusterPlacement'
   | 'fontResources'
   | 'text.glyphRun'
   | 'text.outlineGlyph'
@@ -243,9 +257,14 @@ export interface LayerTextSourceRange {
 }
 
 export interface LayerTextSourceSpan {
+  /**
+   * Export-local dense id. Do not persist this across layer exports; use
+   * stableSourceKey when present for revision-aware diff/editing/cache keys.
+   */
   id: number;
   utf8Range: LayerTextSourceRange;
   utf16Range?: LayerTextSourceRange;
+  stableSourceKey?: LayerStableTextSourceKey;
 }
 
 export type LayerTextSourceAnnotation =
@@ -263,11 +282,86 @@ export type LayerTextSourceAnnotation =
     };
 
 export interface LayerTextSourceEntry {
+  /**
+   * Export-local dense id. It is only stable within this layer tree export.
+   */
   id: number;
+  stableSourceKey?: LayerStableTextSourceKey;
   text: string;
   utf8Range: LayerTextSourceRange;
   utf16Range?: LayerTextSourceRange;
   annotations?: LayerTextSourceAnnotation[];
+}
+
+export interface LayerStableTextSourceKey {
+  scheme: 'hwp-source-v1' | string;
+  section?: number;
+  paragraph?: number;
+  controlPath?: Array<{
+    kind: string;
+    index?: number;
+    row?: number;
+    col?: number;
+  }>;
+  textNode?: number;
+  revision?: string;
+}
+
+export interface LayerPoint {
+  x: number;
+  y: number;
+}
+
+export interface LayerVector {
+  dx: number;
+  dy: number;
+}
+
+export interface LayerAffineTransform {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+}
+
+export interface LayerTextRunPlacement {
+  /**
+   * Canonical TextRun v2 placement. Cluster coordinates are run-local, with
+   * the local baseline at y=0, and this transform maps them to page space.
+   */
+  runToPage: LayerAffineTransform;
+  baselineY?: number;
+}
+
+export interface LayerTextClusterPlacement {
+  sourceRangeUtf8: LayerTextSourceRange;
+  textRangeUtf8: LayerTextSourceRange;
+  textRangeUtf16?: LayerTextSourceRange;
+  origin: LayerPoint;
+  advance?: LayerVector;
+  flags?: string[];
+}
+
+export type LayerTextVariantKind = 'textRun' | 'glyphRun' | 'outlineGlyph';
+export type LayerTextVariantQuality =
+  | 'exact'
+  | 'positionAdjusted'
+  | 'approximate'
+  | 'diagnosticOnly'
+  | 'omitted';
+
+export interface LayerTextVariantMeta {
+  /**
+   * Variants with the same equivalenceGroup represent the same visual text.
+   * Consumers must select at most one variant from the group.
+   */
+  equivalenceGroup: string;
+  variantKind: LayerTextVariantKind;
+  isDefaultFallback?: boolean;
+  requires?: LayerTreeFeature[];
+  quality?: LayerTextVariantQuality;
 }
 
 export interface LayerShapeShadow {
@@ -355,6 +449,13 @@ export interface LayerTextRunOp {
   rotation: number;
   isVertical: boolean;
   orientation?: 'horizontal' | 'vertical-upright' | 'vertical-sideways';
+  /**
+   * Future TextRun v2 placement. Current renderers still consume the v1
+   * baseline/rotation/positions projection when this field is absent.
+   */
+  placement?: LayerTextRunPlacement;
+  clusters?: LayerTextClusterPlacement[];
+  variant?: LayerTextVariantMeta;
   fieldMarker?: 'none' | 'fieldBegin' | 'fieldEnd' | 'fieldBeginEnd' | 'shapeMarker';
   shapeMarkerIndex?: number;
   isParaEnd?: boolean;

@@ -51,9 +51,39 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     );
     set_number(
         &value,
+        "schemaMinorVersion",
+        LAYER_TREE_SCHEMA.schema_minor_version as f64,
+    );
+    let schema = Object::new();
+    set_number(&schema, "major", LAYER_TREE_SCHEMA.schema_version as f64);
+    set_number(
+        &schema,
+        "minor",
+        LAYER_TREE_SCHEMA.schema_minor_version as f64,
+    );
+    set_value(&value, "schema", schema.into());
+    set_number(
+        &value,
         "resourceTableVersion",
         LAYER_TREE_SCHEMA.resource_table_version as f64,
     );
+    set_number(
+        &value,
+        "resourceTableMinorVersion",
+        LAYER_TREE_SCHEMA.resource_table_minor_version as f64,
+    );
+    let resource_table = Object::new();
+    set_number(
+        &resource_table,
+        "major",
+        LAYER_TREE_SCHEMA.resource_table_version as f64,
+    );
+    set_number(
+        &resource_table,
+        "minor",
+        LAYER_TREE_SCHEMA.resource_table_minor_version as f64,
+    );
+    set_value(&value, "resourceTable", resource_table.into());
     set_string(&value, "unit", LAYER_TREE_SCHEMA.unit);
     set_string(
         &value,
@@ -132,18 +162,21 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_value(
         &value,
         "usedFeatures",
-        string_array_to_value(&["text.paintStyle", "text.sourceTable"]),
+        string_array_to_value(&["text.paintStyle", "text.sourceTable", "text.sourceSpan"]),
     );
+    set_value(&value, "optionalFeatures", string_array_to_value(&[]));
     set_value(
         &value,
-        "optionalFeatures",
+        "knownFeatures",
         string_array_to_value(&[
             "fontResources",
             "text.glyphRun",
             "text.outlineGlyph",
             "text.specialVisualOps",
+            "text.clusterPlacement",
         ]),
     );
+    set_value(&value, "requiredFeatures", string_array_to_value(&[]));
     let text_contract = Object::new();
     set_string(&text_contract, "defaultVariant", "textRun");
     set_value(
@@ -1167,7 +1200,29 @@ mod tests {
         let js_value = page_layer_tree_to_js_value(&tree);
 
         assert_same_number(&json_value, &js_value, "schemaVersion");
+        assert_same_number(&json_value, &js_value, "schemaMinorVersion");
+        assert_same_number(
+            &prop(&json_value, "schema"),
+            &prop(&js_value, "schema"),
+            "major",
+        );
+        assert_same_number(
+            &prop(&json_value, "schema"),
+            &prop(&js_value, "schema"),
+            "minor",
+        );
         assert_same_number(&json_value, &js_value, "resourceTableVersion");
+        assert_same_number(&json_value, &js_value, "resourceTableMinorVersion");
+        assert_same_number(
+            &prop(&json_value, "resourceTable"),
+            &prop(&js_value, "resourceTable"),
+            "major",
+        );
+        assert_same_number(
+            &prop(&json_value, "resourceTable"),
+            &prop(&js_value, "resourceTable"),
+            "minor",
+        );
         assert_same_string(&json_value, &js_value, "unit");
         assert_same_string(&json_value, &js_value, "coordinateSystem");
         assert_same_number(&json_value, &js_value, "pageWidth");
@@ -1221,7 +1276,7 @@ mod tests {
         }
         let json_used_features = Array::from(&prop(&json_value, "usedFeatures"));
         let js_used_features = Array::from(&prop(&js_value, "usedFeatures"));
-        assert_eq!(json_used_features.length(), 2);
+        assert_eq!(json_used_features.length(), 3);
         assert_eq!(json_used_features.length(), js_used_features.length());
         assert_eq!(
             string_value(&json_used_features.get(0)),
@@ -1229,10 +1284,21 @@ mod tests {
         );
         let json_optional_features = Array::from(&prop(&json_value, "optionalFeatures"));
         let js_optional_features = Array::from(&prop(&js_value, "optionalFeatures"));
-        assert_eq!(json_optional_features.length(), 4);
+        assert_eq!(json_optional_features.length(), 0);
         assert_eq!(
             json_optional_features.length(),
             js_optional_features.length()
+        );
+        let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
+        let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
+        assert_eq!(json_known_features.length(), 5);
+        assert_eq!(json_known_features.length(), js_known_features.length());
+        let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
+        let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
+        assert_eq!(json_required_features.length(), 0);
+        assert_eq!(
+            json_required_features.length(),
+            js_required_features.length()
         );
         let json_text_contract = prop(&json_value, "text");
         let js_text_contract = prop(&js_value, "text");

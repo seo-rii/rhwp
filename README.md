@@ -168,7 +168,7 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 - The detailed TextRun v2 / optional GlyphRun migration contract is tracked in [`docs/text-ir-v2.md`](docs/text-ir-v2.md).
 - New visual semantics should be lowered into `paint::PaintOp` or shared layer policy first, then replayed by each backend. Backend-only behavior is treated as a parity risk.
 - Public layer export: JS value export with profile/resource-key support is the preferred frontend API for large documents. JSON string export is kept for debug, snapshots, and schema regression checks.
-- Layer schema exports include version, unit, coordinate system, profile, output options, resource-table metadata, used/optional feature lists, and text variant metadata so frontends can reject incompatible IR safely and avoid double-painting future TextRun/GlyphRun alternatives.
+- Layer schema exports keep `schemaVersion` and `resourceTableVersion` as integer major versions for compatibility, and add minor versions, used/optional/required/known feature lists, and text variant metadata so frontends can reject incompatible IR safely and avoid double-painting future TextRun/GlyphRun alternatives.
 
 #### Backend support matrix
 | Backend/API | Default status | Layer IR path | Notes |
