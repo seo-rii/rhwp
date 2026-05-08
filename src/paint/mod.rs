@@ -12,6 +12,9 @@
 //! - Fully shaped glyph runs are a future lower-level IR step; until then,
 //!   `LayerTextRunPaint` is the text replay contract and must preserve every
 //!   visible text flag exported to browser/native backends.
+//! - JSON/JS exports provide a `textSources` table and per-TextRun `source`
+//!   spans so source identity can move toward TextRun v2 without breaking the
+//!   v1 string replay contract.
 
 #![deny(unused_imports, unused_must_use, unused_variables)]
 

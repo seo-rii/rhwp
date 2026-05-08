@@ -41,14 +41,23 @@ impl PageLayerTree {
             self.output_options.show_transparent_borders,
             self.output_options.debug_overlay,
         );
-        self.root.write_json(&mut buf, &self.resources);
+        let mut text_source_state = TextSourceExportState::default();
+        self.root
+            .write_json(&mut buf, &self.resources, &mut text_source_state);
+        buf.push_str(",\"textSources\":");
+        write_text_source_entries(&mut buf, &self.root);
         buf.push('}');
         buf
     }
 }
 
 impl LayerNode {
-    fn write_json(&self, buf: &mut String, resources: &ResourceArena) {
+    fn write_json(
+        &self,
+        buf: &mut String,
+        resources: &ResourceArena,
+        text_sources: &mut TextSourceExportState,
+    ) {
         buf.push('{');
         buf.push_str("\"bounds\":");
         write_bbox(buf, self.bounds);
@@ -93,7 +102,7 @@ impl LayerNode {
                     if idx > 0 {
                         buf.push(',');
                     }
-                    child.write_json(buf, resources);
+                    child.write_json(buf, resources, text_sources);
                 }
                 buf.push(']');
             }
@@ -113,7 +122,7 @@ impl LayerNode {
                     clip_policy.allow_horizontal_overflow_controls
                 );
                 buf.push_str(",\"child\":");
-                child.write_json(buf, resources);
+                child.write_json(buf, resources, text_sources);
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
                 let _ = write!(
@@ -125,7 +134,7 @@ impl LayerNode {
                     if idx > 0 {
                         buf.push(',');
                     }
-                    op.write_json(buf, resources);
+                    op.write_json(buf, resources, text_sources);
                 }
                 buf.push(']');
             }
@@ -135,7 +144,12 @@ impl LayerNode {
 }
 
 impl PaintOp {
-    fn write_json(&self, buf: &mut String, resources: &ResourceArena) {
+    fn write_json(
+        &self,
+        buf: &mut String,
+        resources: &ResourceArena,
+        text_sources: &mut TextSourceExportState,
+    ) {
         match self {
             PaintOp::PageBackground { bbox, background } => {
                 buf.push('{');
@@ -189,6 +203,8 @@ impl PaintOp {
                     run.is_vertical,
                     json_escape(run.orientation.as_str()),
                 );
+                buf.push_str(",\"source\":");
+                write_text_source_span(buf, run, text_sources.next_id());
                 buf.push_str(",\"style\":");
                 write_text_style(buf, &run.style);
                 buf.push_str(",\"paintStyle\":");
@@ -424,6 +440,136 @@ fn write_bbox(buf: &mut String, bbox: BoundingBox) {
         "{{\"x\":{:.6},\"y\":{:.6},\"width\":{:.6},\"height\":{:.6}}}",
         bbox.x, bbox.y, bbox.width, bbox.height
     );
+}
+
+#[derive(Default)]
+struct TextSourceExportState {
+    next_id: u32,
+}
+
+impl TextSourceExportState {
+    fn next_id(&mut self) -> u32 {
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+        id
+    }
+}
+
+fn write_text_source_entries(buf: &mut String, root: &LayerNode) {
+    buf.push('[');
+    let mut state = TextSourceExportState::default();
+    let mut is_first = true;
+    write_text_source_entries_for_node(buf, root, &mut state, &mut is_first);
+    buf.push(']');
+}
+
+fn write_text_source_entries_for_node(
+    buf: &mut String,
+    node: &LayerNode,
+    state: &mut TextSourceExportState,
+    is_first: &mut bool,
+) {
+    match &node.kind {
+        LayerNodeKind::Group { children, .. } => {
+            for child in children {
+                write_text_source_entries_for_node(buf, child, state, is_first);
+            }
+        }
+        LayerNodeKind::ClipRect { child, .. } => {
+            write_text_source_entries_for_node(buf, child, state, is_first);
+        }
+        LayerNodeKind::Leaf { ops, .. } => {
+            for op in ops {
+                if let PaintOp::TextRun { run, .. } = op {
+                    if !*is_first {
+                        buf.push(',');
+                    }
+                    *is_first = false;
+                    write_text_source_entry(buf, run, state.next_id());
+                }
+            }
+        }
+    }
+}
+
+fn write_text_source_entry(buf: &mut String, run: &LayerTextRunPaint, id: u32) {
+    let utf8_end = run.text.len() as u32;
+    let utf16_end = run.text.encode_utf16().count() as u32;
+    let _ = write!(
+        buf,
+        "{{\"id\":{},\"text\":{},\"utf8Range\":",
+        id,
+        json_escape(&run.text)
+    );
+    write_text_source_range(buf, 0, utf8_end);
+    buf.push_str(",\"utf16Range\":");
+    write_text_source_range(buf, 0, utf16_end);
+    buf.push_str(",\"annotations\":");
+    write_text_source_annotations(buf, run, utf8_end, utf16_end);
+    buf.push('}');
+}
+
+fn write_text_source_span(buf: &mut String, run: &LayerTextRunPaint, id: u32) {
+    let utf8_end = run.text.len() as u32;
+    let utf16_end = run.text.encode_utf16().count() as u32;
+    let _ = write!(buf, "{{\"id\":{},\"utf8Range\":", id);
+    write_text_source_range(buf, 0, utf8_end);
+    buf.push_str(",\"utf16Range\":");
+    write_text_source_range(buf, 0, utf16_end);
+    buf.push('}');
+}
+
+fn write_text_source_range(buf: &mut String, start: u32, end: u32) {
+    let _ = write!(buf, "{{\"start\":{},\"end\":{}}}", start, end);
+}
+
+fn write_text_source_annotations(
+    buf: &mut String,
+    run: &LayerTextRunPaint,
+    utf8_end: u32,
+    utf16_end: u32,
+) {
+    buf.push('[');
+    let mut is_first = true;
+    if run.field_marker != FieldMarkerType::None {
+        write_text_source_annotation_prefix(buf, &mut is_first);
+        let _ = write!(
+            buf,
+            "{{\"kind\":\"fieldMarker\",\"marker\":{},\"rangeUtf8\":",
+            json_escape(field_marker_str(run.field_marker))
+        );
+        write_text_source_range(buf, 0, utf8_end);
+        buf.push_str(",\"rangeUtf16\":");
+        write_text_source_range(buf, 0, utf16_end);
+        if let FieldMarkerType::ShapeMarker(index) = run.field_marker {
+            let _ = write!(buf, ",\"shapeMarkerIndex\":{}", index);
+        }
+        buf.push('}');
+    }
+    if run.is_para_end {
+        write_text_source_annotation_prefix(buf, &mut is_first);
+        let _ = write!(
+            buf,
+            "{{\"kind\":\"paragraphEnd\",\"offsetUtf8\":{},\"offsetUtf16\":{}}}",
+            utf8_end, utf16_end
+        );
+    }
+    if run.is_line_break_end {
+        write_text_source_annotation_prefix(buf, &mut is_first);
+        let _ = write!(
+            buf,
+            "{{\"kind\":\"lineBreakEnd\",\"offsetUtf8\":{},\"offsetUtf16\":{}}}",
+            utf8_end, utf16_end
+        );
+    }
+    buf.push(']');
+}
+
+fn write_text_source_annotation_prefix(buf: &mut String, is_first: &mut bool) {
+    if !*is_first {
+        buf.push(',');
+    }
+    *is_first = false;
 }
 
 fn write_text_style(buf: &mut String, style: &TextStyle) {
@@ -1131,6 +1277,8 @@ mod tests {
         assert!(json.contains("\"outputOptions\":{"));
         assert!(json.contains("\"showParagraphMarks\":false"));
         assert!(json.contains("\"type\":\"textRun\""));
+        assert!(json.contains("\"source\":{\"id\":0,\"utf8Range\":{\"start\":0,\"end\":4},\"utf16Range\":{\"start\":0,\"end\":2}}"));
+        assert!(json.contains("\"textSources\":[{\"id\":0,\"text\":\"가A\",\"utf8Range\":{\"start\":0,\"end\":4},\"utf16Range\":{\"start\":0,\"end\":2},\"annotations\":[]}]"));
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"style\":{\"fontFamily\":\"Noto Sans KR\""));
         assert!(json.contains("\"paintStyle\":{\"fontFamily\":\"Noto Sans KR\""));

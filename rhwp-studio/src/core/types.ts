@@ -84,6 +84,12 @@ export interface PageLayerTree {
       };
     };
   };
+  /**
+   * Source-backed text identity table for schema migration toward TextRun v2.
+   * Text paint ops reference this table through `source`; `text` on the op is
+   * still kept as the v1 replay projection for Canvas2D/SVG compatibility.
+   */
+  textSources?: LayerTextSourceEntry[];
   resources?: LayerResources;
   root: LayerNode;
 }
@@ -214,6 +220,39 @@ export interface LayerCharOverlap {
   innerCharSize: number;
 }
 
+export interface LayerTextSourceRange {
+  start: number;
+  end: number;
+}
+
+export interface LayerTextSourceSpan {
+  id: number;
+  utf8Range: LayerTextSourceRange;
+  utf16Range?: LayerTextSourceRange;
+}
+
+export type LayerTextSourceAnnotation =
+  | {
+      kind: 'fieldMarker';
+      marker: 'fieldBegin' | 'fieldEnd' | 'fieldBeginEnd' | 'shapeMarker';
+      rangeUtf8: LayerTextSourceRange;
+      rangeUtf16?: LayerTextSourceRange;
+      shapeMarkerIndex?: number;
+    }
+  | {
+      kind: 'paragraphEnd' | 'lineBreakEnd';
+      offsetUtf8: number;
+      offsetUtf16?: number;
+    };
+
+export interface LayerTextSourceEntry {
+  id: number;
+  text: string;
+  utf8Range: LayerTextSourceRange;
+  utf16Range?: LayerTextSourceRange;
+  annotations?: LayerTextSourceAnnotation[];
+}
+
 export interface LayerShapeShadow {
   shadowType: number;
   color: string;
@@ -290,6 +329,11 @@ export interface LayerTextRunOp {
   type: 'textRun';
   bbox: LayerBounds;
   text: string;
+  /**
+   * Source identity for search/accessibility/debug/editing. Rendering keeps the
+   * v1 `text` projection as the browser-friendly fallback.
+   */
+  source?: LayerTextSourceSpan;
   baseline: number;
   rotation: number;
   isVertical: boolean;

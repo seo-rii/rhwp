@@ -70,6 +70,10 @@ pub struct LayerFootnoteMarkerPaint {
 #[derive(Debug, Clone)]
 pub struct LayerTextRunPaint {
     pub text: String,
+    /// Source-backed identity is exported through the layer tree `textSources`
+    /// table and per-op `source` span. The in-memory v1 payload keeps the
+    /// string projection here so existing Canvas2D/SVG replay remains stable
+    /// while TextRun v2 and optional GlyphRun variants are introduced.
     /// Compatibility text style carried by the transitional TextRun IR.
     ///
     /// Backend replay should treat `PaintTextStyle::from(&style)` as the

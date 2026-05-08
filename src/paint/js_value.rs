@@ -122,7 +122,13 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_debug_backend_capability(&backends, "nativeSkia", false);
     set_value(&debug_capabilities, "backends", backends.into());
     set_value(&value, "debugCapabilities", debug_capabilities.into());
-    set_value(&value, "root", layer_node_to_value(&tree.root));
+    let mut text_source_state = TextSourceExportState::default();
+    set_value(
+        &value,
+        "root",
+        layer_node_to_value(&tree.root, &mut text_source_state),
+    );
+    set_value(&value, "textSources", text_sources_to_value(&tree.root));
 
     let resources = Object::new();
     let images = Array::new();
@@ -178,7 +184,132 @@ fn set_debug_backend_capability(backends: &Object, name: &str, overlay_paint: bo
     set_value(backends, name, capability.into());
 }
 
-fn layer_node_to_value(node: &LayerNode) -> JsValue {
+#[derive(Default)]
+struct TextSourceExportState {
+    next_id: u32,
+}
+
+impl TextSourceExportState {
+    fn next_id(&mut self) -> u32 {
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+        id
+    }
+}
+
+fn text_sources_to_value(root: &LayerNode) -> JsValue {
+    let array = Array::new();
+    let mut state = TextSourceExportState::default();
+    push_text_sources_for_node(&array, root, &mut state);
+    array.into()
+}
+
+fn push_text_sources_for_node(array: &Array, node: &LayerNode, state: &mut TextSourceExportState) {
+    match &node.kind {
+        LayerNodeKind::Group { children, .. } => {
+            for child in children {
+                push_text_sources_for_node(array, child, state);
+            }
+        }
+        LayerNodeKind::ClipRect { child, .. } => {
+            push_text_sources_for_node(array, child, state);
+        }
+        LayerNodeKind::Leaf { ops, .. } => {
+            for op in ops {
+                if let PaintOp::TextRun { run, .. } = op {
+                    array.push(&text_source_entry_to_value(run, state.next_id()));
+                }
+            }
+        }
+    }
+}
+
+fn text_source_entry_to_value(run: &crate::paint::LayerTextRunPaint, id: u32) -> JsValue {
+    let value = Object::new();
+    let utf8_end = run.text.len() as u32;
+    let utf16_end = run.text.encode_utf16().count() as u32;
+    set_number(&value, "id", id as f64);
+    set_string(&value, "text", &run.text);
+    set_value(&value, "utf8Range", text_source_range_to_value(0, utf8_end));
+    set_value(
+        &value,
+        "utf16Range",
+        text_source_range_to_value(0, utf16_end),
+    );
+    set_value(
+        &value,
+        "annotations",
+        text_source_annotations_to_value(run, utf8_end, utf16_end),
+    );
+    value.into()
+}
+
+fn text_source_span_to_value(run: &crate::paint::LayerTextRunPaint, id: u32) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "id", id as f64);
+    set_value(
+        &value,
+        "utf8Range",
+        text_source_range_to_value(0, run.text.len() as u32),
+    );
+    set_value(
+        &value,
+        "utf16Range",
+        text_source_range_to_value(0, run.text.encode_utf16().count() as u32),
+    );
+    value.into()
+}
+
+fn text_source_range_to_value(start: u32, end: u32) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "start", start as f64);
+    set_number(&value, "end", end as f64);
+    value.into()
+}
+
+fn text_source_annotations_to_value(
+    run: &crate::paint::LayerTextRunPaint,
+    utf8_end: u32,
+    utf16_end: u32,
+) -> JsValue {
+    let annotations = Array::new();
+    if run.field_marker != FieldMarkerType::None {
+        let annotation = Object::new();
+        set_string(&annotation, "kind", "fieldMarker");
+        set_string(&annotation, "marker", field_marker_str(run.field_marker));
+        set_value(
+            &annotation,
+            "rangeUtf8",
+            text_source_range_to_value(0, utf8_end),
+        );
+        set_value(
+            &annotation,
+            "rangeUtf16",
+            text_source_range_to_value(0, utf16_end),
+        );
+        if let FieldMarkerType::ShapeMarker(index) = run.field_marker {
+            set_number(&annotation, "shapeMarkerIndex", index as f64);
+        }
+        annotations.push(&annotation);
+    }
+    if run.is_para_end {
+        let annotation = Object::new();
+        set_string(&annotation, "kind", "paragraphEnd");
+        set_number(&annotation, "offsetUtf8", utf8_end as f64);
+        set_number(&annotation, "offsetUtf16", utf16_end as f64);
+        annotations.push(&annotation);
+    }
+    if run.is_line_break_end {
+        let annotation = Object::new();
+        set_string(&annotation, "kind", "lineBreakEnd");
+        set_number(&annotation, "offsetUtf8", utf8_end as f64);
+        set_number(&annotation, "offsetUtf16", utf16_end as f64);
+        annotations.push(&annotation);
+    }
+    annotations.into()
+}
+
+fn layer_node_to_value(node: &LayerNode, text_sources: &mut TextSourceExportState) -> JsValue {
     let value = Object::new();
     set_value(&value, "bounds", bbox_to_value(node.bounds));
     if let Some(source_node_id) = node.source_node_id {
@@ -218,7 +349,7 @@ fn layer_node_to_value(node: &LayerNode) -> JsValue {
             set_value(
                 &value,
                 "children",
-                array_to_value(children.iter().map(layer_node_to_value)),
+                layer_nodes_to_value(children, text_sources),
             );
         }
         LayerNodeKind::ClipRect {
@@ -242,23 +373,38 @@ fn layer_node_to_value(node: &LayerNode) -> JsValue {
                 clip_policy.allow_horizontal_overflow_controls,
             );
             set_value(&value, "clipPolicy", policy.into());
-            set_value(&value, "child", layer_node_to_value(child));
+            set_value(&value, "child", layer_node_to_value(child, text_sources));
         }
         LayerNodeKind::Leaf { ops, cache_hint } => {
             set_string(&value, "kind", "leaf");
             set_string(&value, "cacheHint", cache_hint_str(*cache_hint));
-            set_value(
-                &value,
-                "ops",
-                array_to_value(ops.iter().map(paint_op_to_value)),
-            );
+            set_value(&value, "ops", paint_ops_to_value(ops, text_sources));
         }
     }
 
     value.into()
 }
 
-fn paint_op_to_value(op: &PaintOp) -> JsValue {
+fn layer_nodes_to_value(
+    children: &[LayerNode],
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let array = Array::new();
+    for child in children {
+        array.push(&layer_node_to_value(child, text_sources));
+    }
+    array.into()
+}
+
+fn paint_ops_to_value(ops: &[PaintOp], text_sources: &mut TextSourceExportState) -> JsValue {
+    let array = Array::new();
+    for op in ops {
+        array.push(&paint_op_to_value(op, text_sources));
+    }
+    array.into()
+}
+
+fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> JsValue {
     let value = Object::new();
     match op {
         PaintOp::PageBackground { bbox, background } => {
@@ -293,6 +439,11 @@ fn paint_op_to_value(op: &PaintOp) -> JsValue {
             set_number(&value, "rotation", run.rotation);
             set_bool(&value, "isVertical", run.is_vertical);
             set_string(&value, "orientation", run.orientation.as_str());
+            set_value(
+                &value,
+                "source",
+                text_source_span_to_value(run, text_sources.next_id()),
+            );
             set_value(&value, "style", text_style_to_value(&run.style));
             set_value(
                 &value,
@@ -1039,6 +1190,37 @@ mod tests {
         let js_root = prop(&js_value, "root");
         assert_same_string(&json_root, &js_root, "kind");
         assert_same_string(&json_root, &js_root, "cacheHint");
+        let json_text_sources = Array::from(&prop(&json_value, "textSources"));
+        let js_text_sources = Array::from(&prop(&js_value, "textSources"));
+        assert_eq!(json_text_sources.length(), 1);
+        assert_eq!(json_text_sources.length(), js_text_sources.length());
+        let json_source = json_text_sources.get(0);
+        let js_source = js_text_sources.get(0);
+        assert_same_number(&json_source, &js_source, "id");
+        assert_same_string(&json_source, &js_source, "text");
+        assert_same_number(
+            &prop(&json_source, "utf8Range"),
+            &prop(&js_source, "utf8Range"),
+            "end",
+        );
+        assert_same_number(
+            &prop(&json_source, "utf16Range"),
+            &prop(&js_source, "utf16Range"),
+            "end",
+        );
+        let json_annotations = Array::from(&prop(&json_source, "annotations"));
+        let js_annotations = Array::from(&prop(&js_source, "annotations"));
+        assert_eq!(json_annotations.length(), 3);
+        assert_eq!(json_annotations.length(), js_annotations.length());
+        assert_same_string(&json_annotations.get(0), &js_annotations.get(0), "kind");
+        assert_same_string(&json_annotations.get(0), &js_annotations.get(0), "marker");
+        assert_same_number(
+            &json_annotations.get(0),
+            &js_annotations.get(0),
+            "shapeMarkerIndex",
+        );
+        assert_same_string(&json_annotations.get(1), &js_annotations.get(1), "kind");
+        assert_same_string(&json_annotations.get(2), &js_annotations.get(2), "kind");
 
         let json_ops = Array::from(&prop(&json_root, "ops"));
         let js_ops = Array::from(&prop(&js_root, "ops"));
@@ -1052,6 +1234,12 @@ mod tests {
         assert_same_string(&json_text, &js_text, "fieldMarker");
         assert_same_string(&json_text, &js_text, "orientation");
         assert_same_number(&json_text, &js_text, "shapeMarkerIndex");
+        assert_same_number(&prop(&json_text, "source"), &prop(&js_text, "source"), "id");
+        assert_same_number(
+            &prop(&prop(&json_text, "source"), "utf8Range"),
+            &prop(&prop(&js_text, "source"), "utf8Range"),
+            "end",
+        );
         assert_same_bool(&json_text, &js_text, "isParaEnd");
         assert_same_bool(&json_text, &js_text, "isLineBreakEnd");
         let json_paint_style = prop(&json_text, "paintStyle");
