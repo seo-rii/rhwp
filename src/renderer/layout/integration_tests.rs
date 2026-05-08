@@ -455,14 +455,19 @@ mod tests {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
     fn compare_skia_png_matches_layer_svg(sample: &str, page_num: u32) -> Result<(), String> {
+        let total_start = std::time::Instant::now();
         let path = Path::new(sample);
         if !path.exists() {
             return Ok(());
         }
 
+        let read_start = std::time::Instant::now();
         let data = std::fs::read(path).map_err(|err| format!("샘플 읽기 실패: {sample}: {err}"))?;
+        let read_ms = read_start.elapsed().as_secs_f64() * 1000.0;
+        let parse_start = std::time::Instant::now();
         let core = crate::document_core::DocumentCore::from_bytes(&data)
             .map_err(|err| format!("문서 파싱 실패: {sample}: {err}"))?;
+        let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
         if page_num >= core.page_count() {
             return Err(format!(
                 "페이지 범위 초과: {sample} requested={} page_count={}",
@@ -471,16 +476,24 @@ mod tests {
             ));
         }
 
+        let layer_svg_start = std::time::Instant::now();
         let layered_svg = core
             .render_page_svg_layer_native(page_num)
             .map_err(|err| format!("layer SVG 렌더 실패: {sample} p{page_num}: {err}"))?;
+        let layer_svg_ms = layer_svg_start.elapsed().as_secs_f64() * 1000.0;
+        let rasterize_start = std::time::Instant::now();
         let expected = rasterize_svg(&layered_svg)
             .ok_or_else(|| format!("layer SVG rasterize 실패: {sample} p{page_num}"))?;
+        let rasterize_ms = rasterize_start.elapsed().as_secs_f64() * 1000.0;
+        let skia_start = std::time::Instant::now();
         let actual_png = core
             .render_page_png_native(page_num)
             .map_err(|err| format!("Skia PNG 렌더 실패: {sample} p{page_num}: {err}"))?;
+        let skia_ms = skia_start.elapsed().as_secs_f64() * 1000.0;
+        let decode_start = std::time::Instant::now();
         let actual = decode_png(&actual_png)
             .ok_or_else(|| format!("Skia PNG decode 실패: {sample} p{page_num}"))?;
+        let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
 
         if (actual.width(), actual.height()) != (expected.width(), expected.height()) {
             return Err(format!(
@@ -492,6 +505,7 @@ mod tests {
             ));
         }
 
+        let diff_start = std::time::Instant::now();
         let exact_diff = diff_pixmaps(&expected, &actual, 0);
         let raw_tolerant_diff = diff_pixmaps(&expected, &actual, SKIA_TOLERANT_CHANNEL_DELTA);
         let raster_tolerant_diff = diff_pixmaps_with_neighborhood(
@@ -510,6 +524,17 @@ mod tests {
         let raster_tolerant_ratio =
             raster_tolerant_diff.diff_pixels as f64 / raster_tolerant_diff.total_pixels as f64;
         let ink_mask_ratio = ink_mask_diff.diff_pixels as f64 / ink_mask_diff.total_pixels as f64;
+        let diff_ms = diff_start.elapsed().as_secs_f64() * 1000.0;
+
+        if std::env::var_os("RHWP_SKIA_LOG_PERF").is_some() {
+            eprintln!(
+                "[skia-perf] {sample} p{page_num} read={read_ms:.2}ms parse={parse_ms:.2}ms layer_svg={layer_svg_ms:.2}ms rasterize_svg={rasterize_ms:.2}ms skia_png={skia_ms:.2}ms decode_png={decode_ms:.2}ms diff={diff_ms:.2}ms total={total:.2}ms surface={}x{} png_bytes={}",
+                expected.width(),
+                expected.height(),
+                actual_png.len(),
+                total = total_start.elapsed().as_secs_f64() * 1000.0,
+            );
+        }
 
         let exact_paths = if exact_diff.diff_pixels > 0 {
             Some(save_diff_artifacts(
@@ -1472,6 +1497,10 @@ mod tests {
             ("samples/form-01.hwp".to_string(), vec![0]),
             ("samples/eq-01.hwp".to_string(), vec![0]),
             ("samples/pic-crop-01.hwp".to_string(), vec![0]),
+            ("samples/pic-in-table-01.hwp".to_string(), vec![0]),
+            ("samples/lseg-05-tab.hwp".to_string(), vec![0]),
+            ("samples/shift-return.hwp".to_string(), vec![0]),
+            ("samples/field-01-memo.hwp".to_string(), vec![0]),
             ("samples/table-001.hwp".to_string(), vec![0]),
             ("samples/table-complex.hwp".to_string(), vec![0]),
             ("samples/group-drawing-02.hwp".to_string(), vec![0]),

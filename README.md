@@ -284,8 +284,12 @@ Open `http://localhost:7700` in your browser.
 ```bash
 npm --prefix rhwp-studio run e2e:ci        # Studio E2E (Canvas2D + CanvasKit)
 cargo test-skia-full-sweep                 # Native Skia full screenshot sweep
+RHWP_SKIA_LOG_PERF=1 cargo test --features native-skia test_skia_screenshot_matches_layer_svg_for_representative_sample_corpus -- --nocapture
 python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview
 ```
+
+Set `RHWP_SKIA_LOG_PERF=1` when running the native Skia corpus tests to print
+per-sample parse, layer SVG, SVG rasterize, Skia PNG, decode, and diff timings.
 
 GitHub Actions는 목적별로 분리되어 있습니다.
 
