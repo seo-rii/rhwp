@@ -291,6 +291,11 @@ python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-p
 
 Set `RHWP_SKIA_LOG_PERF=1` when running the native Skia corpus tests to print
 per-sample parse, layer SVG, SVG rasterize, Skia PNG, decode, and diff timings.
+Native Skia `RasterRenderOutput.diagnostics` also reports per-render
+`raster_setup_time_ns`, `raster_replay_time_ns`, `raster_encode_time_ns`, and
+`raster_total_time_ns` alongside replay counts and cache diagnostics, so
+benchmark or CI harnesses can separate setup, PaintOp replay, and PNG encoding
+cost.
 
 GitHub Actions는 목적별로 분리되어 있습니다.
 

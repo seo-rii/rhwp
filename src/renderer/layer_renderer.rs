@@ -147,6 +147,15 @@ pub struct LayerRenderDiagnostics {
     pub static_picture_cache_skipped_oversized: usize,
     pub static_picture_cache_fingerprint_mismatches: usize,
     pub static_picture_cache_recordings: usize,
+    /// Native raster setup time: dimension validation, surface creation,
+    /// clear/scale setup, and replay context initialization.
+    pub raster_setup_time_ns: u64,
+    /// Native layer replay time, excluding surface setup and output encoding.
+    pub raster_replay_time_ns: u64,
+    /// Native raster output encoding time, including image snapshot and byte copy.
+    pub raster_encode_time_ns: u64,
+    /// Native raster total wall-clock time for the render call.
+    pub raster_total_time_ns: u64,
     /// Approximate RGBA bytes processed while producing image-effect intermediates.
     /// This is diagnostic accounting, not allocator-reported memory.
     pub image_effect_preprocessed_bytes: usize,

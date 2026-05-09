@@ -107,6 +107,42 @@ fn renders_basic_rect_to_png() {
 }
 
 #[test]
+fn raster_output_reports_phase_timing_diagnostics() {
+    let rect_bounds = BoundingBox::new(2.0, 2.0, 12.0, 8.0);
+    let root = LayerNode::leaf(
+        BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+        None,
+        vec![PaintOp::Rectangle {
+            bbox: rect_bounds,
+            rect: LayerRectanglePaint {
+                corner_radius: 0.0,
+                style: ShapeStyle {
+                    fill_color: Some(0x0000AA00),
+                    ..Default::default()
+                },
+                gradient: None,
+                transform: Default::default(),
+            },
+        }],
+    );
+    let tree = PageLayerTree::new(20.0, 20.0, root);
+    let renderer = SkiaLayerRenderer::new();
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("timed raster render");
+    let diagnostics = output.diagnostics;
+    let phase_sum = diagnostics
+        .raster_setup_time_ns
+        .saturating_add(diagnostics.raster_replay_time_ns)
+        .saturating_add(diagnostics.raster_encode_time_ns);
+
+    assert!(diagnostics.raster_setup_time_ns > 0);
+    assert!(diagnostics.raster_replay_time_ns > 0);
+    assert!(diagnostics.raster_encode_time_ns > 0);
+    assert!(diagnostics.raster_total_time_ns >= phase_sum);
+}
+
+#[test]
 fn raster_output_accumulates_tile_fallback_diagnostics() {
     use crate::model::image::ImageEffect;
     use crate::model::style::ImageFillMode;

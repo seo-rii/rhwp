@@ -3,6 +3,7 @@ use skia_safe::{
     Rect, Shaper,
 };
 use std::cell::RefCell;
+use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
 use crate::paint::{CacheHint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
@@ -74,6 +75,10 @@ fn raster_dimension(length: f64, scale: f64, max_dimension: i32) -> LayerRenderR
         )));
     }
     Ok(rounded.max(1.0) as i32)
+}
+
+fn duration_ns(duration: Duration) -> u64 {
+    duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
 
 fn calc_arrow_dims(stroke_width: f64, line_len: f64, arrow_size: u8) -> (f64, f64) {
@@ -258,6 +263,7 @@ impl SkiaLayerRenderer {
         options: RasterRenderOptions,
         configure_replay: impl FnOnce(&mut SkiaReplayContext),
     ) -> LayerRenderResult<RasterRenderOutput> {
+        let total_start = Instant::now();
         if let Some(dpi) = options.dpi {
             if !dpi.is_finite() || dpi <= 0.0 {
                 return Err(LayerRenderError::invalid_options(format!(
@@ -272,6 +278,8 @@ impl SkiaLayerRenderer {
         }
         let width = raster_dimension(tree.page_width, options.scale, options.max_dimension)?;
         let height = raster_dimension(tree.page_height, options.scale, options.max_dimension)?;
+
+        let setup_start = Instant::now();
         let mut surface = surfaces::raster_n32_premul((width, height))
             .ok_or_else(|| LayerRenderError::surface_creation("Skia raster surface 생성 실패"))?;
         let canvas = surface.canvas();
@@ -288,19 +296,32 @@ impl SkiaLayerRenderer {
         }
         let mut replay = SkiaReplayContext::new(tree.profile, tree.output_options, options.scale);
         configure_replay(&mut replay);
+        let setup_time = setup_start.elapsed();
+
+        let replay_start = Instant::now();
         self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
+        let replay_time = replay_start.elapsed();
+
+        let encode_start = Instant::now();
         let image = surface.image_snapshot();
         let data = image
             .encode(None, EncodedImageFormat::PNG, None)
             .ok_or_else(|| LayerRenderError::encoding("Skia PNG 인코딩 실패"))?;
+        let bytes = data.as_bytes().to_vec();
+        let encode_time = encode_start.elapsed();
+        let mut diagnostics = replay.diagnostics;
+        diagnostics.raster_setup_time_ns = duration_ns(setup_time);
+        diagnostics.raster_replay_time_ns = duration_ns(replay_time);
+        diagnostics.raster_encode_time_ns = duration_ns(encode_time);
+        diagnostics.raster_total_time_ns = duration_ns(total_start.elapsed());
         Ok(RasterRenderOutput {
-            bytes: data.as_bytes().to_vec(),
+            bytes,
             format: RasterOutputFormat::Png,
             width,
             height,
             dpi: options.dpi,
             color_space: options.color_space,
-            diagnostics: replay.diagnostics,
+            diagnostics,
         })
     }
 
