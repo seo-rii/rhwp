@@ -254,6 +254,7 @@ fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
                 field_marker: Default::default(),
                 is_para_end: false,
                 is_line_break_end: false,
+                ..Default::default()
             },
         }],
     );
@@ -354,6 +355,7 @@ fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
                 field_marker: Default::default(),
                 is_para_end: true,
                 is_line_break_end: false,
+                ..Default::default()
             },
         }],
     );

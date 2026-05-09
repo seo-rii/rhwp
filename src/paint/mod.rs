@@ -35,10 +35,12 @@ pub use layer_tree::{
     TextSourceRange, TextSourceSpan, TextSourceTable,
 };
 pub use paint_op::{
-    LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
-    LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextOrientation, LayerTextRunPaint, PaintBounds, PaintOp, PaintTextStyle,
+    LayerAffineTransform, LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint,
+    LayerFormObjectPaint, LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint,
+    LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint,
+    LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint,
+    LayerVector, PaintBounds, PaintOp, PaintTextStyle, TextClusterBasis, TextClusterFlag,
+    TextClusterPlacement, TextProjectionKind, TextRunPlacement,
 };
 pub use profile::RenderProfile;
 pub use resources::{

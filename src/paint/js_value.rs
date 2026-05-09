@@ -8,9 +8,11 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, LayerNode,
-    LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp, PaintTextStyle, TextSourceAnnotation,
-    TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
+    image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind,
+    LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerVector,
+    PageLayerTree, PaintOp, PaintTextStyle, TextClusterPlacement, TextRunPlacement,
+    TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
+    LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -167,7 +169,14 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_value(
         &value,
         "usedFeatures",
-        string_array_to_value(&["text.paintStyle", "text.sourceTable", "text.sourceSpan"]),
+        string_array_to_value(&[
+            "text.paintStyle",
+            "text.sourceTable",
+            "text.sourceSpan",
+            "text.v2.placement",
+            "text.v2.clusters",
+            "text.projectionKind",
+        ]),
     );
     set_value(&value, "optionalFeatures", string_array_to_value(&[]));
     set_value(
@@ -178,7 +187,10 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
             "text.glyphRun",
             "text.outlineGlyph",
             "text.specialVisualOps",
-            "text.clusterPlacement",
+            "text.charOverlapOp",
+            "text.controlMarkOp",
+            "text.tabLeaderOp",
+            "text.vertical.mixedPerGlyph",
         ]),
     );
     set_value(&value, "requiredFeatures", string_array_to_value(&[]));
@@ -196,6 +208,11 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         string_array_to_value(&["utf8", "utf16"]),
     );
     set_bool(&text_contract, "fallbackRequired", true);
+    set_string(
+        &text_contract,
+        "placementAuthority",
+        "compatibilityProjection",
+    );
     set_value(&value, "text", text_contract.into());
 
     let resources = Object::new();
@@ -535,6 +552,14 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             set_number(&value, "rotation", run.rotation);
             set_bool(&value, "isVertical", run.is_vertical);
             set_string(&value, "orientation", run.orientation.as_str());
+            set_string(&value, "projectionKind", run.projection.as_str());
+            set_string(&value, "clusterBasis", run.cluster_basis.as_str());
+            if let Some(placement) = run.placement {
+                set_value(&value, "placement", text_run_placement_to_value(placement));
+            }
+            if !run.clusters.is_empty() {
+                set_value(&value, "clusters", text_clusters_to_value(&run.clusters));
+            }
             set_value(
                 &value,
                 "source",
@@ -1032,6 +1057,74 @@ fn string_array_to_value(values: &[&str]) -> JsValue {
     array_to_value(values.iter().map(|value| JsValue::from_str(value)))
 }
 
+fn text_run_placement_to_value(placement: TextRunPlacement) -> JsValue {
+    let value = Object::new();
+    set_value(
+        &value,
+        "runToPage",
+        affine_transform_to_value(placement.run_to_page),
+    );
+    set_number(&value, "baselineY", placement.baseline_y);
+    value.into()
+}
+
+fn affine_transform_to_value(transform: LayerAffineTransform) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "a", transform.a);
+    set_number(&value, "b", transform.b);
+    set_number(&value, "c", transform.c);
+    set_number(&value, "d", transform.d);
+    set_number(&value, "e", transform.e);
+    set_number(&value, "f", transform.f);
+    value.into()
+}
+
+fn text_clusters_to_value(clusters: &[TextClusterPlacement]) -> JsValue {
+    array_to_value(clusters.iter().map(|cluster| {
+        let value = Object::new();
+        set_value(
+            &value,
+            "sourceRangeUtf8",
+            text_source_range_to_value(cluster.source_range_utf8),
+        );
+        set_value(
+            &value,
+            "textRangeUtf8",
+            text_source_range_to_value(cluster.text_range_utf8),
+        );
+        if let Some(range) = cluster.text_range_utf16 {
+            set_value(&value, "textRangeUtf16", text_source_range_to_value(range));
+        }
+        set_string(&value, "projection", cluster.projection.as_str());
+        set_value(&value, "origin", layer_point_to_value(cluster.origin));
+        if let Some(advance) = cluster.advance {
+            set_value(&value, "advance", layer_vector_to_value(advance));
+        }
+        if !cluster.flags.is_empty() {
+            let flags = cluster
+                .flags
+                .iter()
+                .map(|flag| JsValue::from_str(flag.as_str()));
+            set_value(&value, "flags", array_to_value(flags));
+        }
+        value.into()
+    }))
+}
+
+fn layer_point_to_value(point: LayerPoint) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "x", point.x);
+    set_number(&value, "y", point.y);
+    value.into()
+}
+
+fn layer_vector_to_value(vector: LayerVector) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "dx", vector.dx);
+    set_number(&value, "dy", vector.dy);
+    value.into()
+}
+
 fn text_control_marks_to_value(run: &crate::paint::LayerTextRunPaint) -> JsValue {
     array_to_value(run.control_marks.iter().map(|mark| {
         let value = Object::new();
@@ -1312,7 +1405,7 @@ mod tests {
         }
         let json_used_features = Array::from(&prop(&json_value, "usedFeatures"));
         let js_used_features = Array::from(&prop(&js_value, "usedFeatures"));
-        assert_eq!(json_used_features.length(), 3);
+        assert_eq!(json_used_features.length(), 6);
         assert_eq!(json_used_features.length(), js_used_features.length());
         assert_eq!(
             string_value(&json_used_features.get(0)),
@@ -1327,7 +1420,7 @@ mod tests {
         );
         let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
         let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
-        assert_eq!(json_known_features.length(), 5);
+        assert_eq!(json_known_features.length(), 8);
         assert_eq!(json_known_features.length(), js_known_features.length());
         let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
         let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
@@ -1345,6 +1438,7 @@ mod tests {
             "sourceTextPreserved",
         );
         assert_same_bool(&json_text_contract, &js_text_contract, "fallbackRequired");
+        assert_same_string(&json_text_contract, &js_text_contract, "placementAuthority");
 
         let json_root = prop(&json_value, "root");
         let js_root = prop(&js_value, "root");
@@ -1393,7 +1487,28 @@ mod tests {
         assert_same_string(&json_text, &js_text, "text");
         assert_same_string(&json_text, &js_text, "fieldMarker");
         assert_same_string(&json_text, &js_text, "orientation");
+        assert_same_string(&json_text, &js_text, "projectionKind");
+        assert_same_string(&json_text, &js_text, "clusterBasis");
         assert_same_number(&json_text, &js_text, "shapeMarkerIndex");
+        let json_placement = prop(&json_text, "placement");
+        let js_placement = prop(&js_text, "placement");
+        assert_close_number(
+            &prop(&json_placement, "runToPage"),
+            &prop(&js_placement, "runToPage"),
+            "e",
+            0.000001,
+        );
+        assert_same_number(&json_placement, &js_placement, "baselineY");
+        let json_clusters = Array::from(&prop(&json_text, "clusters"));
+        let js_clusters = Array::from(&prop(&js_text, "clusters"));
+        assert_eq!(json_clusters.length(), 6);
+        assert_eq!(json_clusters.length(), js_clusters.length());
+        assert_same_string(&json_clusters.get(0), &js_clusters.get(0), "projection");
+        assert_same_number(
+            &prop(&json_clusters.get(0), "sourceRangeUtf8"),
+            &prop(&js_clusters.get(0), "sourceRangeUtf8"),
+            "end",
+        );
         assert_same_number(&prop(&json_text, "source"), &prop(&js_text, "source"), "id");
         assert_same_number(
             &prop(&prop(&json_text, "source"), "utf8Range"),
@@ -1549,6 +1664,7 @@ mod tests {
                             }),
                             baseline: 11.0,
                             field_marker: FieldMarkerType::ShapeMarker(4),
+                            ..Default::default()
                         },
                     },
                     PaintOp::Image {
@@ -1621,6 +1737,15 @@ mod tests {
 
     fn assert_same_number(left: &JsValue, right: &JsValue, name: &str) {
         assert_eq!(number_prop(left, name), number_prop(right, name), "{name}");
+    }
+
+    fn assert_close_number(left: &JsValue, right: &JsValue, name: &str, tolerance: f64) {
+        let left = number_prop(left, name);
+        let right = number_prop(right, name);
+        assert!(
+            (left - right).abs() <= tolerance,
+            "{name}: left={left} right={right}"
+        );
     }
 
     fn assert_same_string(left: &JsValue, right: &JsValue, name: &str) {

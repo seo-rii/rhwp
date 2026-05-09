@@ -995,6 +995,7 @@ fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
                     field_marker: Default::default(),
                     is_para_end: false,
                     is_line_break_end: false,
+                    ..Default::default()
                 },
             },
         ],
@@ -1247,6 +1248,7 @@ fn static_subtree_cache_key_uses_paint_text_style_projection() {
                     field_marker: Default::default(),
                     is_para_end: false,
                     is_line_break_end: false,
+                    ..Default::default()
                 },
             }],
             CacheHint::StaticSubtree,
@@ -2117,6 +2119,7 @@ fn skia_vertical_sideways_uses_explicit_rotation_only() {
                     field_marker: Default::default(),
                     is_para_end: false,
                     is_line_break_end: false,
+                    ..Default::default()
                 },
             }],
         ),
@@ -2158,6 +2161,7 @@ fn skia_vertical_upright_uses_layout_glyph_positions() {
         field_marker: Default::default(),
         is_para_end: false,
         is_line_break_end: false,
+        ..Default::default()
     };
     let tree = PageLayerTree::new(
         130.0,

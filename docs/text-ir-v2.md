@@ -31,6 +31,11 @@ Layer JSON/JS exports currently provide:
 - `TextRun.text`: the v1 replay projection kept for Canvas2D/SVG compatibility.
 - `TextRun.style`: v1-compatible style projection.
 - `TextRun.paintStyle`: paint-visible style projection.
+- `TextRun.projectionKind`: how the replay projection relates to the source
+  text span.
+- `TextRun.placement`: additive TextRun v2 run-local placement metadata.
+- `TextRun.clusterBasis` and `TextRun.clusters`: additive layout/placement
+  cluster metadata. These clusters are not shaped glyph clusters.
 - `usedFeatures`: additive schema features used by this export.
 - `requiredFeatures`: features a consumer must understand for faithful replay.
 - `optionalFeatures`: features present in this export that have a complete
@@ -40,6 +45,8 @@ Layer JSON/JS exports currently provide:
 - `text.defaultVariant`: currently `textRun`.
 - `text.variants`: emitted visual text variants.
 - `text.fallbackRequired`: true while `TextRun` remains the public fallback.
+- `text.placementAuthority`: currently `compatibilityProjection`, meaning
+  `positions`/`baseline`/`rotation` remain authoritative for visual replay.
 
 The source table mirrors field marker, paragraph end, and line-break end
 metadata as source annotations. Visible marks are still carried by existing
@@ -64,19 +71,36 @@ metadata as source annotations. Visible marks are still carried by existing
 - `TextRun.text` is a replay projection, not the long-term canonical identity.
 - Source ranges are UTF-8 byte ranges. UTF-16 ranges are exported for JS/DOM
   consumers when available.
-- Run positions remain v1 compatibility positions for now. TextRun v2 should
-  replace them with typed cluster placements in run-local coordinates.
+- Run positions remain v1 compatibility positions for now. TextRun v2 placement
+  and clusters are additive metadata until `text.placementAuthority` changes
+  from `compatibilityProjection`.
 - TextRun v2 cluster origins are run-local. The local baseline is y=0, and
   `TextRunPlacement.run_to_page` maps the run into page coordinates. `PaintOp`
   bounding boxes remain page-space conservative boxes for culling and v1
   backend compatibility.
+- TextRun v2 clusters are layout/placement clusters. They may be
+  `LegacyPosition`, `Grapheme`, or `LayoutPlacement`. They must not be called
+  shaping clusters unless a shared shaping pass proves the mapping and marks
+  them `ShapingEquivalent`. `GlyphRun` uses shaped glyph clusters.
+- `TextRun.text` is a visible replay projection. Ordinary text should use
+  `projectionKind=verbatim` and must byte-match the source span. Normalized,
+  control, field, and synthetic visual text must identify the source that
+  produced it and explain the mismatch through `projectionKind`.
 - One text run should have homogeneous orientation. Mixed vertical text should
   be split by layout/lowering until per-glyph transforms are introduced.
+- `MixedPerGlyph` orientation is an internal reservation only. Public exports
+  must keep homogeneous `Horizontal`, `VerticalUpright`, or
+  `VerticalSideways` runs until glyph transforms and required feature semantics
+  are fixed.
 - Field marker metadata belongs to source annotations when visible marker text
   has already been lowered as ordinary text.
 - Visible control marks, char overlap, tab leaders, and future decoration
   geometry should move into explicit paint ops before becoming required schema
   features.
+- New visual root paint ops are additive only if old consumers can skip
+  unknown ops without failing. If a strict enum decoder is still in use, emit
+  new visual alternatives through a sidecar/variant table or nested text variant
+  field before adding root ops.
 - Future TextRun/GlyphRun/outline alternatives must be tied together by an
   explicit variant group or a `Text { variants }` container. Consumers must draw
   at most one variant per group. Glyph outline alternatives must not be exported
@@ -118,6 +142,8 @@ metadata as source annotations. Visible marks are still carried by existing
 
 - Removing `TextRun`.
 - Making glyph ids portable without exact font resources.
+- Treating a digest-only resolved system font as portable. A digest can verify a
+  consumer-held font blob, but it is not itself a replayable font resource.
 - Letting Canvas2D/SVG depend on glyph-id replay.
 - Changing layout line breaking to shaped advances in the same step as export
   schema migration.

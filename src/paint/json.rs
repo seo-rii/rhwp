@@ -7,8 +7,9 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerTextRunPaint, PageLayerTree,
-    PaintOp, PaintTextStyle, ResourceArena, TextSourceAnnotation, TextSourceEntry, TextSourceRange,
+    CacheHint, ClipKind, LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic,
+    LayerTextRunPaint, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, ResourceArena,
+    TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange,
     TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
@@ -53,7 +54,7 @@ impl PageLayerTree {
             .write_json(&mut buf, &self.resources, &mut text_source_state);
         buf.push_str(",\"textSources\":");
         write_text_source_entries(&mut buf, &self.text_sources);
-        buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\"],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.clusterPlacement\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true}");
+        buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\"],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\"}");
         buf.push('}');
         buf
     }
@@ -204,13 +205,23 @@ impl PaintOp {
                 write_bbox(buf, *bbox);
                 let _ = write!(
                     buf,
-                    ",\"text\":{},\"baseline\":{:.6},\"rotation\":{:.6},\"isVertical\":{},\"orientation\":{}",
+                    ",\"text\":{},\"baseline\":{:.6},\"rotation\":{:.6},\"isVertical\":{},\"orientation\":{},\"projectionKind\":{},\"clusterBasis\":{}",
                     json_escape(&run.text),
                     run.baseline,
                     run.rotation,
                     run.is_vertical,
                     json_escape(run.orientation.as_str()),
+                    json_escape(run.projection.as_str()),
+                    json_escape(run.cluster_basis.as_str()),
                 );
+                if let Some(placement) = run.placement {
+                    buf.push_str(",\"placement\":");
+                    write_text_run_placement(buf, placement);
+                }
+                if !run.clusters.is_empty() {
+                    buf.push_str(",\"clusters\":");
+                    write_text_clusters(buf, &run.clusters);
+                }
                 buf.push_str(",\"source\":");
                 if let Some(source) = &run.source {
                     write_text_source_span(buf, source);
@@ -622,6 +633,68 @@ fn write_text_positions(buf: &mut String, run: &LayerTextRunPaint) {
         let _ = write!(buf, "{:.6}", position);
     }
     buf.push(']');
+}
+
+fn write_text_run_placement(buf: &mut String, placement: TextRunPlacement) {
+    buf.push_str("{\"runToPage\":");
+    write_affine_transform(buf, placement.run_to_page);
+    let _ = write!(buf, ",\"baselineY\":{:.6}}}", placement.baseline_y);
+}
+
+fn write_affine_transform(buf: &mut String, transform: LayerAffineTransform) {
+    let _ = write!(
+        buf,
+        "{{\"a\":{:.6},\"b\":{:.6},\"c\":{:.6},\"d\":{:.6},\"e\":{:.6},\"f\":{:.6}}}",
+        transform.a, transform.b, transform.c, transform.d, transform.e, transform.f,
+    );
+}
+
+fn write_text_clusters(buf: &mut String, clusters: &[TextClusterPlacement]) {
+    buf.push('[');
+    for (idx, cluster) in clusters.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        buf.push('{');
+        buf.push_str("\"sourceRangeUtf8\":");
+        write_text_source_range(buf, cluster.source_range_utf8);
+        buf.push_str(",\"textRangeUtf8\":");
+        write_text_source_range(buf, cluster.text_range_utf8);
+        if let Some(range) = cluster.text_range_utf16 {
+            buf.push_str(",\"textRangeUtf16\":");
+            write_text_source_range(buf, range);
+        }
+        let _ = write!(
+            buf,
+            ",\"projection\":{},\"origin\":",
+            json_escape(cluster.projection.as_str())
+        );
+        write_layer_point(buf, cluster.origin);
+        if let Some(advance) = cluster.advance {
+            buf.push_str(",\"advance\":");
+            write_layer_vector(buf, advance);
+        }
+        if !cluster.flags.is_empty() {
+            buf.push_str(",\"flags\":[");
+            for (flag_idx, flag) in cluster.flags.iter().enumerate() {
+                if flag_idx > 0 {
+                    buf.push(',');
+                }
+                buf.push_str(&json_escape(flag.as_str()));
+            }
+            buf.push(']');
+        }
+        buf.push('}');
+    }
+    buf.push(']');
+}
+
+fn write_layer_point(buf: &mut String, point: LayerPoint) {
+    let _ = write!(buf, "{{\"x\":{:.6},\"y\":{:.6}}}", point.x, point.y);
+}
+
+fn write_layer_vector(buf: &mut String, vector: LayerVector) {
+    let _ = write!(buf, "{{\"dx\":{:.6},\"dy\":{:.6}}}", vector.dx, vector.dy);
 }
 
 fn write_text_control_marks(buf: &mut String, run: &LayerTextRunPaint) {
@@ -1209,12 +1282,12 @@ mod tests {
             LAYER_TREE_SCHEMA.coordinate_system
         )));
         assert!(json.contains(
-            "\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\"]"
+            "\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\"]"
         ));
         assert!(json.contains("\"optionalFeatures\":[]"));
-        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.clusterPlacement\"]"));
+        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"]"));
         assert!(json.contains("\"requiredFeatures\":[]"));
-        assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true}"));
+        assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\"}"));
     }
 
     #[test]
@@ -1251,6 +1324,7 @@ mod tests {
                 }),
                 baseline: 13.0,
                 field_marker: Default::default(),
+                ..Default::default()
             },
         };
         let rect = PaintOp::Rectangle {
@@ -1309,6 +1383,10 @@ mod tests {
         assert!(json.contains("\"outputOptions\":{"));
         assert!(json.contains("\"showParagraphMarks\":false"));
         assert!(json.contains("\"type\":\"textRun\""));
+        assert!(json.contains("\"projectionKind\":\"syntheticVisual\""));
+        assert!(json.contains("\"clusterBasis\":\"legacyPosition\""));
+        assert!(json.contains("\"placement\":{\"runToPage\":{\"a\":1.000000,\"b\":0.000000,\"c\":-0.000000,\"d\":1.000000,\"e\":10.000000,\"f\":33.000000},\"baselineY\":0.000000}"));
+        assert!(json.contains("\"clusters\":[{\"sourceRangeUtf8\":{\"start\":0,\"end\":3},\"textRangeUtf8\":{\"start\":0,\"end\":3},\"textRangeUtf16\":{\"start\":0,\"end\":1},\"projection\":\"syntheticVisual\",\"origin\":{\"x\":0.000000,\"y\":0.000000},\"advance\":{\"dx\":16.000000,\"dy\":0.000000},\"flags\":[\"specialVisual\",\"notShapingCandidate\"]}"));
         assert!(json.contains("\"source\":{\"id\":0,\"utf8Range\":{\"start\":0,\"end\":4},\"utf16Range\":{\"start\":0,\"end\":2}}"));
         assert!(json.contains("\"textSources\":[{\"id\":0,\"text\":\"가A\",\"utf8Range\":{\"start\":0,\"end\":4},\"utf16Range\":{\"start\":0,\"end\":2},\"annotations\":[]}]"));
         assert!(json.contains(&positions_json));

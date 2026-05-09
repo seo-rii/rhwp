@@ -2,7 +2,7 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::model::ColorRef;
-use crate::paint::layer_tree::TextSourceSpan;
+use crate::paint::layer_tree::{TextSourceRange, TextSourceSpan};
 use crate::paint::resources::{ImageResourceId, SvgResourceId};
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::equation::layout::LayoutBox;
@@ -71,11 +71,11 @@ pub struct LayerFootnoteMarkerPaint {
 #[derive(Debug, Clone)]
 pub struct LayerTextRunPaint {
     pub source: Option<TextSourceSpan>,
-    pub text: String,
     /// Source-backed identity is exported through the layer tree `textSources`
     /// table and per-op `source` span. The in-memory v1 payload keeps the
     /// string projection here so existing Canvas2D/SVG replay remains stable
     /// while TextRun v2 and optional GlyphRun variants are introduced.
+    pub text: String,
     /// Compatibility text style carried by the transitional TextRun IR.
     ///
     /// Backend replay should treat `PaintTextStyle::from(&style)` as the
@@ -83,6 +83,10 @@ pub struct LayerTextRunPaint {
     /// before layer lowering and should not affect paint cache keys or new
     /// schema consumers.
     pub style: TextStyle,
+    pub projection: TextProjectionKind,
+    pub placement: Option<TextRunPlacement>,
+    pub cluster_basis: TextClusterBasis,
+    pub clusters: Vec<TextClusterPlacement>,
     pub positions: Vec<f64>,
     pub control_marks: Vec<LayerTextControlMark>,
     pub baseline: f64,
@@ -93,6 +97,139 @@ pub struct LayerTextRunPaint {
     pub field_marker: FieldMarkerType,
     pub is_para_end: bool,
     pub is_line_break_end: bool,
+}
+
+impl Default for LayerTextRunPaint {
+    fn default() -> Self {
+        Self {
+            source: None,
+            text: String::new(),
+            style: TextStyle::default(),
+            projection: TextProjectionKind::Verbatim,
+            placement: None,
+            cluster_basis: TextClusterBasis::LegacyPosition,
+            clusters: Vec::new(),
+            positions: Vec::new(),
+            control_marks: Vec::new(),
+            baseline: 0.0,
+            rotation: 0.0,
+            is_vertical: false,
+            orientation: LayerTextOrientation::Horizontal,
+            char_overlap: None,
+            field_marker: FieldMarkerType::None,
+            is_para_end: false,
+            is_line_break_end: false,
+        }
+    }
+}
+
+/// Point in layer text coordinate space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LayerPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Vector in layer text coordinate space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LayerVector {
+    pub dx: f64,
+    pub dy: f64,
+}
+
+/// 2D affine transform mapping run-local text coordinates to page space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LayerAffineTransform {
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+    pub d: f64,
+    pub e: f64,
+    pub f: f64,
+}
+
+/// TextRun v2 placement metadata.
+///
+/// Initial schema v1 exports treat this as non-authoritative metadata:
+/// `positions`/`baseline`/`rotation` remain the compatibility replay contract.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextRunPlacement {
+    pub run_to_page: LayerAffineTransform,
+    pub baseline_y: f64,
+}
+
+/// Basis for TextRun v2 cluster placement.
+///
+/// These are layout/placement clusters, not shaped glyph clusters. A run may be
+/// marked `ShapingEquivalent` only after a shaping pass proves that the text
+/// clusters match shaped glyph clusters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextClusterBasis {
+    LegacyPosition,
+    Grapheme,
+    LayoutPlacement,
+    ShapingEquivalent,
+}
+
+impl TextClusterBasis {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TextClusterBasis::LegacyPosition => "legacyPosition",
+            TextClusterBasis::Grapheme => "grapheme",
+            TextClusterBasis::LayoutPlacement => "layoutPlacement",
+            TextClusterBasis::ShapingEquivalent => "shapingEquivalent",
+        }
+    }
+}
+
+/// Relation between `TextRun.text` and the canonical source table slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextProjectionKind {
+    Verbatim,
+    Normalized,
+    ControlProjection,
+    FieldProjection,
+    SyntheticVisual,
+}
+
+impl TextProjectionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TextProjectionKind::Verbatim => "verbatim",
+            TextProjectionKind::Normalized => "normalized",
+            TextProjectionKind::ControlProjection => "controlProjection",
+            TextProjectionKind::FieldProjection => "fieldProjection",
+            TextProjectionKind::SyntheticVisual => "syntheticVisual",
+        }
+    }
+}
+
+/// Extra flags for TextRun v2 layout clusters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextClusterFlag {
+    SpecialVisual,
+    NotShapingCandidate,
+}
+
+impl TextClusterFlag {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TextClusterFlag::SpecialVisual => "specialVisual",
+            TextClusterFlag::NotShapingCandidate => "notShapingCandidate",
+        }
+    }
+}
+
+/// Layout/placement cluster metadata for source-backed TextRun v2 exports.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextClusterPlacement {
+    pub source_range_utf8: TextSourceRange,
+    pub text_range_utf8: TextSourceRange,
+    pub text_range_utf16: Option<TextSourceRange>,
+    pub projection: TextProjectionKind,
+    pub origin: LayerPoint,
+    pub advance: Option<LayerVector>,
+    pub flags: Vec<TextClusterFlag>,
 }
 
 /// Paint-only projection of `TextStyle`.
@@ -533,6 +670,7 @@ mod tests {
                 field_marker: Default::default(),
                 is_para_end: false,
                 is_line_break_end: false,
+                ..Default::default()
             },
         };
         let bounds = op.paint_bounds();

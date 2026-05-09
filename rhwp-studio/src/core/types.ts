@@ -110,6 +110,7 @@ export interface PageLayerTree {
     sourceTextPreserved?: boolean;
     clusterEncoding?: Array<'utf8' | 'utf16'>;
     fallbackRequired?: boolean;
+    placementAuthority?: 'compatibilityProjection' | 'clusterPlacement';
   };
   resources?: LayerResources;
   root: LayerNode;
@@ -119,11 +120,17 @@ export type LayerTreeFeature =
   | 'text.paintStyle'
   | 'text.sourceTable'
   | 'text.sourceSpan'
-  | 'text.clusterPlacement'
+  | 'text.v2.placement'
+  | 'text.v2.clusters'
+  | 'text.projectionKind'
   | 'fontResources'
   | 'text.glyphRun'
   | 'text.outlineGlyph'
-  | 'text.specialVisualOps';
+  | 'text.specialVisualOps'
+  | 'text.charOverlapOp'
+  | 'text.controlMarkOp'
+  | 'text.tabLeaderOp'
+  | 'text.vertical.mixedPerGlyph';
 
 export interface LayerResources {
   tableId: number;
@@ -335,13 +342,29 @@ export interface LayerTextRunPlacement {
   baselineY?: number;
 }
 
+export type LayerTextClusterBasis =
+  | 'legacyPosition'
+  | 'grapheme'
+  | 'layoutPlacement'
+  | 'shapingEquivalent';
+
+export type LayerTextProjectionKind =
+  | 'verbatim'
+  | 'normalized'
+  | 'controlProjection'
+  | 'fieldProjection'
+  | 'syntheticVisual';
+
+export type LayerTextClusterFlag = 'specialVisual' | 'notShapingCandidate';
+
 export interface LayerTextClusterPlacement {
   sourceRangeUtf8: LayerTextSourceRange;
   textRangeUtf8: LayerTextSourceRange;
   textRangeUtf16?: LayerTextSourceRange;
+  projection: LayerTextProjectionKind;
   origin: LayerPoint;
   advance?: LayerVector;
-  flags?: string[];
+  flags?: LayerTextClusterFlag[];
 }
 
 export type LayerTextVariantKind = 'textRun' | 'glyphRun' | 'outlineGlyph';
@@ -449,6 +472,8 @@ export interface LayerTextRunOp {
   rotation: number;
   isVertical: boolean;
   orientation?: 'horizontal' | 'vertical-upright' | 'vertical-sideways';
+  projectionKind?: LayerTextProjectionKind;
+  clusterBasis?: LayerTextClusterBasis;
   /**
    * Future TextRun v2 placement. Current renderers still consume the v1
    * baseline/rotation/positions projection when this field is absent.

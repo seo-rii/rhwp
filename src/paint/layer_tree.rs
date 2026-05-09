@@ -1,4 +1,7 @@
-use crate::paint::paint_op::{LayerTextControlMarkKind, PaintOp};
+use crate::paint::paint_op::{
+    LayerAffineTransform, LayerPoint, LayerTextControlMarkKind, LayerVector, PaintOp,
+    TextClusterBasis, TextClusterFlag, TextClusterPlacement, TextProjectionKind, TextRunPlacement,
+};
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, NodeId};
@@ -81,13 +84,14 @@ impl TextSourceTable {
             }
             LayerNodeKind::Leaf { ops, .. } => {
                 for op in ops {
-                    if let PaintOp::TextRun { run, .. } = op {
+                    if let PaintOp::TextRun { bbox, run } = op {
                         let id = TextSourceId(self.entries.len() as u32);
                         let utf8_range = TextSourceRange::new(0, run.text.len() as u32);
                         let utf16_range =
                             TextSourceRange::new(0, run.text.encode_utf16().count() as u32);
                         let annotations =
                             text_source_annotations(run, utf8_range.end, utf16_range.end);
+                        let projection = text_projection_kind(run);
                         let stable_source_key = run
                             .source
                             .as_ref()
@@ -98,6 +102,10 @@ impl TextSourceTable {
                             utf16_range,
                             stable_source_key: stable_source_key.clone(),
                         });
+                        run.projection = projection;
+                        run.placement = Some(text_run_compat_placement(*bbox, run));
+                        run.cluster_basis = TextClusterBasis::LegacyPosition;
+                        run.clusters = text_run_legacy_clusters(run, projection);
                         self.entries.push(TextSourceEntry {
                             id,
                             stable_source_key,
@@ -111,6 +119,89 @@ impl TextSourceTable {
             }
         }
     }
+}
+
+fn text_projection_kind(run: &crate::paint::paint_op::LayerTextRunPaint) -> TextProjectionKind {
+    if run.char_overlap.is_some() {
+        TextProjectionKind::SyntheticVisual
+    } else if run.field_marker != FieldMarkerType::None {
+        TextProjectionKind::FieldProjection
+    } else if run.text.is_empty()
+        && (run.is_para_end || run.is_line_break_end || !run.control_marks.is_empty())
+    {
+        TextProjectionKind::ControlProjection
+    } else {
+        TextProjectionKind::Verbatim
+    }
+}
+
+fn text_run_compat_placement(
+    bbox: BoundingBox,
+    run: &crate::paint::paint_op::LayerTextRunPaint,
+) -> TextRunPlacement {
+    let radians = run.rotation.to_radians();
+    let (sin, cos) = radians.sin_cos();
+    let local_origin_x = -bbox.width / 2.0;
+    let local_origin_y = -bbox.height / 2.0 + run.baseline;
+    let center_x = bbox.x + bbox.width / 2.0;
+    let center_y = bbox.y + bbox.height / 2.0;
+    TextRunPlacement {
+        run_to_page: LayerAffineTransform {
+            a: cos,
+            b: sin,
+            c: -sin,
+            d: cos,
+            e: center_x + cos * local_origin_x - sin * local_origin_y,
+            f: center_y + sin * local_origin_x + cos * local_origin_y,
+        },
+        baseline_y: 0.0,
+    }
+}
+
+fn text_run_legacy_clusters(
+    run: &crate::paint::paint_op::LayerTextRunPaint,
+    projection: TextProjectionKind,
+) -> Vec<TextClusterPlacement> {
+    let mut clusters = Vec::new();
+    let mut utf16_start = 0_u32;
+    let char_starts = run
+        .text
+        .char_indices()
+        .map(|(offset, ch)| (offset as u32, ch))
+        .collect::<Vec<_>>();
+    for (idx, (utf8_start, ch)) in char_starts.iter().enumerate() {
+        let utf8_end = char_starts
+            .get(idx + 1)
+            .map_or(run.text.len() as u32, |(next, _)| *next);
+        let utf16_end = utf16_start + ch.len_utf16() as u32;
+        let origin_x = run.positions.get(idx).copied().unwrap_or_default();
+        let advance = run.positions.get(idx + 1).map(|next| LayerVector {
+            dx: *next - origin_x,
+            dy: 0.0,
+        });
+        let flags = if run.char_overlap.is_some() {
+            vec![
+                TextClusterFlag::SpecialVisual,
+                TextClusterFlag::NotShapingCandidate,
+            ]
+        } else {
+            Vec::new()
+        };
+        clusters.push(TextClusterPlacement {
+            source_range_utf8: TextSourceRange::new(*utf8_start, utf8_end),
+            text_range_utf8: TextSourceRange::new(*utf8_start, utf8_end),
+            text_range_utf16: Some(TextSourceRange::new(utf16_start, utf16_end)),
+            projection,
+            origin: LayerPoint {
+                x: origin_x,
+                y: 0.0,
+            },
+            advance,
+            flags,
+        });
+        utf16_start = utf16_end;
+    }
+    clusters
 }
 
 fn text_source_annotations(
@@ -555,6 +646,7 @@ mod tests {
                         field_marker: FieldMarkerType::FieldBegin,
                         is_para_end: true,
                         is_line_break_end: false,
+                        ..Default::default()
                     },
                 },
                 PaintOp::TextRun {
@@ -578,6 +670,7 @@ mod tests {
                         field_marker: FieldMarkerType::None,
                         is_para_end: false,
                         is_line_break_end: true,
+                        ..Default::default()
                     },
                 },
             ],
@@ -611,6 +704,25 @@ mod tests {
         let source = run.source.as_ref().expect("source span should be set");
         assert_eq!(source.id, TextSourceId(0));
         assert_eq!(source.utf8_range, TextSourceRange::new(0, 4));
+        assert_eq!(run.projection, TextProjectionKind::FieldProjection);
+        assert_eq!(run.cluster_basis, TextClusterBasis::LegacyPosition);
+        let placement = run.placement.expect("placement should be set");
+        assert_eq!(placement.baseline_y, 0.0);
+        assert_eq!(placement.run_to_page.e, 0.0);
+        assert_eq!(placement.run_to_page.f, 10.0);
+        assert_eq!(run.clusters.len(), 2);
+        assert_eq!(
+            run.clusters[0].source_range_utf8,
+            TextSourceRange::new(0, 3)
+        );
+        assert_eq!(
+            run.clusters[0].text_range_utf16,
+            Some(TextSourceRange::new(0, 1))
+        );
+        assert_eq!(
+            run.clusters[0].projection,
+            TextProjectionKind::FieldProjection
+        );
 
         let PaintOp::TextRun { run, .. } = &ops[1] else {
             panic!("expected text run");
@@ -618,5 +730,6 @@ mod tests {
         let source = run.source.as_ref().expect("source span should be set");
         assert_eq!(source.id, TextSourceId(1));
         assert_eq!(source.stable_source_key.as_deref(), Some("hwp-source-v1"));
+        assert_eq!(run.projection, TextProjectionKind::Verbatim);
     }
 }

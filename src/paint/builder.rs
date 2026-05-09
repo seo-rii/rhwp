@@ -6,7 +6,7 @@ use crate::paint::paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
     LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
     LayerPathPaint, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextOrientation, LayerTextRunPaint, PaintOp,
+    LayerTextOrientation, LayerTextRunPaint, PaintOp, TextClusterBasis, TextProjectionKind,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
@@ -162,6 +162,10 @@ impl LayerBuilder {
                             source: None,
                             text: run.text.clone(),
                             style: run.style.clone(),
+                            projection: TextProjectionKind::Verbatim,
+                            placement: None,
+                            cluster_basis: TextClusterBasis::LegacyPosition,
+                            clusters: Vec::new(),
                             positions,
                             control_marks,
                             baseline: run.baseline,
@@ -278,6 +282,10 @@ impl LayerBuilder {
                         positions: compute_char_positions(&placeholder.label, &text_style),
                         control_marks: Vec::new(),
                         style: text_style,
+                        projection: TextProjectionKind::Verbatim,
+                        placement: None,
+                        cluster_basis: TextClusterBasis::LegacyPosition,
+                        clusters: Vec::new(),
                         baseline: font_size,
                         rotation: 0.0,
                         is_vertical: false,
