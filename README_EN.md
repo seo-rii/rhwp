@@ -182,9 +182,11 @@ See the [roadmap document](mydocs/eng/report/rhwp-milestone.md) for details.
 - `renderPageSvg` currently keeps the legacy SVG path as the default compatibility output. Use `renderPageSvgLegacy` or `renderPageSvgLayer` when the caller needs an explicit SVG path; native/test code may still set `RHWP_RENDER_PATH=layer-svg` to route the compatibility method through layer SVG.
 - Debug overlay rendering is currently implemented by SVG layer/debug SVG paths. Canvas2D, CanvasKit, and native Skia currently receive `debugOptions.debugOverlay` as feature-gating metadata and do not draw overlay paint; layer exports expose generic and backend-specific `debugCapabilities` so external consumers can gate overlay UI without guessing backend support.
 - Field marker metadata (`fieldMarker`) is exported for layer consumers. Field marker visible text is lowered as normal text runs; backend-specific visual marker behavior should be checked through fixture parity rather than inferred from metadata alone.
+- Text runs are still the canonical source-backed text paint contract. `PageLayerTree` carries an internal `textSources` table, and each lowered TextRun gets a `source` span during layer tree construction. Layer JSON/JS exports keep the v1-compatible `style` field, expose `paintStyle` as the paint-visible projection, and serialize the same `textSources` table/source spans. This keeps browser/SVG string replay compatible while moving source identity, field markers, and paragraph/line-break boundaries toward the TextRun v2 contract required before optional lower-level `GlyphRun` replay.
+- The detailed TextRun v2 / optional GlyphRun migration contract is tracked in [`docs/text-ir-v2.md`](docs/text-ir-v2.md).
 - New visual semantics should be lowered into `paint::PaintOp` or shared layer policy first, then replayed by each backend. Backend-only behavior is treated as a parity risk.
 - Public layer export: JS value export with profile/resource-key support is the preferred frontend API for large documents. JSON string export is kept for debug, snapshots, and schema regression checks.
-- Layer schema exports include version, unit, coordinate system, profile, output options, and resource-table metadata so frontends can reject incompatible IR safely.
+- Layer schema exports keep `schemaVersion` and `resourceTableVersion` as integer major versions for compatibility, and add minor versions, used/optional/required/known feature lists, and text variant metadata so frontends can reject incompatible IR safely and avoid double-painting future TextRun/GlyphRun alternatives.
 
 #### Backend Support Matrix
 | Backend/API | Default status | Layer IR path | Notes |
@@ -293,6 +295,27 @@ npx vite --host 0.0.0.0 --port 7700
 ```
 
 Open `http://localhost:7700` in your browser.
+
+### Validation / Regression
+
+```bash
+npm --prefix rhwp-studio run e2e:ci        # Studio E2E (Canvas2D + CanvasKit)
+cargo test-skia-full-sweep                 # Native Skia full screenshot sweep
+RHWP_SKIA_LOG_PERF=1 cargo test --features native-skia test_skia_screenshot_matches_layer_svg_for_representative_sample_corpus -- --nocapture
+python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview
+```
+
+Set `RHWP_SKIA_LOG_PERF=1` when running the native Skia corpus tests to print
+per-sample parse, layer SVG, SVG rasterize, Skia PNG, decode, and diff timings.
+Native Skia `RasterRenderOutput.diagnostics` also reports per-render
+`raster_setup_time_ns`, `raster_replay_time_ns`, `raster_encode_time_ns`, and
+`raster_total_time_ns` alongside replay counts and cache diagnostics, so
+benchmark or CI harnesses can separate setup, PaintOp replay, and PNG encoding
+cost.
+`scripts/renderer_baseline.py` also records browser-side timing diagnostics in
+`browser-baseline-report.json` and the generated Markdown report: app load,
+document load + initial render, screenshot capture time, and image-effect
+preprocessing cache/failure counters for Canvas2D and CanvasKit.
 
 ## CLI Usage
 

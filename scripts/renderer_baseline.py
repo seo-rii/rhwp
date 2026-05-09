@@ -338,6 +338,18 @@ def repo_relative(path_value: str | Path) -> str:
     return str(path.relative_to(ROOT))
 
 
+def format_ms(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return "-"
+    return f"{value:.1f}"
+
+
+def format_count(value: object) -> str:
+    if not isinstance(value, int):
+        return "-"
+    return str(value)
+
+
 def write_reports(
     manifest: dict,
     output_root: Path,
@@ -394,6 +406,45 @@ def write_reports(
         lines.append(
             f"| {sample['id']} | {sample['category']} | {native_text} | {browser_text} |"
         )
+
+    if browser_data and browser_data.get("results"):
+        lines.extend(
+            [
+                "",
+                "## Browser Performance",
+                "",
+                "| Sample | Backend | Profile | App Load ms | Document Load + Initial Render ms | Screenshot ms | Total ms | Effect Pixels | Effect Cache Hits | Effect Cache Misses | Effect Failures |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for item in browser_data["results"]:
+            timings = item.get("timings") or {}
+            image_effects = (item.get("diagnostics") or {}).get("imageEffects") or {}
+            backend = item.get("backend", "")
+            if backend == "canvas2d":
+                effect_diagnostics = image_effects.get("canvas2d") or {}
+            else:
+                effect_diagnostics = image_effects.get("canvaskit") or {}
+
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("sampleId", "-"),
+                        backend or "-",
+                        item.get("profile", "-"),
+                        format_ms(timings.get("appLoadMs")),
+                        format_ms(timings.get("documentLoadAndInitialRenderMs")),
+                        format_ms(timings.get("screenshotMs")),
+                        format_ms(timings.get("totalMs")),
+                        format_count(effect_diagnostics.get("preprocessedPixels")),
+                        format_count(effect_diagnostics.get("cacheHits")),
+                        format_count(effect_diagnostics.get("cacheMisses")),
+                        format_count(effect_diagnostics.get("preprocessFailures")),
+                    ]
+                )
+                + " |"
+            )
 
     (output_root / "baseline-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

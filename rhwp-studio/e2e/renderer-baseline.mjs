@@ -118,6 +118,28 @@ function normalizeSamples(manifest, filterPattern) {
   });
 }
 
+async function resetRendererDiagnostics(page) {
+  await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    pageRenderer?.canvas2dRenderer?.resetImageEffectDiagnostics?.();
+    pageRenderer?.canvaskitRenderer?.resetImageEffectDiagnostics?.();
+  });
+}
+
+async function readRendererDiagnostics(page) {
+  return await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2d = pageRenderer?.canvas2dRenderer?.getImageEffectDiagnostics?.() ?? null;
+    const canvaskit = pageRenderer?.canvaskitRenderer?.getImageEffectDiagnostics?.() ?? null;
+    return {
+      imageEffects: {
+        canvas2d,
+        canvaskit,
+      },
+    };
+  });
+}
+
 const options = parseArgs();
 const manifest = JSON.parse(fs.readFileSync(options.manifest, 'utf8'));
 const samples = normalizeSamples(manifest, options.filter);
@@ -145,12 +167,22 @@ try {
 
     for (const profile of profiles) {
       for (const backend of BACKENDS) {
+        const totalStartedAt = performance.now();
+        const appLoadStartedAt = performance.now();
         await loadApp(page, backend.queryForProfile(profile));
+        const appLoadMs = performance.now() - appLoadStartedAt;
+
+        await resetRendererDiagnostics(page);
+        const documentLoadStartedAt = performance.now();
         await loadHwpFile(page, sample.file);
+        const documentLoadAndInitialRenderMs = performance.now() - documentLoadStartedAt;
 
         const sampleDir = path.join(options.output, sample.id);
         const outputPath = path.join(sampleDir, backend.filenameForProfile(profile));
+        const screenshotStartedAt = performance.now();
         await captureCanvasScreenshot(page, outputPath, `Baseline ${backend.key} (${profile})`);
+        const screenshotMs = performance.now() - screenshotStartedAt;
+        const diagnostics = await readRendererDiagnostics(page);
         results.push({
           sampleId: sample.id,
           file: sample.file,
@@ -158,6 +190,13 @@ try {
           backend: backend.key,
           profile,
           path: outputPath,
+          timings: {
+            appLoadMs,
+            documentLoadAndInitialRenderMs,
+            screenshotMs,
+            totalMs: performance.now() - totalStartedAt,
+          },
+          diagnostics,
         });
       }
     }
