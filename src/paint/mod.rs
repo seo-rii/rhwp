@@ -35,12 +35,13 @@ pub use layer_tree::{
     TextSourceRange, TextSourceSpan, TextSourceTable,
 };
 pub use paint_op::{
-    LayerAffineTransform, LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint,
-    LayerFormObjectPaint, LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint,
-    LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint,
-    LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint,
-    LayerVector, PaintBounds, PaintOp, PaintTextStyle, TextClusterBasis, TextClusterFlag,
-    TextClusterPlacement, TextProjectionKind, TextRunPlacement,
+    LayerAffineTransform, LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint,
+    LayerFootnoteMarkerPaint, LayerFormObjectPaint, LayerImagePaint, LayerLinePaint,
+    LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerPathPaint, LayerPoint,
+    LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark, LayerTextControlMarkKind,
+    LayerTextControlMarkPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
+    PaintOp, PaintTextStyle, TextClusterBasis, TextClusterFlag, TextClusterPlacement,
+    TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind, TextRunPlacement,
 };
 pub use profile::RenderProfile;
 pub use resources::{

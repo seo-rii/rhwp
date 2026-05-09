@@ -581,30 +581,41 @@ impl SkiaLayerRenderer {
             }
         }
 
-        if !run.control_marks.is_empty() {
-            let mut marker_paint = Paint::default();
-            marker_paint.set_anti_alias(true);
-            marker_paint.set_color(Color::from_argb(255, 0x4A, 0x90, 0xD9));
-
-            for mark in &run.control_marks {
-                if !replay.output_options.allows_text_control_mark(mark.kind) {
-                    continue;
-                }
-                let marker_style = crate::renderer::TextStyle {
-                    font_family: "sans-serif".to_string(),
-                    font_size: mark.font_size,
-                    ..Default::default()
-                };
-                let glyph = mark.kind.glyph();
-                let marker_font = make_font(&marker_style, &self.font_mgr, glyph);
-                canvas.draw_str(
-                    glyph,
-                    ((bbox.x + mark.x) as f32, y + mark.y as f32),
-                    &marker_font,
-                    &marker_paint,
-                );
-            }
+        for mark in &run.control_marks {
+            self.render_text_control_mark(canvas, bbox, mark, f64::from(y) - bbox.y, replay);
         }
+    }
+
+    pub(super) fn render_text_control_mark(
+        &self,
+        canvas: &Canvas,
+        bbox: &BoundingBox,
+        mark: &crate::paint::LayerTextControlMark,
+        baseline: f64,
+        replay: &SkiaReplayContext,
+    ) {
+        if !replay.output_options.allows_text_control_mark(mark.kind) {
+            return;
+        }
+        let mut marker_paint = Paint::default();
+        marker_paint.set_anti_alias(true);
+        marker_paint.set_color(Color::from_argb(255, 0x4A, 0x90, 0xD9));
+        let marker_style = crate::renderer::TextStyle {
+            font_family: "sans-serif".to_string(),
+            font_size: mark.font_size,
+            ..Default::default()
+        };
+        let glyph = mark.kind.glyph();
+        let marker_font = make_font(&marker_style, &self.font_mgr, glyph);
+        canvas.draw_str(
+            glyph,
+            (
+                (bbox.x + mark.x) as f32,
+                (bbox.y + baseline + mark.y) as f32,
+            ),
+            &marker_font,
+            &marker_paint,
+        );
     }
 
     fn draw_text_line_shape(

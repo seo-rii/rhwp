@@ -83,37 +83,57 @@ impl TextSourceTable {
                 self.collect_from_node(child);
             }
             LayerNodeKind::Leaf { ops, .. } => {
+                let mut last_text_source = None;
                 for op in ops {
-                    if let PaintOp::TextRun { bbox, run } = op {
-                        let id = TextSourceId(self.entries.len() as u32);
-                        let utf8_range = TextSourceRange::new(0, run.text.len() as u32);
-                        let utf16_range =
-                            TextSourceRange::new(0, run.text.encode_utf16().count() as u32);
-                        let annotations =
-                            text_source_annotations(run, utf8_range.end, utf16_range.end);
-                        let projection = text_projection_kind(run);
-                        let stable_source_key = run
-                            .source
-                            .as_ref()
-                            .and_then(|source| source.stable_source_key.clone());
-                        run.source = Some(TextSourceSpan {
-                            id,
-                            utf8_range,
-                            utf16_range,
-                            stable_source_key: stable_source_key.clone(),
-                        });
-                        run.projection = projection;
-                        run.placement = Some(text_run_compat_placement(*bbox, run));
-                        run.cluster_basis = TextClusterBasis::LegacyPosition;
-                        run.clusters = text_run_legacy_clusters(run, projection);
-                        self.entries.push(TextSourceEntry {
-                            id,
-                            stable_source_key,
-                            text: run.text.clone(),
-                            utf8_range,
-                            utf16_range,
-                            annotations,
-                        });
+                    match op {
+                        PaintOp::TextRun { bbox, run } => {
+                            let id = TextSourceId(self.entries.len() as u32);
+                            let utf8_range = TextSourceRange::new(0, run.text.len() as u32);
+                            let utf16_range =
+                                TextSourceRange::new(0, run.text.encode_utf16().count() as u32);
+                            let annotations =
+                                text_source_annotations(run, utf8_range.end, utf16_range.end);
+                            let projection = text_projection_kind(run);
+                            let stable_source_key = run
+                                .source
+                                .as_ref()
+                                .and_then(|source| source.stable_source_key.clone());
+                            run.source = Some(TextSourceSpan {
+                                id,
+                                utf8_range,
+                                utf16_range,
+                                stable_source_key: stable_source_key.clone(),
+                            });
+                            run.projection = projection;
+                            run.placement = Some(text_run_compat_placement(*bbox, run));
+                            run.cluster_basis = TextClusterBasis::LegacyPosition;
+                            run.clusters = text_run_legacy_clusters(run, projection);
+                            last_text_source = run.source.clone();
+                            self.entries.push(TextSourceEntry {
+                                id,
+                                stable_source_key,
+                                text: run.text.clone(),
+                                utf8_range,
+                                utf16_range,
+                                annotations,
+                            });
+                        }
+                        PaintOp::CharOverlap { overlap, .. } => {
+                            if overlap.source.is_none() {
+                                overlap.source = last_text_source.clone();
+                            }
+                        }
+                        PaintOp::TextControlMark { mark, .. } => {
+                            if mark.source.is_none() {
+                                mark.source = last_text_source.clone();
+                            }
+                        }
+                        PaintOp::TabLeader { leader, .. } => {
+                            if leader.source.is_none() {
+                                leader.source = last_text_source.clone();
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -643,6 +663,7 @@ mod tests {
                         is_vertical: false,
                         orientation: crate::paint::LayerTextOrientation::Horizontal,
                         char_overlap: None,
+                        legacy_visuals: crate::paint::TextLegacyVisuals::default(),
                         field_marker: FieldMarkerType::FieldBegin,
                         is_para_end: true,
                         is_line_break_end: false,
@@ -667,6 +688,7 @@ mod tests {
                         is_vertical: false,
                         orientation: crate::paint::LayerTextOrientation::Horizontal,
                         char_overlap: None,
+                        legacy_visuals: crate::paint::TextLegacyVisuals::default(),
                         field_marker: FieldMarkerType::None,
                         is_para_end: false,
                         is_line_break_end: true,

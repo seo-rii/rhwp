@@ -166,18 +166,38 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "textSources",
         text_sources_to_value(&tree.text_sources),
     );
+    let externalized_visuals = externalized_text_visuals(&tree.root);
+    let mut used_features = vec![
+        "text.paintStyle",
+        "text.sourceTable",
+        "text.sourceSpan",
+        "text.v2.placement",
+        "text.v2.clusters",
+        "text.projectionKind",
+        "text.legacyVisuals",
+    ];
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "charOverlap")
+    {
+        used_features.push("text.charOverlapOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "controlMarks")
+    {
+        used_features.push("text.controlMarkOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "tabLeaders")
+    {
+        used_features.push("text.tabLeaderOp");
+    }
     set_value(
         &value,
         "usedFeatures",
-        string_array_to_value(&[
-            "text.paintStyle",
-            "text.sourceTable",
-            "text.sourceSpan",
-            "text.v2.placement",
-            "text.v2.clusters",
-            "text.projectionKind",
-            "text.legacyVisuals",
-        ]),
+        string_array_to_value(&used_features),
     );
     set_value(&value, "optionalFeatures", string_array_to_value(&[]));
     set_value(
@@ -217,7 +237,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_value(
         &text_contract,
         "externalizedVisuals",
-        string_array_to_value(&[]),
+        string_array_to_value(&externalized_visuals),
     );
     set_value(&value, "text", text_contract.into());
 
@@ -608,6 +628,53 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 );
             }
         }
+        PaintOp::CharOverlap { bbox, overlap } => {
+            set_string(&value, "type", "charOverlap");
+            set_value(&value, "bbox", bbox_to_value(*bbox));
+            set_string(&value, "text", &overlap.text);
+            set_number(&value, "baseline", overlap.baseline);
+            set_number(&value, "rotation", overlap.rotation);
+            set_bool(&value, "isVertical", overlap.is_vertical);
+            set_string(&value, "orientation", overlap.orientation.as_str());
+            if let Some(source) = &overlap.source {
+                set_value(&value, "source", text_source_span_to_value(source));
+            }
+            set_value(&value, "style", text_style_to_value(&overlap.style));
+            set_value(
+                &value,
+                "paintStyle",
+                paint_text_style_to_value(&PaintTextStyle::from(&overlap.style)),
+            );
+            set_value(
+                &value,
+                "positions",
+                array_to_value(overlap.positions.iter().copied().map(JsValue::from_f64)),
+            );
+            set_value(
+                &value,
+                "charOverlap",
+                char_overlap_to_value(&overlap.overlap),
+            );
+        }
+        PaintOp::TextControlMark { bbox, mark } => {
+            set_string(&value, "type", "textControlMark");
+            set_value(&value, "bbox", bbox_to_value(*bbox));
+            if let Some(source) = &mark.source {
+                set_value(&value, "source", text_source_span_to_value(source));
+            }
+            set_value(&value, "mark", text_control_mark_to_value(&mark.mark));
+        }
+        PaintOp::TabLeader { bbox, leader } => {
+            set_string(&value, "type", "tabLeader");
+            set_value(&value, "bbox", bbox_to_value(*bbox));
+            if let Some(source) = &leader.source {
+                set_value(&value, "source", text_source_span_to_value(source));
+            }
+            set_value(&value, "leader", tab_leader_to_value(&leader.leader));
+            set_string(&value, "color", &color_ref_to_css(leader.color));
+            set_number(&value, "fontSize", leader.font_size);
+            set_number(&value, "baseline", leader.baseline);
+        }
         PaintOp::FootnoteMarker { bbox, marker } => {
             set_string(&value, "type", "footnoteMarker");
             set_value(&value, "bbox", bbox_to_value(*bbox));
@@ -763,13 +830,15 @@ fn paint_text_style_to_value(style: &PaintTextStyle) -> JsValue {
 }
 
 fn tab_leaders_to_value(leaders: &[TabLeaderInfo]) -> JsValue {
-    array_to_value(leaders.iter().map(|leader| {
-        let value = Object::new();
-        set_number(&value, "startX", leader.start_x);
-        set_number(&value, "endX", leader.end_x);
-        set_number(&value, "fillType", leader.fill_type as f64);
-        value.into()
-    }))
+    array_to_value(leaders.iter().map(tab_leader_to_value))
+}
+
+fn tab_leader_to_value(leader: &TabLeaderInfo) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "startX", leader.start_x);
+    set_number(&value, "endX", leader.end_x);
+    set_number(&value, "fillType", leader.fill_type as f64);
+    value.into()
 }
 
 fn shape_style_to_value(style: &ShapeStyle) -> JsValue {
@@ -1066,6 +1135,43 @@ fn string_array_to_value(values: &[&str]) -> JsValue {
     array_to_value(values.iter().map(|value| JsValue::from_str(value)))
 }
 
+fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
+    let mut has_char_overlap = false;
+    let mut has_control_marks = false;
+    let mut has_tab_leaders = false;
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                has_char_overlap |= ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::CharOverlap { .. }));
+                has_control_marks |= ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::TextControlMark { .. }));
+                has_tab_leaders |= ops.iter().any(|op| matches!(op, PaintOp::TabLeader { .. }));
+            }
+        }
+    }
+    let mut visuals = Vec::new();
+    if has_char_overlap {
+        visuals.push("charOverlap");
+    }
+    if has_control_marks {
+        visuals.push("controlMarks");
+    }
+    if has_tab_leaders {
+        visuals.push("tabLeaders");
+    }
+    visuals
+}
+
 fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option<JsValue> {
     if run.char_overlap.is_none()
         && run.control_marks.is_empty()
@@ -1075,13 +1181,34 @@ fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option
     }
     let value = Object::new();
     if run.char_overlap.is_some() {
-        set_string(&value, "charOverlap", "canonical");
+        set_string(
+            &value,
+            "charOverlap",
+            run.legacy_visuals
+                .char_overlap
+                .unwrap_or(crate::paint::TextLegacyVisualState::Canonical)
+                .as_str(),
+        );
     }
     if !run.control_marks.is_empty() {
-        set_string(&value, "controlMarks", "canonical");
+        set_string(
+            &value,
+            "controlMarks",
+            run.legacy_visuals
+                .control_marks
+                .unwrap_or(crate::paint::TextLegacyVisualState::Canonical)
+                .as_str(),
+        );
     }
     if !run.style.tab_leaders.is_empty() {
-        set_string(&value, "tabLeaders", "canonical");
+        set_string(
+            &value,
+            "tabLeaders",
+            run.legacy_visuals
+                .tab_leaders
+                .unwrap_or(crate::paint::TextLegacyVisualState::Canonical)
+                .as_str(),
+        );
     }
     Some(value.into())
 }
@@ -1155,15 +1282,17 @@ fn layer_vector_to_value(vector: LayerVector) -> JsValue {
 }
 
 fn text_control_marks_to_value(run: &crate::paint::LayerTextRunPaint) -> JsValue {
-    array_to_value(run.control_marks.iter().map(|mark| {
-        let value = Object::new();
-        set_string(&value, "kind", mark.kind.as_str());
-        set_string(&value, "text", mark.kind.glyph());
-        set_number(&value, "x", mark.x);
-        set_number(&value, "y", mark.y);
-        set_number(&value, "fontSize", mark.font_size);
-        value.into()
-    }))
+    array_to_value(run.control_marks.iter().map(text_control_mark_to_value))
+}
+
+fn text_control_mark_to_value(mark: &crate::paint::LayerTextControlMark) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "kind", mark.kind.as_str());
+    set_string(&value, "text", mark.kind.glyph());
+    set_number(&value, "x", mark.x);
+    set_number(&value, "y", mark.y);
+    set_number(&value, "fontSize", mark.font_size);
+    value.into()
 }
 
 fn char_overlap_to_value(overlap: &crate::renderer::composer::CharOverlapInfo) -> JsValue {

@@ -2,6 +2,7 @@ import { isKnownLayerPaintOp } from '@/core/types';
 import type { CanvasKitRenderMode } from './render-backend';
 import type {
   LayerBounds,
+  LayerCharOverlapOp,
   LayerClipNode,
   LayerEllipseOp,
   LayerFootnoteMarkerOp,
@@ -20,7 +21,9 @@ import type {
   LayerRectangleOp,
   LayerShapeShadow,
   LayerTabLeader,
+  LayerTabLeaderOp,
   LayerTextRunOp,
+  LayerTextControlMarkOp,
   PageLayerTree,
 } from '@/core/types';
 import {
@@ -200,6 +203,21 @@ export class Canvas2DLayerRenderer {
           this.renderTextRun(ctx, op);
         }, op.bbox);
         return;
+      case 'charOverlap':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderCharOverlap(ctx, op);
+        }, op.bbox);
+        return;
+      case 'textControlMark':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderTextControlMark(ctx, op);
+        }, op.bbox);
+        return;
+      case 'tabLeader':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderTabLeader(ctx, op);
+        }, op.bbox);
+        return;
       case 'footnoteMarker':
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderFootnoteMarker(ctx, op);
@@ -320,6 +338,9 @@ export class Canvas2DLayerRenderer {
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = op.positions.at(-1) ?? 0;
       const drawControlMarks = () => {
+        if (op.legacyVisuals?.controlMarks === 'mirror') {
+          return;
+        }
         if (!op.controlMarks?.length) {
           return;
         }
@@ -339,7 +360,7 @@ export class Canvas2DLayerRenderer {
         ctx.restore();
       };
 
-      if (op.charOverlap) {
+      if (op.charOverlap && op.legacyVisuals?.charOverlap !== 'mirror') {
         drawCanvas2DCharOverlap(ctx, op, originX, originY);
         drawControlMarks();
         return;
@@ -447,7 +468,7 @@ export class Canvas2DLayerRenderer {
         }
       }
 
-      if (op.tabLeaders?.length) {
+      if (op.legacyVisuals?.tabLeaders !== 'mirror' && op.tabLeaders?.length) {
         this.drawTabLeaders(ctx, op.tabLeaders, originX, originY, op.style.color);
       }
 
@@ -492,6 +513,38 @@ export class Canvas2DLayerRenderer {
       drawClusters(op.bbox.x, op.bbox.y + op.baseline);
     }
     ctx.restore();
+  }
+
+  private renderCharOverlap(ctx: CanvasRenderingContext2D, op: LayerCharOverlapOp): void {
+    const cx = op.bbox.x + op.bbox.width / 2;
+    const cy = op.bbox.y + op.bbox.height / 2;
+    ctx.save();
+    if (op.rotation) {
+      ctx.translate(cx, cy);
+      ctx.rotate((op.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
+    drawCanvas2DCharOverlap(ctx, op, op.bbox.x, op.bbox.y + op.baseline);
+    ctx.restore();
+  }
+
+  private renderTextControlMark(ctx: CanvasRenderingContext2D, op: LayerTextControlMarkOp): void {
+    if (!allowsTextControlMark(
+      this.currentShowParagraphMarks,
+      this.currentShowControlCodes,
+      op.mark.kind,
+    )) {
+      return;
+    }
+    ctx.save();
+    ctx.fillStyle = '#4A90D9';
+    this.setCanvasTextFont(ctx, 'Noto Sans KR', op.mark.fontSize, false, false);
+    ctx.fillText(op.mark.text, op.bbox.x + op.mark.x, op.bbox.y + op.mark.y);
+    ctx.restore();
+  }
+
+  private renderTabLeader(ctx: CanvasRenderingContext2D, op: LayerTabLeaderOp): void {
+    this.drawTabLeaders(ctx, [op.leader], op.bbox.x, op.bbox.y + op.baseline, op.color);
   }
 
   private renderFootnoteMarker(ctx: CanvasRenderingContext2D, op: LayerFootnoteMarkerOp): void {

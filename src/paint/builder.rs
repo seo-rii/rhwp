@@ -3,10 +3,12 @@ use crate::paint::layer_tree::{
     PageLayerTree,
 };
 use crate::paint::paint_op::{
-    LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
-    LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextOrientation, LayerTextRunPaint, PaintOp, TextClusterBasis, TextProjectionKind,
+    LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint,
+    LayerFormObjectPaint, LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint,
+    LayerPageBackgroundPaint, LayerPathPaint, LayerRectanglePaint, LayerTabLeaderPaint,
+    LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
+    LayerTextOrientation, LayerTextRunPaint, PaintOp, TextClusterBasis, TextLegacyVisualState,
+    TextLegacyVisuals, TextProjectionKind,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
@@ -154,34 +156,132 @@ impl LayerBuilder {
             RenderNodeType::TextRun(run) => {
                 let positions = compute_char_positions(&run.text, &run.style);
                 let control_marks = self.build_text_control_marks(run, node.bbox, &positions);
-                Some(self.build_paint_node(
-                    node,
-                    PaintOp::TextRun {
+                let orientation = LayerTextOrientation::from_run(run.is_vertical, run.rotation);
+                let legacy_visuals = TextLegacyVisuals {
+                    char_overlap: run
+                        .char_overlap
+                        .as_ref()
+                        .map(|_| TextLegacyVisualState::Mirror),
+                    control_marks: (!control_marks.is_empty())
+                        .then_some(TextLegacyVisualState::Mirror),
+                    tab_leaders: (!run.style.tab_leaders.is_empty())
+                        .then_some(TextLegacyVisualState::Mirror),
+                    ..TextLegacyVisuals::default()
+                };
+                let text_op = PaintOp::TextRun {
+                    bbox: node.bbox,
+                    run: LayerTextRunPaint {
+                        source: None,
+                        text: run.text.clone(),
+                        style: run.style.clone(),
+                        projection: TextProjectionKind::Verbatim,
+                        placement: None,
+                        cluster_basis: TextClusterBasis::LegacyPosition,
+                        clusters: Vec::new(),
+                        positions: positions.clone(),
+                        control_marks: control_marks.clone(),
+                        baseline: run.baseline,
+                        rotation: run.rotation,
+                        is_vertical: run.is_vertical,
+                        orientation,
+                        char_overlap: run.char_overlap.clone(),
+                        legacy_visuals,
+                        field_marker: run.field_marker,
+                        is_para_end: run.is_para_end,
+                        is_line_break_end: run.is_line_break_end,
+                    },
+                };
+                let mut ops = vec![text_op];
+                if let Some(overlap) = &run.char_overlap {
+                    ops.push(PaintOp::CharOverlap {
                         bbox: node.bbox,
-                        run: LayerTextRunPaint {
+                        overlap: LayerCharOverlapPaint {
                             source: None,
                             text: run.text.clone(),
                             style: run.style.clone(),
-                            projection: TextProjectionKind::Verbatim,
-                            placement: None,
-                            cluster_basis: TextClusterBasis::LegacyPosition,
-                            clusters: Vec::new(),
                             positions,
-                            control_marks,
                             baseline: run.baseline,
                             rotation: run.rotation,
                             is_vertical: run.is_vertical,
-                            orientation: LayerTextOrientation::from_run(
-                                run.is_vertical,
-                                run.rotation,
-                            ),
-                            char_overlap: run.char_overlap.clone(),
-                            field_marker: run.field_marker,
-                            is_para_end: run.is_para_end,
-                            is_line_break_end: run.is_line_break_end,
+                            orientation,
+                            overlap: overlap.clone(),
                         },
-                    },
-                ))
+                    });
+                }
+                for mut mark in control_marks {
+                    mark.y += run.baseline;
+                    ops.push(PaintOp::TextControlMark {
+                        bbox: node.bbox,
+                        mark: LayerTextControlMarkPaint { source: None, mark },
+                    });
+                }
+                for leader in &run.style.tab_leaders {
+                    ops.push(PaintOp::TabLeader {
+                        bbox: node.bbox,
+                        leader: LayerTabLeaderPaint {
+                            source: None,
+                            leader: leader.clone(),
+                            color: run.style.color,
+                            font_size: run.style.font_size,
+                            baseline: run.baseline,
+                        },
+                    });
+                }
+                let mut visual_bounds = ops[0].visual_bounds();
+                for op in &ops[1..] {
+                    let bounds = op.visual_bounds();
+                    let left = visual_bounds.x.min(bounds.x);
+                    let top = visual_bounds.y.min(bounds.y);
+                    let right =
+                        (visual_bounds.x + visual_bounds.width).max(bounds.x + bounds.width);
+                    let bottom =
+                        (visual_bounds.y + visual_bounds.height).max(bounds.y + bounds.height);
+                    visual_bounds = crate::renderer::render_tree::BoundingBox::new(
+                        left,
+                        top,
+                        right - left,
+                        bottom - top,
+                    );
+                }
+                if node.children.is_empty() {
+                    Some(LayerNode::leaf_with_hint(
+                        visual_bounds,
+                        Some(node.id),
+                        ops,
+                        self.cache_hint_for(&node.node_type),
+                    ))
+                } else {
+                    let mut children = Vec::with_capacity(node.children.len() + 1);
+                    children.push(LayerNode::leaf_with_hint(
+                        visual_bounds,
+                        Some(node.id),
+                        ops,
+                        self.cache_hint_for(&node.node_type),
+                    ));
+                    children.extend(self.build_children(node));
+                    let mut group_bounds = visual_bounds;
+                    for child in &children[1..] {
+                        let left = group_bounds.x.min(child.bounds.x);
+                        let top = group_bounds.y.min(child.bounds.y);
+                        let right = (group_bounds.x + group_bounds.width)
+                            .max(child.bounds.x + child.bounds.width);
+                        let bottom = (group_bounds.y + group_bounds.height)
+                            .max(child.bounds.y + child.bounds.height);
+                        group_bounds = crate::renderer::render_tree::BoundingBox::new(
+                            left,
+                            top,
+                            right - left,
+                            bottom - top,
+                        );
+                    }
+                    Some(LayerNode::group(
+                        group_bounds,
+                        None,
+                        children,
+                        self.cache_hint_for(&node.node_type),
+                        LayerSemantic::default(),
+                    ))
+                }
             }
             RenderNodeType::FootnoteMarker(marker) => Some(self.build_paint_node(
                 node,
@@ -291,6 +391,7 @@ impl LayerBuilder {
                         is_vertical: false,
                         orientation: LayerTextOrientation::Horizontal,
                         char_overlap: None,
+                        legacy_visuals: TextLegacyVisuals::default(),
                         field_marker: Default::default(),
                         is_para_end: false,
                         is_line_break_end: false,
@@ -693,12 +794,13 @@ impl LayerBuilder {
 mod tests {
     use super::*;
     use crate::paint::LayerNodeKind;
+    use crate::renderer::composer::CharOverlapInfo;
     use crate::renderer::render_tree::{
         BoundingBox, FieldMarkerType, GroupNode, PageBackgroundNode, PageNode, RectangleNode,
         RenderNode, RenderNodeType, TableCellNode, TableNode, TextLineNode, TextRunNode,
     };
     use crate::renderer::render_tree::{EquationNode, ImageNode};
-    use crate::renderer::{ShapeStyle, TextStyle};
+    use crate::renderer::{ShapeStyle, TabLeaderInfo, TextStyle};
 
     #[test]
     fn builds_body_clip_layer() {
@@ -1117,24 +1219,158 @@ mod tests {
 
         match &layer_tree.root.kind {
             LayerNodeKind::Group { children, .. } => match &children[0].kind {
-                LayerNodeKind::Leaf { ops, .. } => match &ops[0] {
-                    PaintOp::TextRun { run, .. } => {
-                        let kinds: Vec<_> =
-                            run.control_marks.iter().map(|mark| mark.kind).collect();
-                        assert_eq!(
-                            kinds,
-                            vec![
-                                LayerTextControlMarkKind::Space,
-                                LayerTextControlMarkKind::Tab,
-                                LayerTextControlMarkKind::ParagraphEnd,
-                            ]
-                        );
+                LayerNodeKind::Leaf { ops, .. } => {
+                    assert_eq!(ops.len(), 4);
+                    match &ops[0] {
+                        PaintOp::TextRun { run, .. } => {
+                            assert_eq!(
+                                run.legacy_visuals.control_marks,
+                                Some(TextLegacyVisualState::Mirror)
+                            );
+                            let kinds: Vec<_> =
+                                run.control_marks.iter().map(|mark| mark.kind).collect();
+                            assert_eq!(
+                                kinds,
+                                vec![
+                                    LayerTextControlMarkKind::Space,
+                                    LayerTextControlMarkKind::Tab,
+                                    LayerTextControlMarkKind::ParagraphEnd,
+                                ]
+                            );
+                        }
+                        other => panic!("expected text run op, got {other:?}"),
                     }
-                    other => panic!("expected text run op, got {other:?}"),
-                },
+                    assert!(ops[1..]
+                        .iter()
+                        .all(|op| matches!(op, PaintOp::TextControlMark { .. })));
+                }
                 other => panic!("expected text leaf, got {other:?}"),
             },
             other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn externalizes_char_overlap_with_legacy_mirror() {
+        let mut tree = PageRenderTree::new(0, 300.0, 200.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "12".to_string(),
+                style: TextStyle {
+                    font_size: 18.0,
+                    ..TextStyle::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: Some(CharOverlapInfo {
+                    border_type: 1,
+                    inner_char_size: 90,
+                }),
+                border_fill_id: 0,
+                baseline: 14.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            BoundingBox::new(20.0, 30.0, 30.0, 20.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::Leaf { ops, .. } = &children[0].kind else {
+            panic!("expected text leaf");
+        };
+        assert_eq!(ops.len(), 2);
+        match &ops[0] {
+            PaintOp::TextRun { run, .. } => {
+                assert_eq!(
+                    run.legacy_visuals.char_overlap,
+                    Some(TextLegacyVisualState::Mirror)
+                );
+                assert!(run.char_overlap.is_some());
+            }
+            other => panic!("expected text run mirror, got {other:?}"),
+        }
+        match &ops[1] {
+            PaintOp::CharOverlap { overlap, .. } => {
+                assert_eq!(overlap.text, "12");
+                assert_eq!(overlap.overlap.border_type, 1);
+            }
+            other => panic!("expected char overlap op, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn externalizes_tab_leaders_with_legacy_mirror() {
+        let mut tree = PageRenderTree::new(0, 300.0, 200.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "a\tb".to_string(),
+                style: TextStyle {
+                    tab_leaders: vec![TabLeaderInfo {
+                        start_x: 12.0,
+                        end_x: 42.0,
+                        fill_type: 3,
+                    }],
+                    font_size: 18.0,
+                    ..TextStyle::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 14.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            BoundingBox::new(20.0, 30.0, 80.0, 20.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::Leaf { ops, .. } = &children[0].kind else {
+            panic!("expected text leaf");
+        };
+        assert_eq!(ops.len(), 2);
+        match &ops[0] {
+            PaintOp::TextRun { run, .. } => {
+                assert_eq!(
+                    run.legacy_visuals.tab_leaders,
+                    Some(TextLegacyVisualState::Mirror)
+                );
+                assert_eq!(run.style.tab_leaders.len(), 1);
+            }
+            other => panic!("expected text run mirror, got {other:?}"),
+        }
+        match &ops[1] {
+            PaintOp::TabLeader { leader, .. } => {
+                assert_eq!(leader.leader.fill_type, 3);
+                assert_eq!(leader.baseline, 14.0);
+            }
+            other => panic!("expected tab leader op, got {other:?}"),
         }
     }
 
@@ -1489,6 +1725,9 @@ mod tests {
                                     actual_ops.push(match op {
                                         PaintOp::PageBackground { .. } => "PageBackground",
                                         PaintOp::TextRun { .. } => "TextRun",
+                                        PaintOp::CharOverlap { .. } => "CharOverlap",
+                                        PaintOp::TextControlMark { .. } => "TextControlMark",
+                                        PaintOp::TabLeader { .. } => "TabLeader",
                                         PaintOp::FootnoteMarker { .. } => "FootnoteMarker",
                                         PaintOp::Line { .. } => "Line",
                                         PaintOp::Rectangle { .. } => "Rectangle",

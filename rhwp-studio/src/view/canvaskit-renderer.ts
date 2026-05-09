@@ -6,6 +6,7 @@ import { isKnownLayerPaintOp } from '@/core/types';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
   LayerBounds,
+  LayerCharOverlapOp,
   LayerCacheHint,
   LayerClipNode,
   LayerEllipseOp,
@@ -28,7 +29,9 @@ import type {
   LayerRenderProfile,
   LayerShapeShadow,
   LayerTabLeader,
+  LayerTabLeaderOp,
   LayerTextRunOp,
+  LayerTextControlMarkOp,
   PageLayerTree,
 } from '@/core/types';
 import {
@@ -393,6 +396,15 @@ export class CanvasKitLayerRenderer {
         }
         this.renderTextRun(canvas, op);
         return;
+      case 'charOverlap':
+        this.renderTextRun(canvas, op);
+        return;
+      case 'textControlMark':
+        this.renderTextControlMark(canvas, op);
+        return;
+      case 'tabLeader':
+        this.renderTabLeader(canvas, op);
+        return;
       case 'footnoteMarker':
         if (this.shouldOverlayFootnoteMarker(op)) {
           return;
@@ -523,7 +535,10 @@ export class CanvasKitLayerRenderer {
     }
   }
 
-  private renderTextRun(canvas: ReturnType<Surface['getCanvas']>, op: LayerTextRunOp): void {
+  private renderTextRun(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerTextRunOp | LayerCharOverlapOp,
+  ): void {
     const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
     const hasRatio = Math.abs(ratio - 1) > 0.01;
     const outlineType = op.style.outlineType ?? 0;
@@ -595,7 +610,10 @@ export class CanvasKitLayerRenderer {
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = op.positions.at(-1) ?? 0;
       const drawControlMarks = () => {
-        if (!op.controlMarks?.length) {
+        if ('legacyVisuals' in op && op.legacyVisuals?.controlMarks === 'mirror') {
+          return;
+        }
+        if (!('controlMarks' in op) || !op.controlMarks?.length) {
           return;
         }
         for (const mark of op.controlMarks) {
@@ -614,7 +632,7 @@ export class CanvasKitLayerRenderer {
         }
       };
 
-      if (op.charOverlap) {
+      if (op.charOverlap && (!('legacyVisuals' in op) || op.legacyVisuals?.charOverlap !== 'mirror')) {
         const chars = Array.from(op.text);
         if (chars.length) {
           const decodedNumber = decodePuaOverlapNumber(chars);
@@ -859,7 +877,7 @@ export class CanvasKitLayerRenderer {
         }
       }
 
-      if (op.tabLeaders?.length) {
+      if ('tabLeaders' in op && op.legacyVisuals?.tabLeaders !== 'mirror' && op.tabLeaders?.length) {
         this.drawTabLeaders(canvas, op.tabLeaders, originX, originY, op.style.color);
       }
 
@@ -899,6 +917,37 @@ export class CanvasKitLayerRenderer {
       font.delete();
       typeface.delete();
     }
+  }
+
+  private renderTextControlMark(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerTextControlMarkOp,
+  ): void {
+    if (!allowsTextControlMark(
+      this.currentShowParagraphMarks,
+      this.currentShowControlCodes,
+      op.mark.kind,
+    )) {
+      return;
+    }
+    const markObjects = this.makeTextObjects('Noto Sans KR', op.mark.fontSize, false, false, '#4A90D9');
+    canvas.drawText(
+      op.mark.text,
+      op.bbox.x + op.mark.x,
+      op.bbox.y + op.mark.y,
+      markObjects.paint,
+      markObjects.font,
+    );
+    markObjects.paint.delete();
+    markObjects.font.delete();
+    markObjects.typeface.delete();
+  }
+
+  private renderTabLeader(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerTabLeaderOp,
+  ): void {
+    this.drawTabLeaders(canvas, [op.leader], op.bbox.x, op.bbox.y + op.baseline, op.color);
   }
 
   private renderFootnoteMarker(canvas: ReturnType<Surface['getCanvas']>, op: Extract<LayerPaintOp, { type: 'footnoteMarker' }>): void {
@@ -2431,6 +2480,9 @@ export class CanvasKitLayerRenderer {
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = op.positions.at(-1) ?? 0;
       const drawControlMarks = () => {
+        if (op.legacyVisuals?.controlMarks === 'mirror') {
+          return;
+        }
         if (!op.controlMarks?.length) {
           return;
         }
@@ -2450,7 +2502,7 @@ export class CanvasKitLayerRenderer {
         ctx.restore();
       };
 
-      if (op.charOverlap) {
+      if (op.charOverlap && op.legacyVisuals?.charOverlap !== 'mirror') {
         drawCanvas2DCharOverlap(ctx, op, originX, originY);
         drawControlMarks();
         return;
@@ -2552,7 +2604,7 @@ export class CanvasKitLayerRenderer {
         }
       }
 
-      if (op.tabLeaders?.length) {
+      if (op.legacyVisuals?.tabLeaders !== 'mirror' && op.tabLeaders?.length) {
         this.drawTabLeadersOverlay(ctx, op.tabLeaders, originX, originY, op.style.color);
       }
 

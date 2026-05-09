@@ -99,9 +99,17 @@ metadata as source annotations. Visible marks are still carried by existing
   are fixed.
 - Field marker metadata belongs to source annotations when visible marker text
   has already been lowered as ordinary text.
-- Visible control marks, char overlap, tab leaders, and future decoration
-  geometry should move into explicit paint ops before becoming required schema
-  features.
+- `CharOverlap` is now emitted as an explicit `charOverlap` PaintOp when the
+  builder sees HWP 글자겹침. The paired `TextRun.charOverlap` payload remains
+  only as a legacy mirror for old consumers.
+- Visible control marks are emitted as explicit `textControlMark` PaintOps when
+  paragraph/control-code output options produce visible marks. The paired
+  `TextRun.controlMarks` payload is a legacy mirror for old consumers.
+- Tab leaders are emitted as explicit `tabLeader` PaintOps when present in a
+  lowered text style. The paired `TextRun.tabLeaders` payload is a legacy
+  mirror for old consumers.
+- Future decoration geometry should move into explicit paint ops before
+  becoming required schema features.
 - While those visuals are still inside `TextRun`, `legacyVisuals` marks them
   `canonical`. Once an external op is emitted, the legacy payload must become a
   `mirror`; consumers that support the external op must not draw the mirror.
@@ -127,7 +135,7 @@ metadata as source annotations. Visible marks are still carried by existing
 3. Add feature metadata so consumers can avoid double-painting future variants.
 4. Define TextRun v2 cluster placement and run-local placement contracts.
 5. Split special visible text semantics into paint ops:
-   `CharOverlap`, `TextControlMark`, `TabLeader`, and later
+   `CharOverlap`, `TextControlMark`, and `TabLeader` are implemented; next is
    `TextDecoration`.
 6. Add font resources with portability state:
    `PortableBlob`, `ResolvedButNotEmbedded`, `SystemNameOnly`, or

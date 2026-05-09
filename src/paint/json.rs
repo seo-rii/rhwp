@@ -54,10 +54,78 @@ impl PageLayerTree {
             .write_json(&mut buf, &self.resources, &mut text_source_state);
         buf.push_str(",\"textSources\":");
         write_text_source_entries(&mut buf, &self.text_sources);
-        buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}");
+        write_text_export_metadata(&mut buf, &self.root);
         buf.push('}');
         buf
     }
+}
+
+fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
+    let externalized_visuals = externalized_text_visuals(root);
+    buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "charOverlap")
+    {
+        buf.push_str(",\"text.charOverlapOp\"");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "controlMarks")
+    {
+        buf.push_str(",\"text.controlMarkOp\"");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "tabLeaders")
+    {
+        buf.push_str(",\"text.tabLeaderOp\"");
+    }
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
+    for (idx, visual) in externalized_visuals.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{}", json_escape(visual));
+    }
+    buf.push_str("]}");
+}
+
+fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
+    let mut has_char_overlap = false;
+    let mut has_control_marks = false;
+    let mut has_tab_leaders = false;
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                has_char_overlap |= ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::CharOverlap { .. }));
+                has_control_marks |= ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::TextControlMark { .. }));
+                has_tab_leaders |= ops.iter().any(|op| matches!(op, PaintOp::TabLeader { .. }));
+            }
+        }
+    }
+    let mut visuals = Vec::new();
+    if has_char_overlap {
+        visuals.push("charOverlap");
+    }
+    if has_control_marks {
+        visuals.push("controlMarks");
+    }
+    if has_tab_leaders {
+        visuals.push("tabLeaders");
+    }
+    visuals
 }
 
 impl LayerNode {
@@ -258,6 +326,63 @@ impl PaintOp {
                     write_tab_leaders(buf, &run.style.tab_leaders);
                 }
                 buf.push('}');
+            }
+            PaintOp::CharOverlap { bbox, overlap } => {
+                buf.push('{');
+                buf.push_str("\"type\":\"charOverlap\",\"bbox\":");
+                write_bbox(buf, *bbox);
+                let _ = write!(
+                    buf,
+                    ",\"text\":{},\"baseline\":{:.6},\"rotation\":{:.6},\"isVertical\":{},\"orientation\":{}",
+                    json_escape(&overlap.text),
+                    overlap.baseline,
+                    overlap.rotation,
+                    overlap.is_vertical,
+                    json_escape(overlap.orientation.as_str()),
+                );
+                if let Some(source) = &overlap.source {
+                    buf.push_str(",\"source\":");
+                    write_text_source_span(buf, source);
+                }
+                buf.push_str(",\"style\":");
+                write_text_style(buf, &overlap.style);
+                buf.push_str(",\"paintStyle\":");
+                write_paint_text_style(buf, &PaintTextStyle::from(&overlap.style));
+                buf.push_str(",\"positions\":");
+                write_text_positions_slice(buf, &overlap.positions);
+                buf.push_str(",\"charOverlap\":");
+                write_char_overlap(buf, &overlap.overlap);
+                buf.push('}');
+            }
+            PaintOp::TextControlMark { bbox, mark } => {
+                buf.push('{');
+                buf.push_str("\"type\":\"textControlMark\",\"bbox\":");
+                write_bbox(buf, *bbox);
+                if let Some(source) = &mark.source {
+                    buf.push_str(",\"source\":");
+                    write_text_source_span(buf, source);
+                }
+                buf.push_str(",\"mark\":");
+                write_text_control_mark(buf, &mark.mark);
+                buf.push('}');
+            }
+            PaintOp::TabLeader { bbox, leader } => {
+                buf.push('{');
+                buf.push_str("\"type\":\"tabLeader\",\"bbox\":");
+                write_bbox(buf, *bbox);
+                if let Some(source) = &leader.source {
+                    buf.push_str(",\"source\":");
+                    write_text_source_span(buf, source);
+                }
+                buf.push_str(",\"leader\":");
+                write_tab_leader(buf, &leader.leader);
+                let _ = write!(
+                    buf,
+                    ",\"color\":{},\"fontSize\":{:.6},\"baseline\":{:.6}}}",
+                    json_escape(&color_ref_to_css(leader.color)),
+                    leader.font_size,
+                    leader.baseline,
+                );
             }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 buf.push('{');
@@ -626,8 +751,12 @@ fn write_paint_text_style(buf: &mut String, style: &PaintTextStyle) {
 }
 
 fn write_text_positions(buf: &mut String, run: &LayerTextRunPaint) {
+    write_text_positions_slice(buf, &run.positions);
+}
+
+fn write_text_positions_slice(buf: &mut String, positions: &[f64]) {
     buf.push('[');
-    for (idx, position) in run.positions.iter().enumerate() {
+    for (idx, position) in positions.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
         }
@@ -646,21 +775,33 @@ fn write_text_legacy_visuals(buf: &mut String, run: &LayerTextRunPaint) {
     buf.push_str(",\"legacyVisuals\":{");
     let mut wrote = false;
     if run.char_overlap.is_some() {
-        buf.push_str("\"charOverlap\":\"canonical\"");
+        let state = run
+            .legacy_visuals
+            .char_overlap
+            .unwrap_or(crate::paint::TextLegacyVisualState::Canonical);
+        let _ = write!(buf, "\"charOverlap\":{}", json_escape(state.as_str()));
         wrote = true;
     }
     if !run.control_marks.is_empty() {
         if wrote {
             buf.push(',');
         }
-        buf.push_str("\"controlMarks\":\"canonical\"");
+        let state = run
+            .legacy_visuals
+            .control_marks
+            .unwrap_or(crate::paint::TextLegacyVisualState::Canonical);
+        let _ = write!(buf, "\"controlMarks\":{}", json_escape(state.as_str()));
         wrote = true;
     }
     if !run.style.tab_leaders.is_empty() {
         if wrote {
             buf.push(',');
         }
-        buf.push_str("\"tabLeaders\":\"canonical\"");
+        let state = run
+            .legacy_visuals
+            .tab_leaders
+            .unwrap_or(crate::paint::TextLegacyVisualState::Canonical);
+        let _ = write!(buf, "\"tabLeaders\":{}", json_escape(state.as_str()));
     }
     buf.push('}');
 }
@@ -733,17 +874,21 @@ fn write_text_control_marks(buf: &mut String, run: &LayerTextRunPaint) {
         if idx > 0 {
             buf.push(',');
         }
-        let _ = write!(
-            buf,
-            "{{\"kind\":{},\"text\":{},\"x\":{:.6},\"y\":{:.6},\"fontSize\":{:.6}}}",
-            json_escape(mark.kind.as_str()),
-            json_escape(mark.kind.glyph()),
-            mark.x,
-            mark.y,
-            mark.font_size,
-        );
+        write_text_control_mark(buf, mark);
     }
     buf.push(']');
+}
+
+fn write_text_control_mark(buf: &mut String, mark: &crate::paint::LayerTextControlMark) {
+    let _ = write!(
+        buf,
+        "{{\"kind\":{},\"text\":{},\"x\":{:.6},\"y\":{:.6},\"fontSize\":{:.6}}}",
+        json_escape(mark.kind.as_str()),
+        json_escape(mark.kind.glyph()),
+        mark.x,
+        mark.y,
+        mark.font_size,
+    );
 }
 
 fn write_char_overlap(buf: &mut String, overlap: &crate::renderer::composer::CharOverlapInfo) {
@@ -760,13 +905,17 @@ fn write_tab_leaders(buf: &mut String, leaders: &[TabLeaderInfo]) {
         if idx > 0 {
             buf.push(',');
         }
-        let _ = write!(
-            buf,
-            "{{\"startX\":{:.6},\"endX\":{:.6},\"fillType\":{}}}",
-            leader.start_x, leader.end_x, leader.fill_type
-        );
+        write_tab_leader(buf, leader);
     }
     buf.push(']');
+}
+
+fn write_tab_leader(buf: &mut String, leader: &TabLeaderInfo) {
+    let _ = write!(
+        buf,
+        "{{\"startX\":{:.6},\"endX\":{:.6},\"fillType\":{}}}",
+        leader.start_x, leader.end_x, leader.fill_type
+    );
 }
 
 fn write_shape_style(buf: &mut String, style: &ShapeStyle) {
@@ -1265,10 +1414,10 @@ mod tests {
     use super::*;
     use crate::model::image::ImageEffect;
     use crate::paint::{
-        CacheHint, ClipKind, LayerEquationPaint, LayerImagePaint, LayerLinePaint, LayerNode,
-        LayerOutputOptions, LayerPathPaint, LayerRectanglePaint, LayerTextControlMark,
-        LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
-        ResourceArena, LAYER_TREE_SCHEMA,
+        CacheHint, ClipKind, LayerCharOverlapPaint, LayerEquationPaint, LayerImagePaint,
+        LayerLinePaint, LayerNode, LayerOutputOptions, LayerPathPaint, LayerRectanglePaint,
+        LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint,
+        PageLayerTree, ResourceArena, TextLegacyVisualState, TextLegacyVisuals, LAYER_TREE_SCHEMA,
     };
     use crate::renderer::composer::CharOverlapInfo;
 
@@ -1438,6 +1587,66 @@ mod tests {
         assert!(json.contains("\"svgContent\":\"<text x=\\\"0\\\" y=\\\"12\\\">x</text>\""));
         assert!(json.contains("\"layoutBox\":{\"x\":0.000000,\"y\":0.000000,\"width\":10.000000,\"height\":12.000000,\"baseline\":9.000000,\"kind\":{\"type\":\"text\",\"text\":\"x\"}}"));
         assert!(json.contains("\"cornerRadius\":4.000000"));
+    }
+
+    #[test]
+    fn serializes_external_char_overlap_with_legacy_mirror_contract() {
+        let char_overlap = CharOverlapInfo {
+            border_type: 3,
+            inner_char_size: 85,
+        };
+        let text_run = LayerTextRunPaint {
+            text: "12".to_string(),
+            style: TextStyle {
+                font_size: 16.0,
+                ..TextStyle::default()
+            },
+            positions: vec![0.0, 16.0],
+            baseline: 12.0,
+            char_overlap: Some(char_overlap.clone()),
+            legacy_visuals: TextLegacyVisuals {
+                char_overlap: Some(TextLegacyVisualState::Mirror),
+                ..TextLegacyVisuals::default()
+            },
+            ..LayerTextRunPaint::default()
+        };
+        let tree = PageLayerTree::new(
+            80.0,
+            60.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 80.0, 60.0),
+                None,
+                vec![
+                    PaintOp::TextRun {
+                        bbox: BoundingBox::new(10.0, 20.0, 32.0, 18.0),
+                        run: text_run,
+                    },
+                    PaintOp::CharOverlap {
+                        bbox: BoundingBox::new(10.0, 20.0, 32.0, 18.0),
+                        overlap: LayerCharOverlapPaint {
+                            source: None,
+                            text: "12".to_string(),
+                            style: TextStyle {
+                                font_size: 16.0,
+                                ..TextStyle::default()
+                            },
+                            positions: vec![0.0, 16.0],
+                            baseline: 12.0,
+                            rotation: 0.0,
+                            is_vertical: false,
+                            orientation: LayerTextOrientation::Horizontal,
+                            overlap: char_overlap,
+                        },
+                    },
+                ],
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"type\":\"charOverlap\""));
+        assert!(json.contains("\"legacyVisuals\":{\"charOverlap\":\"mirror\"}"));
+        assert!(json.contains("\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.charOverlapOp\"]"));
+        assert!(json.contains("\"externalizedVisuals\":[\"charOverlap\"]"));
     }
 
     #[test]

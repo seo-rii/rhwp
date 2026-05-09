@@ -212,6 +212,21 @@ impl SvgRenderer {
             PaintOp::TextRun { bbox, run } => {
                 self.render_layer_text_run(*bbox, run);
             }
+            PaintOp::CharOverlap { bbox, overlap } => {
+                self.render_layer_char_overlap(*bbox, overlap);
+            }
+            PaintOp::TextControlMark { bbox, mark } => {
+                self.render_layer_text_control_mark(*bbox, &mark.mark, 0.0);
+            }
+            PaintOp::TabLeader { bbox, leader } => {
+                self.render_layer_tab_leader(
+                    bbox.x,
+                    bbox.y + leader.baseline,
+                    leader.font_size,
+                    leader.color,
+                    &leader.leader,
+                );
+            }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 let sup_size = (marker.base_font_size * 0.55).max(7.0);
                 let color = color_to_svg(marker.color);
@@ -1207,7 +1222,14 @@ impl SvgRenderer {
                 effective_rotation, cx, cy
             ));
         }
-        if let Some(ref overlap) = run.char_overlap {
+        let char_overlap = if run.legacy_visuals.char_overlap
+            == Some(crate::paint::TextLegacyVisualState::Mirror)
+        {
+            None
+        } else {
+            run.char_overlap.as_ref()
+        };
+        if let Some(overlap) = char_overlap {
             self.draw_char_overlap(
                 &run.text,
                 &run.style,
@@ -1218,31 +1240,157 @@ impl SvgRenderer {
                 bbox.height,
             );
         } else {
+            let mut style_without_mirror_tab_leaders;
+            let style = if run.legacy_visuals.tab_leaders
+                == Some(crate::paint::TextLegacyVisualState::Mirror)
+            {
+                style_without_mirror_tab_leaders = run.style.clone();
+                style_without_mirror_tab_leaders.tab_leaders.clear();
+                &style_without_mirror_tab_leaders
+            } else {
+                &run.style
+            };
             self.draw_text_with_positions(
                 &run.text,
                 bbox.x,
                 bbox.y + run.baseline,
-                &run.style,
+                style,
                 Some(&run.positions),
             );
         }
-        for mark in &run.control_marks {
-            let output_options = crate::paint::LayerOutputOptions {
-                show_paragraph_marks: self.show_paragraph_marks,
-                show_control_codes: self.show_control_codes,
-                ..Default::default()
-            };
-            if !output_options.allows_text_control_mark(mark.kind) {
-                continue;
+        if run.legacy_visuals.control_marks != Some(crate::paint::TextLegacyVisualState::Mirror) {
+            for mark in &run.control_marks {
+                self.render_layer_text_control_mark(bbox, mark, run.baseline);
             }
+        }
+        if effective_rotation != 0.0 {
+            self.output.push_str("</g>\n");
+        }
+    }
+
+    fn render_layer_text_control_mark(
+        &mut self,
+        bbox: BoundingBox,
+        mark: &crate::paint::LayerTextControlMark,
+        baseline: f64,
+    ) {
+        let output_options = crate::paint::LayerOutputOptions {
+            show_paragraph_marks: self.show_paragraph_marks,
+            show_control_codes: self.show_control_codes,
+            ..Default::default()
+        };
+        if !output_options.allows_text_control_mark(mark.kind) {
+            return;
+        }
+        self.output.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">{}</text>\n",
+            bbox.x + mark.x,
+            bbox.y + baseline + mark.y,
+            mark.font_size,
+            mark.kind.glyph(),
+        ));
+    }
+
+    fn render_layer_tab_leader(
+        &mut self,
+        origin_x: f64,
+        baseline_y: f64,
+        font_size: f64,
+        color: u32,
+        leader: &crate::renderer::TabLeaderInfo,
+    ) {
+        if leader.fill_type == 0 {
+            return;
+        }
+        let lx1 = origin_x + leader.start_x;
+        let lx2 = origin_x + leader.end_x;
+        let ly = baseline_y - font_size * 0.35;
+        let color = color_to_svg(color);
+        match leader.fill_type {
+            1 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+            2 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"3 3\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+            3 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"1 2\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+            4 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"6 2 1 2\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+            5 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"6 2 1 2 1 2\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+            6 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"8 4\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+            7 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.7\" stroke-dasharray=\"0.1 2.5\" stroke-linecap=\"round\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+            8 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
+                 <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
+                lx1, ly - 1.0, lx2, ly - 1.0, color,
+                lx1, ly + 1.0, lx2, ly + 1.0, color,
+            )),
+            9 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
+                 <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                lx1, ly - 1.2, lx2, ly - 1.2, color,
+                lx1, ly + 0.8, lx2, ly + 0.8, color,
+            )),
+            10 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n\
+                 <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
+                lx1, ly - 0.8, lx2, ly - 0.8, color,
+                lx1, ly + 1.2, lx2, ly + 1.2, color,
+            )),
+            11 => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n\
+                 <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n\
+                 <line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.3\"/>\n",
+                lx1, ly - 2.0, lx2, ly - 2.0, color,
+                lx1, ly, lx2, ly, color,
+                lx1, ly + 2.0, lx2, ly + 2.0, color,
+            )),
+            _ => self.output.push_str(&format!(
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-dasharray=\"1 2\"/>\n",
+                lx1, ly, lx2, ly, color,
+            )),
+        }
+    }
+
+    fn render_layer_char_overlap(
+        &mut self,
+        bbox: BoundingBox,
+        overlap: &crate::paint::LayerCharOverlapPaint,
+    ) {
+        let effective_rotation = overlap.rotation;
+        if effective_rotation != 0.0 {
+            let cx = bbox.x + bbox.width / 2.0;
+            let cy = bbox.y + bbox.height / 2.0;
             self.output.push_str(&format!(
-                "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">{}</text>\n",
-                bbox.x + mark.x,
-                bbox.y + run.baseline + mark.y,
-                mark.font_size,
-                mark.kind.glyph(),
+                "<g transform=\"rotate({},{},{})\">\n",
+                effective_rotation, cx, cy
             ));
         }
+        self.draw_char_overlap(
+            &overlap.text,
+            &overlap.style,
+            &overlap.overlap,
+            bbox.x,
+            bbox.y,
+            bbox.width,
+            bbox.height,
+        );
         if effective_rotation != 0.0 {
             self.output.push_str("</g>\n");
         }

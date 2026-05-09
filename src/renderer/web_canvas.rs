@@ -333,15 +333,61 @@ impl WebCanvasRenderer {
                             continue;
                         }
                         PaintOp::TextRun { bbox, run } => {
+                            let mut style_without_mirror_tab_leaders;
+                            let style = if run.legacy_visuals.tab_leaders
+                                == Some(crate::paint::TextLegacyVisualState::Mirror)
+                            {
+                                style_without_mirror_tab_leaders = run.style.clone();
+                                style_without_mirror_tab_leaders.tab_leaders.clear();
+                                &style_without_mirror_tab_leaders
+                            } else {
+                                &run.style
+                            };
+                            let char_overlap = if run.legacy_visuals.char_overlap
+                                == Some(crate::paint::TextLegacyVisualState::Mirror)
+                            {
+                                None
+                            } else {
+                                run.char_overlap.as_ref()
+                            };
                             self.draw_text_run_contents(
                                 bbox,
                                 &run.text,
-                                &run.style,
-                                run.char_overlap.as_ref(),
+                                style,
+                                char_overlap,
                                 run.rotation,
                                 run.baseline,
                             );
-                            self.draw_layer_text_control_marks(bbox, run);
+                            if run.legacy_visuals.control_marks
+                                != Some(crate::paint::TextLegacyVisualState::Mirror)
+                            {
+                                self.draw_layer_text_control_marks(bbox, run);
+                            }
+                            continue;
+                        }
+                        PaintOp::CharOverlap { bbox, overlap } => {
+                            self.draw_text_run_contents(
+                                bbox,
+                                &overlap.text,
+                                &overlap.style,
+                                Some(&overlap.overlap),
+                                overlap.rotation,
+                                overlap.baseline,
+                            );
+                            continue;
+                        }
+                        PaintOp::TextControlMark { bbox, mark } => {
+                            self.draw_layer_text_control_mark(bbox, &mark.mark, 0.0, 0.0);
+                            continue;
+                        }
+                        PaintOp::TabLeader { bbox, leader } => {
+                            self.draw_tab_leader(
+                                bbox.x,
+                                bbox.y + leader.baseline,
+                                leader.color,
+                                leader.font_size,
+                                &leader.leader,
+                            );
                             continue;
                         }
                         PaintOp::FootnoteMarker { bbox, marker } => {
@@ -413,21 +459,37 @@ impl WebCanvasRenderer {
 
         self.ctx.set_fill_style_str("#4A90D9");
         for mark in &run.control_marks {
-            if !output_options.allows_text_control_mark(mark.kind) {
-                continue;
-            }
-            self.ctx
-                .set_font(&format!("{:.3}px sans-serif", mark.font_size));
-            let _ = self.ctx.fill_text(
-                mark.kind.glyph(),
-                bbox.x + mark.x,
-                bbox.y + run.baseline + mark.y,
-            );
+            self.draw_layer_text_control_mark(bbox, mark, 0.0, run.baseline);
         }
 
         if rotated {
             self.ctx.restore();
         }
+    }
+
+    fn draw_layer_text_control_mark(
+        &self,
+        bbox: &BoundingBox,
+        mark: &crate::paint::LayerTextControlMark,
+        offset_x: f64,
+        offset_y: f64,
+    ) {
+        let output_options = LayerOutputOptions {
+            show_paragraph_marks: self.show_paragraph_marks,
+            show_control_codes: self.show_control_codes,
+            ..Default::default()
+        };
+        if !output_options.allows_text_control_mark(mark.kind) {
+            return;
+        }
+        self.ctx.set_fill_style_str("#4A90D9");
+        self.ctx
+            .set_font(&format!("{:.3}px sans-serif", mark.font_size));
+        let _ = self.ctx.fill_text(
+            mark.kind.glyph(),
+            bbox.x + mark.x + offset_x,
+            bbox.y + mark.y + offset_y,
+        );
     }
 
     fn draw_text_run_contents(
@@ -1879,67 +1941,73 @@ impl Renderer for WebCanvasRenderer {
         // 6=긴파선, 7=원형점선, 8=이중실선, 9=얇고굵은이중선,
         // 10=굵고얇은이중선, 11=얇고굵고얇은삼중선
         for leader in &style.tab_leaders {
-            if leader.fill_type == 0 {
-                continue;
-            }
-            let lx1 = x + leader.start_x;
-            let lx2 = x + leader.end_x;
-            let ly = y - font_size * 0.35; // 글자 세로 중앙
-            let stroke_color = color_to_css(style.color);
-
-            let draw_line =
-                |ctx: &web_sys::CanvasRenderingContext2d, y: f64, width: f64, dash: &[f64]| {
-                    let arr = js_sys::Array::new();
-                    for &d in dash {
-                        arr.push(&JsValue::from(d));
-                    }
-                    let _ = ctx.set_line_dash(&arr);
-                    ctx.set_line_width(width);
-                    ctx.begin_path();
-                    ctx.move_to(lx1, y);
-                    ctx.line_to(lx2, y);
-                    ctx.stroke();
-                };
-
-            self.ctx.set_stroke_style_str(&stroke_color);
-            match leader.fill_type {
-                1 => draw_line(&self.ctx, ly, 0.5, &[]),         // 실선
-                2 => draw_line(&self.ctx, ly, 0.5, &[3.0, 3.0]), // 파선
-                3 => draw_line(&self.ctx, ly, 0.5, &[1.0, 2.0]), // 점선
-                4 => draw_line(&self.ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0]), // 일점쇄선
-                5 => draw_line(&self.ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0, 1.0, 2.0]), // 이점쇄선
-                6 => draw_line(&self.ctx, ly, 0.5, &[8.0, 4.0]), // 긴파선
-                7 => {
-                    // 원형점선 ●●●
-                    self.ctx.set_line_cap("round");
-                    draw_line(&self.ctx, ly, 0.7, &[0.1, 2.5]);
-                    self.ctx.set_line_cap("butt");
-                }
-                8 => {
-                    // 이중실선
-                    draw_line(&self.ctx, ly - 1.0, 0.3, &[]);
-                    draw_line(&self.ctx, ly + 1.0, 0.3, &[]);
-                }
-                9 => {
-                    // 얇고 굵은 이중선
-                    draw_line(&self.ctx, ly - 1.2, 0.3, &[]);
-                    draw_line(&self.ctx, ly + 0.8, 0.8, &[]);
-                }
-                10 => {
-                    // 굵고 얇은 이중선
-                    draw_line(&self.ctx, ly - 0.8, 0.8, &[]);
-                    draw_line(&self.ctx, ly + 1.2, 0.3, &[]);
-                }
-                11 => {
-                    // 얇고 굵고 얇은 삼중선
-                    draw_line(&self.ctx, ly - 2.0, 0.3, &[]);
-                    draw_line(&self.ctx, ly, 0.8, &[]);
-                    draw_line(&self.ctx, ly + 2.0, 0.3, &[]);
-                }
-                _ => draw_line(&self.ctx, ly, 0.5, &[1.0, 2.0]), // 폴백: 점선
-            }
-            let _ = self.ctx.set_line_dash(&js_sys::Array::new());
+            self.draw_tab_leader(x, y, style.color, font_size, leader);
         }
+    }
+
+    fn draw_tab_leader(
+        &self,
+        origin_x: f64,
+        baseline_y: f64,
+        color: u32,
+        font_size: f64,
+        leader: &crate::renderer::TabLeaderInfo,
+    ) {
+        if leader.fill_type == 0 {
+            return;
+        }
+        let lx1 = origin_x + leader.start_x;
+        let lx2 = origin_x + leader.end_x;
+        let ly = baseline_y - font_size * 0.35;
+        let stroke_color = color_to_css(color);
+
+        let draw_line =
+            |ctx: &web_sys::CanvasRenderingContext2d, y: f64, width: f64, dash: &[f64]| {
+                let arr = js_sys::Array::new();
+                for &d in dash {
+                    arr.push(&JsValue::from(d));
+                }
+                let _ = ctx.set_line_dash(&arr);
+                ctx.set_line_width(width);
+                ctx.begin_path();
+                ctx.move_to(lx1, y);
+                ctx.line_to(lx2, y);
+                ctx.stroke();
+            };
+
+        self.ctx.set_stroke_style_str(&stroke_color);
+        match leader.fill_type {
+            1 => draw_line(&self.ctx, ly, 0.5, &[]),
+            2 => draw_line(&self.ctx, ly, 0.5, &[3.0, 3.0]),
+            3 => draw_line(&self.ctx, ly, 0.5, &[1.0, 2.0]),
+            4 => draw_line(&self.ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0]),
+            5 => draw_line(&self.ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0, 1.0, 2.0]),
+            6 => draw_line(&self.ctx, ly, 0.5, &[8.0, 4.0]),
+            7 => {
+                self.ctx.set_line_cap("round");
+                draw_line(&self.ctx, ly, 0.7, &[0.1, 2.5]);
+                self.ctx.set_line_cap("butt");
+            }
+            8 => {
+                draw_line(&self.ctx, ly - 1.0, 0.3, &[]);
+                draw_line(&self.ctx, ly + 1.0, 0.3, &[]);
+            }
+            9 => {
+                draw_line(&self.ctx, ly - 1.2, 0.3, &[]);
+                draw_line(&self.ctx, ly + 0.8, 0.8, &[]);
+            }
+            10 => {
+                draw_line(&self.ctx, ly - 0.8, 0.8, &[]);
+                draw_line(&self.ctx, ly + 1.2, 0.3, &[]);
+            }
+            11 => {
+                draw_line(&self.ctx, ly - 2.0, 0.3, &[]);
+                draw_line(&self.ctx, ly, 0.8, &[]);
+                draw_line(&self.ctx, ly + 2.0, 0.3, &[]);
+            }
+            _ => draw_line(&self.ctx, ly, 0.5, &[1.0, 2.0]),
+        }
+        let _ = self.ctx.set_line_dash(&js_sys::Array::new());
     }
 
     fn draw_rect(

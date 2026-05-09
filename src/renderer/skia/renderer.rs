@@ -556,6 +556,34 @@ impl SkiaLayerRenderer {
                 // upright glyphs use their own bboxes and sideways glyphs carry
                 // explicit run.rotation. Keep Skia aligned with SVG by not adding
                 // another orientation-derived rotation here.
+                let mut replay_run;
+                let run = if run.legacy_visuals.char_overlap
+                    == Some(crate::paint::TextLegacyVisualState::Mirror)
+                    || run.legacy_visuals.control_marks
+                        == Some(crate::paint::TextLegacyVisualState::Mirror)
+                    || run.legacy_visuals.tab_leaders
+                        == Some(crate::paint::TextLegacyVisualState::Mirror)
+                {
+                    replay_run = run.clone();
+                    if replay_run.legacy_visuals.char_overlap
+                        == Some(crate::paint::TextLegacyVisualState::Mirror)
+                    {
+                        replay_run.char_overlap = None;
+                    }
+                    if replay_run.legacy_visuals.control_marks
+                        == Some(crate::paint::TextLegacyVisualState::Mirror)
+                    {
+                        replay_run.control_marks.clear();
+                    }
+                    if replay_run.legacy_visuals.tab_leaders
+                        == Some(crate::paint::TextLegacyVisualState::Mirror)
+                    {
+                        replay_run.style.tab_leaders.clear();
+                    }
+                    &replay_run
+                } else {
+                    run
+                };
                 let rotation = run.rotation;
                 if rotation != 0.0 {
                     let cx = (bbox.x + bbox.width / 2.0) as f32;
@@ -567,6 +595,49 @@ impl SkiaLayerRenderer {
                 } else {
                     self.render_text_run(canvas, bbox, run, replay);
                 }
+            }
+            PaintOp::CharOverlap { bbox, overlap } => {
+                let mut run = crate::paint::LayerTextRunPaint {
+                    source: overlap.source.clone(),
+                    text: overlap.text.clone(),
+                    style: overlap.style.clone(),
+                    positions: overlap.positions.clone(),
+                    baseline: overlap.baseline,
+                    rotation: overlap.rotation,
+                    is_vertical: overlap.is_vertical,
+                    orientation: overlap.orientation,
+                    char_overlap: Some(overlap.overlap.clone()),
+                    ..Default::default()
+                };
+                run.projection = crate::paint::TextProjectionKind::SyntheticVisual;
+                let rotation = run.rotation;
+                if rotation != 0.0 {
+                    let cx = (bbox.x + bbox.width / 2.0) as f32;
+                    let cy = (bbox.y + bbox.height / 2.0) as f32;
+                    canvas.save();
+                    canvas.rotate(rotation as f32, Some((cx, cy).into()));
+                    self.render_text_run(canvas, bbox, &run, replay);
+                    canvas.restore();
+                } else {
+                    self.render_text_run(canvas, bbox, &run, replay);
+                }
+            }
+            PaintOp::TextControlMark { bbox, mark } => {
+                self.render_text_control_mark(canvas, bbox, &mark.mark, 0.0, replay);
+            }
+            PaintOp::TabLeader { bbox, leader } => {
+                let run = crate::paint::LayerTextRunPaint {
+                    text: String::new(),
+                    style: crate::renderer::TextStyle {
+                        color: leader.color,
+                        font_size: leader.font_size,
+                        tab_leaders: vec![leader.leader.clone()],
+                        ..Default::default()
+                    },
+                    baseline: leader.baseline,
+                    ..Default::default()
+                };
+                self.render_text_run(canvas, bbox, &run, replay);
             }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 let mut font = make_font(

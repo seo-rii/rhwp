@@ -208,6 +208,9 @@ export interface LayerLeafNode {
 export type LayerKnownPaintOp =
   | LayerPageBackgroundOp
   | LayerTextRunOp
+  | LayerCharOverlapOp
+  | LayerTextControlMarkOp
+  | LayerTabLeaderOp
   | LayerFootnoteMarkerOp
   | LayerLineOp
   | LayerRectangleOp
@@ -230,6 +233,9 @@ export type LayerPaintOpLike = LayerKnownPaintOp | LayerUnknownPaintOp;
 const KNOWN_LAYER_PAINT_OP_TYPES = new Set([
   'pageBackground',
   'textRun',
+  'charOverlap',
+  'textControlMark',
+  'tabLeader',
   'footnoteMarker',
   'line',
   'rectangle',
@@ -537,6 +543,38 @@ export interface LayerTextRunOp {
   controlMarks?: LayerTextControlMark[];
   charOverlap?: LayerCharOverlap;
   tabLeaders?: LayerTabLeader[];
+}
+
+export interface LayerCharOverlapOp {
+  type: 'charOverlap';
+  bbox: LayerBounds;
+  text: string;
+  source?: LayerTextSourceSpan;
+  baseline: number;
+  rotation: number;
+  isVertical: boolean;
+  orientation?: 'horizontal' | 'vertical-upright' | 'vertical-sideways';
+  style: LayerTextStyle;
+  paintStyle?: LayerTextStyle;
+  positions: number[];
+  charOverlap: LayerCharOverlap;
+}
+
+export interface LayerTextControlMarkOp {
+  type: 'textControlMark';
+  bbox: LayerBounds;
+  source?: LayerTextSourceSpan;
+  mark: LayerTextControlMark;
+}
+
+export interface LayerTabLeaderOp {
+  type: 'tabLeader';
+  bbox: LayerBounds;
+  source?: LayerTextSourceSpan;
+  leader: LayerTabLeader;
+  color: string;
+  fontSize: number;
+  baseline: number;
 }
 
 export interface LayerFootnoteMarkerOp {

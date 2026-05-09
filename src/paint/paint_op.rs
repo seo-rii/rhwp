@@ -26,6 +26,18 @@ pub enum PaintOp {
         bbox: BoundingBox,
         run: LayerTextRunPaint,
     },
+    CharOverlap {
+        bbox: BoundingBox,
+        overlap: LayerCharOverlapPaint,
+    },
+    TextControlMark {
+        bbox: BoundingBox,
+        mark: LayerTextControlMarkPaint,
+    },
+    TabLeader {
+        bbox: BoundingBox,
+        leader: LayerTabLeaderPaint,
+    },
     FootnoteMarker {
         bbox: BoundingBox,
         marker: LayerFootnoteMarkerPaint,
@@ -94,6 +106,7 @@ pub struct LayerTextRunPaint {
     pub is_vertical: bool,
     pub orientation: LayerTextOrientation,
     pub char_overlap: Option<CharOverlapInfo>,
+    pub legacy_visuals: TextLegacyVisuals,
     pub field_marker: FieldMarkerType,
     pub is_para_end: bool,
     pub is_line_break_end: bool,
@@ -116,11 +129,64 @@ impl Default for LayerTextRunPaint {
             is_vertical: false,
             orientation: LayerTextOrientation::Horizontal,
             char_overlap: None,
+            legacy_visuals: TextLegacyVisuals::default(),
             field_marker: FieldMarkerType::None,
             is_para_end: false,
             is_line_break_end: false,
         }
     }
+}
+
+/// Whether a transitional inline visual payload is still authoritative or is a
+/// compatibility mirror of a separate PaintOp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextLegacyVisualState {
+    Canonical,
+    Mirror,
+}
+
+impl TextLegacyVisualState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TextLegacyVisualState::Canonical => "canonical",
+            TextLegacyVisualState::Mirror => "mirror",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TextLegacyVisuals {
+    pub char_overlap: Option<TextLegacyVisualState>,
+    pub control_marks: Option<TextLegacyVisualState>,
+    pub tab_leaders: Option<TextLegacyVisualState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerCharOverlapPaint {
+    pub source: Option<TextSourceSpan>,
+    pub text: String,
+    pub style: TextStyle,
+    pub positions: Vec<f64>,
+    pub baseline: f64,
+    pub rotation: f64,
+    pub is_vertical: bool,
+    pub orientation: LayerTextOrientation,
+    pub overlap: CharOverlapInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerTextControlMarkPaint {
+    pub source: Option<TextSourceSpan>,
+    pub mark: LayerTextControlMark,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerTabLeaderPaint {
+    pub source: Option<TextSourceSpan>,
+    pub leader: TabLeaderInfo,
+    pub color: ColorRef,
+    pub font_size: f64,
+    pub baseline: f64,
 }
 
 /// Point in layer text coordinate space.
@@ -446,6 +512,9 @@ impl PaintOp {
         let logical = match self {
             PaintOp::PageBackground { bbox, .. }
             | PaintOp::TextRun { bbox, .. }
+            | PaintOp::CharOverlap { bbox, .. }
+            | PaintOp::TextControlMark { bbox, .. }
+            | PaintOp::TabLeader { bbox, .. }
             | PaintOp::FootnoteMarker { bbox, .. }
             | PaintOp::Line { bbox, .. }
             | PaintOp::Rectangle { bbox, .. }
@@ -532,6 +601,33 @@ impl PaintOp {
                 }
                 visual
             }
+            PaintOp::CharOverlap { bbox, overlap } => {
+                let style = &overlap.style;
+                let amount = style
+                    .font_size
+                    .max(1.0)
+                    .max(style.shadow_offset_x.abs())
+                    .max(style.shadow_offset_y.abs());
+                expand(*bbox, amount * 0.15)
+            }
+            PaintOp::TextControlMark { bbox, mark } => union(
+                logical,
+                BoundingBox::new(
+                    bbox.x + mark.mark.x,
+                    bbox.y + mark.mark.y - mark.mark.font_size,
+                    mark.mark.font_size,
+                    mark.mark.font_size * 1.2,
+                ),
+            ),
+            PaintOp::TabLeader { bbox, leader } => union(
+                logical,
+                BoundingBox::new(
+                    bbox.x + leader.leader.start_x.min(leader.leader.end_x),
+                    bbox.y + leader.baseline - leader.font_size * 0.4,
+                    (leader.leader.end_x - leader.leader.start_x).abs(),
+                    leader.font_size * 0.5,
+                ),
+            ),
             PaintOp::FootnoteMarker { marker, .. } => {
                 expand(logical, marker.base_font_size.max(0.0) * 0.15)
             }

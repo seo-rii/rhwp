@@ -246,6 +246,48 @@ impl StaticSubtreeCacheKey {
                 self.mix_bbox(bbox);
                 self.mix_text_run(run);
             }
+            PaintOp::CharOverlap { bbox, overlap } => {
+                self.mix_u8(10);
+                self.mix_bbox(bbox);
+                self.mix_str(&overlap.text);
+                self.mix_text_style(&overlap.style);
+                self.mix_f64(overlap.baseline);
+                self.mix_f64(overlap.rotation);
+                self.mix_bool(overlap.is_vertical);
+                self.mix_u8(match overlap.orientation {
+                    crate::paint::LayerTextOrientation::Horizontal => 0,
+                    crate::paint::LayerTextOrientation::VerticalUpright => 1,
+                    crate::paint::LayerTextOrientation::VerticalSideways => 2,
+                });
+                for position in &overlap.positions {
+                    self.mix_f64(*position);
+                }
+                self.mix_u8(overlap.overlap.border_type);
+                self.mix_u8(overlap.overlap.inner_char_size as u8);
+            }
+            PaintOp::TextControlMark { bbox, mark } => {
+                self.mix_u8(11);
+                self.mix_bbox(bbox);
+                self.mix_u8(match mark.mark.kind {
+                    crate::paint::LayerTextControlMarkKind::Space => 0,
+                    crate::paint::LayerTextControlMarkKind::Tab => 1,
+                    crate::paint::LayerTextControlMarkKind::ParagraphEnd => 2,
+                    crate::paint::LayerTextControlMarkKind::LineBreakEnd => 3,
+                });
+                self.mix_f64(mark.mark.x);
+                self.mix_f64(mark.mark.y);
+                self.mix_f64(mark.mark.font_size);
+            }
+            PaintOp::TabLeader { bbox, leader } => {
+                self.mix_u8(12);
+                self.mix_bbox(bbox);
+                self.mix_f64(leader.leader.start_x);
+                self.mix_f64(leader.leader.end_x);
+                self.mix_u8(leader.leader.fill_type);
+                self.mix_u32(leader.color);
+                self.mix_f64(leader.font_size);
+                self.mix_f64(leader.baseline);
+            }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 self.mix_u8(2);
                 self.mix_bbox(bbox);

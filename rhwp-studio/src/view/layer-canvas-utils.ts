@@ -1,5 +1,6 @@
 import type {
   LayerBounds,
+  LayerCharOverlapOp,
   LayerEquationLayoutBox,
   LayerImageOp,
   LayerPathCommand,
@@ -429,7 +430,7 @@ export function puaToDisplayText(ch: string): string | null {
 
 export function drawCanvas2DCharOverlap(
   ctx: CanvasRenderingContext2D,
-  op: LayerTextRunOp,
+  op: LayerTextRunOp | LayerCharOverlapOp,
   originX: number,
   originY: number,
 ): void {
