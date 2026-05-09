@@ -335,7 +335,10 @@ def repo_relative(path_value: str | Path) -> str:
     path = Path(path_value)
     if not path.is_absolute():
         path = (ROOT / path).resolve()
-    return str(path.relative_to(ROOT))
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
 
 
 def format_ms(value: object) -> str:
@@ -361,10 +364,90 @@ def write_reports(
     if browser_report and browser_report.exists():
         browser_data = json.loads(browser_report.read_text(encoding="utf-8"))
 
+    browser_performance_summary: list[dict] = []
+    if browser_data and browser_data.get("results"):
+        summary_by_key: dict[tuple[str, str], dict] = {}
+        for item in browser_data["results"]:
+            backend = item.get("backend", "")
+            profile = item.get("profile", "")
+            key = (backend, profile)
+            summary = summary_by_key.setdefault(
+                key,
+                {
+                    "backend": backend,
+                    "profile": profile,
+                    "sampleCount": 0,
+                    "appLoadMsTotal": 0.0,
+                    "documentLoadAndInitialRenderMsTotal": 0.0,
+                    "screenshotMsTotal": 0.0,
+                    "totalMsTotal": 0.0,
+                    "effectPixelsTotal": 0,
+                    "effectCacheHitsTotal": 0,
+                    "effectCacheMissesTotal": 0,
+                    "effectFailuresTotal": 0,
+                },
+            )
+            summary["sampleCount"] += 1
+            timings = item.get("timings") or {}
+            for field in (
+                "appLoadMs",
+                "documentLoadAndInitialRenderMs",
+                "screenshotMs",
+                "totalMs",
+            ):
+                value = timings.get(field)
+                if isinstance(value, (int, float)):
+                    summary[f"{field}Total"] += float(value)
+
+            image_effects = (item.get("diagnostics") or {}).get("imageEffects") or {}
+            if backend == "canvas2d":
+                effect_diagnostics = image_effects.get("canvas2d") or {}
+            else:
+                effect_diagnostics = image_effects.get("canvaskit") or {}
+            if isinstance(effect_diagnostics.get("preprocessedPixels"), int):
+                summary["effectPixelsTotal"] += effect_diagnostics["preprocessedPixels"]
+            if isinstance(effect_diagnostics.get("cacheHits"), int):
+                summary["effectCacheHitsTotal"] += effect_diagnostics["cacheHits"]
+            if isinstance(effect_diagnostics.get("cacheMisses"), int):
+                summary["effectCacheMissesTotal"] += effect_diagnostics["cacheMisses"]
+            if isinstance(effect_diagnostics.get("preprocessFailures"), int):
+                summary["effectFailuresTotal"] += effect_diagnostics["preprocessFailures"]
+
+        for summary in summary_by_key.values():
+            sample_count = max(1, summary["sampleCount"])
+            browser_performance_summary.append(
+                {
+                    "backend": summary["backend"],
+                    "profile": summary["profile"],
+                    "sampleCount": summary["sampleCount"],
+                    "averageAppLoadMs": summary["appLoadMsTotal"] / sample_count,
+                    "averageDocumentLoadAndInitialRenderMs": summary[
+                        "documentLoadAndInitialRenderMsTotal"
+                    ]
+                    / sample_count,
+                    "averageScreenshotMs": summary["screenshotMsTotal"] / sample_count,
+                    "averageTotalMs": summary["totalMsTotal"] / sample_count,
+                    "effectPixelsTotal": summary["effectPixelsTotal"],
+                    "effectCacheHitsTotal": summary["effectCacheHitsTotal"],
+                    "effectCacheMissesTotal": summary["effectCacheMissesTotal"],
+                    "effectFailuresTotal": summary["effectFailuresTotal"],
+                }
+            )
+        browser_performance_summary.sort(
+            key=lambda item: (item["profile"], item["backend"])
+        )
+
+    performance_summary = {"browser": browser_performance_summary}
+    (output_root / "performance-summary.json").write_text(
+        json.dumps(performance_summary, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
     report_json = {
         "manifest": manifest,
         "native": native_results,
         "browser": browser_data,
+        "performance": performance_summary,
     }
     (output_root / "baseline-report.json").write_text(
         json.dumps(report_json, indent=2, ensure_ascii=False),
@@ -441,6 +524,36 @@ def write_reports(
                         format_count(effect_diagnostics.get("cacheHits")),
                         format_count(effect_diagnostics.get("cacheMisses")),
                         format_count(effect_diagnostics.get("preprocessFailures")),
+                    ]
+                )
+                + " |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Browser Performance Summary",
+                "",
+                "| Backend | Profile | Samples | Avg App Load ms | Avg Document Load + Initial Render ms | Avg Screenshot ms | Avg Total ms | Effect Pixels | Effect Cache Hits | Effect Cache Misses | Effect Failures |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for item in browser_performance_summary:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("backend", "-"),
+                        item.get("profile", "-"),
+                        format_count(item.get("sampleCount")),
+                        format_ms(item.get("averageAppLoadMs")),
+                        format_ms(item.get("averageDocumentLoadAndInitialRenderMs")),
+                        format_ms(item.get("averageScreenshotMs")),
+                        format_ms(item.get("averageTotalMs")),
+                        format_count(item.get("effectPixelsTotal")),
+                        format_count(item.get("effectCacheHitsTotal")),
+                        format_count(item.get("effectCacheMissesTotal")),
+                        format_count(item.get("effectFailuresTotal")),
                     ]
                 )
                 + " |"

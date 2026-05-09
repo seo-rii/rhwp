@@ -297,9 +297,10 @@ Native Skia `RasterRenderOutput.diagnostics` also reports per-render
 benchmark or CI harnesses can separate setup, PaintOp replay, and PNG encoding
 cost.
 `scripts/renderer_baseline.py` also records browser-side timing diagnostics in
-`browser-baseline-report.json` and the generated Markdown report: app load,
-document load + initial render, screenshot capture time, and image-effect
-preprocessing cache/failure counters for Canvas2D and CanvasKit.
+`browser-baseline-report.json`, `performance-summary.json`, and the generated
+Markdown report: app load, document load + initial render, screenshot capture
+time, and image-effect preprocessing cache/failure counters for Canvas2D and
+CanvasKit.
 
 GitHub Actions는 목적별로 분리되어 있습니다.
 
