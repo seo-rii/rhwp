@@ -17,8 +17,8 @@ use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     ClipKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint, LayerNode, LayerNodeKind,
-    LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole, LayerTextRunPaint, PageLayerTree,
-    PaintOp, ResourceArena,
+    LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole, LayerTextDecorationKind,
+    LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp, ResourceArena,
 };
 use base64::Engine;
 
@@ -226,6 +226,9 @@ impl SvgRenderer {
                     leader.color,
                     &leader.leader,
                 );
+            }
+            PaintOp::TextDecoration { bbox, decoration } => {
+                self.render_layer_text_decoration(*bbox, decoration);
             }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 let sup_size = (marker.base_font_size * 0.55).max(7.0);
@@ -1240,13 +1243,26 @@ impl SvgRenderer {
                 bbox.height,
             );
         } else {
-            let mut style_without_mirror_tab_leaders;
+            let mut style_without_mirror_visuals;
             let style = if run.legacy_visuals.tab_leaders
                 == Some(crate::paint::TextLegacyVisualState::Mirror)
+                || run.legacy_visuals.decorations
+                    == Some(crate::paint::TextLegacyVisualState::Mirror)
             {
-                style_without_mirror_tab_leaders = run.style.clone();
-                style_without_mirror_tab_leaders.tab_leaders.clear();
-                &style_without_mirror_tab_leaders
+                style_without_mirror_visuals = run.style.clone();
+                if run.legacy_visuals.tab_leaders
+                    == Some(crate::paint::TextLegacyVisualState::Mirror)
+                {
+                    style_without_mirror_visuals.tab_leaders.clear();
+                }
+                if run.legacy_visuals.decorations
+                    == Some(crate::paint::TextLegacyVisualState::Mirror)
+                {
+                    style_without_mirror_visuals.underline = UnderlineType::None;
+                    style_without_mirror_visuals.strikethrough = false;
+                    style_without_mirror_visuals.emphasis_dot = 0;
+                }
+                &style_without_mirror_visuals
             } else {
                 &run.style
             };
@@ -1264,6 +1280,67 @@ impl SvgRenderer {
             }
         }
         if effective_rotation != 0.0 {
+            self.output.push_str("</g>\n");
+        }
+    }
+
+    fn render_layer_text_decoration(
+        &mut self,
+        bbox: BoundingBox,
+        decoration: &LayerTextDecorationPaint,
+    ) {
+        if decoration.rotation != 0.0 {
+            let cx = bbox.x + bbox.width / 2.0;
+            let cy = bbox.y + bbox.height / 2.0;
+            self.output.push_str(&format!(
+                "<g transform=\"rotate({},{},{})\">\n",
+                decoration.rotation, cx, cy
+            ));
+        }
+        let text_width = decoration.positions.last().copied().unwrap_or(0.0);
+        let baseline_y = bbox.y + decoration.baseline;
+        let color = color_to_svg(decoration.color);
+        match decoration.kind {
+            LayerTextDecorationKind::Underline => {
+                let y = match decoration.underline {
+                    UnderlineType::Top => baseline_y - decoration.font_size + 1.0,
+                    _ => baseline_y + 2.0,
+                };
+                self.draw_line_shape(bbox.x, y, bbox.x + text_width, y, &color, decoration.shape);
+            }
+            LayerTextDecorationKind::Strikethrough => {
+                let y = baseline_y - decoration.font_size * 0.3;
+                self.draw_line_shape(bbox.x, y, bbox.x + text_width, y, &color, decoration.shape);
+            }
+            LayerTextDecorationKind::EmphasisDot => {
+                let dot_char = match decoration.emphasis_dot {
+                    1 => "●",
+                    2 => "○",
+                    3 => "ˇ",
+                    4 => "˜",
+                    5 => "･",
+                    6 => "˸",
+                    _ => "",
+                };
+                if !dot_char.is_empty() {
+                    let dot_size = decoration.font_size * 0.3;
+                    let dot_y = baseline_y - decoration.font_size * 1.05;
+                    for &position in decoration
+                        .positions
+                        .iter()
+                        .take(decoration.positions.len().saturating_sub(1))
+                    {
+                        let dot_x =
+                            bbox.x + position + decoration.font_size * decoration.ratio * 0.5;
+                        self.output.push_str(&format!(
+                            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"middle\" fill=\"{}\">{}</text>\n",
+                            dot_x, dot_y, dot_size, color, dot_char,
+                        ));
+                    }
+                }
+            }
+        }
+        if decoration.rotation != 0.0 {
             self.output.push_str("</g>\n");
         }
     }

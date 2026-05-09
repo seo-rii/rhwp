@@ -136,6 +136,11 @@ impl TextSourceTable {
                                 leader.source = last_text_source.clone();
                             }
                         }
+                        PaintOp::TextDecoration { decoration, .. } => {
+                            if decoration.source.is_none() {
+                                decoration.source = last_text_source.clone();
+                            }
+                        }
                         _ => {}
                     }
                 }

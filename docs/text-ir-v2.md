@@ -62,8 +62,9 @@ Layer JSON/JS exports currently provide:
 - `text.fallbackRequired`: true while `TextRun` remains the public fallback.
 - `text.placementAuthority`: currently `compatibilityProjection`, meaning
   `positions`/`baseline`/`rotation` remain authoritative for visual replay.
-- `text.externalizedVisuals`: contains `charOverlap`, `controlMarks`, or
-  `tabLeaders` when those visuals are emitted as explicit paint ops.
+- `text.externalizedVisuals`: contains `charOverlap`, `controlMarks`,
+  `tabLeaders`, or `decorations` when those visuals are emitted as explicit
+  paint ops.
 
 The source table mirrors field marker, paragraph end, and line-break end
 metadata as source annotations. Visible marks are now emitted as explicit
@@ -121,8 +122,10 @@ old consumers.
 - Tab leaders are emitted as explicit `tabLeader` PaintOps when present in a
   lowered text style. The paired `TextRun.tabLeaders` payload is a legacy
   mirror for old consumers.
-- Future decoration geometry should move into explicit paint ops before
-  becoming required schema features.
+- Text decorations that need backend-stable visual geometry are emitted as
+  explicit `textDecoration` PaintOps. The initial externalized set covers
+  underline, strikethrough, and emphasis-dot geometry. The paired
+  `TextRun` style fields remain a legacy mirror for old consumers.
 - While those visuals are still inside `TextRun`, `legacyVisuals` marks them
   `canonical`. Once an external op is emitted, the legacy payload must become a
   `mirror`; consumers that support the external op must not draw the mirror.
@@ -170,8 +173,8 @@ old consumers.
 3. Add feature metadata so consumers can avoid double-painting future variants.
 4. Define TextRun v2 cluster placement and run-local placement contracts.
 5. Split special visible text semantics into paint ops:
-   `CharOverlap`, `TextControlMark`, and `TabLeader` are implemented; next is
-   `TextDecoration`.
+   `CharOverlap`, `TextControlMark`, `TabLeader`, and `TextDecoration` are
+   implemented.
 6. Add font resources with blob/face split portability state:
    `PortableBlob`, `ExternalVerified`, `ResolvedButNotEmbedded`,
    `SystemNameOnly`, or `UnresolvedFallback`.

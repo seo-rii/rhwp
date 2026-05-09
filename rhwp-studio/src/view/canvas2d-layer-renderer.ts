@@ -22,6 +22,7 @@ import type {
   LayerShapeShadow,
   LayerTabLeader,
   LayerTabLeaderOp,
+  LayerTextDecorationOp,
   LayerTextRunOp,
   LayerTextControlMarkOp,
   PageLayerTree,
@@ -218,6 +219,11 @@ export class Canvas2DLayerRenderer {
           this.renderTabLeader(ctx, op);
         }, op.bbox);
         return;
+      case 'textDecoration':
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          this.renderTextDecoration(ctx, op);
+        }, op.bbox);
+        return;
       case 'footnoteMarker':
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderFootnoteMarker(ctx, op);
@@ -312,7 +318,8 @@ export class Canvas2DLayerRenderer {
     const shadowOffsetY = typeof op.style.shadowOffsetY === 'number' ? op.style.shadowOffsetY : 0;
     const emboss = !!op.style.emboss;
     const engrave = !!op.style.engrave;
-    const emphasisDot = op.style.emphasisDot ?? 0;
+    const decorationsAreMirrors = op.legacyVisuals?.decorations === 'mirror';
+    const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
     const fontSize = op.style.fontSize || 12;
     const clusters = splitIntoClusters(op.text);
@@ -472,7 +479,7 @@ export class Canvas2DLayerRenderer {
         this.drawTabLeaders(ctx, op.tabLeaders, originX, originY, op.style.color);
       }
 
-      if (op.style.underline !== 'none') {
+      if (!decorationsAreMirrors && op.style.underline !== 'none') {
         ctx.save();
         ctx.strokeStyle = op.style.underlineColor || op.style.color;
         ctx.lineWidth = 1;
@@ -484,7 +491,7 @@ export class Canvas2DLayerRenderer {
         ctx.restore();
       }
 
-      if (op.style.strikethrough) {
+      if (!decorationsAreMirrors && op.style.strikethrough) {
         ctx.save();
         ctx.strokeStyle = op.style.strikeColor || op.style.color;
         ctx.lineWidth = 1;
@@ -545,6 +552,56 @@ export class Canvas2DLayerRenderer {
 
   private renderTabLeader(ctx: CanvasRenderingContext2D, op: LayerTabLeaderOp): void {
     this.drawTabLeaders(ctx, [op.leader], op.bbox.x, op.bbox.y + op.baseline, op.color);
+  }
+
+  private renderTextDecoration(ctx: CanvasRenderingContext2D, op: LayerTextDecorationOp): void {
+    const drawDecoration = (originX: number, baselineY: number) => {
+      const textWidth = op.decoration.positions.at(-1) ?? 0;
+      if (op.decoration.kind === 'underline') {
+        const y = op.decoration.underline === 'top'
+          ? baselineY - op.decoration.fontSize + 1
+          : baselineY + 2;
+        this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
+        return;
+      }
+      if (op.decoration.kind === 'strikethrough') {
+        const y = baselineY - op.decoration.fontSize * 0.3;
+        this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
+        return;
+      }
+      const dotChar =
+        op.decoration.emphasisDot === 1 ? '●'
+          : op.decoration.emphasisDot === 2 ? '○'
+            : op.decoration.emphasisDot === 3 ? 'ˇ'
+              : op.decoration.emphasisDot === 4 ? '˜'
+                : op.decoration.emphasisDot === 5 ? '･'
+                  : op.decoration.emphasisDot === 6 ? '˸'
+                    : '';
+      if (!dotChar) {
+        return;
+      }
+      ctx.save();
+      this.setCanvasTextFont(ctx, 'Noto Sans KR', op.decoration.fontSize * 0.3, false, false);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = op.decoration.color;
+      const dotY = baselineY - op.decoration.fontSize * 1.05;
+      for (const position of op.decoration.positions.slice(0, -1)) {
+        const dotX = originX + position + op.decoration.fontSize * op.decoration.ratio * 0.5;
+        ctx.fillText(dotChar, dotX, dotY);
+      }
+      ctx.restore();
+    };
+
+    ctx.save();
+    if (op.decoration.rotation !== 0) {
+      const cx = op.bbox.x + op.bbox.width / 2;
+      const cy = op.bbox.y + op.bbox.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((op.decoration.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
+    drawDecoration(op.bbox.x, op.bbox.y + op.decoration.baseline);
+    ctx.restore();
   }
 
   private renderFootnoteMarker(ctx: CanvasRenderingContext2D, op: LayerFootnoteMarkerOp): void {
@@ -1036,6 +1093,24 @@ export class Canvas2DLayerRenderer {
       ctx.stroke();
       ctx.restore();
     }
+  }
+
+  private drawTextDecorationLine(
+    ctx: CanvasRenderingContext2D,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
+  ): void {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   private setCanvasTextFont(

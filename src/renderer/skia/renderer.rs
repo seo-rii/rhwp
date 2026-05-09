@@ -563,6 +563,8 @@ impl SkiaLayerRenderer {
                         == Some(crate::paint::TextLegacyVisualState::Mirror)
                     || run.legacy_visuals.tab_leaders
                         == Some(crate::paint::TextLegacyVisualState::Mirror)
+                    || run.legacy_visuals.decorations
+                        == Some(crate::paint::TextLegacyVisualState::Mirror)
                 {
                     replay_run = run.clone();
                     if replay_run.legacy_visuals.char_overlap
@@ -579,6 +581,13 @@ impl SkiaLayerRenderer {
                         == Some(crate::paint::TextLegacyVisualState::Mirror)
                     {
                         replay_run.style.tab_leaders.clear();
+                    }
+                    if replay_run.legacy_visuals.decorations
+                        == Some(crate::paint::TextLegacyVisualState::Mirror)
+                    {
+                        replay_run.style.underline = crate::model::style::UnderlineType::None;
+                        replay_run.style.strikethrough = false;
+                        replay_run.style.emphasis_dot = 0;
                     }
                     &replay_run
                 } else {
@@ -638,6 +647,19 @@ impl SkiaLayerRenderer {
                     ..Default::default()
                 };
                 self.render_text_run(canvas, bbox, &run, replay);
+            }
+            PaintOp::TextDecoration { bbox, decoration } => {
+                let rotation = decoration.rotation;
+                if rotation != 0.0 {
+                    let cx = (bbox.x + bbox.width / 2.0) as f32;
+                    let cy = (bbox.y + bbox.height / 2.0) as f32;
+                    canvas.save();
+                    canvas.rotate(rotation as f32, Some((cx, cy).into()));
+                    self.render_text_decoration(canvas, bbox, decoration);
+                    canvas.restore();
+                } else {
+                    self.render_text_decoration(canvas, bbox, decoration);
+                }
             }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 let mut font = make_font(

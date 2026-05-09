@@ -203,6 +203,12 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     {
         used_features.push("text.tabLeaderOp");
     }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "decorations")
+    {
+        used_features.push("text.decorationOp");
+    }
     set_value(
         &value,
         "usedFeatures",
@@ -223,6 +229,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
             "text.charOverlapOp",
             "text.controlMarkOp",
             "text.tabLeaderOp",
+            "text.decorationOp",
             "text.vertical.mixedPerGlyph",
         ]),
     );
@@ -769,6 +776,14 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             set_number(&value, "fontSize", leader.font_size);
             set_number(&value, "baseline", leader.baseline);
         }
+        PaintOp::TextDecoration { bbox, decoration } => {
+            set_string(&value, "type", "textDecoration");
+            set_value(&value, "bbox", bbox_to_value(*bbox));
+            if let Some(source) = &decoration.source {
+                set_value(&value, "source", text_source_span_to_value(source));
+            }
+            set_value(&value, "decoration", text_decoration_to_value(decoration));
+        }
         PaintOp::FootnoteMarker { bbox, marker } => {
             set_string(&value, "type", "footnoteMarker");
             set_value(&value, "bbox", bbox_to_value(*bbox));
@@ -932,6 +947,29 @@ fn tab_leader_to_value(leader: &TabLeaderInfo) -> JsValue {
     set_number(&value, "startX", leader.start_x);
     set_number(&value, "endX", leader.end_x);
     set_number(&value, "fillType", leader.fill_type as f64);
+    value.into()
+}
+
+fn text_decoration_to_value(decoration: &crate::paint::LayerTextDecorationPaint) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "kind", decoration.kind.as_str());
+    set_number(&value, "baseline", decoration.baseline);
+    set_number(&value, "rotation", decoration.rotation);
+    set_number(&value, "fontSize", decoration.font_size);
+    set_number(&value, "ratio", decoration.ratio);
+    set_string(&value, "color", &color_ref_to_css(decoration.color));
+    set_number(&value, "shape", decoration.shape as f64);
+    set_string(
+        &value,
+        "underline",
+        underline_type_str(decoration.underline),
+    );
+    set_number(&value, "emphasisDot", decoration.emphasis_dot as f64);
+    set_value(
+        &value,
+        "positions",
+        array_to_value(decoration.positions.iter().copied().map(JsValue::from_f64)),
+    );
     value.into()
 }
 
@@ -1257,6 +1295,7 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
     let mut has_char_overlap = false;
     let mut has_control_marks = false;
     let mut has_tab_leaders = false;
+    let mut has_decorations = false;
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         match &node.kind {
@@ -1274,6 +1313,9 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
                     .iter()
                     .any(|op| matches!(op, PaintOp::TextControlMark { .. }));
                 has_tab_leaders |= ops.iter().any(|op| matches!(op, PaintOp::TabLeader { .. }));
+                has_decorations |= ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::TextDecoration { .. }));
             }
         }
     }
@@ -1286,6 +1328,9 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
     }
     if has_tab_leaders {
         visuals.push("tabLeaders");
+    }
+    if has_decorations {
+        visuals.push("decorations");
     }
     visuals
 }
@@ -1317,9 +1362,13 @@ fn paint_variant_meta_to_value(variant: &PaintVariantMeta) -> JsValue {
 }
 
 fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option<JsValue> {
+    let has_decorations = run.style.underline != UnderlineType::None
+        || run.style.strikethrough
+        || run.style.emphasis_dot > 0;
     if run.char_overlap.is_none()
         && run.control_marks.is_empty()
         && run.style.tab_leaders.is_empty()
+        && !has_decorations
     {
         return None;
     }
@@ -1350,6 +1399,16 @@ fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option
             "tabLeaders",
             run.legacy_visuals
                 .tab_leaders
+                .unwrap_or(crate::paint::TextLegacyVisualState::Canonical)
+                .as_str(),
+        );
+    }
+    if has_decorations {
+        set_string(
+            &value,
+            "decorations",
+            run.legacy_visuals
+                .decorations
                 .unwrap_or(crate::paint::TextLegacyVisualState::Canonical)
                 .as_str(),
         );
@@ -1722,7 +1781,7 @@ mod tests {
         );
         let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
         let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
-        assert_eq!(json_known_features.length(), 11);
+        assert_eq!(json_known_features.length(), 12);
         assert_eq!(json_known_features.length(), js_known_features.length());
         let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
         let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));

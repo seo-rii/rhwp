@@ -48,10 +48,11 @@ pub use paint_op::{
     LayerFootnoteMarkerPaint, LayerFormObjectPaint, LayerImagePaint, LayerLinePaint,
     LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerPathPaint, LayerPoint,
     LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextControlMarkPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
-    PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterBasis, TextClusterFlag,
-    TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
-    TextRunPlacement, TextVariantKind, TextVariantQuality,
+    LayerTextControlMarkPaint, LayerTextDecorationKind, LayerTextDecorationPaint,
+    LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds, PaintOp, PaintTextStyle,
+    PaintVariantMeta, TextClusterBasis, TextClusterFlag, TextClusterPlacement,
+    TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind, TextRunPlacement,
+    TextVariantKind, TextVariantQuality,
 };
 pub use profile::RenderProfile;
 pub use resources::{

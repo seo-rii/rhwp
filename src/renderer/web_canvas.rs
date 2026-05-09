@@ -333,13 +333,26 @@ impl WebCanvasRenderer {
                             continue;
                         }
                         PaintOp::TextRun { bbox, run } => {
-                            let mut style_without_mirror_tab_leaders;
+                            let mut style_without_mirror_visuals;
                             let style = if run.legacy_visuals.tab_leaders
                                 == Some(crate::paint::TextLegacyVisualState::Mirror)
+                                || run.legacy_visuals.decorations
+                                    == Some(crate::paint::TextLegacyVisualState::Mirror)
                             {
-                                style_without_mirror_tab_leaders = run.style.clone();
-                                style_without_mirror_tab_leaders.tab_leaders.clear();
-                                &style_without_mirror_tab_leaders
+                                style_without_mirror_visuals = run.style.clone();
+                                if run.legacy_visuals.tab_leaders
+                                    == Some(crate::paint::TextLegacyVisualState::Mirror)
+                                {
+                                    style_without_mirror_visuals.tab_leaders.clear();
+                                }
+                                if run.legacy_visuals.decorations
+                                    == Some(crate::paint::TextLegacyVisualState::Mirror)
+                                {
+                                    style_without_mirror_visuals.underline = UnderlineType::None;
+                                    style_without_mirror_visuals.strikethrough = false;
+                                    style_without_mirror_visuals.emphasis_dot = 0;
+                                }
+                                &style_without_mirror_visuals
                             } else {
                                 &run.style
                             };
@@ -389,6 +402,10 @@ impl WebCanvasRenderer {
                                 leader.font_size,
                                 &leader.leader,
                             );
+                            continue;
+                        }
+                        PaintOp::TextDecoration { bbox, decoration } => {
+                            self.draw_layer_text_decoration(bbox, decoration);
                             continue;
                         }
                         PaintOp::FootnoteMarker { bbox, marker } => {
@@ -491,6 +508,88 @@ impl WebCanvasRenderer {
             bbox.x + mark.x + offset_x,
             bbox.y + mark.y + offset_y,
         );
+    }
+
+    fn draw_layer_text_decoration(
+        &self,
+        bbox: &BoundingBox,
+        decoration: &crate::paint::LayerTextDecorationPaint,
+    ) {
+        let rotated = decoration.rotation != 0.0;
+        if rotated {
+            let cx = bbox.x + bbox.width / 2.0;
+            let cy = bbox.y + bbox.height / 2.0;
+            self.ctx.save();
+            let _ = self.ctx.translate(cx, cy);
+            let _ = self
+                .ctx
+                .rotate(decoration.rotation * std::f64::consts::PI / 180.0);
+            let _ = self.ctx.translate(-cx, -cy);
+        }
+
+        let text_width = decoration.positions.last().copied().unwrap_or(0.0);
+        let baseline_y = bbox.y + decoration.baseline;
+        let color = color_to_css(decoration.color);
+        match decoration.kind {
+            crate::paint::LayerTextDecorationKind::Underline => {
+                let y = match decoration.underline {
+                    UnderlineType::Top => baseline_y - decoration.font_size + 1.0,
+                    _ => baseline_y + 2.0,
+                };
+                self.draw_line_shape_canvas(
+                    bbox.x,
+                    y,
+                    bbox.x + text_width,
+                    y,
+                    &color,
+                    decoration.shape,
+                );
+            }
+            crate::paint::LayerTextDecorationKind::Strikethrough => {
+                let y = baseline_y - decoration.font_size * 0.3;
+                self.draw_line_shape_canvas(
+                    bbox.x,
+                    y,
+                    bbox.x + text_width,
+                    y,
+                    &color,
+                    decoration.shape,
+                );
+            }
+            crate::paint::LayerTextDecorationKind::EmphasisDot => {
+                let dot_char = match decoration.emphasis_dot {
+                    1 => "●",
+                    2 => "○",
+                    3 => "ˇ",
+                    4 => "˜",
+                    5 => "･",
+                    6 => "˸",
+                    _ => "",
+                };
+                if !dot_char.is_empty() {
+                    let dot_size = decoration.font_size * 0.3;
+                    let dot_y = baseline_y - decoration.font_size * 1.05;
+                    self.ctx.save();
+                    self.ctx.set_font(&format!("{}px sans-serif", dot_size));
+                    self.ctx.set_text_align("center");
+                    self.ctx.set_fill_style_str(&color);
+                    for &position in decoration
+                        .positions
+                        .iter()
+                        .take(decoration.positions.len().saturating_sub(1))
+                    {
+                        let dot_x =
+                            bbox.x + position + decoration.font_size * decoration.ratio * 0.5;
+                        self.ctx.fill_text(dot_char, dot_x, dot_y).ok();
+                    }
+                    self.ctx.restore();
+                }
+            }
+        }
+
+        if rotated {
+            self.ctx.restore();
+        }
     }
 
     fn draw_text_run_contents(

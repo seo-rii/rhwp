@@ -38,6 +38,10 @@ pub enum PaintOp {
         bbox: BoundingBox,
         leader: LayerTabLeaderPaint,
     },
+    TextDecoration {
+        bbox: BoundingBox,
+        decoration: LayerTextDecorationPaint,
+    },
     FootnoteMarker {
         bbox: BoundingBox,
         marker: LayerFootnoteMarkerPaint,
@@ -161,6 +165,7 @@ pub struct TextLegacyVisuals {
     pub char_overlap: Option<TextLegacyVisualState>,
     pub control_marks: Option<TextLegacyVisualState>,
     pub tab_leaders: Option<TextLegacyVisualState>,
+    pub decorations: Option<TextLegacyVisualState>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +195,38 @@ pub struct LayerTabLeaderPaint {
     pub color: ColorRef,
     pub font_size: f64,
     pub baseline: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerTextDecorationPaint {
+    pub source: Option<TextSourceSpan>,
+    pub kind: LayerTextDecorationKind,
+    pub positions: Vec<f64>,
+    pub baseline: f64,
+    pub rotation: f64,
+    pub font_size: f64,
+    pub ratio: f64,
+    pub color: ColorRef,
+    pub shape: u8,
+    pub underline: UnderlineType,
+    pub emphasis_dot: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerTextDecorationKind {
+    Underline,
+    Strikethrough,
+    EmphasisDot,
+}
+
+impl LayerTextDecorationKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Underline => "underline",
+            Self::Strikethrough => "strikethrough",
+            Self::EmphasisDot => "emphasisDot",
+        }
+    }
 }
 
 /// Variant grouping metadata for future TextRun/GlyphRun/outline alternatives.
@@ -589,6 +626,7 @@ impl PaintOp {
             | PaintOp::CharOverlap { bbox, .. }
             | PaintOp::TextControlMark { bbox, .. }
             | PaintOp::TabLeader { bbox, .. }
+            | PaintOp::TextDecoration { bbox, .. }
             | PaintOp::FootnoteMarker { bbox, .. }
             | PaintOp::Line { bbox, .. }
             | PaintOp::Rectangle { bbox, .. }
@@ -702,6 +740,45 @@ impl PaintOp {
                     leader.font_size * 0.5,
                 ),
             ),
+            PaintOp::TextDecoration { bbox, decoration } => {
+                let text_width = decoration.positions.last().copied().unwrap_or(0.0);
+                match decoration.kind {
+                    LayerTextDecorationKind::Underline => {
+                        let y = match decoration.underline {
+                            UnderlineType::Top => {
+                                bbox.y + decoration.baseline - decoration.font_size + 1.0
+                            }
+                            _ => bbox.y + decoration.baseline + 2.0,
+                        };
+                        union(
+                            logical,
+                            expand(BoundingBox::new(bbox.x, y, text_width, 1.0), 2.0),
+                        )
+                    }
+                    LayerTextDecorationKind::Strikethrough => {
+                        let y = bbox.y + decoration.baseline - decoration.font_size * 0.3;
+                        union(
+                            logical,
+                            expand(BoundingBox::new(bbox.x, y, text_width, 1.0), 2.0),
+                        )
+                    }
+                    LayerTextDecorationKind::EmphasisDot => {
+                        let dot_y = bbox.y + decoration.baseline - decoration.font_size * 1.05;
+                        union(
+                            logical,
+                            expand(
+                                BoundingBox::new(
+                                    bbox.x,
+                                    dot_y - decoration.font_size * 0.15,
+                                    text_width,
+                                    decoration.font_size * 0.3,
+                                ),
+                                2.0,
+                            ),
+                        )
+                    }
+                }
+            }
             PaintOp::FootnoteMarker { marker, .. } => {
                 expand(logical, marker.base_font_size.max(0.0) * 0.15)
             }

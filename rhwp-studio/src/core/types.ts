@@ -137,6 +137,7 @@ export type LayerTreeFeature =
   | 'text.charOverlapOp'
   | 'text.controlMarkOp'
   | 'text.tabLeaderOp'
+  | 'text.decorationOp'
   | 'text.vertical.mixedPerGlyph';
 
 export interface LayerResources {
@@ -270,6 +271,7 @@ export type LayerKnownPaintOp =
   | LayerCharOverlapOp
   | LayerTextControlMarkOp
   | LayerTabLeaderOp
+  | LayerTextDecorationOp
   | LayerFootnoteMarkerOp
   | LayerLineOp
   | LayerRectangleOp
@@ -295,6 +297,7 @@ const KNOWN_LAYER_PAINT_OP_TYPES = new Set([
   'charOverlap',
   'textControlMark',
   'tabLeader',
+  'textDecoration',
   'footnoteMarker',
   'line',
   'rectangle',
@@ -352,7 +355,7 @@ export interface LayerCharOverlap {
   innerCharSize: number;
 }
 
-export type LayerTextLegacyVisualKind = 'charOverlap' | 'controlMarks' | 'tabLeaders';
+export type LayerTextLegacyVisualKind = 'charOverlap' | 'controlMarks' | 'tabLeaders' | 'decorations';
 export type LayerTextLegacyVisualState = 'canonical' | 'mirror';
 
 export type LayerTextLegacyVisuals = Partial<
@@ -638,6 +641,28 @@ export interface LayerTabLeaderOp {
   color: string;
   fontSize: number;
   baseline: number;
+}
+
+export type LayerTextDecorationKind = 'underline' | 'strikethrough' | 'emphasisDot';
+
+export interface LayerTextDecoration {
+  kind: LayerTextDecorationKind;
+  baseline: number;
+  rotation: number;
+  fontSize: number;
+  ratio: number;
+  color: string;
+  shape: number;
+  underline: 'none' | 'bottom' | 'top';
+  emphasisDot: number;
+  positions: number[];
+}
+
+export interface LayerTextDecorationOp {
+  type: 'textDecoration';
+  bbox: LayerBounds;
+  source?: LayerTextSourceSpan;
+  decoration: LayerTextDecoration;
 }
 
 export interface LayerFootnoteMarkerOp {

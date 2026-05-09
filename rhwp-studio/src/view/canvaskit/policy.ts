@@ -44,6 +44,7 @@ export function shouldOverlayTextRun(
   if (context.renderMode === 'compat') {
     const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
     const clusters = splitIntoClusters(op.text);
+    const decorationsAreMirrors = op.legacyVisuals?.decorations === 'mirror';
     if (
       op.isVertical
       || op.rotation !== 0
@@ -51,13 +52,13 @@ export function shouldOverlayTextRun(
       || op.style.bold
       || op.style.italic
       || Math.abs(ratio - 1) > 0.01
-      || op.style.underline !== 'none'
-      || op.style.strikethrough
+      || (!decorationsAreMirrors && op.style.underline !== 'none')
+      || (!decorationsAreMirrors && op.style.strikethrough)
       || (op.style.outlineType ?? 0) > 0
       || (op.style.shadowType ?? 0) > 0
       || op.style.emboss
       || op.style.engrave
-      || (op.style.emphasisDot ?? 0) > 0
+      || (!decorationsAreMirrors && (op.style.emphasisDot ?? 0) > 0)
       || ((typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase() !== '#ffffff')
       || (op.tabLeaders?.length ?? 0) > 0
       || (

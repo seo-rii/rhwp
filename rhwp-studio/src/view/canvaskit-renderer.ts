@@ -30,6 +30,7 @@ import type {
   LayerShapeShadow,
   LayerTabLeader,
   LayerTabLeaderOp,
+  LayerTextDecorationOp,
   LayerTextRunOp,
   LayerTextControlMarkOp,
   PageLayerTree,
@@ -405,6 +406,9 @@ export class CanvasKitLayerRenderer {
       case 'tabLeader':
         this.renderTabLeader(canvas, op);
         return;
+      case 'textDecoration':
+        this.renderTextDecoration(canvas, op);
+        return;
       case 'footnoteMarker':
         if (this.shouldOverlayFootnoteMarker(op)) {
           return;
@@ -548,7 +552,8 @@ export class CanvasKitLayerRenderer {
     const shadowOffsetY = typeof op.style.shadowOffsetY === 'number' ? op.style.shadowOffsetY : 0;
     const emboss = !!op.style.emboss;
     const engrave = !!op.style.engrave;
-    const emphasisDot = op.style.emphasisDot ?? 0;
+    const decorationsAreMirrors = 'legacyVisuals' in op && op.legacyVisuals?.decorations === 'mirror';
+    const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
     const primaryObjects = this.makeTextObjects(
       op.style.fontFamily,
@@ -881,14 +886,14 @@ export class CanvasKitLayerRenderer {
         this.drawTabLeaders(canvas, op.tabLeaders, originX, originY, op.style.color);
       }
 
-      if (op.style.underline !== 'none') {
+      if (!decorationsAreMirrors && op.style.underline !== 'none') {
         const underlinePaint = this.makePaint(op.style.underlineColor || op.style.color, 'stroke');
         underlinePaint.setStrokeWidth(1);
         const y = op.style.underline === 'top' ? originY - op.style.fontSize + 1 : originY + 2;
         canvas.drawLine(originX, y, originX + textWidth, y, underlinePaint);
         underlinePaint.delete();
       }
-      if (op.style.strikethrough) {
+      if (!decorationsAreMirrors && op.style.strikethrough) {
         const strikePaint = this.makePaint(op.style.strikeColor || op.style.color, 'stroke');
         strikePaint.setStrokeWidth(1);
         const y = originY - op.style.fontSize * 0.3;
@@ -948,6 +953,72 @@ export class CanvasKitLayerRenderer {
     op: LayerTabLeaderOp,
   ): void {
     this.drawTabLeaders(canvas, [op.leader], op.bbox.x, op.bbox.y + op.baseline, op.color);
+  }
+
+  private renderTextDecoration(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerTextDecorationOp,
+  ): void {
+    const drawDecoration = (originX: number, baselineY: number) => {
+      const textWidth = op.decoration.positions.at(-1) ?? 0;
+      if (op.decoration.kind === 'underline') {
+        const paint = this.makePaint(op.decoration.color, 'stroke');
+        paint.setStrokeWidth(1);
+        const y = op.decoration.underline === 'top'
+          ? baselineY - op.decoration.fontSize + 1
+          : baselineY + 2;
+        canvas.drawLine(originX, y, originX + textWidth, y, paint);
+        paint.delete();
+        return;
+      }
+      if (op.decoration.kind === 'strikethrough') {
+        const paint = this.makePaint(op.decoration.color, 'stroke');
+        paint.setStrokeWidth(1);
+        const y = baselineY - op.decoration.fontSize * 0.3;
+        canvas.drawLine(originX, y, originX + textWidth, y, paint);
+        paint.delete();
+        return;
+      }
+      const dotChar =
+        op.decoration.emphasisDot === 1 ? '●'
+          : op.decoration.emphasisDot === 2 ? '○'
+            : op.decoration.emphasisDot === 3 ? 'ˇ'
+              : op.decoration.emphasisDot === 4 ? '˜'
+                : op.decoration.emphasisDot === 5 ? '･'
+                  : op.decoration.emphasisDot === 6 ? '˸'
+                    : '';
+      if (!dotChar) {
+        return;
+      }
+      const dotObjects = this.makeTextObjects(
+        'Noto Sans KR',
+        op.decoration.fontSize * 0.3,
+        false,
+        false,
+        op.decoration.color,
+      );
+      const dotY = baselineY - op.decoration.fontSize * 1.05;
+      for (const position of op.decoration.positions.slice(0, -1)) {
+        const dotX = originX + position + op.decoration.fontSize * op.decoration.ratio * 0.5;
+        canvas.drawText(dotChar, dotX, dotY, dotObjects.paint, dotObjects.font);
+      }
+      dotObjects.paint.delete();
+      dotObjects.font.delete();
+      dotObjects.typeface.delete();
+    };
+
+    if (op.decoration.rotation !== 0) {
+      const cx = op.bbox.x + op.bbox.width / 2;
+      const cy = op.bbox.y + op.bbox.height / 2;
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate(op.decoration.rotation, 0, 0);
+      canvas.translate(-cx, -cy);
+      drawDecoration(op.bbox.x, op.bbox.y + op.decoration.baseline);
+      canvas.restore();
+      return;
+    }
+    drawDecoration(op.bbox.x, op.bbox.y + op.decoration.baseline);
   }
 
   private renderFootnoteMarker(canvas: ReturnType<Surface['getCanvas']>, op: Extract<LayerPaintOp, { type: 'footnoteMarker' }>): void {
@@ -2455,7 +2526,8 @@ export class CanvasKitLayerRenderer {
     const shadowOffsetY = typeof op.style.shadowOffsetY === 'number' ? op.style.shadowOffsetY : 0;
     const emboss = !!op.style.emboss;
     const engrave = !!op.style.engrave;
-    const emphasisDot = op.style.emphasisDot ?? 0;
+    const decorationsAreMirrors = op.legacyVisuals?.decorations === 'mirror';
+    const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
     const fontSize = op.style.fontSize || 12;
     const clusters = splitIntoClusters(op.text);
@@ -2608,7 +2680,7 @@ export class CanvasKitLayerRenderer {
         this.drawTabLeadersOverlay(ctx, op.tabLeaders, originX, originY, op.style.color);
       }
 
-      if (op.style.underline !== 'none') {
+      if (!decorationsAreMirrors && op.style.underline !== 'none') {
         ctx.save();
         ctx.strokeStyle = op.style.underlineColor || op.style.color;
         ctx.lineWidth = 1;
@@ -2620,7 +2692,7 @@ export class CanvasKitLayerRenderer {
         ctx.restore();
       }
 
-      if (op.style.strikethrough) {
+      if (!decorationsAreMirrors && op.style.strikethrough) {
         ctx.save();
         ctx.strokeStyle = op.style.strikeColor || op.style.color;
         ctx.lineWidth = 1;

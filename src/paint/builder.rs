@@ -7,8 +7,8 @@ use crate::paint::paint_op::{
     LayerFormObjectPaint, LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint,
     LayerPageBackgroundPaint, LayerPathPaint, LayerRectanglePaint, LayerTabLeaderPaint,
     LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
-    LayerTextOrientation, LayerTextRunPaint, PaintOp, TextClusterBasis, TextLegacyVisualState,
-    TextLegacyVisuals, TextProjectionKind,
+    LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint,
+    PaintOp, TextClusterBasis, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
@@ -166,6 +166,10 @@ impl LayerBuilder {
                         .then_some(TextLegacyVisualState::Mirror),
                     tab_leaders: (!run.style.tab_leaders.is_empty())
                         .then_some(TextLegacyVisualState::Mirror),
+                    decorations: (run.style.underline != crate::model::style::UnderlineType::None
+                        || run.style.strikethrough
+                        || run.style.emphasis_dot > 0)
+                        .then_some(TextLegacyVisualState::Mirror),
                     ..TextLegacyVisuals::default()
                 };
                 let text_op = PaintOp::TextRun {
@@ -201,7 +205,7 @@ impl LayerBuilder {
                             variant: None,
                             text: run.text.clone(),
                             style: run.style.clone(),
-                            positions,
+                            positions: positions.clone(),
                             baseline: run.baseline,
                             rotation: run.rotation,
                             is_vertical: run.is_vertical,
@@ -226,6 +230,68 @@ impl LayerBuilder {
                             color: run.style.color,
                             font_size: run.style.font_size,
                             baseline: run.baseline,
+                        },
+                    });
+                }
+                if run.style.underline != crate::model::style::UnderlineType::None {
+                    ops.push(PaintOp::TextDecoration {
+                        bbox: node.bbox,
+                        decoration: LayerTextDecorationPaint {
+                            source: None,
+                            kind: LayerTextDecorationKind::Underline,
+                            positions: positions.clone(),
+                            baseline: run.baseline,
+                            rotation: run.rotation,
+                            font_size: run.style.font_size,
+                            ratio: run.style.ratio,
+                            color: if run.style.underline_color != 0 {
+                                run.style.underline_color
+                            } else {
+                                run.style.color
+                            },
+                            shape: run.style.underline_shape,
+                            underline: run.style.underline,
+                            emphasis_dot: 0,
+                        },
+                    });
+                }
+                if run.style.strikethrough {
+                    ops.push(PaintOp::TextDecoration {
+                        bbox: node.bbox,
+                        decoration: LayerTextDecorationPaint {
+                            source: None,
+                            kind: LayerTextDecorationKind::Strikethrough,
+                            positions: positions.clone(),
+                            baseline: run.baseline,
+                            rotation: run.rotation,
+                            font_size: run.style.font_size,
+                            ratio: run.style.ratio,
+                            color: if run.style.strike_color != 0 {
+                                run.style.strike_color
+                            } else {
+                                run.style.color
+                            },
+                            shape: run.style.strike_shape,
+                            underline: crate::model::style::UnderlineType::None,
+                            emphasis_dot: 0,
+                        },
+                    });
+                }
+                if run.style.emphasis_dot > 0 {
+                    ops.push(PaintOp::TextDecoration {
+                        bbox: node.bbox,
+                        decoration: LayerTextDecorationPaint {
+                            source: None,
+                            kind: LayerTextDecorationKind::EmphasisDot,
+                            positions: positions.clone(),
+                            baseline: run.baseline,
+                            rotation: run.rotation,
+                            font_size: run.style.font_size,
+                            ratio: run.style.ratio,
+                            color: run.style.color,
+                            shape: 0,
+                            underline: crate::model::style::UnderlineType::None,
+                            emphasis_dot: run.style.emphasis_dot,
                         },
                     });
                 }
@@ -1378,6 +1444,74 @@ mod tests {
     }
 
     #[test]
+    fn externalizes_text_decorations_with_legacy_mirror() {
+        let mut tree = PageRenderTree::new(0, 300.0, 200.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "abc".to_string(),
+                style: TextStyle {
+                    underline: crate::model::style::UnderlineType::Bottom,
+                    strikethrough: true,
+                    emphasis_dot: 1,
+                    font_size: 18.0,
+                    ..TextStyle::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 14.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            BoundingBox::new(20.0, 30.0, 80.0, 20.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::Leaf { ops, .. } = &children[0].kind else {
+            panic!("expected text leaf");
+        };
+        assert_eq!(ops.len(), 4);
+        match &ops[0] {
+            PaintOp::TextRun { run, .. } => {
+                assert_eq!(
+                    run.legacy_visuals.decorations,
+                    Some(TextLegacyVisualState::Mirror)
+                );
+            }
+            other => panic!("expected text run mirror, got {other:?}"),
+        }
+        let kinds: Vec<_> = ops[1..]
+            .iter()
+            .map(|op| match op {
+                PaintOp::TextDecoration { decoration, .. } => decoration.kind,
+                other => panic!("expected text decoration op, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                LayerTextDecorationKind::Underline,
+                LayerTextDecorationKind::Strikethrough,
+                LayerTextDecorationKind::EmphasisDot,
+            ]
+        );
+    }
+
+    #[test]
     fn lowers_group_semantics_as_lightweight_metadata() {
         let mut tree = PageRenderTree::new(0, 800.0, 600.0);
         tree.root.children.push(RenderNode::new(
@@ -1731,6 +1865,7 @@ mod tests {
                                         PaintOp::CharOverlap { .. } => "CharOverlap",
                                         PaintOp::TextControlMark { .. } => "TextControlMark",
                                         PaintOp::TabLeader { .. } => "TabLeader",
+                                        PaintOp::TextDecoration { .. } => "TextDecoration",
                                         PaintOp::FootnoteMarker { .. } => "FootnoteMarker",
                                         PaintOp::Line { .. } => "Line",
                                         PaintOp::Rectangle { .. } => "Rectangle",

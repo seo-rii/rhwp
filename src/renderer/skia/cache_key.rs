@@ -288,6 +288,27 @@ impl StaticSubtreeCacheKey {
                 self.mix_f64(leader.font_size);
                 self.mix_f64(leader.baseline);
             }
+            PaintOp::TextDecoration { bbox, decoration } => {
+                self.mix_u8(13);
+                self.mix_bbox(bbox);
+                self.mix_u8(match decoration.kind {
+                    crate::paint::LayerTextDecorationKind::Underline => 0,
+                    crate::paint::LayerTextDecorationKind::Strikethrough => 1,
+                    crate::paint::LayerTextDecorationKind::EmphasisDot => 2,
+                });
+                self.mix_usize(decoration.positions.len());
+                for position in &decoration.positions {
+                    self.mix_f64(*position);
+                }
+                self.mix_f64(decoration.baseline);
+                self.mix_f64(decoration.rotation);
+                self.mix_f64(decoration.font_size);
+                self.mix_f64(decoration.ratio);
+                self.mix_u32(decoration.color);
+                self.mix_u8(decoration.shape);
+                self.mix_underline(decoration.underline);
+                self.mix_u8(decoration.emphasis_dot);
+            }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 self.mix_u8(2);
                 self.mix_bbox(bbox);

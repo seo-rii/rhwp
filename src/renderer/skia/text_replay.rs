@@ -1,6 +1,6 @@
 use skia_safe::{paint::Cap, Canvas, Color, Paint, PathBuilder, Point, Rect};
 
-use crate::paint::LayerTextRunPaint;
+use crate::paint::{LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint};
 use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::BoundingBox;
@@ -583,6 +583,83 @@ impl SkiaLayerRenderer {
 
         for mark in &run.control_marks {
             self.render_text_control_mark(canvas, bbox, mark, f64::from(y) - bbox.y, replay);
+        }
+    }
+
+    pub(super) fn render_text_decoration(
+        &self,
+        canvas: &Canvas,
+        bbox: &BoundingBox,
+        decoration: &LayerTextDecorationPaint,
+    ) {
+        let text_width = decoration.positions.last().copied().unwrap_or(0.0) as f32;
+        if text_width <= 0.0 {
+            return;
+        }
+        let baseline_y = (bbox.y + decoration.baseline) as f32;
+        let font_size = decoration.font_size.max(1.0) as f32;
+        match decoration.kind {
+            LayerTextDecorationKind::Underline => {
+                let y = match decoration.underline {
+                    UnderlineType::Top => baseline_y - font_size + 1.0,
+                    _ => baseline_y + 2.0,
+                };
+                self.draw_text_line_shape(
+                    canvas,
+                    bbox.x as f32,
+                    y,
+                    bbox.x as f32 + text_width,
+                    y,
+                    decoration.color,
+                    decoration.shape,
+                );
+            }
+            LayerTextDecorationKind::Strikethrough => {
+                let y = baseline_y - font_size * 0.3;
+                self.draw_text_line_shape(
+                    canvas,
+                    bbox.x as f32,
+                    y,
+                    bbox.x as f32 + text_width,
+                    y,
+                    decoration.color,
+                    decoration.shape,
+                );
+            }
+            LayerTextDecorationKind::EmphasisDot => {
+                let dot_char = match decoration.emphasis_dot {
+                    1 => "●",
+                    2 => "○",
+                    3 => "ˇ",
+                    4 => "˜",
+                    5 => "･",
+                    6 => "˸",
+                    _ => "",
+                };
+                if dot_char.is_empty() {
+                    return;
+                }
+                let dot_style = crate::renderer::TextStyle {
+                    font_family: "sans-serif".to_string(),
+                    font_size: f64::from(font_size) * 0.3,
+                    ..Default::default()
+                };
+                let dot_font = make_font(&dot_style, &self.font_mgr, dot_char);
+                let mut dot_paint = Paint::default();
+                dot_paint.set_anti_alias(true);
+                dot_paint.set_color(colorref_to_skia(decoration.color, 1.0));
+                let dot_y = baseline_y - font_size * 1.05;
+                for position in decoration
+                    .positions
+                    .iter()
+                    .take(decoration.positions.len().saturating_sub(1))
+                {
+                    let dot_x = bbox.x as f32
+                        + *position as f32
+                        + (decoration.font_size * decoration.ratio * 0.5) as f32;
+                    canvas.draw_str(dot_char, (dot_x, dot_y), &dot_font, &dot_paint);
+                }
+            }
         }
     }
 

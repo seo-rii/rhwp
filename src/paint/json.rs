@@ -87,7 +87,13 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     {
         buf.push_str(",\"text.tabLeaderOp\"");
     }
-    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "decorations")
+    {
+        buf.push_str(",\"text.decorationOp\"");
+    }
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
@@ -138,6 +144,7 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
     let mut has_char_overlap = false;
     let mut has_control_marks = false;
     let mut has_tab_leaders = false;
+    let mut has_decorations = false;
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         match &node.kind {
@@ -155,6 +162,9 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
                     .iter()
                     .any(|op| matches!(op, PaintOp::TextControlMark { .. }));
                 has_tab_leaders |= ops.iter().any(|op| matches!(op, PaintOp::TabLeader { .. }));
+                has_decorations |= ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::TextDecoration { .. }));
             }
         }
     }
@@ -167,6 +177,9 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
     }
     if has_tab_leaders {
         visuals.push("tabLeaders");
+    }
+    if has_decorations {
+        visuals.push("decorations");
     }
     visuals
 }
@@ -434,6 +447,18 @@ impl PaintOp {
                     leader.font_size,
                     leader.baseline,
                 );
+            }
+            PaintOp::TextDecoration { bbox, decoration } => {
+                buf.push('{');
+                buf.push_str("\"type\":\"textDecoration\",\"bbox\":");
+                write_bbox(buf, *bbox);
+                if let Some(source) = &decoration.source {
+                    buf.push_str(",\"source\":");
+                    write_text_source_span(buf, source);
+                }
+                buf.push_str(",\"decoration\":");
+                write_text_decoration(buf, decoration);
+                buf.push('}');
             }
             PaintOp::FootnoteMarker { bbox, marker } => {
                 buf.push('{');
@@ -927,9 +952,13 @@ fn write_text_positions_slice(buf: &mut String, positions: &[f64]) {
 }
 
 fn write_text_legacy_visuals(buf: &mut String, run: &LayerTextRunPaint) {
+    let has_decorations = run.style.underline != UnderlineType::None
+        || run.style.strikethrough
+        || run.style.emphasis_dot > 0;
     if run.char_overlap.is_none()
         && run.control_marks.is_empty()
         && run.style.tab_leaders.is_empty()
+        && !has_decorations
     {
         return;
     }
@@ -963,6 +992,17 @@ fn write_text_legacy_visuals(buf: &mut String, run: &LayerTextRunPaint) {
             .tab_leaders
             .unwrap_or(crate::paint::TextLegacyVisualState::Canonical);
         let _ = write!(buf, "\"tabLeaders\":{}", json_escape(state.as_str()));
+        wrote = true;
+    }
+    if has_decorations {
+        if wrote {
+            buf.push(',');
+        }
+        let state = run
+            .legacy_visuals
+            .decorations
+            .unwrap_or(crate::paint::TextLegacyVisualState::Canonical);
+        let _ = write!(buf, "\"decorations\":{}", json_escape(state.as_str()));
     }
     buf.push('}');
 }
@@ -1077,6 +1117,24 @@ fn write_tab_leader(buf: &mut String, leader: &TabLeaderInfo) {
         "{{\"startX\":{:.6},\"endX\":{:.6},\"fillType\":{}}}",
         leader.start_x, leader.end_x, leader.fill_type
     );
+}
+
+fn write_text_decoration(buf: &mut String, decoration: &crate::paint::LayerTextDecorationPaint) {
+    let _ = write!(
+        buf,
+        "{{\"kind\":{},\"baseline\":{:.6},\"rotation\":{:.6},\"fontSize\":{:.6},\"ratio\":{:.6},\"color\":{},\"shape\":{},\"underline\":{},\"emphasisDot\":{},\"positions\":",
+        json_escape(decoration.kind.as_str()),
+        decoration.baseline,
+        decoration.rotation,
+        decoration.font_size,
+        decoration.ratio,
+        json_escape(&color_ref_to_css(decoration.color)),
+        decoration.shape,
+        json_escape(underline_type_str(decoration.underline)),
+        decoration.emphasis_dot,
+    );
+    write_text_positions_slice(buf, &decoration.positions);
+    buf.push('}');
 }
 
 fn write_shape_style(buf: &mut String, style: &ShapeStyle) {
@@ -1577,8 +1635,9 @@ mod tests {
     use crate::paint::{
         CacheHint, ClipKind, LayerCharOverlapPaint, LayerEquationPaint, LayerImagePaint,
         LayerLinePaint, LayerNode, LayerOutputOptions, LayerPathPaint, LayerRectanglePaint,
-        LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint,
-        PageLayerTree, ResourceArena, TextLegacyVisualState, TextLegacyVisuals, LAYER_TREE_SCHEMA,
+        LayerTextControlMark, LayerTextControlMarkKind, LayerTextDecorationKind,
+        LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
+        ResourceArena, TextLegacyVisualState, TextLegacyVisuals, LAYER_TREE_SCHEMA,
     };
     use crate::renderer::composer::CharOverlapInfo;
 
@@ -1625,7 +1684,7 @@ mod tests {
             "\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"]"
         ));
         assert!(json.contains("\"optionalFeatures\":[]"));
-        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"]"));
+        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.vertical.mixedPerGlyph\"]"));
         assert!(json.contains("\"requiredFeatures\":[]"));
         assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}"));
         assert!(json.contains("\"fontResources\":{\"blobs\":[],\"faces\":[]}"));
@@ -1735,7 +1794,7 @@ mod tests {
         assert!(json.contains("\"style\":{\"fontFamily\":\"Noto Sans KR\""));
         assert!(json.contains("\"paintStyle\":{\"fontFamily\":\"Noto Sans KR\""));
         assert!(json.contains(
-            "\"legacyVisuals\":{\"charOverlap\":\"canonical\",\"controlMarks\":\"canonical\"}"
+            "\"legacyVisuals\":{\"charOverlap\":\"canonical\",\"controlMarks\":\"canonical\",\"decorations\":\"canonical\"}"
         ));
         assert!(!json.contains("\"availableWidth\""));
         assert!(!json.contains("\"tabStops\""));
@@ -1811,6 +1870,65 @@ mod tests {
         assert!(json.contains("\"legacyVisuals\":{\"charOverlap\":\"mirror\"}"));
         assert!(json.contains("\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.variantGroups\",\"text.charOverlapOp\"]"));
         assert!(json.contains("\"externalizedVisuals\":[\"charOverlap\"]"));
+    }
+
+    #[test]
+    fn serializes_external_text_decorations_with_legacy_mirror_contract() {
+        let style = TextStyle {
+            font_size: 16.0,
+            underline: UnderlineType::Bottom,
+            underline_shape: 2,
+            underline_color: 0x0000_00FF,
+            ..TextStyle::default()
+        };
+        let text_run = LayerTextRunPaint {
+            text: "decorated".to_string(),
+            style: style.clone(),
+            positions: vec![0.0, 16.0, 32.0, 48.0],
+            baseline: 12.0,
+            legacy_visuals: TextLegacyVisuals {
+                decorations: Some(TextLegacyVisualState::Mirror),
+                ..TextLegacyVisuals::default()
+            },
+            ..LayerTextRunPaint::default()
+        };
+        let tree = PageLayerTree::new(
+            90.0,
+            50.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 90.0, 50.0),
+                None,
+                vec![
+                    PaintOp::TextRun {
+                        bbox: BoundingBox::new(10.0, 20.0, 48.0, 18.0),
+                        run: text_run,
+                    },
+                    PaintOp::TextDecoration {
+                        bbox: BoundingBox::new(10.0, 20.0, 48.0, 18.0),
+                        decoration: LayerTextDecorationPaint {
+                            source: None,
+                            kind: LayerTextDecorationKind::Underline,
+                            positions: vec![0.0, 16.0, 32.0, 48.0],
+                            baseline: 12.0,
+                            rotation: 0.0,
+                            font_size: 16.0,
+                            ratio: 1.0,
+                            color: 0x0000_00FF,
+                            shape: 2,
+                            underline: UnderlineType::Bottom,
+                            emphasis_dot: 0,
+                        },
+                    },
+                ],
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"type\":\"textDecoration\""));
+        assert!(json.contains("\"decoration\":{\"kind\":\"underline\""));
+        assert!(json.contains("\"legacyVisuals\":{\"decorations\":\"mirror\"}"));
+        assert!(json.contains("\"text.decorationOp\""));
+        assert!(json.contains("\"externalizedVisuals\":[\"decorations\"]"));
     }
 
     #[test]
