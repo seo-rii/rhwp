@@ -64,6 +64,16 @@ fn style_params(style: &TextStyle) -> (f64, f64, f64) {
     (font_size, ratio, tab_w)
 }
 
+/// Extract the HWP inline-tab type from `tab_extended`.
+///
+/// HWP stores the tab enum in the high byte of `ext[2]` and the leader/fill
+/// type in the low byte. Keep this helper close to the measurement code so
+/// native and WASM tab replay use the same byte contract.
+#[inline]
+pub(super) fn inline_tab_type(ext: &[u16; 7]) -> u8 {
+    ((ext[2] >> 8) & 0xFF) as u8
+}
+
 /// 현재 절대 위치에서 다음 탭 정지를 찾는다.
 ///
 /// Returns (position, tab_type, fill_type).
@@ -77,8 +87,9 @@ pub(crate) fn find_next_tab_stop(
 ) -> (f64, u8, u8) {
     // 커스텀 탭 정지에서 현재 위치 뒤의 첫 번째 검색
     for ts in tab_stops {
-        // 탭 위치가 사용 가능 너비를 초과하면 available_width로 클램핑
-        let pos = if ts.position > available_width && available_width > 0.0 {
+        // Right tabs are absolute to the column and must not be clamped here;
+        // indented paragraphs still align to the same right-tab coordinate.
+        let pos = if ts.tab_type != 1 && ts.position > available_width && available_width > 0.0 {
             available_width
         } else {
             ts.position
@@ -259,7 +270,7 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                     tab_char_idx += 1;
                 } else if has_custom_tabs {
                     let abs_x = style.line_x_offset + total;
-                    let (tab_pos, tab_type, _) = find_next_tab_stop(
+                    let (tab_pos, tab_type, fill_type) = find_next_tab_stop(
                         abs_x,
                         &style.tab_stops,
                         tab_w,
@@ -267,12 +278,25 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                         style.available_width,
                     );
                     let rel_tab = tab_pos - style.line_x_offset;
+                    let effective_rel_tab =
+                        if tab_type == 1 && fill_type != 0 && style.available_width > 0.0 {
+                            style.available_width - style.line_x_offset
+                        } else {
+                            rel_tab
+                        };
                     match tab_type {
                         1 => {
                             // 오른쪽
+                            let mut seg_start = i + 1;
+                            while seg_start < chars.len()
+                                && chars[seg_start] == ' '
+                                && cluster_len[seg_start] != 0
+                            {
+                                seg_start += 1;
+                            }
                             let seg_w =
-                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
-                            total = (rel_tab - seg_w).max(total);
+                                measure_segment_from(&chars, &cluster_len, seg_start, &char_width);
+                            total = (effective_rel_tab - seg_w).max(total);
                         }
                         2 => {
                             // 가운데
@@ -351,20 +375,51 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                 if tab_char_idx < style.inline_tabs.len() {
                     let ext = &style.inline_tabs[tab_char_idx];
                     let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
-                    let tab_type = ext[2];
+                    let tab_type_raw = ext[2];
+                    let tab_type = inline_tab_type(ext);
+                    let fill_type = (tab_type_raw & 0xFF) as u8;
                     let tab_target = x + tab_width_px;
-                    match tab_type {
-                        1 => {
+                    let body_right = if style.available_width > 0.0 {
+                        style.available_width - style.line_x_offset
+                    } else {
+                        f64::INFINITY
+                    };
+                    match (tab_type, tab_type_raw) {
+                        // Preserve the legacy raw encodings, which some fixtures
+                        // already carry as pre-computed tab positions.
+                        (_, 1) => {
                             // 오른쪽
+                            let mut seg_start = i + 1;
+                            while seg_start < chars.len()
+                                && chars[seg_start] == ' '
+                                && cluster_len[seg_start] != 0
+                            {
+                                seg_start += 1;
+                            }
                             let seg_w =
-                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                                measure_segment_from(&chars, &cluster_len, seg_start, &char_width);
                             x = (tab_target - seg_w).max(x);
                         }
-                        2 => {
+                        (_, 2) => {
                             // 가운데
                             let seg_w =
                                 measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             x = (tab_target - seg_w / 2.0).max(x);
+                        }
+                        (2, _) if fill_type != 0 => {
+                            // RIGHT + leader means "extend to the body right
+                            // edge"; ext[0] can contain producer-side segment
+                            // width, so use our measured segment width once.
+                            let mut seg_start = i + 1;
+                            while seg_start < chars.len()
+                                && chars[seg_start] == ' '
+                                && cluster_len[seg_start] != 0
+                            {
+                                seg_start += 1;
+                            }
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, seg_start, &char_width);
+                            x = (body_right - seg_w).max(x);
                         }
                         _ => {
                             // 왼쪽(0)
@@ -374,7 +429,7 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                     tab_char_idx += 1;
                 } else if has_custom_tabs {
                     let abs_x = style.line_x_offset + x;
-                    let (tab_pos, tab_type, _) = find_next_tab_stop(
+                    let (tab_pos, tab_type, fill_type) = find_next_tab_stop(
                         abs_x,
                         &style.tab_stops,
                         tab_w,
@@ -382,16 +437,25 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                         style.available_width,
                     );
                     let rel_tab = tab_pos - style.line_x_offset;
+                    let effective_rel_tab =
+                        if tab_type == 1 && fill_type != 0 && style.available_width > 0.0 {
+                            style.available_width - style.line_x_offset
+                        } else {
+                            rel_tab
+                        };
                     match tab_type {
                         1 => {
                             // 오른쪽
-                            let seg_w =
-                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
-                            if tab_type == 1 {
-                                eprintln!("[DEBUG_TAB_POS] RIGHT tab: abs_x={:.2}, tab_pos={:.2}, line_x_offset={:.2}, rel_tab={:.2}, seg_w={:.2}, avail_w={:.2}, result_x={:.2}",
-                                    abs_x, tab_pos, style.line_x_offset, rel_tab, seg_w, style.available_width, (rel_tab - seg_w).max(x));
+                            let mut seg_start = i + 1;
+                            while seg_start < chars.len()
+                                && chars[seg_start] == ' '
+                                && cluster_len[seg_start] != 0
+                            {
+                                seg_start += 1;
                             }
-                            x = (rel_tab - seg_w).max(x);
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, seg_start, &char_width);
+                            x = (effective_rel_tab - seg_w).max(x);
                         }
                         2 => {
                             // 가운데

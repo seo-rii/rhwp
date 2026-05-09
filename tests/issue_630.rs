@@ -78,7 +78,6 @@ fn extract_page_marker_paren_x_positions(svg: &str) -> Vec<f64> {
 }
 
 #[test]
-#[ignore = "upstream/devel regression test imported; inline tab alignment fix is not ported to skia yet"]
 fn test_630_aift_p4_toc_paren_alignment() {
     let repo_root = env!("CARGO_MANIFEST_DIR");
     let hwp_path = Path::new(repo_root).join("samples/aift.hwp");

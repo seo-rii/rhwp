@@ -2042,6 +2042,11 @@ impl DocumentCore {
         use crate::renderer::render_tree::RenderNodeType;
 
         let tree = self.build_page_tree(page_num)?;
+        let logical_hf_bounds = self.find_page(page_num).ok().map(|(page_content, _, _)| {
+            let header = page_content.layout.header_area;
+            let footer = page_content.layout.footer_area;
+            (header, footer)
+        });
 
         for child in &tree.root.children {
             let is_header = matches!(child.node_type, RenderNodeType::Header);
@@ -2050,11 +2055,17 @@ impl DocumentCore {
                 continue;
             }
 
-            if x >= child.bbox.x
-                && x <= child.bbox.x + child.bbox.width
-                && y >= child.bbox.y
-                && y <= child.bbox.y + child.bbox.height
-            {
+            let hit = if let Some((header, footer)) = logical_hf_bounds {
+                let area = if is_header { header } else { footer };
+                x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height
+            } else {
+                x >= child.bbox.x
+                    && x <= child.bbox.x + child.bbox.width
+                    && y >= child.bbox.y
+                    && y <= child.bbox.y + child.bbox.height
+            };
+
+            if hit {
                 // active header/footer에서 source_section_index와 apply_to 추출
                 // 머리말/꼬리말은 이전 구역에서 상속될 수 있으므로
                 // 페이지 소속 구역이 아닌 source_section_index를 반환해야 함

@@ -37,7 +37,6 @@ fn issue_595_page0_body_coord_not_header() {
 /// 정정 전: hit:true (Header bbox 가 본문 영역 60~1355 까지 침범)
 /// 정정 후: hit:false (정상 머리말 영역 60~145 로 제한)
 #[test]
-#[ignore = "upstream/devel regression test imported; header/footer hit-test fix is not ported to skia yet"]
 fn issue_595_page1_body_coord_not_header_regression_guard() {
     let doc = load_exam_math();
     let r = doc.hit_test_header_footer_native(1, 514.0, 200.0).unwrap();
@@ -51,7 +50,6 @@ fn issue_595_page1_body_coord_not_header_regression_guard() {
 /// 이슈 명세 정확 좌표 — page 1 의 paraIdx=65 ci=0 수식 영역 (654.5, 209.7).
 /// 이 좌표는 본문 영역의 수식 객체 위치이며 머리말 hit 이 아니어야 한다.
 #[test]
-#[ignore = "upstream/devel regression test imported; header/footer hit-test fix is not ported to skia yet"]
 fn issue_595_page1_equation_coord_not_header() {
     let doc = load_exam_math();
     let r = doc.hit_test_header_footer_native(1, 654.5, 209.7).unwrap();
@@ -65,7 +63,6 @@ fn issue_595_page1_equation_coord_not_header() {
 /// page 1 의 페이지 중앙 본문 영역 (514, 800) 도 머리말 hit 이 아니어야 한다.
 /// 본문 한가운데 — 명백히 머리말 영역 밖.
 #[test]
-#[ignore = "upstream/devel regression test imported; header/footer hit-test fix is not ported to skia yet"]
 fn issue_595_page1_body_center_not_header() {
     let doc = load_exam_math();
     let r = doc.hit_test_header_footer_native(1, 514.0, 800.0).unwrap();

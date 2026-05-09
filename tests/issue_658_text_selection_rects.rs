@@ -66,7 +66,6 @@ fn assert_rects_inside_page(rects: &[Rect], page_width: f64) {
 }
 
 #[test]
-#[ignore = "upstream/devel regression test imported; selection rect line-boundary fix is not ported to skia yet"]
 fn issue_658_exam_social_data_cell_selection_rects_do_not_overflow_page() {
     let doc = load_exam_social();
     let page_info = doc.get_page_info(1).expect("page info");
@@ -95,7 +94,6 @@ fn issue_658_exam_social_data_cell_selection_rects_do_not_overflow_page() {
 }
 
 #[test]
-#[ignore = "upstream/devel regression test imported; selection rect line-boundary fix is not ported to skia yet"]
 fn issue_658_exam_social_body_multiline_selection_uses_next_line_start() {
     let doc = load_exam_social();
     let page_info = doc.get_page_info(1).expect("page info");
