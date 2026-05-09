@@ -54,7 +54,7 @@ impl PageLayerTree {
             .write_json(&mut buf, &self.resources, &mut text_source_state);
         buf.push_str(",\"textSources\":");
         write_text_source_entries(&mut buf, &self.text_sources);
-        buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\"],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\"}");
+        buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}");
         buf.push('}');
         buf
     }
@@ -232,6 +232,7 @@ impl PaintOp {
                 write_text_style(buf, &run.style);
                 buf.push_str(",\"paintStyle\":");
                 write_paint_text_style(buf, &PaintTextStyle::from(&run.style));
+                write_text_legacy_visuals(buf, run);
                 buf.push_str(",\"positions\":");
                 write_text_positions(buf, run);
                 if !run.control_marks.is_empty() {
@@ -633,6 +634,35 @@ fn write_text_positions(buf: &mut String, run: &LayerTextRunPaint) {
         let _ = write!(buf, "{:.6}", position);
     }
     buf.push(']');
+}
+
+fn write_text_legacy_visuals(buf: &mut String, run: &LayerTextRunPaint) {
+    if run.char_overlap.is_none()
+        && run.control_marks.is_empty()
+        && run.style.tab_leaders.is_empty()
+    {
+        return;
+    }
+    buf.push_str(",\"legacyVisuals\":{");
+    let mut wrote = false;
+    if run.char_overlap.is_some() {
+        buf.push_str("\"charOverlap\":\"canonical\"");
+        wrote = true;
+    }
+    if !run.control_marks.is_empty() {
+        if wrote {
+            buf.push(',');
+        }
+        buf.push_str("\"controlMarks\":\"canonical\"");
+        wrote = true;
+    }
+    if !run.style.tab_leaders.is_empty() {
+        if wrote {
+            buf.push(',');
+        }
+        buf.push_str("\"tabLeaders\":\"canonical\"");
+    }
+    buf.push('}');
 }
 
 fn write_text_run_placement(buf: &mut String, placement: TextRunPlacement) {
@@ -1282,12 +1312,12 @@ mod tests {
             LAYER_TREE_SCHEMA.coordinate_system
         )));
         assert!(json.contains(
-            "\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\"]"
+            "\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"]"
         ));
         assert!(json.contains("\"optionalFeatures\":[]"));
         assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"]"));
         assert!(json.contains("\"requiredFeatures\":[]"));
-        assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\"}"));
+        assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}"));
     }
 
     #[test]
@@ -1392,6 +1422,9 @@ mod tests {
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"style\":{\"fontFamily\":\"Noto Sans KR\""));
         assert!(json.contains("\"paintStyle\":{\"fontFamily\":\"Noto Sans KR\""));
+        assert!(json.contains(
+            "\"legacyVisuals\":{\"charOverlap\":\"canonical\",\"controlMarks\":\"canonical\"}"
+        ));
         assert!(!json.contains("\"availableWidth\""));
         assert!(!json.contains("\"tabStops\""));
         assert!(json.contains("\"controlMarks\":[{\"kind\":\"paragraphEnd\",\"text\":\"↵\",\"x\":80.000000,\"y\":0.000000,\"fontSize\":16.000000}]"));

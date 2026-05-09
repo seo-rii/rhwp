@@ -176,6 +176,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
             "text.v2.placement",
             "text.v2.clusters",
             "text.projectionKind",
+            "text.legacyVisuals",
         ]),
     );
     set_value(&value, "optionalFeatures", string_array_to_value(&[]));
@@ -212,6 +213,11 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         &text_contract,
         "placementAuthority",
         "compatibilityProjection",
+    );
+    set_value(
+        &text_contract,
+        "externalizedVisuals",
+        string_array_to_value(&[]),
     );
     set_value(&value, "text", text_contract.into());
 
@@ -574,6 +580,9 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 "paintStyle",
                 paint_text_style_to_value(&PaintTextStyle::from(&run.style)),
             );
+            if let Some(legacy_visuals) = text_legacy_visuals_to_value(run) {
+                set_value(&value, "legacyVisuals", legacy_visuals);
+            }
             set_value(
                 &value,
                 "positions",
@@ -1057,6 +1066,26 @@ fn string_array_to_value(values: &[&str]) -> JsValue {
     array_to_value(values.iter().map(|value| JsValue::from_str(value)))
 }
 
+fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option<JsValue> {
+    if run.char_overlap.is_none()
+        && run.control_marks.is_empty()
+        && run.style.tab_leaders.is_empty()
+    {
+        return None;
+    }
+    let value = Object::new();
+    if run.char_overlap.is_some() {
+        set_string(&value, "charOverlap", "canonical");
+    }
+    if !run.control_marks.is_empty() {
+        set_string(&value, "controlMarks", "canonical");
+    }
+    if !run.style.tab_leaders.is_empty() {
+        set_string(&value, "tabLeaders", "canonical");
+    }
+    Some(value.into())
+}
+
 fn text_run_placement_to_value(placement: TextRunPlacement) -> JsValue {
     let value = Object::new();
     set_value(
@@ -1405,7 +1434,7 @@ mod tests {
         }
         let json_used_features = Array::from(&prop(&json_value, "usedFeatures"));
         let js_used_features = Array::from(&prop(&js_value, "usedFeatures"));
-        assert_eq!(json_used_features.length(), 6);
+        assert_eq!(json_used_features.length(), 7);
         assert_eq!(json_used_features.length(), js_used_features.length());
         assert_eq!(
             string_value(&json_used_features.get(0)),
@@ -1439,6 +1468,10 @@ mod tests {
         );
         assert_same_bool(&json_text_contract, &js_text_contract, "fallbackRequired");
         assert_same_string(&json_text_contract, &js_text_contract, "placementAuthority");
+        let json_externalized = Array::from(&prop(&json_text_contract, "externalizedVisuals"));
+        let js_externalized = Array::from(&prop(&js_text_contract, "externalizedVisuals"));
+        assert_eq!(json_externalized.length(), 0);
+        assert_eq!(json_externalized.length(), js_externalized.length());
 
         let json_root = prop(&json_value, "root");
         let js_root = prop(&js_value, "root");
@@ -1534,6 +1567,10 @@ mod tests {
             &prop(&js_text, "charOverlap"),
             "innerCharSize",
         );
+        let json_legacy_visuals = prop(&json_text, "legacyVisuals");
+        let js_legacy_visuals = prop(&js_text, "legacyVisuals");
+        assert_same_string(&json_legacy_visuals, &js_legacy_visuals, "charOverlap");
+        assert_same_string(&json_legacy_visuals, &js_legacy_visuals, "controlMarks");
         let json_marks = Array::from(&prop(&json_text, "controlMarks"));
         let js_marks = Array::from(&prop(&js_text, "controlMarks"));
         assert_eq!(json_marks.length(), 1);

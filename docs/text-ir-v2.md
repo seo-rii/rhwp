@@ -36,6 +36,8 @@ Layer JSON/JS exports currently provide:
 - `TextRun.placement`: additive TextRun v2 run-local placement metadata.
 - `TextRun.clusterBasis` and `TextRun.clusters`: additive layout/placement
   cluster metadata. These clusters are not shaped glyph clusters.
+- `TextRun.legacyVisuals`: whether legacy inline visual payloads are currently
+  canonical or mirrors of future external paint ops.
 - `usedFeatures`: additive schema features used by this export.
 - `requiredFeatures`: features a consumer must understand for faithful replay.
 - `optionalFeatures`: features present in this export that have a complete
@@ -47,6 +49,9 @@ Layer JSON/JS exports currently provide:
 - `text.fallbackRequired`: true while `TextRun` remains the public fallback.
 - `text.placementAuthority`: currently `compatibilityProjection`, meaning
   `positions`/`baseline`/`rotation` remain authoritative for visual replay.
+- `text.externalizedVisuals`: currently empty. Future exports add
+  `charOverlap`, `controlMarks`, or `tabLeaders` here when those visuals move
+  out of `TextRun`.
 
 The source table mirrors field marker, paragraph end, and line-break end
 metadata as source annotations. Visible marks are still carried by existing
@@ -97,6 +102,9 @@ metadata as source annotations. Visible marks are still carried by existing
 - Visible control marks, char overlap, tab leaders, and future decoration
   geometry should move into explicit paint ops before becoming required schema
   features.
+- While those visuals are still inside `TextRun`, `legacyVisuals` marks them
+  `canonical`. Once an external op is emitted, the legacy payload must become a
+  `mirror`; consumers that support the external op must not draw the mirror.
 - New visual root paint ops are additive only if old consumers can skip
   unknown ops without failing. If a strict enum decoder is still in use, emit
   new visual alternatives through a sidecar/variant table or nested text variant

@@ -111,6 +111,7 @@ export interface PageLayerTree {
     clusterEncoding?: Array<'utf8' | 'utf16'>;
     fallbackRequired?: boolean;
     placementAuthority?: 'compatibilityProjection' | 'clusterPlacement';
+    externalizedVisuals?: LayerTextLegacyVisualKind[];
   };
   resources?: LayerResources;
   root: LayerNode;
@@ -123,6 +124,7 @@ export type LayerTreeFeature =
   | 'text.v2.placement'
   | 'text.v2.clusters'
   | 'text.projectionKind'
+  | 'text.legacyVisuals'
   | 'fontResources'
   | 'text.glyphRun'
   | 'text.outlineGlyph'
@@ -284,6 +286,13 @@ export interface LayerCharOverlap {
   borderType: number;
   innerCharSize: number;
 }
+
+export type LayerTextLegacyVisualKind = 'charOverlap' | 'controlMarks' | 'tabLeaders';
+export type LayerTextLegacyVisualState = 'canonical' | 'mirror';
+
+export type LayerTextLegacyVisuals = Partial<
+  Record<LayerTextLegacyVisualKind, LayerTextLegacyVisualState>
+>;
 
 export interface LayerTextSourceRange {
   start: number;
@@ -517,6 +526,12 @@ export interface LayerTextRunOp {
    * lower-level glyph replay. `style` remains for v1 compatibility.
    */
   paintStyle?: LayerTextStyle;
+  /**
+   * Indicates whether legacy inline visual payloads remain canonical or are
+   * mirrors of future external PaintOps. Consumers that support externalized
+   * visual ops must skip mirror payloads to avoid double paint.
+   */
+  legacyVisuals?: LayerTextLegacyVisuals;
   style: LayerTextStyle;
   positions: number[];
   controlMarks?: LayerTextControlMark[];
