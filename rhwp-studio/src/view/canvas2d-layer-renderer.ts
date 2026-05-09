@@ -204,6 +204,10 @@ export class Canvas2DLayerRenderer {
           this.renderTextRun(ctx, op);
         }, op.bbox);
         return;
+      case 'glyphRun':
+        // GlyphRun is an optional schema-v1 alternative. Browser Canvas2D
+        // keeps the TextRun fallback as its canonical replay path.
+        return;
       case 'charOverlap':
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderCharOverlap(ctx, op);

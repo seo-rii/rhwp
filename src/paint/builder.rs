@@ -1862,6 +1862,7 @@ mod tests {
                                     actual_ops.push(match op {
                                         PaintOp::PageBackground { .. } => "PageBackground",
                                         PaintOp::TextRun { .. } => "TextRun",
+                                        PaintOp::GlyphRun { .. } => "GlyphRun",
                                         PaintOp::CharOverlap { .. } => "CharOverlap",
                                         PaintOp::TextControlMark { .. } => "TextControlMark",
                                         PaintOp::TabLeader { .. } => "TabLeader",

@@ -605,6 +605,11 @@ impl SkiaLayerRenderer {
                     self.render_text_run(canvas, bbox, run, replay);
                 }
             }
+            PaintOp::GlyphRun { .. } => {
+                // GlyphRun is an optional TextRun alternative in schema v1.
+                // Native Skia keeps selecting the TextRun fallback until
+                // portable font registration and glyph replay are enabled.
+            }
             PaintOp::CharOverlap { bbox, overlap } => {
                 let mut run = crate::paint::LayerTextRunPaint {
                     source: overlap.source.clone(),

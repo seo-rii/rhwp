@@ -378,6 +378,12 @@ impl WebCanvasRenderer {
                             }
                             continue;
                         }
+                        PaintOp::GlyphRun { .. } => {
+                            // Schema v1 GlyphRun is an optional visual
+                            // alternative. Canvas2D keeps TextRun fallback as
+                            // its replay contract.
+                            continue;
+                        }
                         PaintOp::CharOverlap { bbox, overlap } => {
                             self.draw_text_run_contents(
                                 bbox,

@@ -2,6 +2,7 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::model::ColorRef;
+use crate::paint::font::{GlyphRunReplayEligibility, ShapeKey, TextDirection, WritingMode};
 use crate::paint::layer_tree::{TextSourceRange, TextSourceSpan};
 use crate::paint::resources::{ImageResourceId, SvgResourceId};
 use crate::renderer::composer::CharOverlapInfo;
@@ -25,6 +26,10 @@ pub enum PaintOp {
     TextRun {
         bbox: BoundingBox,
         run: LayerTextRunPaint,
+    },
+    GlyphRun {
+        bbox: BoundingBox,
+        run: LayerGlyphRunPaint,
     },
     CharOverlap {
         bbox: BoundingBox,
@@ -115,6 +120,25 @@ pub struct LayerTextRunPaint {
     pub field_marker: FieldMarkerType,
     pub is_para_end: bool,
     pub is_line_break_end: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerGlyphRunPaint {
+    pub source: TextSourceSpan,
+    pub variant: PaintVariantMeta,
+    pub paint_style: PaintTextStyle,
+    pub shape_key: ShapeKey,
+    pub placement: GlyphRunPlacement,
+    pub glyph_ids: Vec<u32>,
+    pub positions: Vec<LayerPoint>,
+    pub advances: Option<Vec<LayerVector>>,
+    pub clusters: Vec<GlyphCluster>,
+    pub direction: TextDirection,
+    pub bidi_level: Option<u8>,
+    pub writing_mode: WritingMode,
+    pub orientation: GlyphRunOrientation,
+    pub glyph_transforms: Option<Vec<GlyphTransform>>,
+    pub diagnostics: GlyphRunDiagnostics,
 }
 
 impl Default for LayerTextRunPaint {
@@ -333,6 +357,103 @@ pub struct LayerAffineTransform {
 pub struct TextRunPlacement {
     pub run_to_page: LayerAffineTransform,
     pub baseline_y: f64,
+}
+
+pub type GlyphRunPlacement = TextRunPlacement;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphRunOrientation {
+    Horizontal,
+    VerticalUpright,
+    VerticalSideways,
+    MixedPerGlyph,
+}
+
+impl GlyphRunOrientation {
+    pub fn from_text_orientation(orientation: LayerTextOrientation) -> Self {
+        match orientation {
+            LayerTextOrientation::Horizontal => Self::Horizontal,
+            LayerTextOrientation::VerticalUpright => Self::VerticalUpright,
+            LayerTextOrientation::VerticalSideways => Self::VerticalSideways,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Horizontal => "horizontal",
+            Self::VerticalUpright => "vertical-upright",
+            Self::VerticalSideways => "vertical-sideways",
+            Self::MixedPerGlyph => "mixedPerGlyph",
+        }
+    }
+}
+
+/// Optional per-glyph transform reserved for future mixed vertical exports.
+///
+/// Public schema v1 must not emit `MixedPerGlyph`; this type exists so internal
+/// lowerers can keep explicit transform data once that contract is designed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlyphTransform {
+    pub xx: f32,
+    pub xy: f32,
+    pub yx: f32,
+    pub yy: f32,
+    pub tx: f32,
+    pub ty: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlyphRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl GlyphRange {
+    pub fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphClusterFlag {
+    Ligature,
+    FallbackBoundary,
+}
+
+impl GlyphClusterFlag {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ligature => "ligature",
+            Self::FallbackBoundary => "fallbackBoundary",
+        }
+    }
+}
+
+/// Shaped glyph cluster mapping for future lower-level text variants.
+///
+/// Unlike `TextClusterPlacement`, this cluster describes shaped glyph ranges.
+/// Source identity still points back to the layer tree text source table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlyphCluster {
+    pub source_range_utf8: TextSourceRange,
+    pub source_range_utf16: Option<TextSourceRange>,
+    pub text_range_utf8: Option<TextSourceRange>,
+    pub glyph_range: GlyphRange,
+    pub flags: Vec<GlyphClusterFlag>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlyphRunDiagnostics {
+    pub quality: TextVariantQuality,
+    pub replay_eligibility: GlyphRunReplayEligibility,
+    pub strict_visual_eligible: bool,
+    pub max_origin_delta_px: f64,
+    pub max_advance_delta_px: f64,
+    pub max_residual_after_adjustment_px: f64,
+    pub cluster_mismatch_count: u32,
+    pub missing_glyph_count: u32,
+    pub used_fallback_font_count: u32,
+    pub reason: Option<String>,
 }
 
 /// Basis for TextRun v2 cluster placement.
@@ -623,6 +744,7 @@ impl PaintOp {
         let logical = match self {
             PaintOp::PageBackground { bbox, .. }
             | PaintOp::TextRun { bbox, .. }
+            | PaintOp::GlyphRun { bbox, .. }
             | PaintOp::CharOverlap { bbox, .. }
             | PaintOp::TextControlMark { bbox, .. }
             | PaintOp::TabLeader { bbox, .. }
@@ -712,6 +834,16 @@ impl PaintOp {
                     visual = union(visual, mark_box);
                 }
                 visual
+            }
+            PaintOp::GlyphRun { bbox, run } => {
+                let amount = run
+                    .paint_style
+                    .font_size
+                    .max(run.paint_style.shadow_offset_x.abs())
+                    .max(run.paint_style.shadow_offset_y.abs())
+                    .max(1.0)
+                    * 0.2;
+                expand(*bbox, amount)
             }
             PaintOp::CharOverlap { bbox, overlap } => {
                 let style = &overlap.style;

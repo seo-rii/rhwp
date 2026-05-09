@@ -2,9 +2,9 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::paint::{
-    CacheHint, ClipKind, ClipPolicy, ImageResourceId, LayerNode, LayerNodeKind, LayerOutputOptions,
-    LayerSemantic, LayerSemanticRole, LayerTextControlMarkKind, LayerTextOrientation,
-    LayerTextRunPaint, PaintOp, PaintTextStyle, ResourceArena, SvgResourceId,
+    CacheHint, ClipKind, ClipPolicy, ImageResourceId, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
+    LayerOutputOptions, LayerSemantic, LayerSemanticRole, LayerTextControlMarkKind,
+    LayerTextOrientation, LayerTextRunPaint, PaintOp, PaintTextStyle, ResourceArena, SvgResourceId,
 };
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
@@ -246,6 +246,11 @@ impl StaticSubtreeCacheKey {
                 self.mix_bbox(bbox);
                 self.mix_text_run(run);
             }
+            PaintOp::GlyphRun { bbox, run } => {
+                self.mix_u8(14);
+                self.mix_bbox(bbox);
+                self.mix_glyph_run(run);
+            }
             PaintOp::CharOverlap { bbox, overlap } => {
                 self.mix_u8(10);
                 self.mix_bbox(bbox);
@@ -460,8 +465,101 @@ impl StaticSubtreeCacheKey {
         self.mix_bool(run.is_line_break_end);
     }
 
+    fn mix_glyph_run(&mut self, run: &LayerGlyphRunPaint) {
+        self.mix_paint_text_style(&run.paint_style);
+        self.mix_str(&run.shape_key.font_instance.face_key.0);
+        self.mix_f64(run.shape_key.font_instance.size_px);
+        self.mix_usize(run.shape_key.font_instance.variations.len());
+        for variation in &run.shape_key.font_instance.variations {
+            self.mix_str(&variation.tag);
+            self.mix_f64(f64::from(variation.value));
+        }
+        self.mix_bool(run.shape_key.font_instance.synthetic_bold);
+        self.mix_bool(run.shape_key.font_instance.synthetic_italic);
+        self.mix_u8(match run.shape_key.direction {
+            crate::paint::TextDirection::Ltr => 0,
+            crate::paint::TextDirection::Rtl => 1,
+            crate::paint::TextDirection::Auto => 2,
+        });
+        self.mix_u8(match run.shape_key.writing_mode {
+            crate::paint::WritingMode::HorizontalTb => 0,
+            crate::paint::WritingMode::VerticalRl => 1,
+            crate::paint::WritingMode::VerticalLr => 2,
+        });
+        self.mix_str(
+            run.shape_key
+                .script
+                .as_ref()
+                .map_or("", |script| script.0.as_str()),
+        );
+        self.mix_str(
+            run.shape_key
+                .language
+                .as_ref()
+                .map_or("", |language| language.0.as_str()),
+        );
+        self.mix_usize(run.shape_key.features.len());
+        for feature in &run.shape_key.features {
+            self.mix_str(&feature.tag);
+            self.mix_bool(feature.enabled);
+            self.mix_u32(feature.value.unwrap_or(0));
+        }
+        self.mix_str(&run.shape_key.shaping_engine.0);
+        self.mix_str(&run.shape_key.fallback_policy.0);
+        self.mix_usize(run.glyph_ids.len());
+        for glyph_id in &run.glyph_ids {
+            self.mix_u32(*glyph_id);
+        }
+        self.mix_usize(run.positions.len());
+        for position in &run.positions {
+            self.mix_f64(position.x);
+            self.mix_f64(position.y);
+        }
+        if let Some(advances) = &run.advances {
+            self.mix_bool(true);
+            self.mix_usize(advances.len());
+            for advance in advances {
+                self.mix_f64(advance.dx);
+                self.mix_f64(advance.dy);
+            }
+        } else {
+            self.mix_bool(false);
+        }
+        self.mix_usize(run.clusters.len());
+        for cluster in &run.clusters {
+            self.mix_u32(cluster.source_range_utf8.start);
+            self.mix_u32(cluster.source_range_utf8.end);
+            if let Some(range) = cluster.source_range_utf16 {
+                self.mix_bool(true);
+                self.mix_u32(range.start);
+                self.mix_u32(range.end);
+            } else {
+                self.mix_bool(false);
+            }
+            if let Some(range) = cluster.text_range_utf8 {
+                self.mix_bool(true);
+                self.mix_u32(range.start);
+                self.mix_u32(range.end);
+            } else {
+                self.mix_bool(false);
+            }
+            self.mix_u32(cluster.glyph_range.start);
+            self.mix_u32(cluster.glyph_range.end);
+        }
+        self.mix_u8(match run.orientation {
+            crate::paint::GlyphRunOrientation::Horizontal => 0,
+            crate::paint::GlyphRunOrientation::VerticalUpright => 1,
+            crate::paint::GlyphRunOrientation::VerticalSideways => 2,
+            crate::paint::GlyphRunOrientation::MixedPerGlyph => 3,
+        });
+    }
+
     fn mix_text_style(&mut self, style: &TextStyle) {
         let style = PaintTextStyle::from(style);
+        self.mix_paint_text_style(&style);
+    }
+
+    fn mix_paint_text_style(&mut self, style: &PaintTextStyle) {
         self.mix_str(&style.font_family);
         self.mix_f64(style.font_size);
         self.mix_u32(style.color);

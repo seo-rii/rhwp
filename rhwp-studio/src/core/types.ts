@@ -268,6 +268,7 @@ export interface LayerLeafNode {
 export type LayerKnownPaintOp =
   | LayerPageBackgroundOp
   | LayerTextRunOp
+  | LayerGlyphRunOp
   | LayerCharOverlapOp
   | LayerTextControlMarkOp
   | LayerTabLeaderOp
@@ -294,6 +295,7 @@ export type LayerPaintOpLike = LayerKnownPaintOp | LayerUnknownPaintOp;
 const KNOWN_LAYER_PAINT_OP_TYPES = new Set([
   'pageBackground',
   'textRun',
+  'glyphRun',
   'charOverlap',
   'textControlMark',
   'tabLeader',
@@ -495,6 +497,88 @@ export interface LayerTextVariantMeta {
   quality?: LayerTextVariantQuality;
 }
 
+export interface LayerVariationAxisValue {
+  tag: string;
+  value: number;
+}
+
+export interface LayerOpenTypeFeatureSetting {
+  tag: string;
+  enabled: boolean;
+  value?: number;
+}
+
+export interface LayerFontInstanceKey {
+  faceKey: string;
+  sizePx: number;
+  variations?: LayerVariationAxisValue[];
+  syntheticBold?: boolean;
+  syntheticItalic?: boolean;
+}
+
+export type LayerTextDirection = 'ltr' | 'rtl' | 'auto';
+export type LayerWritingMode = 'horizontal-tb' | 'vertical-rl' | 'vertical-lr';
+
+export interface LayerShapeKey {
+  fontInstance: LayerFontInstanceKey;
+  direction: LayerTextDirection;
+  writingMode: LayerWritingMode;
+  script?: string;
+  language?: string;
+  features?: LayerOpenTypeFeatureSetting[];
+  shapingEngine: string;
+  fallbackPolicy: string;
+}
+
+export type LayerGlyphRunOrientation =
+  | 'horizontal'
+  | 'vertical-upright'
+  | 'vertical-sideways'
+  | 'mixedPerGlyph';
+
+export type LayerGlyphRunReplayEligibility =
+  | 'portable'
+  | 'conditionalExternalFont'
+  | 'localDiagnosticOnly'
+  | 'notReplayable';
+
+export interface LayerGlyphRange {
+  start: number;
+  end: number;
+}
+
+export type LayerGlyphClusterFlag = 'ligature' | 'fallbackBoundary';
+
+export interface LayerGlyphCluster {
+  sourceRangeUtf8: LayerTextSourceRange;
+  sourceRangeUtf16?: LayerTextSourceRange;
+  textRangeUtf8?: LayerTextSourceRange;
+  glyphRange: LayerGlyphRange;
+  flags?: LayerGlyphClusterFlag[];
+}
+
+export interface LayerGlyphTransform {
+  xx: number;
+  xy: number;
+  yx: number;
+  yy: number;
+  tx: number;
+  ty: number;
+}
+
+export interface LayerGlyphRunDiagnostics {
+  quality: LayerTextVariantQuality;
+  replayEligibility: LayerGlyphRunReplayEligibility;
+  strictVisualEligible: boolean;
+  maxOriginDeltaPx: number;
+  maxAdvanceDeltaPx: number;
+  maxResidualAfterAdjustmentPx: number;
+  clusterMismatchCount: number;
+  missingGlyphCount: number;
+  usedFallbackFontCount: number;
+  reason?: string;
+}
+
 export interface LayerShapeShadow {
   shadowType: number;
   color: string;
@@ -609,6 +693,26 @@ export interface LayerTextRunOp {
   controlMarks?: LayerTextControlMark[];
   charOverlap?: LayerCharOverlap;
   tabLeaders?: LayerTabLeader[];
+}
+
+export interface LayerGlyphRunOp {
+  type: 'glyphRun';
+  bbox: LayerBounds;
+  source: LayerTextSourceSpan;
+  variant: LayerTextVariantMeta;
+  paintStyle: LayerTextStyle;
+  shapeKey: LayerShapeKey;
+  placement: LayerTextRunPlacement;
+  glyphIds: number[];
+  positions: LayerPoint[];
+  advances?: LayerVector[];
+  clusters: LayerGlyphCluster[];
+  direction: LayerTextDirection;
+  bidiLevel?: number;
+  writingMode: LayerWritingMode;
+  orientation: LayerGlyphRunOrientation;
+  glyphTransforms?: LayerGlyphTransform[];
+  diagnostics: LayerGlyphRunDiagnostics;
 }
 
 export interface LayerCharOverlapOp {

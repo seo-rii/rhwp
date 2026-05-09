@@ -1,7 +1,10 @@
 use crate::paint::{
-    FontPortabilityKind, GlyphRunReplayEligibility, LayerNode, LayerNodeKind, LayerTextRunPaint,
-    PaintOp, TextClusterFlag,
+    FontPortabilityKind, GlyphCluster, GlyphRunDiagnostics, GlyphRunOrientation,
+    GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
+    LayerPoint, LayerTextRunPaint, LayerVector, PaintOp, PaintTextStyle, ShapeKey, TextClusterFlag,
+    TextRunPlacement, TextVariantKind, TextVariantQuality,
 };
+use crate::renderer::render_tree::BoundingBox;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontRequest {
@@ -25,8 +28,27 @@ pub struct ResolvedFontFace {
     pub portability: FontPortabilityKind,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedGlyphRun {
+    pub shape_key: ShapeKey,
+    pub glyph_ids: Vec<u32>,
+    pub positions: Vec<LayerPoint>,
+    pub advances: Option<Vec<LayerVector>>,
+    pub clusters: Vec<GlyphCluster>,
+    pub diagnostics: GlyphRunDiagnostics,
+}
+
 pub trait FontResolver {
     fn resolve_font(&self, request: &FontRequest) -> ResolvedFontFace;
+
+    fn shape_glyph_run(
+        &self,
+        _request: &FontRequest,
+        _run: &LayerTextRunPaint,
+        _resolved: &ResolvedFontFace,
+    ) -> Option<ResolvedGlyphRun> {
+        None
+    }
 }
 
 #[derive(Debug, Default)]
@@ -105,6 +127,12 @@ impl<'a> TextShapeLowerer<'a> {
         report
     }
 
+    pub fn lower_root(&self, root: &mut LayerNode) -> TextShapeReport {
+        let mut report = TextShapeReport::default();
+        self.lower_node(root, &mut report);
+        report
+    }
+
     fn collect_node(&self, node: &LayerNode, report: &mut TextShapeReport) {
         match &node.kind {
             LayerNodeKind::Group { children, .. } => {
@@ -123,7 +151,53 @@ impl<'a> TextShapeLowerer<'a> {
         }
     }
 
+    fn lower_node(&self, node: &mut LayerNode, report: &mut TextShapeReport) {
+        match &mut node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    self.lower_node(child, report);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => self.lower_node(child, report),
+            LayerNodeKind::Leaf { ops, .. } => {
+                let mut lowered = Vec::with_capacity(ops.len());
+                for op in ops.drain(..) {
+                    if let PaintOp::TextRun { bbox, run } = op {
+                        let (diagnostic, glyph_run) = self.lower_text_run(bbox, &run);
+                        report.diagnostics.push(diagnostic);
+                        lowered.push(PaintOp::TextRun { bbox, run });
+                        if let Some(glyph_run) = glyph_run {
+                            lowered.push(PaintOp::GlyphRun {
+                                bbox,
+                                run: glyph_run,
+                            });
+                        }
+                    } else {
+                        lowered.push(op);
+                    }
+                }
+                *ops = lowered;
+            }
+        }
+    }
+
     fn analyze_text_run(&self, run: &LayerTextRunPaint) -> TextShapeDiagnostic {
+        self.evaluate_text_run(None, run).0
+    }
+
+    fn lower_text_run(
+        &self,
+        bbox: BoundingBox,
+        run: &LayerTextRunPaint,
+    ) -> (TextShapeDiagnostic, Option<LayerGlyphRunPaint>) {
+        self.evaluate_text_run(Some(bbox), run)
+    }
+
+    fn evaluate_text_run(
+        &self,
+        bbox: Option<BoundingBox>,
+        run: &LayerTextRunPaint,
+    ) -> (TextShapeDiagnostic, Option<LayerGlyphRunPaint>) {
         let has_source = run.source.is_some();
         let excluded_by_cluster = run.clusters.iter().any(|cluster| {
             cluster
@@ -138,27 +212,33 @@ impl<'a> TextShapeLowerer<'a> {
                 .is_some_and(|state| state == crate::paint::TextLegacyVisualState::Mirror);
 
         if !has_source {
-            return TextShapeDiagnostic {
-                text: run.text.clone(),
-                attempted: false,
-                public_glyph_run_emitted: false,
-                quality: GlyphRunQuality::Omitted,
-                replay_eligibility: GlyphRunReplayEligibility::NotReplayable,
-                strict_visual_eligible: false,
-                reason: Some("missingSourceSpan".to_string()),
-            };
+            return (
+                TextShapeDiagnostic {
+                    text: run.text.clone(),
+                    attempted: false,
+                    public_glyph_run_emitted: false,
+                    quality: GlyphRunQuality::Omitted,
+                    replay_eligibility: GlyphRunReplayEligibility::NotReplayable,
+                    strict_visual_eligible: false,
+                    reason: Some("missingSourceSpan".to_string()),
+                },
+                None,
+            );
         }
 
         if excluded_by_cluster || excluded_by_legacy_visual {
-            return TextShapeDiagnostic {
-                text: run.text.clone(),
-                attempted: false,
-                public_glyph_run_emitted: false,
-                quality: GlyphRunQuality::Omitted,
-                replay_eligibility: GlyphRunReplayEligibility::NotReplayable,
-                strict_visual_eligible: false,
-                reason: Some("notShapingCandidate".to_string()),
-            };
+            return (
+                TextShapeDiagnostic {
+                    text: run.text.clone(),
+                    attempted: false,
+                    public_glyph_run_emitted: false,
+                    quality: GlyphRunQuality::Omitted,
+                    replay_eligibility: GlyphRunReplayEligibility::NotReplayable,
+                    strict_visual_eligible: false,
+                    reason: Some("notShapingCandidate".to_string()),
+                },
+                None,
+            );
         }
 
         let request = FontRequest::from(run);
@@ -170,12 +250,12 @@ impl<'a> TextShapeLowerer<'a> {
                 | GlyphRunReplayEligibility::ConditionalExternalFont
                 | GlyphRunReplayEligibility::LocalDiagnosticOnly
         );
-        let quality = if attempted {
+        let mut diagnostic_quality = if attempted {
             GlyphRunQuality::DiagnosticOnly
         } else {
             GlyphRunQuality::Omitted
         };
-        let reason = match replay_eligibility {
+        let mut reason = match replay_eligibility {
             GlyphRunReplayEligibility::Portable => Some("diagnosticsOnlySkeleton".to_string()),
             GlyphRunReplayEligibility::ConditionalExternalFont => {
                 Some("externalFontRequiresConsumerVerification".to_string())
@@ -186,15 +266,116 @@ impl<'a> TextShapeLowerer<'a> {
             GlyphRunReplayEligibility::NotReplayable => Some("fontResourceUnavailable".to_string()),
         };
 
-        TextShapeDiagnostic {
-            text: run.text.clone(),
-            attempted,
-            public_glyph_run_emitted: false,
-            quality,
+        let mut public_glyph_run = None;
+        let mut public_glyph_run_emitted = false;
+        let mut strict_visual_eligible = false;
+
+        if matches!(
             replay_eligibility,
-            strict_visual_eligible: false,
-            reason,
+            GlyphRunReplayEligibility::Portable
+                | GlyphRunReplayEligibility::ConditionalExternalFont
+        ) {
+            if let (Some(bbox), Some(source), Some(variant)) =
+                (bbox, run.source.clone(), run.variant.clone())
+            {
+                if let Some(shaped) = self.resolver.shape_glyph_run(&request, run, &resolved) {
+                    if glyph_run_is_exportable(&shaped) {
+                        let mut glyph_variant = variant;
+                        glyph_variant.variant_id = "glyphRun".to_string();
+                        glyph_variant.variant_kind = TextVariantKind::GlyphRun;
+                        glyph_variant.is_default_fallback = false;
+                        glyph_variant.requires =
+                            vec!["fontResources".to_string(), "text.glyphRun".to_string()];
+                        glyph_variant.quality = Some(shaped.diagnostics.quality);
+                        diagnostic_quality = glyph_quality_from_variant(shaped.diagnostics.quality);
+                        strict_visual_eligible = shaped.diagnostics.strict_visual_eligible;
+                        reason = shaped.diagnostics.reason.clone();
+                        public_glyph_run_emitted = true;
+                        public_glyph_run = Some(LayerGlyphRunPaint {
+                            source,
+                            variant: glyph_variant,
+                            paint_style: PaintTextStyle::from(&run.style),
+                            shape_key: shaped.shape_key.clone(),
+                            placement: run
+                                .placement
+                                .unwrap_or_else(|| fallback_placement(bbox, run)),
+                            glyph_ids: shaped.glyph_ids,
+                            positions: shaped.positions,
+                            advances: shaped.advances,
+                            clusters: shaped.clusters,
+                            direction: shaped.shape_key.direction,
+                            bidi_level: None,
+                            writing_mode: shaped.shape_key.writing_mode,
+                            orientation: GlyphRunOrientation::from_text_orientation(
+                                run.orientation,
+                            ),
+                            glyph_transforms: None,
+                            diagnostics: shaped.diagnostics,
+                        });
+                    } else {
+                        reason = Some("glyphRunDiagnosticsNotExportable".to_string());
+                    }
+                }
+            }
         }
+
+        (
+            TextShapeDiagnostic {
+                text: run.text.clone(),
+                attempted,
+                public_glyph_run_emitted,
+                quality: diagnostic_quality,
+                replay_eligibility,
+                strict_visual_eligible,
+                reason,
+            },
+            public_glyph_run,
+        )
+    }
+}
+
+fn fallback_placement(bbox: BoundingBox, run: &LayerTextRunPaint) -> TextRunPlacement {
+    TextRunPlacement {
+        run_to_page: LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: bbox.x,
+            f: bbox.y + run.baseline,
+        },
+        baseline_y: 0.0,
+    }
+}
+
+fn glyph_run_is_exportable(shaped: &ResolvedGlyphRun) -> bool {
+    !shaped.glyph_ids.is_empty()
+        && shaped.glyph_ids.len() == shaped.positions.len()
+        && shaped
+            .advances
+            .as_ref()
+            .map_or(true, |advances| advances.len() == shaped.glyph_ids.len())
+        && !shaped.clusters.is_empty()
+        && matches!(
+            shaped.diagnostics.replay_eligibility,
+            GlyphRunReplayEligibility::Portable
+                | GlyphRunReplayEligibility::ConditionalExternalFont
+        )
+        && matches!(
+            shaped.diagnostics.quality,
+            TextVariantQuality::Exact | TextVariantQuality::PositionAdjusted
+        )
+        && shaped.diagnostics.missing_glyph_count == 0
+        && shaped.diagnostics.cluster_mismatch_count == 0
+}
+
+fn glyph_quality_from_variant(quality: TextVariantQuality) -> GlyphRunQuality {
+    match quality {
+        TextVariantQuality::Exact => GlyphRunQuality::Exact,
+        TextVariantQuality::PositionAdjusted => GlyphRunQuality::PositionAdjusted,
+        TextVariantQuality::Approximate => GlyphRunQuality::Approximate,
+        TextVariantQuality::DiagnosticOnly => GlyphRunQuality::DiagnosticOnly,
+        TextVariantQuality::Omitted => GlyphRunQuality::Omitted,
     }
 }
 
@@ -202,9 +383,10 @@ impl<'a> TextShapeLowerer<'a> {
 mod tests {
     use super::*;
     use crate::paint::{
-        LayerNode, LayerTextRunPaint, TextSourceId, TextSourceRange, TextSourceSpan,
+        FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster, GlyphRange, LayerNode,
+        LayerTextRunPaint, ScriptTag, ShapingEngineId, TextDirection, TextSourceId,
+        TextSourceRange, TextSourceSpan, WritingMode,
     };
-    use crate::renderer::render_tree::BoundingBox;
 
     struct PortableResolver;
 
@@ -216,24 +398,96 @@ mod tests {
         }
     }
 
-    #[test]
-    fn diagnostics_only_lowerer_never_emits_public_glyph_runs() {
-        let run = LayerTextRunPaint {
+    struct EmittingResolver;
+
+    impl FontResolver for EmittingResolver {
+        fn resolve_font(&self, _request: &FontRequest) -> ResolvedFontFace {
+            ResolvedFontFace {
+                portability: FontPortabilityKind::PortableBlob,
+            }
+        }
+
+        fn shape_glyph_run(
+            &self,
+            _request: &FontRequest,
+            run: &LayerTextRunPaint,
+            _resolved: &ResolvedFontFace,
+        ) -> Option<ResolvedGlyphRun> {
+            Some(ResolvedGlyphRun {
+                shape_key: placeholder_shape_key(
+                    FontFaceKey("font-face-0".to_string()),
+                    run.style.font_size.max(12.0),
+                ),
+                glyph_ids: vec![42],
+                positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+                advances: Some(vec![LayerVector { dx: 12.0, dy: 0.0 }]),
+                clusters: vec![GlyphCluster {
+                    source_range_utf8: TextSourceRange::new(0, run.text.len() as u32),
+                    source_range_utf16: Some(TextSourceRange::new(
+                        0,
+                        run.text.encode_utf16().count() as u32,
+                    )),
+                    text_range_utf8: Some(TextSourceRange::new(0, run.text.len() as u32)),
+                    glyph_range: GlyphRange::new(0, 1),
+                    flags: Vec::new(),
+                }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            })
+        }
+    }
+
+    fn placeholder_shape_key(face_key: FontFaceKey, size_px: f64) -> ShapeKey {
+        ShapeKey {
+            font_instance: FontInstanceKey {
+                face_key,
+                size_px,
+                variations: Vec::new(),
+                synthetic_bold: false,
+                synthetic_italic: false,
+            },
+            direction: TextDirection::Ltr,
+            writing_mode: WritingMode::HorizontalTb,
+            script: Some(ScriptTag("DFLT".to_string())),
+            language: None,
+            features: Vec::new(),
+            shaping_engine: ShapingEngineId("test".to_string()),
+            fallback_policy: FontFallbackPolicyId("none".to_string()),
+        }
+    }
+
+    fn sourced_text_run(text: &str) -> LayerTextRunPaint {
+        LayerTextRunPaint {
             source: Some(TextSourceSpan {
                 id: TextSourceId(0),
-                utf8_range: TextSourceRange::new(0, 3),
-                utf16_range: TextSourceRange::new(0, 1),
+                utf8_range: TextSourceRange::new(0, text.len() as u32),
+                utf16_range: TextSourceRange::new(0, text.encode_utf16().count() as u32),
                 stable_source_key: None,
             }),
-            text: "가".to_string(),
+            variant: Some(crate::paint::PaintVariantMeta::text_run_default("text-0")),
+            text: text.to_string(),
             ..LayerTextRunPaint::default()
-        };
+        }
+    }
+
+    #[test]
+    fn diagnostics_only_lowerer_never_emits_public_glyph_runs() {
         let root = LayerNode::leaf(
             BoundingBox::new(0.0, 0.0, 100.0, 100.0),
             None,
             vec![PaintOp::TextRun {
                 bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
-                run,
+                run: sourced_text_run("가"),
             }],
         );
         let lowerer = TextShapeLowerer::diagnostics_only(&PortableResolver);
@@ -250,6 +504,35 @@ mod tests {
             report.diagnostics[0].quality,
             GlyphRunQuality::DiagnosticOnly
         );
+    }
+
+    #[test]
+    fn lowerer_emits_public_glyph_run_only_from_exportable_shaped_data() {
+        let mut root = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 100.0, 100.0),
+            None,
+            vec![PaintOp::TextRun {
+                bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+                run: sourced_text_run("A"),
+            }],
+        );
+        let lowerer = TextShapeLowerer::new(&EmittingResolver);
+        let report = lowerer.lower_root(&mut root);
+
+        assert_eq!(report.public_glyph_run_count(), 1);
+        let LayerNodeKind::Leaf { ops, .. } = &root.kind else {
+            panic!("expected leaf root");
+        };
+        assert!(matches!(ops[0], PaintOp::TextRun { .. }));
+        let PaintOp::GlyphRun { run, .. } = &ops[1] else {
+            panic!("expected glyph run variant");
+        };
+        assert_eq!(run.variant.equivalence_group, "text-0");
+        assert_eq!(run.variant.variant_id, "glyphRun");
+        assert_eq!(run.variant.variant_kind, TextVariantKind::GlyphRun);
+        assert!(!run.variant.is_default_fallback);
+        assert_eq!(run.glyph_ids, vec![42]);
+        assert!(run.diagnostics.strict_visual_eligible);
     }
 
     #[test]

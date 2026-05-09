@@ -212,6 +212,10 @@ impl SvgRenderer {
             PaintOp::TextRun { bbox, run } => {
                 self.render_layer_text_run(*bbox, run);
             }
+            PaintOp::GlyphRun { .. } => {
+                // Optional GlyphRun variants are paired with TextRun fallback
+                // in schema v1; SVG keeps the searchable TextRun default.
+            }
             PaintOp::CharOverlap { bbox, overlap } => {
                 self.render_layer_char_overlap(*bbox, overlap);
             }

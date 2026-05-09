@@ -44,15 +44,16 @@ pub use layer_tree::{
     TextSourceRange, TextSourceSpan, TextSourceTable,
 };
 pub use paint_op::{
-    LayerAffineTransform, LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint,
-    LayerFootnoteMarkerPaint, LayerFormObjectPaint, LayerImagePaint, LayerLinePaint,
-    LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerPathPaint, LayerPoint,
-    LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextControlMarkPaint, LayerTextDecorationKind, LayerTextDecorationPaint,
-    LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds, PaintOp, PaintTextStyle,
-    PaintVariantMeta, TextClusterBasis, TextClusterFlag, TextClusterPlacement,
-    TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind, TextRunPlacement,
-    TextVariantKind, TextVariantQuality,
+    GlyphCluster, GlyphClusterFlag, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
+    GlyphRunPlacement, GlyphTransform, LayerAffineTransform, LayerCharOverlapPaint,
+    LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
+    LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint,
+    LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint,
+    LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
+    LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint,
+    LayerVector, PaintBounds, PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterBasis,
+    TextClusterFlag, TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals,
+    TextProjectionKind, TextRunPlacement, TextVariantKind, TextVariantQuality,
 };
 pub use profile::RenderProfile;
 pub use resources::{
@@ -62,5 +63,5 @@ pub use resources::{
 pub use schema::{LayerTreeSchema, LAYER_TREE_SCHEMA};
 pub use text_shape::{
     FontRequest, FontResolver, GlyphRunQuality, NoopFontResolver, ResolvedFontFace,
-    TextShapeDiagnostic, TextShapeLowerer, TextShapeReport,
+    ResolvedGlyphRun, TextShapeDiagnostic, TextShapeLowerer, TextShapeReport,
 };

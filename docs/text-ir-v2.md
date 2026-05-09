@@ -15,9 +15,11 @@ font instance, so portable glyph replay requires a font resource table with
 exact font bytes, face index, variations, synthetic style flags, shaping
 features, script, language, and fallback policy. The IR now has the foundation
 types for that contract (`FontBlobResource`, `FontFaceResource`,
-`FontInstanceKey`, and `ShapeKey`), but no public `GlyphRun` is emitted yet.
-Until portable font identity is available, `GlyphRun` must be optional and
-paired with `TextRun` fallback.
+`FontInstanceKey`, and `ShapeKey`). A guarded `TextShapeLowerer` can now append
+optional `GlyphRun` variants when a resolver supplies exportable shaped glyph
+data with portable or consumer-verified font eligibility. Normal exports still
+emit only `TextRun`; any `GlyphRun` must remain optional and paired with
+`TextRun` fallback.
 
 ## Export Contract
 
@@ -41,10 +43,10 @@ Layer JSON/JS exports currently provide:
   cluster metadata. These clusters are not shaped glyph clusters.
 - `TextRun.legacyVisuals`: whether legacy inline visual payloads are currently
   canonical or mirrors of future external paint ops.
-- `TextRun.variant`: a variant-set metadata record. Schema v1 uses this only
-  for the `TextRun` default fallback; future `GlyphRun` or `glyphOutline`
-  alternatives must share the same `equivalenceGroup` but use a distinct
-  `variantId`.
+- `TextRun.variant`: a variant-set metadata record. Schema v1 uses this for the
+  `TextRun` default fallback. Optional `GlyphRun` alternatives share the same
+  `equivalenceGroup` but use a distinct `variantId`. Future `glyphOutline`
+  alternatives must follow the same rule.
 - `fontResources`: a blob/face-split font resource table. It is currently empty
   in normal exports and exists so future portable `GlyphRun` variants can
   require exact font blob + face identity.
@@ -179,10 +181,11 @@ old consumers.
    `PortableBlob`, `ExternalVerified`, `ResolvedButNotEmbedded`,
    `SystemNameOnly`, or `UnresolvedFallback`.
 7. Introduce a post-layout `TextShapeLowerer` skeleton that respects existing
-   layout positions and reports variant quality diagnostics. A diagnostics-only
-   skeleton now exists and never emits public glyph runs.
+   layout positions and reports variant quality diagnostics.
 8. Add optional `GlyphRun` variants only when a portable or verified font
-   instance and source cluster mapping are available.
+   instance and source cluster mapping are available. The lowerer now supports
+   this gated append path, but default exports do not run a real shaping/font
+   resolver yet.
 9. Move shaping into layout only after line breaking, fallback metrics, vertical
    metrics, and regression fixtures are stable.
 

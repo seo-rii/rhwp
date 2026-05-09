@@ -7,10 +7,11 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic,
-    LayerTextRunPaint, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
-    ResourceArena, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry,
-    TextSourceRange, TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
+    CacheHint, ClipKind, GlyphCluster, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform,
+    LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerTextRunPaint, LayerVector,
+    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, ResourceArena, ShapeKey,
+    TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange,
+    TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -65,7 +66,11 @@ impl PageLayerTree {
 fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
     let has_variant_groups = has_text_variant_groups(root);
+    let has_glyph_runs = has_glyph_runs(root);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
+    if has_glyph_runs {
+        buf.push_str(",\"fontResources\",\"text.glyphRun\"");
+    }
     if has_variant_groups {
         buf.push_str(",\"text.variantGroups\"");
     }
@@ -93,7 +98,15 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     {
         buf.push_str(",\"text.decorationOp\"");
     }
-    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
+    buf.push_str("],\"optionalFeatures\":[");
+    if has_glyph_runs {
+        buf.push_str("\"fontResources\",\"text.glyphRun\"");
+    }
+    buf.push_str("],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"");
+    if has_glyph_runs {
+        buf.push_str(",\"glyphRun\"");
+    }
+    buf.push_str("],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
@@ -123,15 +136,36 @@ fn has_text_variant_groups(root: &LayerNode) -> bool {
                                 ..
                             },
                             ..
-                        } | PaintOp::CharOverlap {
-                            overlap: crate::paint::LayerCharOverlapPaint {
-                                variant: Some(_),
+                        } | PaintOp::GlyphRun { .. }
+                            | PaintOp::CharOverlap {
+                                overlap: crate::paint::LayerCharOverlapPaint {
+                                    variant: Some(_),
+                                    ..
+                                },
                                 ..
-                            },
-                            ..
-                        }
+                            }
                     )
                 }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn has_glyph_runs(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops.iter().any(|op| matches!(op, PaintOp::GlyphRun { .. })) {
                     return true;
                 }
             }
@@ -385,6 +419,53 @@ impl PaintOp {
                     buf.push_str(",\"tabLeaders\":");
                     write_tab_leaders(buf, &run.style.tab_leaders);
                 }
+                buf.push('}');
+            }
+            PaintOp::GlyphRun { bbox, run } => {
+                buf.push('{');
+                buf.push_str("\"type\":\"glyphRun\",\"bbox\":");
+                write_bbox(buf, *bbox);
+                buf.push_str(",\"source\":");
+                write_text_source_span(buf, &run.source);
+                buf.push_str(",\"variant\":");
+                write_paint_variant_meta(buf, &run.variant);
+                buf.push_str(",\"paintStyle\":");
+                write_paint_text_style(buf, &run.paint_style);
+                buf.push_str(",\"shapeKey\":");
+                write_shape_key(buf, &run.shape_key);
+                buf.push_str(",\"placement\":");
+                write_text_run_placement(buf, run.placement);
+                buf.push_str(",\"glyphIds\":[");
+                for (idx, glyph_id) in run.glyph_ids.iter().enumerate() {
+                    if idx > 0 {
+                        buf.push(',');
+                    }
+                    let _ = write!(buf, "{}", glyph_id);
+                }
+                buf.push_str("],\"positions\":");
+                write_points(buf, &run.positions);
+                if let Some(advances) = &run.advances {
+                    buf.push_str(",\"advances\":");
+                    write_vectors(buf, advances);
+                }
+                buf.push_str(",\"clusters\":");
+                write_glyph_clusters(buf, &run.clusters);
+                let _ = write!(
+                    buf,
+                    ",\"direction\":{},\"writingMode\":{},\"orientation\":{}",
+                    json_escape(run.direction.as_str()),
+                    json_escape(run.writing_mode.as_str()),
+                    json_escape(run.orientation.as_str()),
+                );
+                if let Some(bidi_level) = run.bidi_level {
+                    let _ = write!(buf, ",\"bidiLevel\":{}", bidi_level);
+                }
+                if let Some(transforms) = &run.glyph_transforms {
+                    buf.push_str(",\"glyphTransforms\":");
+                    write_glyph_transforms(buf, transforms);
+                }
+                buf.push_str(",\"diagnostics\":");
+                write_glyph_run_diagnostics(buf, &run.diagnostics);
                 buf.push('}');
             }
             PaintOp::CharOverlap { bbox, overlap } => {
@@ -1137,6 +1218,157 @@ fn write_text_decoration(buf: &mut String, decoration: &crate::paint::LayerTextD
     buf.push('}');
 }
 
+fn write_shape_key(buf: &mut String, shape_key: &ShapeKey) {
+    buf.push_str("{\"fontInstance\":{");
+    let instance = &shape_key.font_instance;
+    let _ = write!(
+        buf,
+        "\"faceKey\":{},\"sizePx\":{:.6},\"syntheticBold\":{},\"syntheticItalic\":{}",
+        json_escape(&instance.face_key.0),
+        instance.size_px,
+        instance.synthetic_bold,
+        instance.synthetic_italic,
+    );
+    buf.push_str(",\"variations\":[");
+    for (idx, axis) in instance.variations.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(
+            buf,
+            "{{\"tag\":{},\"value\":{:.6}}}",
+            json_escape(&axis.tag),
+            axis.value
+        );
+    }
+    buf.push_str("]}");
+    let _ = write!(
+        buf,
+        ",\"direction\":{},\"writingMode\":{},\"shapingEngine\":{},\"fallbackPolicy\":{}",
+        json_escape(shape_key.direction.as_str()),
+        json_escape(shape_key.writing_mode.as_str()),
+        json_escape(&shape_key.shaping_engine.0),
+        json_escape(&shape_key.fallback_policy.0),
+    );
+    if let Some(script) = &shape_key.script {
+        let _ = write!(buf, ",\"script\":{}", json_escape(&script.0));
+    }
+    if let Some(language) = &shape_key.language {
+        let _ = write!(buf, ",\"language\":{}", json_escape(&language.0));
+    }
+    buf.push_str(",\"features\":[");
+    for (idx, feature) in shape_key.features.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(
+            buf,
+            "{{\"tag\":{},\"enabled\":{}",
+            json_escape(&feature.tag),
+            feature.enabled
+        );
+        if let Some(value) = feature.value {
+            let _ = write!(buf, ",\"value\":{}", value);
+        }
+        buf.push('}');
+    }
+    buf.push_str("]}");
+}
+
+fn write_points(buf: &mut String, points: &[LayerPoint]) {
+    buf.push('[');
+    for (idx, point) in points.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{{\"x\":{:.6},\"y\":{:.6}}}", point.x, point.y);
+    }
+    buf.push(']');
+}
+
+fn write_vectors(buf: &mut String, vectors: &[LayerVector]) {
+    buf.push('[');
+    for (idx, vector) in vectors.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{{\"dx\":{:.6},\"dy\":{:.6}}}", vector.dx, vector.dy);
+    }
+    buf.push(']');
+}
+
+fn write_glyph_clusters(buf: &mut String, clusters: &[GlyphCluster]) {
+    buf.push('[');
+    for (idx, cluster) in clusters.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        buf.push('{');
+        buf.push_str("\"sourceRangeUtf8\":");
+        write_text_source_range(buf, cluster.source_range_utf8);
+        if let Some(range) = cluster.source_range_utf16 {
+            buf.push_str(",\"sourceRangeUtf16\":");
+            write_text_source_range(buf, range);
+        }
+        if let Some(range) = cluster.text_range_utf8 {
+            buf.push_str(",\"textRangeUtf8\":");
+            write_text_source_range(buf, range);
+        }
+        let _ = write!(
+            buf,
+            ",\"glyphRange\":{{\"start\":{},\"end\":{}}}",
+            cluster.glyph_range.start, cluster.glyph_range.end
+        );
+        if !cluster.flags.is_empty() {
+            buf.push_str(",\"flags\":[");
+            for (flag_idx, flag) in cluster.flags.iter().enumerate() {
+                if flag_idx > 0 {
+                    buf.push(',');
+                }
+                let _ = write!(buf, "{}", json_escape(flag.as_str()));
+            }
+            buf.push(']');
+        }
+        buf.push('}');
+    }
+    buf.push(']');
+}
+
+fn write_glyph_transforms(buf: &mut String, transforms: &[GlyphTransform]) {
+    buf.push('[');
+    for (idx, transform) in transforms.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(
+            buf,
+            "{{\"xx\":{:.6},\"xy\":{:.6},\"yx\":{:.6},\"yy\":{:.6},\"tx\":{:.6},\"ty\":{:.6}}}",
+            transform.xx, transform.xy, transform.yx, transform.yy, transform.tx, transform.ty
+        );
+    }
+    buf.push(']');
+}
+
+fn write_glyph_run_diagnostics(buf: &mut String, diagnostics: &GlyphRunDiagnostics) {
+    let _ = write!(
+        buf,
+        "{{\"quality\":{},\"replayEligibility\":{},\"strictVisualEligible\":{},\"maxOriginDeltaPx\":{:.6},\"maxAdvanceDeltaPx\":{:.6},\"maxResidualAfterAdjustmentPx\":{:.6},\"clusterMismatchCount\":{},\"missingGlyphCount\":{},\"usedFallbackFontCount\":{}",
+        json_escape(diagnostics.quality.as_str()),
+        json_escape(diagnostics.replay_eligibility.as_str()),
+        diagnostics.strict_visual_eligible,
+        diagnostics.max_origin_delta_px,
+        diagnostics.max_advance_delta_px,
+        diagnostics.max_residual_after_adjustment_px,
+        diagnostics.cluster_mismatch_count,
+        diagnostics.missing_glyph_count,
+        diagnostics.used_fallback_font_count,
+    );
+    if let Some(reason) = &diagnostics.reason {
+        let _ = write!(buf, ",\"reason\":{}", json_escape(reason));
+    }
+    buf.push('}');
+}
+
 fn write_shape_style(buf: &mut String, style: &ShapeStyle) {
     buf.push('{');
     if let Some(color) = style.fill_color {
@@ -1633,11 +1865,15 @@ mod tests {
     use super::*;
     use crate::model::image::ImageEffect;
     use crate::paint::{
-        CacheHint, ClipKind, LayerCharOverlapPaint, LayerEquationPaint, LayerImagePaint,
-        LayerLinePaint, LayerNode, LayerOutputOptions, LayerPathPaint, LayerRectanglePaint,
-        LayerTextControlMark, LayerTextControlMarkKind, LayerTextDecorationKind,
-        LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
-        ResourceArena, TextLegacyVisualState, TextLegacyVisuals, LAYER_TREE_SCHEMA,
+        CacheHint, ClipKind, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
+        GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility,
+        LayerCharOverlapPaint, LayerEquationPaint, LayerGlyphRunPaint, LayerImagePaint,
+        LayerLinePaint, LayerNode, LayerOutputOptions, LayerPathPaint, LayerPoint,
+        LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+        LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint,
+        PageLayerTree, PaintTextStyle, PaintVariantMeta, ResourceArena, ScriptTag, ShapeKey,
+        ShapingEngineId, TextDirection, TextLegacyVisualState, TextLegacyVisuals, TextSourceId,
+        TextSourceRange, TextSourceSpan, TextVariantQuality, WritingMode, LAYER_TREE_SCHEMA,
     };
     use crate::renderer::composer::CharOverlapInfo;
 
@@ -2182,6 +2418,126 @@ mod tests {
 
         let json = tree.to_json();
         assert!(json.contains("\"profile\":\"high-quality\""));
+    }
+
+    #[test]
+    fn serializes_optional_glyph_run_variant_with_text_run_fallback() {
+        let source = TextSourceSpan {
+            id: TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let shape_key = ShapeKey {
+            font_instance: FontInstanceKey {
+                face_key: FontFaceKey("face-0".to_string()),
+                size_px: 12.0,
+                variations: Vec::new(),
+                synthetic_bold: false,
+                synthetic_italic: false,
+            },
+            direction: TextDirection::Ltr,
+            writing_mode: WritingMode::HorizontalTb,
+            script: Some(ScriptTag("DFLT".to_string())),
+            language: None,
+            features: Vec::new(),
+            shaping_engine: ShapingEngineId("test".to_string()),
+            fallback_policy: FontFallbackPolicyId("none".to_string()),
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source.clone()),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let glyph_run = PaintOp::GlyphRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerGlyphRunPaint {
+                source,
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphRun".to_string(),
+                    variant_kind: crate::paint::TextVariantKind::GlyphRun,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                },
+                paint_style: PaintTextStyle::from(&TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                }),
+                shape_key,
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 12.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                glyph_ids: vec![42],
+                positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+                advances: None,
+                clusters: vec![GlyphCluster {
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    source_range_utf16: Some(TextSourceRange::new(0, 1)),
+                    text_range_utf8: Some(TextSourceRange::new(0, 1)),
+                    glyph_range: GlyphRange::new(0, 1),
+                    flags: Vec::new(),
+                }],
+                direction: TextDirection::Ltr,
+                bidi_level: None,
+                writing_mode: WritingMode::HorizontalTb,
+                orientation: GlyphRunOrientation::Horizontal,
+                glyph_transforms: None,
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, glyph_run],
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"type\":\"glyphRun\""));
+        assert!(json.contains("\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"fontResources\",\"text.glyphRun\",\"text.variantGroups\"]"));
+        assert!(json.contains("\"optionalFeatures\":[\"fontResources\",\"text.glyphRun\"]"));
+        assert!(json.contains("\"variants\":[\"textRun\",\"glyphRun\"]"));
+        assert!(json.contains("\"variantId\":\"glyphRun\""));
+        assert!(json.contains("\"glyphIds\":[42]"));
+        assert!(json.contains("\"replayEligibility\":\"portable\""));
+        assert!(json.contains("\"strictVisualEligible\":true"));
     }
 
     #[test]

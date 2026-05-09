@@ -8,11 +8,11 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind,
-    LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerVector,
-    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterPlacement,
-    TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan,
-    TextSourceTable, LAYER_TREE_SCHEMA,
+    image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, GlyphCluster,
+    GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode, LayerNodeKind,
+    LayerPoint, LayerSemantic, LayerVector, PageLayerTree, PaintOp, PaintTextStyle,
+    PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation,
+    TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -173,6 +173,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     );
     let externalized_visuals = externalized_text_visuals(&tree.root);
     let has_variant_groups = has_text_variant_groups(&tree.root);
+    let has_glyph_runs = has_glyph_runs(&tree.root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -182,6 +183,10 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "text.projectionKind",
         "text.legacyVisuals",
     ];
+    if has_glyph_runs {
+        used_features.push("fontResources");
+        used_features.push("text.glyphRun");
+    }
     if has_variant_groups {
         used_features.push("text.variantGroups");
     }
@@ -214,7 +219,16 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "usedFeatures",
         string_array_to_value(&used_features),
     );
-    set_value(&value, "optionalFeatures", string_array_to_value(&[]));
+    let mut optional_features = Vec::new();
+    if has_glyph_runs {
+        optional_features.push("fontResources");
+        optional_features.push("text.glyphRun");
+    }
+    set_value(
+        &value,
+        "optionalFeatures",
+        string_array_to_value(&optional_features),
+    );
     set_value(
         &value,
         "knownFeatures",
@@ -236,11 +250,11 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_value(&value, "requiredFeatures", string_array_to_value(&[]));
     let text_contract = Object::new();
     set_string(&text_contract, "defaultVariant", "textRun");
-    set_value(
-        &text_contract,
-        "variants",
-        string_array_to_value(&["textRun"]),
-    );
+    let mut variants = vec!["textRun"];
+    if has_glyph_runs {
+        variants.push("glyphRun");
+    }
+    set_value(&text_contract, "variants", string_array_to_value(&variants));
     set_string(&text_contract, "variantSelection", "exclusiveVariantSet");
     set_bool(&text_contract, "sourceTextPreserved", true);
     set_value(
@@ -725,6 +739,51 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                     tab_leaders_to_value(&run.style.tab_leaders),
                 );
             }
+        }
+        PaintOp::GlyphRun { bbox, run } => {
+            set_string(&value, "type", "glyphRun");
+            set_value(&value, "bbox", bbox_to_value(*bbox));
+            set_value(&value, "source", text_source_span_to_value(&run.source));
+            set_value(&value, "variant", paint_variant_meta_to_value(&run.variant));
+            set_value(
+                &value,
+                "paintStyle",
+                paint_text_style_to_value(&run.paint_style),
+            );
+            set_value(&value, "shapeKey", shape_key_to_value(&run.shape_key));
+            set_value(
+                &value,
+                "placement",
+                text_run_placement_to_value(run.placement),
+            );
+            set_value(
+                &value,
+                "glyphIds",
+                array_to_value(run.glyph_ids.iter().map(|id| JsValue::from_f64(*id as f64))),
+            );
+            set_value(&value, "positions", points_to_value(&run.positions));
+            if let Some(advances) = &run.advances {
+                set_value(&value, "advances", vectors_to_value(advances));
+            }
+            set_value(&value, "clusters", glyph_clusters_to_value(&run.clusters));
+            set_string(&value, "direction", run.direction.as_str());
+            if let Some(bidi_level) = run.bidi_level {
+                set_number(&value, "bidiLevel", bidi_level as f64);
+            }
+            set_string(&value, "writingMode", run.writing_mode.as_str());
+            set_string(&value, "orientation", run.orientation.as_str());
+            if let Some(transforms) = &run.glyph_transforms {
+                set_value(
+                    &value,
+                    "glyphTransforms",
+                    glyph_transforms_to_value(transforms),
+                );
+            }
+            set_value(
+                &value,
+                "diagnostics",
+                glyph_run_diagnostics_to_value(&run.diagnostics),
+            );
         }
         PaintOp::CharOverlap { bbox, overlap } => {
             set_string(&value, "type", "charOverlap");
@@ -1280,9 +1339,30 @@ fn has_text_variant_groups(root: &LayerNode) -> bool {
             LayerNodeKind::Leaf { ops, .. } => {
                 if ops.iter().any(|op| match op {
                     PaintOp::TextRun { run, .. } => run.variant.is_some(),
+                    PaintOp::GlyphRun { .. } => true,
                     PaintOp::CharOverlap { overlap, .. } => overlap.variant.is_some(),
                     _ => false,
                 }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn has_glyph_runs(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops.iter().any(|op| matches!(op, PaintOp::GlyphRun { .. })) {
                     return true;
                 }
             }
@@ -1468,6 +1548,166 @@ fn text_clusters_to_value(clusters: &[TextClusterPlacement]) -> JsValue {
         }
         value.into()
     }))
+}
+
+fn shape_key_to_value(shape_key: &ShapeKey) -> JsValue {
+    let value = Object::new();
+    let font_instance = Object::new();
+    set_string(
+        &font_instance,
+        "faceKey",
+        &shape_key.font_instance.face_key.0,
+    );
+    set_number(&font_instance, "sizePx", shape_key.font_instance.size_px);
+    set_bool(
+        &font_instance,
+        "syntheticBold",
+        shape_key.font_instance.synthetic_bold,
+    );
+    set_bool(
+        &font_instance,
+        "syntheticItalic",
+        shape_key.font_instance.synthetic_italic,
+    );
+    set_value(
+        &font_instance,
+        "variations",
+        array_to_value(shape_key.font_instance.variations.iter().map(|axis| {
+            let axis_value = Object::new();
+            set_string(&axis_value, "tag", &axis.tag);
+            set_number(&axis_value, "value", axis.value as f64);
+            axis_value.into()
+        })),
+    );
+    set_value(&value, "fontInstance", font_instance.into());
+    set_string(&value, "direction", shape_key.direction.as_str());
+    set_string(&value, "writingMode", shape_key.writing_mode.as_str());
+    if let Some(script) = &shape_key.script {
+        set_string(&value, "script", &script.0);
+    }
+    if let Some(language) = &shape_key.language {
+        set_string(&value, "language", &language.0);
+    }
+    set_value(
+        &value,
+        "features",
+        array_to_value(shape_key.features.iter().map(|feature| {
+            let feature_value = Object::new();
+            set_string(&feature_value, "tag", &feature.tag);
+            set_bool(&feature_value, "enabled", feature.enabled);
+            if let Some(feature_setting) = feature.value {
+                set_number(&feature_value, "value", feature_setting as f64);
+            }
+            feature_value.into()
+        })),
+    );
+    set_string(&value, "shapingEngine", &shape_key.shaping_engine.0);
+    set_string(&value, "fallbackPolicy", &shape_key.fallback_policy.0);
+    value.into()
+}
+
+fn points_to_value(points: &[LayerPoint]) -> JsValue {
+    array_to_value(points.iter().copied().map(layer_point_to_value))
+}
+
+fn vectors_to_value(vectors: &[LayerVector]) -> JsValue {
+    array_to_value(vectors.iter().copied().map(layer_vector_to_value))
+}
+
+fn glyph_clusters_to_value(clusters: &[GlyphCluster]) -> JsValue {
+    array_to_value(clusters.iter().map(|cluster| {
+        let value = Object::new();
+        set_value(
+            &value,
+            "sourceRangeUtf8",
+            text_source_range_to_value(cluster.source_range_utf8),
+        );
+        if let Some(range) = cluster.source_range_utf16 {
+            set_value(
+                &value,
+                "sourceRangeUtf16",
+                text_source_range_to_value(range),
+            );
+        }
+        if let Some(range) = cluster.text_range_utf8 {
+            set_value(&value, "textRangeUtf8", text_source_range_to_value(range));
+        }
+        let glyph_range = Object::new();
+        set_number(&glyph_range, "start", cluster.glyph_range.start as f64);
+        set_number(&glyph_range, "end", cluster.glyph_range.end as f64);
+        set_value(&value, "glyphRange", glyph_range.into());
+        if !cluster.flags.is_empty() {
+            set_value(
+                &value,
+                "flags",
+                array_to_value(
+                    cluster
+                        .flags
+                        .iter()
+                        .map(|flag| JsValue::from_str(flag.as_str())),
+                ),
+            );
+        }
+        value.into()
+    }))
+}
+
+fn glyph_transforms_to_value(transforms: &[GlyphTransform]) -> JsValue {
+    array_to_value(transforms.iter().map(|transform| {
+        let value = Object::new();
+        set_number(&value, "xx", transform.xx as f64);
+        set_number(&value, "xy", transform.xy as f64);
+        set_number(&value, "yx", transform.yx as f64);
+        set_number(&value, "yy", transform.yy as f64);
+        set_number(&value, "tx", transform.tx as f64);
+        set_number(&value, "ty", transform.ty as f64);
+        value.into()
+    }))
+}
+
+fn glyph_run_diagnostics_to_value(diagnostics: &GlyphRunDiagnostics) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "quality", diagnostics.quality.as_str());
+    set_string(
+        &value,
+        "replayEligibility",
+        diagnostics.replay_eligibility.as_str(),
+    );
+    set_bool(
+        &value,
+        "strictVisualEligible",
+        diagnostics.strict_visual_eligible,
+    );
+    set_number(&value, "maxOriginDeltaPx", diagnostics.max_origin_delta_px);
+    set_number(
+        &value,
+        "maxAdvanceDeltaPx",
+        diagnostics.max_advance_delta_px,
+    );
+    set_number(
+        &value,
+        "maxResidualAfterAdjustmentPx",
+        diagnostics.max_residual_after_adjustment_px,
+    );
+    set_number(
+        &value,
+        "clusterMismatchCount",
+        diagnostics.cluster_mismatch_count as f64,
+    );
+    set_number(
+        &value,
+        "missingGlyphCount",
+        diagnostics.missing_glyph_count as f64,
+    );
+    set_number(
+        &value,
+        "usedFallbackFontCount",
+        diagnostics.used_fallback_font_count as f64,
+    );
+    if let Some(reason) = &diagnostics.reason {
+        set_string(&value, "reason", reason);
+    }
+    value.into()
 }
 
 fn layer_point_to_value(point: LayerPoint) -> JsValue {

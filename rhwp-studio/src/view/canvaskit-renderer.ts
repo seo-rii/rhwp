@@ -397,6 +397,10 @@ export class CanvasKitLayerRenderer {
         }
         this.renderTextRun(canvas, op);
         return;
+      case 'glyphRun':
+        // CanvasKit keeps TextRun fallback until portable font registration
+        // and glyph replay are enabled for this backend.
+        return;
       case 'charOverlap':
         this.renderTextRun(canvas, op);
         return;
