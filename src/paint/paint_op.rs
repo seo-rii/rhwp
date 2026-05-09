@@ -2,6 +2,7 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::model::ColorRef;
+use crate::paint::layer_tree::TextSourceSpan;
 use crate::paint::resources::{ImageResourceId, SvgResourceId};
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::equation::layout::LayoutBox;
@@ -69,6 +70,7 @@ pub struct LayerFootnoteMarkerPaint {
 
 #[derive(Debug, Clone)]
 pub struct LayerTextRunPaint {
+    pub source: Option<TextSourceSpan>,
     pub text: String,
     /// Source-backed identity is exported through the layer tree `textSources`
     /// table and per-op `source` span. The in-memory v1 payload keeps the
@@ -511,6 +513,7 @@ mod tests {
         let op = PaintOp::TextRun {
             bbox,
             run: LayerTextRunPaint {
+                source: None,
                 text: "text".to_string(),
                 style: TextStyle {
                     font_size: 20.0,

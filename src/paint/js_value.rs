@@ -9,7 +9,8 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, LayerNode,
-    LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp, PaintTextStyle, LAYER_TREE_SCHEMA,
+    LayerNodeKind, LayerSemantic, PageLayerTree, PaintOp, PaintTextStyle, TextSourceAnnotation,
+    TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -158,7 +159,11 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "root",
         layer_node_to_value(&tree.root, &mut text_source_state),
     );
-    set_value(&value, "textSources", text_sources_to_value(&tree.root));
+    set_value(
+        &value,
+        "textSources",
+        text_sources_to_value(&tree.text_sources),
+    );
     set_value(
         &value,
         "usedFeatures",
@@ -260,113 +265,141 @@ impl TextSourceExportState {
     }
 }
 
-fn text_sources_to_value(root: &LayerNode) -> JsValue {
+fn text_sources_to_value(table: &TextSourceTable) -> JsValue {
     let array = Array::new();
-    let mut state = TextSourceExportState::default();
-    push_text_sources_for_node(&array, root, &mut state);
+    for entry in &table.entries {
+        array.push(&text_source_entry_to_value(entry));
+    }
     array.into()
 }
 
-fn push_text_sources_for_node(array: &Array, node: &LayerNode, state: &mut TextSourceExportState) {
-    match &node.kind {
-        LayerNodeKind::Group { children, .. } => {
-            for child in children {
-                push_text_sources_for_node(array, child, state);
-            }
-        }
-        LayerNodeKind::ClipRect { child, .. } => {
-            push_text_sources_for_node(array, child, state);
-        }
-        LayerNodeKind::Leaf { ops, .. } => {
-            for op in ops {
-                if let PaintOp::TextRun { run, .. } = op {
-                    array.push(&text_source_entry_to_value(run, state.next_id()));
-                }
-            }
-        }
-    }
-}
-
-fn text_source_entry_to_value(run: &crate::paint::LayerTextRunPaint, id: u32) -> JsValue {
+fn text_source_entry_to_value(entry: &TextSourceEntry) -> JsValue {
     let value = Object::new();
-    let utf8_end = run.text.len() as u32;
-    let utf16_end = run.text.encode_utf16().count() as u32;
-    set_number(&value, "id", id as f64);
-    set_string(&value, "text", &run.text);
-    set_value(&value, "utf8Range", text_source_range_to_value(0, utf8_end));
+    set_number(&value, "id", entry.id.0 as f64);
+    set_string(&value, "text", &entry.text);
     set_value(
         &value,
-        "utf16Range",
-        text_source_range_to_value(0, utf16_end),
+        "utf8Range",
+        text_source_range_to_value(entry.utf8_range),
     );
     set_value(
         &value,
+        "utf16Range",
+        text_source_range_to_value(entry.utf16_range),
+    );
+    if let Some(stable_source_key) = &entry.stable_source_key {
+        set_value(
+            &value,
+            "stableSourceKey",
+            stable_source_key_to_value(stable_source_key),
+        );
+    }
+    set_value(
+        &value,
         "annotations",
-        text_source_annotations_to_value(run, utf8_end, utf16_end),
+        text_source_annotations_to_value(&entry.annotations),
     );
     value.into()
 }
 
-fn text_source_span_to_value(run: &crate::paint::LayerTextRunPaint, id: u32) -> JsValue {
+fn legacy_text_source_span_to_value(run: &crate::paint::LayerTextRunPaint, id: u32) -> JsValue {
     let value = Object::new();
     set_number(&value, "id", id as f64);
     set_value(
         &value,
         "utf8Range",
-        text_source_range_to_value(0, run.text.len() as u32),
+        text_source_range_to_value(TextSourceRange::new(0, run.text.len() as u32)),
     );
     set_value(
         &value,
         "utf16Range",
-        text_source_range_to_value(0, run.text.encode_utf16().count() as u32),
+        text_source_range_to_value(TextSourceRange::new(
+            0,
+            run.text.encode_utf16().count() as u32,
+        )),
     );
     value.into()
 }
 
-fn text_source_range_to_value(start: u32, end: u32) -> JsValue {
+fn text_source_span_to_value(span: &TextSourceSpan) -> JsValue {
     let value = Object::new();
-    set_number(&value, "start", start as f64);
-    set_number(&value, "end", end as f64);
+    set_number(&value, "id", span.id.0 as f64);
+    set_value(
+        &value,
+        "utf8Range",
+        text_source_range_to_value(span.utf8_range),
+    );
+    set_value(
+        &value,
+        "utf16Range",
+        text_source_range_to_value(span.utf16_range),
+    );
+    if let Some(stable_source_key) = &span.stable_source_key {
+        set_value(
+            &value,
+            "stableSourceKey",
+            stable_source_key_to_value(stable_source_key),
+        );
+    }
     value.into()
 }
 
-fn text_source_annotations_to_value(
-    run: &crate::paint::LayerTextRunPaint,
-    utf8_end: u32,
-    utf16_end: u32,
-) -> JsValue {
+fn text_source_range_to_value(range: TextSourceRange) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "start", range.start as f64);
+    set_number(&value, "end", range.end as f64);
+    value.into()
+}
+
+fn stable_source_key_to_value(stable_source_key: &str) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "scheme", stable_source_key);
+    value.into()
+}
+
+fn text_source_annotations_to_value(source_annotations: &[TextSourceAnnotation]) -> JsValue {
     let annotations = Array::new();
-    if run.field_marker != FieldMarkerType::None {
+    for source_annotation in source_annotations {
         let annotation = Object::new();
-        set_string(&annotation, "kind", "fieldMarker");
-        set_string(&annotation, "marker", field_marker_str(run.field_marker));
-        set_value(
-            &annotation,
-            "rangeUtf8",
-            text_source_range_to_value(0, utf8_end),
-        );
-        set_value(
-            &annotation,
-            "rangeUtf16",
-            text_source_range_to_value(0, utf16_end),
-        );
-        if let FieldMarkerType::ShapeMarker(index) = run.field_marker {
-            set_number(&annotation, "shapeMarkerIndex", index as f64);
+        match source_annotation {
+            TextSourceAnnotation::FieldMarker {
+                marker,
+                range_utf8,
+                range_utf16,
+            } => {
+                set_string(&annotation, "kind", "fieldMarker");
+                set_string(&annotation, "marker", field_marker_str(*marker));
+                set_value(
+                    &annotation,
+                    "rangeUtf8",
+                    text_source_range_to_value(*range_utf8),
+                );
+                set_value(
+                    &annotation,
+                    "rangeUtf16",
+                    text_source_range_to_value(*range_utf16),
+                );
+                if let FieldMarkerType::ShapeMarker(index) = marker {
+                    set_number(&annotation, "shapeMarkerIndex", *index as f64);
+                }
+            }
+            TextSourceAnnotation::ParagraphEnd {
+                offset_utf8,
+                offset_utf16,
+            } => {
+                set_string(&annotation, "kind", "paragraphEnd");
+                set_number(&annotation, "offsetUtf8", *offset_utf8 as f64);
+                set_number(&annotation, "offsetUtf16", *offset_utf16 as f64);
+            }
+            TextSourceAnnotation::LineBreakEnd {
+                offset_utf8,
+                offset_utf16,
+            } => {
+                set_string(&annotation, "kind", "lineBreakEnd");
+                set_number(&annotation, "offsetUtf8", *offset_utf8 as f64);
+                set_number(&annotation, "offsetUtf16", *offset_utf16 as f64);
+            }
         }
-        annotations.push(&annotation);
-    }
-    if run.is_para_end {
-        let annotation = Object::new();
-        set_string(&annotation, "kind", "paragraphEnd");
-        set_number(&annotation, "offsetUtf8", utf8_end as f64);
-        set_number(&annotation, "offsetUtf16", utf16_end as f64);
-        annotations.push(&annotation);
-    }
-    if run.is_line_break_end {
-        let annotation = Object::new();
-        set_string(&annotation, "kind", "lineBreakEnd");
-        set_number(&annotation, "offsetUtf8", utf8_end as f64);
-        set_number(&annotation, "offsetUtf16", utf16_end as f64);
         annotations.push(&annotation);
     }
     annotations.into()
@@ -505,7 +538,10 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             set_value(
                 &value,
                 "source",
-                text_source_span_to_value(run, text_sources.next_id()),
+                run.source.as_ref().map_or_else(
+                    || legacy_text_source_span_to_value(run, text_sources.next_id()),
+                    text_source_span_to_value,
+                ),
             );
             set_value(&value, "style", text_style_to_value(&run.style));
             set_value(
@@ -1487,6 +1523,7 @@ mod tests {
                     PaintOp::TextRun {
                         bbox: BoundingBox::new(8.0, 10.0, 80.0, 16.0),
                         run: LayerTextRunPaint {
+                            source: None,
                             text: "marker".to_string(),
                             style: TextStyle {
                                 font_family: "Noto Sans KR".to_string(),

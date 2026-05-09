@@ -942,6 +942,7 @@ fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
             PaintOp::TextRun {
                 bbox: text_bbox,
                 run: LayerTextRunPaint {
+                    source: None,
                     text: "Skia".to_string(),
                     style: TextStyle {
                         font_size: 8.0,
@@ -1197,6 +1198,7 @@ fn static_subtree_cache_key_uses_paint_text_style_projection() {
             vec![PaintOp::TextRun {
                 bbox,
                 run: LayerTextRunPaint {
+                    source: None,
                     text: "Paint".to_string(),
                     style,
                     positions: vec![0.0, 8.0, 16.0, 24.0, 32.0, 40.0],
@@ -2061,6 +2063,7 @@ fn skia_vertical_sideways_uses_explicit_rotation_only() {
             vec![PaintOp::TextRun {
                 bbox,
                 run: LayerTextRunPaint {
+                    source: None,
                     text: "ABC".to_string(),
                     style: TextStyle {
                         font_family: "sans-serif".to_string(),
@@ -2101,6 +2104,7 @@ fn skia_vertical_upright_uses_layout_glyph_positions() {
     let first = BoundingBox::new(50.0, 18.0, 26.0, 26.0);
     let second = BoundingBox::new(50.0, 52.0, 26.0, 26.0);
     let make_run = |text: &str| LayerTextRunPaint {
+        source: None,
         text: text.to_string(),
         style: TextStyle {
             font_family: "sans-serif".to_string(),

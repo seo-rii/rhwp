@@ -238,6 +238,7 @@ fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
         vec![PaintOp::TextRun {
             bbox,
             run: LayerTextRunPaint {
+                source: None,
                 text: "세로".to_string(),
                 style: TextStyle {
                     font_size: 14.0,
@@ -324,6 +325,7 @@ fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
         vec![PaintOp::TextRun {
             bbox,
             run: LayerTextRunPaint {
+                source: None,
                 text: "a b".to_string(),
                 style: TextStyle {
                     font_size: 14.0,

@@ -8,7 +8,8 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerSemantic, LayerTextRunPaint, PageLayerTree,
-    PaintOp, PaintTextStyle, ResourceArena, LAYER_TREE_SCHEMA,
+    PaintOp, PaintTextStyle, ResourceArena, TextSourceAnnotation, TextSourceEntry, TextSourceRange,
+    TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -51,7 +52,7 @@ impl PageLayerTree {
         self.root
             .write_json(&mut buf, &self.resources, &mut text_source_state);
         buf.push_str(",\"textSources\":");
-        write_text_source_entries(&mut buf, &self.root);
+        write_text_source_entries(&mut buf, &self.text_sources);
         buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\"],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.clusterPlacement\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true}");
         buf.push('}');
         buf
@@ -211,7 +212,11 @@ impl PaintOp {
                     json_escape(run.orientation.as_str()),
                 );
                 buf.push_str(",\"source\":");
-                write_text_source_span(buf, run, text_sources.next_id());
+                if let Some(source) = &run.source {
+                    write_text_source_span(buf, source);
+                } else {
+                    write_legacy_text_source_span(buf, run, text_sources.next_id());
+                }
                 buf.push_str(",\"style\":");
                 write_text_style(buf, &run.style);
                 buf.push_str(",\"paintStyle\":");
@@ -462,121 +467,116 @@ impl TextSourceExportState {
     }
 }
 
-fn write_text_source_entries(buf: &mut String, root: &LayerNode) {
+fn write_text_source_entries(buf: &mut String, table: &TextSourceTable) {
     buf.push('[');
-    let mut state = TextSourceExportState::default();
-    let mut is_first = true;
-    write_text_source_entries_for_node(buf, root, &mut state, &mut is_first);
+    for (idx, entry) in table.entries.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        write_text_source_entry(buf, entry);
+    }
     buf.push(']');
 }
 
-fn write_text_source_entries_for_node(
-    buf: &mut String,
-    node: &LayerNode,
-    state: &mut TextSourceExportState,
-    is_first: &mut bool,
-) {
-    match &node.kind {
-        LayerNodeKind::Group { children, .. } => {
-            for child in children {
-                write_text_source_entries_for_node(buf, child, state, is_first);
-            }
-        }
-        LayerNodeKind::ClipRect { child, .. } => {
-            write_text_source_entries_for_node(buf, child, state, is_first);
-        }
-        LayerNodeKind::Leaf { ops, .. } => {
-            for op in ops {
-                if let PaintOp::TextRun { run, .. } = op {
-                    if !*is_first {
-                        buf.push(',');
-                    }
-                    *is_first = false;
-                    write_text_source_entry(buf, run, state.next_id());
-                }
-            }
-        }
-    }
-}
-
-fn write_text_source_entry(buf: &mut String, run: &LayerTextRunPaint, id: u32) {
-    let utf8_end = run.text.len() as u32;
-    let utf16_end = run.text.encode_utf16().count() as u32;
+fn write_text_source_entry(buf: &mut String, entry: &TextSourceEntry) {
     let _ = write!(
         buf,
         "{{\"id\":{},\"text\":{},\"utf8Range\":",
-        id,
-        json_escape(&run.text)
+        entry.id.0,
+        json_escape(&entry.text)
     );
-    write_text_source_range(buf, 0, utf8_end);
+    write_text_source_range(buf, entry.utf8_range);
     buf.push_str(",\"utf16Range\":");
-    write_text_source_range(buf, 0, utf16_end);
+    write_text_source_range(buf, entry.utf16_range);
+    if let Some(stable_source_key) = &entry.stable_source_key {
+        let _ = write!(
+            buf,
+            ",\"stableSourceKey\":{{\"scheme\":{}}}",
+            json_escape(stable_source_key)
+        );
+    }
     buf.push_str(",\"annotations\":");
-    write_text_source_annotations(buf, run, utf8_end, utf16_end);
+    write_text_source_annotations(buf, &entry.annotations);
     buf.push('}');
 }
 
-fn write_text_source_span(buf: &mut String, run: &LayerTextRunPaint, id: u32) {
+fn write_legacy_text_source_span(buf: &mut String, run: &LayerTextRunPaint, id: u32) {
     let utf8_end = run.text.len() as u32;
     let utf16_end = run.text.encode_utf16().count() as u32;
     let _ = write!(buf, "{{\"id\":{},\"utf8Range\":", id);
-    write_text_source_range(buf, 0, utf8_end);
+    write_text_source_range(buf, TextSourceRange::new(0, utf8_end));
     buf.push_str(",\"utf16Range\":");
-    write_text_source_range(buf, 0, utf16_end);
+    write_text_source_range(buf, TextSourceRange::new(0, utf16_end));
     buf.push('}');
 }
 
-fn write_text_source_range(buf: &mut String, start: u32, end: u32) {
-    let _ = write!(buf, "{{\"start\":{},\"end\":{}}}", start, end);
+fn write_text_source_span(buf: &mut String, span: &TextSourceSpan) {
+    let _ = write!(buf, "{{\"id\":{},\"utf8Range\":", span.id.0);
+    write_text_source_range(buf, span.utf8_range);
+    buf.push_str(",\"utf16Range\":");
+    write_text_source_range(buf, span.utf16_range);
+    if let Some(stable_source_key) = &span.stable_source_key {
+        let _ = write!(
+            buf,
+            ",\"stableSourceKey\":{{\"scheme\":{}}}",
+            json_escape(stable_source_key)
+        );
+    }
+    buf.push('}');
 }
 
-fn write_text_source_annotations(
-    buf: &mut String,
-    run: &LayerTextRunPaint,
-    utf8_end: u32,
-    utf16_end: u32,
-) {
+fn write_text_source_range(buf: &mut String, range: TextSourceRange) {
+    let _ = write!(buf, "{{\"start\":{},\"end\":{}}}", range.start, range.end);
+}
+
+fn write_text_source_annotations(buf: &mut String, annotations: &[TextSourceAnnotation]) {
     buf.push('[');
-    let mut is_first = true;
-    if run.field_marker != FieldMarkerType::None {
-        write_text_source_annotation_prefix(buf, &mut is_first);
-        let _ = write!(
-            buf,
-            "{{\"kind\":\"fieldMarker\",\"marker\":{},\"rangeUtf8\":",
-            json_escape(field_marker_str(run.field_marker))
-        );
-        write_text_source_range(buf, 0, utf8_end);
-        buf.push_str(",\"rangeUtf16\":");
-        write_text_source_range(buf, 0, utf16_end);
-        if let FieldMarkerType::ShapeMarker(index) = run.field_marker {
-            let _ = write!(buf, ",\"shapeMarkerIndex\":{}", index);
+    for (idx, annotation) in annotations.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
         }
-        buf.push('}');
-    }
-    if run.is_para_end {
-        write_text_source_annotation_prefix(buf, &mut is_first);
-        let _ = write!(
-            buf,
-            "{{\"kind\":\"paragraphEnd\",\"offsetUtf8\":{},\"offsetUtf16\":{}}}",
-            utf8_end, utf16_end
-        );
-    }
-    if run.is_line_break_end {
-        write_text_source_annotation_prefix(buf, &mut is_first);
-        let _ = write!(
-            buf,
-            "{{\"kind\":\"lineBreakEnd\",\"offsetUtf8\":{},\"offsetUtf16\":{}}}",
-            utf8_end, utf16_end
-        );
+        match annotation {
+            TextSourceAnnotation::FieldMarker {
+                marker,
+                range_utf8,
+                range_utf16,
+            } => {
+                let _ = write!(
+                    buf,
+                    "{{\"kind\":\"fieldMarker\",\"marker\":{},\"rangeUtf8\":",
+                    json_escape(field_marker_str(*marker))
+                );
+                write_text_source_range(buf, *range_utf8);
+                buf.push_str(",\"rangeUtf16\":");
+                write_text_source_range(buf, *range_utf16);
+                if let FieldMarkerType::ShapeMarker(index) = marker {
+                    let _ = write!(buf, ",\"shapeMarkerIndex\":{}", index);
+                }
+                buf.push('}');
+            }
+            TextSourceAnnotation::ParagraphEnd {
+                offset_utf8,
+                offset_utf16,
+            } => {
+                let _ = write!(
+                    buf,
+                    "{{\"kind\":\"paragraphEnd\",\"offsetUtf8\":{},\"offsetUtf16\":{}}}",
+                    offset_utf8, offset_utf16
+                );
+            }
+            TextSourceAnnotation::LineBreakEnd {
+                offset_utf8,
+                offset_utf16,
+            } => {
+                let _ = write!(
+                    buf,
+                    "{{\"kind\":\"lineBreakEnd\",\"offsetUtf8\":{},\"offsetUtf16\":{}}}",
+                    offset_utf8, offset_utf16
+                );
+            }
+        }
     }
     buf.push(']');
-}
-
-fn write_text_source_annotation_prefix(buf: &mut String, is_first: &mut bool) {
-    if !*is_first {
-        buf.push(',');
-    }
-    *is_first = false;
 }
 
 fn write_text_style(buf: &mut String, style: &TextStyle) {
@@ -1223,6 +1223,7 @@ mod tests {
         let text = PaintOp::TextRun {
             bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
             run: LayerTextRunPaint {
+                source: None,
                 text: "가A".to_string(),
                 style: TextStyle {
                     font_family: "Noto Sans KR".to_string(),

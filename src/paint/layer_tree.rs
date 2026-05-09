@@ -1,7 +1,145 @@
 use crate::paint::paint_op::{LayerTextControlMarkKind, PaintOp};
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
-use crate::renderer::render_tree::{BoundingBox, NodeId};
+use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, NodeId};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TextSourceId(pub u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TextSourceRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl TextSourceRange {
+    pub fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TextSourceSpan {
+    pub id: TextSourceId,
+    pub utf8_range: TextSourceRange,
+    pub utf16_range: TextSourceRange,
+    pub stable_source_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextSourceEntry {
+    pub id: TextSourceId,
+    pub stable_source_key: Option<String>,
+    pub text: String,
+    pub utf8_range: TextSourceRange,
+    pub utf16_range: TextSourceRange,
+    pub annotations: Vec<TextSourceAnnotation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextSourceAnnotation {
+    FieldMarker {
+        marker: FieldMarkerType,
+        range_utf8: TextSourceRange,
+        range_utf16: TextSourceRange,
+    },
+    ParagraphEnd {
+        offset_utf8: u32,
+        offset_utf16: u32,
+    },
+    LineBreakEnd {
+        offset_utf8: u32,
+        offset_utf16: u32,
+    },
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TextSourceTable {
+    pub entries: Vec<TextSourceEntry>,
+}
+
+impl TextSourceTable {
+    pub fn from_layer_node(root: &mut LayerNode) -> Self {
+        let mut table = Self::default();
+        table.collect_from_node(root);
+        table
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn collect_from_node(&mut self, node: &mut LayerNode) {
+        match &mut node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    self.collect_from_node(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => {
+                self.collect_from_node(child);
+            }
+            LayerNodeKind::Leaf { ops, .. } => {
+                for op in ops {
+                    if let PaintOp::TextRun { run, .. } = op {
+                        let id = TextSourceId(self.entries.len() as u32);
+                        let utf8_range = TextSourceRange::new(0, run.text.len() as u32);
+                        let utf16_range =
+                            TextSourceRange::new(0, run.text.encode_utf16().count() as u32);
+                        let annotations =
+                            text_source_annotations(run, utf8_range.end, utf16_range.end);
+                        let stable_source_key = run
+                            .source
+                            .as_ref()
+                            .and_then(|source| source.stable_source_key.clone());
+                        run.source = Some(TextSourceSpan {
+                            id,
+                            utf8_range,
+                            utf16_range,
+                            stable_source_key: stable_source_key.clone(),
+                        });
+                        self.entries.push(TextSourceEntry {
+                            id,
+                            stable_source_key,
+                            text: run.text.clone(),
+                            utf8_range,
+                            utf16_range,
+                            annotations,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn text_source_annotations(
+    run: &crate::paint::paint_op::LayerTextRunPaint,
+    utf8_end: u32,
+    utf16_end: u32,
+) -> Vec<TextSourceAnnotation> {
+    let mut annotations = Vec::new();
+    if run.field_marker != FieldMarkerType::None {
+        annotations.push(TextSourceAnnotation::FieldMarker {
+            marker: run.field_marker,
+            range_utf8: TextSourceRange::new(0, utf8_end),
+            range_utf16: TextSourceRange::new(0, utf16_end),
+        });
+    }
+    if run.is_para_end {
+        annotations.push(TextSourceAnnotation::ParagraphEnd {
+            offset_utf8: utf8_end,
+            offset_utf16: utf16_end,
+        });
+    }
+    if run.is_line_break_end {
+        annotations.push(TextSourceAnnotation::LineBreakEnd {
+            offset_utf8: utf8_end,
+            offset_utf16: utf16_end,
+        });
+    }
+    annotations
+}
 
 /// 한 페이지의 visual layer tree.
 ///
@@ -17,6 +155,7 @@ pub struct PageLayerTree {
     pub output_options: LayerOutputOptions,
     pub root: LayerNode,
     pub resources: ResourceArena,
+    pub text_sources: TextSourceTable,
 }
 
 impl PageLayerTree {
@@ -77,6 +216,7 @@ pub struct PageLayerTreeBuilder {
     output_options: LayerOutputOptions,
     root: LayerNode,
     resources: ResourceArena,
+    text_sources: Option<TextSourceTable>,
 }
 
 impl PageLayerTreeBuilder {
@@ -88,6 +228,7 @@ impl PageLayerTreeBuilder {
             output_options: LayerOutputOptions::default(),
             root,
             resources: ResourceArena::default(),
+            text_sources: None,
         }
     }
 
@@ -106,14 +247,24 @@ impl PageLayerTreeBuilder {
         self
     }
 
+    pub fn text_sources(mut self, text_sources: TextSourceTable) -> Self {
+        self.text_sources = Some(text_sources);
+        self
+    }
+
     pub fn build(self) -> PageLayerTree {
+        let mut root = self.root;
+        let text_sources = self
+            .text_sources
+            .unwrap_or_else(|| TextSourceTable::from_layer_node(&mut root));
         PageLayerTree {
             page_width: self.page_width,
             page_height: self.page_height,
             profile: self.profile,
             output_options: self.output_options,
-            root: self.root,
+            root,
             resources: self.resources,
+            text_sources,
         }
     }
 }
@@ -374,5 +525,98 @@ impl LayerSemantic {
             row_count: Some(row_count),
             col_count: Some(col_count),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::TextStyle;
+
+    #[test]
+    fn page_layer_tree_builds_internal_text_source_table_and_spans() {
+        let root = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 80.0, 20.0),
+            None,
+            vec![
+                PaintOp::TextRun {
+                    bbox: BoundingBox::new(0.0, 0.0, 30.0, 12.0),
+                    run: crate::paint::LayerTextRunPaint {
+                        source: None,
+                        text: "가A".to_string(),
+                        style: TextStyle::default(),
+                        positions: vec![0.0, 10.0, 20.0],
+                        control_marks: Vec::new(),
+                        baseline: 10.0,
+                        rotation: 0.0,
+                        is_vertical: false,
+                        orientation: crate::paint::LayerTextOrientation::Horizontal,
+                        char_overlap: None,
+                        field_marker: FieldMarkerType::FieldBegin,
+                        is_para_end: true,
+                        is_line_break_end: false,
+                    },
+                },
+                PaintOp::TextRun {
+                    bbox: BoundingBox::new(32.0, 0.0, 20.0, 12.0),
+                    run: crate::paint::LayerTextRunPaint {
+                        source: Some(TextSourceSpan {
+                            id: TextSourceId(99),
+                            utf8_range: TextSourceRange::new(4, 8),
+                            utf16_range: TextSourceRange::new(2, 4),
+                            stable_source_key: Some("hwp-source-v1".to_string()),
+                        }),
+                        text: "B".to_string(),
+                        style: TextStyle::default(),
+                        positions: vec![0.0, 9.0],
+                        control_marks: Vec::new(),
+                        baseline: 10.0,
+                        rotation: 0.0,
+                        is_vertical: false,
+                        orientation: crate::paint::LayerTextOrientation::Horizontal,
+                        char_overlap: None,
+                        field_marker: FieldMarkerType::None,
+                        is_para_end: false,
+                        is_line_break_end: true,
+                    },
+                },
+            ],
+        );
+
+        let tree = PageLayerTree::new(100.0, 100.0, root);
+
+        assert_eq!(tree.text_sources.entries.len(), 2);
+        assert_eq!(tree.text_sources.entries[0].id, TextSourceId(0));
+        assert_eq!(tree.text_sources.entries[0].text, "가A");
+        assert_eq!(
+            tree.text_sources.entries[0].utf8_range,
+            TextSourceRange::new(0, 4)
+        );
+        assert_eq!(
+            tree.text_sources.entries[0].utf16_range,
+            TextSourceRange::new(0, 2)
+        );
+        assert_eq!(tree.text_sources.entries[0].annotations.len(), 2);
+        assert_eq!(
+            tree.text_sources.entries[1].stable_source_key.as_deref(),
+            Some("hwp-source-v1")
+        );
+
+        let LayerNodeKind::Leaf { ops, .. } = &tree.root.kind else {
+            panic!("expected leaf root");
+        };
+        let PaintOp::TextRun { run, .. } = &ops[0] else {
+            panic!("expected text run");
+        };
+        let source = run.source.as_ref().expect("source span should be set");
+        assert_eq!(source.id, TextSourceId(0));
+        assert_eq!(source.utf8_range, TextSourceRange::new(0, 4));
+
+        let PaintOp::TextRun { run, .. } = &ops[1] else {
+            panic!("expected text run");
+        };
+        let source = run.source.as_ref().expect("source span should be set");
+        assert_eq!(source.id, TextSourceId(1));
+        assert_eq!(source.stable_source_key.as_deref(), Some("hwp-source-v1"));
     }
 }

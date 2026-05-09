@@ -159,6 +159,7 @@ impl LayerBuilder {
                     PaintOp::TextRun {
                         bbox: node.bbox,
                         run: LayerTextRunPaint {
+                            source: None,
                             text: run.text.clone(),
                             style: run.style.clone(),
                             positions,
@@ -272,6 +273,7 @@ impl LayerBuilder {
                 let text_op = PaintOp::TextRun {
                     bbox: text_bbox,
                     run: LayerTextRunPaint {
+                        source: None,
                         text: placeholder.label.clone(),
                         positions: compute_char_positions(&placeholder.label, &text_style),
                         control_marks: Vec::new(),

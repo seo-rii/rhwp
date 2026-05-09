@@ -31,7 +31,8 @@ pub mod schema;
 pub use builder::LayerBuilder;
 pub use layer_tree::{
     CacheHint, ClipKind, ClipPolicy, LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic,
-    LayerSemanticRole, PageLayerTree,
+    LayerSemanticRole, PageLayerTree, TextSourceAnnotation, TextSourceEntry, TextSourceId,
+    TextSourceRange, TextSourceSpan, TextSourceTable,
 };
 pub use paint_op::{
     LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,

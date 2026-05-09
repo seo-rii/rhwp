@@ -18,6 +18,12 @@ must be optional and paired with `TextRun` fallback.
 
 ## Export Contract
 
+`PageLayerTree` now carries an internal `textSources` table and each
+`LayerTextRunPaint` may carry a `source` span into that table. The builder
+creates export-local dense ids during layer tree construction so JSON, JS value,
+and future backend diagnostics read the same source identity instead of
+re-scanning the tree independently.
+
 Layer JSON/JS exports currently provide:
 
 - `textSources`: source text entries keyed by numeric id.
@@ -80,7 +86,8 @@ metadata as source annotations. Visible marks are still carried by existing
 ## Migration Phases
 
 1. Keep `TextRun` fallback and expose `paintStyle`.
-2. Add `textSources` and per-TextRun `source` spans.
+2. Promote `textSources` into `PageLayerTree` and attach per-TextRun `source`
+   spans during layer tree construction.
 3. Add feature metadata so consumers can avoid double-painting future variants.
 4. Define TextRun v2 cluster placement and run-local placement contracts.
 5. Split special visible text semantics into paint ops:
