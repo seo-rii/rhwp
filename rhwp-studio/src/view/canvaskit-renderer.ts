@@ -2,6 +2,7 @@ import CanvasKitInit from 'canvaskit-wasm';
 import type { CanvasKit, Font, Image, Paint, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
+import { isKnownLayerPaintOp } from '@/core/types';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
   LayerBounds,
@@ -371,6 +372,9 @@ export class CanvasKitLayerRenderer {
     node: LayerLeafNode,
   ): void {
     for (const op of node.ops) {
+      if (!isKnownLayerPaintOp(op)) {
+        continue;
+      }
       this.renderOp(canvas, op);
     }
   }
@@ -1875,6 +1879,9 @@ export class CanvasKitLayerRenderer {
     this.currentCacheHintStack.push(node.cacheHint);
     try {
       return node.ops.some((op) => {
+        if (!isKnownLayerPaintOp(op)) {
+          return false;
+        }
         if (
           this.renderMode === 'compat'
           && op.type === 'pageBackground'
@@ -1931,6 +1938,9 @@ export class CanvasKitLayerRenderer {
     }
     this.withCacheHint(node.cacheHint, () => {
       for (const op of node.ops) {
+        if (!isKnownLayerPaintOp(op)) {
+          continue;
+        }
         if (
           this.renderMode === 'compat'
           && op.type === 'pageBackground'

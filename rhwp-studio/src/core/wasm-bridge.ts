@@ -1,4 +1,5 @@
 import init, { HwpDocument, version } from '@wasm/rhwp.js';
+import { isKnownLayerPaintOp } from './types';
 import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, CellPathEntry, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree, LayerNode, LayerPaintOp } from './types';
 import { resolveFont, fontFamilyWithFallback } from './font-substitution';
 import { REGISTERED_FONTS } from './font-loader';
@@ -372,6 +373,9 @@ export class WasmBridge {
     const walk = (node: LayerNode): void => {
       if (node.kind === 'leaf') {
         for (const op of node.ops) {
+          if (!isKnownLayerPaintOp(op)) {
+            continue;
+          }
           rewriteOp(op);
         }
         return;

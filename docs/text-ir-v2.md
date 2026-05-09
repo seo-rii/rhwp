@@ -101,6 +101,10 @@ metadata as source annotations. Visible marks are still carried by existing
   unknown ops without failing. If a strict enum decoder is still in use, emit
   new visual alternatives through a sidecar/variant table or nested text variant
   field before adding root ops.
+- Studio Canvas2D and CanvasKit consumers intentionally filter unknown layer
+  paint ops before dispatch. This makes future root ops additive for those
+  consumers, while new visual alternatives still need variant grouping to avoid
+  double-painting legacy mirrors.
 - Future TextRun/GlyphRun/outline alternatives must be tied together by an
   explicit variant group or a `Text { variants }` container. Consumers must draw
   at most one variant per group. Glyph outline alternatives must not be exported

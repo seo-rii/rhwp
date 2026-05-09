@@ -1,3 +1,4 @@
+import { isKnownLayerPaintOp } from '@/core/types';
 import type { CanvasKitRenderMode } from './render-backend';
 import type {
   LayerBounds,
@@ -180,6 +181,9 @@ export class Canvas2DLayerRenderer {
 
   private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {
     for (const op of node.ops) {
+      if (!isKnownLayerPaintOp(op)) {
+        continue;
+      }
       this.renderOp(ctx, op);
     }
   }

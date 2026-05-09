@@ -200,10 +200,10 @@ export interface LayerLeafNode {
   sourceNodeId?: number;
   semantic?: LayerSemantic;
   cacheHint: LayerCacheHint;
-  ops: LayerPaintOp[];
+  ops: LayerPaintOpLike[];
 }
 
-export type LayerPaintOp =
+export type LayerKnownPaintOp =
   | LayerPageBackgroundOp
   | LayerTextRunOp
   | LayerFootnoteMarkerOp
@@ -214,6 +214,33 @@ export type LayerPaintOp =
   | LayerImageOp
   | LayerEquationOp
   | LayerFormObjectOp;
+
+export type LayerPaintOp = LayerKnownPaintOp;
+
+export interface LayerUnknownPaintOp {
+  type: string;
+  bbox?: LayerBounds;
+  [key: string]: unknown;
+}
+
+export type LayerPaintOpLike = LayerKnownPaintOp | LayerUnknownPaintOp;
+
+const KNOWN_LAYER_PAINT_OP_TYPES = new Set([
+  'pageBackground',
+  'textRun',
+  'footnoteMarker',
+  'line',
+  'rectangle',
+  'ellipse',
+  'path',
+  'image',
+  'equation',
+  'formObject',
+]);
+
+export function isKnownLayerPaintOp(op: LayerPaintOpLike): op is LayerKnownPaintOp {
+  return KNOWN_LAYER_PAINT_OP_TYPES.has(op.type);
+}
 
 export interface LayerTextStyle {
   fontFamily: string;
