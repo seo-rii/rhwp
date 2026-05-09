@@ -330,8 +330,10 @@ impl LayoutEngine {
 
                     for ch_idx in *s..*e {
                         // 각주 마커 삽입: 현재 문자 위치에 각주가 있으면 먼저 run flush + FootnoteMarker 노드 삽입
-                        if let Some(&(_, fn_num)) = composed.and_then(|c| {
-                            c.footnote_positions.iter().find(|&&(pos, _)| pos == ch_idx)
+                        if let Some(&(_, fn_num, fn_ctrl_idx)) = composed.and_then(|c| {
+                            c.footnote_positions
+                                .iter()
+                                .find(|&&(pos, _, _)| pos == ch_idx)
                         }) {
                             // 현재까지 누적된 run 출력
                             if ch_idx > line_run_start {
@@ -395,15 +397,6 @@ impl LayoutEngine {
                             } else {
                                 baseline_dist
                             };
-                            // 각주 컨트롤 인덱스 찾기
-                            let fn_ctrl_idx = composed
-                                .map(|c| {
-                                    c.footnote_positions
-                                        .iter()
-                                        .position(|&(p, _)| p == ch_idx)
-                                        .unwrap_or(0)
-                                })
-                                .unwrap_or(0);
                             let marker_id = tree.next_id();
                             let marker_node = RenderNode::new(
                                 marker_id,
@@ -1107,7 +1100,7 @@ impl LayoutEngine {
                         .map(|r| r.text.chars().count())
                         .sum::<usize>()
                         + comp_line.char_start;
-                for &(fpos, fnum) in composed.footnote_positions.iter() {
+                for &(fpos, fnum, _) in composed.footnote_positions.iter() {
                     if fpos >= run_char_pos_est
                         && (fpos < run_char_end_est
                             || (is_last_run_est && fpos == run_char_end_est))
@@ -1383,7 +1376,7 @@ impl LayoutEngine {
             };
 
             // 각주 마커 위치 수집
-            let fn_positions: &[(usize, u16)] = &composed.footnote_positions;
+            let fn_positions: &[(usize, u16, usize)] = &composed.footnote_positions;
             let mut fn_marker_inserted = vec![false; fn_positions.len()];
 
             let mut pending_right_tab_render: Option<(f64, u8)> = None;
@@ -1619,14 +1612,14 @@ impl LayoutEngine {
                         // run 내 각주 위치 수집 (run 내 상대 위치, 각주 번호, fn_positions 인덱스)
                         // 마지막 run에서는 run_char_end 위치의 각주도 포함 (문단 끝 각주)
                         let is_last = is_last_run_of_line(run_idx);
-                        let run_fn_markers: Vec<(usize, u16, usize)> = fn_positions
+                        let run_fn_markers: Vec<(usize, u16, usize, usize)> = fn_positions
                             .iter()
                             .enumerate()
-                            .filter_map(|(fni, &(fpos, fnum))| {
+                            .filter_map(|(fni, &(fpos, fnum, fn_ctrl_idx))| {
                                 let in_range = fpos >= run_char_pos
                                     && (fpos < run_char_end || (is_last && fpos == run_char_end));
                                 if !fn_marker_inserted[fni] && in_range {
-                                    Some((fpos - run_char_pos, fnum, fni))
+                                    Some((fpos - run_char_pos, fnum, fni, fn_ctrl_idx))
                                 } else {
                                     None
                                 }
@@ -1666,7 +1659,7 @@ impl LayoutEngine {
                             let mut sub_x = x;
                             let mut sub_char_offset = char_offset;
 
-                            for &(rel_pos, fnum, fni) in &run_fn_markers {
+                            for &(rel_pos, fnum, fni, fn_ctrl_idx) in &run_fn_markers {
                                 fn_marker_inserted[fni] = true;
                                 // 각주 앞 텍스트 세그먼트
                                 if rel_pos > seg_start {
@@ -1722,7 +1715,7 @@ impl LayoutEngine {
                                         color: base_ts.color,
                                         section_index,
                                         para_index,
-                                        control_index: fni,
+                                        control_index: fn_ctrl_idx,
                                     }),
                                     BoundingBox::new(sub_x, y, sup_w, line_height),
                                 );

@@ -99,6 +99,11 @@ pub enum DocumentEvent {
         para: usize,
         ctrl: usize,
     },
+    FootnoteDeleted {
+        section: usize,
+        para: usize,
+        ctrl: usize,
+    },
 
     // ── 클립보드/HTML ──
     ContentPasted {
@@ -248,6 +253,14 @@ impl DocumentEvent {
                 ctrl,
             } => format!(
                 r#"{{"type":"PictureResized","section":{},"para":{},"ctrl":{}}}"#,
+                section, para, ctrl
+            ),
+            DocumentEvent::FootnoteDeleted {
+                section,
+                para,
+                ctrl,
+            } => format!(
+                r#"{{"type":"FootnoteDeleted","section":{},"para":{},"ctrl":{}}}"#,
                 section, para, ctrl
             ),
 

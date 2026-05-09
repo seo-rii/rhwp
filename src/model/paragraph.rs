@@ -211,6 +211,81 @@ impl Paragraph {
         }
     }
 
+    /// 반환: positions[i] = controls[i]가 삽입되어야 할 텍스트 문자 인덱스.
+    ///
+    /// HWP 파서는 텍스트에서 8-code-unit 제어 문자 슬롯을 제거한다. 이 메서드는
+    /// `char_offsets`의 gap을 사용해 본문 안에서 각 컨트롤이 차지하던 logical
+    /// cursor unit을 복원한다.
+    pub(crate) fn control_text_positions(&self) -> Vec<usize> {
+        let offsets = &self.char_offsets;
+        let total_controls = self.controls.len();
+
+        if total_controls == 0 {
+            return vec![];
+        }
+
+        if offsets.is_empty() {
+            let mut pos = 0usize;
+            let mut positions = Vec::with_capacity(total_controls);
+            for ctrl in &self.controls {
+                positions.push(pos);
+                if matches!(
+                    ctrl,
+                    Control::Shape(_)
+                        | Control::Table(_)
+                        | Control::Picture(_)
+                        | Control::Equation(_)
+                        | Control::Footnote(_)
+                        | Control::Endnote(_)
+                ) {
+                    pos += 1;
+                }
+            }
+            return positions;
+        }
+
+        let chars: Vec<char> = self.text.chars().collect();
+        let mut positions = Vec::with_capacity(total_controls);
+
+        let gap_before = offsets[0] as usize;
+        let n_ctrls_before = gap_before / 8;
+        for _ in 0..n_ctrls_before {
+            if positions.len() >= total_controls {
+                break;
+            }
+            positions.push(0);
+        }
+
+        for i in 0..offsets.len().saturating_sub(1) {
+            if positions.len() >= total_controls {
+                break;
+            }
+            let current_off = offsets[i] as usize;
+            let next_off = offsets[i + 1] as usize;
+            let char_width = if chars.get(i).map_or(false, |&c| c as u32 > 0xFFFF) {
+                2
+            } else {
+                1
+            };
+            if next_off > current_off + char_width {
+                let gap = next_off - current_off - char_width;
+                let n_ctrls = gap / 8;
+                for _ in 0..n_ctrls {
+                    if positions.len() >= total_controls {
+                        break;
+                    }
+                    positions.push(i + 1);
+                }
+            }
+        }
+
+        while positions.len() < total_controls {
+            positions.push(chars.len());
+        }
+
+        positions
+    }
+
     /// char_offset 위치에 텍스트를 삽입한다.
     ///
     /// char_offset은 Rust 문자(char) 인덱스이다 (바이트 인덱스가 아님).
@@ -231,6 +306,24 @@ impl Paragraph {
         // 이 경우 char_offset을 text_len으로 clamp하되, UTF-16 위치는
         // 마지막 문자 + 후행 컨트롤 갭을 포함한 값으로 계산
         let effective_char_offset = char_offset.min(text_len);
+        let control_positions = self.control_text_positions();
+        let inserts_before_inline_control = char_offset <= text_len
+            && self
+                .controls
+                .iter()
+                .zip(control_positions.iter())
+                .any(|(ctrl, &pos)| {
+                    pos == effective_char_offset
+                        && matches!(
+                            ctrl,
+                            Control::Shape(_)
+                                | Control::Table(_)
+                                | Control::Picture(_)
+                                | Control::Equation(_)
+                                | Control::Footnote(_)
+                                | Control::Endnote(_)
+                        )
+                });
 
         // 바이트 삽입 위치 계산
         let byte_offset: usize = text_chars[..effective_char_offset]
@@ -247,6 +340,15 @@ impl Paragraph {
             // 후행 컨트롤 수 = char_offset - text_len
             let trailing_ctrl_count = (char_offset - text_len) as u32;
             last_char_end + trailing_ctrl_count * 8
+        } else if inserts_before_inline_control {
+            if effective_char_offset == 0 {
+                0
+            } else if !self.char_offsets.is_empty() {
+                let prev_idx = effective_char_offset - 1;
+                self.char_offsets[prev_idx] + Self::char_utf16_len(text_chars[prev_idx])
+            } else {
+                0
+            }
         } else if effective_char_offset < self.char_offsets.len() {
             self.char_offsets[effective_char_offset]
         } else if !self.char_offsets.is_empty() {
@@ -359,15 +461,11 @@ impl Paragraph {
         } else {
             0
         };
-        let utf16_end: u32 = if del_end < self.char_offsets.len() {
-            self.char_offsets[del_end]
-        } else if !self.char_offsets.is_empty() {
-            let last_idx = self.char_offsets.len() - 1;
-            self.char_offsets[last_idx] + Self::char_utf16_len(text_chars[last_idx])
-        } else {
-            0
-        };
-        let utf16_delta = utf16_end - utf16_start;
+        let utf16_delta: u32 = text_chars[char_offset..del_end]
+            .iter()
+            .map(|c| Self::char_utf16_len(*c))
+            .sum();
+        let utf16_end = utf16_start + utf16_delta;
 
         // 1. 텍스트 삭제
         self.text.drain(byte_start..byte_end);
