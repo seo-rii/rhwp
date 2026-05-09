@@ -10,9 +10,9 @@ use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind,
     LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerVector,
-    PageLayerTree, PaintOp, PaintTextStyle, TextClusterPlacement, TextRunPlacement,
-    TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
-    LAYER_TREE_SCHEMA,
+    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterPlacement,
+    TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan,
+    TextSourceTable, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -166,7 +166,13 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "textSources",
         text_sources_to_value(&tree.text_sources),
     );
+    set_value(
+        &value,
+        "fontResources",
+        font_resources_to_value(tree.resources.font_resources()),
+    );
     let externalized_visuals = externalized_text_visuals(&tree.root);
+    let has_variant_groups = has_text_variant_groups(&tree.root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -176,6 +182,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "text.projectionKind",
         "text.legacyVisuals",
     ];
+    if has_variant_groups {
+        used_features.push("text.variantGroups");
+    }
     if externalized_visuals
         .iter()
         .any(|visual| *visual == "charOverlap")
@@ -205,6 +214,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "knownFeatures",
         string_array_to_value(&[
             "fontResources",
+            "fontResources.blobFaceSplit",
+            "text.variantGroups",
+            "text.shapeDiagnostics",
             "text.glyphRun",
             "text.outlineGlyph",
             "text.specialVisualOps",
@@ -222,6 +234,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "variants",
         string_array_to_value(&["textRun"]),
     );
+    set_string(&text_contract, "variantSelection", "exclusiveVariantSet");
     set_bool(&text_contract, "sourceTextPreserved", true);
     set_value(
         &text_contract,
@@ -343,6 +356,81 @@ fn text_source_entry_to_value(entry: &TextSourceEntry) -> JsValue {
         text_source_annotations_to_value(&entry.annotations),
     );
     value.into()
+}
+
+fn font_resources_to_value(table: &crate::paint::FontResourceTable) -> JsValue {
+    let value = Object::new();
+    let blobs = Array::new();
+    for blob in &table.blobs {
+        let blob_value = Object::new();
+        set_string(&blob_value, "id", &blob.id.0);
+        set_string(&blob_value, "source", blob.source.as_str());
+        set_string(&blob_value, "portability", blob.portability.kind().as_str());
+        if let Some(digest) = &blob.digest {
+            let digest_value = Object::new();
+            set_string(&digest_value, "algorithm", &digest.algorithm);
+            set_string(&digest_value, "value", &digest.value);
+            set_value(&blob_value, "digest", digest_value.into());
+        }
+        if let Some(data_ref) = &blob.data_ref {
+            let data_ref_value = Object::new();
+            set_string(&data_ref_value, "kind", data_ref.kind.as_str());
+            set_string(&data_ref_value, "id", &data_ref.id);
+            set_value(&blob_value, "dataRef", data_ref_value.into());
+        }
+        blobs.push(&blob_value);
+    }
+    set_value(&value, "blobs", blobs.into());
+
+    let faces = Array::new();
+    for face in &table.faces {
+        let face_value = Object::new();
+        set_string(&face_value, "id", &face.id.0);
+        set_string(&face_value, "blobKey", &face.blob_key.0);
+        set_number(&face_value, "faceIndex", face.face_index as f64);
+        if let Some(postscript_name) = &face.postscript_name {
+            set_string(&face_value, "postscriptName", postscript_name);
+        }
+        if !face.family_names.is_empty() {
+            set_value(
+                &face_value,
+                "familyNames",
+                localized_names_to_value(&face.family_names),
+            );
+        }
+        if !face.style_names.is_empty() {
+            set_value(
+                &face_value,
+                "styleNames",
+                localized_names_to_value(&face.style_names),
+            );
+        }
+        if let Some(weight_class) = face.weight_class {
+            set_number(&face_value, "weightClass", weight_class as f64);
+        }
+        if let Some(width_class) = face.width_class {
+            set_number(&face_value, "widthClass", width_class as f64);
+        }
+        if let Some(italic) = face.italic {
+            set_bool(&face_value, "italic", italic);
+        }
+        faces.push(&face_value);
+    }
+    set_value(&value, "faces", faces.into());
+    value.into()
+}
+
+fn localized_names_to_value(names: &[crate::paint::LocalizedName]) -> JsValue {
+    let values = Array::new();
+    for name in names {
+        let value = Object::new();
+        set_string(&value, "value", &name.value);
+        if let Some(locale) = &name.locale {
+            set_string(&value, "locale", locale);
+        }
+        values.push(&value);
+    }
+    values.into()
 }
 
 fn legacy_text_source_span_to_value(run: &crate::paint::LayerTextRunPaint, id: u32) -> JsValue {
@@ -594,6 +682,9 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                     text_source_span_to_value,
                 ),
             );
+            if let Some(variant) = &run.variant {
+                set_value(&value, "variant", paint_variant_meta_to_value(variant));
+            }
             set_value(&value, "style", text_style_to_value(&run.style));
             set_value(
                 &value,
@@ -638,6 +729,9 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             set_string(&value, "orientation", overlap.orientation.as_str());
             if let Some(source) = &overlap.source {
                 set_value(&value, "source", text_source_span_to_value(source));
+            }
+            if let Some(variant) = &overlap.variant {
+                set_value(&value, "variant", paint_variant_meta_to_value(variant));
             }
             set_value(&value, "style", text_style_to_value(&overlap.style));
             set_value(
@@ -1135,6 +1229,30 @@ fn string_array_to_value(values: &[&str]) -> JsValue {
     array_to_value(values.iter().map(|value| JsValue::from_str(value)))
 }
 
+fn has_text_variant_groups(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops.iter().any(|op| match op {
+                    PaintOp::TextRun { run, .. } => run.variant.is_some(),
+                    PaintOp::CharOverlap { overlap, .. } => overlap.variant.is_some(),
+                    _ => false,
+                }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
     let mut has_char_overlap = false;
     let mut has_control_marks = false;
@@ -1170,6 +1288,32 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
         visuals.push("tabLeaders");
     }
     visuals
+}
+
+fn paint_variant_meta_to_value(variant: &PaintVariantMeta) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "equivalenceGroup", &variant.equivalence_group);
+    set_string(&value, "variantId", &variant.variant_id);
+    set_string(&value, "variantKind", variant.variant_kind.as_str());
+    set_number(&value, "partIndex", variant.part_index as f64);
+    set_number(&value, "partCount", variant.part_count as f64);
+    set_bool(&value, "isDefaultFallback", variant.is_default_fallback);
+    if !variant.requires.is_empty() {
+        set_value(
+            &value,
+            "requires",
+            array_to_value(
+                variant
+                    .requires
+                    .iter()
+                    .map(|feature| JsValue::from_str(feature)),
+            ),
+        );
+    }
+    if let Some(quality) = variant.quality {
+        set_string(&value, "quality", quality.as_str());
+    }
+    value.into()
 }
 
 fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option<JsValue> {
@@ -1563,7 +1707,7 @@ mod tests {
         }
         let json_used_features = Array::from(&prop(&json_value, "usedFeatures"));
         let js_used_features = Array::from(&prop(&js_value, "usedFeatures"));
-        assert_eq!(json_used_features.length(), 7);
+        assert_eq!(json_used_features.length(), 8);
         assert_eq!(json_used_features.length(), js_used_features.length());
         assert_eq!(
             string_value(&json_used_features.get(0)),
@@ -1578,7 +1722,7 @@ mod tests {
         );
         let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
         let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
-        assert_eq!(json_known_features.length(), 8);
+        assert_eq!(json_known_features.length(), 11);
         assert_eq!(json_known_features.length(), js_known_features.length());
         let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
         let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
@@ -1590,6 +1734,7 @@ mod tests {
         let json_text_contract = prop(&json_value, "text");
         let js_text_contract = prop(&js_value, "text");
         assert_same_string(&json_text_contract, &js_text_contract, "defaultVariant");
+        assert_same_string(&json_text_contract, &js_text_contract, "variantSelection");
         assert_same_bool(
             &json_text_contract,
             &js_text_contract,
@@ -1601,6 +1746,18 @@ mod tests {
         let js_externalized = Array::from(&prop(&js_text_contract, "externalizedVisuals"));
         assert_eq!(json_externalized.length(), 0);
         assert_eq!(json_externalized.length(), js_externalized.length());
+        let json_font_resources = prop(&json_value, "fontResources");
+        let js_font_resources = prop(&js_value, "fontResources");
+        assert_eq!(
+            Array::from(&prop(&json_font_resources, "blobs")).length(),
+            0
+        );
+        assert_eq!(Array::from(&prop(&js_font_resources, "blobs")).length(), 0);
+        assert_eq!(
+            Array::from(&prop(&json_font_resources, "faces")).length(),
+            0
+        );
+        assert_eq!(Array::from(&prop(&js_font_resources, "faces")).length(), 0);
 
         let json_root = prop(&json_value, "root");
         let js_root = prop(&js_value, "root");

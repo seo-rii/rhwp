@@ -381,7 +381,8 @@ impl WebCanvasRenderer {
                             continue;
                         }
                         PaintOp::TabLeader { bbox, leader } => {
-                            self.draw_tab_leader(
+                            draw_tab_leader_canvas(
+                                &self.ctx,
                                 bbox.x,
                                 bbox.y + leader.baseline,
                                 leader.color,
@@ -1941,73 +1942,8 @@ impl Renderer for WebCanvasRenderer {
         // 6=긴파선, 7=원형점선, 8=이중실선, 9=얇고굵은이중선,
         // 10=굵고얇은이중선, 11=얇고굵고얇은삼중선
         for leader in &style.tab_leaders {
-            self.draw_tab_leader(x, y, style.color, font_size, leader);
+            draw_tab_leader_canvas(&self.ctx, x, y, style.color, font_size, leader);
         }
-    }
-
-    fn draw_tab_leader(
-        &self,
-        origin_x: f64,
-        baseline_y: f64,
-        color: u32,
-        font_size: f64,
-        leader: &crate::renderer::TabLeaderInfo,
-    ) {
-        if leader.fill_type == 0 {
-            return;
-        }
-        let lx1 = origin_x + leader.start_x;
-        let lx2 = origin_x + leader.end_x;
-        let ly = baseline_y - font_size * 0.35;
-        let stroke_color = color_to_css(color);
-
-        let draw_line =
-            |ctx: &web_sys::CanvasRenderingContext2d, y: f64, width: f64, dash: &[f64]| {
-                let arr = js_sys::Array::new();
-                for &d in dash {
-                    arr.push(&JsValue::from(d));
-                }
-                let _ = ctx.set_line_dash(&arr);
-                ctx.set_line_width(width);
-                ctx.begin_path();
-                ctx.move_to(lx1, y);
-                ctx.line_to(lx2, y);
-                ctx.stroke();
-            };
-
-        self.ctx.set_stroke_style_str(&stroke_color);
-        match leader.fill_type {
-            1 => draw_line(&self.ctx, ly, 0.5, &[]),
-            2 => draw_line(&self.ctx, ly, 0.5, &[3.0, 3.0]),
-            3 => draw_line(&self.ctx, ly, 0.5, &[1.0, 2.0]),
-            4 => draw_line(&self.ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0]),
-            5 => draw_line(&self.ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0, 1.0, 2.0]),
-            6 => draw_line(&self.ctx, ly, 0.5, &[8.0, 4.0]),
-            7 => {
-                self.ctx.set_line_cap("round");
-                draw_line(&self.ctx, ly, 0.7, &[0.1, 2.5]);
-                self.ctx.set_line_cap("butt");
-            }
-            8 => {
-                draw_line(&self.ctx, ly - 1.0, 0.3, &[]);
-                draw_line(&self.ctx, ly + 1.0, 0.3, &[]);
-            }
-            9 => {
-                draw_line(&self.ctx, ly - 1.2, 0.3, &[]);
-                draw_line(&self.ctx, ly + 0.8, 0.8, &[]);
-            }
-            10 => {
-                draw_line(&self.ctx, ly - 0.8, 0.8, &[]);
-                draw_line(&self.ctx, ly + 1.2, 0.3, &[]);
-            }
-            11 => {
-                draw_line(&self.ctx, ly - 2.0, 0.3, &[]);
-                draw_line(&self.ctx, ly, 0.8, &[]);
-                draw_line(&self.ctx, ly + 2.0, 0.3, &[]);
-            }
-            _ => draw_line(&self.ctx, ly, 0.5, &[1.0, 2.0]),
-        }
-        let _ = self.ctx.set_line_dash(&js_sys::Array::new());
     }
 
     fn draw_rect(
@@ -3076,6 +3012,71 @@ fn draw_arrow_head(
         }
         ArrowStyle::None => {}
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn draw_tab_leader_canvas(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    origin_x: f64,
+    baseline_y: f64,
+    color: u32,
+    font_size: f64,
+    leader: &crate::renderer::TabLeaderInfo,
+) {
+    if leader.fill_type == 0 {
+        return;
+    }
+    let lx1 = origin_x + leader.start_x;
+    let lx2 = origin_x + leader.end_x;
+    let ly = baseline_y - font_size * 0.35;
+    let stroke_color = color_to_css(color);
+
+    let draw_line = |ctx: &web_sys::CanvasRenderingContext2d, y: f64, width: f64, dash: &[f64]| {
+        let arr = js_sys::Array::new();
+        for &d in dash {
+            arr.push(&JsValue::from(d));
+        }
+        let _ = ctx.set_line_dash(&arr);
+        ctx.set_line_width(width);
+        ctx.begin_path();
+        ctx.move_to(lx1, y);
+        ctx.line_to(lx2, y);
+        ctx.stroke();
+    };
+
+    ctx.set_stroke_style_str(&stroke_color);
+    match leader.fill_type {
+        1 => draw_line(ctx, ly, 0.5, &[]),
+        2 => draw_line(ctx, ly, 0.5, &[3.0, 3.0]),
+        3 => draw_line(ctx, ly, 0.5, &[1.0, 2.0]),
+        4 => draw_line(ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0]),
+        5 => draw_line(ctx, ly, 0.5, &[6.0, 2.0, 1.0, 2.0, 1.0, 2.0]),
+        6 => draw_line(ctx, ly, 0.5, &[8.0, 4.0]),
+        7 => {
+            ctx.set_line_cap("round");
+            draw_line(ctx, ly, 0.7, &[0.1, 2.5]);
+            ctx.set_line_cap("butt");
+        }
+        8 => {
+            draw_line(ctx, ly - 1.0, 0.3, &[]);
+            draw_line(ctx, ly + 1.0, 0.3, &[]);
+        }
+        9 => {
+            draw_line(ctx, ly - 1.2, 0.3, &[]);
+            draw_line(ctx, ly + 0.8, 0.8, &[]);
+        }
+        10 => {
+            draw_line(ctx, ly - 0.8, 0.8, &[]);
+            draw_line(ctx, ly + 1.2, 0.3, &[]);
+        }
+        11 => {
+            draw_line(ctx, ly - 2.0, 0.3, &[]);
+            draw_line(ctx, ly, 0.8, &[]);
+            draw_line(ctx, ly + 2.0, 0.3, &[]);
+        }
+        _ => draw_line(ctx, ly, 0.5, &[1.0, 2.0]),
+    }
+    let _ = ctx.set_line_dash(&js_sys::Array::new());
 }
 
 /// COLORREF (BGR) → CSS 색상 문자열 변환

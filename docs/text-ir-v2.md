@@ -13,8 +13,11 @@ annotation payloads that Canvas2D and SVG can replay with string APIs.
 `GlyphRun` is not canonical yet. Glyph ids are meaningful only inside an exact
 font instance, so portable glyph replay requires a font resource table with
 exact font bytes, face index, variations, synthetic style flags, shaping
-features, script, language, and fallback policy. Until that exists, `GlyphRun`
-must be optional and paired with `TextRun` fallback.
+features, script, language, and fallback policy. The IR now has the foundation
+types for that contract (`FontBlobResource`, `FontFaceResource`,
+`FontInstanceKey`, and `ShapeKey`), but no public `GlyphRun` is emitted yet.
+Until portable font identity is available, `GlyphRun` must be optional and
+paired with `TextRun` fallback.
 
 ## Export Contract
 
@@ -38,6 +41,13 @@ Layer JSON/JS exports currently provide:
   cluster metadata. These clusters are not shaped glyph clusters.
 - `TextRun.legacyVisuals`: whether legacy inline visual payloads are currently
   canonical or mirrors of future external paint ops.
+- `TextRun.variant`: a variant-set metadata record. Schema v1 uses this only
+  for the `TextRun` default fallback; future `GlyphRun` or `glyphOutline`
+  alternatives must share the same `equivalenceGroup` but use a distinct
+  `variantId`.
+- `fontResources`: a blob/face-split font resource table. It is currently empty
+  in normal exports and exists so future portable `GlyphRun` variants can
+  require exact font blob + face identity.
 - `usedFeatures`: additive schema features used by this export.
 - `requiredFeatures`: features a consumer must understand for faithful replay.
 - `optionalFeatures`: features present in this export that have a complete
@@ -46,16 +56,19 @@ Layer JSON/JS exports currently provide:
   necessarily present in this export.
 - `text.defaultVariant`: currently `textRun`.
 - `text.variants`: emitted visual text variants.
+- `text.variantSelection`: currently `exclusiveVariantSet`, meaning consumers
+  choose exactly one `variantId` per `equivalenceGroup` and paint all parts of
+  that selected variant set.
 - `text.fallbackRequired`: true while `TextRun` remains the public fallback.
 - `text.placementAuthority`: currently `compatibilityProjection`, meaning
   `positions`/`baseline`/`rotation` remain authoritative for visual replay.
-- `text.externalizedVisuals`: currently empty. Future exports add
-  `charOverlap`, `controlMarks`, or `tabLeaders` here when those visuals move
-  out of `TextRun`.
+- `text.externalizedVisuals`: contains `charOverlap`, `controlMarks`, or
+  `tabLeaders` when those visuals are emitted as explicit paint ops.
 
 The source table mirrors field marker, paragraph end, and line-break end
-metadata as source annotations. Visible marks are still carried by existing
-`TextRun.controlMarks` until special visual ops are introduced.
+metadata as source annotations. Visible marks are now emitted as explicit
+special visual ops, with legacy `TextRun` payloads retained only as mirrors for
+old consumers.
 
 ## Invariants
 
@@ -122,10 +135,32 @@ metadata as source annotations. Visible marks are still carried by existing
   consumers, while new visual alternatives still need variant grouping to avoid
   double-painting legacy mirrors.
 - Future TextRun/GlyphRun/outline alternatives must be tied together by an
-  explicit variant group or a `Text { variants }` container. Consumers must draw
-  at most one variant per group. Glyph outline alternatives must not be exported
-  as generic `Path` ops while TextRun fallback is also present, because old
-  consumers would double-paint them.
+  explicit variant group or a `Text { variants }` container. In schema v1,
+  `equivalenceGroup` is variant-set based, not op based: consumers choose
+  exactly one `variantId` per group and then draw all ops with that `variantId`.
+  This is required because a future glyph variant may split into multiple
+  `GlyphRun` ops for fallback fonts, bidi runs, or outline chunks. Glyph outline
+  alternatives must not be exported as generic `Path` ops while TextRun fallback
+  is also present, because old consumers would double-paint them.
+
+## Font And Shape Contract
+
+- `FontBlobResource` describes a font blob or collection. `FontFaceResource`
+  describes a concrete face inside that blob and keeps `faceIndex` explicit for
+  diagnostics and backend construction.
+- `PortableBlob` requires a digest and a replayable `dataRef`. It is the only
+  self-contained portable font state.
+- `ExternalVerified` is conditionally replayable only after the consumer
+  resolves the external blob and verifies that its digest matches.
+- `ResolvedButNotEmbedded`, `SystemNameOnly`, and `UnresolvedFallback` are not
+  portable visual replay contracts. They may produce diagnostics-only shaping
+  attempts but must keep `TextRun` fallback.
+- `FontInstanceKey` contains exact face, size, variation, and synthetic style
+  identity. `ShapeKey` contains shaping input such as direction, writing mode,
+  script, language, OpenType features, shaping engine, and fallback policy.
+- One future `GlyphRun` must refer to one actual font instance and one shape
+  key. Fallback font use means split glyph runs inside the same selected
+  variant set.
 
 ## Migration Phases
 
@@ -137,13 +172,14 @@ metadata as source annotations. Visible marks are still carried by existing
 5. Split special visible text semantics into paint ops:
    `CharOverlap`, `TextControlMark`, and `TabLeader` are implemented; next is
    `TextDecoration`.
-6. Add font resources with portability state:
-   `PortableBlob`, `ResolvedButNotEmbedded`, `SystemNameOnly`, or
-   `UnresolvedFallback`.
+6. Add font resources with blob/face split portability state:
+   `PortableBlob`, `ExternalVerified`, `ResolvedButNotEmbedded`,
+   `SystemNameOnly`, or `UnresolvedFallback`.
 7. Introduce a post-layout `TextShapeLowerer` skeleton that respects existing
-   layout positions and reports variant quality diagnostics.
-8. Add optional `GlyphRun` variants only when a portable font instance and
-   source cluster mapping are available.
+   layout positions and reports variant quality diagnostics. A diagnostics-only
+   skeleton now exists and never emits public glyph runs.
+8. Add optional `GlyphRun` variants only when a portable or verified font
+   instance and source cluster mapping are available.
 9. Move shaping into layout only after line breaking, fallback metrics, vertical
    metrics, and regression fixtures are stable.
 

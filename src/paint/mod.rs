@@ -19,6 +19,7 @@
 #![deny(unused_imports, unused_must_use, unused_variables)]
 
 pub mod builder;
+pub mod font;
 #[cfg(target_arch = "wasm32")]
 pub mod js_value;
 mod json;
@@ -27,8 +28,16 @@ pub mod paint_op;
 pub mod profile;
 pub mod resources;
 pub mod schema;
+pub mod text_shape;
 
 pub use builder::LayerBuilder;
+pub use font::{
+    BinaryResourceKind, BinaryResourceRef, FontBlobKey, FontBlobResource, FontDigest,
+    FontExternalRef, FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey,
+    FontPortability, FontPortabilityKind, FontResourceSource, FontResourceTable,
+    GlyphRunReplayEligibility, LanguageTag, LocalizedName, OpenTypeFeatureSetting, ScriptTag,
+    ShapeKey, ShapingEngineId, TextDirection, VariationAxisValue, WritingMode,
+};
 pub use layer_tree::{
     CacheHint, ClipKind, ClipPolicy, LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic,
     LayerSemanticRole, PageLayerTree, TextSourceAnnotation, TextSourceEntry, TextSourceId,
@@ -40,8 +49,9 @@ pub use paint_op::{
     LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerPathPaint, LayerPoint,
     LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark, LayerTextControlMarkKind,
     LayerTextControlMarkPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
-    PaintOp, PaintTextStyle, TextClusterBasis, TextClusterFlag, TextClusterPlacement,
-    TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind, TextRunPlacement,
+    PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterBasis, TextClusterFlag,
+    TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
+    TextRunPlacement, TextVariantKind, TextVariantQuality,
 };
 pub use profile::RenderProfile;
 pub use resources::{
@@ -49,3 +59,7 @@ pub use resources::{
     SvgResourceId,
 };
 pub use schema::{LayerTreeSchema, LAYER_TREE_SCHEMA};
+pub use text_shape::{
+    FontRequest, FontResolver, GlyphRunQuality, NoopFontResolver, ResolvedFontFace,
+    TextShapeDiagnostic, TextShapeLowerer, TextShapeReport,
+};

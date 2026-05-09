@@ -83,6 +83,7 @@ pub struct LayerFootnoteMarkerPaint {
 #[derive(Debug, Clone)]
 pub struct LayerTextRunPaint {
     pub source: Option<TextSourceSpan>,
+    pub variant: Option<PaintVariantMeta>,
     /// Source-backed identity is exported through the layer tree `textSources`
     /// table and per-op `source` span. The in-memory v1 payload keeps the
     /// string projection here so existing Canvas2D/SVG replay remains stable
@@ -116,6 +117,7 @@ impl Default for LayerTextRunPaint {
     fn default() -> Self {
         Self {
             source: None,
+            variant: None,
             text: String::new(),
             style: TextStyle::default(),
             projection: TextProjectionKind::Verbatim,
@@ -164,6 +166,7 @@ pub struct TextLegacyVisuals {
 #[derive(Debug, Clone)]
 pub struct LayerCharOverlapPaint {
     pub source: Option<TextSourceSpan>,
+    pub variant: Option<PaintVariantMeta>,
     pub text: String,
     pub style: TextStyle,
     pub positions: Vec<f64>,
@@ -187,6 +190,77 @@ pub struct LayerTabLeaderPaint {
     pub color: ColorRef,
     pub font_size: f64,
     pub baseline: f64,
+}
+
+/// Variant grouping metadata for future TextRun/GlyphRun/outline alternatives.
+///
+/// The migration contract is variant-set based: consumers choose one
+/// `variant_id` per `equivalence_group` and paint every part belonging to that
+/// variant. This lets a future glyph variant split by fallback font or bidi
+/// boundary without treating each split run as a separate visual alternative.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaintVariantMeta {
+    pub equivalence_group: String,
+    pub variant_id: String,
+    pub variant_kind: TextVariantKind,
+    pub part_index: u32,
+    pub part_count: u32,
+    pub is_default_fallback: bool,
+    pub requires: Vec<String>,
+    pub quality: Option<TextVariantQuality>,
+}
+
+impl PaintVariantMeta {
+    pub fn text_run_default(equivalence_group: impl Into<String>) -> Self {
+        Self {
+            equivalence_group: equivalence_group.into(),
+            variant_id: "textRun".to_string(),
+            variant_kind: TextVariantKind::TextRun,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: true,
+            requires: Vec::new(),
+            quality: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextVariantKind {
+    TextRun,
+    GlyphRun,
+    GlyphOutline,
+}
+
+impl TextVariantKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TextRun => "textRun",
+            Self::GlyphRun => "glyphRun",
+            Self::GlyphOutline => "glyphOutline",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextVariantQuality {
+    Exact,
+    PositionAdjusted,
+    Approximate,
+    DiagnosticOnly,
+    Omitted,
+}
+
+impl TextVariantQuality {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::PositionAdjusted => "positionAdjusted",
+            Self::Approximate => "approximate",
+            Self::DiagnosticOnly => "diagnosticOnly",
+            Self::Omitted => "omitted",
+        }
+    }
 }
 
 /// Point in layer text coordinate space.

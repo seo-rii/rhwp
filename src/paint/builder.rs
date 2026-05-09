@@ -172,6 +172,7 @@ impl LayerBuilder {
                     bbox: node.bbox,
                     run: LayerTextRunPaint {
                         source: None,
+                        variant: None,
                         text: run.text.clone(),
                         style: run.style.clone(),
                         projection: TextProjectionKind::Verbatim,
@@ -197,6 +198,7 @@ impl LayerBuilder {
                         bbox: node.bbox,
                         overlap: LayerCharOverlapPaint {
                             source: None,
+                            variant: None,
                             text: run.text.clone(),
                             style: run.style.clone(),
                             positions,
@@ -378,6 +380,7 @@ impl LayerBuilder {
                     bbox: text_bbox,
                     run: LayerTextRunPaint {
                         source: None,
+                        variant: None,
                         text: placeholder.label.clone(),
                         positions: compute_char_positions(&placeholder.label, &text_style),
                         control_marks: Vec::new(),

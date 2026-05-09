@@ -1,6 +1,7 @@
 use crate::paint::paint_op::{
     LayerAffineTransform, LayerPoint, LayerTextControlMarkKind, LayerVector, PaintOp,
-    TextClusterBasis, TextClusterFlag, TextClusterPlacement, TextProjectionKind, TextRunPlacement,
+    PaintVariantMeta, TextClusterBasis, TextClusterFlag, TextClusterPlacement, TextProjectionKind,
+    TextRunPlacement,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
@@ -108,6 +109,8 @@ impl TextSourceTable {
                             run.placement = Some(text_run_compat_placement(*bbox, run));
                             run.cluster_basis = TextClusterBasis::LegacyPosition;
                             run.clusters = text_run_legacy_clusters(run, projection);
+                            run.variant =
+                                Some(PaintVariantMeta::text_run_default(format!("text-{}", id.0)));
                             last_text_source = run.source.clone();
                             self.entries.push(TextSourceEntry {
                                 id,

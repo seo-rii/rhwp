@@ -105,8 +105,9 @@ export interface PageLayerTree {
   knownFeatures?: LayerTreeFeature[];
   requiredFeatures?: LayerTreeFeature[];
   text?: {
-    defaultVariant?: 'textRun' | 'glyphRun' | 'outlineGlyph';
-    variants?: Array<'textRun' | 'glyphRun' | 'outlineGlyph'>;
+    defaultVariant?: LayerTextVariantKind;
+    variants?: LayerTextVariantKind[];
+    variantSelection?: 'exclusiveVariantSet';
     sourceTextPreserved?: boolean;
     clusterEncoding?: Array<'utf8' | 'utf16'>;
     fallbackRequired?: boolean;
@@ -114,6 +115,7 @@ export interface PageLayerTree {
     externalizedVisuals?: LayerTextLegacyVisualKind[];
   };
   resources?: LayerResources;
+  fontResources?: LayerFontResources;
   root: LayerNode;
 }
 
@@ -126,6 +128,9 @@ export type LayerTreeFeature =
   | 'text.projectionKind'
   | 'text.legacyVisuals'
   | 'fontResources'
+  | 'fontResources.blobFaceSplit'
+  | 'text.variantGroups'
+  | 'text.shapeDiagnostics'
   | 'text.glyphRun'
   | 'text.outlineGlyph'
   | 'text.specialVisualOps'
@@ -142,6 +147,60 @@ export interface LayerResources {
   svgFragments: Array<string | undefined>;
   svgHashes?: string[];
   svgKeys?: string[];
+}
+
+export interface LayerFontResources {
+  blobs: LayerFontBlobResource[];
+  faces: LayerFontFaceResource[];
+}
+
+export type LayerFontResourceSource =
+  | 'embedded'
+  | 'bundled'
+  | 'systemResolved'
+  | 'externalUrl'
+  | 'unresolvedFallback';
+
+export type LayerFontPortability =
+  | 'portableBlob'
+  | 'externalVerified'
+  | 'resolvedButNotEmbedded'
+  | 'systemNameOnly'
+  | 'unresolvedFallback';
+
+export interface LayerFontDigest {
+  algorithm: string;
+  value: string;
+}
+
+export interface LayerBinaryResourceRef {
+  kind: 'fontBlob' | 'externalFont';
+  id: string;
+}
+
+export interface LayerLocalizedName {
+  value: string;
+  locale?: string;
+}
+
+export interface LayerFontBlobResource {
+  id: string;
+  source: LayerFontResourceSource;
+  portability: LayerFontPortability;
+  digest?: LayerFontDigest;
+  dataRef?: LayerBinaryResourceRef;
+}
+
+export interface LayerFontFaceResource {
+  id: string;
+  blobKey: string;
+  faceIndex: number;
+  postscriptName?: string;
+  familyNames?: LayerLocalizedName[];
+  styleNames?: LayerLocalizedName[];
+  weightClass?: number;
+  widthClass?: number;
+  italic?: boolean;
 }
 
 export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;
@@ -409,7 +468,7 @@ export interface LayerTextClusterPlacement {
   flags?: LayerTextClusterFlag[];
 }
 
-export type LayerTextVariantKind = 'textRun' | 'glyphRun' | 'outlineGlyph';
+export type LayerTextVariantKind = 'textRun' | 'glyphRun' | 'glyphOutline';
 export type LayerTextVariantQuality =
   | 'exact'
   | 'positionAdjusted'
@@ -420,10 +479,14 @@ export type LayerTextVariantQuality =
 export interface LayerTextVariantMeta {
   /**
    * Variants with the same equivalenceGroup represent the same visual text.
-   * Consumers must select at most one variant from the group.
+   * Consumers choose exactly one variantId from the group and paint every part
+   * belonging to that variant set.
    */
   equivalenceGroup: string;
+  variantId: string;
   variantKind: LayerTextVariantKind;
+  partIndex?: number;
+  partCount?: number;
   isDefaultFallback?: boolean;
   requires?: LayerTreeFeature[];
   quality?: LayerTextVariantQuality;

@@ -8,9 +8,9 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic,
-    LayerTextRunPaint, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, ResourceArena,
-    TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange,
-    TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
+    LayerTextRunPaint, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
+    ResourceArena, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry,
+    TextSourceRange, TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -54,6 +54,8 @@ impl PageLayerTree {
             .write_json(&mut buf, &self.resources, &mut text_source_state);
         buf.push_str(",\"textSources\":");
         write_text_source_entries(&mut buf, &self.text_sources);
+        buf.push_str(",\"fontResources\":");
+        write_font_resources(&mut buf, self.resources.font_resources());
         write_text_export_metadata(&mut buf, &self.root);
         buf.push('}');
         buf
@@ -62,7 +64,11 @@ impl PageLayerTree {
 
 fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
+    let has_variant_groups = has_text_variant_groups(root);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
+    if has_variant_groups {
+        buf.push_str(",\"text.variantGroups\"");
+    }
     if externalized_visuals
         .iter()
         .any(|visual| *visual == "charOverlap")
@@ -81,7 +87,7 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     {
         buf.push_str(",\"text.tabLeaderOp\"");
     }
-    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
@@ -89,6 +95,43 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
         let _ = write!(buf, "{}", json_escape(visual));
     }
     buf.push_str("]}");
+}
+
+fn has_text_variant_groups(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops.iter().any(|op| {
+                    matches!(
+                        op,
+                        PaintOp::TextRun {
+                            run: LayerTextRunPaint {
+                                variant: Some(_),
+                                ..
+                            },
+                            ..
+                        } | PaintOp::CharOverlap {
+                            overlap: crate::paint::LayerCharOverlapPaint {
+                                variant: Some(_),
+                                ..
+                            },
+                            ..
+                        }
+                    )
+                }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
@@ -296,6 +339,10 @@ impl PaintOp {
                 } else {
                     write_legacy_text_source_span(buf, run, text_sources.next_id());
                 }
+                if let Some(variant) = &run.variant {
+                    buf.push_str(",\"variant\":");
+                    write_paint_variant_meta(buf, variant);
+                }
                 buf.push_str(",\"style\":");
                 write_text_style(buf, &run.style);
                 buf.push_str(",\"paintStyle\":");
@@ -343,6 +390,10 @@ impl PaintOp {
                 if let Some(source) = &overlap.source {
                     buf.push_str(",\"source\":");
                     write_text_source_span(buf, source);
+                }
+                if let Some(variant) = &overlap.variant {
+                    buf.push_str(",\"variant\":");
+                    write_paint_variant_meta(buf, variant);
                 }
                 buf.push_str(",\"style\":");
                 write_text_style(buf, &overlap.style);
@@ -615,6 +666,89 @@ fn write_text_source_entries(buf: &mut String, table: &TextSourceTable) {
     buf.push(']');
 }
 
+fn write_font_resources(buf: &mut String, table: &crate::paint::FontResourceTable) {
+    buf.push_str("{\"blobs\":[");
+    for (idx, blob) in table.blobs.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(
+            buf,
+            "{{\"id\":{},\"source\":{},\"portability\":{}",
+            json_escape(&blob.id.0),
+            json_escape(blob.source.as_str()),
+            json_escape(blob.portability.kind().as_str())
+        );
+        if let Some(digest) = &blob.digest {
+            let _ = write!(
+                buf,
+                ",\"digest\":{{\"algorithm\":{},\"value\":{}}}",
+                json_escape(&digest.algorithm),
+                json_escape(&digest.value)
+            );
+        }
+        if let Some(data_ref) = &blob.data_ref {
+            let _ = write!(
+                buf,
+                ",\"dataRef\":{{\"kind\":{},\"id\":{}}}",
+                json_escape(data_ref.kind.as_str()),
+                json_escape(&data_ref.id)
+            );
+        }
+        buf.push('}');
+    }
+    buf.push_str("],\"faces\":[");
+    for (idx, face) in table.faces.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(
+            buf,
+            "{{\"id\":{},\"blobKey\":{},\"faceIndex\":{}",
+            json_escape(&face.id.0),
+            json_escape(&face.blob_key.0),
+            face.face_index
+        );
+        if let Some(postscript_name) = &face.postscript_name {
+            let _ = write!(buf, ",\"postscriptName\":{}", json_escape(postscript_name));
+        }
+        if !face.family_names.is_empty() {
+            buf.push_str(",\"familyNames\":");
+            write_localized_names(buf, &face.family_names);
+        }
+        if !face.style_names.is_empty() {
+            buf.push_str(",\"styleNames\":");
+            write_localized_names(buf, &face.style_names);
+        }
+        if let Some(weight_class) = face.weight_class {
+            let _ = write!(buf, ",\"weightClass\":{}", weight_class);
+        }
+        if let Some(width_class) = face.width_class {
+            let _ = write!(buf, ",\"widthClass\":{}", width_class);
+        }
+        if let Some(italic) = face.italic {
+            let _ = write!(buf, ",\"italic\":{}", italic);
+        }
+        buf.push('}');
+    }
+    buf.push_str("]}");
+}
+
+fn write_localized_names(buf: &mut String, names: &[crate::paint::LocalizedName]) {
+    buf.push('[');
+    for (idx, name) in names.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{{\"value\":{}", json_escape(&name.value));
+        if let Some(locale) = &name.locale {
+            let _ = write!(buf, ",\"locale\":{}", json_escape(locale));
+        }
+        buf.push('}');
+    }
+    buf.push(']');
+}
+
 fn write_text_source_entry(buf: &mut String, entry: &TextSourceEntry) {
     let _ = write!(
         buf,
@@ -658,6 +792,33 @@ fn write_text_source_span(buf: &mut String, span: &TextSourceSpan) {
             ",\"stableSourceKey\":{{\"scheme\":{}}}",
             json_escape(stable_source_key)
         );
+    }
+    buf.push('}');
+}
+
+fn write_paint_variant_meta(buf: &mut String, variant: &PaintVariantMeta) {
+    let _ = write!(
+        buf,
+        "{{\"equivalenceGroup\":{},\"variantId\":{},\"variantKind\":{},\"partIndex\":{},\"partCount\":{},\"isDefaultFallback\":{}",
+        json_escape(&variant.equivalence_group),
+        json_escape(&variant.variant_id),
+        json_escape(variant.variant_kind.as_str()),
+        variant.part_index,
+        variant.part_count,
+        variant.is_default_fallback,
+    );
+    if !variant.requires.is_empty() {
+        buf.push_str(",\"requires\":[");
+        for (idx, feature) in variant.requires.iter().enumerate() {
+            if idx > 0 {
+                buf.push(',');
+            }
+            let _ = write!(buf, "{}", json_escape(feature));
+        }
+        buf.push(']');
+    }
+    if let Some(quality) = variant.quality {
+        let _ = write!(buf, ",\"quality\":{}", json_escape(quality.as_str()));
     }
     buf.push('}');
 }
@@ -1464,9 +1625,10 @@ mod tests {
             "\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"]"
         ));
         assert!(json.contains("\"optionalFeatures\":[]"));
-        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"]"));
+        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.vertical.mixedPerGlyph\"]"));
         assert!(json.contains("\"requiredFeatures\":[]"));
-        assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}"));
+        assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}"));
+        assert!(json.contains("\"fontResources\":{\"blobs\":[],\"faces\":[]}"));
     }
 
     #[test]
@@ -1567,6 +1729,7 @@ mod tests {
         assert!(json.contains("\"placement\":{\"runToPage\":{\"a\":1.000000,\"b\":0.000000,\"c\":-0.000000,\"d\":1.000000,\"e\":10.000000,\"f\":33.000000},\"baselineY\":0.000000}"));
         assert!(json.contains("\"clusters\":[{\"sourceRangeUtf8\":{\"start\":0,\"end\":3},\"textRangeUtf8\":{\"start\":0,\"end\":3},\"textRangeUtf16\":{\"start\":0,\"end\":1},\"projection\":\"syntheticVisual\",\"origin\":{\"x\":0.000000,\"y\":0.000000},\"advance\":{\"dx\":16.000000,\"dy\":0.000000},\"flags\":[\"specialVisual\",\"notShapingCandidate\"]}"));
         assert!(json.contains("\"source\":{\"id\":0,\"utf8Range\":{\"start\":0,\"end\":4},\"utf16Range\":{\"start\":0,\"end\":2}}"));
+        assert!(json.contains("\"variant\":{\"equivalenceGroup\":\"text-0\",\"variantId\":\"textRun\",\"variantKind\":\"textRun\",\"partIndex\":0,\"partCount\":1,\"isDefaultFallback\":true}"));
         assert!(json.contains("\"textSources\":[{\"id\":0,\"text\":\"가A\",\"utf8Range\":{\"start\":0,\"end\":4},\"utf16Range\":{\"start\":0,\"end\":2},\"annotations\":[]}]"));
         assert!(json.contains(&positions_json));
         assert!(json.contains("\"style\":{\"fontFamily\":\"Noto Sans KR\""));
@@ -1625,6 +1788,7 @@ mod tests {
                         bbox: BoundingBox::new(10.0, 20.0, 32.0, 18.0),
                         overlap: LayerCharOverlapPaint {
                             source: None,
+                            variant: None,
                             text: "12".to_string(),
                             style: TextStyle {
                                 font_size: 16.0,
@@ -1645,7 +1809,7 @@ mod tests {
         let json = tree.to_json();
         assert!(json.contains("\"type\":\"charOverlap\""));
         assert!(json.contains("\"legacyVisuals\":{\"charOverlap\":\"mirror\"}"));
-        assert!(json.contains("\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.charOverlapOp\"]"));
+        assert!(json.contains("\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.variantGroups\",\"text.charOverlapOp\"]"));
         assert!(json.contains("\"externalizedVisuals\":[\"charOverlap\"]"));
     }
 

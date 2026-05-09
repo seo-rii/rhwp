@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::paint::font::FontResourceTable;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImageResourceId(pub usize);
 
@@ -22,6 +24,7 @@ pub struct ResourceArena {
     svg_hashes: Vec<u64>,
     svg_fingerprints: Vec<[u8; 16]>,
     svg_lookup: HashMap<u64, Vec<SvgResourceId>>,
+    font_resources: FontResourceTable,
 }
 
 impl ResourceArena {
@@ -105,6 +108,14 @@ impl ResourceArena {
             .iter()
             .enumerate()
             .map(|(index, svg)| (SvgResourceId(index), svg.as_str()))
+    }
+
+    pub fn font_resources(&self) -> &FontResourceTable {
+        &self.font_resources
+    }
+
+    pub fn font_resources_mut(&mut self) -> &mut FontResourceTable {
+        &mut self.font_resources
     }
 }
 
