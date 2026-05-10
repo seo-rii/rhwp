@@ -75,7 +75,7 @@ export function shouldRenderLayerTextVariant(
   op: LayerPaintOp,
   selected: LayerTextVariantSelection,
 ): boolean {
-  const variant = op.type === 'textRun' || op.type === 'glyphRun'
+  const variant = op.type === 'textRun' || op.type === 'glyphRun' || op.type === 'glyphOutline'
     ? op.variant
     : undefined;
   if (!variant) {
@@ -83,7 +83,7 @@ export function shouldRenderLayerTextVariant(
   }
   const selectedVariant = selected.get(variant.equivalenceGroup);
   if (!selectedVariant) {
-    return op.type !== 'glyphRun';
+    return op.type !== 'glyphRun' && op.type !== 'glyphOutline';
   }
   return selectedVariant === variant.variantId;
 }

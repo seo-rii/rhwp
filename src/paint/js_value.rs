@@ -174,6 +174,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let externalized_visuals = externalized_text_visuals(&tree.root);
     let has_variant_groups = has_text_variant_groups(&tree.root);
     let has_glyph_runs = has_glyph_runs(&tree.root);
+    let has_glyph_outlines = has_glyph_outlines(&tree.root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -186,6 +187,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     if has_glyph_runs {
         used_features.push("fontResources");
         used_features.push("text.glyphRun");
+    }
+    if has_glyph_outlines {
+        used_features.push("text.outlineGlyph");
     }
     if has_variant_groups {
         used_features.push("text.variantGroups");
@@ -224,6 +228,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         optional_features.push("fontResources");
         optional_features.push("text.glyphRun");
     }
+    if has_glyph_outlines {
+        optional_features.push("text.outlineGlyph");
+    }
     set_value(
         &value,
         "optionalFeatures",
@@ -253,6 +260,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let mut variants = vec!["textRun"];
     if has_glyph_runs {
         variants.push("glyphRun");
+    }
+    if has_glyph_outlines {
+        variants.push("glyphOutline");
     }
     set_value(&text_contract, "variants", string_array_to_value(&variants));
     set_string(&text_contract, "variantSelection", "exclusiveVariantSet");
@@ -797,6 +807,44 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 &value,
                 "diagnostics",
                 glyph_run_diagnostics_to_value(&run.diagnostics),
+            );
+        }
+        PaintOp::GlyphOutline { bbox, outline } => {
+            set_string(&value, "type", "glyphOutline");
+            set_value(&value, "bbox", bbox_to_value(*bbox));
+            set_value(&value, "source", text_source_span_to_value(&outline.source));
+            set_value(
+                &value,
+                "variant",
+                paint_variant_meta_to_value(&outline.variant),
+            );
+            set_value(
+                &value,
+                "paintStyle",
+                paint_text_style_to_value(&outline.paint_style),
+            );
+            set_value(
+                &value,
+                "placement",
+                text_run_placement_to_value(outline.placement),
+            );
+            set_value(
+                &value,
+                "paths",
+                array_to_value(outline.paths.iter().map(|path| {
+                    let path_value = Object::new();
+                    set_value(
+                        &path_value,
+                        "commands",
+                        path_commands_to_value(&path.commands),
+                    );
+                    path_value.into()
+                })),
+            );
+            set_value(
+                &value,
+                "diagnostics",
+                glyph_run_diagnostics_to_value(&outline.diagnostics),
             );
         }
         PaintOp::CharOverlap { bbox, overlap } => {
@@ -1354,6 +1402,7 @@ fn has_text_variant_groups(root: &LayerNode) -> bool {
                 if ops.iter().any(|op| match op {
                     PaintOp::TextRun { run, .. } => run.variant.is_some(),
                     PaintOp::GlyphRun { .. } => true,
+                    PaintOp::GlyphOutline { .. } => true,
                     PaintOp::CharOverlap { overlap, .. } => overlap.variant.is_some(),
                     _ => false,
                 }) {
@@ -1377,6 +1426,29 @@ fn has_glyph_runs(root: &LayerNode) -> bool {
             LayerNodeKind::ClipRect { child, .. } => stack.push(child),
             LayerNodeKind::Leaf { ops, .. } => {
                 if ops.iter().any(|op| matches!(op, PaintOp::GlyphRun { .. })) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn has_glyph_outlines(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::GlyphOutline { .. }))
+                {
                     return true;
                 }
             }

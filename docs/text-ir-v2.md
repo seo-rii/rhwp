@@ -45,8 +45,11 @@ Layer JSON/JS exports currently provide:
   canonical or mirrors of future external paint ops.
 - `TextRun.variant`: a variant-set metadata record. Schema v1 uses this for the
   `TextRun` default fallback. Optional `GlyphRun` alternatives share the same
-  `equivalenceGroup` but use a distinct `variantId`. Future `glyphOutline`
-  alternatives must follow the same rule.
+  `equivalenceGroup` but use a distinct `variantId`.
+- `glyphOutline` ops: optional strict-visual outline alternatives. They are
+  explicit text variants with source, variant metadata, paint style, placement,
+  outline path payloads, and diagnostics. They are never serialized as generic
+  `Path` ops while `TextRun` fallback is present.
 - `fontResources`: a blob/face-split font resource table. It is currently empty
   in normal exports and exists so future portable `GlyphRun` variants can
   require exact font blob + face identity.
@@ -143,14 +146,15 @@ old consumers.
   paint ops before dispatch. This makes future root ops additive for those
   consumers, while new visual alternatives still need variant grouping to avoid
   double-painting legacy mirrors.
-- Future TextRun/GlyphRun/outline alternatives must be tied together by an
+- TextRun/GlyphRun/outline alternatives must be tied together by an
   explicit variant group or a `Text { variants }` container. In schema v1,
   `equivalenceGroup` is variant-set based, not op based: consumers choose
   exactly one `variantId` per group and then draw all ops with that `variantId`.
   This is required because a future glyph variant may split into multiple
   `GlyphRun` ops for fallback fonts, bidi runs, or outline chunks. Glyph outline
-  alternatives must not be exported as generic `Path` ops while TextRun fallback
-  is also present, because old consumers would double-paint them.
+  alternatives are exported as explicit `glyphOutline` ops, not generic `Path`
+  ops, while TextRun fallback is also present, because old consumers would
+  double-paint generic paths.
 - Schema v1 variant groups are leaf-local. All ops in one `equivalenceGroup`
   must live in the same leaf and paint-order scope, and every group must keep a
   default `TextRun` fallback. Cross-leaf or cross-clip variants require a future
@@ -237,7 +241,11 @@ instantiation for the exported face:
    instance and source cluster mapping are available. The lowerer now supports
    this gated append path, but default exports do not run a real shaping/font
    resolver yet.
-9. Move shaping into layout only after line breaking, fallback metrics, vertical
+9. Add the `glyphOutline` variant contract as an explicit strict-visual text
+   alternative. The schema/export surface exists, but default renderers still
+   choose `TextRun`/`GlyphRun`; outline replay/export profiles remain future
+   work.
+10. Move shaping into layout only after line breaking, fallback metrics, vertical
    metrics, and regression fixtures are stable.
 
 ## Backend Policy
@@ -257,10 +265,12 @@ instantiation for the exported face:
   requested face, and the run passes the fill-only eligibility matrix above.
   Otherwise it replays the `TextRun` fallback.
 - Canvas2D: replay `TextRun` by default. It uses the same variant-set guard but
-  never selects `GlyphRun` in schema v1; glyph data is diagnostics, hit-test
-  metadata, or future strict outline fallback.
+  never selects `GlyphRun` or `glyphOutline` in schema v1; glyph data is
+  diagnostics, hit-test metadata, or future strict outline fallback.
 - SVG: replay `TextRun` by default for search/accessibility. Strict visual mode
-  may use glyph outline paths plus source metadata.
+  may select explicit `glyphOutline` variants plus source metadata. It must not
+  reinterpret those outlines as ordinary `Path` fallback while `TextRun` is
+  present.
 
 ## Non-Goals For The Current Branch
 

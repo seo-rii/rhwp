@@ -225,6 +225,7 @@ fn op_variant(op: &PaintOp) -> Option<&PaintVariantMeta> {
     match op {
         PaintOp::TextRun { run, .. } => run.variant.as_ref(),
         PaintOp::GlyphRun { run, .. } => Some(&run.variant),
+        PaintOp::GlyphOutline { outline, .. } => Some(&outline.variant),
         PaintOp::CharOverlap { overlap, .. } => overlap.variant.as_ref(),
         _ => None,
     }

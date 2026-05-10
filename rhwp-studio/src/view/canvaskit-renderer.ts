@@ -418,6 +418,10 @@ export class CanvasKitLayerRenderer {
       case 'glyphRun':
         this.renderGlyphRun(canvas, op);
         return;
+      case 'glyphOutline':
+        // GlyphOutline remains a strict visual variant contract. CanvasKit
+        // currently selects GlyphRun or TextRun variants, not outline payloads.
+        return;
       case 'charOverlap':
         this.renderTextRun(canvas, op);
         return;

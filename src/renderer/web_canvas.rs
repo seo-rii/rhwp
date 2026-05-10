@@ -384,6 +384,12 @@ impl WebCanvasRenderer {
                             // its replay contract.
                             continue;
                         }
+                        PaintOp::GlyphOutline { .. } => {
+                            // Strict outline text must not be replayed as a
+                            // generic Canvas path while TextRun fallback is
+                            // present.
+                            continue;
+                        }
                         PaintOp::CharOverlap { bbox, overlap } => {
                             self.draw_text_run_contents(
                                 bbox,

@@ -67,9 +67,13 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
     let has_variant_groups = has_text_variant_groups(root);
     let has_glyph_runs = has_glyph_runs(root);
+    let has_glyph_outlines = has_glyph_outlines(root);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
     if has_glyph_runs {
         buf.push_str(",\"fontResources\",\"text.glyphRun\"");
+    }
+    if has_glyph_outlines {
+        buf.push_str(",\"text.outlineGlyph\"");
     }
     if has_variant_groups {
         buf.push_str(",\"text.variantGroups\"");
@@ -89,10 +93,19 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     buf.push_str("],\"optionalFeatures\":[");
     if has_glyph_runs {
         buf.push_str("\"fontResources\",\"text.glyphRun\"");
+        if has_glyph_outlines {
+            buf.push(',');
+        }
+    }
+    if has_glyph_outlines {
+        buf.push_str("\"text.outlineGlyph\"");
     }
     buf.push_str("],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variantGroups\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"");
     if has_glyph_runs {
         buf.push_str(",\"glyphRun\"");
+    }
+    if has_glyph_outlines {
+        buf.push_str(",\"glyphOutline\"");
     }
     buf.push_str("],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
@@ -125,6 +138,7 @@ fn has_text_variant_groups(root: &LayerNode) -> bool {
                             },
                             ..
                         } | PaintOp::GlyphRun { .. }
+                            | PaintOp::GlyphOutline { .. }
                             | PaintOp::CharOverlap {
                                 overlap: crate::paint::LayerCharOverlapPaint {
                                     variant: Some(_),
@@ -154,6 +168,29 @@ fn has_glyph_runs(root: &LayerNode) -> bool {
             LayerNodeKind::ClipRect { child, .. } => stack.push(child),
             LayerNodeKind::Leaf { ops, .. } => {
                 if ops.iter().any(|op| matches!(op, PaintOp::GlyphRun { .. })) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn has_glyph_outlines(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops
+                    .iter()
+                    .any(|op| matches!(op, PaintOp::GlyphOutline { .. }))
+                {
                     return true;
                 }
             }
@@ -454,6 +491,31 @@ impl PaintOp {
                 }
                 buf.push_str(",\"diagnostics\":");
                 write_glyph_run_diagnostics(buf, &run.diagnostics);
+                buf.push('}');
+            }
+            PaintOp::GlyphOutline { bbox, outline } => {
+                buf.push('{');
+                buf.push_str("\"type\":\"glyphOutline\",\"bbox\":");
+                write_bbox(buf, *bbox);
+                buf.push_str(",\"source\":");
+                write_text_source_span(buf, &outline.source);
+                buf.push_str(",\"variant\":");
+                write_paint_variant_meta(buf, &outline.variant);
+                buf.push_str(",\"paintStyle\":");
+                write_paint_text_style(buf, &outline.paint_style);
+                buf.push_str(",\"placement\":");
+                write_text_run_placement(buf, outline.placement);
+                buf.push_str(",\"paths\":[");
+                for (idx, path) in outline.paths.iter().enumerate() {
+                    if idx > 0 {
+                        buf.push(',');
+                    }
+                    buf.push_str("{\"commands\":");
+                    write_path_commands(buf, &path.commands);
+                    buf.push('}');
+                }
+                buf.push_str("],\"diagnostics\":");
+                write_glyph_run_diagnostics(buf, &outline.diagnostics);
                 buf.push('}');
             }
             PaintOp::CharOverlap { bbox, overlap } => {
@@ -1855,13 +1917,14 @@ mod tests {
     use crate::paint::{
         CacheHint, ClipKind, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
         GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility,
-        LayerCharOverlapPaint, LayerEquationPaint, LayerGlyphRunPaint, LayerImagePaint,
-        LayerLinePaint, LayerNode, LayerOutputOptions, LayerPathPaint, LayerPoint,
-        LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-        LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint,
-        PageLayerTree, PaintTextStyle, PaintVariantMeta, ResourceArena, ScriptTag, ShapeKey,
-        ShapingEngineId, TextDirection, TextLegacyVisualState, TextLegacyVisuals, TextSourceId,
-        TextSourceRange, TextSourceSpan, TextVariantQuality, WritingMode, LAYER_TREE_SCHEMA,
+        LayerAffineTransform, LayerCharOverlapPaint, LayerEquationPaint, LayerGlyphOutlinePaint,
+        LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode,
+        LayerOutputOptions, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTextControlMark,
+        LayerTextControlMarkKind, LayerTextDecorationKind, LayerTextDecorationPaint,
+        LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintTextStyle, PaintVariantMeta,
+        ResourceArena, ScriptTag, ShapeKey, ShapingEngineId, TextDirection, TextLegacyVisualState,
+        TextLegacyVisuals, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantQuality,
+        WritingMode, LAYER_TREE_SCHEMA,
     };
     use crate::renderer::composer::CharOverlapInfo;
 
@@ -2526,6 +2589,100 @@ mod tests {
         assert!(json.contains("\"glyphIds\":[42]"));
         assert!(json.contains("\"replayEligibility\":\"portable\""));
         assert!(json.contains("\"strictVisualEligible\":true"));
+    }
+
+    #[test]
+    fn serializes_optional_glyph_outline_variant_without_generic_path_fallback() {
+        let source = TextSourceSpan {
+            id: TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source.clone()),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let glyph_outline = PaintOp::GlyphOutline {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            outline: LayerGlyphOutlinePaint {
+                source,
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: crate::paint::TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["text.outlineGlyph".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                },
+                paint_style: PaintTextStyle::from(&TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                }),
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 12.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                paths: vec![LayerGlyphOutlinePath {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(10.0, 0.0),
+                        PathCommand::LineTo(10.0, 10.0),
+                        PathCommand::ClosePath,
+                    ],
+                }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, glyph_outline],
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"type\":\"glyphOutline\""));
+        assert!(json.contains("\"text.outlineGlyph\""));
+        assert!(json.contains("\"variants\":[\"textRun\",\"glyphOutline\"]"));
+        assert!(json.contains("\"variantId\":\"glyphOutline\""));
+        assert!(json.contains("\"paths\":[{\"commands\":["));
+        assert!(!json.contains("\"type\":\"path\",\"commands\""));
     }
 
     #[test]

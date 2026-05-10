@@ -216,6 +216,10 @@ impl SvgRenderer {
                 // Optional GlyphRun variants are paired with TextRun fallback
                 // in schema v1; SVG keeps the searchable TextRun default.
             }
+            PaintOp::GlyphOutline { .. } => {
+                // GlyphOutline must remain an explicit strict-visual variant,
+                // not a generic Path, so schema v1 SVG keeps TextRun fallback.
+            }
             PaintOp::CharOverlap { bbox, overlap } => {
                 self.render_layer_char_overlap(*bbox, overlap);
             }

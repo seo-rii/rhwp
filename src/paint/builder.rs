@@ -1862,6 +1862,7 @@ mod tests {
                                         PaintOp::PageBackground { .. } => "PageBackground",
                                         PaintOp::TextRun { .. } => "TextRun",
                                         PaintOp::GlyphRun { .. } => "GlyphRun",
+                                        PaintOp::GlyphOutline { .. } => "GlyphOutline",
                                         PaintOp::CharOverlap { .. } => "CharOverlap",
                                         PaintOp::TextControlMark { .. } => "TextControlMark",
                                         PaintOp::TabLeader { .. } => "TabLeader",

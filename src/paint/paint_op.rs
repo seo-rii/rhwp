@@ -31,6 +31,10 @@ pub enum PaintOp {
         bbox: BoundingBox,
         run: LayerGlyphRunPaint,
     },
+    GlyphOutline {
+        bbox: BoundingBox,
+        outline: LayerGlyphOutlinePaint,
+    },
     CharOverlap {
         bbox: BoundingBox,
         overlap: LayerCharOverlapPaint,
@@ -139,6 +143,21 @@ pub struct LayerGlyphRunPaint {
     pub orientation: GlyphRunOrientation,
     pub glyph_transforms: Option<Vec<GlyphTransform>>,
     pub diagnostics: GlyphRunDiagnostics,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerGlyphOutlinePaint {
+    pub source: TextSourceSpan,
+    pub variant: PaintVariantMeta,
+    pub paint_style: PaintTextStyle,
+    pub placement: TextRunPlacement,
+    pub paths: Vec<LayerGlyphOutlinePath>,
+    pub diagnostics: GlyphRunDiagnostics,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayerGlyphOutlinePath {
+    pub commands: Vec<PathCommand>,
 }
 
 impl Default for LayerTextRunPaint {
@@ -765,6 +784,7 @@ impl PaintOp {
             PaintOp::PageBackground { bbox, .. }
             | PaintOp::TextRun { bbox, .. }
             | PaintOp::GlyphRun { bbox, .. }
+            | PaintOp::GlyphOutline { bbox, .. }
             | PaintOp::CharOverlap { bbox, .. }
             | PaintOp::TextControlMark { bbox, .. }
             | PaintOp::TabLeader { bbox, .. }
@@ -861,6 +881,16 @@ impl PaintOp {
                     .font_size
                     .max(run.paint_style.shadow_offset_x.abs())
                     .max(run.paint_style.shadow_offset_y.abs())
+                    .max(1.0)
+                    * 0.2;
+                expand(*bbox, amount)
+            }
+            PaintOp::GlyphOutline { bbox, outline } => {
+                let amount = outline
+                    .paint_style
+                    .font_size
+                    .max(outline.paint_style.shadow_offset_x.abs())
+                    .max(outline.paint_style.shadow_offset_y.abs())
                     .max(1.0)
                     * 0.2;
                 expand(*bbox, amount)

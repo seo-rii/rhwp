@@ -588,24 +588,31 @@ impl SkiaLayerRenderer {
                     }
                 }
                 for op in ops {
-                    let skip_unselected_text_variant =
-                        match op {
-                            PaintOp::TextRun { run, .. } => {
-                                run.variant.as_ref().is_some_and(|variant| {
+                    let skip_unselected_text_variant = match op {
+                        PaintOp::TextRun { run, .. } => {
+                            run.variant
+                                .as_ref()
+                                .is_some_and(|variant| {
                                     match selected_text_variants.get(&variant.equivalence_group) {
                                         Some(selected) => selected != &variant.variant_id,
                                         None => false,
                                     }
                                 })
+                        }
+                        PaintOp::GlyphRun { run, .. } => {
+                            match selected_text_variants.get(&run.variant.equivalence_group) {
+                                Some(selected) => selected != &run.variant.variant_id,
+                                None => true,
                             }
-                            PaintOp::GlyphRun { run, .. } => {
-                                match selected_text_variants.get(&run.variant.equivalence_group) {
-                                    Some(selected) => selected != &run.variant.variant_id,
-                                    None => true,
-                                }
+                        }
+                        PaintOp::GlyphOutline { outline, .. } => {
+                            match selected_text_variants.get(&outline.variant.equivalence_group) {
+                                Some(selected) => selected != &outline.variant.variant_id,
+                                None => true,
                             }
-                            _ => false,
-                        };
+                        }
+                        _ => false,
+                    };
                     if skip_unselected_text_variant {
                         continue;
                     }
@@ -826,6 +833,11 @@ impl SkiaLayerRenderer {
                     }
                 }
                 canvas.restore();
+            }
+            PaintOp::GlyphOutline { .. } => {
+                // GlyphOutline is a strict-visual variant contract, not a
+                // generic Path fallback. Native Skia currently selects
+                // GlyphRun or TextRun variants only.
             }
             PaintOp::CharOverlap { bbox, overlap } => {
                 let mut run = crate::paint::LayerTextRunPaint {

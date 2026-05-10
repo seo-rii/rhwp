@@ -251,6 +251,19 @@ impl StaticSubtreeCacheKey {
                 self.mix_bbox(bbox);
                 self.mix_glyph_run(run);
             }
+            PaintOp::GlyphOutline { bbox, outline } => {
+                self.mix_u8(15);
+                self.mix_bbox(bbox);
+                self.mix_paint_text_style(&outline.paint_style);
+                self.mix_text_run_placement(outline.placement);
+                self.mix_usize(outline.paths.len());
+                for path in &outline.paths {
+                    self.mix_usize(path.commands.len());
+                    for command in &path.commands {
+                        self.mix_path_command(command);
+                    }
+                }
+            }
             PaintOp::CharOverlap { bbox, overlap } => {
                 self.mix_u8(10);
                 self.mix_bbox(bbox);
@@ -506,6 +519,7 @@ impl StaticSubtreeCacheKey {
         }
         self.mix_str(&run.shape_key.shaping_engine.0);
         self.mix_str(&run.shape_key.fallback_policy.0);
+        self.mix_text_run_placement(run.placement);
         self.mix_usize(run.glyph_ids.len());
         for glyph_id in &run.glyph_ids {
             self.mix_u32(*glyph_id);
@@ -552,6 +566,17 @@ impl StaticSubtreeCacheKey {
             crate::paint::GlyphRunOrientation::VerticalSideways => 2,
             crate::paint::GlyphRunOrientation::MixedPerGlyph => 3,
         });
+    }
+
+    fn mix_text_run_placement(&mut self, placement: crate::paint::TextRunPlacement) {
+        let transform = placement.run_to_page;
+        self.mix_f64(transform.a);
+        self.mix_f64(transform.b);
+        self.mix_f64(transform.c);
+        self.mix_f64(transform.d);
+        self.mix_f64(transform.e);
+        self.mix_f64(transform.f);
+        self.mix_f64(placement.baseline_y);
     }
 
     fn mix_text_style(&mut self, style: &TextStyle) {

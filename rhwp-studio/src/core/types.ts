@@ -276,6 +276,7 @@ export type LayerKnownPaintOp =
   | LayerPageBackgroundOp
   | LayerTextRunOp
   | LayerGlyphRunOp
+  | LayerGlyphOutlineOp
   | LayerCharOverlapOp
   | LayerTextControlMarkOp
   | LayerTabLeaderOp
@@ -303,6 +304,7 @@ const KNOWN_LAYER_PAINT_OP_TYPES = new Set([
   'pageBackground',
   'textRun',
   'glyphRun',
+  'glyphOutline',
   'charOverlap',
   'textControlMark',
   'tabLeader',
@@ -719,6 +721,21 @@ export interface LayerGlyphRunOp {
   writingMode: LayerWritingMode;
   orientation: LayerGlyphRunOrientation;
   glyphTransforms?: LayerGlyphTransform[];
+  diagnostics: LayerGlyphRunDiagnostics;
+}
+
+export interface LayerGlyphOutlinePath {
+  commands: LayerPathCommand[];
+}
+
+export interface LayerGlyphOutlineOp {
+  type: 'glyphOutline';
+  bbox: LayerBounds;
+  source: LayerTextSourceSpan;
+  variant: LayerTextVariantMeta;
+  paintStyle: LayerTextStyle;
+  placement: LayerTextRunPlacement;
+  paths: LayerGlyphOutlinePath[];
   diagnostics: LayerGlyphRunDiagnostics;
 }
 
