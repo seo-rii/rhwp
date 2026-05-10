@@ -218,6 +218,12 @@ instantiation for the exported face:
   fills, ratio scaling, color glyph mode, and per-glyph transforms still
   disqualify the `GlyphRun` variant for that backend. Those runs use `TextRun`
   until effect parity fixtures explicitly enable the glyph path.
+- CanvasKit fallback diagnostics use effect-specific reason strings
+  (`glyphRunUnderlineUnsupported`, `glyphRunStrikethroughUnsupported`,
+  `glyphRunEmphasisUnsupported`, `glyphRunRatioUnsupported`,
+  `glyphRunEmbossUnsupported`, `glyphRunEngraveUnsupported`,
+  `glyphRunShadeUnsupported`) so each effect can be promoted independently once
+  a parity fixture covers it.
 - Explicit glyph positions use `canvas.drawGlyphs`. `TextBlob.MakeFromGlyphs`
   is not used for positioned `GlyphRun` replay because it relies on font default
   advances. RSXform/TextBlob paths are future optimizations for repeated static

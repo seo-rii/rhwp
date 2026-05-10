@@ -889,6 +889,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedEffectTree.fontResources,
     );
     const unsupportedPng = renderTree(unsupportedEffectTree);
+    const unsupportedEffectReasons = {};
+    const unsupportedEffectCases = [
+      ['underline', (style) => ({ ...style, underline: 'bottom' })],
+      ['strikethrough', (style) => ({ ...style, strikethrough: true })],
+      ['emphasis', (style) => ({ ...style, emphasisDot: 1 })],
+      ['ratio', (style) => ({ ...style, ratio: 0.8 })],
+      ['emboss', (style) => ({ ...style, emboss: true })],
+      ['engrave', (style) => ({ ...style, engrave: true })],
+      ['shade', (style) => ({ ...style, shadeColor: '#ffff00' })],
+    ];
+    for (const [name, mutateStyle] of unsupportedEffectCases) {
+      const candidate = structuredClone(tree);
+      glyphOp(candidate).paintStyle = mutateStyle(glyphOp(candidate).paintStyle);
+      unsupportedEffectReasons[name] = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+        glyphOp(candidate),
+        candidate.fontResources,
+      ).reason;
+    }
 
     const digestMismatchTree = structuredClone(tree);
     assignFontIdentity(
@@ -1143,6 +1161,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       status,
       png,
       unsupportedStatus,
+      unsupportedEffectReasons,
       unsupportedPng,
       digestMismatchStatus,
       digestMismatchPng,
@@ -1203,8 +1222,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     portableGlyphRunProbe.unsupportedStatus?.replayable === false
-      && portableGlyphRunProbe.unsupportedStatus?.reason === 'unsupportedGlyphRunPaintEffect',
+      && portableGlyphRunProbe.unsupportedStatus?.reason === 'glyphRunUnderlineUnsupported',
     `CanvasKit GlyphRun rejects unsupported text effects=${JSON.stringify(portableGlyphRunProbe.unsupportedStatus)}`,
+  );
+  assert(
+    JSON.stringify(portableGlyphRunProbe.unsupportedEffectReasons) === JSON.stringify({
+      underline: 'glyphRunUnderlineUnsupported',
+      strikethrough: 'glyphRunStrikethroughUnsupported',
+      emphasis: 'glyphRunEmphasisUnsupported',
+      ratio: 'glyphRunRatioUnsupported',
+      emboss: 'glyphRunEmbossUnsupported',
+      engrave: 'glyphRunEngraveUnsupported',
+      shade: 'glyphRunShadeUnsupported',
+    }),
+    `CanvasKit GlyphRun reports precise unsupported effect reasons=${JSON.stringify(portableGlyphRunProbe.unsupportedEffectReasons)}`,
   );
   const fallbackRedPixels = countPixels(
     portableGlyphRunProbe.unsupportedPng,

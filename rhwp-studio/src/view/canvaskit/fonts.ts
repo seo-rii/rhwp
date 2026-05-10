@@ -245,8 +245,9 @@ export class CanvasKitFontRegistry {
     ) {
       return { replayable: false, reason: 'nonFiniteGlyphTransform' };
     }
-    if (!this.isSupportedGlyphRunPaint(run)) {
-      return { replayable: false, reason: 'unsupportedGlyphRunPaintEffect' };
+    const unsupportedPaintReason = this.unsupportedGlyphRunPaintReason(run);
+    if (unsupportedPaintReason) {
+      return { replayable: false, reason: unsupportedPaintReason };
     }
     if (run.shapeKey.fontInstance.variations?.length) {
       return { replayable: false, reason: 'fontVariationUnsupported' };
@@ -403,7 +404,7 @@ export class CanvasKitFontRegistry {
     return bytes;
   }
 
-  private isSupportedGlyphRunPaint(run: LayerGlyphRunOp): boolean {
+  private unsupportedGlyphRunPaintReason(run: LayerGlyphRunOp): string | null {
     const style = run.paintStyle;
     const ratio = typeof style.ratio === 'number' ? style.ratio : 1;
     const shadeColor = (style.shadeColor || '#ffffff').toLowerCase();
@@ -414,14 +415,33 @@ export class CanvasKitFontRegistry {
     const hasSupportedShadow = shadowType === 0
       || (shadowType > 0 && Number.isFinite(shadowOffsetX) && Number.isFinite(shadowOffsetY));
     const hasSupportedOutline = Number.isFinite(outlineType) && outlineType >= 0;
-    return Math.abs(ratio - 1) <= 0.001
-      && style.underline === 'none'
-      && !style.strikethrough
-      && (style.emphasisDot ?? 0) === 0
-      && hasSupportedOutline
-      && hasSupportedShadow
-      && !style.emboss
-      && !style.engrave
-      && shadeColor === '#ffffff';
+    if (Math.abs(ratio - 1) > 0.001) {
+      return 'glyphRunRatioUnsupported';
+    }
+    if (style.underline !== 'none') {
+      return 'glyphRunUnderlineUnsupported';
+    }
+    if (style.strikethrough) {
+      return 'glyphRunStrikethroughUnsupported';
+    }
+    if ((style.emphasisDot ?? 0) !== 0) {
+      return 'glyphRunEmphasisUnsupported';
+    }
+    if (!hasSupportedOutline) {
+      return 'glyphRunOutlineUnsupported';
+    }
+    if (!hasSupportedShadow) {
+      return 'glyphRunShadowUnsupported';
+    }
+    if (style.emboss) {
+      return 'glyphRunEmbossUnsupported';
+    }
+    if (style.engrave) {
+      return 'glyphRunEngraveUnsupported';
+    }
+    if (shadeColor !== '#ffffff') {
+      return 'glyphRunShadeUnsupported';
+    }
+    return null;
   }
 }
