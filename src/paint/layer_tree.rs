@@ -325,6 +325,19 @@ impl PageLayerTree {
         self.output_options = output_options;
         self
     }
+
+    /// Runs the post-layout text shaping/lowering pass on this tree.
+    ///
+    /// This is opt-in while schema v1 keeps `TextRun` as the compatibility
+    /// replay contract. The lowerer may append optional `GlyphRun` variants,
+    /// but the original `TextRun` fallback remains in the same paint-order
+    /// slot through variant metadata.
+    pub fn lower_text_shapes(
+        &mut self,
+        resolver: &dyn crate::paint::FontResolver,
+    ) -> crate::paint::TextShapeReport {
+        crate::paint::TextShapeLowerer::new(resolver).lower_root(&mut self.root)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -650,7 +663,74 @@ impl LayerSemantic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paint::{
+        FontFaceKey, FontFallbackPolicyId, FontInstanceKey, FontRequest, GlyphCluster, GlyphRange,
+        GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerPoint, LayerVector, ResolvedFontFace,
+        ResolvedGlyphRun, ScriptTag, ShapeKey, ShapingEngineId, TextDirection, TextVariantQuality,
+        WritingMode,
+    };
     use crate::renderer::TextStyle;
+
+    struct TestGlyphResolver;
+
+    impl crate::paint::FontResolver for TestGlyphResolver {
+        fn resolve_font(&self, _request: &FontRequest) -> ResolvedFontFace {
+            ResolvedFontFace {
+                portability: crate::paint::FontPortabilityKind::PortableBlob,
+            }
+        }
+
+        fn shape_glyph_run(
+            &self,
+            _request: &FontRequest,
+            run: &crate::paint::LayerTextRunPaint,
+            _resolved: &ResolvedFontFace,
+        ) -> Option<ResolvedGlyphRun> {
+            Some(ResolvedGlyphRun {
+                shape_key: ShapeKey {
+                    font_instance: FontInstanceKey {
+                        face_key: FontFaceKey("test-face".to_string()),
+                        size_px: run.style.font_size.max(12.0),
+                        variations: Vec::new(),
+                        synthetic_bold: false,
+                        synthetic_italic: false,
+                    },
+                    direction: TextDirection::Ltr,
+                    writing_mode: WritingMode::HorizontalTb,
+                    script: Some(ScriptTag("DFLT".to_string())),
+                    language: None,
+                    features: Vec::new(),
+                    shaping_engine: ShapingEngineId("test".to_string()),
+                    fallback_policy: FontFallbackPolicyId("none".to_string()),
+                },
+                glyph_ids: vec![42],
+                positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+                advances: Some(vec![LayerVector { dx: 10.0, dy: 0.0 }]),
+                clusters: vec![GlyphCluster {
+                    source_range_utf8: TextSourceRange::new(0, run.text.len() as u32),
+                    source_range_utf16: Some(TextSourceRange::new(
+                        0,
+                        run.text.encode_utf16().count() as u32,
+                    )),
+                    text_range_utf8: Some(TextSourceRange::new(0, run.text.len() as u32)),
+                    glyph_range: GlyphRange::new(0, 1),
+                    flags: Vec::new(),
+                }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            })
+        }
+    }
 
     #[test]
     fn page_layer_tree_builds_internal_text_source_table_and_spans() {
@@ -761,5 +841,40 @@ mod tests {
         assert_eq!(source.id, TextSourceId(1));
         assert_eq!(source.stable_source_key.as_deref(), Some("hwp-source-v1"));
         assert_eq!(run.projection, TextProjectionKind::Verbatim);
+    }
+
+    #[test]
+    fn page_layer_tree_can_run_opt_in_text_shape_lowerer() {
+        let root = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 80.0, 20.0),
+            None,
+            vec![PaintOp::TextRun {
+                bbox: BoundingBox::new(0.0, 0.0, 30.0, 12.0),
+                run: crate::paint::LayerTextRunPaint {
+                    text: "A".to_string(),
+                    style: TextStyle {
+                        font_size: 16.0,
+                        ..Default::default()
+                    },
+                    positions: vec![0.0, 10.0],
+                    baseline: 10.0,
+                    ..Default::default()
+                },
+            }],
+        );
+        let mut tree = PageLayerTree::new(100.0, 100.0, root);
+        let report = tree.lower_text_shapes(&TestGlyphResolver);
+
+        assert_eq!(report.public_glyph_run_count(), 1);
+        let LayerNodeKind::Leaf { ops, .. } = &tree.root.kind else {
+            panic!("expected leaf root");
+        };
+        assert!(matches!(ops[0], PaintOp::TextRun { .. }));
+        let PaintOp::GlyphRun { run, .. } = &ops[1] else {
+            panic!("expected glyph run");
+        };
+        assert_eq!(run.variant.equivalence_group, "text-0");
+        assert_eq!(run.variant.variant_id, "glyphRun");
+        assert_eq!(run.glyph_ids, vec![42]);
     }
 }

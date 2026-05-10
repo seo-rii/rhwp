@@ -229,7 +229,10 @@ instantiation for the exported face:
    `PortableBlob`, `ExternalVerified`, `ResolvedButNotEmbedded`,
    `SystemNameOnly`, or `UnresolvedFallback`.
 7. Introduce a post-layout `TextShapeLowerer` skeleton that respects existing
-   layout positions and reports variant quality diagnostics.
+   layout positions and reports variant quality diagnostics. `PageLayerTree`
+   exposes this as an opt-in lowering pass so callers can append `GlyphRun`
+   variants after layer construction without changing the default TextRun-only
+   export path.
 8. Add optional `GlyphRun` variants only when a portable or verified font
    instance and source cluster mapping are available. The lowerer now supports
    this gated append path, but default exports do not run a real shaping/font
