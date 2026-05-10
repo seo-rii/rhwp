@@ -958,6 +958,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
     );
     const positionAdjustedPng = renderTree(positionAdjustedTree);
 
+    const positionAdjustedStrictTree = structuredClone(tree);
+    assignFontIdentity(
+      positionAdjustedStrictTree,
+      'position-adjusted-strict',
+      'fixture-font-digest-position-adjusted-strict',
+    );
+    glyphOp(positionAdjustedStrictTree).diagnostics.quality = 'positionAdjusted';
+    glyphOp(positionAdjustedStrictTree).diagnostics.maxOriginDeltaPx = 0.1;
+    glyphOp(positionAdjustedStrictTree).diagnostics.maxAdvanceDeltaPx = 0.1;
+    glyphOp(positionAdjustedStrictTree).diagnostics.maxResidualAfterAdjustmentPx = 0.1;
+    glyphOp(positionAdjustedStrictTree).variant.quality = 'positionAdjusted';
+    const positionAdjustedStrictPng = renderTree(positionAdjustedStrictTree);
+    const positionAdjustedStrictStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(positionAdjustedStrictTree),
+      positionAdjustedStrictTree.fontResources,
+    );
+
     const multiPartTree = structuredClone(tree);
     assignFontIdentity(multiPartTree, 'multipart', 'fixture-font-digest-multipart');
     multiPartTree.textSources[0].text = 'HH';
@@ -1113,6 +1130,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       faceIndexPng,
       positionAdjustedStatus,
       positionAdjustedPng,
+      positionAdjustedStrictStatus,
+      positionAdjustedStrictPng,
       multiPartStatuses,
       multiPartPng,
       duplicatePartPng,
@@ -1274,6 +1293,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     positionAdjustedRedPixels > 20 && positionAdjustedBlackPixels < 5,
     `CanvasKit over-tolerance PositionAdjusted run keeps TextRun fallback red=${positionAdjustedRedPixels}, black=${positionAdjustedBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.positionAdjustedStrictStatus?.replayable === true,
+    `CanvasKit GlyphRun accepts PositionAdjusted residuals within strict tolerance=${JSON.stringify(portableGlyphRunProbe.positionAdjustedStrictStatus)}`,
+  );
+  const positionAdjustedStrictRedPixels = countPixels(
+    portableGlyphRunProbe.positionAdjustedStrictPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const positionAdjustedStrictBlackPixels = countPixels(
+    portableGlyphRunProbe.positionAdjustedStrictPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    positionAdjustedStrictBlackPixels > 20 && positionAdjustedStrictRedPixels < 5,
+    `CanvasKit in-tolerance PositionAdjusted run selects GlyphRun black=${positionAdjustedStrictBlackPixels}, red=${positionAdjustedStrictRedPixels}`,
   );
   assert(
     portableGlyphRunProbe.multiPartStatuses?.length === 2

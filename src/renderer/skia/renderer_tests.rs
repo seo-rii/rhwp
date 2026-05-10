@@ -2823,6 +2823,44 @@ fn native_skia_keeps_text_fallback_for_position_adjusted_residual_over_tolerance
 }
 
 #[test]
+fn native_skia_replays_position_adjusted_glyph_run_within_tolerance() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.diagnostics.quality = TextVariantQuality::PositionAdjusted;
+                run.variant.quality = Some(TextVariantQuality::PositionAdjusted);
+                run.diagnostics.max_origin_delta_px = 0.1;
+                run.diagnostics.max_advance_delta_px = 0.1;
+                run.diagnostics.max_residual_after_adjustment_px = 0.1;
+            }
+        }
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("position-adjusted glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("position-adjusted glyph variant ink");
+
+    assert!(
+        bounds.max_x < 100,
+        "native Skia should select PositionAdjusted GlyphRun when residual is within strict tolerance, got {bounds:?}"
+    );
+}
+
+#[test]
 fn native_skia_keeps_text_fallback_for_incomplete_glyph_variant_set() {
     let renderer = SkiaLayerRenderer::new();
     let style = TextStyle {

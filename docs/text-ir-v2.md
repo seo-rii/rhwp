@@ -298,9 +298,10 @@ keep the same schema v1 contract: source/logical order comes from
 stream, and each exported glyph run remains homogeneous in direction, bidi
 level, writing mode, and orientation. `MixedPerGlyph` remains internal-only.
 
-P1.5 should add positive `PositionAdjusted` replay and expand native Skia vs
-CanvasKit fuzzy PNG matrices. Shaped measurement and line breaking remain
-outside this milestone.
+P1.5 adds positive `PositionAdjusted` replay for native Skia and CanvasKit when
+the residual stays within the strict page-space tolerance. Expanded native Skia
+vs CanvasKit fuzzy PNG matrices remain a renderer-sweep follow-up. Shaped
+measurement and line breaking remain outside this milestone.
 
 ### Fixture Font Policy
 
@@ -335,14 +336,14 @@ rerender tests may still use exact image comparison.
 
 ### PositionAdjusted Policy
 
-`PositionAdjusted` remains a valid future strict candidate, but P0/P1a should not
-use it for positive replay fixtures. A negative P1a fixture asserts that
-`PositionAdjusted` data with residuals above tolerance falls back to `TextRun`.
-Positive `PositionAdjusted` replay belongs to P1.5 and must pass the existing hard
-gates: portable or verified font, complete source coverage, no missing glyphs,
-no cluster mismatch, explicit final glyph positions, no unsplit fallback font,
-no unsupported paint effects, and residuals within the configured page-space
-and device-space tolerance. The canonical fast-path gate is page-space residual;
+`PositionAdjusted` is a strict candidate only after the normal `Exact` replay and
+fallback contracts are stable. P1 keeps both sides of the gate small: residuals
+above tolerance fall back to `TextRun`, while P1.5 accepts in-tolerance
+`PositionAdjusted` runs for native Skia and CanvasKit. Positive replay must pass
+the existing hard gates: portable or verified font, complete source coverage, no
+missing glyphs, no cluster mismatch, explicit final glyph positions, no unsplit
+fallback font, no unsupported paint effects, and residuals within the configured
+page-space tolerance. The canonical fast-path gate is page-space residual;
 device-space residual remains a raster/parity diagnostic until the PNG matrix is
 stable.
 
@@ -353,13 +354,15 @@ The fast CI path should keep these checks small:
 - Rust unit tests: variant set selection, font digest mismatch,
   non-portable fallback, unsupported-effect fallback, and CanvasKit glyph-id
   range guard. P1a adds duplicate-part rejection, synthetic fallback-font split,
-  and over-tolerance `PositionAdjusted` fallback.
+  and over-tolerance `PositionAdjusted` fallback. P1.5 adds in-tolerance
+  `PositionAdjusted` selection.
 - Native Skia tests: fill-only `GlyphRun`, explicit positions, and unsupported
-  effect fallback.
+  effect fallback, plus small `PositionAdjusted` positive/negative coverage.
 - Studio/CanvasKit E2E: one eligible fill-only glyph replay, one digest
   mismatch fallback, one unsupported-effect fallback, and small negative
   capability probes for unsupported variations, font collection face index, and
-  over-tolerance `PositionAdjusted`.
+  over-tolerance `PositionAdjusted`. P1.5 adds one in-tolerance
+  `PositionAdjusted` replay probe.
 
 Native Skia vs CanvasKit PNG fuzzy parity and larger matrices should start in a
 renderer sweep or nightly-style job, then move into the fast path only after
