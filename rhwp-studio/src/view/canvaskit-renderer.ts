@@ -957,7 +957,6 @@ export class CanvasKitLayerRenderer {
     if (!font) {
       return;
     }
-    const paint = this.makePaint(op.paintStyle.color, 'fill');
     const glyphs = new Uint16Array(op.glyphIds.length);
     const positions = new Float32Array(op.positions.length * 2);
     for (const [index, glyphId] of op.glyphIds.entries()) {
@@ -979,21 +978,32 @@ export class CanvasKitLayerRenderer {
       0,
       1,
     ]);
+    const drawGlyphs = (
+      xOffset: number,
+      yOffset: number,
+      paint: Paint,
+    ): void => {
+      canvas.drawGlyphs(glyphs, positions, xOffset, yOffset, font, paint);
+    };
     if ((op.paintStyle.shadowType ?? 0) > 0) {
       const shadowPaint = this.makePaint(op.paintStyle.shadowColor || '#000000', 'fill');
-      canvas.drawGlyphs(
-        glyphs,
-        positions,
-        op.paintStyle.shadowOffsetX ?? 0,
-        op.paintStyle.shadowOffsetY ?? 0,
-        font,
-        shadowPaint,
-      );
+      drawGlyphs(op.paintStyle.shadowOffsetX ?? 0, op.paintStyle.shadowOffsetY ?? 0, shadowPaint);
       shadowPaint.delete();
     }
-    canvas.drawGlyphs(glyphs, positions, 0, 0, font, paint);
+    if ((op.paintStyle.outlineType ?? 0) > 0) {
+      const fillPaint = this.makePaint('#ffffff', 'fill');
+      const strokePaint = this.makePaint(op.paintStyle.color, 'stroke');
+      strokePaint.setStrokeWidth(Math.max(op.paintStyle.fontSize / 25, 0.5));
+      drawGlyphs(0, 0, fillPaint);
+      drawGlyphs(0, 0, strokePaint);
+      fillPaint.delete();
+      strokePaint.delete();
+    } else {
+      const fillPaint = this.makePaint(op.paintStyle.color, 'fill');
+      drawGlyphs(0, 0, fillPaint);
+      fillPaint.delete();
+    }
     canvas.restore();
-    paint.delete();
   }
 
   private renderTextControlMark(

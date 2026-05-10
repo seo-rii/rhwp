@@ -410,13 +410,15 @@ export class CanvasKitFontRegistry {
     const shadowType = style.shadowType ?? 0;
     const shadowOffsetX = style.shadowOffsetX ?? 0;
     const shadowOffsetY = style.shadowOffsetY ?? 0;
+    const outlineType = style.outlineType ?? 0;
     const hasSupportedShadow = shadowType === 0
       || (shadowType > 0 && Number.isFinite(shadowOffsetX) && Number.isFinite(shadowOffsetY));
+    const hasSupportedOutline = Number.isFinite(outlineType) && outlineType >= 0;
     return Math.abs(ratio - 1) <= 0.001
       && style.underline === 'none'
       && !style.strikethrough
       && (style.emphasisDot ?? 0) === 0
-      && (style.outlineType ?? 0) === 0
+      && hasSupportedOutline
       && hasSupportedShadow
       && !style.emboss
       && !style.engrave

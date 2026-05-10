@@ -882,7 +882,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedEffectTree = structuredClone(tree);
     unsupportedEffectTree.root.ops[2].paintStyle = {
       ...unsupportedEffectTree.root.ops[2].paintStyle,
-      outlineType: 1,
+      underline: 'bottom',
     };
     const unsupportedStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
       unsupportedEffectTree.root.ops[2],
@@ -986,6 +986,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const shadowStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
       glyphOp(shadowTree),
       shadowTree.fontResources,
+    );
+
+    const outlineTree = structuredClone(tree);
+    assignFontIdentity(outlineTree, 'outline', 'fixture-font-digest-outline');
+    glyphOp(outlineTree).paintStyle = {
+      ...glyphOp(outlineTree).paintStyle,
+      color: '#0000cc',
+      outlineType: 1,
+    };
+    const outlinePng = renderTree(outlineTree);
+    const outlineStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(outlineTree),
+      outlineTree.fontResources,
     );
 
     const multiPartTree = structuredClone(tree);
@@ -1147,6 +1160,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       positionAdjustedStrictPng,
       shadowStatus,
       shadowPng,
+      outlineStatus,
+      outlinePng,
       multiPartStatuses,
       multiPartPng,
       duplicatePartPng,
@@ -1344,6 +1359,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     shadowBlackPixels > 20 && shadowGreenPixels > 10 && shadowRedPixels < 5,
     `CanvasKit GlyphRun shadow paints fill+shadow and suppresses fallback black=${shadowBlackPixels}, green=${shadowGreenPixels}, red=${shadowRedPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.outlineStatus?.replayable === true,
+    `CanvasKit GlyphRun accepts supported outline replay=${JSON.stringify(portableGlyphRunProbe.outlineStatus)}`,
+  );
+  const outlineRedPixels = countPixels(
+    portableGlyphRunProbe.outlinePng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const outlineBluePixels = countPixels(
+    portableGlyphRunProbe.outlinePng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 120 && pixel.green < 120 && pixel.blue > 120,
+  );
+  assert(
+    outlineBluePixels > 20 && outlineRedPixels < 5,
+    `CanvasKit GlyphRun outline paints selected variant and suppresses fallback blue=${outlineBluePixels}, red=${outlineRedPixels}`,
   );
   assert(
     portableGlyphRunProbe.multiPartStatuses?.length === 2

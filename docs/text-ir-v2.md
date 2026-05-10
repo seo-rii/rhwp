@@ -212,12 +212,12 @@ instantiation for the exported face:
   until variable-font instance construction is proven.
 - Public glyph ids remain `u32`, but CanvasKit replay validates that every id
   fits the current `HEAPU16`/SkGlyphID path before calling `drawGlyphs`.
-- Initial CanvasKit replay supports fill plus the same simple offset shadow pass
-  used by its `TextRun` path. Unsupported text effects such as
-  underline/strike/emphasis mirrors, outline, emboss/engrave, shade fills, ratio
-  scaling, color glyph mode, and per-glyph transforms still disqualify the
-  `GlyphRun` variant for that backend. Those runs use `TextRun` until effect
-  parity fixtures explicitly enable the glyph path.
+- Initial CanvasKit replay supports fill, the same simple offset shadow pass
+  used by its `TextRun` path, and the matching outline/stroke pass. Unsupported
+  text effects such as underline/strike/emphasis mirrors, emboss/engrave, shade
+  fills, ratio scaling, color glyph mode, and per-glyph transforms still
+  disqualify the `GlyphRun` variant for that backend. Those runs use `TextRun`
+  until effect parity fixtures explicitly enable the glyph path.
 - Explicit glyph positions use `canvas.drawGlyphs`. `TextBlob.MakeFromGlyphs`
   is not used for positioned `GlyphRun` replay because it relies on font default
   advances. RSXform/TextBlob paths are future optimizations for repeated static
@@ -416,8 +416,8 @@ flakiness and runtime are understood.
   the `TextRun` fallback remains selected.
 - CanvasKit: pre-scans variant sets and selects `GlyphRun` only when the
   renderer has verified the exact font blob/external font, can instantiate the
-  requested face, and the run passes the fill/shadow eligibility matrix above.
-  Otherwise it replays the `TextRun` fallback.
+  requested face, and the run passes the fill/shadow/outline eligibility matrix
+  above. Otherwise it replays the `TextRun` fallback.
 - Canvas2D: replay `TextRun` by default. It uses the same variant-set guard but
   never selects `GlyphRun` or `glyphOutline` in schema v1; glyph data is
   diagnostics, hit-test metadata, or future strict outline fallback.
