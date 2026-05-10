@@ -461,6 +461,27 @@ The current validator keeps this conservative:
 leaf, clip, transform, or cache boundaries. Until then, `anchorOpId` plus the
 same-leaf invariant is the compatibility contract.
 
+## Backend Variant Selection Reports
+
+Variant selection is backend-local. The same layer export may select `GlyphRun`
+in native Skia, fall back to `TextRun` in CanvasKit, and keep `TextRun` as the
+default in Canvas2D/SVG. Renderers that evaluate optional visual variants should
+therefore expose a report separate from the immutable layer export:
+
+- `equivalenceGroup`;
+- selected `variantId` and selected reason;
+- rejected variant ids with stable reasons such as
+  `glyphRunUnderlineUnsupported`, `fontBlobNotVerified`,
+  `fontFaceIndexUnsupported`, or `fontVariationUnsupported`;
+- per-part replay status for multi-part variant sets.
+
+CanvasKit also reports the eligibility gates that matter for portable glyph
+replay: digest match, exact face instantiation, face-index support, variation
+support, and effect support. These are render diagnostics, not schema fields,
+because `ExternalVerified` fonts and backend capabilities are resolved at render
+time. Unsupported CanvasKit runs must select the `TextRun` fallback instead of
+painting an approximate glyph stream.
+
 ## Non-Goals For The Current Branch
 
 - Removing `TextRun`.

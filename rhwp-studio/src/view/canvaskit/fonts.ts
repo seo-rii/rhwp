@@ -89,6 +89,31 @@ const MATH_ALIASES = [
   'Cambria Math',
 ];
 
+export interface CanvasKitGlyphRunReplayReport {
+  replayEligibility: LayerGlyphRunOp['diagnostics']['replayEligibility'];
+  quality: LayerGlyphRunOp['diagnostics']['quality'];
+  strictVisualEligible: boolean;
+  digestMatched?: boolean;
+  exactFaceInstantiated?: boolean;
+  faceIndexSupported?: boolean;
+  variationSupported?: boolean;
+  effectSupported?: boolean;
+  reason?: string;
+}
+
+export type CanvasKitGlyphRunReplayStatus =
+  | {
+    replayable: true;
+    face: LayerFontFaceResource;
+    blob: LayerFontBlobResource;
+    report: CanvasKitGlyphRunReplayReport;
+  }
+  | {
+    replayable: false;
+    reason: string;
+    report: CanvasKitGlyphRunReplayReport;
+  };
+
 export class CanvasKitFontRegistry {
   readonly aliases = new Set<string>();
   private readonly verifiedFontBlobs = new Map<string, ArrayBuffer>();
@@ -191,21 +216,21 @@ export class CanvasKitFontRegistry {
   glyphRunReplayStatus(
     run: LayerGlyphRunOp,
     fontResources: LayerFontResources | undefined,
-  ): { replayable: true; face: LayerFontFaceResource; blob: LayerFontBlobResource } | { replayable: false; reason: string } {
+  ): CanvasKitGlyphRunReplayStatus {
     if (run.diagnostics.replayEligibility !== 'portable'
       && run.diagnostics.replayEligibility !== 'conditionalExternalFont') {
-      return { replayable: false, reason: 'nonPortableGlyphRun' };
+      return this.glyphRunReplayFailure(run, 'nonPortableGlyphRun');
     }
     if (!run.diagnostics.strictVisualEligible
       || (run.diagnostics.quality !== 'exact' && run.diagnostics.quality !== 'positionAdjusted')) {
-      return { replayable: false, reason: 'qualityNotStrictEligible' };
+      return this.glyphRunReplayFailure(run, 'qualityNotStrictEligible');
     }
     if (run.diagnostics.quality === 'positionAdjusted') {
       const fontSize = Number.isFinite(run.paintStyle.fontSize) ? run.paintStyle.fontSize : 0;
       const tolerance = Math.min(0.5, Math.max(0.25, fontSize * 0.005));
       if (!Number.isFinite(run.diagnostics.maxResidualAfterAdjustmentPx)
         || run.diagnostics.maxResidualAfterAdjustmentPx > tolerance) {
-        return { replayable: false, reason: 'positionAdjustedResidualTooHigh' };
+        return this.glyphRunReplayFailure(run, 'positionAdjustedResidualTooHigh');
       }
     }
     if (
@@ -213,25 +238,25 @@ export class CanvasKitFontRegistry {
       || run.diagnostics.clusterMismatchCount !== 0
       || run.diagnostics.usedFallbackFontCount !== 0
     ) {
-      return { replayable: false, reason: 'diagnosticsNotClean' };
+      return this.glyphRunReplayFailure(run, 'diagnosticsNotClean');
     }
     if (run.orientation === 'mixedPerGlyph' || run.glyphTransforms?.length) {
-      return { replayable: false, reason: 'mixedGlyphTransformsUnsupported' };
+      return this.glyphRunReplayFailure(run, 'mixedGlyphTransformsUnsupported');
     }
     if (!run.glyphIds.length || run.glyphIds.length !== run.positions.length) {
-      return { replayable: false, reason: 'glyphPositionLengthMismatch' };
+      return this.glyphRunReplayFailure(run, 'glyphPositionLengthMismatch');
     }
     if (run.advances && run.advances.length !== run.glyphIds.length) {
-      return { replayable: false, reason: 'glyphAdvanceLengthMismatch' };
+      return this.glyphRunReplayFailure(run, 'glyphAdvanceLengthMismatch');
     }
     for (const glyphId of run.glyphIds) {
       if (!Number.isInteger(glyphId) || glyphId <= 0 || glyphId > 0xffff) {
-        return { replayable: false, reason: 'glyphIdOutOfRange' };
+        return this.glyphRunReplayFailure(run, 'glyphIdOutOfRange');
       }
     }
     for (const point of run.positions) {
       if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-        return { replayable: false, reason: 'nonFiniteGlyphPosition' };
+        return this.glyphRunReplayFailure(run, 'nonFiniteGlyphPosition');
       }
     }
     const transform = run.placement.runToPage;
@@ -243,45 +268,104 @@ export class CanvasKitFontRegistry {
       || !Number.isFinite(transform.e)
       || !Number.isFinite(transform.f)
     ) {
-      return { replayable: false, reason: 'nonFiniteGlyphTransform' };
+      return this.glyphRunReplayFailure(run, 'nonFiniteGlyphTransform');
     }
     const unsupportedPaintReason = this.unsupportedGlyphRunPaintReason(run);
     if (unsupportedPaintReason) {
-      return { replayable: false, reason: unsupportedPaintReason };
+      return this.glyphRunReplayFailure(run, unsupportedPaintReason, {
+        effectSupported: false,
+      });
     }
     if (run.shapeKey.fontInstance.variations?.length) {
-      return { replayable: false, reason: 'fontVariationUnsupported' };
+      return this.glyphRunReplayFailure(run, 'fontVariationUnsupported', {
+        variationSupported: false,
+      });
     }
 
     const faceKey = run.shapeKey.fontInstance.faceKey;
     const face = fontResources?.faces.find((candidate) => candidate.id === faceKey);
     if (!face) {
-      return { replayable: false, reason: 'fontFaceMissing' };
+      return this.glyphRunReplayFailure(run, 'fontFaceMissing', {
+        exactFaceInstantiated: false,
+      });
     }
     const blob = fontResources?.blobs.find((candidate) => candidate.id === face.blobKey);
     if (!blob) {
-      return { replayable: false, reason: 'fontBlobMissing' };
+      return this.glyphRunReplayFailure(run, 'fontBlobMissing', {
+        exactFaceInstantiated: false,
+      });
     }
     if (face.faceIndex !== 0) {
-      return { replayable: false, reason: 'fontFaceIndexUnsupported' };
+      return this.glyphRunReplayFailure(run, 'fontFaceIndexUnsupported', {
+        exactFaceInstantiated: false,
+        faceIndexSupported: false,
+      });
     }
     if (run.diagnostics.replayEligibility === 'portable') {
       if (blob.portability !== 'portableBlob' || !blob.digest || !blob.dataRef) {
-        return { replayable: false, reason: 'fontBlobNotPortable' };
+        return this.glyphRunReplayFailure(run, 'fontBlobNotPortable', {
+          digestMatched: false,
+          exactFaceInstantiated: false,
+        });
       }
       if (!this.verifiedFontBlobs.has(this.fontBlobCacheKey(blob.id, blob.digest.value))) {
-        return { replayable: false, reason: 'fontBlobNotVerified' };
+        return this.glyphRunReplayFailure(run, 'fontBlobNotVerified', {
+          digestMatched: false,
+          exactFaceInstantiated: false,
+        });
       }
-      return { replayable: true, face, blob };
+      if (!this.typefaceForGlyphRun(face, blob)) {
+        return this.glyphRunReplayFailure(run, 'fontFaceInstantiationFailed', {
+          digestMatched: true,
+          exactFaceInstantiated: false,
+        });
+      }
+      return {
+        replayable: true,
+        face,
+        blob,
+        report: {
+          ...this.glyphRunReplayBaseReport(run),
+          digestMatched: true,
+          exactFaceInstantiated: true,
+          faceIndexSupported: true,
+          variationSupported: true,
+          effectSupported: true,
+        },
+      };
     }
     if (blob.portability !== 'externalVerified' || !blob.digest) {
-      return { replayable: false, reason: 'externalFontNotVerified' };
+      return this.glyphRunReplayFailure(run, 'externalFontNotVerified', {
+        digestMatched: false,
+        exactFaceInstantiated: false,
+      });
     }
     if (!this.verifiedFontBlobs.has(this.fontBlobCacheKey(blob.id, blob.digest.value))
       && !this.glyphRunTypefaces.has(this.typefaceCacheKey(face, blob))) {
-      return { replayable: false, reason: 'externalFontNotInstantiated' };
+      return this.glyphRunReplayFailure(run, 'externalFontNotInstantiated', {
+        digestMatched: false,
+        exactFaceInstantiated: false,
+      });
     }
-    return { replayable: true, face, blob };
+    if (!this.typefaceForGlyphRun(face, blob)) {
+      return this.glyphRunReplayFailure(run, 'fontFaceInstantiationFailed', {
+        digestMatched: true,
+        exactFaceInstantiated: false,
+      });
+    }
+    return {
+      replayable: true,
+      face,
+      blob,
+      report: {
+        ...this.glyphRunReplayBaseReport(run),
+        digestMatched: true,
+        exactFaceInstantiated: true,
+        faceIndexSupported: true,
+        variationSupported: true,
+        effectSupported: true,
+      },
+    };
   }
 
   glyphRunFont(
@@ -443,5 +527,32 @@ export class CanvasKitFontRegistry {
       return 'glyphRunShadeUnsupported';
     }
     return null;
+  }
+
+  private glyphRunReplayFailure(
+    run: LayerGlyphRunOp,
+    reason: string,
+    report: Partial<CanvasKitGlyphRunReplayReport> = {},
+  ): CanvasKitGlyphRunReplayStatus {
+    return {
+      replayable: false,
+      reason,
+      report: {
+        ...this.glyphRunReplayBaseReport(run),
+        ...report,
+        reason,
+      },
+    };
+  }
+
+  private glyphRunReplayBaseReport(run: LayerGlyphRunOp): CanvasKitGlyphRunReplayReport {
+    return {
+      replayEligibility: run.diagnostics.replayEligibility,
+      quality: run.diagnostics.quality,
+      strictVisualEligible: run.diagnostics.strictVisualEligible,
+      faceIndexSupported: true,
+      variationSupported: !(run.shapeKey.fontInstance.variations?.length),
+      effectSupported: this.unsupportedGlyphRunPaintReason(run) === null,
+    };
   }
 }

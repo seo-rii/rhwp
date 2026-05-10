@@ -849,16 +849,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
 
     const glyphOp = (candidate) => candidate.root.ops.find((op) => op.type === 'glyphRun');
-    const renderTree = (candidate) => {
+    const renderTreeWithDiagnostics = (candidate) => {
       const canvas = document.createElement('canvas');
       canvas.width = candidate.pageWidth;
       canvas.height = candidate.pageHeight;
       document.body.appendChild(canvas);
       canvaskitRenderer.renderPage(candidate, canvas, 1);
       const png = canvas.toDataURL('image/png');
+      const textVariantSelectionDiagnostics = canvaskitRenderer.getTextVariantSelectionDiagnostics();
       canvas.remove();
-      return png;
+      return { png, textVariantSelectionDiagnostics };
     };
+    const renderTree = (candidate) => renderTreeWithDiagnostics(candidate).png;
     const assignFontIdentity = (candidate, suffix, digestValue) => {
       const blobId = `fixture-font-blob-${suffix}`;
       const faceId = `fixture-face-${suffix}`;
@@ -877,7 +879,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
 
     const status = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(tree.root.ops[2], tree.fontResources);
-    const png = renderTree(tree);
+    const renderResult = renderTreeWithDiagnostics(tree);
+    const png = renderResult.png;
+    const selectionDiagnostics = renderResult.textVariantSelectionDiagnostics;
+    const renderedStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(tree.root.ops[2], tree.fontResources);
 
     const unsupportedEffectTree = structuredClone(tree);
     unsupportedEffectTree.root.ops[2].paintStyle = {
@@ -888,7 +893,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedEffectTree.root.ops[2],
       unsupportedEffectTree.fontResources,
     );
-    const unsupportedPng = renderTree(unsupportedEffectTree);
+    const unsupportedRenderResult = renderTreeWithDiagnostics(unsupportedEffectTree);
+    const unsupportedPng = unsupportedRenderResult.png;
+    const unsupportedSelectionDiagnostics = unsupportedRenderResult.textVariantSelectionDiagnostics;
     const unsupportedEffectReasons = {};
     const unsupportedEffectCases = [
       ['underline', (style) => ({ ...style, underline: 'bottom' })],
@@ -1159,6 +1166,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
     return {
       status,
+      renderedStatus,
       png,
       unsupportedStatus,
       unsupportedEffectReasons,
@@ -1181,6 +1189,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       shadowPng,
       outlineStatus,
       outlinePng,
+      selectionDiagnostics,
+      unsupportedSelectionDiagnostics,
       multiPartStatuses,
       multiPartPng,
       duplicatePartPng,
@@ -1220,10 +1230,40 @@ runTest('Renderer lifecycle', async ({ page }) => {
     glyphRedPixels < 5,
     `CanvasKit GlyphRun variant suppressed TextRun fallback red pixels=${glyphRedPixels}`,
   );
+  const selectedReport = portableGlyphRunProbe.selectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    selectedReport?.selectedVariantId === 'glyphRun'
+      && selectedReport?.selectedReason === 'glyphRunEligible',
+    `CanvasKit records selected GlyphRun variant=${JSON.stringify(selectedReport)}`,
+  );
+  assert(
+    portableGlyphRunProbe.renderedStatus?.report?.digestMatched === true
+      && portableGlyphRunProbe.renderedStatus?.report?.exactFaceInstantiated === true
+      && portableGlyphRunProbe.renderedStatus?.report?.effectSupported === true,
+    `CanvasKit replay report records verified face/effect gates=${JSON.stringify(portableGlyphRunProbe.renderedStatus?.report)}`,
+  );
   assert(
     portableGlyphRunProbe.unsupportedStatus?.replayable === false
       && portableGlyphRunProbe.unsupportedStatus?.reason === 'glyphRunUnderlineUnsupported',
     `CanvasKit GlyphRun rejects unsupported text effects=${JSON.stringify(portableGlyphRunProbe.unsupportedStatus)}`,
+  );
+  const unsupportedSelectionReport = portableGlyphRunProbe.unsupportedSelectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    unsupportedSelectionReport?.selectedVariantId === 'textRun'
+      && unsupportedSelectionReport?.selectedReason === 'defaultFallback'
+      && unsupportedSelectionReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphRun'
+          && variant.reasons.includes('glyphRunUnderlineUnsupported'),
+      ),
+    `CanvasKit records GlyphRun fallback reason=${JSON.stringify(unsupportedSelectionReport)}`,
+  );
+  assert(
+    portableGlyphRunProbe.unsupportedStatus?.report?.effectSupported === false,
+    `CanvasKit replay report records unsupported effect gate=${JSON.stringify(portableGlyphRunProbe.unsupportedStatus?.report)}`,
   );
   assert(
     JSON.stringify(portableGlyphRunProbe.unsupportedEffectReasons) === JSON.stringify({

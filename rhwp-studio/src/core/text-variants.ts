@@ -1,86 +1,192 @@
 import type {
   LayerGlyphRunOp,
   LayerPaintOp,
+  LayerTextVariantMeta,
 } from './types';
 
 export type LayerTextVariantSelection = ReadonlyMap<string, string>;
+
+export interface LayerTextVariantReplayStatus {
+  replayable: boolean;
+  reason?: string;
+}
+
+export interface LayerTextVariantPartReport {
+  equivalenceGroup: string;
+  variantId: string;
+  variantKind: LayerTextVariantMeta['variantKind'];
+  partIndex: number;
+  partCount: number;
+  replayable: boolean;
+  reason?: string;
+}
+
+export interface LayerTextVariantRejectedReport {
+  variantId: string;
+  variantKind: LayerTextVariantMeta['variantKind'];
+  reasons: string[];
+}
+
+export interface LayerTextVariantGroupReport {
+  equivalenceGroup: string;
+  selectedVariantId: string;
+  selectedReason: 'glyphRunEligible' | 'defaultFallback' | 'noSupportedVariant';
+  rejectedVariants: LayerTextVariantRejectedReport[];
+  parts: LayerTextVariantPartReport[];
+}
+
+export interface LayerTextVariantSelectionResult {
+  selected: Map<string, string>;
+  reports: LayerTextVariantGroupReport[];
+}
+
+type VariantPartState = {
+  order: number;
+  variantKind: LayerTextVariantMeta['variantKind'];
+  expectedPartCount: number;
+  parts: Set<number>;
+  supported: boolean;
+  isDefaultFallback: boolean;
+  reasons: Set<string>;
+};
+
+export function selectLayerTextVariantSetsWithReport(
+  ops: readonly LayerPaintOp[],
+  glyphRunReplayStatus: (op: LayerGlyphRunOp) => LayerTextVariantReplayStatus | boolean,
+): LayerTextVariantSelectionResult {
+  const selected = new Map<string, string>();
+  const groupVariants = new Map<string, Map<string, VariantPartState>>();
+  const defaultFallbacks = new Map<string, string>();
+  const partReports: LayerTextVariantPartReport[] = [];
+
+  let order = 0;
+  for (const op of ops) {
+    const variant = textVariantMetaForOp(op);
+    if (!variant) {
+      continue;
+    }
+    const group = variant.equivalenceGroup;
+    const variantId = variant.variantId;
+    const variantKind = variant.variantKind;
+    const partIndex = variant.partIndex ?? 0;
+    const partCount = variant.partCount ?? 1;
+    if (variant.isDefaultFallback) {
+      defaultFallbacks.set(group, variantId);
+    }
+    let variants = groupVariants.get(group);
+    if (!variants) {
+      variants = new Map();
+      groupVariants.set(group, variants);
+    }
+    let state = variants.get(variantId);
+    if (!state) {
+      state = {
+        order,
+        variantKind,
+        expectedPartCount: Math.max(partCount, 0),
+        parts: new Set<number>(),
+        supported: true,
+        isDefaultFallback: !!variant.isDefaultFallback,
+        reasons: new Set<string>(),
+      };
+      order += 1;
+      variants.set(variantId, state);
+    }
+    if (state.expectedPartCount !== partCount || partCount <= 0) {
+      state.supported = false;
+      state.reasons.add('variantPartCountMismatch');
+    }
+    if (state.parts.has(partIndex)) {
+      state.supported = false;
+      state.reasons.add('variantDuplicatePart');
+    }
+    state.parts.add(partIndex);
+
+    let replayStatus: LayerTextVariantReplayStatus;
+    if (op.type === 'textRun') {
+      replayStatus = { replayable: true, reason: 'defaultFallback' };
+    } else if (op.type === 'glyphRun') {
+      const status = glyphRunReplayStatus(op);
+      replayStatus = typeof status === 'boolean' ? { replayable: status } : status;
+    } else if (op.type === 'glyphOutline') {
+      replayStatus = { replayable: false, reason: 'glyphOutlineUnsupported' };
+    } else {
+      replayStatus = { replayable: true };
+    }
+    if (!replayStatus.replayable) {
+      state.supported = false;
+      state.reasons.add(replayStatus.reason ?? 'variantUnsupported');
+    }
+    partReports.push({
+      equivalenceGroup: group,
+      variantId,
+      variantKind,
+      partIndex,
+      partCount,
+      replayable: replayStatus.replayable,
+      reason: replayStatus.reason,
+    });
+  }
+
+  const reports: LayerTextVariantGroupReport[] = [];
+  for (const [group, variants] of groupVariants.entries()) {
+    const candidates = [...variants.entries()]
+      .sort(([, a], [, b]) => a.order - b.order);
+    for (const [variantId, variant] of candidates) {
+      if (variant.variantKind !== 'glyphRun') {
+        continue;
+      }
+      if (variant.supported && partsComplete(variant)) {
+        selected.set(group, variantId);
+        break;
+      }
+    }
+    const selectedVariantId = selected.get(group);
+    const fallbackVariantId = defaultFallbacks.get(group) ?? 'textRun';
+    const groupParts = partReports.filter((part) => part.equivalenceGroup === group);
+    reports.push({
+      equivalenceGroup: group,
+      selectedVariantId: selectedVariantId ?? fallbackVariantId,
+      selectedReason: selectedVariantId ? 'glyphRunEligible' : defaultFallbacks.has(group)
+        ? 'defaultFallback'
+        : 'noSupportedVariant',
+      rejectedVariants: candidates
+        .filter(([variantId, variant]) => variantId !== selectedVariantId && !variant.isDefaultFallback)
+        .map(([variantId, variant]) => {
+          const reasons = new Set(variant.reasons);
+          if (!partsComplete(variant)) {
+            reasons.add('variantPartsIncomplete');
+          }
+          if (variant.variantKind === 'textRun') {
+            reasons.add('defaultFallbackNotSelected');
+          }
+          return {
+            variantId,
+            variantKind: variant.variantKind,
+            reasons: [...reasons],
+          };
+        }),
+      parts: groupParts,
+    });
+  }
+  return { selected, reports };
+}
 
 export function selectLayerTextVariantSets(
   ops: readonly LayerPaintOp[],
   canReplayGlyphRun: (op: LayerGlyphRunOp) => boolean,
 ): Map<string, string> {
-  const selected = new Map<string, string>();
-  const glyphVariants = new Map<
-    string,
-    Map<
-      string,
-      {
-        order: number;
-        expectedPartCount: number;
-        parts: Set<number>;
-        supported: boolean;
-      }
-    >
-  >();
-
-  let order = 0;
-  for (const op of ops) {
-    if (op.type !== 'glyphRun') {
-      continue;
-    }
-    const group = op.variant.equivalenceGroup;
-    const variantId = op.variant.variantId;
-    const partIndex = op.variant.partIndex ?? 0;
-    const partCount = op.variant.partCount ?? 1;
-    let groupVariants = glyphVariants.get(group);
-    if (!groupVariants) {
-      groupVariants = new Map();
-      glyphVariants.set(group, groupVariants);
-    }
-    let variant = groupVariants.get(variantId);
-    if (!variant) {
-      variant = {
-        order,
-        expectedPartCount: Math.max(partCount, 0),
-        parts: new Set<number>(),
-        supported: true,
-      };
-      order += 1;
-      groupVariants.set(variantId, variant);
-    }
-    if (variant.expectedPartCount !== partCount || partCount <= 0) {
-      variant.supported = false;
-    }
-    if (variant.parts.has(partIndex)) {
-      variant.supported = false;
-    }
-    variant.parts.add(partIndex);
-    variant.supported &&= canReplayGlyphRun(op);
-  }
-
-  for (const [group, groupVariants] of glyphVariants.entries()) {
-    const candidates = [...groupVariants.entries()]
-      .sort(([, a], [, b]) => a.order - b.order);
-    for (const [variantId, variant] of candidates) {
-      const partsComplete = variant.parts.size === variant.expectedPartCount
-        && Array.from({ length: variant.expectedPartCount }, (_, index) => index)
-          .every((index) => variant.parts.has(index));
-      if (variant.supported && partsComplete) {
-        selected.set(group, variantId);
-        break;
-      }
-    }
-  }
-  return selected;
+  return selectLayerTextVariantSetsWithReport(
+    ops,
+    (op) => ({ replayable: canReplayGlyphRun(op) }),
+  ).selected;
 }
 
 export function shouldRenderLayerTextVariant(
   op: LayerPaintOp,
   selected: LayerTextVariantSelection,
 ): boolean {
-  const variant = op.type === 'textRun' || op.type === 'glyphRun' || op.type === 'glyphOutline'
-    ? op.variant
-    : undefined;
+  const variant = textVariantMetaForOp(op);
   if (!variant) {
     return true;
   }
@@ -89,4 +195,17 @@ export function shouldRenderLayerTextVariant(
     return op.type !== 'glyphRun' && op.type !== 'glyphOutline';
   }
   return selectedVariant === variant.variantId;
+}
+
+function textVariantMetaForOp(op: LayerPaintOp): LayerTextVariantMeta | undefined {
+  if (op.type === 'textRun' || op.type === 'glyphRun' || op.type === 'glyphOutline') {
+    return op.variant;
+  }
+  return undefined;
+}
+
+function partsComplete(variant: VariantPartState): boolean {
+  return variant.parts.size === variant.expectedPartCount
+    && Array.from({ length: variant.expectedPartCount }, (_, index) => index)
+      .every((index) => variant.parts.has(index));
 }

@@ -5,7 +5,9 @@ import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 import { isKnownLayerPaintOp } from '@/core/types';
 import {
   selectLayerTextVariantSets,
+  selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
+  type LayerTextVariantGroupReport,
 } from '@/core/text-variants';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
@@ -126,6 +128,8 @@ export class CanvasKitLayerRenderer {
   private lastScale = 1;
   private currentProfile: LayerRenderProfile = 'screen';
   private currentLayerTreeCacheKey = 'none';
+  private readonly textVariantSelectionDiagnostics: LayerTextVariantGroupReport[] = [];
+  private collectTextVariantSelectionDiagnostics = false;
   private rerenderScheduled = false;
   private disposed = false;
   private asyncResourceReadyCallback: (() => void) | null = null;
@@ -178,14 +182,21 @@ export class CanvasKitLayerRenderer {
     this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
+    this.textVariantSelectionDiagnostics.length = 0;
 
     const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
 
     let renderError: unknown = null;
     try {
-      this.renderSurface(surface, tree, scale);
+      this.collectTextVariantSelectionDiagnostics = true;
+      try {
+        this.renderSurface(surface, tree, scale);
+      } finally {
+        this.collectTextVariantSelectionDiagnostics = false;
+      }
       this.renderFallbackOverlays(tree.root, targetCanvas, scale);
     } catch (error) {
+      this.collectTextVariantSelectionDiagnostics = false;
       renderError = error;
     }
 
@@ -202,7 +213,12 @@ export class CanvasKitLayerRenderer {
       throw renderError;
     }
 
-    this.renderSurface(fallbackSurface, tree, scale);
+    this.collectTextVariantSelectionDiagnostics = true;
+    try {
+      this.renderSurface(fallbackSurface, tree, scale);
+    } finally {
+      this.collectTextVariantSelectionDiagnostics = false;
+    }
     this.renderFallbackOverlays(tree.root, targetCanvas, scale);
   }
 
@@ -249,6 +265,20 @@ export class CanvasKitLayerRenderer {
   resetImageEffectDiagnostics(): void {
     this.resourceCache.resetImageEffectDiagnostics();
     resetLayerImageEffectDiagnostics(this.overlayImageEffectDiagnostics);
+  }
+
+  getTextVariantSelectionDiagnostics(): readonly LayerTextVariantGroupReport[] {
+    return this.textVariantSelectionDiagnostics.map((report) => ({
+      equivalenceGroup: report.equivalenceGroup,
+      selectedVariantId: report.selectedVariantId,
+      selectedReason: report.selectedReason,
+      rejectedVariants: report.rejectedVariants.map((variant) => ({
+        variantId: variant.variantId,
+        variantKind: variant.variantKind,
+        reasons: [...variant.reasons],
+      })),
+      parts: report.parts.map((part) => ({ ...part })),
+    }));
   }
 
   private renderSurface(surface: Surface, tree: PageLayerTree, scale: number): void {
@@ -382,10 +412,7 @@ export class CanvasKitLayerRenderer {
     node: LayerLeafNode,
   ): void {
     const ops = node.ops.filter(isKnownLayerPaintOp);
-    const selectedTextVariants = selectLayerTextVariantSets(
-      ops,
-      (op) => this.canReplayGlyphRun(op),
-    );
+    const selectedTextVariants = this.selectLayerTextVariantSets(ops);
     for (const op of ops) {
       if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
         continue;
@@ -399,6 +426,21 @@ export class CanvasKitLayerRenderer {
       op,
       this.lastRenderedTree?.fontResources,
     ).replayable;
+  }
+
+  private selectLayerTextVariantSets(ops: readonly LayerPaintOp[]): ReturnType<typeof selectLayerTextVariantSets> {
+    if (!this.collectTextVariantSelectionDiagnostics) {
+      return selectLayerTextVariantSets(
+        ops,
+        (op) => this.canReplayGlyphRun(op),
+      );
+    }
+    const result = selectLayerTextVariantSetsWithReport(
+      ops,
+      (op) => this.fontRegistry.glyphRunReplayStatus(op, this.lastRenderedTree?.fontResources),
+    );
+    this.textVariantSelectionDiagnostics.push(...result.reports);
+    return result.selected;
   }
 
   private renderOp(
@@ -2081,10 +2123,7 @@ export class CanvasKitLayerRenderer {
     this.currentCacheHintStack.push(node.cacheHint);
     try {
       const ops = node.ops.filter(isKnownLayerPaintOp);
-      const selectedTextVariants = selectLayerTextVariantSets(
-        ops,
-        (op) => this.canReplayGlyphRun(op),
-      );
+      const selectedTextVariants = this.selectLayerTextVariantSets(ops);
       return ops.some((op) => {
         if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
           return false;
@@ -2145,10 +2184,7 @@ export class CanvasKitLayerRenderer {
     }
     this.withCacheHint(node.cacheHint, () => {
       const ops = node.ops.filter(isKnownLayerPaintOp);
-      const selectedTextVariants = selectLayerTextVariantSets(
-        ops,
-        (op) => this.canReplayGlyphRun(op),
-      );
+      const selectedTextVariants = this.selectLayerTextVariantSets(ops);
       for (const op of ops) {
         if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
           continue;
