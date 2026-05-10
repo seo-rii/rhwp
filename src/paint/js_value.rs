@@ -8,9 +8,9 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, GlyphCluster,
-    GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode, LayerNodeKind,
-    LayerPoint, LayerSemantic, LayerVector, PageLayerTree, PaintOp, PaintTextStyle,
+    font_blob_resource_key, image_resource_key, resource_digest_hex, svg_resource_key, CacheHint,
+    ClipKind, GlyphCluster, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
+    LayerNodeKind, LayerPoint, LayerSemantic, LayerVector, PageLayerTree, PaintOp, PaintTextStyle,
     PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation,
     TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
 };
@@ -307,6 +307,20 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_value(&resources, "svgFragments", svg_fragments.into());
     set_value(&resources, "svgHashes", svg_hashes.into());
     set_value(&resources, "svgKeys", svg_keys.into());
+
+    let font_blobs = Array::new();
+    let font_blob_hashes = Array::new();
+    let font_blob_keys = Array::new();
+    for (id, bytes) in tree.resources.font_blob_resources() {
+        let digest = resource_digest_hex(bytes);
+        let key = font_blob_resource_key(bytes.len(), &digest);
+        font_blob_hashes.set(id.0 as u32, JsValue::from_str(&digest));
+        font_blob_keys.set(id.0 as u32, JsValue::from_str(&key));
+        font_blobs.set(id.0 as u32, Uint8Array::from(bytes).into());
+    }
+    set_value(&resources, "fontBlobs", font_blobs.into());
+    set_value(&resources, "fontBlobHashes", font_blob_hashes.into());
+    set_value(&resources, "fontBlobKeys", font_blob_keys.into());
     set_value(&value, "resources", resources.into());
     value.into()
 }
@@ -2191,11 +2205,17 @@ mod tests {
         let svg_fragments = Array::from(&prop(&resources, "svgFragments"));
         let svg_hashes = Array::from(&prop(&resources, "svgHashes"));
         let svg_keys = Array::from(&prop(&resources, "svgKeys"));
+        let font_blobs = Array::from(&prop(&resources, "fontBlobs"));
+        let font_blob_hashes = Array::from(&prop(&resources, "fontBlobHashes"));
+        let font_blob_keys = Array::from(&prop(&resources, "fontBlobKeys"));
 
         let image_digest = resource_digest_hex(&image_bytes);
         let image_key = image_resource_key(image_bytes.len(), &image_digest);
         let svg_digest = resource_digest_hex(&svg_fragment);
         let svg_key = svg_resource_key(svg_fragment.len(), &svg_digest);
+        let font_bytes = [5_u8, 4, 3, 2];
+        let font_digest = resource_digest_hex(font_bytes);
+        let font_key = font_blob_resource_key(font_bytes.len(), &font_digest);
 
         assert_eq!(
             Uint8Array::new(&images.get(0)).length(),
@@ -2206,6 +2226,12 @@ mod tests {
         assert_eq!(string_value(&svg_fragments.get(0)), svg_fragment);
         assert_eq!(string_value(&svg_hashes.get(0)), svg_digest);
         assert_eq!(string_value(&svg_keys.get(0)), svg_key);
+        assert_eq!(
+            Uint8Array::new(&font_blobs.get(0)).length(),
+            font_bytes.len() as u32
+        );
+        assert_eq!(string_value(&font_blob_hashes.get(0)), font_digest);
+        assert_eq!(string_value(&font_blob_keys.get(0)), font_key);
     }
 
     #[wasm_bindgen_test]
@@ -2249,6 +2275,7 @@ mod tests {
         let mut resources = ResourceArena::default();
         let image_id = resources.intern_image_bytes(image_bytes);
         let svg_id = resources.intern_svg_fragment(svg_fragment);
+        resources.intern_font_blob_bytes(&[5, 4, 3, 2]);
 
         PageLayerTree::with_resources(
             120.0,

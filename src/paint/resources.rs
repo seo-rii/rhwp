@@ -8,6 +8,9 @@ pub struct ImageResourceId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SvgResourceId(pub usize);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FontBlobResourceId(pub usize);
+
 pub const RESOURCE_KEY_ALGORITHM: &str = "blake3";
 
 /// 레이어 replay가 공유하는 바이너리/문자열 자원 저장소.
@@ -24,6 +27,10 @@ pub struct ResourceArena {
     svg_hashes: Vec<u64>,
     svg_fingerprints: Vec<[u8; 16]>,
     svg_lookup: HashMap<u64, Vec<SvgResourceId>>,
+    font_blob_bytes: Vec<Vec<u8>>,
+    font_blob_hashes: Vec<u64>,
+    font_blob_fingerprints: Vec<[u8; 16]>,
+    font_blob_lookup: HashMap<u64, Vec<FontBlobResourceId>>,
     font_resources: FontResourceTable,
 }
 
@@ -110,6 +117,48 @@ impl ResourceArena {
             .map(|(index, svg)| (SvgResourceId(index), svg.as_str()))
     }
 
+    pub fn intern_font_blob_bytes(&mut self, bytes: &[u8]) -> FontBlobResourceId {
+        let hash = resource_hash(bytes);
+        if let Some(candidates) = self.font_blob_lookup.get(&hash) {
+            for id in candidates {
+                if self.font_blob_bytes[id.0].as_slice() == bytes {
+                    return *id;
+                }
+            }
+        }
+
+        let id = FontBlobResourceId(self.font_blob_bytes.len());
+        self.font_blob_bytes.push(bytes.to_vec());
+        self.font_blob_hashes.push(hash);
+        self.font_blob_fingerprints
+            .push(resource_fingerprint(bytes));
+        self.font_blob_lookup.entry(hash).or_default().push(id);
+        id
+    }
+
+    pub fn font_blob_bytes(&self, id: FontBlobResourceId) -> Option<&[u8]> {
+        self.font_blob_bytes.get(id.0).map(Vec::as_slice)
+    }
+
+    pub fn font_blob_count(&self) -> usize {
+        self.font_blob_bytes.len()
+    }
+
+    pub fn font_blob_hash(&self, id: FontBlobResourceId) -> Option<u64> {
+        self.font_blob_hashes.get(id.0).copied()
+    }
+
+    pub fn font_blob_fingerprint(&self, id: FontBlobResourceId) -> Option<[u8; 16]> {
+        self.font_blob_fingerprints.get(id.0).copied()
+    }
+
+    pub fn font_blob_resources(&self) -> impl Iterator<Item = (FontBlobResourceId, &[u8])> + '_ {
+        self.font_blob_bytes
+            .iter()
+            .enumerate()
+            .map(|(index, bytes)| (FontBlobResourceId(index), bytes.as_slice()))
+    }
+
     pub fn font_resources(&self) -> &FontResourceTable {
         &self.font_resources
     }
@@ -150,6 +199,10 @@ pub fn svg_resource_key(byte_len: usize, digest: &str) -> String {
     resource_key("svg", byte_len, digest)
 }
 
+pub fn font_blob_resource_key(byte_len: usize, digest: &str) -> String {
+    resource_key("font", byte_len, digest)
+}
+
 fn resource_key(kind: &str, byte_len: usize, digest: &str) -> String {
     format!("{kind}:{RESOURCE_KEY_ALGORITHM}:{byte_len}:{digest}")
 }
@@ -157,8 +210,8 @@ fn resource_key(kind: &str, byte_len: usize, digest: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        image_resource_key, resource_digest_hex, resource_fingerprint, svg_resource_key,
-        ImageResourceId, ResourceArena, SvgResourceId,
+        font_blob_resource_key, image_resource_key, resource_digest_hex, resource_fingerprint,
+        svg_resource_key, FontBlobResourceId, ImageResourceId, ResourceArena, SvgResourceId,
     };
 
     #[test]
@@ -168,6 +221,8 @@ mod tests {
         let image_b = arena.intern_image_bytes(&[1, 2, 3, 4]);
         let svg_a = arena.intern_svg_fragment("<svg/>");
         let svg_b = arena.intern_svg_fragment("<svg/>");
+        let font_a = arena.intern_font_blob_bytes(&[5, 6, 7, 8]);
+        let font_b = arena.intern_font_blob_bytes(&[5, 6, 7, 8]);
 
         assert_eq!(image_a, ImageResourceId(0));
         assert_eq!(image_b, ImageResourceId(0));
@@ -198,6 +253,21 @@ mod tests {
             arena.svg_resources().collect::<Vec<_>>(),
             vec![(SvgResourceId(0), "<svg/>")]
         );
+
+        assert_eq!(font_a, FontBlobResourceId(0));
+        assert_eq!(font_b, FontBlobResourceId(0));
+        assert_eq!(arena.font_blob_count(), 1);
+        assert_eq!(arena.font_blob_bytes(font_a), Some(&[5, 6, 7, 8][..]));
+        assert_eq!(arena.font_blob_hash(font_a), arena.font_blob_hash(font_b));
+        assert!(arena.font_blob_hash(font_a).is_some());
+        assert_eq!(
+            arena.font_blob_fingerprint(font_a),
+            Some(resource_fingerprint([5, 6, 7, 8]))
+        );
+        assert_eq!(
+            arena.font_blob_resources().collect::<Vec<_>>(),
+            vec![(FontBlobResourceId(0), &[5, 6, 7, 8][..])]
+        );
     }
 
     #[test]
@@ -215,5 +285,6 @@ mod tests {
             svg_resource_key(6, "0123456789abcdef"),
             "svg:blake3:6:0123456789abcdef"
         );
+        assert_eq!(font_blob_resource_key(8, "feed"), "font:blake3:8:feed");
     }
 }

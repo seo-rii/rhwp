@@ -50,6 +50,10 @@ Layer JSON/JS exports currently provide:
 - `fontResources`: a blob/face-split font resource table. It is currently empty
   in normal exports and exists so future portable `GlyphRun` variants can
   require exact font blob + face identity.
+- `resources.fontBlobs`, `resources.fontBlobHashes`, and `resources.fontBlobKeys`:
+  self-contained font blob payloads and producer resource fingerprints for
+  `PortableBlob` entries whose `dataRef.kind` is `fontBlob`. These fields mirror
+  image/SVG resource payload export for JS/CanvasKit consumers.
 - `usedFeatures`: additive schema features used by this export.
 - `requiredFeatures`: features a consumer must understand for faithful replay.
 - `optionalFeatures`: features present in this export that have a complete
@@ -159,6 +163,11 @@ old consumers.
   diagnostics and backend construction.
 - `PortableBlob` requires a digest and a replayable `dataRef`. It is the only
   self-contained portable font state.
+- A `PortableBlob` `dataRef` may point at `resources.fontBlobs`. The JS export
+  pairs that payload with `resources.fontBlobHashes`; CanvasKit registers the
+  blob only when the referenced producer hash matches the `FontBlobResource`
+  digest. This is still a producer resource assertion, not a substitute for
+  external font verification.
 - `ExternalVerified` is conditionally replayable only after the consumer
   resolves the external blob and verifies that its digest matches.
 - `ResolvedButNotEmbedded`, `SystemNameOnly`, and `UnresolvedFallback` are not
@@ -185,6 +194,11 @@ instantiation for the exported face:
   selectable only after the renderer resolves the external blob and verifies the
   digest. `ResolvedButNotEmbedded`, `SystemNameOnly`, and
   `UnresolvedFallback` always keep `TextRun` fallback.
+- When a `PortableBlob` points at an exported `fontBlob` resource, CanvasKit
+  registers it at `renderPage` setup time after the resource digest metadata
+  matches the font resource digest. Typeface/font caches are keyed by face id,
+  blob id, digest, and face index so tree-local ids cannot accidentally reuse a
+  stale typeface from another export.
 - The current CanvasKit adapter rejects TTC/OTC faces with `faceIndex != 0`
   because the public browser binding used here does not expose an explicit face
   selection parameter for glyph replay. It also rejects variation instances

@@ -148,6 +148,13 @@ export interface LayerResources {
   svgFragments: Array<string | undefined>;
   svgHashes?: string[];
   svgKeys?: string[];
+  /**
+   * Self-contained font blob payloads for portable GlyphRun replay. Entries are
+   * referenced by `fontResources.blobs[].dataRef` when `kind === 'fontBlob'`.
+   */
+  fontBlobs?: Array<Uint8Array | number[] | string | undefined>;
+  fontBlobHashes?: string[];
+  fontBlobKeys?: string[];
 }
 
 export interface LayerFontResources {

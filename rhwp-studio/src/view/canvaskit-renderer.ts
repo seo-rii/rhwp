@@ -172,6 +172,7 @@ export class CanvasKitLayerRenderer {
     this.currentProfile = tree.profile;
     this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
     this.resourceCache.setResources(tree.resources);
+    this.fontRegistry.registerFontBlobsFromResources(tree.fontResources, tree.resources);
     this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
     this.currentShowParagraphMarks = tree.outputOptions?.showParagraphMarks ?? false;
     this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;

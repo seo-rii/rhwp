@@ -100,6 +100,25 @@ function isOpaqueRed(pixel) {
   return pixel.red > 220 && pixel.green < 40 && pixel.blue < 40 && pixel.alpha > 220;
 }
 
+function countPixels(dataUrl, predicate) {
+  const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+  let count = 0;
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const offset = (y * png.width + x) * 4;
+      if (predicate({
+        red: png.data[offset],
+        green: png.data[offset + 1],
+        blue: png.data[offset + 2],
+        alpha: png.data[offset + 3],
+      })) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
 function isTransparent(pixel) {
   return pixel.alpha < 8;
 }
@@ -630,6 +649,243 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     fieldMarkerDiff.passed,
     `field marker browser parity exact=${fieldMarkerDiff.exactDiffPixels}, tolerant=${fieldMarkerDiff.rawTolerantDiffPixels}, max_channel_delta=${fieldMarkerDiff.maxChannelDelta}`,
+  );
+
+  setTestCase('canvaskit-portable-glyph-run');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const glyphRunFontBytes = [...fs.readFileSync(path.join(RHWP_ROOT, 'web', 'fonts', 'NotoSansKR-Regular.woff2'))];
+  const portableGlyphRunProbe = await page.evaluate(({ fontBytes }) => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvaskitRenderer) {
+      return { error: 'CanvasKit renderer unavailable' };
+    }
+    const canvasKit = canvaskitRenderer.canvasKit;
+    const bytes = new Uint8Array(fontBytes);
+    const typeface = canvasKit.Typeface.MakeTypefaceFromData(bytes.buffer.slice(0))
+      ?? canvasKit.Typeface.MakeFreeTypeFaceFromData(bytes.buffer.slice(0));
+    if (!typeface) {
+      return { error: 'test typeface unavailable' };
+    }
+    const font = new canvasKit.Font(typeface, 42);
+    const glyphIds = Array.from(font.getGlyphIDs('H') ?? []);
+    font.delete();
+    typeface.delete();
+    if (glyphIds.length !== 1 || glyphIds[0] === 0) {
+      return { error: `invalid glyph id ${JSON.stringify(glyphIds)}` };
+    }
+
+    const style = (color) => ({
+      fontFamily: 'Noto Sans KR',
+      fontSize: 42,
+      color,
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: color,
+      strikeColor: color,
+      shadeColor: '#ffffff',
+    });
+    const source = {
+      id: 0,
+      utf8Range: { start: 0, end: 1 },
+      utf16Range: { start: 0, end: 1 },
+    };
+    const textVariant = {
+      equivalenceGroup: 'glyph-fixture-0',
+      variantId: 'textRun',
+      variantKind: 'textRun',
+      partIndex: 0,
+      partCount: 1,
+      isDefaultFallback: true,
+    };
+    const glyphVariant = {
+      equivalenceGroup: 'glyph-fixture-0',
+      variantId: 'glyphRun',
+      variantKind: 'glyphRun',
+      partIndex: 0,
+      partCount: 1,
+      isDefaultFallback: false,
+      requires: ['fontResources', 'text.glyphRun'],
+      quality: 'exact',
+    };
+    const digest = 'fixture-font-digest';
+    const tree = {
+      pageWidth: 96,
+      pageHeight: 64,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1801,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [fontBytes],
+        fontBlobHashes: [digest],
+        fontBlobKeys: [`font:fixture:${fontBytes.length}:${digest}`],
+      },
+      fontResources: {
+        blobs: [{
+          id: 'fixture-font-blob',
+          source: 'bundled',
+          portability: 'portableBlob',
+          digest: { algorithm: 'fixture', value: digest },
+          dataRef: { kind: 'fontBlob', id: '0' },
+        }],
+        faces: [{
+          id: 'fixture-face',
+          blobKey: 'fixture-font-blob',
+          faceIndex: 0,
+          familyNames: [{ value: 'Noto Sans KR' }],
+          styleNames: [],
+        }],
+      },
+      textSources: [{
+        id: 0,
+        text: 'H',
+        utf8Range: { start: 0, end: 1 },
+        utf16Range: { start: 0, end: 1 },
+        annotations: [],
+      }],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1,
+        bounds: { x: 0, y: 0, width: 96, height: 64 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 96, height: 64 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          {
+            type: 'textRun',
+            bbox: { x: 12, y: 8, width: 56, height: 48 },
+            source,
+            variant: textVariant,
+            text: 'H',
+            baseline: 42,
+            rotation: 0,
+            isVertical: false,
+            orientation: 'horizontal',
+            projectionKind: 'verbatim',
+            clusterBasis: 'legacyPosition',
+            style: style('#ff0000'),
+            paintStyle: style('#ff0000'),
+            positions: [0, 34],
+            controlMarks: [],
+            tabLeaders: [],
+          },
+          {
+            type: 'glyphRun',
+            bbox: { x: 12, y: 8, width: 56, height: 48 },
+            source,
+            variant: glyphVariant,
+            paintStyle: style('#000000'),
+            shapeKey: {
+              fontInstance: {
+                faceKey: 'fixture-face',
+                sizePx: 42,
+                variations: [],
+                syntheticBold: false,
+                syntheticItalic: false,
+              },
+              direction: 'ltr',
+              writingMode: 'horizontal-tb',
+              shapingEngine: 'fixture',
+              fallbackPolicy: 'none',
+            },
+            placement: {
+              runToPage: { a: 1, b: 0, c: 0, d: 1, e: 12, f: 50 },
+              baselineY: 0,
+            },
+            glyphIds,
+            positions: [{ x: 0, y: 0 }],
+            clusters: [{
+              sourceRangeUtf8: { start: 0, end: 1 },
+              sourceRangeUtf16: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              flags: [],
+            }],
+            direction: 'ltr',
+            writingMode: 'horizontal-tb',
+            orientation: 'horizontal',
+            diagnostics: {
+              quality: 'exact',
+              replayEligibility: 'portable',
+              strictVisualEligible: true,
+              maxOriginDeltaPx: 0,
+              maxAdvanceDeltaPx: 0,
+              maxResidualAfterAdjustmentPx: 0,
+              clusterMismatchCount: 0,
+              missingGlyphCount: 0,
+              usedFallbackFontCount: 0,
+            },
+          },
+        ],
+      },
+    };
+
+    const status = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(tree.root.ops[2], tree.fontResources);
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 64;
+    document.body.appendChild(canvas);
+    canvaskitRenderer.renderPage(tree, canvas, 1);
+    const png = canvas.toDataURL('image/png');
+    canvas.remove();
+    return {
+      status,
+      png,
+    };
+  }, { fontBytes: glyphRunFontBytes });
+
+  assert(
+    !portableGlyphRunProbe.error,
+    portableGlyphRunProbe.error || 'CanvasKit portable GlyphRun probe available',
+  );
+  assert(
+    portableGlyphRunProbe.status?.replayable === false
+      && portableGlyphRunProbe.status?.reason === 'fontBlobNotVerified',
+    `CanvasKit GlyphRun status stays unverified before render=${JSON.stringify(portableGlyphRunProbe.status)}`,
+  );
+  const glyphBlackPixels = countPixels(
+    portableGlyphRunProbe.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const glyphRedPixels = countPixels(
+    portableGlyphRunProbe.png,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  assert(
+    glyphBlackPixels > 20,
+    `CanvasKit GlyphRun drawGlyphs produced black pixels=${glyphBlackPixels}`,
+  );
+  assert(
+    glyphRedPixels < 5,
+    `CanvasKit GlyphRun variant suppressed TextRun fallback red pixels=${glyphRedPixels}`,
   );
 
   setTestCase('canvas-layer-clip-scope-parity');

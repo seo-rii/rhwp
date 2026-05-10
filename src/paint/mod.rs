@@ -58,8 +58,8 @@ pub use paint_op::{
 };
 pub use profile::RenderProfile;
 pub use resources::{
-    image_resource_key, resource_digest_hex, svg_resource_key, ImageResourceId, ResourceArena,
-    SvgResourceId,
+    font_blob_resource_key, image_resource_key, resource_digest_hex, svg_resource_key,
+    FontBlobResourceId, ImageResourceId, ResourceArena, SvgResourceId,
 };
 pub use schema::{LayerTreeSchema, LAYER_TREE_SCHEMA};
 pub use text_shape::{

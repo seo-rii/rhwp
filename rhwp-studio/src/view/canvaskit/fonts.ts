@@ -5,6 +5,7 @@ import type {
   LayerFontBlobResource,
   LayerFontFaceResource,
   LayerFontResources,
+  LayerResources,
   LayerGlyphRunOp,
 } from '@/core/types';
 
@@ -164,6 +165,29 @@ export class CanvasKitFontRegistry {
     this.verifiedFontBlobs.set(this.fontBlobCacheKey(blobId, digestValue), arrayBuffer);
   }
 
+  registerFontBlobsFromResources(
+    fontResources: LayerFontResources | undefined,
+    resources: LayerResources | undefined,
+  ): void {
+    if (!fontResources?.blobs.length || !resources?.fontBlobs) {
+      return;
+    }
+    for (const blob of fontResources.blobs) {
+      if (blob.portability !== 'portableBlob' || !blob.digest || blob.dataRef?.kind !== 'fontBlob') {
+        continue;
+      }
+      const digest = this.fontBlobDigestForRef(resources.fontBlobHashes, blob.dataRef.id);
+      if (digest !== blob.digest.value) {
+        continue;
+      }
+      const bytes = this.fontBlobBytesForRef(resources.fontBlobs, blob.dataRef.id);
+      if (!bytes) {
+        continue;
+      }
+      this.registerVerifiedFontBlob(blob.id, blob.digest.value, bytes);
+    }
+  }
+
   glyphRunReplayStatus(
     run: LayerGlyphRunOp,
     fontResources: LayerFontResources | undefined,
@@ -245,7 +269,7 @@ export class CanvasKitFontRegistry {
       return { replayable: false, reason: 'externalFontNotVerified' };
     }
     if (!this.verifiedFontBlobs.has(this.fontBlobCacheKey(blob.id, blob.digest.value))
-      && !this.glyphRunTypefaces.has(face.id)) {
+      && !this.glyphRunTypefaces.has(this.typefaceCacheKey(face, blob))) {
       return { replayable: false, reason: 'externalFontNotInstantiated' };
     }
     return { replayable: true, face, blob };
@@ -264,8 +288,9 @@ export class CanvasKitFontRegistry {
       return null;
     }
     const instance = run.shapeKey.fontInstance;
+    const typefaceKey = this.typefaceCacheKey(status.face, status.blob);
     const key = [
-      status.face.id,
+      typefaceKey,
       instance.sizePx.toFixed(4),
       instance.syntheticBold ? 'bold' : 'regular',
       instance.syntheticItalic ? 'italic' : 'upright',
@@ -296,7 +321,8 @@ export class CanvasKitFontRegistry {
   }
 
   private typefaceForGlyphRun(face: LayerFontFaceResource, blob: LayerFontBlobResource): Typeface | null {
-    const cached = this.glyphRunTypefaces.get(face.id);
+    const cacheKey = this.typefaceCacheKey(face, blob);
+    const cached = this.glyphRunTypefaces.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -312,12 +338,61 @@ export class CanvasKitFontRegistry {
     if (!typeface) {
       return null;
     }
-    this.glyphRunTypefaces.set(face.id, typeface);
+    this.glyphRunTypefaces.set(cacheKey, typeface);
     return typeface;
   }
 
   private fontBlobCacheKey(blobId: string, digestValue: string): string {
     return `${blobId}:${digestValue}`;
+  }
+
+  private typefaceCacheKey(face: LayerFontFaceResource, blob: LayerFontBlobResource): string {
+    return `${face.id}:${blob.id}:${blob.digest?.value ?? 'no-digest'}:face=${face.faceIndex}`;
+  }
+
+  private fontBlobDigestForRef(
+    hashes: string[] | Record<string, string> | undefined,
+    refId: string,
+  ): string | undefined {
+    if (!hashes) {
+      return undefined;
+    }
+    if (Array.isArray(hashes)) {
+      const index = Number.parseInt(refId, 10);
+      return Number.isInteger(index) ? hashes[index] : undefined;
+    }
+    return hashes[refId];
+  }
+
+  private fontBlobBytesForRef(
+    blobs: NonNullable<LayerResources['fontBlobs']> | Record<string, Uint8Array | number[] | string | undefined>,
+    refId: string,
+  ): Uint8Array | null {
+    const payload = Array.isArray(blobs)
+      ? blobs[Number.parseInt(refId, 10)]
+      : blobs[refId];
+    if (!payload) {
+      return null;
+    }
+    if (payload instanceof Uint8Array) {
+      return payload;
+    }
+    if (Array.isArray(payload)) {
+      return new Uint8Array(payload);
+    }
+    if (typeof payload !== 'string') {
+      return null;
+    }
+    const base64 = payload.includes(',') ? payload.split(',').pop() ?? '' : payload;
+    const binary = globalThis.atob?.(base64);
+    if (!binary) {
+      return null;
+    }
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
   }
 
   private isFillOnlyPaint(run: LayerGlyphRunOp): boolean {
