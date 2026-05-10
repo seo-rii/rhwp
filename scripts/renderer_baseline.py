@@ -353,16 +353,49 @@ def format_count(value: object) -> str:
     return str(value)
 
 
+def run_native_canvaskit_parity_report(
+    native_results: list[dict],
+    browser_report: Path | None,
+    output_root: Path,
+    profiles: list[str],
+) -> Path | None:
+    if not native_results or not browser_report or not browser_report.exists():
+        return None
+
+    native_results_path = output_root / "native-results.json"
+    native_results_path.write_text(
+        json.dumps(native_results, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    parity_report_path = output_root / "native-canvaskit-parity-report.json"
+    run_command(
+        [
+            "node",
+            "e2e/renderer-baseline-native-diff.mjs",
+            f"--native={native_results_path}",
+            f"--browser={browser_report}",
+            f"--output={parity_report_path}",
+            f"--profiles={','.join(profiles)}",
+        ],
+        STUDIO_ROOT,
+    )
+    return parity_report_path
+
+
 def write_reports(
     manifest: dict,
     output_root: Path,
     native_results: list[dict],
     browser_report: Path | None,
     profiles: list[str],
+    parity_report: Path | None,
 ) -> None:
     browser_data = None
     if browser_report and browser_report.exists():
         browser_data = json.loads(browser_report.read_text(encoding="utf-8"))
+    parity_data = None
+    if parity_report and parity_report.exists():
+        parity_data = json.loads(parity_report.read_text(encoding="utf-8"))
 
     browser_performance_summary: list[dict] = []
     if browser_data and browser_data.get("results"):
@@ -448,6 +481,7 @@ def write_reports(
         "native": native_results,
         "browser": browser_data,
         "performance": performance_summary,
+        "nativeCanvasKitParity": parity_data,
     }
     (output_root / "baseline-report.json").write_text(
         json.dumps(report_json, indent=2, ensure_ascii=False),
@@ -559,6 +593,48 @@ def write_reports(
                 + " |"
             )
 
+    if parity_data:
+        summary = parity_data.get("summary") or {}
+        lines.extend(
+            [
+                "",
+                "## Native Skia vs CanvasKit Fuzzy Parity",
+                "",
+                f"- mode: `{parity_data.get('mode', 'reportOnly')}`",
+                f"- compared: {summary.get('compared', 0)}",
+                f"- passed: {summary.get('passed', 0)}",
+                f"- failed: {summary.get('failed', 0)}",
+                f"- missing: {summary.get('missing', 0)}",
+                f"- errors: {summary.get('errors', 0)}",
+                "",
+                "| Sample | Profile | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
+                "| --- | --- | --- | --- | ---: | ---: | ---: |",
+            ]
+        )
+        for item in parity_data.get("comparisons", []):
+            diff = item.get("diff") or {}
+            passed = "-"
+            if "passed" in diff:
+                passed = "yes" if diff.get("passed") else "no"
+            diff_pixels = diff.get("selectedDiffPixels")
+            diff_ratio = diff.get("selectedDiffRatio")
+            max_channel_delta = diff.get("maxChannelDelta")
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("sampleId", "-"),
+                        item.get("profile", "-"),
+                        item.get("status", "-"),
+                        passed,
+                        format_count(diff_pixels),
+                        f"{diff_ratio:.6f}" if isinstance(diff_ratio, (int, float)) else "-",
+                        format_count(max_channel_delta),
+                    ]
+                )
+                + " |"
+            )
+
     (output_root / "baseline-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -610,7 +686,10 @@ def main() -> None:
             profiles,
         )
 
-    write_reports(manifest, output_root, native_results, browser_report, profiles)
+    parity_report = run_native_canvaskit_parity_report(
+        native_results, browser_report, output_root, profiles
+    )
+    write_reports(manifest, output_root, native_results, browser_report, profiles, parity_report)
     print(f"\n[baseline] complete: {output_root}", flush=True)
 
 

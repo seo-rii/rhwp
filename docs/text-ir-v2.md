@@ -374,6 +374,10 @@ The fast CI path should keep these checks small:
 Native Skia vs CanvasKit PNG fuzzy parity and larger matrices should start in a
 renderer sweep or nightly-style job, then move into the fast path only after
 flakiness and runtime are understood.
+The full renderer baseline now writes a report-only
+`native-canvaskit-parity-report.json` and mirrors its summary into
+`baseline-report.md`; this artifact is observational data for threshold tuning,
+not a pass/fail gate for the fast path.
 
 ## Migration Phases
 
