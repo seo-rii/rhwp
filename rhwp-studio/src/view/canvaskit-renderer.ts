@@ -3,6 +3,10 @@ import type { CanvasKit, Font, Image, Paint, Shader, Surface, TextBlob, Typeface
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import { isKnownLayerPaintOp } from '@/core/types';
+import {
+  selectLayerTextVariantSets,
+  shouldRenderLayerTextVariant,
+} from '@/core/text-variants';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
   LayerBounds,
@@ -14,6 +18,7 @@ import type {
   LayerEquationOp,
   LayerFootnoteMarkerOp,
   LayerFormObjectOp,
+  LayerGlyphRunOp,
   LayerGradient,
   LayerImageOp,
   LayerLeafNode,
@@ -375,12 +380,24 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerLeafNode,
   ): void {
-    for (const op of node.ops) {
-      if (!isKnownLayerPaintOp(op)) {
+    const ops = node.ops.filter(isKnownLayerPaintOp);
+    const selectedTextVariants = selectLayerTextVariantSets(
+      ops,
+      (op) => this.canReplayGlyphRun(op),
+    );
+    for (const op of ops) {
+      if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
         continue;
       }
       this.renderOp(canvas, op);
     }
+  }
+
+  private canReplayGlyphRun(_op: LayerGlyphRunOp): boolean {
+    // CanvasKit glyph replay needs a verified font-blob registration path.
+    // Until then schema-v1 GlyphRun variants remain metadata/debug payloads and
+    // the TextRun fallback is the only selectable CanvasKit visual variant.
+    return false;
   }
 
   private renderOp(
@@ -2002,8 +2019,13 @@ export class CanvasKitLayerRenderer {
 
     this.currentCacheHintStack.push(node.cacheHint);
     try {
-      return node.ops.some((op) => {
-        if (!isKnownLayerPaintOp(op)) {
+      const ops = node.ops.filter(isKnownLayerPaintOp);
+      const selectedTextVariants = selectLayerTextVariantSets(
+        ops,
+        (op) => this.canReplayGlyphRun(op),
+      );
+      return ops.some((op) => {
+        if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
           return false;
         }
         if (
@@ -2061,8 +2083,13 @@ export class CanvasKitLayerRenderer {
       return;
     }
     this.withCacheHint(node.cacheHint, () => {
-      for (const op of node.ops) {
-        if (!isKnownLayerPaintOp(op)) {
+      const ops = node.ops.filter(isKnownLayerPaintOp);
+      const selectedTextVariants = selectLayerTextVariantSets(
+        ops,
+        (op) => this.canReplayGlyphRun(op),
+      );
+      for (const op of ops) {
+        if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
           continue;
         }
         if (

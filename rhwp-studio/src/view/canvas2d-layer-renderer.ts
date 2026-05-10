@@ -1,4 +1,8 @@
 import { isKnownLayerPaintOp } from '@/core/types';
+import {
+  selectLayerTextVariantSets,
+  shouldRenderLayerTextVariant,
+} from '@/core/text-variants';
 import type { CanvasKitRenderMode } from './render-backend';
 import type {
   LayerBounds,
@@ -184,8 +188,10 @@ export class Canvas2DLayerRenderer {
   }
 
   private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {
-    for (const op of node.ops) {
-      if (!isKnownLayerPaintOp(op)) {
+    const ops = node.ops.filter(isKnownLayerPaintOp);
+    const selectedTextVariants = selectLayerTextVariantSets(ops, () => false);
+    for (const op of ops) {
+      if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
         continue;
       }
       this.renderOp(ctx, op);

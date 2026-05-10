@@ -83,26 +83,18 @@ fn alpha_bounds(pixmap: &tiny_skia::Pixmap) -> Option<AlphaBounds> {
 }
 
 fn glyph_variant_test_tree(
-    glyph_id: u16,
+    glyph_ids: &[u16],
     replay_eligibility: GlyphRunReplayEligibility,
 ) -> PageLayerTree {
+    assert!(!glyph_ids.is_empty());
+    let text = "A".repeat(glyph_ids.len());
     let source = TextSourceSpan {
         id: TextSourceId(0),
-        utf8_range: TextSourceRange::new(0, 1),
-        utf16_range: TextSourceRange::new(0, 1),
+        utf8_range: TextSourceRange::new(0, text.len() as u32),
+        utf16_range: TextSourceRange::new(0, glyph_ids.len() as u32),
         stable_source_key: None,
     };
     let text_variant = PaintVariantMeta::text_run_default("text-0");
-    let glyph_variant = PaintVariantMeta {
-        equivalence_group: "text-0".to_string(),
-        variant_id: "glyphRun".to_string(),
-        variant_kind: TextVariantKind::GlyphRun,
-        part_index: 0,
-        part_count: 1,
-        is_default_fallback: false,
-        requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
-        quality: Some(TextVariantQuality::Exact),
-    };
     let style = TextStyle {
         font_family: "sans-serif".to_string(),
         font_size: 32.0,
@@ -140,92 +132,103 @@ fn glyph_variant_test_tree(
         });
     }
 
-    PageLayerTree::with_resources(
-        190.0,
-        82.0,
-        LayerNode::leaf(
+    let mut ops = vec![PaintOp::TextRun {
+        bbox,
+        run: LayerTextRunPaint {
+            source: Some(source.clone()),
+            variant: Some(text_variant),
+            text: text.clone(),
+            style: style.clone(),
+            positions: (0..=glyph_ids.len())
+                .map(|idx| 118.0 + idx as f64 * 32.0)
+                .collect(),
+            baseline: 54.0,
+            ..Default::default()
+        },
+    }];
+    for (idx, glyph_id) in glyph_ids.iter().copied().enumerate() {
+        let start = idx as u32;
+        let end = start + 1;
+        ops.push(PaintOp::GlyphRun {
             bbox,
-            None,
-            vec![
-                PaintOp::TextRun {
-                    bbox,
-                    run: LayerTextRunPaint {
-                        source: Some(source.clone()),
-                        variant: Some(text_variant),
-                        text: "A".to_string(),
-                        style: style.clone(),
-                        positions: vec![118.0, 150.0],
-                        baseline: 54.0,
-                        ..Default::default()
-                    },
+            run: LayerGlyphRunPaint {
+                source: TextSourceSpan {
+                    id: source.id,
+                    utf8_range: TextSourceRange::new(start, end),
+                    utf16_range: TextSourceRange::new(start, end),
+                    stable_source_key: None,
                 },
-                PaintOp::GlyphRun {
-                    bbox,
-                    run: LayerGlyphRunPaint {
-                        source,
-                        variant: glyph_variant,
-                        paint_style: PaintTextStyle::from(&style),
-                        shape_key: ShapeKey {
-                            font_instance: FontInstanceKey {
-                                face_key: FontFaceKey("test-face".to_string()),
-                                size_px: 32.0,
-                                variations: Vec::new(),
-                                synthetic_bold: false,
-                                synthetic_italic: false,
-                            },
-                            direction: TextDirection::Ltr,
-                            writing_mode: WritingMode::HorizontalTb,
-                            script: None,
-                            language: None,
-                            features: Vec::new(),
-                            shaping_engine: ShapingEngineId("test-shaper".to_string()),
-                            fallback_policy: FontFallbackPolicyId("test-fallback".to_string()),
-                        },
-                        placement: TextRunPlacement {
-                            run_to_page: LayerAffineTransform {
-                                a: 1.0,
-                                b: 0.0,
-                                c: 0.0,
-                                d: 1.0,
-                                e: 28.0,
-                                f: 56.0,
-                            },
-                            baseline_y: 0.0,
-                        },
-                        glyph_ids: vec![u32::from(glyph_id)],
-                        positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
-                        advances: None,
-                        clusters: vec![GlyphCluster {
-                            source_range_utf8: TextSourceRange::new(0, 1),
-                            source_range_utf16: Some(TextSourceRange::new(0, 1)),
-                            text_range_utf8: Some(TextSourceRange::new(0, 1)),
-                            glyph_range: GlyphRange::new(0, 1),
-                            flags: Vec::new(),
-                        }],
-                        direction: TextDirection::Ltr,
-                        bidi_level: None,
-                        writing_mode: WritingMode::HorizontalTb,
-                        orientation: GlyphRunOrientation::Horizontal,
-                        glyph_transforms: None,
-                        diagnostics: GlyphRunDiagnostics {
-                            quality: TextVariantQuality::Exact,
-                            replay_eligibility,
-                            strict_visual_eligible: replay_eligibility
-                                == GlyphRunReplayEligibility::Portable,
-                            max_origin_delta_px: 0.0,
-                            max_advance_delta_px: 0.0,
-                            max_residual_after_adjustment_px: 0.0,
-                            cluster_mismatch_count: 0,
-                            missing_glyph_count: 0,
-                            used_fallback_font_count: 0,
-                            reason: None,
-                        },
-                    },
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphRun".to_string(),
+                    variant_kind: TextVariantKind::GlyphRun,
+                    part_index: idx as u32,
+                    part_count: glyph_ids.len() as u32,
+                    is_default_fallback: false,
+                    requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
                 },
-            ],
-        ),
-        resources,
-    )
+                paint_style: PaintTextStyle::from(&style),
+                shape_key: ShapeKey {
+                    font_instance: FontInstanceKey {
+                        face_key: FontFaceKey("test-face".to_string()),
+                        size_px: 32.0,
+                        variations: Vec::new(),
+                        synthetic_bold: false,
+                        synthetic_italic: false,
+                    },
+                    direction: TextDirection::Ltr,
+                    writing_mode: WritingMode::HorizontalTb,
+                    script: None,
+                    language: None,
+                    features: Vec::new(),
+                    shaping_engine: ShapingEngineId("test-shaper".to_string()),
+                    fallback_policy: FontFallbackPolicyId("test-fallback".to_string()),
+                },
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 28.0 + idx as f64 * 36.0,
+                        f: 56.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                glyph_ids: vec![u32::from(glyph_id)],
+                positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+                advances: None,
+                clusters: vec![GlyphCluster {
+                    source_range_utf8: TextSourceRange::new(start, end),
+                    source_range_utf16: Some(TextSourceRange::new(start, end)),
+                    text_range_utf8: Some(TextSourceRange::new(start, end)),
+                    glyph_range: GlyphRange::new(0, 1),
+                    flags: Vec::new(),
+                }],
+                direction: TextDirection::Ltr,
+                bidi_level: None,
+                writing_mode: WritingMode::HorizontalTb,
+                orientation: GlyphRunOrientation::Horizontal,
+                glyph_transforms: None,
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility,
+                    strict_visual_eligible: replay_eligibility
+                        == GlyphRunReplayEligibility::Portable,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        });
+    }
+
+    PageLayerTree::with_resources(190.0, 82.0, LayerNode::leaf(bbox, None, ops), resources)
 }
 
 #[test]
@@ -2363,7 +2366,7 @@ fn native_skia_replays_portable_glyph_run_variant() {
         .expect("test font should map A to a glyph");
     assert_ne!(glyph_id, 0, "test font should not return missing glyph");
 
-    let tree = glyph_variant_test_tree(glyph_id, GlyphRunReplayEligibility::Portable);
+    let tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
     let png = renderer
         .render_png(&tree)
         .expect("portable glyph variant render");
@@ -2390,7 +2393,7 @@ fn native_skia_keeps_text_fallback_for_nonportable_glyph_run() {
         .next()
         .expect("test font should map A to a glyph");
 
-    let tree = glyph_variant_test_tree(glyph_id, GlyphRunReplayEligibility::LocalDiagnosticOnly);
+    let tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::LocalDiagnosticOnly);
     let png = renderer
         .render_png(&tree)
         .expect("non-portable glyph variant render");
@@ -2400,6 +2403,33 @@ fn native_skia_keeps_text_fallback_for_nonportable_glyph_run() {
     assert!(
         bounds.min_x > 95,
         "native Skia must keep TextRun fallback when GlyphRun is diagnostic-only, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_replays_all_parts_of_selected_glyph_variant_set() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let tree = glyph_variant_test_tree(&[glyph_id, glyph_id], GlyphRunReplayEligibility::Portable);
+    let png = renderer
+        .render_png(&tree)
+        .expect("multi-part glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("multi-part glyph variant ink");
+
+    assert!(
+        bounds.max_x > 70 && bounds.max_x < 110,
+        "native Skia should draw all selected GlyphRun parts and suppress the right-side TextRun fallback, got {bounds:?}"
     );
 }
 

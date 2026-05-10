@@ -197,9 +197,12 @@ old consumers.
   `TextRun` fallback. A `ConditionalExternalFont` run is not selected until a
   consumer-side font verification path exists.
 - CanvasKit: prefer portable `GlyphRun` only after the same font blob is
-  registered, otherwise replay `TextRun`.
-- Canvas2D: replay `TextRun` by default. Use glyph data only for diagnostics,
-  hit testing, or strict outline fallback.
+  registered, otherwise replay `TextRun`. Studio still pre-scans variant sets
+  before replay so future CanvasKit glyph support suppresses the `TextRun`
+  fallback instead of double-painting it.
+- Canvas2D: replay `TextRun` by default. It uses the same variant-set guard but
+  never selects `GlyphRun` in schema v1; glyph data is diagnostics, hit-test
+  metadata, or future strict outline fallback.
 - SVG: replay `TextRun` by default for search/accessibility. Strict visual mode
   may use glyph outline paths plus source metadata.
 
