@@ -976,6 +976,12 @@ fn write_paint_variant_meta(buf: &mut String, variant: &PaintVariantMeta) {
     if let Some(quality) = variant.quality {
         let _ = write!(buf, ",\"quality\":{}", json_escape(quality.as_str()));
     }
+    if let Some(anchor_op_id) = &variant.anchor_op_id {
+        let _ = write!(buf, ",\"anchorOpId\":{}", json_escape(anchor_op_id));
+    }
+    if let Some(local_paint_order) = variant.local_paint_order {
+        let _ = write!(buf, ",\"localPaintOrder\":{}", local_paint_order);
+    }
     buf.push('}');
 }
 
@@ -2523,6 +2529,8 @@ mod tests {
                     is_default_fallback: false,
                     requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
                     quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: None,
+                    local_paint_order: None,
                 },
                 paint_style: PaintTextStyle::from(&TextStyle {
                     font_family: "Test".to_string(),
@@ -2627,6 +2635,8 @@ mod tests {
                     is_default_fallback: false,
                     requires: vec!["text.outlineGlyph".to_string()],
                     quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some("op-text-0".to_string()),
+                    local_paint_order: Some(0),
                 },
                 paint_style: PaintTextStyle::from(&TextStyle {
                     font_family: "Test".to_string(),
@@ -2681,6 +2691,8 @@ mod tests {
         assert!(json.contains("\"text.outlineGlyph\""));
         assert!(json.contains("\"variants\":[\"textRun\",\"glyphOutline\"]"));
         assert!(json.contains("\"variantId\":\"glyphOutline\""));
+        assert!(json.contains("\"anchorOpId\":\"op-text-0\""));
+        assert!(json.contains("\"localPaintOrder\":0"));
         assert!(json.contains("\"paths\":[{\"commands\":["));
         assert!(!json.contains("\"type\":\"path\",\"commands\""));
     }

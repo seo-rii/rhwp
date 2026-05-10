@@ -10,7 +10,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::paint::{LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintVariantMeta};
+use crate::paint::{
+    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintVariantMeta, TextVariantKind,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextVariantScopeError {
@@ -39,6 +41,11 @@ pub enum TextVariantScopeError {
         variant_id: String,
         expected: u32,
         actual: u32,
+        leaf: String,
+    },
+    MissingAnchorOpId {
+        equivalence_group: String,
+        variant_id: String,
         leaf: String,
     },
 }
@@ -87,6 +94,14 @@ impl fmt::Display for TextVariantScopeError {
             } => write!(
                 f,
                 "text variant `{variant_id}` in group `{equivalence_group}` at leaf `{leaf}` has {actual} parts, expected {expected}"
+            ),
+            Self::MissingAnchorOpId {
+                equivalence_group,
+                variant_id,
+                leaf,
+            } => write!(
+                f,
+                "glyph outline variant `{variant_id}` in group `{equivalence_group}` at leaf `{leaf}` has no anchorOpId"
             ),
         }
     }
@@ -161,6 +176,13 @@ fn validate_leaf(
 
         let group = groups.entry(variant.equivalence_group.clone()).or_default();
         group.has_default_fallback |= variant.is_default_fallback;
+        if variant.variant_kind == TextVariantKind::GlyphOutline && variant.anchor_op_id.is_none() {
+            return Err(TextVariantScopeError::MissingAnchorOpId {
+                equivalence_group: variant.equivalence_group.clone(),
+                variant_id: variant.variant_id.clone(),
+                leaf: leaf_path,
+            });
+        }
         let state = group
             .variants
             .entry(variant.variant_id.clone())
@@ -276,6 +298,8 @@ mod tests {
             is_default_fallback: false,
             requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
             quality: None,
+            anchor_op_id: None,
+            local_paint_order: None,
         };
         let mut glyph_part_1 = glyph_part_0.clone();
         glyph_part_1.part_index = 1;
@@ -328,6 +352,8 @@ mod tests {
             is_default_fallback: false,
             requires: Vec::new(),
             quality: None,
+            anchor_op_id: None,
+            local_paint_order: None,
         };
         let tree = tree(LayerNode::leaf(
             bbox(),
@@ -341,5 +367,58 @@ mod tests {
             validate_text_variant_scope(&tree),
             Err(TextVariantScopeError::PartCountMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn rejects_glyph_outline_without_anchor() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: None,
+            local_paint_order: None,
+        };
+        let tree = tree(LayerNode::leaf(
+            bbox(),
+            None,
+            vec![
+                text_op(PaintVariantMeta::text_run_default("text-1")),
+                text_op(outline_part),
+            ],
+        ));
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::MissingAnchorOpId { .. })
+        ));
+    }
+
+    #[test]
+    fn accepts_glyph_outline_with_anchor() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-text-1".to_string()),
+            local_paint_order: Some(0),
+        };
+        let tree = tree(LayerNode::leaf(
+            bbox(),
+            None,
+            vec![
+                text_op(PaintVariantMeta::text_run_default("text-1")),
+                text_op(outline_part),
+            ],
+        ));
+        validate_text_variant_scope(&tree).unwrap();
     }
 }

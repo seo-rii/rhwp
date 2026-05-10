@@ -1524,6 +1524,12 @@ fn paint_variant_meta_to_value(variant: &PaintVariantMeta) -> JsValue {
     if let Some(quality) = variant.quality {
         set_string(&value, "quality", quality.as_str());
     }
+    if let Some(anchor_op_id) = &variant.anchor_op_id {
+        set_string(&value, "anchorOpId", anchor_op_id);
+    }
+    if let Some(local_paint_order) = variant.local_paint_order {
+        set_number(&value, "localPaintOrder", local_paint_order as f64);
+    }
     value.into()
 }
 

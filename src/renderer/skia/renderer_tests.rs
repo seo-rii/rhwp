@@ -86,7 +86,11 @@ fn count_pixels_matching(
     pixmap: &tiny_skia::Pixmap,
     predicate: impl Fn(&tiny_skia::PremultipliedColorU8) -> bool,
 ) -> usize {
-    pixmap.pixels().iter().filter(|pixel| predicate(pixel)).count()
+    pixmap
+        .pixels()
+        .iter()
+        .filter(|pixel| predicate(pixel))
+        .count()
 }
 
 fn glyph_variant_test_tree(
@@ -174,6 +178,8 @@ fn glyph_variant_test_tree(
                     is_default_fallback: false,
                     requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
                     quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: None,
+                    local_paint_order: None,
                 },
                 paint_style: PaintTextStyle::from(&style),
                 shape_key: ShapeKey {

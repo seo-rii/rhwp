@@ -288,6 +288,15 @@ pub struct PaintVariantMeta {
     pub is_default_fallback: bool,
     pub requires: Vec<String>,
     pub quality: Option<TextVariantQuality>,
+    /// Optional root paint-order anchor for strict visual sidecar variants.
+    ///
+    /// `GlyphOutline` must not be exported as a generic `Path` while a
+    /// `TextRun` fallback exists. When an outline is emitted as a sidecar
+    /// variant, this id points at the root text op whose paint-order slot it
+    /// replaces.
+    pub anchor_op_id: Option<String>,
+    /// Optional order within the selected variant set at the anchored slot.
+    pub local_paint_order: Option<u32>,
 }
 
 impl PaintVariantMeta {
@@ -301,6 +310,8 @@ impl PaintVariantMeta {
             is_default_fallback: true,
             requires: Vec::new(),
             quality: None,
+            anchor_op_id: None,
+            local_paint_order: None,
         }
     }
 }

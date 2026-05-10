@@ -404,7 +404,9 @@ not a pass/fail gate for the fast path.
 9. Add the `glyphOutline` variant contract as an explicit strict-visual text
    alternative. The schema/export surface exists, but default renderers still
    choose `TextRun`/`GlyphRun`; outline replay/export profiles remain future
-   work.
+   work. `glyphOutline` variants carry `anchorOpId` metadata so a sidecar
+   outline can reuse the anchored `TextRun` paint-order slot without being
+   exported as an ordinary `Path`.
 10. Expand `GlyphRun` parity fixtures for exact-quality, portable, fill-only
     replay. This phase covers native Skia, CanvasKit, fallback gates,
     multi-part variant sets, glyph-id range guards, and fuzzy cross-backend PNG
@@ -435,6 +437,29 @@ not a pass/fail gate for the fast path.
   may select explicit `glyphOutline` variants plus source metadata. It must not
   reinterpret those outlines as ordinary `Path` fallback while `TextRun` is
   present.
+
+## GlyphOutline Sidecar Contract
+
+`GlyphOutline` is a strict-visual text alternative, not a generic vector shape.
+Schema v1 keeps the `TextRun` fallback in the root paint stream and allows
+outline payloads to live as sidecar variants. A sidecar outline uses
+`variant.anchorOpId` to point at the root text op whose paint-order slot it
+replaces. Within that slot, `localPaintOrder` is an optional stable order for
+multi-part outline payloads.
+
+The current validator keeps this conservative:
+
+- every variant in an `equivalenceGroup` remains in one leaf / paint-order
+  scope;
+- consumers choose exactly one `variantId` per group and paint every selected
+  part;
+- `glyphOutline` variants must carry `anchorOpId`;
+- `glyphOutline` must never be exported as an already-known generic `Path`
+  while a `TextRun` fallback exists.
+
+`paintOrderSlotId` is reserved for a later schema step if variants need to cross
+leaf, clip, transform, or cache boundaries. Until then, `anchorOpId` plus the
+same-leaf invariant is the compatibility contract.
 
 ## Non-Goals For The Current Branch
 

@@ -504,6 +504,13 @@ export interface LayerTextVariantMeta {
   isDefaultFallback?: boolean;
   requires?: LayerTreeFeature[];
   quality?: LayerTextVariantQuality;
+  /**
+   * Root paint-order anchor used by strict visual sidecar variants such as
+   * GlyphOutline. Consumers paint the selected variant set at the anchor slot.
+   */
+  anchorOpId?: string;
+  /** Ordering inside the selected variant set at the anchor slot. */
+  localPaintOrder?: number;
 }
 
 export interface LayerVariationAxisValue {
