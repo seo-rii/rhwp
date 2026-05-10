@@ -82,6 +82,13 @@ fn alpha_bounds(pixmap: &tiny_skia::Pixmap) -> Option<AlphaBounds> {
     bounds
 }
 
+fn count_pixels_matching(
+    pixmap: &tiny_skia::Pixmap,
+    predicate: impl Fn(&tiny_skia::PremultipliedColorU8) -> bool,
+) -> usize {
+    pixmap.pixels().iter().filter(|pixel| predicate(pixel)).count()
+}
+
 fn glyph_variant_test_tree(
     glyph_ids: &[u16],
     replay_eligibility: GlyphRunReplayEligibility,
@@ -2509,6 +2516,103 @@ fn native_skia_replays_glyph_run_shadow_effect() {
         bounds.max_x < 100,
         "native Skia should select a shadow-capable GlyphRun variant instead of TextRun fallback, got {bounds:?}"
     );
+}
+
+#[test]
+fn native_skia_replays_glyph_run_outline_effect() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.paint_style.outline_type = 1;
+            }
+        }
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("outline glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("outline glyph variant ink");
+    let white_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 220 && pixel.green() > 220 && pixel.blue() > 220
+    });
+    let dark_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 32 && pixel.red() < 80 && pixel.green() < 80 && pixel.blue() < 80
+    });
+
+    assert!(
+        bounds.max_x < 100,
+        "native Skia should select an outline-capable GlyphRun variant instead of TextRun fallback, got {bounds:?}"
+    );
+    assert!(
+        white_pixels > 20 && dark_pixels > 20,
+        "outline GlyphRun should paint both white fill and dark stroke, white={white_pixels}, dark={dark_pixels}"
+    );
+}
+
+#[test]
+fn native_skia_replays_glyph_run_emboss_and_engrave_effects() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    for (emboss, engrave, label) in [(true, false, "emboss"), (false, true, "engrave")] {
+        let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+        if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+            for op in ops {
+                if let PaintOp::GlyphRun { run, .. } = op {
+                    run.paint_style.emboss = emboss;
+                    run.paint_style.engrave = engrave;
+                }
+            }
+        }
+        let png = renderer
+            .render_png(&tree)
+            .unwrap_or_else(|err| panic!("{label} glyph variant render failed: {err:?}"));
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("emboss/engrave glyph variant ink");
+        let light_pixels = count_pixels_matching(&pixmap, |pixel| {
+            pixel.alpha() > 32 && pixel.red() > 180 && pixel.green() > 180 && pixel.blue() > 180
+        });
+        let gray_pixels = count_pixels_matching(&pixmap, |pixel| {
+            pixel.alpha() > 32
+                && pixel.red() >= 80
+                && pixel.red() <= 190
+                && pixel.green() >= 80
+                && pixel.green() <= 190
+                && pixel.blue() >= 80
+                && pixel.blue() <= 190
+        });
+
+        assert!(
+            bounds.max_x < 100,
+            "native Skia should select a {label}-capable GlyphRun variant instead of TextRun fallback, got {bounds:?}"
+        );
+        assert!(
+            light_pixels > 10 && gray_pixels > 10,
+            "{label} GlyphRun should paint highlight and shadow passes, light={light_pixels}, gray={gray_pixels}"
+        );
+    }
 }
 
 #[test]
