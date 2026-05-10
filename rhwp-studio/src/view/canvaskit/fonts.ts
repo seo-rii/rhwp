@@ -245,7 +245,7 @@ export class CanvasKitFontRegistry {
     ) {
       return { replayable: false, reason: 'nonFiniteGlyphTransform' };
     }
-    if (!this.isFillOnlyPaint(run)) {
+    if (!this.isSupportedGlyphRunPaint(run)) {
       return { replayable: false, reason: 'unsupportedGlyphRunPaintEffect' };
     }
     if (run.shapeKey.fontInstance.variations?.length) {
@@ -403,16 +403,21 @@ export class CanvasKitFontRegistry {
     return bytes;
   }
 
-  private isFillOnlyPaint(run: LayerGlyphRunOp): boolean {
+  private isSupportedGlyphRunPaint(run: LayerGlyphRunOp): boolean {
     const style = run.paintStyle;
     const ratio = typeof style.ratio === 'number' ? style.ratio : 1;
     const shadeColor = (style.shadeColor || '#ffffff').toLowerCase();
+    const shadowType = style.shadowType ?? 0;
+    const shadowOffsetX = style.shadowOffsetX ?? 0;
+    const shadowOffsetY = style.shadowOffsetY ?? 0;
+    const hasSupportedShadow = shadowType === 0
+      || (shadowType > 0 && Number.isFinite(shadowOffsetX) && Number.isFinite(shadowOffsetY));
     return Math.abs(ratio - 1) <= 0.001
       && style.underline === 'none'
       && !style.strikethrough
       && (style.emphasisDot ?? 0) === 0
       && (style.outlineType ?? 0) === 0
-      && (style.shadowType ?? 0) === 0
+      && hasSupportedShadow
       && !style.emboss
       && !style.engrave
       && shadeColor === '#ffffff';

@@ -979,6 +979,18 @@ export class CanvasKitLayerRenderer {
       0,
       1,
     ]);
+    if ((op.paintStyle.shadowType ?? 0) > 0) {
+      const shadowPaint = this.makePaint(op.paintStyle.shadowColor || '#000000', 'fill');
+      canvas.drawGlyphs(
+        glyphs,
+        positions,
+        op.paintStyle.shadowOffsetX ?? 0,
+        op.paintStyle.shadowOffsetY ?? 0,
+        font,
+        shadowPaint,
+      );
+      shadowPaint.delete();
+    }
     canvas.drawGlyphs(glyphs, positions, 0, 0, font, paint);
     canvas.restore();
     paint.delete();

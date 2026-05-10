@@ -882,9 +882,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedEffectTree = structuredClone(tree);
     unsupportedEffectTree.root.ops[2].paintStyle = {
       ...unsupportedEffectTree.root.ops[2].paintStyle,
-      shadowType: 1,
-      shadowOffsetX: 2,
-      shadowOffsetY: 2,
+      outlineType: 1,
     };
     const unsupportedStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
       unsupportedEffectTree.root.ops[2],
@@ -973,6 +971,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const positionAdjustedStrictStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
       glyphOp(positionAdjustedStrictTree),
       positionAdjustedStrictTree.fontResources,
+    );
+
+    const shadowTree = structuredClone(tree);
+    assignFontIdentity(shadowTree, 'shadow', 'fixture-font-digest-shadow');
+    glyphOp(shadowTree).paintStyle = {
+      ...glyphOp(shadowTree).paintStyle,
+      shadowType: 1,
+      shadowColor: '#00cc00',
+      shadowOffsetX: 8,
+      shadowOffsetY: 0,
+    };
+    const shadowPng = renderTree(shadowTree);
+    const shadowStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(shadowTree),
+      shadowTree.fontResources,
     );
 
     const multiPartTree = structuredClone(tree);
@@ -1132,6 +1145,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       positionAdjustedPng,
       positionAdjustedStrictStatus,
       positionAdjustedStrictPng,
+      shadowStatus,
+      shadowPng,
       multiPartStatuses,
       multiPartPng,
       duplicatePartPng,
@@ -1309,6 +1324,26 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     positionAdjustedStrictBlackPixels > 20 && positionAdjustedStrictRedPixels < 5,
     `CanvasKit in-tolerance PositionAdjusted run selects GlyphRun black=${positionAdjustedStrictBlackPixels}, red=${positionAdjustedStrictRedPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.shadowStatus?.replayable === true,
+    `CanvasKit GlyphRun accepts supported offset shadow replay=${JSON.stringify(portableGlyphRunProbe.shadowStatus)}`,
+  );
+  const shadowRedPixels = countPixels(
+    portableGlyphRunProbe.shadowPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const shadowBlackPixels = countPixels(
+    portableGlyphRunProbe.shadowPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const shadowGreenPixels = countPixels(
+    portableGlyphRunProbe.shadowPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 120 && pixel.green > 120 && pixel.blue < 120,
+  );
+  assert(
+    shadowBlackPixels > 20 && shadowGreenPixels > 10 && shadowRedPixels < 5,
+    `CanvasKit GlyphRun shadow paints fill+shadow and suppresses fallback black=${shadowBlackPixels}, green=${shadowGreenPixels}, red=${shadowRedPixels}`,
   );
   assert(
     portableGlyphRunProbe.multiPartStatuses?.length === 2
