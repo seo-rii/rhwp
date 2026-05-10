@@ -200,6 +200,14 @@ export class CanvasKitFontRegistry {
       || (run.diagnostics.quality !== 'exact' && run.diagnostics.quality !== 'positionAdjusted')) {
       return { replayable: false, reason: 'qualityNotStrictEligible' };
     }
+    if (run.diagnostics.quality === 'positionAdjusted') {
+      const fontSize = Number.isFinite(run.paintStyle.fontSize) ? run.paintStyle.fontSize : 0;
+      const tolerance = Math.min(0.5, Math.max(0.25, fontSize * 0.005));
+      if (!Number.isFinite(run.diagnostics.maxResidualAfterAdjustmentPx)
+        || run.diagnostics.maxResidualAfterAdjustmentPx > tolerance) {
+        return { replayable: false, reason: 'positionAdjustedResidualTooHigh' };
+      }
+    }
     if (
       run.diagnostics.missingGlyphCount !== 0
       || run.diagnostics.clusterMismatchCount !== 0

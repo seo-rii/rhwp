@@ -51,6 +51,9 @@ export function selectLayerTextVariantSets(
     if (variant.expectedPartCount !== partCount || partCount <= 0) {
       variant.supported = false;
     }
+    if (variant.parts.has(partIndex)) {
+      variant.supported = false;
+    }
     variant.parts.add(partIndex);
     variant.supported &&= canReplayGlyphRun(op);
   }

@@ -193,6 +193,9 @@ instantiation for the exported face:
 - A `GlyphRun` is selectable only when diagnostics mark it `Exact` or gated
   `PositionAdjusted`, `strictVisualEligible=true`, and it has no missing glyphs,
   cluster mismatches, or unsplit fallback-font use.
+- `PositionAdjusted` is gated by strict residual tolerance before replay. The
+  current screen tolerance is `min(0.5px, max(0.25px, fontSizePx * 0.005))`;
+  over-tolerance runs keep `TextRun` fallback.
 - `PortableBlob` requires a digest, `dataRef`, and a consumer-verified font blob
   registered in the renderer cache. `ExternalVerified` is conditional: it is
   selectable only after the renderer resolves the external blob and verifies the
@@ -266,9 +269,32 @@ P0 fixtures are required before treating the `GlyphRun` replay path as stable:
 - `glyphrun_native_canvaskit_fill_png_fuzzy`: native Skia and CanvasKit render
   the same eligible fill-only glyph fixture within a small image tolerance.
 
-P0 should use `Exact` quality only. `PositionAdjusted` positive replay,
-bidi/vertical/fallback-font split matrices, color glyphs, and glyph outline
-strict visual output are P1/P2 work.
+P0 uses `Exact` quality only. `PositionAdjusted` positive replay,
+bidi/vertical matrices, color glyphs, and glyph outline strict visual output are
+P1.5/P2 work.
+
+### P1a Fixtures
+
+P1a keeps the scope on replay-contract hardening rather than typography
+expansion:
+
+- synthetic fallback-font split: one selected `glyphRun` variant may contain
+  multiple parts that point at different exact font faces.
+- duplicate variant part rejection: a `variantId` with repeated `partIndex`
+  values is incomplete/invalid even when `partCount` would otherwise look
+  satisfied.
+- CanvasKit unsupported capability fallback: variation instances and non-zero
+  `faceIndex` font faces keep `TextRun` fallback until the adapter proves exact
+  variation/collection-face construction.
+- `PositionAdjusted` negative fixture: residuals above the strict page-space
+  tolerance keep `TextRun` fallback.
+
+### P1b / P1.5 Follow-Up
+
+P1b should add basic bidi, vertical-upright, and vertical-sideways fixtures with
+small independent cases. P1.5 should add positive `PositionAdjusted` replay and
+expand native Skia vs CanvasKit fuzzy PNG matrices. Shaped measurement and line
+breaking remain outside this milestone.
 
 ### Fixture Font Policy
 
@@ -303,14 +329,16 @@ rerender tests may still use exact image comparison.
 
 ### PositionAdjusted Policy
 
-`PositionAdjusted` remains a valid future strict candidate, but P0 should not
-use it for positive replay fixtures. A negative P0 fixture may assert that
+`PositionAdjusted` remains a valid future strict candidate, but P0/P1a should not
+use it for positive replay fixtures. A negative P1a fixture asserts that
 `PositionAdjusted` data with residuals above tolerance falls back to `TextRun`.
-Positive `PositionAdjusted` replay belongs to P1 and must pass the existing hard
+Positive `PositionAdjusted` replay belongs to P1.5 and must pass the existing hard
 gates: portable or verified font, complete source coverage, no missing glyphs,
 no cluster mismatch, explicit final glyph positions, no unsplit fallback font,
 no unsupported paint effects, and residuals within the configured page-space
-and device-space tolerance.
+and device-space tolerance. The canonical fast-path gate is page-space residual;
+device-space residual remains a raster/parity diagnostic until the PNG matrix is
+stable.
 
 ### CI Placement
 
@@ -318,11 +346,14 @@ The fast CI path should keep these checks small:
 
 - Rust unit tests: variant set selection, font digest mismatch,
   non-portable fallback, unsupported-effect fallback, and CanvasKit glyph-id
-  range guard.
+  range guard. P1a adds duplicate-part rejection, synthetic fallback-font split,
+  and over-tolerance `PositionAdjusted` fallback.
 - Native Skia tests: fill-only `GlyphRun`, explicit positions, and unsupported
   effect fallback.
 - Studio/CanvasKit E2E: one eligible fill-only glyph replay, one digest
-  mismatch fallback, and one unsupported-effect fallback.
+  mismatch fallback, one unsupported-effect fallback, and small negative
+  capability probes for unsupported variations, font collection face index, and
+  over-tolerance `PositionAdjusted`.
 
 Native Skia vs CanvasKit PNG fuzzy parity and larger matrices should start in a
 renderer sweep or nightly-style job, then move into the fast path only after

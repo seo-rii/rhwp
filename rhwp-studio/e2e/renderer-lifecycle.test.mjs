@@ -925,6 +925,39 @@ runTest('Renderer lifecycle', async ({ page }) => {
     );
     const outOfRangePng = renderTree(outOfRangeTree);
 
+    const variationTree = structuredClone(tree);
+    assignFontIdentity(variationTree, 'variation', 'fixture-font-digest-variation');
+    glyphOp(variationTree).shapeKey.fontInstance.variations = [{ tag: 'wght', value: 700 }];
+    const variationStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(variationTree),
+      variationTree.fontResources,
+    );
+    const variationPng = renderTree(variationTree);
+
+    const faceIndexTree = structuredClone(tree);
+    assignFontIdentity(faceIndexTree, 'face-index', 'fixture-font-digest-face-index');
+    faceIndexTree.fontResources.faces[0].faceIndex = 1;
+    const faceIndexStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(faceIndexTree),
+      faceIndexTree.fontResources,
+    );
+    const faceIndexPng = renderTree(faceIndexTree);
+
+    const positionAdjustedTree = structuredClone(tree);
+    assignFontIdentity(
+      positionAdjustedTree,
+      'position-adjusted',
+      'fixture-font-digest-position-adjusted',
+    );
+    glyphOp(positionAdjustedTree).diagnostics.quality = 'positionAdjusted';
+    glyphOp(positionAdjustedTree).diagnostics.maxResidualAfterAdjustmentPx = 0.75;
+    glyphOp(positionAdjustedTree).variant.quality = 'positionAdjusted';
+    const positionAdjustedStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(positionAdjustedTree),
+      positionAdjustedTree.fontResources,
+    );
+    const positionAdjustedPng = renderTree(positionAdjustedTree);
+
     const multiPartTree = structuredClone(tree);
     assignFontIdentity(multiPartTree, 'multipart', 'fixture-font-digest-multipart');
     multiPartTree.textSources[0].text = 'HH';
@@ -985,6 +1018,29 @@ runTest('Renderer lifecycle', async ({ page }) => {
       .filter((op) => op.type === 'glyphRun')
       .map((op) => canvaskitRenderer.fontRegistry.glyphRunReplayStatus(op, multiPartTree.fontResources));
 
+    const duplicatePartTree = structuredClone(multiPartTree);
+    for (const op of duplicatePartTree.root.ops) {
+      if (op.type === 'glyphRun') {
+        op.variant.partIndex = 0;
+        op.variant.partCount = 1;
+      }
+    }
+    const duplicatePartPng = renderTree(duplicatePartTree);
+
+    const fallbackSplitTree = structuredClone(multiPartTree);
+    fallbackSplitTree.fontResources.faces.push({
+      ...fallbackSplitTree.fontResources.faces[0],
+      id: 'fixture-face-multipart-alt',
+      blobKey: fallbackSplitTree.fontResources.faces[0].blobKey,
+      postscriptName: 'FixtureFaceMultipartAlt',
+    });
+    const fallbackSplitGlyphs = fallbackSplitTree.root.ops.filter((op) => op.type === 'glyphRun');
+    fallbackSplitGlyphs[1].shapeKey.fontInstance.faceKey = 'fixture-face-multipart-alt';
+    fallbackSplitGlyphs[1].clusters[0].flags = ['fallbackBoundary'];
+    const fallbackSplitStatuses = fallbackSplitGlyphs
+      .map((op) => canvaskitRenderer.fontRegistry.glyphRunReplayStatus(op, fallbackSplitTree.fontResources));
+    const fallbackSplitPng = renderTree(fallbackSplitTree);
+
     return {
       status,
       png,
@@ -996,8 +1052,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nonPortablePng,
       outOfRangeStatus,
       outOfRangePng,
+      variationStatus,
+      variationPng,
+      faceIndexStatus,
+      faceIndexPng,
+      positionAdjustedStatus,
+      positionAdjustedPng,
       multiPartStatuses,
       multiPartPng,
+      duplicatePartPng,
+      fallbackSplitStatuses,
+      fallbackSplitPng,
     };
   }, { fontBytes: glyphRunFontBytes });
 
@@ -1099,6 +1164,57 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `CanvasKit out-of-range glyph id keeps TextRun fallback red=${outOfRangeRedPixels}, black=${outOfRangeBlackPixels}`,
   );
   assert(
+    portableGlyphRunProbe.variationStatus?.replayable === false
+      && portableGlyphRunProbe.variationStatus?.reason === 'fontVariationUnsupported',
+    `CanvasKit GlyphRun rejects unsupported variation instances=${JSON.stringify(portableGlyphRunProbe.variationStatus)}`,
+  );
+  const variationRedPixels = countPixels(
+    portableGlyphRunProbe.variationPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const variationBlackPixels = countPixels(
+    portableGlyphRunProbe.variationPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    variationRedPixels > 20 && variationBlackPixels < 5,
+    `CanvasKit unsupported font variation keeps TextRun fallback red=${variationRedPixels}, black=${variationBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.faceIndexStatus?.replayable === false
+      && portableGlyphRunProbe.faceIndexStatus?.reason === 'fontFaceIndexUnsupported',
+    `CanvasKit GlyphRun rejects TTC/OTC-style non-zero face index=${JSON.stringify(portableGlyphRunProbe.faceIndexStatus)}`,
+  );
+  const faceIndexRedPixels = countPixels(
+    portableGlyphRunProbe.faceIndexPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const faceIndexBlackPixels = countPixels(
+    portableGlyphRunProbe.faceIndexPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    faceIndexRedPixels > 20 && faceIndexBlackPixels < 5,
+    `CanvasKit unsupported font face index keeps TextRun fallback red=${faceIndexRedPixels}, black=${faceIndexBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.positionAdjustedStatus?.replayable === false
+      && portableGlyphRunProbe.positionAdjustedStatus?.reason === 'positionAdjustedResidualTooHigh',
+    `CanvasKit GlyphRun rejects PositionAdjusted residuals over strict tolerance=${JSON.stringify(portableGlyphRunProbe.positionAdjustedStatus)}`,
+  );
+  const positionAdjustedRedPixels = countPixels(
+    portableGlyphRunProbe.positionAdjustedPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const positionAdjustedBlackPixels = countPixels(
+    portableGlyphRunProbe.positionAdjustedPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    positionAdjustedRedPixels > 20 && positionAdjustedBlackPixels < 5,
+    `CanvasKit over-tolerance PositionAdjusted run keeps TextRun fallback red=${positionAdjustedRedPixels}, black=${positionAdjustedBlackPixels}`,
+  );
+  assert(
     portableGlyphRunProbe.multiPartStatuses?.length === 2
       && portableGlyphRunProbe.multiPartStatuses.every((status) => status.replayable === true),
     `CanvasKit multi-part GlyphRun variant set becomes replayable=${JSON.stringify(portableGlyphRunProbe.multiPartStatuses)}`,
@@ -1114,6 +1230,35 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     multiPartBlackPixels > glyphBlackPixels * 1.5 && multiPartRedPixels < 5,
     `CanvasKit multi-part GlyphRun paints all selected parts and suppresses fallback black=${multiPartBlackPixels}, red=${multiPartRedPixels}`,
+  );
+  const duplicatePartRedPixels = countPixels(
+    portableGlyphRunProbe.duplicatePartPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const duplicatePartBlackPixels = countPixels(
+    portableGlyphRunProbe.duplicatePartPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    duplicatePartRedPixels > 20 && duplicatePartBlackPixels < 5,
+    `CanvasKit duplicate GlyphRun variant part keeps TextRun fallback red=${duplicatePartRedPixels}, black=${duplicatePartBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.fallbackSplitStatuses?.length === 2
+      && portableGlyphRunProbe.fallbackSplitStatuses.every((status) => status.replayable === true),
+    `CanvasKit synthetic fallback-font GlyphRun variant set becomes replayable=${JSON.stringify(portableGlyphRunProbe.fallbackSplitStatuses)}`,
+  );
+  const fallbackSplitBlackPixels = countPixels(
+    portableGlyphRunProbe.fallbackSplitPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const fallbackSplitRedPixels = countPixels(
+    portableGlyphRunProbe.fallbackSplitPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  assert(
+    fallbackSplitBlackPixels > glyphBlackPixels * 1.5 && fallbackSplitRedPixels < 5,
+    `CanvasKit synthetic fallback-font GlyphRun paints all selected parts black=${fallbackSplitBlackPixels}, red=${fallbackSplitRedPixels}`,
   );
 
   setTestCase('canvas-layer-clip-scope-parity');

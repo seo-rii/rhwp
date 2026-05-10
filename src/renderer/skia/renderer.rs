@@ -105,6 +105,14 @@ fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &Resour
     {
         return false;
     }
+    if run.diagnostics.quality == TextVariantQuality::PositionAdjusted {
+        let tolerance = 0.5_f64.min(0.25_f64.max(run.paint_style.font_size * 0.005));
+        if !run.diagnostics.max_residual_after_adjustment_px.is_finite()
+            || run.diagnostics.max_residual_after_adjustment_px > tolerance
+        {
+            return false;
+        }
+    }
     let ratio = if run.paint_style.ratio > 0.0 {
         run.paint_style.ratio
     } else {
@@ -570,7 +578,9 @@ impl SkiaLayerRenderer {
                         if state.1 != run.variant.part_count || run.variant.part_count == 0 {
                             state.3 = false;
                         }
-                        state.2.insert(run.variant.part_index);
+                        if !state.2.insert(run.variant.part_index) {
+                            state.3 = false;
+                        }
                         state.3 &= native_skia_can_replay_glyph_run(run, resources);
                     }
                 }

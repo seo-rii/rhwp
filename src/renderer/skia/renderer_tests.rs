@@ -2539,6 +2539,151 @@ fn native_skia_replays_all_parts_of_selected_glyph_variant_set() {
 }
 
 #[test]
+fn native_skia_replays_synthetic_fallback_font_variant_parts() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree =
+        glyph_variant_test_tree(&[glyph_id, glyph_id], GlyphRunReplayEligibility::Portable);
+    let digest = FontDigest {
+        algorithm: "sha256".to_string(),
+        value: "test-font-digest-alt".to_string(),
+    };
+    let data_ref = BinaryResourceRef {
+        kind: BinaryResourceKind::FontBlob,
+        id: "font-blob-alt".to_string(),
+    };
+    tree.resources
+        .font_resources_mut()
+        .blobs
+        .push(FontBlobResource {
+            id: FontBlobKey("font-blob-alt".to_string()),
+            digest: Some(digest.clone()),
+            source: FontResourceSource::Bundled,
+            data_ref: Some(data_ref.clone()),
+            portability: FontPortability::PortableBlob { digest, data_ref },
+        });
+    tree.resources
+        .font_resources_mut()
+        .faces
+        .push(FontFaceResource {
+            id: FontFaceKey("test-face-alt".to_string()),
+            blob_key: FontBlobKey("font-blob-alt".to_string()),
+            face_index: 0,
+            postscript_name: Some("TestFaceAlt".to_string()),
+            family_names: Vec::new(),
+            style_names: Vec::new(),
+            weight_class: None,
+            width_class: None,
+            italic: None,
+        });
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                if run.variant.part_index == 1 {
+                    run.shape_key.font_instance.face_key = FontFaceKey("test-face-alt".to_string());
+                    run.clusters[0]
+                        .flags
+                        .push(crate::paint::GlyphClusterFlag::FallbackBoundary);
+                }
+            }
+        }
+    }
+
+    let png = renderer
+        .render_png(&tree)
+        .expect("synthetic fallback font split glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("synthetic fallback split glyph variant ink");
+
+    assert!(
+        bounds.max_x > 70 && bounds.max_x < 110,
+        "native Skia should draw every GlyphRun part in a synthetic fallback-font variant set, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_duplicate_glyph_variant_part() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree =
+        glyph_variant_test_tree(&[glyph_id, glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.variant.part_index = 0;
+                run.variant.part_count = 1;
+            }
+        }
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("duplicate glyph variant part fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when a GlyphRun variant repeats a part index, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_position_adjusted_residual_over_tolerance() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.diagnostics.quality = TextVariantQuality::PositionAdjusted;
+                run.variant.quality = Some(TextVariantQuality::PositionAdjusted);
+                run.diagnostics.max_residual_after_adjustment_px = 0.75;
+            }
+        }
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("position-adjusted residual fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when PositionAdjusted residual exceeds strict tolerance, got {bounds:?}"
+    );
+}
+
+#[test]
 fn native_skia_keeps_text_fallback_for_incomplete_glyph_variant_set() {
     let renderer = SkiaLayerRenderer::new();
     let style = TextStyle {
