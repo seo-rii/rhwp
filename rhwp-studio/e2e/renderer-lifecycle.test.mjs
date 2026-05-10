@@ -848,14 +848,36 @@ runTest('Renderer lifecycle', async ({ page }) => {
       },
     };
 
+    const glyphOp = (candidate) => candidate.root.ops.find((op) => op.type === 'glyphRun');
+    const renderTree = (candidate) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = candidate.pageWidth;
+      canvas.height = candidate.pageHeight;
+      document.body.appendChild(canvas);
+      canvaskitRenderer.renderPage(candidate, canvas, 1);
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    const assignFontIdentity = (candidate, suffix, digestValue) => {
+      const blobId = `fixture-font-blob-${suffix}`;
+      const faceId = `fixture-face-${suffix}`;
+      candidate.resources.fontBlobHashes = [digestValue];
+      candidate.resources.fontBlobKeys = [`font:fixture:${fontBytes.length}:${digestValue}`];
+      candidate.fontResources.blobs[0].id = blobId;
+      candidate.fontResources.blobs[0].digest = { algorithm: 'fixture', value: digestValue };
+      candidate.fontResources.blobs[0].dataRef = { kind: 'fontBlob', id: '0' };
+      candidate.fontResources.faces[0].id = faceId;
+      candidate.fontResources.faces[0].blobKey = blobId;
+      for (const op of candidate.root.ops) {
+        if (op.type === 'glyphRun') {
+          op.shapeKey.fontInstance.faceKey = faceId;
+        }
+      }
+    };
+
     const status = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(tree.root.ops[2], tree.fontResources);
-    const canvas = document.createElement('canvas');
-    canvas.width = 96;
-    canvas.height = 64;
-    document.body.appendChild(canvas);
-    canvaskitRenderer.renderPage(tree, canvas, 1);
-    const png = canvas.toDataURL('image/png');
-    canvas.remove();
+    const png = renderTree(tree);
 
     const unsupportedEffectTree = structuredClone(tree);
     unsupportedEffectTree.root.ops[2].paintStyle = {
@@ -868,19 +890,114 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedEffectTree.root.ops[2],
       unsupportedEffectTree.fontResources,
     );
-    const unsupportedCanvas = document.createElement('canvas');
-    unsupportedCanvas.width = 96;
-    unsupportedCanvas.height = 64;
-    document.body.appendChild(unsupportedCanvas);
-    canvaskitRenderer.renderPage(unsupportedEffectTree, unsupportedCanvas, 1);
-    const unsupportedPng = unsupportedCanvas.toDataURL('image/png');
-    unsupportedCanvas.remove();
+    const unsupportedPng = renderTree(unsupportedEffectTree);
+
+    const digestMismatchTree = structuredClone(tree);
+    assignFontIdentity(
+      digestMismatchTree,
+      'digest-mismatch',
+      'fixture-font-digest-mismatch',
+    );
+    digestMismatchTree.resources.fontBlobHashes = ['wrong-fixture-font-digest'];
+    const digestMismatchStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(digestMismatchTree),
+      digestMismatchTree.fontResources,
+    );
+    const digestMismatchPng = renderTree(digestMismatchTree);
+
+    const nonPortableTree = structuredClone(tree);
+    assignFontIdentity(nonPortableTree, 'non-portable', 'fixture-font-digest-non-portable');
+    glyphOp(nonPortableTree).diagnostics.replayEligibility = 'localDiagnosticOnly';
+    nonPortableTree.fontResources.blobs[0].portability = 'systemNameOnly';
+    delete nonPortableTree.fontResources.blobs[0].dataRef;
+    const nonPortableStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(nonPortableTree),
+      nonPortableTree.fontResources,
+    );
+    const nonPortablePng = renderTree(nonPortableTree);
+
+    const outOfRangeTree = structuredClone(tree);
+    assignFontIdentity(outOfRangeTree, 'out-of-range', 'fixture-font-digest-out-of-range');
+    glyphOp(outOfRangeTree).glyphIds = [0x10000];
+    const outOfRangeStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(outOfRangeTree),
+      outOfRangeTree.fontResources,
+    );
+    const outOfRangePng = renderTree(outOfRangeTree);
+
+    const multiPartTree = structuredClone(tree);
+    assignFontIdentity(multiPartTree, 'multipart', 'fixture-font-digest-multipart');
+    multiPartTree.textSources[0].text = 'HH';
+    multiPartTree.textSources[0].utf8Range = { start: 0, end: 2 };
+    multiPartTree.textSources[0].utf16Range = { start: 0, end: 2 };
+    multiPartTree.root.ops[1] = {
+      ...multiPartTree.root.ops[1],
+      text: 'HH',
+      positions: [0, 34, 68],
+      bbox: { x: 12, y: 8, width: 84, height: 48 },
+      source: {
+        ...multiPartTree.root.ops[1].source,
+        utf8Range: { start: 0, end: 2 },
+        utf16Range: { start: 0, end: 2 },
+      },
+    };
+    const firstGlyphPart = {
+      ...multiPartTree.root.ops[2],
+      bbox: { x: 12, y: 8, width: 84, height: 48 },
+      source: {
+        ...multiPartTree.root.ops[2].source,
+        utf8Range: { start: 0, end: 1 },
+        utf16Range: { start: 0, end: 1 },
+      },
+      variant: {
+        ...multiPartTree.root.ops[2].variant,
+        partIndex: 0,
+        partCount: 2,
+      },
+      placement: {
+        ...multiPartTree.root.ops[2].placement,
+        runToPage: { a: 1, b: 0, c: 0, d: 1, e: 12, f: 50 },
+      },
+    };
+    const secondGlyphPart = structuredClone(firstGlyphPart);
+    secondGlyphPart.source = {
+      ...secondGlyphPart.source,
+      utf8Range: { start: 1, end: 2 },
+      utf16Range: { start: 1, end: 2 },
+    };
+    secondGlyphPart.variant = {
+      ...secondGlyphPart.variant,
+      partIndex: 1,
+      partCount: 2,
+    };
+    secondGlyphPart.placement = {
+      ...secondGlyphPart.placement,
+      runToPage: { a: 1, b: 0, c: 0, d: 1, e: 44, f: 50 },
+    };
+    multiPartTree.root.ops = [
+      multiPartTree.root.ops[0],
+      multiPartTree.root.ops[1],
+      firstGlyphPart,
+      secondGlyphPart,
+    ];
+    const multiPartPng = renderTree(multiPartTree);
+    const multiPartStatuses = multiPartTree.root.ops
+      .filter((op) => op.type === 'glyphRun')
+      .map((op) => canvaskitRenderer.fontRegistry.glyphRunReplayStatus(op, multiPartTree.fontResources));
 
     return {
       status,
       png,
       unsupportedStatus,
       unsupportedPng,
+      digestMismatchStatus,
+      digestMismatchPng,
+      nonPortableStatus,
+      nonPortablePng,
+      outOfRangeStatus,
+      outOfRangePng,
+      multiPartStatuses,
+      multiPartPng,
     };
   }, { fontBytes: glyphRunFontBytes });
 
@@ -929,6 +1046,74 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     fallbackBlackPixels < 5,
     `CanvasKit unsupported GlyphRun effect suppresses black glyph path pixels=${fallbackBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.digestMismatchStatus?.replayable === false
+      && portableGlyphRunProbe.digestMismatchStatus?.reason === 'fontBlobNotVerified',
+    `CanvasKit GlyphRun rejects digest-mismatched font blobs=${JSON.stringify(portableGlyphRunProbe.digestMismatchStatus)}`,
+  );
+  const digestMismatchRedPixels = countPixels(
+    portableGlyphRunProbe.digestMismatchPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const digestMismatchBlackPixels = countPixels(
+    portableGlyphRunProbe.digestMismatchPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    digestMismatchRedPixels > 20 && digestMismatchBlackPixels < 5,
+    `CanvasKit digest mismatch keeps TextRun fallback red=${digestMismatchRedPixels}, black=${digestMismatchBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.nonPortableStatus?.replayable === false
+      && portableGlyphRunProbe.nonPortableStatus?.reason === 'nonPortableGlyphRun',
+    `CanvasKit GlyphRun rejects non-portable font resources=${JSON.stringify(portableGlyphRunProbe.nonPortableStatus)}`,
+  );
+  const nonPortableRedPixels = countPixels(
+    portableGlyphRunProbe.nonPortablePng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const nonPortableBlackPixels = countPixels(
+    portableGlyphRunProbe.nonPortablePng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    nonPortableRedPixels > 20 && nonPortableBlackPixels < 5,
+    `CanvasKit non-portable font keeps TextRun fallback red=${nonPortableRedPixels}, black=${nonPortableBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.outOfRangeStatus?.replayable === false
+      && portableGlyphRunProbe.outOfRangeStatus?.reason === 'glyphIdOutOfRange',
+    `CanvasKit GlyphRun rejects backend-incompatible glyph ids=${JSON.stringify(portableGlyphRunProbe.outOfRangeStatus)}`,
+  );
+  const outOfRangeRedPixels = countPixels(
+    portableGlyphRunProbe.outOfRangePng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const outOfRangeBlackPixels = countPixels(
+    portableGlyphRunProbe.outOfRangePng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    outOfRangeRedPixels > 20 && outOfRangeBlackPixels < 5,
+    `CanvasKit out-of-range glyph id keeps TextRun fallback red=${outOfRangeRedPixels}, black=${outOfRangeBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.multiPartStatuses?.length === 2
+      && portableGlyphRunProbe.multiPartStatuses.every((status) => status.replayable === true),
+    `CanvasKit multi-part GlyphRun variant set becomes replayable=${JSON.stringify(portableGlyphRunProbe.multiPartStatuses)}`,
+  );
+  const multiPartBlackPixels = countPixels(
+    portableGlyphRunProbe.multiPartPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const multiPartRedPixels = countPixels(
+    portableGlyphRunProbe.multiPartPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  assert(
+    multiPartBlackPixels > glyphBlackPixels * 1.5 && multiPartRedPixels < 5,
+    `CanvasKit multi-part GlyphRun paints all selected parts and suppresses fallback black=${multiPartBlackPixels}, red=${multiPartRedPixels}`,
   );
 
   setTestCase('canvas-layer-clip-scope-parity');

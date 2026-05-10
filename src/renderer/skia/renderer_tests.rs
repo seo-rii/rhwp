@@ -2407,6 +2407,40 @@ fn native_skia_keeps_text_fallback_for_nonportable_glyph_run() {
 }
 
 #[test]
+fn native_skia_keeps_text_fallback_for_out_of_range_glyph_id() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.glyph_ids[0] = u32::from(u16::MAX) + 1;
+            }
+        }
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("out-of-range glyph id fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when GlyphRun has a backend-incompatible glyph id, got {bounds:?}"
+    );
+}
+
+#[test]
 fn native_skia_keeps_text_fallback_for_unsupported_glyph_run_effects() {
     let renderer = SkiaLayerRenderer::new();
     let style = TextStyle {
