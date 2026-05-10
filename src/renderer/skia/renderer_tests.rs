@@ -9,7 +9,7 @@ use crate::paint::{
     FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey,
     FontPortability, FontResourceSource, GlyphCluster, GlyphRange, GlyphRunDiagnostics,
     GlyphRunOrientation, GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform,
-    LayerBuilder, LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode,
+    LayerBuilder, LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode, LayerNodeKind,
     LayerOutputOptions, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerSemantic,
     LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintOp, PaintTextStyle,
     PaintVariantMeta, RenderProfile, ResourceArena, ShapeKey, ShapingEngineId, SvgResourceId,
@@ -2403,6 +2403,40 @@ fn native_skia_keeps_text_fallback_for_nonportable_glyph_run() {
     assert!(
         bounds.min_x > 95,
         "native Skia must keep TextRun fallback when GlyphRun is diagnostic-only, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_unsupported_glyph_run_effects() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.paint_style.underline = UnderlineType::Bottom;
+            }
+        }
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("unsupported glyph effect fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when GlyphRun has unsupported text effects, got {bounds:?}"
     );
 }
 

@@ -268,6 +268,7 @@ impl<'a> TextShapeLowerer<'a> {
         let mut public_glyph_run = None;
         let mut public_glyph_run_emitted = false;
         let mut strict_visual_eligible = false;
+        let paint_style = PaintTextStyle::from(&run.style);
 
         if matches!(
             replay_eligibility,
@@ -278,7 +279,9 @@ impl<'a> TextShapeLowerer<'a> {
                 (bbox, run.source.clone(), run.variant.clone())
             {
                 if let Some(shaped) = self.resolver.shape_glyph_run(&request, run, &resolved) {
-                    if glyph_run_is_exportable(&shaped) {
+                    if !paint_style.is_fill_only_glyph_replay() {
+                        reason = Some("unsupportedGlyphRunPaintEffect".to_string());
+                    } else if glyph_run_is_exportable(&shaped) {
                         let mut glyph_variant = variant;
                         glyph_variant.variant_id = "glyphRun".to_string();
                         glyph_variant.variant_kind = TextVariantKind::GlyphRun;
@@ -293,7 +296,7 @@ impl<'a> TextShapeLowerer<'a> {
                         public_glyph_run = Some(LayerGlyphRunPaint {
                             source,
                             variant: glyph_variant,
-                            paint_style: PaintTextStyle::from(&run.style),
+                            paint_style: paint_style.clone(),
                             shape_key: shaped.shape_key.clone(),
                             placement: run
                                 .placement
@@ -532,6 +535,33 @@ mod tests {
         assert!(!run.variant.is_default_fallback);
         assert_eq!(run.glyph_ids, vec![42]);
         assert!(run.diagnostics.strict_visual_eligible);
+    }
+
+    #[test]
+    fn lowerer_keeps_text_fallback_when_glyph_run_effects_are_not_fill_only() {
+        let mut text_run = sourced_text_run("A");
+        text_run.style.underline = crate::model::style::UnderlineType::Bottom;
+        let mut root = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 100.0, 100.0),
+            None,
+            vec![PaintOp::TextRun {
+                bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+                run: text_run,
+            }],
+        );
+        let lowerer = TextShapeLowerer::new(&EmittingResolver);
+        let report = lowerer.lower_root(&mut root);
+
+        assert_eq!(report.public_glyph_run_count(), 0);
+        assert_eq!(
+            report.diagnostics[0].reason.as_deref(),
+            Some("unsupportedGlyphRunPaintEffect")
+        );
+        let LayerNodeKind::Leaf { ops, .. } = &root.kind else {
+            panic!("expected leaf root");
+        };
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(ops[0], PaintOp::TextRun { .. }));
     }
 
     #[test]

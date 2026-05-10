@@ -102,6 +102,7 @@ fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &Resour
             TextVariantQuality::Exact | TextVariantQuality::PositionAdjusted
         )
         || run.diagnostics.replay_eligibility != GlyphRunReplayEligibility::Portable
+        || !run.paint_style.is_fill_only_glyph_replay()
     {
         return false;
     }

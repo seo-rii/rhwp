@@ -594,6 +594,26 @@ impl From<&TextStyle> for PaintTextStyle {
     }
 }
 
+impl PaintTextStyle {
+    /// Returns whether a backend may replay this text as a simple fill-only
+    /// positioned glyph run without losing HWP text effects.
+    pub fn is_fill_only_glyph_replay(&self) -> bool {
+        let ratio = if self.ratio > 0.0 { self.ratio } else { 1.0 };
+        (ratio - 1.0).abs() <= 0.001
+            && self.tab_leaders.is_empty()
+            && self.underline == UnderlineType::None
+            && !self.strikethrough
+            && self.outline_type == 0
+            && self.shadow_type == 0
+            && !self.emboss
+            && !self.engrave
+            && !self.superscript
+            && !self.subscript
+            && self.emphasis_dot == 0
+            && (self.shade_color & 0x00FF_FFFF) == 0x00FF_FFFF
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayerTextOrientation {
     Horizontal,
