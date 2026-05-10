@@ -219,6 +219,115 @@ instantiation for the exported face:
   advances. RSXform/TextBlob paths are future optimizations for repeated static
   text or public `MixedPerGlyph` transforms.
 
+## GlyphRun Parity Fixture Milestone
+
+The next milestone is limited to `GlyphRun` replay parity and fallback
+fixtures. It must not change layout measurement, line breaking, fallback
+metrics, vertical metrics, or HWP-compatible text placement. Existing layout
+positions remain authoritative; `GlyphRun` variants are optional visual
+alternatives selected only when the backend can replay them safely.
+
+The milestone is successful when the following contracts are covered by
+fixtures:
+
+- Portable font resources refer to the same font bytes and exact face that the
+  backend instantiates.
+- Variant selection suppresses the `TextRun` fallback only when the selected
+  `GlyphRun` variant set is complete and supported.
+- CanvasKit remains more conservative than native Skia and falls back whenever
+  exact font, glyph id, or paint-effect eligibility is not proven.
+- Unsafe cases do not silently draw a wrong glyph stream; they keep `TextRun`
+  fallback and expose deterministic diagnostics or selection state.
+- Variant grouping is tested as a set-level rule: one `variantId` is selected
+  per `equivalenceGroup`, and every op part with that selected `variantId` is
+  replayed.
+
+### P0 Fixtures
+
+P0 fixtures are required before treating the `GlyphRun` replay path as stable:
+
+- `glyphrun_native_fill_exact_font`: native Skia replays an exact-quality,
+  portable, fill-only `GlyphRun`.
+- `glyphrun_canvaskit_fill_exact_font`: CanvasKit verifies the same single-face
+  font blob and reaches the `drawGlyphs` path.
+- `glyphrun_explicit_positions`: glyph ids and run-local positions are asserted
+  exactly, with v1 `TextRun` placement still authoritative for layout.
+- `glyphrun_variant_set_multipart`: a selected variant set can contain multiple
+  parts, and all parts are painted together.
+- `glyphrun_unsupported_effect_falls_back`: unsupported CanvasKit effects keep
+  `TextRun` fallback.
+- `glyphrun_digest_mismatch_falls_back`: font blob digest mismatch keeps
+  `TextRun` fallback.
+- `glyphrun_non_portable_font_falls_back`: `ResolvedButNotEmbedded`,
+  `SystemNameOnly`, and `UnresolvedFallback` resources never become default
+  glyph replay.
+- `glyphrun_canvaskit_glyph_id_out_of_range_falls_back`: public `u32`
+  glyph ids outside the current CanvasKit `u16` path are rejected before replay.
+- `glyphrun_native_canvaskit_fill_png_fuzzy`: native Skia and CanvasKit render
+  the same eligible fill-only glyph fixture within a small image tolerance.
+
+P0 should use `Exact` quality only. `PositionAdjusted` positive replay,
+bidi/vertical/fallback-font split matrices, color glyphs, and glyph outline
+strict visual output are P1/P2 work.
+
+### Fixture Font Policy
+
+Portable glyph replay fixtures must use a checked-in, small, single-face TTF or
+OTF fixture with a clear license, fixed digest, and expected face metadata.
+System fonts installed by CI are not portable fixture inputs. They may be used
+only for negative or diagnostic cases where the expected result is `TextRun`
+fallback.
+
+P0 must not use TTC/OTC collections or variable fonts for CanvasKit strict
+replay. Even `faceIndex == 0` TTC/OTC data remains ineligible until the
+CanvasKit adapter proves explicit face selection. Variable font instances are
+also ineligible until the adapter proves exact variation construction.
+
+### Parity And Tolerance Policy
+
+Schema-level and selection-level assertions should be exact:
+
+- selected `variantId`
+- glyph ids
+- glyph position arrays, allowing only small floating point epsilon where the
+  export format requires it
+- fallback reason or replay eligibility
+- variant part completeness
+
+Native Skia vs CanvasKit PNG comparison should be fuzzy, not exact. Even
+fill-only glyphs may differ slightly because the rasterizers, antialiasing, and
+font rendering settings are not guaranteed to produce byte-identical pixels.
+Initial P0 PNG comparison should crop to the glyph visual region and allow a
+small per-channel and differing-pixel threshold. Same-backend deterministic
+rerender tests may still use exact image comparison.
+
+### PositionAdjusted Policy
+
+`PositionAdjusted` remains a valid future strict candidate, but P0 should not
+use it for positive replay fixtures. A negative P0 fixture may assert that
+`PositionAdjusted` data with residuals above tolerance falls back to `TextRun`.
+Positive `PositionAdjusted` replay belongs to P1 and must pass the existing hard
+gates: portable or verified font, complete source coverage, no missing glyphs,
+no cluster mismatch, explicit final glyph positions, no unsplit fallback font,
+no unsupported paint effects, and residuals within the configured page-space
+and device-space tolerance.
+
+### CI Placement
+
+The fast CI path should keep these checks small:
+
+- Rust unit tests: variant set selection, font digest mismatch,
+  non-portable fallback, unsupported-effect fallback, and CanvasKit glyph-id
+  range guard.
+- Native Skia tests: fill-only `GlyphRun`, explicit positions, and unsupported
+  effect fallback.
+- Studio/CanvasKit E2E: one eligible fill-only glyph replay, one digest
+  mismatch fallback, and one unsupported-effect fallback.
+
+Native Skia vs CanvasKit PNG fuzzy parity and larger matrices should start in a
+renderer sweep or nightly-style job, then move into the fast path only after
+flakiness and runtime are understood.
+
 ## Migration Phases
 
 1. Keep `TextRun` fallback and expose `paintStyle`.
@@ -245,7 +354,11 @@ instantiation for the exported face:
    alternative. The schema/export surface exists, but default renderers still
    choose `TextRun`/`GlyphRun`; outline replay/export profiles remain future
    work.
-10. Move shaping into layout only after line breaking, fallback metrics, vertical
+10. Expand `GlyphRun` parity fixtures for exact-quality, portable, fill-only
+    replay. This phase covers native Skia, CanvasKit, fallback gates,
+    multi-part variant sets, glyph-id range guards, and fuzzy cross-backend PNG
+    comparison. It does not change layout measurement.
+11. Move shaping into layout only after line breaking, fallback metrics, vertical
    metrics, and regression fixtures are stable.
 
 ## Backend Policy
@@ -281,4 +394,8 @@ instantiation for the exported face:
 - Letting Canvas2D/SVG depend on glyph-id replay.
 - Changing layout line breaking to shaped advances in the same step as export
   schema migration.
+- Adding shaped measurement shadow diagnostics as a CI gate in the same
+  milestone as `GlyphRun` replay parity. Measurement diagnostics may have
+  local/reporting hooks, but layout-delta and line-break decisions are a
+  separate layout migration.
 - Treating system-name-only `GlyphRun` data as portable visual replay.
