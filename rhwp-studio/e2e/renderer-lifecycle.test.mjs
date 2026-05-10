@@ -856,9 +856,31 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitRenderer.renderPage(tree, canvas, 1);
     const png = canvas.toDataURL('image/png');
     canvas.remove();
+
+    const unsupportedEffectTree = structuredClone(tree);
+    unsupportedEffectTree.root.ops[2].paintStyle = {
+      ...unsupportedEffectTree.root.ops[2].paintStyle,
+      shadowType: 1,
+      shadowOffsetX: 2,
+      shadowOffsetY: 2,
+    };
+    const unsupportedStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      unsupportedEffectTree.root.ops[2],
+      unsupportedEffectTree.fontResources,
+    );
+    const unsupportedCanvas = document.createElement('canvas');
+    unsupportedCanvas.width = 96;
+    unsupportedCanvas.height = 64;
+    document.body.appendChild(unsupportedCanvas);
+    canvaskitRenderer.renderPage(unsupportedEffectTree, unsupportedCanvas, 1);
+    const unsupportedPng = unsupportedCanvas.toDataURL('image/png');
+    unsupportedCanvas.remove();
+
     return {
       status,
       png,
+      unsupportedStatus,
+      unsupportedPng,
     };
   }, { fontBytes: glyphRunFontBytes });
 
@@ -886,6 +908,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     glyphRedPixels < 5,
     `CanvasKit GlyphRun variant suppressed TextRun fallback red pixels=${glyphRedPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.unsupportedStatus?.replayable === false
+      && portableGlyphRunProbe.unsupportedStatus?.reason === 'unsupportedGlyphRunPaintEffect',
+    `CanvasKit GlyphRun rejects unsupported text effects=${JSON.stringify(portableGlyphRunProbe.unsupportedStatus)}`,
+  );
+  const fallbackRedPixels = countPixels(
+    portableGlyphRunProbe.unsupportedPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const fallbackBlackPixels = countPixels(
+    portableGlyphRunProbe.unsupportedPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    fallbackRedPixels > 20,
+    `CanvasKit unsupported GlyphRun effect keeps TextRun fallback red pixels=${fallbackRedPixels}`,
+  );
+  assert(
+    fallbackBlackPixels < 5,
+    `CanvasKit unsupported GlyphRun effect suppresses black glyph path pixels=${fallbackBlackPixels}`,
   );
 
   setTestCase('canvas-layer-clip-scope-parity');
