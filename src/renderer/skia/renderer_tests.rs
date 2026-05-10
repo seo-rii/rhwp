@@ -2468,6 +2468,42 @@ fn native_skia_replays_all_parts_of_selected_glyph_variant_set() {
 }
 
 #[test]
+fn native_skia_keeps_text_fallback_for_incomplete_glyph_variant_set() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree =
+        glyph_variant_test_tree(&[glyph_id, glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        ops.retain(|op| {
+            !matches!(
+                op,
+                PaintOp::GlyphRun { run, .. } if run.variant.part_index == 1
+            )
+        });
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("incomplete glyph variant set fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when GlyphRun variant parts are incomplete, got {bounds:?}"
+    );
+}
+
+#[test]
 fn output_options_enable_text_control_marks() {
     let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
     tree.root.children.push(RenderNode::new(

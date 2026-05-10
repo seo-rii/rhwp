@@ -245,7 +245,8 @@ instantiation for the exported face:
   it keeps the `TextRun` fallback. A `ConditionalExternalFont` run is not
   selected until a consumer-side font verification path exists, and runs with
   effects that are still implemented by TextRun replay stay on the fallback
-  path.
+  path. The selector treats `GlyphRun` alternatives as complete variant sets:
+  if any part is missing or unsupported, the `TextRun` fallback remains selected.
 - CanvasKit: pre-scans variant sets and selects `GlyphRun` only when the
   renderer has verified the exact font blob/external font, can instantiate the
   requested face, and the run passes the fill-only eligibility matrix above.

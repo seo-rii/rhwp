@@ -3,7 +3,7 @@ use skia_safe::{
     PictureRecorder, Rect, Shaper,
 };
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
@@ -536,13 +536,39 @@ impl SkiaLayerRenderer {
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
                 replay.push_cache_hint(*cache_hint);
-                let mut selected_text_variants = HashMap::new();
+                let mut variant_order = 0usize;
+                let mut glyph_variants =
+                    HashMap::<String, HashMap<String, (usize, u32, HashSet<u32>, bool)>>::new();
                 for op in ops {
                     if let PaintOp::GlyphRun { run, .. } = op {
-                        if native_skia_can_replay_glyph_run(run, resources) {
-                            selected_text_variants
-                                .entry(run.variant.equivalence_group.clone())
-                                .or_insert_with(|| run.variant.variant_id.clone());
+                        let group = glyph_variants
+                            .entry(run.variant.equivalence_group.clone())
+                            .or_default();
+                        let state =
+                            group
+                                .entry(run.variant.variant_id.clone())
+                                .or_insert_with(|| {
+                                    let order = variant_order;
+                                    variant_order = variant_order.saturating_add(1);
+                                    (order, run.variant.part_count, HashSet::new(), true)
+                                });
+                        if state.1 != run.variant.part_count || run.variant.part_count == 0 {
+                            state.3 = false;
+                        }
+                        state.2.insert(run.variant.part_index);
+                        state.3 &= native_skia_can_replay_glyph_run(run, resources);
+                    }
+                }
+                let mut selected_text_variants = HashMap::new();
+                for (group, variants) in glyph_variants {
+                    let mut candidates = variants.into_iter().collect::<Vec<_>>();
+                    candidates.sort_by_key(|(_, (order, _, _, _))| *order);
+                    for (variant_id, (_, expected_part_count, parts, supported)) in candidates {
+                        let parts_complete = parts.len() as u32 == expected_part_count
+                            && (0..expected_part_count).all(|index| parts.contains(&index));
+                        if supported && parts_complete {
+                            selected_text_variants.insert(group, variant_id);
+                            break;
                         }
                     }
                 }
