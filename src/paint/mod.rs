@@ -29,6 +29,7 @@ pub mod profile;
 pub mod resources;
 pub mod schema;
 pub mod text_shape;
+pub mod text_variants;
 
 pub use builder::LayerBuilder;
 pub use font::{
@@ -65,3 +66,4 @@ pub use text_shape::{
     FontRequest, FontResolver, GlyphRunQuality, NoopFontResolver, ResolvedFontFace,
     ResolvedGlyphRun, TextShapeDiagnostic, TextShapeLowerer, TextShapeReport,
 };
+pub use text_variants::{validate_text_variant_scope, TextVariantScopeError};

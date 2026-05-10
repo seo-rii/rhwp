@@ -1,6 +1,12 @@
-import type { TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, Font, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 
 import { resolveFont } from '@/core/font-substitution';
+import type {
+  LayerFontBlobResource,
+  LayerFontFaceResource,
+  LayerFontResources,
+  LayerGlyphRunOp,
+} from '@/core/types';
 
 const FONT_SANS_REGULAR_URL = new URL('../../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
 const FONT_SANS_BOLD_URL = new URL('../../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
@@ -84,8 +90,14 @@ const MATH_ALIASES = [
 
 export class CanvasKitFontRegistry {
   readonly aliases = new Set<string>();
+  private readonly verifiedFontBlobs = new Map<string, ArrayBuffer>();
+  private readonly glyphRunTypefaces = new Map<string, Typeface>();
+  private readonly glyphRunFonts = new Map<string, Font>();
 
-  constructor(private readonly fontProvider: TypefaceFontProvider) {}
+  constructor(
+    private readonly canvasKit: CanvasKit,
+    private readonly fontProvider: TypefaceFontProvider,
+  ) {}
 
   async registerFonts(): Promise<void> {
     const fontFiles = new Map<string, Uint8Array>();
@@ -144,7 +156,182 @@ export class CanvasKitFontRegistry {
     return 'Noto Sans KR';
   }
 
+  registerVerifiedFontBlob(blobId: string, digestValue: string, bytes: ArrayBuffer | Uint8Array): void {
+    const source = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const copy = new Uint8Array(source.byteLength);
+    copy.set(source);
+    const arrayBuffer = copy.buffer;
+    this.verifiedFontBlobs.set(this.fontBlobCacheKey(blobId, digestValue), arrayBuffer);
+  }
+
+  glyphRunReplayStatus(
+    run: LayerGlyphRunOp,
+    fontResources: LayerFontResources | undefined,
+  ): { replayable: true; face: LayerFontFaceResource; blob: LayerFontBlobResource } | { replayable: false; reason: string } {
+    if (run.diagnostics.replayEligibility !== 'portable'
+      && run.diagnostics.replayEligibility !== 'conditionalExternalFont') {
+      return { replayable: false, reason: 'nonPortableGlyphRun' };
+    }
+    if (!run.diagnostics.strictVisualEligible
+      || (run.diagnostics.quality !== 'exact' && run.diagnostics.quality !== 'positionAdjusted')) {
+      return { replayable: false, reason: 'qualityNotStrictEligible' };
+    }
+    if (
+      run.diagnostics.missingGlyphCount !== 0
+      || run.diagnostics.clusterMismatchCount !== 0
+      || run.diagnostics.usedFallbackFontCount !== 0
+    ) {
+      return { replayable: false, reason: 'diagnosticsNotClean' };
+    }
+    if (run.orientation === 'mixedPerGlyph' || run.glyphTransforms?.length) {
+      return { replayable: false, reason: 'mixedGlyphTransformsUnsupported' };
+    }
+    if (!run.glyphIds.length || run.glyphIds.length !== run.positions.length) {
+      return { replayable: false, reason: 'glyphPositionLengthMismatch' };
+    }
+    if (run.advances && run.advances.length !== run.glyphIds.length) {
+      return { replayable: false, reason: 'glyphAdvanceLengthMismatch' };
+    }
+    for (const glyphId of run.glyphIds) {
+      if (!Number.isInteger(glyphId) || glyphId <= 0 || glyphId > 0xffff) {
+        return { replayable: false, reason: 'glyphIdOutOfRange' };
+      }
+    }
+    for (const point of run.positions) {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        return { replayable: false, reason: 'nonFiniteGlyphPosition' };
+      }
+    }
+    const transform = run.placement.runToPage;
+    if (
+      !Number.isFinite(transform.a)
+      || !Number.isFinite(transform.b)
+      || !Number.isFinite(transform.c)
+      || !Number.isFinite(transform.d)
+      || !Number.isFinite(transform.e)
+      || !Number.isFinite(transform.f)
+    ) {
+      return { replayable: false, reason: 'nonFiniteGlyphTransform' };
+    }
+    if (!this.isFillOnlyPaint(run)) {
+      return { replayable: false, reason: 'unsupportedGlyphRunPaintEffect' };
+    }
+    if (run.shapeKey.fontInstance.variations?.length) {
+      return { replayable: false, reason: 'fontVariationUnsupported' };
+    }
+
+    const faceKey = run.shapeKey.fontInstance.faceKey;
+    const face = fontResources?.faces.find((candidate) => candidate.id === faceKey);
+    if (!face) {
+      return { replayable: false, reason: 'fontFaceMissing' };
+    }
+    const blob = fontResources?.blobs.find((candidate) => candidate.id === face.blobKey);
+    if (!blob) {
+      return { replayable: false, reason: 'fontBlobMissing' };
+    }
+    if (face.faceIndex !== 0) {
+      return { replayable: false, reason: 'fontFaceIndexUnsupported' };
+    }
+    if (run.diagnostics.replayEligibility === 'portable') {
+      if (blob.portability !== 'portableBlob' || !blob.digest || !blob.dataRef) {
+        return { replayable: false, reason: 'fontBlobNotPortable' };
+      }
+      if (!this.verifiedFontBlobs.has(this.fontBlobCacheKey(blob.id, blob.digest.value))) {
+        return { replayable: false, reason: 'fontBlobNotVerified' };
+      }
+      return { replayable: true, face, blob };
+    }
+    if (blob.portability !== 'externalVerified' || !blob.digest) {
+      return { replayable: false, reason: 'externalFontNotVerified' };
+    }
+    if (!this.verifiedFontBlobs.has(this.fontBlobCacheKey(blob.id, blob.digest.value))
+      && !this.glyphRunTypefaces.has(face.id)) {
+      return { replayable: false, reason: 'externalFontNotInstantiated' };
+    }
+    return { replayable: true, face, blob };
+  }
+
+  glyphRunFont(
+    run: LayerGlyphRunOp,
+    fontResources: LayerFontResources | undefined,
+  ): Font | null {
+    const status = this.glyphRunReplayStatus(run, fontResources);
+    if (!status.replayable) {
+      return null;
+    }
+    const typeface = this.typefaceForGlyphRun(status.face, status.blob);
+    if (!typeface) {
+      return null;
+    }
+    const instance = run.shapeKey.fontInstance;
+    const key = [
+      status.face.id,
+      instance.sizePx.toFixed(4),
+      instance.syntheticBold ? 'bold' : 'regular',
+      instance.syntheticItalic ? 'italic' : 'upright',
+    ].join('|');
+    const cached = this.glyphRunFonts.get(key);
+    if (cached) {
+      return cached;
+    }
+    const font = new this.canvasKit.Font(typeface, instance.sizePx || 12);
+    font.setSubpixel(true);
+    font.setEmbolden(!!instance.syntheticBold);
+    font.setSkewX(instance.syntheticItalic ? -0.25 : 0);
+    this.glyphRunFonts.set(key, font);
+    return font;
+  }
+
   clear(): void {
     this.aliases.clear();
+    for (const font of this.glyphRunFonts.values()) {
+      font.delete();
+    }
+    this.glyphRunFonts.clear();
+    for (const typeface of this.glyphRunTypefaces.values()) {
+      typeface.delete();
+    }
+    this.glyphRunTypefaces.clear();
+    this.verifiedFontBlobs.clear();
+  }
+
+  private typefaceForGlyphRun(face: LayerFontFaceResource, blob: LayerFontBlobResource): Typeface | null {
+    const cached = this.glyphRunTypefaces.get(face.id);
+    if (cached) {
+      return cached;
+    }
+    if (!blob.digest) {
+      return null;
+    }
+    const bytes = this.verifiedFontBlobs.get(this.fontBlobCacheKey(blob.id, blob.digest.value));
+    if (!bytes) {
+      return null;
+    }
+    const typeface = this.canvasKit.Typeface.MakeTypefaceFromData(bytes.slice(0))
+      ?? this.canvasKit.Typeface.MakeFreeTypeFaceFromData(bytes.slice(0));
+    if (!typeface) {
+      return null;
+    }
+    this.glyphRunTypefaces.set(face.id, typeface);
+    return typeface;
+  }
+
+  private fontBlobCacheKey(blobId: string, digestValue: string): string {
+    return `${blobId}:${digestValue}`;
+  }
+
+  private isFillOnlyPaint(run: LayerGlyphRunOp): boolean {
+    const style = run.paintStyle;
+    const ratio = typeof style.ratio === 'number' ? style.ratio : 1;
+    const shadeColor = (style.shadeColor || '#ffffff').toLowerCase();
+    return Math.abs(ratio - 1) <= 0.001
+      && style.underline === 'none'
+      && !style.strikethrough
+      && (style.emphasisDot ?? 0) === 0
+      && (style.outlineType ?? 0) === 0
+      && (style.shadowType ?? 0) === 0
+      && !style.emboss
+      && !style.engrave
+      && shadeColor === '#ffffff';
   }
 }

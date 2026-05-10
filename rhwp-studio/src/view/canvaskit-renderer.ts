@@ -137,7 +137,7 @@ export class CanvasKitLayerRenderer {
   ) {
     this.resourceCache = new CanvasKitResourceCache(canvasKit, () => this.scheduleRerender());
     this.surfaceCache = new CanvasKitSurfaceCache(canvasKit);
-    this.fontRegistry = new CanvasKitFontRegistry(fontProvider);
+    this.fontRegistry = new CanvasKitFontRegistry(canvasKit, fontProvider);
     this.imageCache = this.resourceCache.imageCache;
     this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
     this.domImageCache = this.resourceCache.domImageCache;
@@ -393,11 +393,11 @@ export class CanvasKitLayerRenderer {
     }
   }
 
-  private canReplayGlyphRun(_op: LayerGlyphRunOp): boolean {
-    // CanvasKit glyph replay needs a verified font-blob registration path.
-    // Until then schema-v1 GlyphRun variants remain metadata/debug payloads and
-    // the TextRun fallback is the only selectable CanvasKit visual variant.
-    return false;
+  private canReplayGlyphRun(op: LayerGlyphRunOp): boolean {
+    return this.fontRegistry.glyphRunReplayStatus(
+      op,
+      this.lastRenderedTree?.fontResources,
+    ).replayable;
   }
 
   private renderOp(
@@ -415,8 +415,7 @@ export class CanvasKitLayerRenderer {
         this.renderTextRun(canvas, op);
         return;
       case 'glyphRun':
-        // CanvasKit keeps TextRun fallback until portable font registration
-        // and glyph replay are enabled for this backend.
+        this.renderGlyphRun(canvas, op);
         return;
       case 'charOverlap':
         this.renderTextRun(canvas, op);
@@ -943,6 +942,41 @@ export class CanvasKitLayerRenderer {
       font.delete();
       typeface.delete();
     }
+  }
+
+  private renderGlyphRun(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerGlyphRunOp,
+  ): void {
+    const font = this.fontRegistry.glyphRunFont(op, this.lastRenderedTree?.fontResources);
+    if (!font) {
+      return;
+    }
+    const paint = this.makePaint(op.paintStyle.color, 'fill');
+    const glyphs = new Uint16Array(op.glyphIds.length);
+    const positions = new Float32Array(op.positions.length * 2);
+    for (const [index, glyphId] of op.glyphIds.entries()) {
+      glyphs[index] = glyphId;
+      const point = op.positions[index];
+      positions[index * 2] = point.x;
+      positions[index * 2 + 1] = point.y;
+    }
+    const transform = op.placement.runToPage;
+    canvas.save();
+    canvas.concat([
+      transform.a,
+      transform.c,
+      transform.e,
+      transform.b,
+      transform.d,
+      transform.f,
+      0,
+      0,
+      1,
+    ]);
+    canvas.drawGlyphs(glyphs, positions, 0, 0, font, paint);
+    canvas.restore();
+    paint.delete();
   }
 
   private renderTextControlMark(

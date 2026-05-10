@@ -147,6 +147,10 @@ old consumers.
   `GlyphRun` ops for fallback fonts, bidi runs, or outline chunks. Glyph outline
   alternatives must not be exported as generic `Path` ops while TextRun fallback
   is also present, because old consumers would double-paint them.
+- Schema v1 variant groups are leaf-local. All ops in one `equivalenceGroup`
+  must live in the same leaf and paint-order scope, and every group must keep a
+  default `TextRun` fallback. Cross-leaf or cross-clip variants require a future
+  `paintOrderSlotId`/variant table design.
 
 ## Font And Shape Contract
 
@@ -166,6 +170,36 @@ old consumers.
 - One future `GlyphRun` must refer to one actual font instance and one shape
   key. Fallback font use means split glyph runs inside the same selected
   variant set.
+
+## CanvasKit GlyphRun Gate
+
+CanvasKit is treated as a Skia-capable backend, but its `GlyphRun` path is more
+conservative than native Skia until the browser adapter proves exact font
+instantiation for the exported face:
+
+- A `GlyphRun` is selectable only when diagnostics mark it `Exact` or gated
+  `PositionAdjusted`, `strictVisualEligible=true`, and it has no missing glyphs,
+  cluster mismatches, or unsplit fallback-font use.
+- `PortableBlob` requires a digest, `dataRef`, and a consumer-verified font blob
+  registered in the renderer cache. `ExternalVerified` is conditional: it is
+  selectable only after the renderer resolves the external blob and verifies the
+  digest. `ResolvedButNotEmbedded`, `SystemNameOnly`, and
+  `UnresolvedFallback` always keep `TextRun` fallback.
+- The current CanvasKit adapter rejects TTC/OTC faces with `faceIndex != 0`
+  because the public browser binding used here does not expose an explicit face
+  selection parameter for glyph replay. It also rejects variation instances
+  until variable-font instance construction is proven.
+- Public glyph ids remain `u32`, but CanvasKit replay validates that every id
+  fits the current `HEAPU16`/SkGlyphID path before calling `drawGlyphs`.
+- Initial CanvasKit replay is fill-only: unsupported text effects such as
+  underline/strike/emphasis mirrors, shadow, outline, emboss/engrave, shade
+  fills, ratio scaling, color glyph mode, and per-glyph transforms disqualify
+  the `GlyphRun` variant for that backend. Those runs use `TextRun` until effect
+  parity fixtures explicitly enable the glyph path.
+- Explicit glyph positions use `canvas.drawGlyphs`. `TextBlob.MakeFromGlyphs`
+  is not used for positioned `GlyphRun` replay because it relies on font default
+  advances. RSXform/TextBlob paths are future optimizations for repeated static
+  text or public `MixedPerGlyph` transforms.
 
 ## Migration Phases
 
@@ -196,10 +230,10 @@ old consumers.
   resolves to a `PortableBlob` entry in `fontResources`; otherwise it keeps the
   `TextRun` fallback. A `ConditionalExternalFont` run is not selected until a
   consumer-side font verification path exists.
-- CanvasKit: prefer portable `GlyphRun` only after the same font blob is
-  registered, otherwise replay `TextRun`. Studio still pre-scans variant sets
-  before replay so future CanvasKit glyph support suppresses the `TextRun`
-  fallback instead of double-painting it.
+- CanvasKit: pre-scans variant sets and selects `GlyphRun` only when the
+  renderer has verified the exact font blob/external font, can instantiate the
+  requested face, and the run passes the fill-only eligibility matrix above.
+  Otherwise it replays the `TextRun` fallback.
 - Canvas2D: replay `TextRun` by default. It uses the same variant-set guard but
   never selects `GlyphRun` in schema v1; glyph data is diagnostics, hit-test
   metadata, or future strict outline fallback.
