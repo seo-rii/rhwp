@@ -37,6 +37,10 @@ export interface LayerBounds {
   height: number;
 }
 
+export type LayerLayoutProfile = 'hwpCompat' | 'shapedModern';
+export type LayerLayoutMeasurementAuthority = 'legacyHwpPositions' | 'shapedAdvances';
+export type LayerShapedMeasurementMode = 'none' | 'diagnosticsOnly' | 'shadowReport' | 'authoritative';
+
 export interface PageLayerTree {
   schemaVersion?: number;
   schemaMinorVersion?: number;
@@ -55,6 +59,16 @@ export interface PageLayerTree {
   pageWidth: number;
   pageHeight: number;
   profile: LayerRenderProfile;
+  /**
+   * Layout migration policy. Schema v1 defaults to HWP-compatible layout
+   * positions; shaped measurement is diagnostic until an opt-in profile owns
+   * line-breaking changes.
+   */
+  layout?: {
+    profile?: LayerLayoutProfile;
+    measurementAuthority?: LayerLayoutMeasurementAuthority;
+    shapedMeasurement?: LayerShapedMeasurementMode;
+  };
   outputOptions?: {
     showParagraphMarks?: boolean;
     showControlCodes?: boolean;

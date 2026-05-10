@@ -96,6 +96,11 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     set_number(&value, "pageWidth", tree.page_width);
     set_number(&value, "pageHeight", tree.page_height);
     set_string(&value, "profile", tree.profile.as_str());
+    let layout = Object::new();
+    set_string(&layout, "profile", "hwpCompat");
+    set_string(&layout, "measurementAuthority", "legacyHwpPositions");
+    set_string(&layout, "shapedMeasurement", "diagnosticsOnly");
+    set_value(&value, "layout", layout.into());
     let output_options = Object::new();
     set_bool(
         &output_options,
@@ -2050,6 +2055,11 @@ mod tests {
         assert_same_number(&json_value, &js_value, "pageWidth");
         assert_same_number(&json_value, &js_value, "pageHeight");
         assert_same_string(&json_value, &js_value, "profile");
+        let json_layout = prop(&json_value, "layout");
+        let js_layout = prop(&js_value, "layout");
+        assert_same_string(&json_layout, &js_layout, "profile");
+        assert_same_string(&json_layout, &js_layout, "measurementAuthority");
+        assert_same_string(&json_layout, &js_layout, "shapedMeasurement");
 
         let json_options = prop(&json_value, "outputOptions");
         let js_options = prop(&js_value, "outputOptions");

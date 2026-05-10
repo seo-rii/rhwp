@@ -482,6 +482,32 @@ because `ExternalVerified` fonts and backend capabilities are resolved at render
 time. Unsupported CanvasKit runs must select the `TextRun` fallback instead of
 painting an approximate glyph stream.
 
+## Layout Profile Contract
+
+Text IR v2 separates renderer migration from layout migration. The default
+schema v1 layout policy is:
+
+```json
+{
+  "layout": {
+    "profile": "hwpCompat",
+    "measurementAuthority": "legacyHwpPositions",
+    "shapedMeasurement": "diagnosticsOnly"
+  }
+}
+```
+
+`hwpCompat` means existing HWP-compatible layout positions, line segmentation,
+and pagination remain authoritative. `TextShapeLowerer` may append optional
+visual variants and diagnostics, but it must not change measurement or line
+breaking.
+
+`shapedModern` is reserved for a future opt-in profile where shaped advances may
+drive measurement and line breaking. That profile must ship with separate corpus
+reports and reference expectations; it must not become the default as part of
+GlyphRun/GlyphOutline renderer work. Until then, shaped measurement deltas are
+diagnostics or shadow reports, not CI gates for the compatibility renderer.
+
 ## Non-Goals For The Current Branch
 
 - Removing `TextRun`.
