@@ -1041,6 +1041,61 @@ runTest('Renderer lifecycle', async ({ page }) => {
       .map((op) => canvaskitRenderer.fontRegistry.glyphRunReplayStatus(op, fallbackSplitTree.fontResources));
     const fallbackSplitPng = renderTree(fallbackSplitTree);
 
+    const bidiSplitTree = structuredClone(multiPartTree);
+    const bidiGlyphs = bidiSplitTree.root.ops.filter((op) => op.type === 'glyphRun');
+    bidiGlyphs[0].source.utf8Range = { start: 1, end: 2 };
+    bidiGlyphs[0].source.utf16Range = { start: 1, end: 2 };
+    bidiGlyphs[0].clusters[0].sourceRangeUtf8 = { start: 1, end: 2 };
+    bidiGlyphs[0].clusters[0].sourceRangeUtf16 = { start: 1, end: 2 };
+    bidiGlyphs[0].direction = 'rtl';
+    bidiGlyphs[0].bidiLevel = 1;
+    bidiGlyphs[0].shapeKey.direction = 'rtl';
+    bidiGlyphs[1].source.utf8Range = { start: 0, end: 1 };
+    bidiGlyphs[1].source.utf16Range = { start: 0, end: 1 };
+    bidiGlyphs[1].clusters[0].sourceRangeUtf8 = { start: 0, end: 1 };
+    bidiGlyphs[1].clusters[0].sourceRangeUtf16 = { start: 0, end: 1 };
+    bidiGlyphs[1].direction = 'ltr';
+    bidiGlyphs[1].bidiLevel = 0;
+    bidiGlyphs[1].shapeKey.direction = 'ltr';
+    const bidiSplitStatuses = bidiGlyphs
+      .map((op) => canvaskitRenderer.fontRegistry.glyphRunReplayStatus(op, bidiSplitTree.fontResources));
+    const bidiSplitPng = renderTree(bidiSplitTree);
+
+    const verticalUprightTree = structuredClone(multiPartTree);
+    verticalUprightTree.pageHeight = 112;
+    verticalUprightTree.root.bounds = { x: 0, y: 0, width: 96, height: 112 };
+    verticalUprightTree.root.ops[1] = {
+      ...verticalUprightTree.root.ops[1],
+      bbox: { x: 10, y: 8, width: 52, height: 96 },
+      isVertical: true,
+      orientation: 'vertical-upright',
+    };
+    const verticalUprightGlyphs = verticalUprightTree.root.ops.filter((op) => op.type === 'glyphRun');
+    for (const [index, op] of verticalUprightGlyphs.entries()) {
+      op.bbox = { x: 10, y: 8, width: 52, height: 96 };
+      op.shapeKey.writingMode = 'vertical-rl';
+      op.writingMode = 'vertical-rl';
+      op.orientation = 'vertical-upright';
+      op.placement.runToPage = { a: 1, b: 0, c: 0, d: 1, e: 42, f: 38 + index * 34 };
+    }
+    const verticalUprightStatuses = verticalUprightGlyphs
+      .map((op) => canvaskitRenderer.fontRegistry.glyphRunReplayStatus(op, verticalUprightTree.fontResources));
+    const verticalUprightPng = renderTree(verticalUprightTree);
+
+    const verticalSidewaysTree = structuredClone(tree);
+    assignFontIdentity(verticalSidewaysTree, 'vertical-sideways', 'fixture-font-digest-vertical-sideways');
+    glyphOp(verticalSidewaysTree).shapeKey.writingMode = 'vertical-rl';
+    glyphOp(verticalSidewaysTree).writingMode = 'vertical-rl';
+    glyphOp(verticalSidewaysTree).orientation = 'vertical-sideways';
+    glyphOp(verticalSidewaysTree).placement.runToPage = { a: 0, b: 1, c: -1, d: 0, e: 62, f: 18 };
+    verticalSidewaysTree.root.ops[1].isVertical = true;
+    verticalSidewaysTree.root.ops[1].orientation = 'vertical-sideways';
+    const verticalSidewaysPng = renderTree(verticalSidewaysTree);
+    const verticalSidewaysStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(verticalSidewaysTree),
+      verticalSidewaysTree.fontResources,
+    );
+
     return {
       status,
       png,
@@ -1063,6 +1118,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       duplicatePartPng,
       fallbackSplitStatuses,
       fallbackSplitPng,
+      bidiSplitStatuses,
+      bidiSplitPng,
+      verticalUprightStatuses,
+      verticalUprightPng,
+      verticalSidewaysStatus,
+      verticalSidewaysPng,
     };
   }, { fontBytes: glyphRunFontBytes });
 
@@ -1259,6 +1320,56 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     fallbackSplitBlackPixels > glyphBlackPixels * 1.5 && fallbackSplitRedPixels < 5,
     `CanvasKit synthetic fallback-font GlyphRun paints all selected parts black=${fallbackSplitBlackPixels}, red=${fallbackSplitRedPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.bidiSplitStatuses?.length === 2
+      && portableGlyphRunProbe.bidiSplitStatuses.every((status) => status.replayable === true),
+    `CanvasKit bidi-split GlyphRun variant parts are replayable=${JSON.stringify(portableGlyphRunProbe.bidiSplitStatuses)}`,
+  );
+  const bidiSplitBlackPixels = countPixels(
+    portableGlyphRunProbe.bidiSplitPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const bidiSplitRedPixels = countPixels(
+    portableGlyphRunProbe.bidiSplitPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  assert(
+    bidiSplitBlackPixels > glyphBlackPixels * 1.5 && bidiSplitRedPixels < 5,
+    `CanvasKit bidi-split GlyphRun paints all visual-order parts and suppresses fallback black=${bidiSplitBlackPixels}, red=${bidiSplitRedPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.verticalUprightStatuses?.length === 2
+      && portableGlyphRunProbe.verticalUprightStatuses.every((status) => status.replayable === true),
+    `CanvasKit vertical-upright GlyphRun parts are replayable=${JSON.stringify(portableGlyphRunProbe.verticalUprightStatuses)}`,
+  );
+  const verticalUprightBlackPixels = countPixels(
+    portableGlyphRunProbe.verticalUprightPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const verticalUprightRedPixels = countPixels(
+    portableGlyphRunProbe.verticalUprightPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  assert(
+    verticalUprightBlackPixels > glyphBlackPixels * 1.5 && verticalUprightRedPixels < 5,
+    `CanvasKit vertical-upright GlyphRun paints stacked parts and suppresses fallback black=${verticalUprightBlackPixels}, red=${verticalUprightRedPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.verticalSidewaysStatus?.replayable === true,
+    `CanvasKit vertical-sideways GlyphRun is replayable=${JSON.stringify(portableGlyphRunProbe.verticalSidewaysStatus)}`,
+  );
+  const verticalSidewaysBlackPixels = countPixels(
+    portableGlyphRunProbe.verticalSidewaysPng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const verticalSidewaysRedPixels = countPixels(
+    portableGlyphRunProbe.verticalSidewaysPng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  assert(
+    verticalSidewaysBlackPixels > 20 && verticalSidewaysRedPixels < 5,
+    `CanvasKit vertical-sideways GlyphRun uses explicit transform and suppresses fallback black=${verticalSidewaysBlackPixels}, red=${verticalSidewaysRedPixels}`,
   );
 
   setTestCase('canvas-layer-clip-scope-parity');

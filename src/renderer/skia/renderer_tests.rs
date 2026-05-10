@@ -2612,6 +2612,145 @@ fn native_skia_replays_synthetic_fallback_font_variant_parts() {
 }
 
 #[test]
+fn native_skia_replays_bidi_split_glyph_variant_parts_in_paint_order() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree =
+        glyph_variant_test_tree(&[glyph_id, glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                if run.variant.part_index == 0 {
+                    run.source.utf8_range = TextSourceRange::new(1, 2);
+                    run.source.utf16_range = TextSourceRange::new(1, 2);
+                    run.clusters[0].source_range_utf8 = TextSourceRange::new(1, 2);
+                    run.clusters[0].source_range_utf16 = Some(TextSourceRange::new(1, 2));
+                    run.direction = TextDirection::Rtl;
+                    run.bidi_level = Some(1);
+                    run.shape_key.direction = TextDirection::Rtl;
+                } else {
+                    run.source.utf8_range = TextSourceRange::new(0, 1);
+                    run.source.utf16_range = TextSourceRange::new(0, 1);
+                    run.clusters[0].source_range_utf8 = TextSourceRange::new(0, 1);
+                    run.clusters[0].source_range_utf16 = Some(TextSourceRange::new(0, 1));
+                    run.direction = TextDirection::Ltr;
+                    run.bidi_level = Some(0);
+                    run.shape_key.direction = TextDirection::Ltr;
+                }
+            }
+        }
+    }
+
+    let png = renderer
+        .render_png(&tree)
+        .expect("bidi split glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("bidi split glyph variant ink");
+
+    assert!(
+        bounds.max_x > 70 && bounds.max_x < 110,
+        "native Skia should paint every bidi GlyphRun part in op-stream order and suppress TextRun fallback, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_replays_vertical_upright_glyph_variant_parts() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 26.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree =
+        glyph_variant_test_tree(&[glyph_id, glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.paint_style.font_size = 26.0;
+                run.shape_key.font_instance.size_px = 26.0;
+                run.shape_key.writing_mode = WritingMode::VerticalRl;
+                run.writing_mode = WritingMode::VerticalRl;
+                run.orientation = GlyphRunOrientation::VerticalUpright;
+                run.placement.run_to_page.e = 46.0;
+                run.placement.run_to_page.f = 32.0 + f64::from(run.variant.part_index) * 30.0;
+            }
+        }
+    }
+
+    let png = renderer
+        .render_png(&tree)
+        .expect("vertical upright glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("vertical upright glyph variant ink");
+
+    assert!(
+        bounds.height() > bounds.width() && bounds.max_x < 100,
+        "native Skia should replay vertical-upright GlyphRun parts from explicit placement and suppress fallback, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_replays_vertical_sideways_glyph_variant_transform() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.shape_key.writing_mode = WritingMode::VerticalRl;
+                run.writing_mode = WritingMode::VerticalRl;
+                run.orientation = GlyphRunOrientation::VerticalSideways;
+                run.placement.run_to_page = LayerAffineTransform {
+                    a: 0.0,
+                    b: 1.0,
+                    c: -1.0,
+                    d: 0.0,
+                    e: 62.0,
+                    f: 24.0,
+                };
+            }
+        }
+    }
+
+    let png = renderer
+        .render_png(&tree)
+        .expect("vertical sideways glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("vertical sideways glyph variant ink");
+
+    assert!(
+        bounds.min_x >= 55 && bounds.max_x < 100 && bounds.min_y >= 18 && bounds.max_y < 60,
+        "native Skia should replay vertical-sideways GlyphRun transform in its explicit placement and suppress fallback, got {bounds:?}"
+    );
+}
+
+#[test]
 fn native_skia_keeps_text_fallback_for_duplicate_glyph_variant_part() {
     let renderer = SkiaLayerRenderer::new();
     let style = TextStyle {

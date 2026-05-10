@@ -291,10 +291,16 @@ expansion:
 
 ### P1b / P1.5 Follow-Up
 
-P1b should add basic bidi, vertical-upright, and vertical-sideways fixtures with
-small independent cases. P1.5 should add positive `PositionAdjusted` replay and
-expand native Skia vs CanvasKit fuzzy PNG matrices. Shaped measurement and line
-breaking remain outside this milestone.
+P1b extends the exact-quality fixture set with small independent cases for bidi
+split, vertical-upright, and vertical-sideways `GlyphRun` replay. These tests
+keep the same schema v1 contract: source/logical order comes from
+`TextSourceSpan`/cluster ranges, visual paint order comes from the leaf op
+stream, and each exported glyph run remains homogeneous in direction, bidi
+level, writing mode, and orientation. `MixedPerGlyph` remains internal-only.
+
+P1.5 should add positive `PositionAdjusted` replay and expand native Skia vs
+CanvasKit fuzzy PNG matrices. Shaped measurement and line breaking remain
+outside this milestone.
 
 ### Fixture Font Policy
 
