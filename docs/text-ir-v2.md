@@ -454,6 +454,13 @@ The current validator keeps this conservative:
 - consumers choose exactly one `variantId` per group and paint every selected
   part;
 - `glyphOutline` variants must carry `anchorOpId`;
+- schema v1 `glyphOutline` is monochrome fill-only: it may use fill color,
+  opacity, fill rules, run-local outline paths, and source mapping;
+- `glyphOutline` rejects text effects and non-outline glyph formats until each
+  has a strict profile. Shadow, stroke/outline, emboss/engrave,
+  underline/strike/emphasis, tab leaders, ratio/shade adjustments, color glyphs,
+  bitmap glyphs, and SVG-in-font glyphs are not outline-eligible in the first
+  profile;
 - `glyphOutline` must never be exported as an already-known generic `Path`
   while a `TextRun` fallback exists.
 

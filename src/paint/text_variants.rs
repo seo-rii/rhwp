@@ -48,6 +48,11 @@ pub enum TextVariantScopeError {
         variant_id: String,
         leaf: String,
     },
+    UnsupportedGlyphOutlineStyle {
+        equivalence_group: String,
+        variant_id: String,
+        leaf: String,
+    },
 }
 
 impl fmt::Display for TextVariantScopeError {
@@ -102,6 +107,14 @@ impl fmt::Display for TextVariantScopeError {
             } => write!(
                 f,
                 "glyph outline variant `{variant_id}` in group `{equivalence_group}` at leaf `{leaf}` has no anchorOpId"
+            ),
+            Self::UnsupportedGlyphOutlineStyle {
+                equivalence_group,
+                variant_id,
+                leaf,
+            } => write!(
+                f,
+                "glyph outline variant `{variant_id}` in group `{equivalence_group}` at leaf `{leaf}` is not monochrome fill-only eligible"
             ),
         }
     }
@@ -183,6 +196,15 @@ fn validate_leaf(
                 leaf: leaf_path,
             });
         }
+        if let PaintOp::GlyphOutline { outline, .. } = op {
+            if !outline.paint_style.is_fill_only_glyph_replay() {
+                return Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle {
+                    equivalence_group: outline.variant.equivalence_group.clone(),
+                    variant_id: outline.variant.variant_id.clone(),
+                    leaf: leaf_path,
+                });
+            }
+        }
         let state = group
             .variants
             .entry(variant.variant_id.clone())
@@ -259,9 +281,13 @@ mod tests {
     use crate::paint::resources::ResourceArena;
     use crate::paint::RenderProfile;
     use crate::paint::{
-        LayerNode, LayerOutputOptions, LayerTextRunPaint, TextSourceTable, TextVariantKind,
+        GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
+        LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerNode, LayerOutputOptions,
+        LayerTextRunPaint, PaintTextStyle, TextRunPlacement, TextSourceId, TextSourceRange,
+        TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
     };
     use crate::renderer::render_tree::BoundingBox;
+    use crate::renderer::{PathCommand, TextStyle};
 
     fn bbox() -> BoundingBox {
         BoundingBox::new(0.0, 0.0, 10.0, 10.0)
@@ -273,6 +299,53 @@ mod tests {
             ..LayerTextRunPaint::default()
         };
         PaintOp::TextRun { bbox: bbox(), run }
+    }
+
+    fn outline_op(variant: PaintVariantMeta, style: TextStyle) -> PaintOp {
+        PaintOp::GlyphOutline {
+            bbox: bbox(),
+            outline: LayerGlyphOutlinePaint {
+                source: TextSourceSpan {
+                    id: TextSourceId(0),
+                    utf8_range: TextSourceRange::new(0, 1),
+                    utf16_range: TextSourceRange::new(0, 1),
+                    stable_source_key: None,
+                },
+                variant,
+                paint_style: PaintTextStyle::from(&style),
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 0.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                paths: vec![LayerGlyphOutlinePath {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(1.0, 0.0),
+                        PathCommand::LineTo(1.0, 1.0),
+                        PathCommand::ClosePath,
+                    ],
+                }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        }
     }
 
     fn tree(root: LayerNode) -> PageLayerTree {
@@ -388,7 +461,7 @@ mod tests {
             None,
             vec![
                 text_op(PaintVariantMeta::text_run_default("text-1")),
-                text_op(outline_part),
+                outline_op(outline_part, TextStyle::default()),
             ],
         ));
         assert!(matches!(
@@ -416,9 +489,39 @@ mod tests {
             None,
             vec![
                 text_op(PaintVariantMeta::text_run_default("text-1")),
-                text_op(outline_part),
+                outline_op(outline_part, TextStyle::default()),
             ],
         ));
         validate_text_variant_scope(&tree).unwrap();
+    }
+
+    #[test]
+    fn rejects_glyph_outline_with_non_monochrome_style() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-text-1".to_string()),
+            local_paint_order: Some(0),
+        };
+        let mut style = TextStyle::default();
+        style.shadow_type = 1;
+        let tree = tree(LayerNode::leaf(
+            bbox(),
+            None,
+            vec![
+                text_op(PaintVariantMeta::text_run_default("text-1")),
+                outline_op(outline_part, style),
+            ],
+        ));
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle { .. })
+        ));
     }
 }
