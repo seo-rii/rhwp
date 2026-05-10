@@ -191,8 +191,11 @@ old consumers.
 
 ## Backend Policy
 
-- Native Skia: prefer portable `GlyphRun` when available, otherwise replay
-  `TextRun`.
+- Native Skia: preselects text variant sets before replay. It now draws
+  `GlyphRun` variants when the run is strict-eligible and its `ShapeKey`
+  resolves to a `PortableBlob` entry in `fontResources`; otherwise it keeps the
+  `TextRun` fallback. A `ConditionalExternalFont` run is not selected until a
+  consumer-side font verification path exists.
 - CanvasKit: prefer portable `GlyphRun` only after the same font blob is
   registered, otherwise replay `TextRun`.
 - Canvas2D: replay `TextRun` by default. Use glyph data only for diagnostics,

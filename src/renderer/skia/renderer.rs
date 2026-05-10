@@ -1,12 +1,16 @@
 use skia_safe::{
-    surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Paint, PathBuilder, PictureRecorder,
-    Rect, Shaper,
+    surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Matrix, Paint, PathBuilder,
+    PictureRecorder, Rect, Shaper,
 };
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
-use crate::paint::{CacheHint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena};
+use crate::paint::{
+    CacheHint, GlyphRunOrientation, GlyphRunReplayEligibility, LayerGlyphRunPaint, LayerNode,
+    LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextVariantQuality,
+};
 use crate::renderer::layer_renderer::{
     LayerRasterRenderer, LayerRenderError, LayerRenderResult, RasterOutputFormat,
     RasterRenderOptions, RasterRenderOutput,
@@ -79,6 +83,66 @@ fn raster_dimension(length: f64, scale: f64, max_dimension: i32) -> LayerRenderR
 
 fn duration_ns(duration: Duration) -> u64 {
     duration.as_nanos().min(u128::from(u64::MAX)) as u64
+}
+
+fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &ResourceArena) -> bool {
+    if run.glyph_ids.is_empty()
+        || run.glyph_ids.len() != run.positions.len()
+        || run
+            .advances
+            .as_ref()
+            .is_some_and(|advances| advances.len() != run.glyph_ids.len())
+        || run.glyph_transforms.is_some()
+        || run.orientation == GlyphRunOrientation::MixedPerGlyph
+        || !run.diagnostics.strict_visual_eligible
+        || run.diagnostics.missing_glyph_count != 0
+        || run.diagnostics.cluster_mismatch_count != 0
+        || !matches!(
+            run.diagnostics.quality,
+            TextVariantQuality::Exact | TextVariantQuality::PositionAdjusted
+        )
+        || run.diagnostics.replay_eligibility != GlyphRunReplayEligibility::Portable
+    {
+        return false;
+    }
+    let font_resources = resources.font_resources();
+    let Some(face) = font_resources
+        .faces
+        .iter()
+        .find(|face| face.id == run.shape_key.font_instance.face_key)
+    else {
+        return false;
+    };
+    let Some(blob) = font_resources
+        .blobs
+        .iter()
+        .find(|blob| blob.id == face.blob_key)
+    else {
+        return false;
+    };
+    if !blob.portability.is_self_contained_replayable() {
+        return false;
+    }
+    let transform = run.placement.run_to_page;
+    [
+        transform.a,
+        transform.b,
+        transform.c,
+        transform.d,
+        transform.e,
+        transform.f,
+        run.placement.baseline_y,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+        && run
+            .glyph_ids
+            .iter()
+            .all(|glyph_id| *glyph_id <= u16::MAX as u32)
+        && run
+            .positions
+            .iter()
+            .all(|position| position.x.is_finite() && position.y.is_finite())
 }
 
 fn calc_arrow_dims(stroke_width: f64, line_len: f64, arrow_size: u8) -> (f64, f64) {
@@ -471,7 +535,38 @@ impl SkiaLayerRenderer {
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
                 replay.push_cache_hint(*cache_hint);
+                let mut selected_text_variants = HashMap::new();
                 for op in ops {
+                    if let PaintOp::GlyphRun { run, .. } = op {
+                        if native_skia_can_replay_glyph_run(run, resources) {
+                            selected_text_variants
+                                .entry(run.variant.equivalence_group.clone())
+                                .or_insert_with(|| run.variant.variant_id.clone());
+                        }
+                    }
+                }
+                for op in ops {
+                    let skip_unselected_text_variant =
+                        match op {
+                            PaintOp::TextRun { run, .. } => {
+                                run.variant.as_ref().is_some_and(|variant| {
+                                    match selected_text_variants.get(&variant.equivalence_group) {
+                                        Some(selected) => selected != &variant.variant_id,
+                                        None => false,
+                                    }
+                                })
+                            }
+                            PaintOp::GlyphRun { run, .. } => {
+                                match selected_text_variants.get(&run.variant.equivalence_group) {
+                                    Some(selected) => selected != &run.variant.variant_id,
+                                    None => true,
+                                }
+                            }
+                            _ => false,
+                        };
+                    if skip_unselected_text_variant {
+                        continue;
+                    }
                     self.render_op(canvas, op, resources, replay);
                 }
                 replay.pop_cache_hint();
@@ -605,10 +700,90 @@ impl SkiaLayerRenderer {
                     self.render_text_run(canvas, bbox, run, replay);
                 }
             }
-            PaintOp::GlyphRun { .. } => {
-                // GlyphRun is an optional TextRun alternative in schema v1.
-                // Native Skia keeps selecting the TextRun fallback until
-                // portable font registration and glyph replay are enabled.
+            PaintOp::GlyphRun { run, .. } => {
+                if !native_skia_can_replay_glyph_run(run, resources) {
+                    return;
+                }
+                let font_style = crate::renderer::TextStyle {
+                    font_family: run.paint_style.font_family.clone(),
+                    font_size: run.paint_style.font_size,
+                    color: run.paint_style.color,
+                    bold: run.paint_style.bold,
+                    italic: run.paint_style.italic,
+                    ..Default::default()
+                };
+                let font = make_font(&font_style, &self.font_mgr, "A");
+                let transform = run.placement.run_to_page;
+                let matrix = Matrix::from_affine(&[
+                    transform.a as f32,
+                    transform.b as f32,
+                    transform.c as f32,
+                    transform.d as f32,
+                    transform.e as f32,
+                    transform.f as f32,
+                ]);
+                let mut fill_paint = Paint::default();
+                fill_paint.set_anti_alias(true);
+                fill_paint.set_style(skia_safe::paint::Style::Fill);
+                fill_paint.set_color(colorref_to_skia(run.paint_style.color, 1.0));
+
+                let mut shadow_paint = Paint::default();
+                shadow_paint.set_anti_alias(true);
+                shadow_paint.set_style(skia_safe::paint::Style::Fill);
+                shadow_paint.set_color(colorref_to_skia(run.paint_style.shadow_color, 1.0));
+
+                let mut stroke_paint = Paint::default();
+                stroke_paint.set_anti_alias(true);
+                stroke_paint.set_style(skia_safe::paint::Style::Stroke);
+                stroke_paint.set_stroke_width((run.paint_style.font_size as f32 / 25.0).max(0.5));
+                stroke_paint.set_color(colorref_to_skia(run.paint_style.color, 1.0));
+
+                let mut highlight_paint = Paint::default();
+                highlight_paint.set_anti_alias(true);
+                highlight_paint.set_style(skia_safe::paint::Style::Fill);
+                highlight_paint.set_color(Color::WHITE);
+
+                let draw_glyph_paths = |paint: &Paint, x_offset: f32, y_offset: f32| {
+                    for (glyph_id, position) in run.glyph_ids.iter().zip(run.positions.iter()) {
+                        let glyph_id = *glyph_id as u16;
+                        if let Some(path) = font.get_path(glyph_id) {
+                            let path = path.with_offset((
+                                position.x as f32 + x_offset,
+                                position.y as f32 + y_offset,
+                            ));
+                            canvas.draw_path(&path, paint);
+                        }
+                    }
+                };
+
+                canvas.save();
+                canvas.concat(&matrix);
+                if run.paint_style.emboss || run.paint_style.engrave {
+                    let offset = (run.paint_style.font_size as f32 / 20.0).max(1.0);
+                    if run.paint_style.emboss {
+                        draw_glyph_paths(&highlight_paint, -offset, -offset);
+                        draw_glyph_paths(&shadow_paint, offset, offset);
+                    } else {
+                        draw_glyph_paths(&shadow_paint, -offset, -offset);
+                        draw_glyph_paths(&highlight_paint, offset, offset);
+                    }
+                    draw_glyph_paths(&fill_paint, 0.0, 0.0);
+                } else {
+                    if run.paint_style.shadow_type > 0 {
+                        draw_glyph_paths(
+                            &shadow_paint,
+                            run.paint_style.shadow_offset_x as f32,
+                            run.paint_style.shadow_offset_y as f32,
+                        );
+                    }
+                    if run.paint_style.outline_type > 0 {
+                        draw_glyph_paths(&highlight_paint, 0.0, 0.0);
+                        draw_glyph_paths(&stroke_paint, 0.0, 0.0);
+                    } else {
+                        draw_glyph_paths(&fill_paint, 0.0, 0.0);
+                    }
+                }
+                canvas.restore();
             }
             PaintOp::CharOverlap { bbox, overlap } => {
                 let mut run = crate::paint::LayerTextRunPaint {
