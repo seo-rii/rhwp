@@ -2441,6 +2441,43 @@ fn native_skia_keeps_text_fallback_for_unsupported_glyph_run_effects() {
 }
 
 #[test]
+fn native_skia_replays_glyph_run_shadow_effect() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.paint_style.shadow_type = 1;
+                run.paint_style.shadow_color = 0x0000_0000;
+                run.paint_style.shadow_offset_x = 4.0;
+                run.paint_style.shadow_offset_y = 2.0;
+            }
+        }
+    }
+    let png = renderer
+        .render_png(&tree)
+        .expect("shadow glyph variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("shadow glyph variant ink");
+
+    assert!(
+        bounds.max_x < 100,
+        "native Skia should select a shadow-capable GlyphRun variant instead of TextRun fallback, got {bounds:?}"
+    );
+}
+
+#[test]
 fn native_skia_replays_all_parts_of_selected_glyph_variant_set() {
     let renderer = SkiaLayerRenderer::new();
     let style = TextStyle {

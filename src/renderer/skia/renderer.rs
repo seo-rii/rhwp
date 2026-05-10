@@ -102,7 +102,22 @@ fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &Resour
             TextVariantQuality::Exact | TextVariantQuality::PositionAdjusted
         )
         || run.diagnostics.replay_eligibility != GlyphRunReplayEligibility::Portable
-        || !run.paint_style.is_fill_only_glyph_replay()
+    {
+        return false;
+    }
+    let ratio = if run.paint_style.ratio > 0.0 {
+        run.paint_style.ratio
+    } else {
+        1.0
+    };
+    if (ratio - 1.0).abs() > 0.001
+        || !run.paint_style.tab_leaders.is_empty()
+        || run.paint_style.underline != crate::model::style::UnderlineType::None
+        || run.paint_style.strikethrough
+        || run.paint_style.superscript
+        || run.paint_style.subscript
+        || run.paint_style.emphasis_dot != 0
+        || (run.paint_style.shade_color & 0x00FF_FFFF) != 0x00FF_FFFF
     {
         return false;
     }

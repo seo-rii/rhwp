@@ -240,13 +240,15 @@ instantiation for the exported face:
 ## Backend Policy
 
 - Native Skia: preselects text variant sets before replay. It now draws
-  fill-only `GlyphRun` variants when the run is strict-eligible and its
-  `ShapeKey` resolves to a `PortableBlob` entry in `fontResources`; otherwise
-  it keeps the `TextRun` fallback. A `ConditionalExternalFont` run is not
-  selected until a consumer-side font verification path exists, and runs with
-  effects that are still implemented by TextRun replay stay on the fallback
-  path. The selector treats `GlyphRun` alternatives as complete variant sets:
-  if any part is missing or unsupported, the `TextRun` fallback remains selected.
+  `GlyphRun` variants when the run is strict-eligible, its `ShapeKey` resolves
+  to a `PortableBlob` entry in `fontResources`, and every effect used by that
+  run is covered by native glyph replay. Fill, shadow, outline, emboss, and
+  engrave use native glyph/path replay; underline, strike, emphasis-dot, tab
+  leader, ratio, shade, superscript, and subscript still keep the `TextRun`
+  fallback. A `ConditionalExternalFont` run is not selected until a
+  consumer-side font verification path exists. The selector treats `GlyphRun`
+  alternatives as complete variant sets: if any part is missing or unsupported,
+  the `TextRun` fallback remains selected.
 - CanvasKit: pre-scans variant sets and selects `GlyphRun` only when the
   renderer has verified the exact font blob/external font, can instantiate the
   requested face, and the run passes the fill-only eligibility matrix above.
