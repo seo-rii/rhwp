@@ -170,7 +170,6 @@ impl LayerBuilder {
                         || run.style.strikethrough
                         || run.style.emphasis_dot > 0)
                         .then_some(TextLegacyVisualState::Mirror),
-                    ..TextLegacyVisuals::default()
                 };
                 let text_op = PaintOp::TextRun {
                     bbox: node.bbox,

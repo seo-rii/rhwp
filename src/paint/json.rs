@@ -74,28 +74,16 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     if has_variant_groups {
         buf.push_str(",\"text.variantGroups\"");
     }
-    if externalized_visuals
-        .iter()
-        .any(|visual| *visual == "charOverlap")
-    {
+    if externalized_visuals.contains(&"charOverlap") {
         buf.push_str(",\"text.charOverlapOp\"");
     }
-    if externalized_visuals
-        .iter()
-        .any(|visual| *visual == "controlMarks")
-    {
+    if externalized_visuals.contains(&"controlMarks") {
         buf.push_str(",\"text.controlMarkOp\"");
     }
-    if externalized_visuals
-        .iter()
-        .any(|visual| *visual == "tabLeaders")
-    {
+    if externalized_visuals.contains(&"tabLeaders") {
         buf.push_str(",\"text.tabLeaderOp\"");
     }
-    if externalized_visuals
-        .iter()
-        .any(|visual| *visual == "decorations")
-    {
+    if externalized_visuals.contains(&"decorations") {
         buf.push_str(",\"text.decorationOp\"");
     }
     buf.push_str("],\"optionalFeatures\":[");

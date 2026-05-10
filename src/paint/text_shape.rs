@@ -202,8 +202,7 @@ impl<'a> TextShapeLowerer<'a> {
         let excluded_by_cluster = run.clusters.iter().any(|cluster| {
             cluster
                 .flags
-                .iter()
-                .any(|flag| *flag == TextClusterFlag::NotShapingCandidate)
+                .contains(&TextClusterFlag::NotShapingCandidate)
         });
         let excluded_by_legacy_visual = run.char_overlap.is_some()
             || run
