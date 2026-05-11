@@ -1007,7 +1007,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       shadowOffsetX: 8,
       shadowOffsetY: 0,
     };
-    const shadowPng = renderTree(shadowTree);
+    const shadowRenderResult = renderTreeWithDiagnostics(shadowTree);
+    const shadowPng = shadowRenderResult.png;
     const shadowStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
       glyphOp(shadowTree),
       shadowTree.fontResources,
@@ -1020,7 +1021,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       color: '#0000cc',
       outlineType: 1,
     };
-    const outlinePng = renderTree(outlineTree);
+    const outlineRenderResult = renderTreeWithDiagnostics(outlineTree);
+    const outlinePng = outlineRenderResult.png;
     const outlineStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
       glyphOp(outlineTree),
       outlineTree.fontResources,
@@ -1187,8 +1189,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       positionAdjustedStrictPng,
       shadowStatus,
       shadowPng,
+      shadowSelectionDiagnostics: shadowRenderResult.textVariantSelectionDiagnostics,
       outlineStatus,
       outlinePng,
+      outlineSelectionDiagnostics: outlineRenderResult.textVariantSelectionDiagnostics,
       selectionDiagnostics,
       unsupportedSelectionDiagnostics,
       multiPartStatuses,
@@ -1235,7 +1239,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     selectedReport?.selectedVariantId === 'glyphRun'
-      && selectedReport?.selectedReason === 'glyphRunEligible',
+      && selectedReport?.selectedVariantKind === 'glyphRun'
+      && selectedReport?.selectedReason === 'glyphRunStrictEligible'
+      && selectedReport?.backend === 'canvaskit'
+      && selectedReport?.renderProfile === 'screen'
+      && selectedReport?.partsExpected === 1
+      && selectedReport?.partsReplayed === 1
+      && selectedReport?.fontVerification?.digestMatched === true
+      && selectedReport?.fontVerification?.exactFaceInstantiated === true
+      && selectedReport?.fontVerification?.effectSupported === true,
     `CanvasKit records selected GlyphRun variant=${JSON.stringify(selectedReport)}`,
   );
   assert(
@@ -1254,7 +1266,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     unsupportedSelectionReport?.selectedVariantId === 'textRun'
-      && unsupportedSelectionReport?.selectedReason === 'defaultFallback'
+      && unsupportedSelectionReport?.selectedVariantKind === 'textRun'
+      && unsupportedSelectionReport?.selectedReason === 'defaultTextRunFallback'
       && unsupportedSelectionReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphRun'
           && variant.reasons.includes('glyphRunUnderlineUnsupported'),
@@ -1415,6 +1428,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     portableGlyphRunProbe.shadowStatus?.replayable === true,
     `CanvasKit GlyphRun accepts supported offset shadow replay=${JSON.stringify(portableGlyphRunProbe.shadowStatus)}`,
   );
+  const shadowSelectionReport = portableGlyphRunProbe.shadowSelectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    shadowSelectionReport?.selectedVariantId === 'glyphRun'
+      && shadowSelectionReport?.selectedReason === 'glyphRunStrictEligible'
+      && shadowSelectionReport?.fontVerification?.effectSupported === true,
+    `CanvasKit GlyphRun shadow records effect-supported selection=${JSON.stringify(shadowSelectionReport)}`,
+  );
   const shadowRedPixels = countPixels(
     portableGlyphRunProbe.shadowPng,
     (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
@@ -1434,6 +1456,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     portableGlyphRunProbe.outlineStatus?.replayable === true,
     `CanvasKit GlyphRun accepts supported outline replay=${JSON.stringify(portableGlyphRunProbe.outlineStatus)}`,
+  );
+  const outlineSelectionReport = portableGlyphRunProbe.outlineSelectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    outlineSelectionReport?.selectedVariantId === 'glyphRun'
+      && outlineSelectionReport?.selectedReason === 'glyphRunStrictEligible'
+      && outlineSelectionReport?.fontVerification?.effectSupported === true,
+    `CanvasKit GlyphRun outline records effect-supported selection=${JSON.stringify(outlineSelectionReport)}`,
   );
   const outlineRedPixels = countPixels(
     portableGlyphRunProbe.outlinePng,

@@ -55,6 +55,7 @@ export interface LayerTextVariantFontVerificationReport {
   exactFaceInstantiated?: boolean;
   faceIndexSupported?: boolean;
   variationSupported?: boolean;
+  effectSupported?: boolean;
   replayEligible: boolean;
   reason?: LayerTextVariantRejectReason;
 }
