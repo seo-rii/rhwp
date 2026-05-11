@@ -128,6 +128,17 @@ export interface PageLayerTree {
     placementAuthority?: 'compatibilityProjection' | 'clusterPlacement';
     externalizedVisuals?: LayerTextLegacyVisualKind[];
   };
+  /**
+   * Schema v2 text variant envelope contract. v2 writers may use
+   * `PaintOp::Text { variants }` as the canonical text paint slot while v1
+   * compatibility exports keep the flattened TextRun/GlyphRun/GlyphOutline ops.
+   */
+  textV2?: {
+    canonicalOp?: 'text';
+    fallbackPolicy?: LayerTextFallbackPolicy;
+    strictVisualFallbackFree?: boolean;
+    paintOrderSlots?: 'required' | 'reserved';
+  };
   resources?: LayerResources;
   fontResources?: LayerFontResources;
   root: LayerNode;
@@ -143,6 +154,10 @@ export type LayerTreeFeature =
   | 'text.paintStyle'
   | 'text.sourceTable'
   | 'text.sourceSpan'
+  | 'text.variants'
+  | 'text.paintOrderSlot'
+  | 'text.strictVisualFallbackFree'
+  | 'text.crossScopeVariants'
   | 'text.v2.placement'
   | 'text.v2.clusters'
   | 'text.projectionKind'
@@ -154,11 +169,17 @@ export type LayerTreeFeature =
   | 'text.shapeDiagnostics'
   | 'text.glyphRun'
   | 'text.outlineGlyph'
+  | 'text.glyphOutline.monochromeFill'
+  | 'text.glyphOutline.monochromeFillStroke'
+  | 'text.glyphOutline.colorLayers'
+  | 'text.glyphOutline.bitmapGlyph'
+  | 'text.glyphOutline.svgGlyph'
   | 'text.specialVisualOps'
   | 'text.charOverlapOp'
   | 'text.controlMarkOp'
   | 'text.tabLeaderOp'
   | 'text.decorationOp'
+  | 'text.layout.shapedModern'
   | 'text.vertical.mixedPerGlyph';
 
 export interface LayerResources {
@@ -295,6 +316,7 @@ export interface LayerLeafNode {
 
 export type LayerKnownPaintOp =
   | LayerPageBackgroundOp
+  | LayerTextOp
   | LayerTextRunOp
   | LayerGlyphRunOp
   | LayerGlyphOutlineOp
@@ -323,6 +345,7 @@ export type LayerPaintOpLike = LayerKnownPaintOp | LayerUnknownPaintOp;
 
 const KNOWN_LAYER_PAINT_OP_TYPES = new Set([
   'pageBackground',
+  'text',
   'textRun',
   'glyphRun',
   'glyphOutline',
@@ -504,6 +527,10 @@ export interface LayerTextClusterPlacement {
 }
 
 export type LayerTextVariantKind = 'textRun' | 'glyphRun' | 'glyphOutline';
+export type LayerTextFallbackPolicy = 'required' | 'none';
+export type LayerTextVariantSelectionPolicy = 'exclusiveVariantSet';
+export type LayerTextPaintOrderSlotId = string;
+export type LayerTextPaintScopeRef = string;
 export type LayerTextVariantQuality =
   | 'exact'
   | 'positionAdjusted'
@@ -532,6 +559,37 @@ export interface LayerTextVariantMeta {
   anchorOpId?: string;
   /** Ordering inside the selected variant set at the anchor slot. */
   localPaintOrder?: number;
+}
+
+export type LayerTextVariantPayload = LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp;
+
+export interface LayerTextVariantPart {
+  partIndex?: number;
+  partCount?: number;
+  localPaintOrder?: number;
+  scopeRef?: LayerTextPaintScopeRef;
+  payload: LayerTextVariantPayload;
+}
+
+export interface LayerTextVariantSet {
+  variantId: string;
+  kind: LayerTextVariantKind;
+  requiredFeatures?: LayerTreeFeature[];
+  optionalFeatures?: LayerTreeFeature[];
+  quality?: LayerTextVariantQuality;
+  parts: LayerTextVariantPart[];
+}
+
+export interface LayerTextOp {
+  id?: string;
+  type: 'text';
+  bbox: LayerBounds;
+  paintOrderSlotId: LayerTextPaintOrderSlotId;
+  source?: LayerTextSourceSpan;
+  selectionPolicy?: LayerTextVariantSelectionPolicy;
+  defaultVariantId: string;
+  fallbackPolicy?: LayerTextFallbackPolicy;
+  variants: LayerTextVariantSet[];
 }
 
 export interface LayerVariationAxisValue {

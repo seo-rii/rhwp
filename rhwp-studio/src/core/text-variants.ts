@@ -3,7 +3,9 @@ import type {
   LayerGlyphRunOp,
   LayerPaintOp,
   LayerPaintOpLike,
+  LayerTextRunOp,
   LayerTextVariantMeta,
+  LayerTextVariantPayload,
 } from './types';
 import { isKnownLayerPaintOp } from './types';
 
@@ -142,7 +144,9 @@ export function layerTextVariantOpsForLeaf(
   rootOps: readonly LayerPaintOpLike[],
   variantOps: readonly LayerPaintOpLike[] | undefined,
 ): LayerPaintOp[] {
-  const ops = rootOps.filter(isKnownLayerPaintOp);
+  const ops = rootOps
+    .filter(isKnownLayerPaintOp)
+    .flatMap(expandTextPaintOp);
   if (!variantOps?.length) {
     return ops;
   }
@@ -188,6 +192,71 @@ export function layerTextVariantOpsForLeaf(
     merged.push(...sidecars.sort(compareVariantPaintOrder));
   }
   return merged;
+}
+
+function expandTextPaintOp(op: LayerPaintOp): LayerPaintOp[] {
+  if (op.type !== 'text') {
+    return [op];
+  }
+
+  const paintSlotId = op.id ?? op.paintOrderSlotId;
+  const equivalenceGroup = paintSlotId;
+  const expanded: LayerPaintOp[] = [];
+  for (const variantSet of op.variants) {
+    const declaredPartCount = variantSet.parts.length;
+    for (const [index, part] of variantSet.parts.entries()) {
+      const payload = part.payload;
+      if (!isTextVariantPayload(payload)) {
+        continue;
+      }
+      const partIndex = part.partIndex ?? index;
+      const partCount = part.partCount ?? declaredPartCount;
+      const isDefaultFallback = op.fallbackPolicy !== 'none'
+        && variantSet.variantId === op.defaultVariantId
+        && variantSet.kind === 'textRun';
+      const payloadId =
+        layerPaintOpId(payload)
+        ?? (isDefaultFallback ? paintSlotId : `${paintSlotId}:${variantSet.variantId}:${partIndex}`);
+      expanded.push(withTextVariantMeta(payload, payloadId, {
+        equivalenceGroup,
+        variantId: variantSet.variantId,
+        variantKind: variantSet.kind,
+        partIndex,
+        partCount,
+        isDefaultFallback,
+        requires: variantSet.requiredFeatures,
+        quality: variantSet.quality,
+        anchorOpId: paintSlotId,
+        localPaintOrder: part.localPaintOrder ?? partIndex,
+      }));
+    }
+  }
+  return expanded;
+}
+
+function isTextVariantPayload(payload: LayerTextVariantPayload): payload is LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp {
+  return payload.type === 'textRun'
+    || payload.type === 'glyphRun'
+    || payload.type === 'glyphOutline';
+}
+
+function withTextVariantMeta(
+  payload: LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp,
+  id: string,
+  variant: LayerTextVariantMeta,
+): LayerPaintOp {
+  if (payload.type === 'textRun') {
+    return { ...payload, id, variant };
+  }
+  if (payload.type === 'glyphRun') {
+    return { ...payload, id, variant };
+  }
+  return {
+    ...payload,
+    id,
+    anchorOpId: payload.anchorOpId ?? variant.anchorOpId,
+    variant,
+  };
 }
 
 export function selectLayerTextVariantSetsWithReport(

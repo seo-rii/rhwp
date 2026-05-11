@@ -277,6 +277,10 @@ export class Canvas2DLayerRenderer {
           this.renderPageBackground(ctx, op);
         }, op.bbox);
         return;
+      case 'text':
+        // Schema v2 Text ops are expanded into concrete variant payloads before
+        // leaf replay. If one reaches this switch, keep it non-painting.
+        return;
       case 'textRun':
         this.withCurrentOverlayClip(ctx, 0, () => {
           this.renderTextRun(ctx, op);

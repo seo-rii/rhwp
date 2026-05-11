@@ -159,6 +159,17 @@ old consumers.
   must live in the same leaf and paint-order scope, and every group must keep a
   default `TextRun` fallback. Cross-leaf or cross-clip variants require a future
   `paintOrderSlotId`/variant table design.
+- Schema v2 is now the Phase 2 envelope for that future design rather than a
+  late cleanup. It should introduce a canonical `PaintOp::Text { variants }`
+  text paint slot, `paintOrderSlotId`, explicit fallback policy, and feature
+  gates for strict/fallback-free text, cross-scope variants, richer
+  `GlyphOutline` payloads, shapedModern layout authority, and public
+  mixed-per-glyph orientation. The v2 reader/validator should land before broad
+  writer enablement; v1 compatibility export remains available.
+- In schema v2, `anchorOpId` is a v1 bridge concept. The `Text` op itself owns
+  the paint slot through `paintOrderSlotId`; compatibility downgrades may
+  flatten the text container back into v1 root `TextRun` plus optional
+  variant-group ops.
 
 ## Font And Shape Contract
 
@@ -611,10 +622,11 @@ Schema v1 should close as a compatibility-safe text replay schema:
   range, explicit positions, and effect-specific eligibility.
 - shaped measurement remains report-only telemetry outside the replay schema.
 
-Schema v2 or explicit future strict/layout profiles should carry larger changes:
-`PaintOp::Text { variants }`, fallback-free text exports, cross-scope variants,
-`paintOrderSlotId`, richer `GlyphOutline` payloads, public mixed-per-glyph
-orientation, and shapedModern layout authority.
+Schema v2 is the Phase 2 envelope for larger changes: `PaintOp::Text {
+variants }`, fallback-free text exports, cross-scope variants,
+`paintOrderSlotId`, richer `GlyphOutline` payload kinds, public
+mixed-per-glyph orientation, and shapedModern layout metadata. Those features
+remain profile/feature gated even after the schema shape exists.
 
 ## Phase 2 Entry Gate
 
@@ -639,17 +651,26 @@ The v1 closeout gate is:
 - shaped measurement stays telemetry outside the replay schema and does not
   infer `lineBreakWouldChange`.
 
-Phase 2 can then choose one explicit axis at a time:
+Phase 2 now opens schema v2 early, but still chooses one explicit emission axis
+at a time. The preferred order is:
 
-- `variantOps` dual-reader / single-writer migration before richer outline
-  payloads;
-- small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
+- schema v2 root/profile metadata, `PaintOp::Text { variants }`, and
+  `paintOrderSlotId` reader/validator;
+- v1-to-v2 lowering and v2-to-v1 downgrade only when a `TextRun` fallback and
+  same-scope variants make the downgrade faithful;
+- v2 compatibility writer as an opt-in path with `TextRun` fallback required;
+- strictVisual writer only when required features are complete and
+  `fallbackPolicy=none` is explicitly requested;
 - richer `GlyphOutline` payload design, starting with a stroke subset only if
   bbox inflation, fill/stroke order, SVG/Canvas2D/native fixtures, and reject
   reasons are fixed;
-- shapedModern layout work as a separate layout migration milestone;
-- schema v2 cleanup such as `PaintOp::Text { variants }`, fallback-free text
-  exports, cross-scope variants, or `paintOrderSlotId`.
+- small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
+- shapedModern layout work as a separate opt-in layout migration milestone.
+
+The Studio reader accepts the first v2 text envelope shape by expanding a
+`text` paint op into its concrete `TextRun`, `GlyphRun`, and `GlyphOutline`
+variant payloads before running the existing variant-set selection logic. This
+keeps the reader ahead of the writer while preserving v1 replay behavior.
 
 ## Non-Goals For The Current Branch
 

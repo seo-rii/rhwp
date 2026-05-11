@@ -1665,6 +1665,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
       },
       ...overrides,
     });
+    const makeTextRunOp = (id = 'op-text-outline') => ({
+      id,
+      type: 'textRun',
+      bbox: { x: 8, y: 26, width: 40, height: 28 },
+      source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+      variant: textVariant,
+      text: 'A',
+      style,
+      paintStyle: style,
+      positions: [0, 22],
+      baseline: 48,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+    });
     const makeTree = (
       outlineStyle = style,
       paths = [outlinePath],
@@ -1691,21 +1706,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         bounds: { x: 0, y: 0, width: 80, height: 70 },
         cacheHint: 'none',
         ops: [
-          {
-            id: 'op-text-outline',
-            type: 'textRun',
-            bbox: { x: 8, y: 26, width: 40, height: 28 },
-            source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
-            variant: textVariant,
-            text: 'A',
-            style,
-            paintStyle: style,
-            positions: [0, 22],
-            baseline: 48,
-            rotation: 0,
-            isVertical: false,
-            orientation: 'horizontal',
-          },
+          makeTextRunOp(),
           ...(sidecar ? [] : [outlineOp]),
         ],
       },
@@ -1714,6 +1715,58 @@ runTest('Renderer lifecycle', async ({ page }) => {
         : {}),
       });
     };
+    const makeV2TextTree = () => ({
+      schemaVersion: 2,
+      schemaMinorVersion: 0,
+      pageWidth: 80,
+      pageHeight: 70,
+      profile: 'screen',
+      textV2: {
+        canonicalOp: 'text',
+        fallbackPolicy: 'required',
+        strictVisualFallbackFree: false,
+        paintOrderSlots: 'required',
+      },
+      resources: { tableId: 502, images: [], svgFragments: [] },
+      textSources: [{
+        id: 17,
+        text: 'A',
+        utf8Range: { start: 0, end: 1 },
+        utf16Range: { start: 0, end: 1 },
+        annotations: [],
+      }],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1701,
+        bounds: { x: 0, y: 0, width: 80, height: 70 },
+        cacheHint: 'none',
+        ops: [{
+          id: 'op-text-v2-outline',
+          type: 'text',
+          bbox: { x: 8, y: 8, width: 44, height: 46 },
+          paintOrderSlotId: 'slot-v2-outline',
+          source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+          selectionPolicy: 'exclusiveVariantSet',
+          defaultVariantId: 'textRun',
+          fallbackPolicy: 'required',
+          variants: [
+            {
+              variantId: 'textRun',
+              kind: 'textRun',
+              quality: 'exact',
+              parts: [{ payload: makeTextRunOp() }],
+            },
+            {
+              variantId: 'glyphOutline',
+              kind: 'glyphOutline',
+              requiredFeatures: ['text.outlineGlyph', 'text.glyphOutline.monochromeFill'],
+              quality: 'exact',
+              parts: [{ payload: makeOutlineOp(style, [outlinePath], { id: 'op-outline-v2-payload' }) }],
+            },
+          ],
+        }],
+      },
+    });
     const strokePayload = {
       payloadKind: 'monochromeFillStroke',
       stroke: {
@@ -1761,6 +1814,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
         }],
       ), true);
       const strokePayloadSidecar = render(makeTree(style, [outlinePath], true, strokePayload), true);
+      const v2Fallback = render(makeV2TextTree(), false);
+      const v2Strict = render(makeV2TextTree(), true);
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
       const unsupportedPayload = render(makeTree(style, []), true);
       return {
@@ -1770,6 +1825,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
         duplicateSidecar,
         invalidAnchorSidecar,
         strokePayloadSidecar,
+        v2Fallback,
+        v2Strict,
         unsupported,
         unsupportedPayload,
       };
@@ -1883,6 +1940,39 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && strokePayloadSidecarReport?.outlineEligibility?.replayEligible === false,
     `Canvas2D strict profile rejects reserved stroke outline payload=${JSON.stringify(strokePayloadSidecarReport)}`,
   );
+  const v2FallbackReport = canvas2dGlyphOutlineProbe.v2Fallback?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'op-text-v2-outline',
+  );
+  assert(
+    v2FallbackReport?.selectedVariantId === 'textRun'
+      && v2FallbackReport?.selectedVariantKind === 'textRun'
+      && v2FallbackReport?.selectedReason === 'defaultTextRunFallback'
+      && v2FallbackReport?.partsExpected === 1
+      && v2FallbackReport?.partsReplayed === 1
+      && v2FallbackReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('backendDoesNotSupportVariant'),
+      ),
+    `Canvas2D default profile reads schema v2 Text envelope as fallback=${JSON.stringify(v2FallbackReport)}`,
+  );
+  const v2StrictReport = canvas2dGlyphOutlineProbe.v2Strict?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'op-text-v2-outline',
+  );
+  assert(
+    v2StrictReport?.selectedVariantId === 'glyphOutline'
+      && v2StrictReport?.selectedVariantKind === 'glyphOutline'
+      && v2StrictReport?.selectedReason === 'glyphOutlineStrictProfile'
+      && v2StrictReport?.anchorOpId === 'op-text-v2-outline'
+      && v2StrictReport?.partsExpected === 1
+      && v2StrictReport?.partsReplayed === 1
+      && v2StrictReport?.parts?.some(
+        (part) => part.variantId === 'glyphOutline'
+          && part.variantKind === 'glyphOutline'
+          && part.replayable === true
+          && part.outlineEligibility?.replayEligible === true,
+      ),
+    `Canvas2D strict profile selects schema v2 Text GlyphOutline variant=${JSON.stringify(v2StrictReport)}`,
+  );
   const unsupportedOutlineReport = canvas2dGlyphOutlineProbe.unsupported?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',
   );
@@ -1927,6 +2017,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvas2dGlyphOutlineProbe.strokePayloadSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
   );
+  const v2StrictBlackPixels = countPixels(
+    canvas2dGlyphOutlineProbe.v2Strict.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
   assert(
     strictOutlineBlackPixels > 100 && unsupportedOutlineBlackPixels < 20,
     `Canvas2D strict outline paints only eligible paths black=${strictOutlineBlackPixels}, unsupportedBlack=${unsupportedOutlineBlackPixels}`,
@@ -1938,6 +2032,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     strokePayloadBlackPixels < 20,
     `Canvas2D strict outline does not replay reserved stroke payload black=${strokePayloadBlackPixels}`,
+  );
+  assert(
+    v2StrictBlackPixels > 100,
+    `Canvas2D strict outline paints schema v2 Text variant path black=${v2StrictBlackPixels}`,
   );
 
   setTestCase('canvas-layer-clip-scope-parity');

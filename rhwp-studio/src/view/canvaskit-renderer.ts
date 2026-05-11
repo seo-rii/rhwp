@@ -488,6 +488,10 @@ export class CanvasKitLayerRenderer {
       case 'pageBackground':
         this.renderPageBackground(canvas, op);
         return;
+      case 'text':
+        // Schema v2 Text ops are expanded into concrete variant payloads before
+        // CanvasKit replay. A raw container is metadata only here.
+        return;
       case 'textRun':
         if (this.shouldOverlayTextRun(op)) {
           return;
