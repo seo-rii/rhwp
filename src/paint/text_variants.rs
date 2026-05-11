@@ -475,6 +475,31 @@ mod tests {
     }
 
     #[test]
+    fn rejects_glyph_outline_without_text_run_fallback() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-text-1".to_string()),
+            local_paint_order: Some(0),
+        };
+        let tree = tree(LayerNode::leaf(
+            bbox(),
+            None,
+            vec![outline_op(outline_part, TextStyle::default())],
+        ));
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::MissingDefaultFallback { .. })
+        ));
+    }
+
+    #[test]
     fn accepts_glyph_outline_with_anchor() {
         let outline_part = PaintVariantMeta {
             equivalence_group: "text-1".to_string(),

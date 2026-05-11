@@ -2707,7 +2707,10 @@ mod tests {
         let json = tree.to_json();
         assert!(json.contains("\"type\":\"glyphOutline\""));
         assert!(json.contains("\"text.outlineGlyph\""));
+        assert!(json.contains("\"optionalFeatures\":[\"text.outlineGlyph\"]"));
+        assert!(json.contains("\"requiredFeatures\":[]"));
         assert!(json.contains("\"variants\":[\"textRun\",\"glyphOutline\"]"));
+        assert!(json.contains("\"fallbackRequired\":true"));
         assert!(json.contains("\"variantId\":\"glyphOutline\""));
         assert!(json.contains("\"anchorOpId\":\"op-text-0\""));
         assert!(json.contains("\"localPaintOrder\":0"));
@@ -2716,6 +2719,8 @@ mod tests {
         assert!(json.contains("\"glyphRange\":{\"start\":0,\"end\":1}"));
         assert!(json.contains("\"fillRule\":\"evenodd\""));
         assert!(!json.contains("\"type\":\"path\",\"commands\""));
+        assert!(!json.contains("\"variantOps\""));
+        assert!(!json.contains("\"paintOrderSlotId\""));
     }
 
     #[test]

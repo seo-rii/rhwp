@@ -600,6 +600,41 @@ Schema v2 or explicit future strict/layout profiles should carry larger changes:
 `paintOrderSlotId`, richer `GlyphOutline` payloads, public mixed-per-glyph
 orientation, and shapedModern layout authority.
 
+## Phase 2 Entry Gate
+
+Phase 2 should not start by adding new payload expressiveness. It starts only
+after schema v1 is closed and the compatibility contracts above are stable in
+tests and renderer reports.
+
+The v1 closeout gate is:
+
+- exports keep `text.fallbackRequired=true`, `requiredFeatures=[]`, and
+  `TextRun` as the default text variant;
+- optional `GlyphRun` and `glyphOutline` variants never remove the root
+  `TextRun` fallback in schema v1;
+- `glyphOutline` remains an explicit text variant, not a generic `Path`, and
+  current writers do not emit `variantOps` or `paintOrderSlotId`;
+- `glyphOutline` requires `anchorOpId`, a same-leaf text fallback, path-level
+  source/glyph provenance, and monochrome fill-only style eligibility;
+- backend `VariantSelectionReport` remains the source of truth for why a
+  backend selected or rejected `TextRun`, `GlyphRun`, or `glyphOutline`;
+- native-vs-CanvasKit parity matrices stay report-only until thresholds and
+  flakiness are understood;
+- shaped measurement stays telemetry outside the replay schema and does not
+  infer `lineBreakWouldChange`.
+
+Phase 2 can then choose one explicit axis at a time:
+
+- `variantOps` dual-reader / single-writer migration before richer outline
+  payloads;
+- small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
+- richer `GlyphOutline` payload design, starting with a stroke subset only if
+  bbox inflation, fill/stroke order, SVG/Canvas2D/native fixtures, and reject
+  reasons are fixed;
+- shapedModern layout work as a separate layout migration milestone;
+- schema v2 cleanup such as `PaintOp::Text { variants }`, fallback-free text
+  exports, cross-scope variants, or `paintOrderSlotId`.
+
 ## Non-Goals For The Current Branch
 
 - Removing `TextRun`.
