@@ -1,7 +1,10 @@
 use super::*;
 use crate::paint::{
-    LayerOutputOptions, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextOrientation,
+    GlyphOutlineFillRule, GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
+    LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions, LayerRectanglePaint,
+    LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, PaintTextStyle,
+    PaintVariantMeta, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
+    TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
@@ -273,6 +276,122 @@ fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
     );
     assert!(output.contains(">세</text>"));
     assert!(output.contains(">로</text>"));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
+    let bbox = BoundingBox::new(0.0, 0.0, 20.0, 20.0);
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let text_variant = PaintVariantMeta::text_run_default("text-0");
+    let outline_variant = PaintVariantMeta {
+        equivalence_group: "text-0".to_string(),
+        variant_id: "glyphOutline".to_string(),
+        variant_kind: TextVariantKind::GlyphOutline,
+        part_index: 0,
+        part_count: 1,
+        is_default_fallback: false,
+        requires: vec!["text.outlineGlyph".to_string()],
+        quality: Some(TextVariantQuality::Exact),
+        anchor_op_id: Some("op-text-0".to_string()),
+        local_paint_order: Some(0),
+    };
+    let root = LayerNode::leaf(
+        bbox,
+        Some(1),
+        vec![
+            PaintOp::TextRun {
+                bbox,
+                run: LayerTextRunPaint {
+                    source: Some(TextSourceSpan {
+                        id: TextSourceId(7),
+                        utf8_range: TextSourceRange::new(0, 1),
+                        utf16_range: TextSourceRange::new(0, 1),
+                        stable_source_key: None,
+                    }),
+                    variant: Some(text_variant),
+                    text: "A".to_string(),
+                    style: text_style.clone(),
+                    positions: vec![0.0, 10.0],
+                    baseline: 12.0,
+                    orientation: LayerTextOrientation::Horizontal,
+                    ..Default::default()
+                },
+            },
+            PaintOp::GlyphOutline {
+                bbox,
+                outline: LayerGlyphOutlinePaint {
+                    source: TextSourceSpan {
+                        id: TextSourceId(7),
+                        utf8_range: TextSourceRange::new(0, 1),
+                        utf16_range: TextSourceRange::new(0, 1),
+                        stable_source_key: None,
+                    },
+                    variant: outline_variant,
+                    paint_style: PaintTextStyle::from(&text_style),
+                    placement: TextRunPlacement {
+                        run_to_page: LayerAffineTransform {
+                            a: 1.0,
+                            b: 0.0,
+                            c: 0.0,
+                            d: 1.0,
+                            e: 3.0,
+                            f: 4.0,
+                        },
+                        baseline_y: 0.0,
+                    },
+                    paths: vec![LayerGlyphOutlinePath {
+                        commands: vec![
+                            PathCommand::MoveTo(0.0, 0.0),
+                            PathCommand::LineTo(8.0, 0.0),
+                            PathCommand::LineTo(8.0, 8.0),
+                            PathCommand::ClosePath,
+                        ],
+                        fill_rule: GlyphOutlineFillRule::EvenOdd,
+                    }],
+                    diagnostics: GlyphRunDiagnostics {
+                        quality: TextVariantQuality::Exact,
+                        replay_eligibility: GlyphRunReplayEligibility::Portable,
+                        strict_visual_eligible: true,
+                        max_origin_delta_px: 0.0,
+                        max_advance_delta_px: 0.0,
+                        max_residual_after_adjustment_px: 0.0,
+                        cluster_mismatch_count: 0,
+                        missing_glyph_count: 0,
+                        used_fallback_font_count: 0,
+                        reason: None,
+                    },
+                },
+            },
+        ],
+    );
+    let tree = PageLayerTree::new(40.0, 30.0, root);
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &tree.root.kind {
+        let PaintOp::TextRun { run, .. } = &ops[0] else {
+            panic!("expected text run");
+        };
+        assert_eq!(run.variant.as_ref().unwrap().variant_id, "textRun");
+        assert_eq!(run.variant.as_ref().unwrap().equivalence_group, "text-0");
+    }
+
+    let mut default_renderer = SvgRenderer::new();
+    default_renderer.render_layer_tree(&tree);
+    let default_output = default_renderer.output();
+    assert!(default_output.contains(">A</text>"));
+    assert!(!default_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+
+    let mut strict_renderer = SvgRenderer::new();
+    strict_renderer.set_strict_glyph_outline_replay(true);
+    strict_renderer.render_layer_tree(&tree);
+    let strict_output = strict_renderer.output();
+    assert!(!strict_output.contains(">A</text>"));
+    assert!(strict_output.contains("<path d=\"M0 0 L8 0 L8 8 Z\""));
+    assert!(strict_output.contains("fill-rule=\"evenodd\""));
+    assert!(strict_output.contains("data-rhwp-source-id=\"7\""));
+    assert!(strict_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    assert!(strict_output.contains("matrix(1 0 0 1 3 4)"));
 }
 
 #[test]

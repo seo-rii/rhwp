@@ -12,6 +12,7 @@ import type {
   LayerFootnoteMarkerOp,
   LayerFormObjectOp,
   LayerGradient,
+  LayerGlyphOutlineOp,
   LayerImageOp,
   LayerLeafNode,
   LayerLineOp,
@@ -91,6 +92,7 @@ export class Canvas2DLayerRenderer {
   private currentClipEnabled = true;
   private currentShowParagraphMarks = false;
   private currentShowControlCodes = false;
+  private strictGlyphOutlineReplay = false;
   private rerenderScheduled = false;
   private asyncResourceReadyCallback: (() => void) | null = null;
 
@@ -134,8 +136,19 @@ export class Canvas2DLayerRenderer {
     this.asyncResourceReadyCallback = callback;
   }
 
+  setStrictGlyphOutlineReplay(enabled: boolean): void {
+    this.strictGlyphOutlineReplay = enabled;
+  }
+
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
     return { ...this.imageEffectDiagnostics };
+  }
+
+  private canReplayGlyphOutline(op: LayerGlyphOutlineOp): boolean {
+    return this.strictGlyphOutlineReplay
+      && op.diagnostics.strictVisualEligible
+      && isFillOnlyGlyphOutlineStyle(op)
+      && op.paths.length > 0;
   }
 
   resetImageEffectDiagnostics(): void {
@@ -189,7 +202,11 @@ export class Canvas2DLayerRenderer {
 
   private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {
     const ops = node.ops.filter(isKnownLayerPaintOp);
-    const selectedTextVariants = selectLayerTextVariantSets(ops, () => false);
+    const selectedTextVariants = selectLayerTextVariantSets(
+      ops,
+      () => false,
+      (op) => this.canReplayGlyphOutline(op),
+    );
     for (const op of ops) {
       if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
         continue;
@@ -215,8 +232,28 @@ export class Canvas2DLayerRenderer {
         // keeps the TextRun fallback as its canonical replay path.
         return;
       case 'glyphOutline':
-        // Strict outline text is an optional visual alternative. Canvas2D
-        // keeps TextRun fallback unless an explicit outline profile selects it.
+        if (!isFillOnlyGlyphOutlineStyle(op)) {
+          return;
+        }
+        this.withCurrentOverlayClip(ctx, 0, () => {
+          ctx.save();
+          const transform = op.placement.runToPage;
+          ctx.transform(
+            transform.a,
+            transform.b,
+            transform.c,
+            transform.d,
+            transform.e,
+            transform.f,
+          );
+          ctx.fillStyle = op.paintStyle.color;
+          for (const path of op.paths) {
+            ctx.beginPath();
+            appendPathCommands(ctx, path.commands);
+            ctx.fill(path.fillRule ?? 'nonzero');
+          }
+          ctx.restore();
+        }, op.bbox);
         return;
       case 'charOverlap':
         this.withCurrentOverlayClip(ctx, 0, () => {
@@ -1581,6 +1618,21 @@ function appendPathCommands(
         break;
     }
   }
+}
+
+function isFillOnlyGlyphOutlineStyle(op: LayerGlyphOutlineOp): boolean {
+  const style = op.paintStyle;
+  const ratio = typeof style.ratio === 'number' && style.ratio > 0 ? style.ratio : 1;
+  const shadeColor = (typeof style.shadeColor === 'string' ? style.shadeColor : '#ffffff').toLowerCase();
+  return Math.abs(ratio - 1) <= 0.001
+    && style.underline === 'none'
+    && !style.strikethrough
+    && (style.outlineType ?? 0) === 0
+    && (style.shadowType ?? 0) === 0
+    && !style.emboss
+    && !style.engrave
+    && (style.emphasisDot ?? 0) === 0
+    && shadeColor === '#ffffff';
 }
 
 function strokeDashPattern(dash: string, width: number): number[] {

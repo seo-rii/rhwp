@@ -258,6 +258,10 @@ impl StaticSubtreeCacheKey {
                 self.mix_text_run_placement(outline.placement);
                 self.mix_usize(outline.paths.len());
                 for path in &outline.paths {
+                    self.mix_u8(match path.fill_rule {
+                        crate::paint::GlyphOutlineFillRule::NonZero => 0,
+                        crate::paint::GlyphOutlineFillRule::EvenOdd => 1,
+                    });
                     self.mix_usize(path.commands.len());
                     for command in &path.commands {
                         self.mix_path_command(command);

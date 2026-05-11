@@ -1,4 +1,5 @@
 import type {
+  LayerGlyphOutlineOp,
   LayerGlyphRunOp,
   LayerPaintOp,
   LayerTextVariantMeta,
@@ -30,7 +31,7 @@ export interface LayerTextVariantRejectedReport {
 export interface LayerTextVariantGroupReport {
   equivalenceGroup: string;
   selectedVariantId: string;
-  selectedReason: 'glyphRunEligible' | 'defaultFallback' | 'noSupportedVariant';
+  selectedReason: 'glyphRunEligible' | 'glyphOutlineEligible' | 'defaultFallback' | 'noSupportedVariant';
   rejectedVariants: LayerTextVariantRejectedReport[];
   parts: LayerTextVariantPartReport[];
 }
@@ -53,6 +54,10 @@ type VariantPartState = {
 export function selectLayerTextVariantSetsWithReport(
   ops: readonly LayerPaintOp[],
   glyphRunReplayStatus: (op: LayerGlyphRunOp) => LayerTextVariantReplayStatus | boolean,
+  glyphOutlineReplayStatus: (op: LayerGlyphOutlineOp) => LayerTextVariantReplayStatus | boolean = () => ({
+    replayable: false,
+    reason: 'glyphOutlineUnsupported',
+  }),
 ): LayerTextVariantSelectionResult {
   const selected = new Map<string, string>();
   const groupVariants = new Map<string, Map<string, VariantPartState>>();
@@ -109,7 +114,8 @@ export function selectLayerTextVariantSetsWithReport(
       const status = glyphRunReplayStatus(op);
       replayStatus = typeof status === 'boolean' ? { replayable: status } : status;
     } else if (op.type === 'glyphOutline') {
-      replayStatus = { replayable: false, reason: 'glyphOutlineUnsupported' };
+      const status = glyphOutlineReplayStatus(op);
+      replayStatus = typeof status === 'boolean' ? { replayable: status } : status;
     } else {
       replayStatus = { replayable: true };
     }
@@ -133,7 +139,7 @@ export function selectLayerTextVariantSetsWithReport(
     const candidates = [...variants.entries()]
       .sort(([, a], [, b]) => a.order - b.order);
     for (const [variantId, variant] of candidates) {
-      if (variant.variantKind !== 'glyphRun') {
+      if (variant.isDefaultFallback) {
         continue;
       }
       if (variant.supported && partsComplete(variant)) {
@@ -142,12 +148,15 @@ export function selectLayerTextVariantSetsWithReport(
       }
     }
     const selectedVariantId = selected.get(group);
+    const selectedKind = selectedVariantId ? variants.get(selectedVariantId)?.variantKind : undefined;
     const fallbackVariantId = defaultFallbacks.get(group) ?? 'textRun';
     const groupParts = partReports.filter((part) => part.equivalenceGroup === group);
     reports.push({
       equivalenceGroup: group,
       selectedVariantId: selectedVariantId ?? fallbackVariantId,
-      selectedReason: selectedVariantId ? 'glyphRunEligible' : defaultFallbacks.has(group)
+      selectedReason: selectedKind === 'glyphOutline' ? 'glyphOutlineEligible'
+        : selectedKind === 'glyphRun' ? 'glyphRunEligible'
+          : defaultFallbacks.has(group)
         ? 'defaultFallback'
         : 'noSupportedVariant',
       rejectedVariants: candidates
@@ -175,10 +184,14 @@ export function selectLayerTextVariantSetsWithReport(
 export function selectLayerTextVariantSets(
   ops: readonly LayerPaintOp[],
   canReplayGlyphRun: (op: LayerGlyphRunOp) => boolean,
+  canReplayGlyphOutline?: (op: LayerGlyphOutlineOp) => boolean,
 ): Map<string, string> {
   return selectLayerTextVariantSetsWithReport(
     ops,
     (op) => ({ replayable: canReplayGlyphRun(op) }),
+    canReplayGlyphOutline
+      ? (op) => ({ replayable: canReplayGlyphOutline(op) })
+      : undefined,
   ).selected;
 }
 

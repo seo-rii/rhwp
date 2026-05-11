@@ -45,12 +45,12 @@ pub use layer_tree::{
     TextSourceRange, TextSourceSpan, TextSourceTable,
 };
 pub use paint_op::{
-    GlyphCluster, GlyphClusterFlag, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
-    GlyphRunPlacement, GlyphTransform, LayerAffineTransform, LayerCharOverlapPaint,
-    LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint, LayerFormObjectPaint,
-    LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
-    LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerPathPaint,
-    LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark,
+    GlyphCluster, GlyphClusterFlag, GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics,
+    GlyphRunOrientation, GlyphRunPlacement, GlyphTransform, LayerAffineTransform,
+    LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint,
+    LayerFormObjectPaint, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint,
+    LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
+    LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark,
     LayerTextControlMarkKind, LayerTextControlMarkPaint, LayerTextDecorationKind,
     LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
     PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterBasis, TextClusterFlag,

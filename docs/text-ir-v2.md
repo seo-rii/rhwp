@@ -430,11 +430,13 @@ not a pass/fail gate for the fast path.
   renderer has verified the exact font blob/external font, can instantiate the
   requested face, and the run passes the fill/shadow/outline eligibility matrix
   above. Otherwise it replays the `TextRun` fallback.
-- Canvas2D: replay `TextRun` by default. It uses the same variant-set guard but
-  never selects `GlyphRun` or `glyphOutline` in schema v1; glyph data is
-  diagnostics, hit-test metadata, or future strict outline fallback.
+- Canvas2D: replay `TextRun` by default. It never selects `GlyphRun` in schema
+  v1. An explicit strict outline profile may select `glyphOutline` variants and
+  replay their run-local paths through Canvas 2D path fill; otherwise
+  `TextRun` remains selected.
 - SVG: replay `TextRun` by default for search/accessibility. Strict visual mode
-  may select explicit `glyphOutline` variants plus source metadata. It must not
+  may select explicit `glyphOutline` variants plus source metadata and emit
+  `<path data-rhwp-*>` elements at the anchored text paint slot. It must not
   reinterpret those outlines as ordinary `Path` fallback while `TextRun` is
   present.
 
@@ -455,7 +457,7 @@ The current validator keeps this conservative:
   part;
 - `glyphOutline` variants must carry `anchorOpId`;
 - schema v1 `glyphOutline` is monochrome fill-only: it may use fill color,
-  opacity, fill rules, run-local outline paths, and source mapping;
+  path `fillRule`, run-local outline paths, and source mapping;
 - `glyphOutline` rejects text effects and non-outline glyph formats until each
   has a strict profile. Shadow, stroke/outline, emboss/engrave,
   underline/strike/emphasis, tab leaders, ratio/shade adjustments, color glyphs,

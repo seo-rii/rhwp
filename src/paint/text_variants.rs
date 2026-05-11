@@ -281,7 +281,7 @@ mod tests {
     use crate::paint::resources::ResourceArena;
     use crate::paint::RenderProfile;
     use crate::paint::{
-        GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
+        GlyphOutlineFillRule, GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
         LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerNode, LayerOutputOptions,
         LayerTextRunPaint, PaintTextStyle, TextRunPlacement, TextSourceId, TextSourceRange,
         TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
@@ -331,6 +331,7 @@ mod tests {
                         PathCommand::LineTo(1.0, 1.0),
                         PathCommand::ClosePath,
                     ],
+                    fill_rule: GlyphOutlineFillRule::NonZero,
                 }],
                 diagnostics: GlyphRunDiagnostics {
                     quality: TextVariantQuality::Exact,

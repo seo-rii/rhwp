@@ -158,6 +158,22 @@ pub struct LayerGlyphOutlinePaint {
 #[derive(Debug, Clone)]
 pub struct LayerGlyphOutlinePath {
     pub commands: Vec<PathCommand>,
+    pub fill_rule: GlyphOutlineFillRule,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphOutlineFillRule {
+    NonZero,
+    EvenOdd,
+}
+
+impl GlyphOutlineFillRule {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NonZero => "nonzero",
+            Self::EvenOdd => "evenodd",
+        }
+    }
 }
 
 impl Default for LayerTextRunPaint {

@@ -512,6 +512,11 @@ impl PaintOp {
                     }
                     buf.push_str("{\"commands\":");
                     write_path_commands(buf, &path.commands);
+                    let _ = write!(
+                        buf,
+                        ",\"fillRule\":{}",
+                        json_escape(path.fill_rule.as_str())
+                    );
                     buf.push('}');
                 }
                 buf.push_str("],\"diagnostics\":");
@@ -1922,15 +1927,15 @@ mod tests {
     use crate::model::image::ImageEffect;
     use crate::paint::{
         CacheHint, ClipKind, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
-        GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility,
-        LayerAffineTransform, LayerCharOverlapPaint, LayerEquationPaint, LayerGlyphOutlinePaint,
-        LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode,
-        LayerOutputOptions, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTextControlMark,
-        LayerTextControlMarkKind, LayerTextDecorationKind, LayerTextDecorationPaint,
-        LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintTextStyle, PaintVariantMeta,
-        ResourceArena, ScriptTag, ShapeKey, ShapingEngineId, TextDirection, TextLegacyVisualState,
-        TextLegacyVisuals, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantQuality,
-        WritingMode, LAYER_TREE_SCHEMA,
+        GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
+        GlyphRunReplayEligibility, LayerAffineTransform, LayerCharOverlapPaint, LayerEquationPaint,
+        LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
+        LayerLinePaint, LayerNode, LayerOutputOptions, LayerPathPaint, LayerPoint,
+        LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+        LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint,
+        PageLayerTree, PaintTextStyle, PaintVariantMeta, ResourceArena, ScriptTag, ShapeKey,
+        ShapingEngineId, TextDirection, TextLegacyVisualState, TextLegacyVisuals, TextSourceId,
+        TextSourceRange, TextSourceSpan, TextVariantQuality, WritingMode, LAYER_TREE_SCHEMA,
     };
     use crate::renderer::composer::CharOverlapInfo;
 
@@ -2662,6 +2667,7 @@ mod tests {
                         PathCommand::LineTo(10.0, 10.0),
                         PathCommand::ClosePath,
                     ],
+                    fill_rule: GlyphOutlineFillRule::EvenOdd,
                 }],
                 diagnostics: GlyphRunDiagnostics {
                     quality: TextVariantQuality::Exact,
@@ -2695,6 +2701,7 @@ mod tests {
         assert!(json.contains("\"anchorOpId\":\"op-text-0\""));
         assert!(json.contains("\"localPaintOrder\":0"));
         assert!(json.contains("\"paths\":[{\"commands\":["));
+        assert!(json.contains("\"fillRule\":\"evenodd\""));
         assert!(!json.contains("\"type\":\"path\",\"commands\""));
     }
 

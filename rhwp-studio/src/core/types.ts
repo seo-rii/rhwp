@@ -747,6 +747,7 @@ export interface LayerGlyphRunOp {
 
 export interface LayerGlyphOutlinePath {
   commands: LayerPathCommand[];
+  fillRule?: CanvasFillRule;
 }
 
 export interface LayerGlyphOutlineOp {

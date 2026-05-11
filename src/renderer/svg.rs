@@ -76,6 +76,9 @@ pub struct SvgRenderer {
     pub font_paths: Vec<std::path::PathBuf>,
     /// 사용된 폰트별 codepoint 수집 (font_family → codepoints)
     font_codepoints: std::collections::HashMap<String, std::collections::HashSet<char>>,
+    /// Strict visual SVG profile: replay selected monochrome glyph outlines
+    /// instead of the anchored TextRun fallback.
+    strict_glyph_outline_replay: bool,
 }
 
 /// 디버그 오버레이용 문단 경계 정보
@@ -122,12 +125,17 @@ impl SvgRenderer {
             font_embed_mode: FontEmbedMode::None,
             font_paths: Vec::new(),
             font_codepoints: std::collections::HashMap::new(),
+            strict_glyph_outline_replay: false,
         }
     }
 
     /// 생성된 SVG 문자열 반환
     pub fn output(&self) -> &str {
         &self.output
+    }
+
+    pub fn set_strict_glyph_outline_replay(&mut self, enabled: bool) {
+        self.strict_glyph_outline_replay = enabled;
     }
 
     /// 수집된 폰트별 사용 글자 목록 반환
@@ -197,7 +205,89 @@ impl SvgRenderer {
                 self.output.push_str("</g>\n");
             }
             LayerNodeKind::Leaf { ops, .. } => {
+                let mut selected_outline_variants =
+                    std::collections::HashMap::<String, String>::new();
+                if self.strict_glyph_outline_replay {
+                    #[derive(Default)]
+                    struct OutlineVariantCandidate {
+                        variant_id: String,
+                        part_count: u32,
+                        parts: std::collections::HashSet<u32>,
+                        supported: bool,
+                    }
+
+                    let mut candidates =
+                        std::collections::HashMap::<String, OutlineVariantCandidate>::new();
+                    for op in ops {
+                        let PaintOp::GlyphOutline { outline, .. } = op else {
+                            continue;
+                        };
+                        if outline.variant.variant_kind
+                            != crate::paint::TextVariantKind::GlyphOutline
+                        {
+                            continue;
+                        }
+                        let candidate = candidates
+                            .entry(outline.variant.equivalence_group.clone())
+                            .or_insert_with(|| OutlineVariantCandidate {
+                                variant_id: outline.variant.variant_id.clone(),
+                                part_count: outline.variant.part_count,
+                                parts: std::collections::HashSet::new(),
+                                supported: true,
+                            });
+                        if candidate.variant_id != outline.variant.variant_id
+                            || candidate.part_count != outline.variant.part_count
+                            || outline.variant.part_count == 0
+                            || outline.variant.anchor_op_id.is_none()
+                            || !outline.paint_style.is_fill_only_glyph_replay()
+                        {
+                            candidate.supported = false;
+                        }
+                        if !candidate.parts.insert(outline.variant.part_index) {
+                            candidate.supported = false;
+                        }
+                    }
+                    for (group, candidate) in candidates {
+                        let complete = candidate.supported
+                            && candidate.parts.len() as u32 == candidate.part_count
+                            && (0..candidate.part_count)
+                                .all(|part| candidate.parts.contains(&part));
+                        if complete {
+                            selected_outline_variants.insert(group, candidate.variant_id);
+                        }
+                    }
+                }
+
                 for op in ops {
+                    let should_render = match op {
+                        PaintOp::TextRun { run, .. } => {
+                            if let Some(variant) = &run.variant {
+                                if let Some(selected) =
+                                    selected_outline_variants.get(&variant.equivalence_group)
+                                {
+                                    selected == &variant.variant_id
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        PaintOp::GlyphRun { run, .. } => {
+                            !selected_outline_variants.contains_key(&run.variant.equivalence_group)
+                        }
+                        PaintOp::GlyphOutline { outline, .. } => {
+                            match selected_outline_variants.get(&outline.variant.equivalence_group)
+                            {
+                                Some(selected) => selected == &outline.variant.variant_id,
+                                None => false,
+                            }
+                        }
+                        _ => true,
+                    };
+                    if !should_render {
+                        continue;
+                    }
                     self.render_layer_op(op, resources);
                 }
             }
@@ -216,9 +306,60 @@ impl SvgRenderer {
                 // Optional GlyphRun variants are paired with TextRun fallback
                 // in schema v1; SVG keeps the searchable TextRun default.
             }
-            PaintOp::GlyphOutline { .. } => {
-                // GlyphOutline must remain an explicit strict-visual variant,
-                // not a generic Path, so schema v1 SVG keeps TextRun fallback.
+            PaintOp::GlyphOutline { outline, .. } => {
+                if !self.strict_glyph_outline_replay {
+                    return;
+                }
+                let transform = outline.placement.run_to_page;
+                let fill = color_to_svg(outline.paint_style.color);
+                self.output.push_str(&format!(
+                    "<g transform=\"matrix({} {} {} {} {} {})\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\">",
+                    transform.a,
+                    transform.b,
+                    transform.c,
+                    transform.d,
+                    transform.e,
+                    transform.f,
+                    escape_xml(&outline.variant.equivalence_group),
+                    escape_xml(&outline.variant.variant_id),
+                ));
+                for path in &outline.paths {
+                    let mut d = String::new();
+                    for command in &path.commands {
+                        match command {
+                            PathCommand::MoveTo(x, y) => d.push_str(&format!("M{} {} ", x, y)),
+                            PathCommand::LineTo(x, y) => d.push_str(&format!("L{} {} ", x, y)),
+                            PathCommand::CurveTo(x1, y1, x2, y2, x, y) => {
+                                d.push_str(&format!("C{} {} {} {} {} {} ", x1, y1, x2, y2, x, y));
+                            }
+                            PathCommand::ArcTo(rx, ry, x_rot, large_arc, sweep, x, y) => {
+                                d.push_str(&format!(
+                                    "A{} {} {} {} {} {} {} ",
+                                    rx,
+                                    ry,
+                                    x_rot,
+                                    if *large_arc { 1 } else { 0 },
+                                    if *sweep { 1 } else { 0 },
+                                    x,
+                                    y
+                                ));
+                            }
+                            PathCommand::ClosePath => d.push_str("Z "),
+                        }
+                    }
+                    self.output.push_str(&format!(
+                        "<path d=\"{}\" fill=\"{}\" fill-rule=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed glyph outline</desc></path>\n",
+                        d.trim(),
+                        fill,
+                        path.fill_rule.as_str(),
+                        outline.source.id.0,
+                        outline.source.utf8_range.start,
+                        outline.source.utf8_range.end,
+                        escape_xml(&outline.variant.equivalence_group),
+                        escape_xml(&outline.variant.variant_id),
+                    ));
+                }
+                self.output.push_str("</g>\n");
             }
             PaintOp::CharOverlap { bbox, overlap } => {
                 self.render_layer_char_overlap(*bbox, overlap);

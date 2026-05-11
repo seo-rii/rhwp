@@ -843,6 +843,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                         "commands",
                         path_commands_to_value(&path.commands),
                     );
+                    set_string(&path_value, "fillRule", path.fill_rule.as_str());
                     path_value.into()
                 })),
             );
