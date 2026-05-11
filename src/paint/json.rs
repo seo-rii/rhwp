@@ -510,7 +510,15 @@ impl PaintOp {
                     if idx > 0 {
                         buf.push(',');
                     }
-                    buf.push_str("{\"commands\":");
+                    let _ = write!(buf, "{{\"glyphId\":{}", path.glyph_id);
+                    buf.push_str(",\"sourceRangeUtf8\":");
+                    write_text_source_range(buf, path.source_range_utf8);
+                    let _ = write!(
+                        buf,
+                        ",\"glyphRange\":{{\"start\":{},\"end\":{}}}",
+                        path.glyph_range.start, path.glyph_range.end
+                    );
+                    buf.push_str(",\"commands\":");
                     write_path_commands(buf, &path.commands);
                     let _ = write!(
                         buf,
@@ -2661,6 +2669,9 @@ mod tests {
                     baseline_y: 0.0,
                 },
                 paths: vec![LayerGlyphOutlinePath {
+                    glyph_id: 42,
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    glyph_range: GlyphRange { start: 0, end: 1 },
                     commands: vec![
                         PathCommand::MoveTo(0.0, 0.0),
                         PathCommand::LineTo(10.0, 0.0),
@@ -2700,7 +2711,9 @@ mod tests {
         assert!(json.contains("\"variantId\":\"glyphOutline\""));
         assert!(json.contains("\"anchorOpId\":\"op-text-0\""));
         assert!(json.contains("\"localPaintOrder\":0"));
-        assert!(json.contains("\"paths\":[{\"commands\":["));
+        assert!(json.contains("\"paths\":[{\"glyphId\":42"));
+        assert!(json.contains("\"sourceRangeUtf8\":{\"start\":0,\"end\":1}"));
+        assert!(json.contains("\"glyphRange\":{\"start\":0,\"end\":1}"));
         assert!(json.contains("\"fillRule\":\"evenodd\""));
         assert!(!json.contains("\"type\":\"path\",\"commands\""));
     }

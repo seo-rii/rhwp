@@ -258,6 +258,11 @@ impl StaticSubtreeCacheKey {
                 self.mix_text_run_placement(outline.placement);
                 self.mix_usize(outline.paths.len());
                 for path in &outline.paths {
+                    self.mix_u32(path.glyph_id);
+                    self.mix_u32(path.source_range_utf8.start);
+                    self.mix_u32(path.source_range_utf8.end);
+                    self.mix_u32(path.glyph_range.start);
+                    self.mix_u32(path.glyph_range.end);
                     self.mix_u8(match path.fill_rule {
                         crate::paint::GlyphOutlineFillRule::NonZero => 0,
                         crate::paint::GlyphOutlineFillRule::EvenOdd => 1,

@@ -19,6 +19,12 @@ use crate::paint::{
     ClipKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint, LayerNode, LayerNodeKind,
     LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole, LayerTextDecorationKind,
     LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp, ResourceArena,
+    TextSourceEntry, TextSourceTable,
+};
+use crate::renderer::layer_renderer::{
+    select_text_variant_sets_with_report, should_render_selected_text_variant,
+    VariantOutlineEligibilityReport, VariantRejectReason, VariantReplayStatus,
+    VariantSelectionBackend, VariantSelectionContext, VariantSelectionReport,
 };
 use base64::Engine;
 
@@ -79,6 +85,9 @@ pub struct SvgRenderer {
     /// Strict visual SVG profile: replay selected monochrome glyph outlines
     /// instead of the anchored TextRun fallback.
     strict_glyph_outline_replay: bool,
+    current_render_profile: String,
+    /// Backend-local text variant selection diagnostics for the last layer render.
+    text_variant_selection_diagnostics: Vec<VariantSelectionReport>,
 }
 
 /// 디버그 오버레이용 문단 경계 정보
@@ -126,6 +135,8 @@ impl SvgRenderer {
             font_paths: Vec::new(),
             font_codepoints: std::collections::HashMap::new(),
             strict_glyph_outline_replay: false,
+            current_render_profile: "screen".to_string(),
+            text_variant_selection_diagnostics: Vec::new(),
         }
     }
 
@@ -136,6 +147,10 @@ impl SvgRenderer {
 
     pub fn set_strict_glyph_outline_replay(&mut self, enabled: bool) {
         self.strict_glyph_outline_replay = enabled;
+    }
+
+    pub fn text_variant_selection_diagnostics(&self) -> &[VariantSelectionReport] {
+        &self.text_variant_selection_diagnostics
     }
 
     /// 수집된 폰트별 사용 글자 목록 반환
@@ -156,9 +171,22 @@ impl SvgRenderer {
         self.show_control_codes = tree.output_options.show_control_codes;
         self.debug_overlay = tree.output_options.debug_overlay;
         self.clip_enabled = tree.output_options.clip_enabled;
+        self.current_render_profile = tree.profile.as_str().to_string();
+        self.text_variant_selection_diagnostics.clear();
         self.begin_page(tree.page_width, tree.page_height);
+        if self.strict_glyph_outline_replay && !tree.text_sources.is_empty() {
+            self.render_text_source_metadata(&tree.text_sources);
+        }
         self.render_layer_node(&tree.root, &tree.resources);
         self.end_page();
+    }
+
+    fn render_text_source_metadata(&mut self, text_sources: &TextSourceTable) {
+        self.output
+            .push_str("<metadata id=\"rhwp-text-sources\" type=\"application/json\">");
+        self.output
+            .push_str(&escape_xml(&text_sources_metadata_json(text_sources)));
+        self.output.push_str("</metadata>\n");
     }
 
     fn render_layer_node(&mut self, node: &LayerNode, resources: &ResourceArena) {
@@ -205,87 +233,68 @@ impl SvgRenderer {
                 self.output.push_str("</g>\n");
             }
             LayerNodeKind::Leaf { ops, .. } => {
-                let mut selected_outline_variants =
-                    std::collections::HashMap::<String, String>::new();
-                if self.strict_glyph_outline_replay {
-                    #[derive(Default)]
-                    struct OutlineVariantCandidate {
-                        variant_id: String,
-                        part_count: u32,
-                        parts: std::collections::HashSet<u32>,
-                        supported: bool,
-                    }
-
-                    let mut candidates =
-                        std::collections::HashMap::<String, OutlineVariantCandidate>::new();
-                    for op in ops {
-                        let PaintOp::GlyphOutline { outline, .. } = op else {
-                            continue;
-                        };
-                        if outline.variant.variant_kind
-                            != crate::paint::TextVariantKind::GlyphOutline
-                        {
-                            continue;
-                        }
-                        let candidate = candidates
-                            .entry(outline.variant.equivalence_group.clone())
-                            .or_insert_with(|| OutlineVariantCandidate {
-                                variant_id: outline.variant.variant_id.clone(),
-                                part_count: outline.variant.part_count,
-                                parts: std::collections::HashSet::new(),
-                                supported: true,
-                            });
-                        if candidate.variant_id != outline.variant.variant_id
-                            || candidate.part_count != outline.variant.part_count
-                            || outline.variant.part_count == 0
-                            || outline.variant.anchor_op_id.is_none()
-                            || !outline.paint_style.is_fill_only_glyph_replay()
-                        {
-                            candidate.supported = false;
-                        }
-                        if !candidate.parts.insert(outline.variant.part_index) {
-                            candidate.supported = false;
-                        }
-                    }
-                    for (group, candidate) in candidates {
-                        let complete = candidate.supported
-                            && candidate.parts.len() as u32 == candidate.part_count
-                            && (0..candidate.part_count)
-                                .all(|part| candidate.parts.contains(&part));
-                        if complete {
-                            selected_outline_variants.insert(group, candidate.variant_id);
-                        }
-                    }
-                }
-
-                for op in ops {
-                    let should_render = match op {
-                        PaintOp::TextRun { run, .. } => {
-                            if let Some(variant) = &run.variant {
-                                if let Some(selected) =
-                                    selected_outline_variants.get(&variant.equivalence_group)
-                                {
-                                    selected == &variant.variant_id
-                                } else {
-                                    true
-                                }
-                            } else {
-                                true
-                            }
-                        }
-                        PaintOp::GlyphRun { run, .. } => {
-                            !selected_outline_variants.contains_key(&run.variant.equivalence_group)
-                        }
+                let strict_outline = self.strict_glyph_outline_replay;
+                let selection = select_text_variant_sets_with_report(
+                    ops,
+                    |_| {
+                        VariantReplayStatus::rejected(
+                            VariantRejectReason::BackendDoesNotSupportVariant,
+                        )
+                    },
+                    |op| match op {
                         PaintOp::GlyphOutline { outline, .. } => {
-                            match selected_outline_variants.get(&outline.variant.equivalence_group)
-                            {
-                                Some(selected) => selected == &outline.variant.variant_id,
-                                None => false,
+                            let (replayable, reason, payload_supported, paint_style_supported) =
+                                if !strict_outline {
+                                    (
+                                        false,
+                                        Some(VariantRejectReason::BackendDoesNotSupportVariant),
+                                        true,
+                                        outline.paint_style.is_fill_only_glyph_replay(),
+                                    )
+                                } else if outline.variant.anchor_op_id.is_none()
+                                    || outline.paths.is_empty()
+                                {
+                                    (
+                                        false,
+                                        Some(VariantRejectReason::UnsupportedOutlinePayload),
+                                        false,
+                                        outline.paint_style.is_fill_only_glyph_replay(),
+                                    )
+                                } else if !outline.paint_style.is_fill_only_glyph_replay() {
+                                    (
+                                        false,
+                                        Some(VariantRejectReason::UnsupportedPaintEffect),
+                                        true,
+                                        false,
+                                    )
+                                } else {
+                                    (true, None, true, true)
+                                };
+                            VariantReplayStatus {
+                                replayable,
+                                reason,
+                                details: None,
+                                font_verification: None,
+                                outline_eligibility: Some(VariantOutlineEligibilityReport {
+                                    strict_visual_eligible: true,
+                                    payload_supported,
+                                    paint_style_supported,
+                                    replay_eligible: replayable,
+                                    reason,
+                                }),
                             }
                         }
-                        _ => true,
-                    };
-                    if !should_render {
+                        _ => VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported),
+                    },
+                    VariantSelectionContext {
+                        backend: VariantSelectionBackend::Svg,
+                        render_profile: self.current_render_profile.clone(),
+                    },
+                );
+                self.text_variant_selection_diagnostics
+                    .extend(selection.reports);
+                for op in ops {
+                    if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }
                     self.render_layer_op(op, resources);
@@ -348,13 +357,16 @@ impl SvgRenderer {
                         }
                     }
                     self.output.push_str(&format!(
-                        "<path d=\"{}\" fill=\"{}\" fill-rule=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed glyph outline</desc></path>\n",
+                        "<path d=\"{}\" fill=\"{}\" fill-rule=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed glyph outline</desc></path>\n",
                         d.trim(),
                         fill,
                         path.fill_rule.as_str(),
+                        path.glyph_id,
+                        path.glyph_range.start,
+                        path.glyph_range.end,
                         outline.source.id.0,
-                        outline.source.utf8_range.start,
-                        outline.source.utf8_range.end,
+                        path.source_range_utf8.start,
+                        path.source_range_utf8.end,
                         escape_xml(&outline.variant.equivalence_group),
                         escape_xml(&outline.variant.variant_id),
                     ));
@@ -3150,6 +3162,114 @@ impl SvgRenderer {
             ),
         }
     }
+}
+
+fn text_sources_metadata_json(text_sources: &TextSourceTable) -> String {
+    let mut buf = String::from("{\"textSources\":[");
+    for (idx, entry) in text_sources.entries.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        write_text_source_entry_metadata_json(&mut buf, entry);
+    }
+    buf.push_str("]}");
+    buf
+}
+
+fn write_text_source_entry_metadata_json(buf: &mut String, entry: &TextSourceEntry) {
+    buf.push_str("{\"id\":");
+    buf.push_str(&entry.id.0.to_string());
+    buf.push_str(",\"text\":");
+    write_json_string(buf, &entry.text);
+    buf.push_str(",\"utf8Range\":");
+    write_text_source_range_metadata_json(buf, entry.utf8_range);
+    buf.push_str(",\"utf16Range\":");
+    write_text_source_range_metadata_json(buf, entry.utf16_range);
+    if let Some(stable_source_key) = &entry.stable_source_key {
+        buf.push_str(",\"stableSourceKey\":{\"scheme\":");
+        write_json_string(buf, stable_source_key);
+        buf.push('}');
+    }
+    buf.push_str(",\"annotations\":[");
+    for (idx, annotation) in entry.annotations.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        match annotation {
+            crate::paint::TextSourceAnnotation::FieldMarker {
+                marker,
+                range_utf8,
+                range_utf16,
+            } => {
+                buf.push_str("{\"type\":\"fieldMarker\",\"marker\":");
+                write_json_string(buf, field_marker_metadata_str(*marker));
+                buf.push_str(",\"rangeUtf8\":");
+                write_text_source_range_metadata_json(buf, *range_utf8);
+                buf.push_str(",\"rangeUtf16\":");
+                write_text_source_range_metadata_json(buf, *range_utf16);
+                buf.push('}');
+            }
+            crate::paint::TextSourceAnnotation::ParagraphEnd {
+                offset_utf8,
+                offset_utf16,
+            } => {
+                buf.push_str("{\"type\":\"paragraphEnd\",\"offsetUtf8\":");
+                buf.push_str(&offset_utf8.to_string());
+                buf.push_str(",\"offsetUtf16\":");
+                buf.push_str(&offset_utf16.to_string());
+                buf.push('}');
+            }
+            crate::paint::TextSourceAnnotation::LineBreakEnd {
+                offset_utf8,
+                offset_utf16,
+            } => {
+                buf.push_str("{\"type\":\"lineBreakEnd\",\"offsetUtf8\":");
+                buf.push_str(&offset_utf8.to_string());
+                buf.push_str(",\"offsetUtf16\":");
+                buf.push_str(&offset_utf16.to_string());
+                buf.push('}');
+            }
+        }
+    }
+    buf.push_str("]}");
+}
+
+fn write_text_source_range_metadata_json(buf: &mut String, range: crate::paint::TextSourceRange) {
+    buf.push_str("{\"start\":");
+    buf.push_str(&range.start.to_string());
+    buf.push_str(",\"end\":");
+    buf.push_str(&range.end.to_string());
+    buf.push('}');
+}
+
+fn field_marker_metadata_str(
+    marker: crate::renderer::render_tree::FieldMarkerType,
+) -> &'static str {
+    match marker {
+        crate::renderer::render_tree::FieldMarkerType::None => "none",
+        crate::renderer::render_tree::FieldMarkerType::FieldBegin => "fieldBegin",
+        crate::renderer::render_tree::FieldMarkerType::FieldEnd => "fieldEnd",
+        crate::renderer::render_tree::FieldMarkerType::FieldBeginEnd => "fieldBeginEnd",
+        crate::renderer::render_tree::FieldMarkerType::ShapeMarker(_) => "shapeMarker",
+    }
+}
+
+fn write_json_string(buf: &mut String, value: &str) {
+    buf.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => buf.push_str("\\\""),
+            '\\' => buf.push_str("\\\\"),
+            '\n' => buf.push_str("\\n"),
+            '\r' => buf.push_str("\\r"),
+            '\t' => buf.push_str("\\t"),
+            c if c < '\x20' => {
+                let _ = std::fmt::Write::write_fmt(buf, format_args!("\\u{:04x}", c as u32));
+            }
+            c => buf.push(c),
+        }
+    }
+    buf.push('"');
 }
 
 impl Renderer for SvgRenderer {

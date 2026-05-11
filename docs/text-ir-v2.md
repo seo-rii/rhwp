@@ -377,7 +377,9 @@ flakiness and runtime are understood.
 The full renderer baseline now writes a report-only
 `native-canvaskit-parity-report.json` and mirrors its summary into
 `baseline-report.md`; this artifact is observational data for threshold tuning,
-not a pass/fail gate for the fast path.
+not a pass/fail gate for the fast path. It records per-profile/per-sample
+summaries and the highest-delta comparisons so larger nightly matrices can be
+triaged without promoting them to PR gates.
 
 ## Migration Phases
 
@@ -436,9 +438,11 @@ not a pass/fail gate for the fast path.
   `TextRun` remains selected.
 - SVG: replay `TextRun` by default for search/accessibility. Strict visual mode
   may select explicit `glyphOutline` variants plus source metadata and emit
-  `<path data-rhwp-*>` elements at the anchored text paint slot. It must not
-  reinterpret those outlines as ordinary `Path` fallback while `TextRun` is
-  present.
+  `<path data-rhwp-*>` elements at the anchored text paint slot. Strict SVG
+  output includes a `<metadata id="rhwp-text-sources" type="application/json">`
+  text-source sidecar and keeps per-path source/glyph provenance attributes.
+  It must not reinterpret those outlines as ordinary `Path` fallback while
+  `TextRun` is present.
 
 ## GlyphOutline Sidecar Contract
 
@@ -449,6 +453,16 @@ outline payloads to live as sidecar variants. A sidecar outline uses
 replaces. Within that slot, `localPaintOrder` is an optional stable order for
 multi-part outline payloads.
 
+The current writer may still emit `glyphOutline` in the root op stream because
+it is an explicit text variant, not a generic `Path`. The future `variantOps`
+migration should be dual-reader / single-writer: readers accept both root
+`glyphOutline` ops and sidecar `variantOps` outlines, while a writer emits a
+given outline in exactly one location in a single export. Richer outline
+payloads should move to `variantOps` before color, bitmap, SVG-in-font, or
+other strict-only payloads are introduced. This does not introduce
+`paintOrderSlotId`; in schema v1, `anchorOpId` remains the paint-order slot
+until cross-leaf, cross-scope, or anchorless strict exports are required.
+
 The current validator keeps this conservative:
 
 - every variant in an `equivalenceGroup` remains in one leaf / paint-order
@@ -458,6 +472,9 @@ The current validator keeps this conservative:
 - `glyphOutline` variants must carry `anchorOpId`;
 - schema v1 `glyphOutline` is monochrome fill-only: it may use fill color,
   path `fillRule`, run-local outline paths, and source mapping;
+- each outline path carries `glyphId`, `glyphRange`, and a UTF-8 source range
+  so SVG/Canvas2D strict replay can keep path-level provenance for debugging,
+  search sidecars, and accessibility sidecars;
 - `glyphOutline` rejects text effects and non-outline glyph formats until each
   has a strict profile. Shadow, stroke/outline, emboss/engrave,
   underline/strike/emphasis, tab leaders, ratio/shade adjustments, color glyphs,
@@ -469,6 +486,11 @@ The current validator keeps this conservative:
 `paintOrderSlotId` is reserved for a later schema step if variants need to cross
 leaf, clip, transform, or cache boundaries. Until then, `anchorOpId` plus the
 same-leaf invariant is the compatibility contract.
+
+Current SVG/Canvas2D fixtures assert the conservative profile directly:
+default profile selects `TextRun`, strict profile selects `glyphOutline`,
+unsupported payload/style falls back to `TextRun` with deterministic reject
+reasons, and part-level replay reports preserve the selected variant set.
 
 ## Backend Variant Selection Reports
 
@@ -507,8 +529,10 @@ outline replay. Canvas2D reports `GlyphRun` rejection as
 `backendDoesNotSupportVariant`, and reports `GlyphOutline` rejections as
 `unsupportedOutlinePayload`, `unsupportedPaintEffect`, or
 `backendDoesNotSupportVariant` depending on the strict replay gate. Native Skia
-and SVG should use the same selected/rejected reason vocabulary as their variant
-paths are promoted to common diagnostics.
+and SVG expose the same selected/rejected reason vocabulary through backend-local
+render diagnostics, so the same export can explain why native Skia selected
+`GlyphRun`, SVG default selected `TextRun`, or SVG strict selected
+`GlyphOutline`.
 
 ## Layout Profile Contract
 
@@ -535,6 +559,46 @@ drive measurement and line breaking. That profile must ship with separate corpus
 reports and reference expectations; it must not become the default as part of
 GlyphRun/GlyphOutline renderer work. Until then, shaped measurement deltas are
 diagnostics or shadow reports, not CI gates for the compatibility renderer.
+The current report-only hook records run-level shaped measurement observations
+when `TextShapeLowerer` obtains shaped data: legacy width from existing TextRun
+positions, shaped width from explicit glyph positions/advances, delta, cluster
+mismatch count, fallback-font difference, and quality. Line-level
+aggregation is also report-only: callers may group already-collected run
+measurements into line summaries with legacy/shaped width totals, max run delta,
+and mismatch/fallback counters. Callers may also group line summaries into
+paragraph and page summaries with counts, maximum deltas, total absolute deltas,
+and mismatch/fallback counters. These summaries do not infer line membership,
+paragraph membership, page membership, or decide `lineBreakWouldChange`; those
+remain out of scope until the layout migration milestone because they need
+paragraph/container context. `TextShapeReport` can serialize these observations
+as a standalone shaped-measurement JSON artifact; that artifact is telemetry for
+local/nightly migration analysis and is not part of the layer replay schema.
+
+## Schema v1 Closure Criteria
+
+Schema v1 should close as a compatibility-safe text replay schema:
+
+- `TextRun` remains the root fallback and public compatibility contract.
+- `TextSourceTable`, `TextSourceSpan`, `TextRun` placement, and layout-cluster
+  metadata stay additive and source-backed.
+- visible special text semantics stay explicit paint ops or legacy mirrors:
+  `CharOverlap`, `TextControlMark`, `TabLeader`, and `TextDecoration`.
+- font blob, face, instance, and shape identity stay explicit before portable
+  `GlyphRun` replay is selected.
+- `GlyphRun` and `glyphOutline` remain optional text variants with `TextRun`
+  fallback in schema v1 exports.
+- variant selection stays set-based: one `variantId` per `equivalenceGroup`,
+  then all parts of that variant are replayed.
+- backend-local `VariantSelectionReport` remains the way to explain selected and
+  rejected variants; the export itself is producer-side and immutable.
+- CanvasKit remains conservatively gated by exact face/font support, glyph id
+  range, explicit positions, and effect-specific eligibility.
+- shaped measurement remains report-only telemetry outside the replay schema.
+
+Schema v2 or explicit future strict/layout profiles should carry larger changes:
+`PaintOp::Text { variants }`, fallback-free text exports, cross-scope variants,
+`paintOrderSlotId`, richer `GlyphOutline` payloads, public mixed-per-glyph
+orientation, and shapedModern layout authority.
 
 ## Non-Goals For The Current Branch
 

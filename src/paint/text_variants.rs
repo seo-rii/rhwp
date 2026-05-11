@@ -281,10 +281,10 @@ mod tests {
     use crate::paint::resources::ResourceArena;
     use crate::paint::RenderProfile;
     use crate::paint::{
-        GlyphOutlineFillRule, GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
-        LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerNode, LayerOutputOptions,
-        LayerTextRunPaint, PaintTextStyle, TextRunPlacement, TextSourceId, TextSourceRange,
-        TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
+        GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
+        LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerNode,
+        LayerOutputOptions, LayerTextRunPaint, PaintTextStyle, TextRunPlacement, TextSourceId,
+        TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
     };
     use crate::renderer::render_tree::BoundingBox;
     use crate::renderer::{PathCommand, TextStyle};
@@ -325,6 +325,9 @@ mod tests {
                     baseline_y: 0.0,
                 },
                 paths: vec![LayerGlyphOutlinePath {
+                    glyph_id: 42,
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    glyph_range: GlyphRange { start: 0, end: 1 },
                     commands: vec![
                         PathCommand::MoveTo(0.0, 0.0),
                         PathCommand::LineTo(1.0, 0.0),
@@ -512,6 +515,36 @@ mod tests {
         };
         let mut style = TextStyle::default();
         style.shadow_type = 1;
+        let tree = tree(LayerNode::leaf(
+            bbox(),
+            None,
+            vec![
+                text_op(PaintVariantMeta::text_run_default("text-1")),
+                outline_op(outline_part, style),
+            ],
+        ));
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_glyph_outline_with_stroke_outline_style() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-text-1".to_string()),
+            local_paint_order: Some(0),
+        };
+        let mut style = TextStyle::default();
+        style.outline_type = 1;
         let tree = tree(LayerNode::leaf(
             bbox(),
             None,

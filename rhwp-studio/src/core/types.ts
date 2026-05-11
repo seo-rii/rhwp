@@ -746,6 +746,9 @@ export interface LayerGlyphRunOp {
 }
 
 export interface LayerGlyphOutlinePath {
+  glyphId?: number;
+  sourceRangeUtf8?: LayerTextSourceRange;
+  glyphRange?: { start: number; end: number };
   commands: LayerPathCommand[];
   fillRule?: CanvasFillRule;
 }

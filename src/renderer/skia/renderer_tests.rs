@@ -17,7 +17,9 @@ use crate::paint::{
     TextVariantKind, TextVariantQuality, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
-use crate::renderer::layer_renderer::RasterRenderOptions;
+use crate::renderer::layer_renderer::{
+    RasterRenderOptions, VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
+};
 use crate::renderer::render_tree::{
     BoundingBox, EllipseNode, LineNode, PageNode, PathNode, RectangleNode, RenderNode,
     RenderNodeType, ShapeTransform, TextRunNode,
@@ -2380,16 +2382,31 @@ fn native_skia_replays_portable_glyph_run_variant() {
     assert_ne!(glyph_id, 0, "test font should not return missing glyph");
 
     let tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
-    let png = renderer
-        .render_png(&tree)
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
         .expect("portable glyph variant render");
-    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
     let bounds = alpha_bounds(&pixmap).expect("glyph variant ink");
 
     assert!(
         bounds.max_x < 100,
         "native Skia should select the left-side GlyphRun variant instead of the right-side TextRun fallback, got {bounds:?}"
     );
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia variant selection report");
+    assert_eq!(report.backend, VariantSelectionBackend::NativeSkia);
+    assert_eq!(report.render_profile, "screen");
+    assert_eq!(report.selected_variant_id, "glyphRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphRunStrictEligible
+    );
+    assert_eq!(report.parts_expected, 1);
+    assert_eq!(report.parts_replayed, 1);
 }
 
 #[test]
@@ -2407,16 +2424,33 @@ fn native_skia_keeps_text_fallback_for_nonportable_glyph_run() {
         .expect("test font should map A to a glyph");
 
     let tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::LocalDiagnosticOnly);
-    let png = renderer
-        .render_png(&tree)
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
         .expect("non-portable glyph variant render");
-    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
     let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
 
     assert!(
         bounds.min_x > 95,
         "native Skia must keep TextRun fallback when GlyphRun is diagnostic-only, got {bounds:?}"
     );
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia fallback variant selection report");
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphRun"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::FontNotPortable)
+    }));
 }
 
 #[test]

@@ -65,6 +65,8 @@ pub use resources::{
 pub use schema::{LayerTreeSchema, LAYER_TREE_SCHEMA};
 pub use text_shape::{
     FontRequest, FontResolver, GlyphRunQuality, NoopFontResolver, ResolvedFontFace,
-    ResolvedGlyphRun, TextShapeDiagnostic, TextShapeLowerer, TextShapeReport,
+    ResolvedGlyphRun, ShapedMeasurementLineReport, ShapedMeasurementPageSummary,
+    ShapedMeasurementParagraphSummary, ShapedMeasurementRunReport, TextShapeDiagnostic,
+    TextShapeLowerer, TextShapeReport,
 };
 pub use text_variants::{validate_text_variant_scope, TextVariantScopeError};

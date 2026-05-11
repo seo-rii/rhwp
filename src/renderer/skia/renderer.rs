@@ -3,7 +3,6 @@ use skia_safe::{
     PictureRecorder, Rect, Shaper,
 };
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
@@ -12,8 +11,10 @@ use crate::paint::{
     LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
-    LayerRasterRenderer, LayerRenderError, LayerRenderResult, RasterOutputFormat,
-    RasterRenderOptions, RasterRenderOutput,
+    select_text_variant_sets_with_report, should_render_selected_text_variant, LayerRasterRenderer,
+    LayerRenderError, LayerRenderResult, RasterOutputFormat, RasterRenderOptions,
+    RasterRenderOutput, VariantRejectReason, VariantReplayStatus, VariantSelectionBackend,
+    VariantSelectionContext,
 };
 use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::{ArrowStyle, LineRenderType};
@@ -85,7 +86,10 @@ fn duration_ns(duration: Duration) -> u64 {
     duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
 
-fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &ResourceArena) -> bool {
+fn native_skia_glyph_run_replay_status(
+    run: &LayerGlyphRunPaint,
+    resources: &ResourceArena,
+) -> VariantReplayStatus {
     if run.glyph_ids.is_empty()
         || run.glyph_ids.len() != run.positions.len()
         || run
@@ -94,23 +98,35 @@ fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &Resour
             .is_some_and(|advances| advances.len() != run.glyph_ids.len())
         || run.glyph_transforms.is_some()
         || run.orientation == GlyphRunOrientation::MixedPerGlyph
-        || !run.diagnostics.strict_visual_eligible
-        || run.diagnostics.missing_glyph_count != 0
-        || run.diagnostics.cluster_mismatch_count != 0
-        || !matches!(
-            run.diagnostics.quality,
-            TextVariantQuality::Exact | TextVariantQuality::PositionAdjusted
-        )
-        || run.diagnostics.replay_eligibility != GlyphRunReplayEligibility::Portable
     {
-        return false;
+        return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
+    }
+    if run.diagnostics.replay_eligibility != GlyphRunReplayEligibility::Portable {
+        return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
+    }
+    if !run.diagnostics.strict_visual_eligible {
+        return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
+    }
+    if run.diagnostics.missing_glyph_count != 0 {
+        return VariantReplayStatus::rejected(VariantRejectReason::MissingGlyph);
+    }
+    if run.diagnostics.cluster_mismatch_count != 0 {
+        return VariantReplayStatus::rejected(VariantRejectReason::ClusterMismatch);
+    }
+    if !matches!(
+        run.diagnostics.quality,
+        TextVariantQuality::Exact | TextVariantQuality::PositionAdjusted
+    ) {
+        return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
     }
     if run.diagnostics.quality == TextVariantQuality::PositionAdjusted {
         let tolerance = 0.5_f64.min(0.25_f64.max(run.paint_style.font_size * 0.005));
         if !run.diagnostics.max_residual_after_adjustment_px.is_finite()
             || run.diagnostics.max_residual_after_adjustment_px > tolerance
         {
-            return false;
+            return VariantReplayStatus::rejected(
+                VariantRejectReason::PositionAdjustedResidualTooLarge,
+            );
         }
     }
     let ratio = if run.paint_style.ratio > 0.0 {
@@ -127,7 +143,7 @@ fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &Resour
         || run.paint_style.emphasis_dot != 0
         || (run.paint_style.shade_color & 0x00FF_FFFF) != 0x00FF_FFFF
     {
-        return false;
+        return VariantReplayStatus::rejected(VariantRejectReason::UnsupportedPaintEffect);
     }
     let font_resources = resources.font_resources();
     let Some(face) = font_resources
@@ -135,20 +151,20 @@ fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &Resour
         .iter()
         .find(|face| face.id == run.shape_key.font_instance.face_key)
     else {
-        return false;
+        return VariantReplayStatus::rejected(VariantRejectReason::ExactFaceUnavailable);
     };
     let Some(blob) = font_resources
         .blobs
         .iter()
         .find(|blob| blob.id == face.blob_key)
     else {
-        return false;
+        return VariantReplayStatus::rejected(VariantRejectReason::ExactFaceUnavailable);
     };
     if !blob.portability.is_self_contained_replayable() {
-        return false;
+        return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
     }
     let transform = run.placement.run_to_page;
-    [
+    if ![
         transform.a,
         transform.b,
         transform.c,
@@ -159,14 +175,25 @@ fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &Resour
     ]
     .into_iter()
     .all(f64::is_finite)
-        && run
-            .glyph_ids
-            .iter()
-            .all(|glyph_id| *glyph_id <= u16::MAX as u32)
-        && run
+        || !run
             .positions
             .iter()
             .all(|position| position.x.is_finite() && position.y.is_finite())
+    {
+        return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
+    }
+    if run
+        .glyph_ids
+        .iter()
+        .any(|glyph_id| *glyph_id > u16::MAX as u32)
+    {
+        return VariantReplayStatus::rejected(VariantRejectReason::GlyphIdOutOfRange);
+    }
+    VariantReplayStatus::replayable()
+}
+
+fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &ResourceArena) -> bool {
+    native_skia_glyph_run_replay_status(run, resources).replayable
 }
 
 fn calc_arrow_dims(stroke_width: f64, line_len: f64, arrow_size: u8) -> (f64, f64) {
@@ -559,71 +586,30 @@ impl SkiaLayerRenderer {
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
                 replay.push_cache_hint(*cache_hint);
-                let mut variant_order = 0usize;
-                let mut glyph_variants =
-                    HashMap::<String, HashMap<String, (usize, u32, HashSet<u32>, bool)>>::new();
-                for op in ops {
-                    if let PaintOp::GlyphRun { run, .. } = op {
-                        let group = glyph_variants
-                            .entry(run.variant.equivalence_group.clone())
-                            .or_default();
-                        let state =
-                            group
-                                .entry(run.variant.variant_id.clone())
-                                .or_insert_with(|| {
-                                    let order = variant_order;
-                                    variant_order = variant_order.saturating_add(1);
-                                    (order, run.variant.part_count, HashSet::new(), true)
-                                });
-                        if state.1 != run.variant.part_count || run.variant.part_count == 0 {
-                            state.3 = false;
-                        }
-                        if !state.2.insert(run.variant.part_index) {
-                            state.3 = false;
-                        }
-                        state.3 &= native_skia_can_replay_glyph_run(run, resources);
-                    }
-                }
-                let mut selected_text_variants = HashMap::new();
-                for (group, variants) in glyph_variants {
-                    let mut candidates = variants.into_iter().collect::<Vec<_>>();
-                    candidates.sort_by_key(|(_, (order, _, _, _))| *order);
-                    for (variant_id, (_, expected_part_count, parts, supported)) in candidates {
-                        let parts_complete = parts.len() as u32 == expected_part_count
-                            && (0..expected_part_count).all(|index| parts.contains(&index));
-                        if supported && parts_complete {
-                            selected_text_variants.insert(group, variant_id);
-                            break;
-                        }
-                    }
-                }
-                for op in ops {
-                    let skip_unselected_text_variant = match op {
-                        PaintOp::TextRun { run, .. } => {
-                            run.variant
-                                .as_ref()
-                                .is_some_and(|variant| {
-                                    match selected_text_variants.get(&variant.equivalence_group) {
-                                        Some(selected) => selected != &variant.variant_id,
-                                        None => false,
-                                    }
-                                })
-                        }
+                let selection = select_text_variant_sets_with_report(
+                    ops,
+                    |op| match op {
                         PaintOp::GlyphRun { run, .. } => {
-                            match selected_text_variants.get(&run.variant.equivalence_group) {
-                                Some(selected) => selected != &run.variant.variant_id,
-                                None => true,
-                            }
+                            native_skia_glyph_run_replay_status(run, resources)
                         }
-                        PaintOp::GlyphOutline { outline, .. } => {
-                            match selected_text_variants.get(&outline.variant.equivalence_group) {
-                                Some(selected) => selected != &outline.variant.variant_id,
-                                None => true,
-                            }
-                        }
-                        _ => false,
-                    };
-                    if skip_unselected_text_variant {
+                        _ => VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported),
+                    },
+                    |_| {
+                        VariantReplayStatus::rejected(
+                            VariantRejectReason::BackendDoesNotSupportVariant,
+                        )
+                    },
+                    VariantSelectionContext {
+                        backend: VariantSelectionBackend::NativeSkia,
+                        render_profile: replay.profile.as_str().to_string(),
+                    },
+                );
+                replay
+                    .diagnostics
+                    .variant_selections
+                    .extend(selection.reports);
+                for op in ops {
+                    if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }
                     self.render_op(canvas, op, resources, replay);

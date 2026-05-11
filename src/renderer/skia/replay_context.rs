@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::model::image::ImageEffect;
 use crate::paint::{CacheHint, ImageResourceId, LayerOutputOptions, RenderProfile, SvgResourceId};
-use crate::renderer::layer_renderer::LayerRenderDiagnostics;
+use crate::renderer::layer_renderer::{LayerRenderDiagnostics, VariantSelectionBackend};
 
 use super::cache::BoundedLruCache;
 use super::image_conv::{
@@ -81,7 +81,11 @@ impl SkiaReplayContext {
             output_options,
             scale,
             replay_policy: SkiaReplayPolicy::for_state(profile, false, false),
-            diagnostics: LayerRenderDiagnostics::default(),
+            diagnostics: LayerRenderDiagnostics {
+                backend: Some(VariantSelectionBackend::NativeSkia),
+                render_profile: Some(profile.as_str().to_string()),
+                ..LayerRenderDiagnostics::default()
+            },
             cache_hints: Vec::new(),
             image_cache: HashMap::new(),
             image_effect_cache: BoundedLruCache::new(

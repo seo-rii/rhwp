@@ -3,8 +3,11 @@ use crate::paint::{
     GlyphOutlineFillRule, GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions, LayerRectanglePaint,
     LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, PaintTextStyle,
-    PaintVariantMeta, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
-    TextVariantKind, TextVariantQuality,
+    PaintVariantMeta, TextRunPlacement, TextSourceEntry, TextSourceId, TextSourceRange,
+    TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
+};
+use crate::renderer::layer_renderer::{
+    VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
 };
 use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
@@ -280,6 +283,234 @@ fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
 
 #[test]
 fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let tree = glyph_outline_fixture_tree(
+        PaintTextStyle::from(&text_style),
+        vec![glyph_outline_fixture_path()],
+    );
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &tree.root.kind {
+        let PaintOp::TextRun { run, .. } = &ops[0] else {
+            panic!("expected text run");
+        };
+        assert_eq!(run.variant.as_ref().unwrap().variant_id, "textRun");
+        assert_eq!(run.variant.as_ref().unwrap().equivalence_group, "text-0");
+    }
+
+    let mut default_renderer = SvgRenderer::new();
+    default_renderer.render_layer_tree(&tree);
+    let default_output = default_renderer.output();
+    assert!(default_output.contains(">A</text>"));
+    assert!(!default_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    let default_report = default_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg default variant report");
+    assert_eq!(default_report.backend, VariantSelectionBackend::Svg);
+    assert_eq!(default_report.selected_variant_id, "textRun");
+    assert_eq!(
+        default_report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert_eq!(default_report.parts_expected, 1);
+    assert_eq!(default_report.parts_replayed, 1);
+    assert_eq!(default_report.parts.len(), 2);
+    assert!(default_report
+        .parts
+        .iter()
+        .any(|part| { part.variant_id == "textRun" && part.replayable && part.reason.is_none() }));
+    assert!(default_report.parts.iter().any(|part| {
+        part.variant_id == "glyphOutline"
+            && !part.replayable
+            && part.reason == Some(VariantRejectReason::BackendDoesNotSupportVariant)
+    }));
+    assert!(default_report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::BackendDoesNotSupportVariant)
+    }));
+
+    let mut strict_renderer = SvgRenderer::new();
+    strict_renderer.set_strict_glyph_outline_replay(true);
+    strict_renderer.render_layer_tree(&tree);
+    let strict_output = strict_renderer.output();
+    assert!(!strict_output.contains(">A</text>"));
+    assert!(strict_output.contains("id=\"rhwp-text-sources\""));
+    assert!(strict_output.contains("&quot;textSources&quot;"));
+    assert!(strict_output.contains("&quot;stableSourceKey&quot;"));
+    assert!(strict_output.contains("&quot;fixture-source&quot;"));
+    assert!(strict_output.contains("<path d=\"M0 0 L8 0 L8 8 Z\""));
+    assert!(strict_output.contains("fill-rule=\"evenodd\""));
+    assert!(strict_output.contains("data-rhwp-glyph-id=\"42\""));
+    assert!(strict_output.contains("data-rhwp-glyph-start=\"0\""));
+    assert!(strict_output.contains("data-rhwp-glyph-end=\"1\""));
+    assert!(strict_output.contains("data-rhwp-source-id=\"7\""));
+    assert!(strict_output.contains("data-rhwp-source-utf8-start=\"0\""));
+    assert!(strict_output.contains("data-rhwp-source-utf8-end=\"1\""));
+    assert!(strict_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    assert!(strict_output.contains("matrix(1 0 0 1 3 4)"));
+    let strict_report = strict_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict variant report");
+    assert_eq!(strict_report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        strict_report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+    assert_eq!(
+        strict_report.selected_variant_kind,
+        TextVariantKind::GlyphOutline
+    );
+    assert_eq!(strict_report.anchor_op_id.as_deref(), Some("op-text-0"));
+    assert_eq!(strict_report.parts_expected, 1);
+    assert_eq!(strict_report.parts_replayed, 1);
+    assert!(strict_report.rejected_variants.is_empty());
+    assert_eq!(strict_report.parts.len(), 2);
+    assert!(strict_report.parts.iter().any(|part| {
+        part.variant_id == "glyphOutline"
+            && part.variant_kind == TextVariantKind::GlyphOutline
+            && part.part_index == 0
+            && part.part_count == 1
+            && part.replayable
+            && part.reason.is_none()
+            && part
+                .outline_eligibility
+                .as_ref()
+                .is_some_and(|eligibility| eligibility.replay_eligible)
+    }));
+    assert!(strict_report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| eligibility.replay_eligible));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let empty_payload_tree = glyph_outline_fixture_tree(PaintTextStyle::from(&text_style), vec![]);
+    let mut empty_payload_renderer = SvgRenderer::new();
+    empty_payload_renderer.set_strict_glyph_outline_replay(true);
+    empty_payload_renderer.render_layer_tree(&empty_payload_tree);
+    let empty_payload_output = empty_payload_renderer.output();
+    assert!(empty_payload_output.contains(">A</text>"));
+    assert!(!empty_payload_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    let empty_payload_report = empty_payload_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict empty outline report");
+    assert_eq!(empty_payload_report.selected_variant_id, "textRun");
+    assert_eq!(
+        empty_payload_report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert!(empty_payload_report
+        .rejected_variants
+        .iter()
+        .any(|variant| {
+            variant.variant_id == "glyphOutline"
+                && variant
+                    .reasons
+                    .contains(&VariantRejectReason::UnsupportedOutlinePayload)
+        }));
+    assert!(empty_payload_report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            !eligibility.payload_supported
+                && !eligibility.replay_eligible
+                && eligibility.reason == Some(VariantRejectReason::UnsupportedOutlinePayload)
+        }));
+
+    let mut unsupported_style = PaintTextStyle::from(&text_style);
+    unsupported_style.underline = crate::model::style::UnderlineType::Bottom;
+    let unsupported_style_tree =
+        glyph_outline_fixture_tree(unsupported_style, vec![glyph_outline_fixture_path()]);
+    let mut unsupported_style_renderer = SvgRenderer::new();
+    unsupported_style_renderer.set_strict_glyph_outline_replay(true);
+    unsupported_style_renderer.render_layer_tree(&unsupported_style_tree);
+    let unsupported_style_output = unsupported_style_renderer.output();
+    assert!(unsupported_style_output.contains(">A</text>"));
+    assert!(!unsupported_style_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    let unsupported_style_report = unsupported_style_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict unsupported style report");
+    assert_eq!(unsupported_style_report.selected_variant_id, "textRun");
+    assert!(unsupported_style_report
+        .rejected_variants
+        .iter()
+        .any(|variant| {
+            variant.variant_id == "glyphOutline"
+                && variant
+                    .reasons
+                    .contains(&VariantRejectReason::UnsupportedPaintEffect)
+        }));
+    assert!(unsupported_style_report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            eligibility.payload_supported
+                && !eligibility.paint_style_supported
+                && !eligibility.replay_eligible
+                && eligibility.reason == Some(VariantRejectReason::UnsupportedPaintEffect)
+        }));
+
+    let mut unsupported_outline_effect = PaintTextStyle::from(&text_style);
+    unsupported_outline_effect.outline_type = 1;
+    let unsupported_outline_effect_tree = glyph_outline_fixture_tree(
+        unsupported_outline_effect,
+        vec![glyph_outline_fixture_path()],
+    );
+    let mut unsupported_outline_effect_renderer = SvgRenderer::new();
+    unsupported_outline_effect_renderer.set_strict_glyph_outline_replay(true);
+    unsupported_outline_effect_renderer.render_layer_tree(&unsupported_outline_effect_tree);
+    let unsupported_outline_effect_output = unsupported_outline_effect_renderer.output();
+    assert!(unsupported_outline_effect_output.contains(">A</text>"));
+    assert!(!unsupported_outline_effect_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    let unsupported_outline_effect_report = unsupported_outline_effect_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict unsupported outline effect report");
+    assert_eq!(
+        unsupported_outline_effect_report.selected_variant_id,
+        "textRun"
+    );
+    assert!(unsupported_outline_effect_report
+        .rejected_variants
+        .iter()
+        .any(|variant| {
+            variant.variant_id == "glyphOutline"
+                && variant
+                    .reasons
+                    .contains(&VariantRejectReason::UnsupportedPaintEffect)
+        }));
+    assert!(unsupported_outline_effect_report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            eligibility.payload_supported
+                && !eligibility.paint_style_supported
+                && !eligibility.replay_eligible
+                && eligibility.reason == Some(VariantRejectReason::UnsupportedPaintEffect)
+        }));
+}
+
+fn glyph_outline_fixture_tree(
+    outline_paint_style: PaintTextStyle,
+    paths: Vec<LayerGlyphOutlinePath>,
+) -> PageLayerTree {
     let bbox = BoundingBox::new(0.0, 0.0, 20.0, 20.0);
     let text_style = TextStyle {
         font_size: 12.0,
@@ -313,7 +544,7 @@ fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
                     }),
                     variant: Some(text_variant),
                     text: "A".to_string(),
-                    style: text_style.clone(),
+                    style: text_style,
                     positions: vec![0.0, 10.0],
                     baseline: 12.0,
                     orientation: LayerTextOrientation::Horizontal,
@@ -330,7 +561,7 @@ fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
                         stable_source_key: None,
                     },
                     variant: outline_variant,
-                    paint_style: PaintTextStyle::from(&text_style),
+                    paint_style: outline_paint_style,
                     placement: TextRunPlacement {
                         run_to_page: LayerAffineTransform {
                             a: 1.0,
@@ -342,15 +573,7 @@ fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
                         },
                         baseline_y: 0.0,
                     },
-                    paths: vec![LayerGlyphOutlinePath {
-                        commands: vec![
-                            PathCommand::MoveTo(0.0, 0.0),
-                            PathCommand::LineTo(8.0, 0.0),
-                            PathCommand::LineTo(8.0, 8.0),
-                            PathCommand::ClosePath,
-                        ],
-                        fill_rule: GlyphOutlineFillRule::EvenOdd,
-                    }],
+                    paths,
                     diagnostics: GlyphRunDiagnostics {
                         quality: TextVariantQuality::Exact,
                         replay_eligibility: GlyphRunReplayEligibility::Portable,
@@ -367,31 +590,33 @@ fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
             },
         ],
     );
-    let tree = PageLayerTree::new(40.0, 30.0, root);
-    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &tree.root.kind {
-        let PaintOp::TextRun { run, .. } = &ops[0] else {
-            panic!("expected text run");
-        };
-        assert_eq!(run.variant.as_ref().unwrap().variant_id, "textRun");
-        assert_eq!(run.variant.as_ref().unwrap().equivalence_group, "text-0");
+    PageLayerTree::builder(40.0, 30.0, root)
+        .text_sources(TextSourceTable {
+            entries: vec![TextSourceEntry {
+                id: TextSourceId(7),
+                stable_source_key: Some("fixture-source".to_string()),
+                text: "A".to_string(),
+                utf8_range: TextSourceRange::new(0, 1),
+                utf16_range: TextSourceRange::new(0, 1),
+                annotations: Vec::new(),
+            }],
+        })
+        .build()
+}
+
+fn glyph_outline_fixture_path() -> LayerGlyphOutlinePath {
+    LayerGlyphOutlinePath {
+        glyph_id: 42,
+        source_range_utf8: TextSourceRange::new(0, 1),
+        glyph_range: crate::paint::GlyphRange { start: 0, end: 1 },
+        commands: vec![
+            PathCommand::MoveTo(0.0, 0.0),
+            PathCommand::LineTo(8.0, 0.0),
+            PathCommand::LineTo(8.0, 8.0),
+            PathCommand::ClosePath,
+        ],
+        fill_rule: GlyphOutlineFillRule::EvenOdd,
     }
-
-    let mut default_renderer = SvgRenderer::new();
-    default_renderer.render_layer_tree(&tree);
-    let default_output = default_renderer.output();
-    assert!(default_output.contains(">A</text>"));
-    assert!(!default_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
-
-    let mut strict_renderer = SvgRenderer::new();
-    strict_renderer.set_strict_glyph_outline_replay(true);
-    strict_renderer.render_layer_tree(&tree);
-    let strict_output = strict_renderer.output();
-    assert!(!strict_output.contains(">A</text>"));
-    assert!(strict_output.contains("<path d=\"M0 0 L8 0 L8 8 Z\""));
-    assert!(strict_output.contains("fill-rule=\"evenodd\""));
-    assert!(strict_output.contains("data-rhwp-source-id=\"7\""));
-    assert!(strict_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
-    assert!(strict_output.contains("matrix(1 0 0 1 3 4)"));
 }
 
 #[test]

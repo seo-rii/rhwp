@@ -94,9 +94,81 @@ pub struct TextShapeDiagnostic {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapedMeasurementRunReport {
+    pub document_id: Option<String>,
+    pub sample_id: Option<String>,
+    pub page_index: Option<u32>,
+    pub text_op_id: Option<String>,
+    pub source: Option<crate::paint::TextSourceSpan>,
+    pub legacy_width_px: f64,
+    pub shaped_width_px: f64,
+    pub delta_px: f64,
+    pub delta_ratio: f64,
+    pub cluster_mismatch_count: u32,
+    pub fallback_font_difference: bool,
+    pub vertical_metric_difference: bool,
+    pub shaping_quality: Option<GlyphRunQuality>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapedMeasurementLineReport {
+    pub document_id: Option<String>,
+    pub sample_id: Option<String>,
+    pub page_index: Option<u32>,
+    pub paragraph_id: Option<String>,
+    pub line_index: u32,
+    pub legacy_line_width_px: f64,
+    pub shaped_line_width_px: f64,
+    pub delta_px: f64,
+    pub delta_ratio: f64,
+    pub contributing_run_count: u32,
+    pub max_run_delta_px: f64,
+    pub fallback_font_difference_count: u32,
+    pub vertical_metric_difference_count: u32,
+    pub cluster_mismatch_count_sum: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapedMeasurementParagraphSummary {
+    pub document_id: Option<String>,
+    pub sample_id: Option<String>,
+    pub page_index: Option<u32>,
+    pub paragraph_id: Option<String>,
+    pub line_count: u32,
+    pub run_count: u32,
+    pub max_run_delta_px: f64,
+    pub max_line_delta_px: f64,
+    pub max_line_delta_ratio: f64,
+    pub total_abs_delta_px: f64,
+    pub cluster_mismatch_count_sum: u32,
+    pub fallback_font_difference_count: u32,
+    pub vertical_metric_difference_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapedMeasurementPageSummary {
+    pub document_id: Option<String>,
+    pub sample_id: Option<String>,
+    pub page_index: Option<u32>,
+    pub paragraph_count: u32,
+    pub line_count: u32,
+    pub run_count: u32,
+    pub max_run_delta_px: f64,
+    pub max_line_delta_px: f64,
+    pub total_abs_delta_px: f64,
+    pub fallback_font_difference_count: u32,
+    pub vertical_metric_difference_count: u32,
+    pub cluster_mismatch_count_sum: u32,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TextShapeReport {
     pub diagnostics: Vec<TextShapeDiagnostic>,
+    pub shaped_measurements: Vec<ShapedMeasurementRunReport>,
+    pub shaped_measurement_lines: Vec<ShapedMeasurementLineReport>,
+    pub shaped_measurement_paragraphs: Vec<ShapedMeasurementParagraphSummary>,
+    pub shaped_measurement_pages: Vec<ShapedMeasurementPageSummary>,
 }
 
 impl TextShapeReport {
@@ -106,6 +178,521 @@ impl TextShapeReport {
             .filter(|diagnostic| diagnostic.public_glyph_run_emitted)
             .count()
     }
+
+    /// Adds a report-only line summary from already-collected run measurements.
+    ///
+    /// The caller owns line membership. This method deliberately does not infer
+    /// line breaks or mutate layout; it only aggregates telemetry for future
+    /// layout migration analysis.
+    pub fn summarize_shaped_measurement_line(
+        &mut self,
+        document_id: Option<String>,
+        sample_id: Option<String>,
+        page_index: Option<u32>,
+        paragraph_id: Option<String>,
+        line_index: u32,
+        run_indices: &[usize],
+    ) -> Option<&ShapedMeasurementLineReport> {
+        let mut contributing_run_count = 0u32;
+        let mut legacy_line_width_px = 0.0;
+        let mut shaped_line_width_px = 0.0;
+        let mut max_run_delta_px = 0.0f64;
+        let mut fallback_font_difference_count = 0u32;
+        let mut vertical_metric_difference_count = 0u32;
+        let mut cluster_mismatch_count_sum = 0u32;
+
+        for index in run_indices {
+            let Some(run) = self.shaped_measurements.get(*index) else {
+                continue;
+            };
+            contributing_run_count = contributing_run_count.saturating_add(1);
+            legacy_line_width_px += run.legacy_width_px;
+            shaped_line_width_px += run.shaped_width_px;
+            max_run_delta_px = max_run_delta_px.max(run.delta_px.abs());
+            if run.fallback_font_difference {
+                fallback_font_difference_count = fallback_font_difference_count.saturating_add(1);
+            }
+            if run.vertical_metric_difference {
+                vertical_metric_difference_count =
+                    vertical_metric_difference_count.saturating_add(1);
+            }
+            cluster_mismatch_count_sum =
+                cluster_mismatch_count_sum.saturating_add(run.cluster_mismatch_count);
+        }
+
+        if contributing_run_count == 0 {
+            return None;
+        }
+
+        let delta_px = shaped_line_width_px - legacy_line_width_px;
+        let delta_ratio = if legacy_line_width_px.abs() > f64::EPSILON {
+            delta_px / legacy_line_width_px
+        } else {
+            0.0
+        };
+
+        self.shaped_measurement_lines
+            .push(ShapedMeasurementLineReport {
+                document_id,
+                sample_id,
+                page_index,
+                paragraph_id,
+                line_index,
+                legacy_line_width_px,
+                shaped_line_width_px,
+                delta_px,
+                delta_ratio,
+                contributing_run_count,
+                max_run_delta_px,
+                fallback_font_difference_count,
+                vertical_metric_difference_count,
+                cluster_mismatch_count_sum,
+            });
+        self.shaped_measurement_lines.last()
+    }
+
+    /// Adds a report-only paragraph summary from existing line summaries.
+    ///
+    /// The caller owns paragraph membership. This method does not infer
+    /// paragraph boundaries, reflow lines, or decide whether line breaks would
+    /// change under shaped measurement.
+    pub fn summarize_shaped_measurement_paragraph(
+        &mut self,
+        document_id: Option<String>,
+        sample_id: Option<String>,
+        page_index: Option<u32>,
+        paragraph_id: Option<String>,
+        line_indices: &[usize],
+    ) -> Option<&ShapedMeasurementParagraphSummary> {
+        let mut line_count = 0u32;
+        let mut run_count = 0u32;
+        let mut max_run_delta_px = 0.0f64;
+        let mut max_line_delta_px = 0.0f64;
+        let mut max_line_delta_ratio = 0.0f64;
+        let mut total_abs_delta_px = 0.0f64;
+        let mut cluster_mismatch_count_sum = 0u32;
+        let mut fallback_font_difference_count = 0u32;
+        let mut vertical_metric_difference_count = 0u32;
+
+        for index in line_indices {
+            let Some(line) = self.shaped_measurement_lines.get(*index) else {
+                continue;
+            };
+            line_count = line_count.saturating_add(1);
+            run_count = run_count.saturating_add(line.contributing_run_count);
+            max_run_delta_px = max_run_delta_px.max(line.max_run_delta_px.abs());
+            max_line_delta_px = max_line_delta_px.max(line.delta_px.abs());
+            max_line_delta_ratio = max_line_delta_ratio.max(line.delta_ratio.abs());
+            total_abs_delta_px += line.delta_px.abs();
+            cluster_mismatch_count_sum =
+                cluster_mismatch_count_sum.saturating_add(line.cluster_mismatch_count_sum);
+            fallback_font_difference_count =
+                fallback_font_difference_count.saturating_add(line.fallback_font_difference_count);
+            vertical_metric_difference_count = vertical_metric_difference_count
+                .saturating_add(line.vertical_metric_difference_count);
+        }
+
+        if line_count == 0 {
+            return None;
+        }
+
+        self.shaped_measurement_paragraphs
+            .push(ShapedMeasurementParagraphSummary {
+                document_id,
+                sample_id,
+                page_index,
+                paragraph_id,
+                line_count,
+                run_count,
+                max_run_delta_px,
+                max_line_delta_px,
+                max_line_delta_ratio,
+                total_abs_delta_px,
+                cluster_mismatch_count_sum,
+                fallback_font_difference_count,
+                vertical_metric_difference_count,
+            });
+        self.shaped_measurement_paragraphs.last()
+    }
+
+    /// Adds a report-only page summary from existing paragraph summaries.
+    ///
+    /// The caller owns page membership. This method is telemetry-only and does
+    /// not feed layout measurement, pagination, or CI pass/fail decisions.
+    pub fn summarize_shaped_measurement_page(
+        &mut self,
+        document_id: Option<String>,
+        sample_id: Option<String>,
+        page_index: Option<u32>,
+        paragraph_indices: &[usize],
+    ) -> Option<&ShapedMeasurementPageSummary> {
+        let mut paragraph_count = 0u32;
+        let mut line_count = 0u32;
+        let mut run_count = 0u32;
+        let mut max_run_delta_px = 0.0f64;
+        let mut max_line_delta_px = 0.0f64;
+        let mut total_abs_delta_px = 0.0f64;
+        let mut fallback_font_difference_count = 0u32;
+        let mut vertical_metric_difference_count = 0u32;
+        let mut cluster_mismatch_count_sum = 0u32;
+
+        for index in paragraph_indices {
+            let Some(paragraph) = self.shaped_measurement_paragraphs.get(*index) else {
+                continue;
+            };
+            paragraph_count = paragraph_count.saturating_add(1);
+            line_count = line_count.saturating_add(paragraph.line_count);
+            run_count = run_count.saturating_add(paragraph.run_count);
+            max_run_delta_px = max_run_delta_px.max(paragraph.max_run_delta_px.abs());
+            max_line_delta_px = max_line_delta_px.max(paragraph.max_line_delta_px.abs());
+            total_abs_delta_px += paragraph.total_abs_delta_px;
+            fallback_font_difference_count = fallback_font_difference_count
+                .saturating_add(paragraph.fallback_font_difference_count);
+            vertical_metric_difference_count = vertical_metric_difference_count
+                .saturating_add(paragraph.vertical_metric_difference_count);
+            cluster_mismatch_count_sum =
+                cluster_mismatch_count_sum.saturating_add(paragraph.cluster_mismatch_count_sum);
+        }
+
+        if paragraph_count == 0 {
+            return None;
+        }
+
+        self.shaped_measurement_pages
+            .push(ShapedMeasurementPageSummary {
+                document_id,
+                sample_id,
+                page_index,
+                paragraph_count,
+                line_count,
+                run_count,
+                max_run_delta_px,
+                max_line_delta_px,
+                total_abs_delta_px,
+                fallback_font_difference_count,
+                vertical_metric_difference_count,
+                cluster_mismatch_count_sum,
+            });
+        self.shaped_measurement_pages.last()
+    }
+
+    /// Serializes the report-only shaped measurement observations.
+    ///
+    /// This artifact is intentionally separate from layer-tree schema export:
+    /// it is backend/layout migration telemetry, not a replay contract.
+    pub fn shaped_measurements_json(&self) -> String {
+        let mut buf = String::from("{\"shapedMeasurements\":[");
+        for (idx, measurement) in self.shaped_measurements.iter().enumerate() {
+            if idx > 0 {
+                buf.push(',');
+            }
+            write_shaped_measurement_json(&mut buf, measurement);
+        }
+        buf.push_str("],\"shapedMeasurementLines\":[");
+        for (idx, line) in self.shaped_measurement_lines.iter().enumerate() {
+            if idx > 0 {
+                buf.push(',');
+            }
+            buf.push('{');
+            let mut first = true;
+            write_optional_string_field(
+                &mut buf,
+                "documentId",
+                line.document_id.as_deref(),
+                &mut first,
+            );
+            write_optional_string_field(
+                &mut buf,
+                "sampleId",
+                line.sample_id.as_deref(),
+                &mut first,
+            );
+            write_optional_u32_field(&mut buf, "pageIndex", line.page_index, &mut first);
+            write_optional_string_field(
+                &mut buf,
+                "paragraphId",
+                line.paragraph_id.as_deref(),
+                &mut first,
+            );
+            write_field_prefix(&mut buf, "lineIndex", &mut first);
+            buf.push_str(&line.line_index.to_string());
+            write_f64_field(
+                &mut buf,
+                "legacyLineWidthPx",
+                line.legacy_line_width_px,
+                &mut first,
+            );
+            write_f64_field(
+                &mut buf,
+                "shapedLineWidthPx",
+                line.shaped_line_width_px,
+                &mut first,
+            );
+            write_f64_field(&mut buf, "deltaPx", line.delta_px, &mut first);
+            write_f64_field(&mut buf, "deltaRatio", line.delta_ratio, &mut first);
+            write_field_prefix(&mut buf, "contributingRunCount", &mut first);
+            buf.push_str(&line.contributing_run_count.to_string());
+            write_f64_field(&mut buf, "maxRunDeltaPx", line.max_run_delta_px, &mut first);
+            write_field_prefix(&mut buf, "fallbackFontDifferenceCount", &mut first);
+            buf.push_str(&line.fallback_font_difference_count.to_string());
+            write_field_prefix(&mut buf, "verticalMetricDifferenceCount", &mut first);
+            buf.push_str(&line.vertical_metric_difference_count.to_string());
+            write_field_prefix(&mut buf, "clusterMismatchCountSum", &mut first);
+            buf.push_str(&line.cluster_mismatch_count_sum.to_string());
+            buf.push('}');
+        }
+        buf.push_str("],\"shapedMeasurementParagraphs\":[");
+        for (idx, paragraph) in self.shaped_measurement_paragraphs.iter().enumerate() {
+            if idx > 0 {
+                buf.push(',');
+            }
+            buf.push('{');
+            let mut first = true;
+            write_optional_string_field(
+                &mut buf,
+                "documentId",
+                paragraph.document_id.as_deref(),
+                &mut first,
+            );
+            write_optional_string_field(
+                &mut buf,
+                "sampleId",
+                paragraph.sample_id.as_deref(),
+                &mut first,
+            );
+            write_optional_u32_field(&mut buf, "pageIndex", paragraph.page_index, &mut first);
+            write_optional_string_field(
+                &mut buf,
+                "paragraphId",
+                paragraph.paragraph_id.as_deref(),
+                &mut first,
+            );
+            write_field_prefix(&mut buf, "lineCount", &mut first);
+            buf.push_str(&paragraph.line_count.to_string());
+            write_field_prefix(&mut buf, "runCount", &mut first);
+            buf.push_str(&paragraph.run_count.to_string());
+            write_f64_field(
+                &mut buf,
+                "maxRunDeltaPx",
+                paragraph.max_run_delta_px,
+                &mut first,
+            );
+            write_f64_field(
+                &mut buf,
+                "maxLineDeltaPx",
+                paragraph.max_line_delta_px,
+                &mut first,
+            );
+            write_f64_field(
+                &mut buf,
+                "maxLineDeltaRatio",
+                paragraph.max_line_delta_ratio,
+                &mut first,
+            );
+            write_f64_field(
+                &mut buf,
+                "totalAbsDeltaPx",
+                paragraph.total_abs_delta_px,
+                &mut first,
+            );
+            write_field_prefix(&mut buf, "clusterMismatchCountSum", &mut first);
+            buf.push_str(&paragraph.cluster_mismatch_count_sum.to_string());
+            write_field_prefix(&mut buf, "fallbackFontDifferenceCount", &mut first);
+            buf.push_str(&paragraph.fallback_font_difference_count.to_string());
+            write_field_prefix(&mut buf, "verticalMetricDifferenceCount", &mut first);
+            buf.push_str(&paragraph.vertical_metric_difference_count.to_string());
+            buf.push('}');
+        }
+        buf.push_str("],\"shapedMeasurementPages\":[");
+        for (idx, page) in self.shaped_measurement_pages.iter().enumerate() {
+            if idx > 0 {
+                buf.push(',');
+            }
+            buf.push('{');
+            let mut first = true;
+            write_optional_string_field(
+                &mut buf,
+                "documentId",
+                page.document_id.as_deref(),
+                &mut first,
+            );
+            write_optional_string_field(
+                &mut buf,
+                "sampleId",
+                page.sample_id.as_deref(),
+                &mut first,
+            );
+            write_optional_u32_field(&mut buf, "pageIndex", page.page_index, &mut first);
+            write_field_prefix(&mut buf, "paragraphCount", &mut first);
+            buf.push_str(&page.paragraph_count.to_string());
+            write_field_prefix(&mut buf, "lineCount", &mut first);
+            buf.push_str(&page.line_count.to_string());
+            write_field_prefix(&mut buf, "runCount", &mut first);
+            buf.push_str(&page.run_count.to_string());
+            write_f64_field(&mut buf, "maxRunDeltaPx", page.max_run_delta_px, &mut first);
+            write_f64_field(
+                &mut buf,
+                "maxLineDeltaPx",
+                page.max_line_delta_px,
+                &mut first,
+            );
+            write_f64_field(
+                &mut buf,
+                "totalAbsDeltaPx",
+                page.total_abs_delta_px,
+                &mut first,
+            );
+            write_field_prefix(&mut buf, "fallbackFontDifferenceCount", &mut first);
+            buf.push_str(&page.fallback_font_difference_count.to_string());
+            write_field_prefix(&mut buf, "verticalMetricDifferenceCount", &mut first);
+            buf.push_str(&page.vertical_metric_difference_count.to_string());
+            write_field_prefix(&mut buf, "clusterMismatchCountSum", &mut first);
+            buf.push_str(&page.cluster_mismatch_count_sum.to_string());
+            buf.push('}');
+        }
+        buf.push_str("]}");
+        buf
+    }
+}
+
+fn write_shaped_measurement_json(buf: &mut String, measurement: &ShapedMeasurementRunReport) {
+    buf.push('{');
+    let mut first = true;
+    write_optional_string_field(
+        buf,
+        "documentId",
+        measurement.document_id.as_deref(),
+        &mut first,
+    );
+    write_optional_string_field(
+        buf,
+        "sampleId",
+        measurement.sample_id.as_deref(),
+        &mut first,
+    );
+    write_optional_u32_field(buf, "pageIndex", measurement.page_index, &mut first);
+    write_optional_string_field(
+        buf,
+        "textOpId",
+        measurement.text_op_id.as_deref(),
+        &mut first,
+    );
+    if let Some(source) = &measurement.source {
+        write_field_prefix(buf, "source", &mut first);
+        write_text_source_span_json(buf, source);
+    }
+    write_f64_field(
+        buf,
+        "legacyWidthPx",
+        measurement.legacy_width_px,
+        &mut first,
+    );
+    write_f64_field(
+        buf,
+        "shapedWidthPx",
+        measurement.shaped_width_px,
+        &mut first,
+    );
+    write_f64_field(buf, "deltaPx", measurement.delta_px, &mut first);
+    write_f64_field(buf, "deltaRatio", measurement.delta_ratio, &mut first);
+    write_field_prefix(buf, "clusterMismatchCount", &mut first);
+    buf.push_str(&measurement.cluster_mismatch_count.to_string());
+    write_field_prefix(buf, "fallbackFontDifference", &mut first);
+    buf.push_str(if measurement.fallback_font_difference {
+        "true"
+    } else {
+        "false"
+    });
+    write_field_prefix(buf, "verticalMetricDifference", &mut first);
+    buf.push_str(if measurement.vertical_metric_difference {
+        "true"
+    } else {
+        "false"
+    });
+    if let Some(quality) = measurement.shaping_quality {
+        write_field_prefix(buf, "shapingQuality", &mut first);
+        write_json_string(buf, quality.as_str());
+    }
+    buf.push('}');
+}
+
+fn write_optional_string_field(
+    buf: &mut String,
+    name: &str,
+    value: Option<&str>,
+    first: &mut bool,
+) {
+    if let Some(value) = value {
+        write_field_prefix(buf, name, first);
+        write_json_string(buf, value);
+    }
+}
+
+fn write_optional_u32_field(buf: &mut String, name: &str, value: Option<u32>, first: &mut bool) {
+    if let Some(value) = value {
+        write_field_prefix(buf, name, first);
+        buf.push_str(&value.to_string());
+    }
+}
+
+fn write_f64_field(buf: &mut String, name: &str, value: f64, first: &mut bool) {
+    write_field_prefix(buf, name, first);
+    if value.is_finite() {
+        buf.push_str(&value.to_string());
+    } else {
+        buf.push_str("null");
+    }
+}
+
+fn write_field_prefix(buf: &mut String, name: &str, first: &mut bool) {
+    if *first {
+        *first = false;
+    } else {
+        buf.push(',');
+    }
+    write_json_string(buf, name);
+    buf.push(':');
+}
+
+fn write_text_source_span_json(buf: &mut String, source: &crate::paint::TextSourceSpan) {
+    buf.push_str("{\"id\":");
+    buf.push_str(&source.id.0.to_string());
+    buf.push_str(",\"utf8Range\":");
+    write_text_source_range_json(buf, source.utf8_range);
+    buf.push_str(",\"utf16Range\":");
+    write_text_source_range_json(buf, source.utf16_range);
+    if let Some(stable_source_key) = &source.stable_source_key {
+        buf.push_str(",\"stableSourceKey\":{\"scheme\":");
+        write_json_string(buf, stable_source_key);
+        buf.push('}');
+    }
+    buf.push('}');
+}
+
+fn write_text_source_range_json(buf: &mut String, range: crate::paint::TextSourceRange) {
+    buf.push_str("{\"start\":");
+    buf.push_str(&range.start.to_string());
+    buf.push_str(",\"end\":");
+    buf.push_str(&range.end.to_string());
+    buf.push('}');
+}
+
+fn write_json_string(buf: &mut String, value: &str) {
+    buf.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => buf.push_str("\\\""),
+            '\\' => buf.push_str("\\\\"),
+            '\n' => buf.push_str("\\n"),
+            '\r' => buf.push_str("\\r"),
+            '\t' => buf.push_str("\\t"),
+            c if c < '\x20' => {
+                let _ = std::fmt::Write::write_fmt(buf, format_args!("\\u{:04x}", c as u32));
+            }
+            c => buf.push(c),
+        }
+    }
+    buf.push('"');
 }
 
 pub struct TextShapeLowerer<'a> {
@@ -163,8 +750,11 @@ impl<'a> TextShapeLowerer<'a> {
                 let mut lowered = Vec::with_capacity(ops.len());
                 for op in ops.drain(..) {
                     if let PaintOp::TextRun { bbox, run } = op {
-                        let (diagnostic, glyph_run) = self.lower_text_run(bbox, &run);
+                        let (diagnostic, measurement, glyph_run) = self.lower_text_run(bbox, &run);
                         report.diagnostics.push(diagnostic);
+                        if let Some(measurement) = measurement {
+                            report.shaped_measurements.push(measurement);
+                        }
                         lowered.push(PaintOp::TextRun { bbox, run });
                         if let Some(glyph_run) = glyph_run {
                             lowered.push(PaintOp::GlyphRun {
@@ -189,7 +779,11 @@ impl<'a> TextShapeLowerer<'a> {
         &self,
         bbox: BoundingBox,
         run: &LayerTextRunPaint,
-    ) -> (TextShapeDiagnostic, Option<LayerGlyphRunPaint>) {
+    ) -> (
+        TextShapeDiagnostic,
+        Option<ShapedMeasurementRunReport>,
+        Option<LayerGlyphRunPaint>,
+    ) {
         self.evaluate_text_run(Some(bbox), run)
     }
 
@@ -197,7 +791,11 @@ impl<'a> TextShapeLowerer<'a> {
         &self,
         bbox: Option<BoundingBox>,
         run: &LayerTextRunPaint,
-    ) -> (TextShapeDiagnostic, Option<LayerGlyphRunPaint>) {
+    ) -> (
+        TextShapeDiagnostic,
+        Option<ShapedMeasurementRunReport>,
+        Option<LayerGlyphRunPaint>,
+    ) {
         let has_source = run.source.is_some();
         let excluded_by_cluster = run.clusters.iter().any(|cluster| {
             cluster
@@ -222,6 +820,7 @@ impl<'a> TextShapeLowerer<'a> {
                     reason: Some("missingSourceSpan".to_string()),
                 },
                 None,
+                None,
             );
         }
 
@@ -236,6 +835,7 @@ impl<'a> TextShapeLowerer<'a> {
                     strict_visual_eligible: false,
                     reason: Some("notShapingCandidate".to_string()),
                 },
+                None,
                 None,
             );
         }
@@ -270,54 +870,57 @@ impl<'a> TextShapeLowerer<'a> {
         let mut strict_visual_eligible = false;
         let paint_style = PaintTextStyle::from(&run.style);
 
-        if matches!(
+        let shaped = if matches!(
             replay_eligibility,
             GlyphRunReplayEligibility::Portable
                 | GlyphRunReplayEligibility::ConditionalExternalFont
         ) {
-            if let (Some(bbox), Some(source), Some(variant)) =
-                (bbox, run.source.clone(), run.variant.clone())
-            {
-                if let Some(shaped) = self.resolver.shape_glyph_run(&request, run, &resolved) {
-                    if !paint_style.is_fill_only_glyph_replay() {
-                        reason = Some("unsupportedGlyphRunPaintEffect".to_string());
-                    } else if glyph_run_is_exportable(&shaped) {
-                        let mut glyph_variant = variant;
-                        glyph_variant.variant_id = "glyphRun".to_string();
-                        glyph_variant.variant_kind = TextVariantKind::GlyphRun;
-                        glyph_variant.is_default_fallback = false;
-                        glyph_variant.requires =
-                            vec!["fontResources".to_string(), "text.glyphRun".to_string()];
-                        glyph_variant.quality = Some(shaped.diagnostics.quality);
-                        diagnostic_quality = glyph_quality_from_variant(shaped.diagnostics.quality);
-                        strict_visual_eligible = shaped.diagnostics.strict_visual_eligible;
-                        reason = shaped.diagnostics.reason.clone();
-                        public_glyph_run_emitted = true;
-                        public_glyph_run = Some(LayerGlyphRunPaint {
-                            source,
-                            variant: glyph_variant,
-                            paint_style: paint_style.clone(),
-                            shape_key: shaped.shape_key.clone(),
-                            placement: run
-                                .placement
-                                .unwrap_or_else(|| fallback_placement(bbox, run)),
-                            glyph_ids: shaped.glyph_ids,
-                            positions: shaped.positions,
-                            advances: shaped.advances,
-                            clusters: shaped.clusters,
-                            direction: shaped.shape_key.direction,
-                            bidi_level: None,
-                            writing_mode: shaped.shape_key.writing_mode,
-                            orientation: GlyphRunOrientation::from_text_orientation(
-                                run.orientation,
-                            ),
-                            glyph_transforms: None,
-                            diagnostics: shaped.diagnostics,
-                        });
-                    } else {
-                        reason = Some("glyphRunDiagnosticsNotExportable".to_string());
-                    }
-                }
+            self.resolver.shape_glyph_run(&request, run, &resolved)
+        } else {
+            None
+        };
+        let measurement_report = shaped
+            .as_ref()
+            .map(|shaped| shaped_measurement_report(run, shaped));
+
+        if let (Some(bbox), Some(source), Some(variant), Some(shaped)) =
+            (bbox, run.source.clone(), run.variant.clone(), shaped)
+        {
+            if !paint_style.is_fill_only_glyph_replay() {
+                reason = Some("unsupportedGlyphRunPaintEffect".to_string());
+            } else if glyph_run_is_exportable(&shaped) {
+                let mut glyph_variant = variant;
+                glyph_variant.variant_id = "glyphRun".to_string();
+                glyph_variant.variant_kind = TextVariantKind::GlyphRun;
+                glyph_variant.is_default_fallback = false;
+                glyph_variant.requires =
+                    vec!["fontResources".to_string(), "text.glyphRun".to_string()];
+                glyph_variant.quality = Some(shaped.diagnostics.quality);
+                diagnostic_quality = glyph_quality_from_variant(shaped.diagnostics.quality);
+                strict_visual_eligible = shaped.diagnostics.strict_visual_eligible;
+                reason = shaped.diagnostics.reason.clone();
+                public_glyph_run_emitted = true;
+                public_glyph_run = Some(LayerGlyphRunPaint {
+                    source,
+                    variant: glyph_variant,
+                    paint_style: paint_style.clone(),
+                    shape_key: shaped.shape_key.clone(),
+                    placement: run
+                        .placement
+                        .unwrap_or_else(|| fallback_placement(bbox, run)),
+                    glyph_ids: shaped.glyph_ids,
+                    positions: shaped.positions,
+                    advances: shaped.advances,
+                    clusters: shaped.clusters,
+                    direction: shaped.shape_key.direction,
+                    bidi_level: None,
+                    writing_mode: shaped.shape_key.writing_mode,
+                    orientation: GlyphRunOrientation::from_text_orientation(run.orientation),
+                    glyph_transforms: None,
+                    diagnostics: shaped.diagnostics,
+                });
+            } else {
+                reason = Some("glyphRunDiagnosticsNotExportable".to_string());
             }
         }
 
@@ -331,8 +934,73 @@ impl<'a> TextShapeLowerer<'a> {
                 strict_visual_eligible,
                 reason,
             },
+            measurement_report,
             public_glyph_run,
         )
+    }
+}
+
+fn shaped_measurement_report(
+    run: &LayerTextRunPaint,
+    shaped: &ResolvedGlyphRun,
+) -> ShapedMeasurementRunReport {
+    let legacy_width_px = run
+        .positions
+        .first()
+        .zip(run.positions.last())
+        .map(|(first, last)| (last - first).abs())
+        .unwrap_or(0.0);
+    let shaped_width_px = shaped_width(shaped);
+    let delta_px = shaped_width_px - legacy_width_px;
+    let delta_ratio = if legacy_width_px.abs() > f64::EPSILON {
+        delta_px / legacy_width_px
+    } else {
+        0.0
+    };
+    ShapedMeasurementRunReport {
+        document_id: None,
+        sample_id: None,
+        page_index: None,
+        text_op_id: None,
+        source: run.source.clone(),
+        legacy_width_px,
+        shaped_width_px,
+        delta_px,
+        delta_ratio,
+        cluster_mismatch_count: shaped.diagnostics.cluster_mismatch_count,
+        fallback_font_difference: shaped.diagnostics.used_fallback_font_count > 0,
+        vertical_metric_difference: false,
+        shaping_quality: Some(glyph_quality_from_variant(shaped.diagnostics.quality)),
+    }
+}
+
+fn shaped_width(shaped: &ResolvedGlyphRun) -> f64 {
+    if shaped.positions.is_empty() {
+        return 0.0;
+    }
+    let start = shaped
+        .positions
+        .iter()
+        .map(|point| point.x)
+        .fold(f64::INFINITY, f64::min);
+    let end = shaped
+        .positions
+        .iter()
+        .enumerate()
+        .map(|(idx, point)| {
+            point.x
+                + shaped
+                    .advances
+                    .as_ref()
+                    .and_then(|advances| advances.get(idx))
+                    .map(|advance| advance.dx)
+                    .unwrap_or(0.0)
+        })
+        .fold(f64::NEG_INFINITY, f64::max);
+    if start.is_finite() && end.is_finite() {
+        (end - start).abs()
+    } else {
+        0.0
     }
 }
 
@@ -510,18 +1178,100 @@ mod tests {
 
     #[test]
     fn lowerer_emits_public_glyph_run_only_from_exportable_shaped_data() {
+        let mut text_run = sourced_text_run("A");
+        text_run.positions = vec![0.0, 10.0];
         let mut root = LayerNode::leaf(
             BoundingBox::new(0.0, 0.0, 100.0, 100.0),
             None,
             vec![PaintOp::TextRun {
                 bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
-                run: sourced_text_run("A"),
+                run: text_run,
             }],
         );
         let lowerer = TextShapeLowerer::new(&EmittingResolver);
-        let report = lowerer.lower_root(&mut root);
+        let mut report = lowerer.lower_root(&mut root);
 
         assert_eq!(report.public_glyph_run_count(), 1);
+        assert_eq!(report.shaped_measurements.len(), 1);
+        assert_eq!(report.shaped_measurements[0].legacy_width_px, 10.0);
+        assert_eq!(report.shaped_measurements[0].shaped_width_px, 12.0);
+        assert_eq!(report.shaped_measurements[0].delta_px, 2.0);
+        assert_eq!(
+            report.shaped_measurements[0].shaping_quality,
+            Some(GlyphRunQuality::Exact)
+        );
+        assert!(report
+            .summarize_shaped_measurement_line(
+                None,
+                None,
+                Some(0),
+                Some("paragraph-0".to_string()),
+                0,
+                &[0],
+            )
+            .is_some());
+        assert_eq!(report.shaped_measurement_lines.len(), 1);
+        assert_eq!(
+            report.shaped_measurement_lines[0].legacy_line_width_px,
+            10.0
+        );
+        assert_eq!(
+            report.shaped_measurement_lines[0].shaped_line_width_px,
+            12.0
+        );
+        assert_eq!(report.shaped_measurement_lines[0].delta_px, 2.0);
+        assert_eq!(report.shaped_measurement_lines[0].contributing_run_count, 1);
+        assert_eq!(report.shaped_measurement_lines[0].max_run_delta_px, 2.0);
+        assert!(report
+            .summarize_shaped_measurement_paragraph(
+                None,
+                None,
+                Some(0),
+                Some("paragraph-0".to_string()),
+                &[0],
+            )
+            .is_some());
+        assert_eq!(report.shaped_measurement_paragraphs.len(), 1);
+        assert_eq!(report.shaped_measurement_paragraphs[0].line_count, 1);
+        assert_eq!(report.shaped_measurement_paragraphs[0].run_count, 1);
+        assert_eq!(
+            report.shaped_measurement_paragraphs[0].max_run_delta_px,
+            2.0
+        );
+        assert_eq!(
+            report.shaped_measurement_paragraphs[0].max_line_delta_px,
+            2.0
+        );
+        assert_eq!(
+            report.shaped_measurement_paragraphs[0].total_abs_delta_px,
+            2.0
+        );
+        assert!(report
+            .summarize_shaped_measurement_page(None, None, Some(0), &[0])
+            .is_some());
+        assert_eq!(report.shaped_measurement_pages.len(), 1);
+        assert_eq!(report.shaped_measurement_pages[0].paragraph_count, 1);
+        assert_eq!(report.shaped_measurement_pages[0].line_count, 1);
+        assert_eq!(report.shaped_measurement_pages[0].run_count, 1);
+        assert_eq!(report.shaped_measurement_pages[0].max_run_delta_px, 2.0);
+        assert_eq!(report.shaped_measurement_pages[0].max_line_delta_px, 2.0);
+        assert_eq!(report.shaped_measurement_pages[0].total_abs_delta_px, 2.0);
+        let measurement_json = report.shaped_measurements_json();
+        assert!(measurement_json.contains("\"shapedMeasurements\""));
+        assert!(measurement_json.contains("\"shapedMeasurementLines\""));
+        assert!(measurement_json.contains("\"shapedMeasurementParagraphs\""));
+        assert!(measurement_json.contains("\"shapedMeasurementPages\""));
+        assert!(measurement_json.contains("\"legacyWidthPx\":10"));
+        assert!(measurement_json.contains("\"shapedWidthPx\":12"));
+        assert!(measurement_json.contains("\"deltaPx\":2"));
+        assert!(measurement_json.contains("\"shapingQuality\":\"exact\""));
+        assert!(measurement_json.contains("\"paragraphId\":\"paragraph-0\""));
+        assert!(measurement_json.contains("\"legacyLineWidthPx\":10"));
+        assert!(measurement_json.contains("\"shapedLineWidthPx\":12"));
+        assert!(measurement_json.contains("\"contributingRunCount\":1"));
+        assert!(measurement_json.contains("\"paragraphCount\":1"));
+        assert!(measurement_json.contains("\"totalAbsDeltaPx\":2"));
+        assert!(!measurement_json.contains("lineBreakWouldChange"));
         let LayerNodeKind::Leaf { ops, .. } = &root.kind else {
             panic!("expected leaf root");
         };

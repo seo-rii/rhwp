@@ -157,6 +157,9 @@ pub struct LayerGlyphOutlinePaint {
 
 #[derive(Debug, Clone)]
 pub struct LayerGlyphOutlinePath {
+    pub glyph_id: u32,
+    pub source_range_utf8: TextSourceRange,
+    pub glyph_range: GlyphRange,
     pub commands: Vec<PathCommand>,
     pub fill_rule: GlyphOutlineFillRule,
 }

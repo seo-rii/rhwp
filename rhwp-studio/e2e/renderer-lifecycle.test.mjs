@@ -1575,6 +1575,245 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `CanvasKit vertical-sideways GlyphRun uses explicit transform and suppresses fallback black=${verticalSidewaysBlackPixels}, red=${verticalSidewaysRedPixels}`,
   );
 
+  setTestCase('canvas2d-glyph-outline-strict-profile');
+  const canvas2dGlyphOutlineProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvas2dRenderer;
+    if (!renderer) {
+      return { error: 'Canvas2D renderer unavailable' };
+    }
+
+    const style = {
+      fontFamily: 'Arial',
+      fontSize: 20,
+      color: '#dd0000',
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: '#dd0000',
+      strikeColor: '#dd0000',
+      shadeColor: '#ffffff',
+    };
+    const textVariant = {
+      equivalenceGroup: 'outline-fixture-0',
+      variantId: 'textRun',
+      variantKind: 'textRun',
+      partIndex: 0,
+      partCount: 1,
+      isDefaultFallback: true,
+      quality: 'exact',
+    };
+    const outlineVariant = {
+      equivalenceGroup: 'outline-fixture-0',
+      variantId: 'glyphOutline',
+      variantKind: 'glyphOutline',
+      partIndex: 0,
+      partCount: 1,
+      isDefaultFallback: false,
+      requires: ['text.outlineGlyph'],
+      quality: 'exact',
+      anchorOpId: 'op-text-outline',
+      localPaintOrder: 0,
+    };
+    const outlinePath = {
+      glyphId: 42,
+      sourceRangeUtf8: { start: 0, end: 1 },
+      glyphRange: { start: 0, end: 1 },
+      fillRule: 'evenodd',
+      commands: [
+        { type: 'moveTo', x: 0, y: 0 },
+        { type: 'lineTo', x: 18, y: 0 },
+        { type: 'lineTo', x: 18, y: 18 },
+        { type: 'lineTo', x: 0, y: 18 },
+        { type: 'closePath' },
+      ],
+    };
+    const makeTree = (outlineStyle = style, paths = [outlinePath]) => ({
+      pageWidth: 80,
+      pageHeight: 70,
+      profile: 'screen',
+      resources: { tableId: 501, images: [], svgFragments: [] },
+      textSources: [{
+        id: 17,
+        text: 'A',
+        utf8Range: { start: 0, end: 1 },
+        utf16Range: { start: 0, end: 1 },
+        annotations: [],
+      }],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1700,
+        bounds: { x: 0, y: 0, width: 80, height: 70 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'textRun',
+            bbox: { x: 8, y: 26, width: 40, height: 28 },
+            source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+            variant: textVariant,
+            text: 'A',
+            style,
+            paintStyle: style,
+            positions: [0, 22],
+            baseline: 48,
+            rotation: 0,
+            isVertical: false,
+            orientation: 'horizontal',
+          },
+          {
+            type: 'glyphOutline',
+            bbox: { x: 8, y: 8, width: 24, height: 24 },
+            source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+            variant: outlineVariant,
+            paintStyle: { ...outlineStyle, color: '#000000' },
+            placement: {
+              runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+              baselineY: 0,
+            },
+            paths,
+            diagnostics: {
+              quality: 'exact',
+              replayEligibility: 'portable',
+              strictVisualEligible: true,
+              maxOriginDeltaPx: 0,
+              maxAdvanceDeltaPx: 0,
+              maxResidualAfterAdjustmentPx: 0,
+              clusterMismatchCount: 0,
+              missingGlyphCount: 0,
+              usedFallbackFontCount: 0,
+            },
+          },
+        ],
+      },
+    });
+    const render = (tree, strict) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.setStrictGlyphOutlineReplay(strict);
+      renderer.renderPage(tree, canvas, 1);
+      const png = canvas.toDataURL('image/png');
+      const diagnostics = renderer.getTextVariantSelectionDiagnostics();
+      canvas.remove();
+      return { png, diagnostics };
+    };
+    try {
+      const fallback = render(makeTree(), false);
+      const strict = render(makeTree(), true);
+      const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
+      const unsupportedPayload = render(makeTree(style, []), true);
+      return { fallback, strict, unsupported, unsupportedPayload };
+    } finally {
+      renderer.setStrictGlyphOutlineReplay(false);
+    }
+  });
+
+  assert(!canvas2dGlyphOutlineProbe.error, canvas2dGlyphOutlineProbe.error || 'Canvas2D glyph outline probe available');
+  const fallbackOutlineReport = canvas2dGlyphOutlineProbe.fallback?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    fallbackOutlineReport?.selectedVariantId === 'textRun'
+      && fallbackOutlineReport?.selectedVariantKind === 'textRun'
+      && fallbackOutlineReport?.selectedReason === 'defaultTextRunFallback'
+      && fallbackOutlineReport?.partsExpected === 1
+      && fallbackOutlineReport?.partsReplayed === 1
+      && fallbackOutlineReport?.parts?.some(
+        (part) => part.variantId === 'textRun' && part.replayable === true && !part.reason,
+      )
+      && fallbackOutlineReport?.parts?.some(
+        (part) => part.variantId === 'glyphOutline'
+          && part.replayable === false
+          && part.reason === 'backendDoesNotSupportVariant'
+          && part.outlineEligibility?.payloadSupported === true
+          && part.outlineEligibility?.paintStyleSupported === true
+          && part.outlineEligibility?.replayEligible === false,
+      )
+      && fallbackOutlineReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('backendDoesNotSupportVariant'),
+      ),
+    `Canvas2D default profile keeps TextRun fallback=${JSON.stringify(fallbackOutlineReport)}`,
+  );
+  const strictOutlineReport = canvas2dGlyphOutlineProbe.strict?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    strictOutlineReport?.selectedVariantId === 'glyphOutline'
+      && strictOutlineReport?.selectedVariantKind === 'glyphOutline'
+      && strictOutlineReport?.selectedReason === 'glyphOutlineStrictProfile'
+      && strictOutlineReport?.anchorOpId === 'op-text-outline'
+      && strictOutlineReport?.partsExpected === 1
+      && strictOutlineReport?.partsReplayed === 1
+      && strictOutlineReport?.outlineEligibility?.replayEligible === true,
+    `Canvas2D strict profile selects GlyphOutline=${JSON.stringify(strictOutlineReport)}`,
+  );
+  assert(
+    strictOutlineReport?.parts?.some(
+      (part) => part.variantId === 'glyphOutline'
+        && part.variantKind === 'glyphOutline'
+        && part.partIndex === 0
+        && part.partCount === 1
+        && part.replayable === true
+        && !part.reason
+        && part.outlineEligibility?.replayEligible === true,
+    ),
+    `Canvas2D strict profile records replayed GlyphOutline part=${JSON.stringify(strictOutlineReport)}`,
+  );
+  const unsupportedOutlineReport = canvas2dGlyphOutlineProbe.unsupported?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    unsupportedOutlineReport?.selectedVariantId === 'textRun'
+      && unsupportedOutlineReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedPaintEffect'),
+      )
+      && unsupportedOutlineReport?.outlineEligibility?.payloadSupported === true
+      && unsupportedOutlineReport?.outlineEligibility?.paintStyleSupported === false
+      && unsupportedOutlineReport?.outlineEligibility?.replayEligible === false,
+    `Canvas2D unsupported outline style falls back=${JSON.stringify(unsupportedOutlineReport)}`,
+  );
+  const unsupportedPayloadOutlineReport = canvas2dGlyphOutlineProbe.unsupportedPayload?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    unsupportedPayloadOutlineReport?.selectedVariantId === 'textRun'
+      && unsupportedPayloadOutlineReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedOutlinePayload'),
+      )
+      && unsupportedPayloadOutlineReport?.outlineEligibility?.payloadSupported === false
+      && unsupportedPayloadOutlineReport?.outlineEligibility?.paintStyleSupported === true
+      && unsupportedPayloadOutlineReport?.outlineEligibility?.replayEligible === false,
+    `Canvas2D unsupported outline payload falls back=${JSON.stringify(unsupportedPayloadOutlineReport)}`,
+  );
+  const strictOutlineBlackPixels = countPixels(
+    canvas2dGlyphOutlineProbe.strict.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const unsupportedOutlineBlackPixels = countPixels(
+    canvas2dGlyphOutlineProbe.unsupported.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    strictOutlineBlackPixels > 100 && unsupportedOutlineBlackPixels < 20,
+    `Canvas2D strict outline paints only eligible paths black=${strictOutlineBlackPixels}, unsupportedBlack=${unsupportedOutlineBlackPixels}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {

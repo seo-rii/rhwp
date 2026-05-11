@@ -607,6 +607,65 @@ def write_reports(
                 f"- missing: {summary.get('missing', 0)}",
                 f"- errors: {summary.get('errors', 0)}",
                 "",
+                "### Profile Summary",
+                "",
+                "| Profile | Total | Compared | Passed | Failed | Missing | Errors | Worst Diff Ratio | Worst Channel Delta |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for item in parity_data.get("summaryByProfile", []):
+            worst_ratio = item.get("worstSelectedDiffRatio")
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("profile", "-"),
+                        format_count(item.get("total")),
+                        format_count(item.get("compared")),
+                        format_count(item.get("passed")),
+                        format_count(item.get("failed")),
+                        format_count(item.get("missing")),
+                        format_count(item.get("errors")),
+                        f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
+                        format_count(item.get("worstMaxChannelDelta")),
+                    ]
+                )
+                + " |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "### Worst Comparisons",
+                "",
+                "| Sample | Profile | Passed | Diff Pixels | Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for item in parity_data.get("worstComparisons", []):
+            diff_ratio = item.get("selectedDiffRatio")
+            mean_abs = item.get("meanAbsChannelDelta")
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("sampleId", "-"),
+                        item.get("profile", "-"),
+                        "yes" if item.get("passed") else "no",
+                        format_count(item.get("selectedDiffPixels")),
+                        f"{diff_ratio:.6f}" if isinstance(diff_ratio, (int, float)) else "-",
+                        format_count(item.get("maxChannelDelta")),
+                        f"{mean_abs:.3f}" if isinstance(mean_abs, (int, float)) else "-",
+                    ]
+                )
+                + " |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "### Comparisons",
+                "",
                 "| Sample | Profile | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
                 "| --- | --- | --- | --- | ---: | ---: | ---: |",
             ]

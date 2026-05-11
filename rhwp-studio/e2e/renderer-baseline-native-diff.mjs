@@ -89,6 +89,87 @@ async function comparePair(nativePath, canvaskitPath) {
   };
 }
 
+function emptySummary(keyField, keyValue) {
+  return {
+    [keyField]: keyValue,
+    total: 0,
+    compared: 0,
+    passed: 0,
+    failed: 0,
+    missing: 0,
+    errors: 0,
+    worstSelectedDiffRatio: 0,
+    worstMaxChannelDelta: 0,
+  };
+}
+
+function addComparisonToSummary(summary, item) {
+  summary.total += 1;
+  if (item.status === 'missing') {
+    summary.missing += 1;
+    return;
+  }
+  if (item.status === 'error') {
+    summary.errors += 1;
+    return;
+  }
+  if (item.status !== 'compared') {
+    return;
+  }
+
+  summary.compared += 1;
+  if (item.diff?.passed) {
+    summary.passed += 1;
+  } else {
+    summary.failed += 1;
+  }
+  if (typeof item.diff?.selectedDiffRatio === 'number') {
+    summary.worstSelectedDiffRatio = Math.max(
+      summary.worstSelectedDiffRatio,
+      item.diff.selectedDiffRatio,
+    );
+  }
+  if (typeof item.diff?.maxChannelDelta === 'number') {
+    summary.worstMaxChannelDelta = Math.max(
+      summary.worstMaxChannelDelta,
+      item.diff.maxChannelDelta,
+    );
+  }
+}
+
+function summarizeBy(comparisons, keyField) {
+  const summaries = new Map();
+  for (const item of comparisons) {
+    const keyValue = item[keyField] ?? '';
+    if (!summaries.has(keyValue)) {
+      summaries.set(keyValue, emptySummary(keyField, keyValue));
+    }
+    addComparisonToSummary(summaries.get(keyValue), item);
+  }
+  return [...summaries.values()].sort((a, b) => String(a[keyField]).localeCompare(String(b[keyField])));
+}
+
+function worstComparisons(comparisons, limit = 10) {
+  return comparisons
+    .filter((item) => item.status === 'compared')
+    .map((item) => ({
+      sampleId: item.sampleId,
+      profile: item.profile,
+      passed: !!item.diff?.passed,
+      selectedDiffPixels: item.diff?.selectedDiffPixels ?? 0,
+      selectedDiffRatio: item.diff?.selectedDiffRatio ?? 0,
+      maxChannelDelta: item.diff?.maxChannelDelta ?? 0,
+      meanAbsChannelDelta: item.diff?.meanAbsChannelDelta ?? 0,
+    }))
+    .sort((a, b) => (
+      b.selectedDiffRatio - a.selectedDiffRatio
+        || b.maxChannelDelta - a.maxChannelDelta
+        || String(a.sampleId).localeCompare(String(b.sampleId))
+        || String(a.profile).localeCompare(String(b.profile))
+    ))
+    .slice(0, limit);
+}
+
 const options = parseArgs();
 const rootDir = path.resolve(new URL('../..', import.meta.url).pathname);
 const nativeResults = JSON.parse(fs.readFileSync(options.native, 'utf8'));
@@ -146,6 +227,9 @@ const passed = compared.filter((item) => item.diff?.passed).length;
 const failed = compared.length - passed;
 const missing = comparisons.filter((item) => item.status === 'missing').length;
 const errors = comparisons.filter((item) => item.status === 'error').length;
+const summaryByProfile = summarizeBy(comparisons, 'profile');
+const summaryBySample = summarizeBy(comparisons, 'sampleId');
+const worst = worstComparisons(comparisons);
 
 fs.mkdirSync(path.dirname(options.output), { recursive: true });
 fs.writeFileSync(
@@ -166,6 +250,9 @@ fs.writeFileSync(
         missing,
         errors,
       },
+      summaryByProfile,
+      summaryBySample,
+      worstComparisons: worst,
       comparisons,
     },
     null,

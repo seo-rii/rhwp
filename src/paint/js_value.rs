@@ -838,6 +838,16 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 "paths",
                 array_to_value(outline.paths.iter().map(|path| {
                     let path_value = Object::new();
+                    set_number(&path_value, "glyphId", path.glyph_id as f64);
+                    set_value(
+                        &path_value,
+                        "sourceRangeUtf8",
+                        text_source_range_to_value(path.source_range_utf8),
+                    );
+                    let glyph_range = Object::new();
+                    set_number(&glyph_range, "start", path.glyph_range.start as f64);
+                    set_number(&glyph_range, "end", path.glyph_range.end as f64);
+                    set_value(&path_value, "glyphRange", glyph_range.into());
                     set_value(
                         &path_value,
                         "commands",
