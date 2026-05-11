@@ -131,6 +131,12 @@ export interface PageLayerTree {
   resources?: LayerResources;
   fontResources?: LayerFontResources;
   root: LayerNode;
+  /**
+   * Phase 2 sidecar variant payloads. Schema v1 writers may still keep
+   * glyphOutline in the root stream, but readers accept sidecar variants and
+   * attach them to the root op referenced by anchorOpId.
+   */
+  variantOps?: LayerPaintOpLike[];
 }
 
 export type LayerTreeFeature =
@@ -682,6 +688,8 @@ export interface LayerPageBackgroundOp {
 }
 
 export interface LayerTextRunOp {
+  /** Optional paint op identity used as a sidecar variant anchor. */
+  id?: string;
   type: 'textRun';
   bbox: LayerBounds;
   text: string;
@@ -726,6 +734,7 @@ export interface LayerTextRunOp {
 }
 
 export interface LayerGlyphRunOp {
+  id?: string;
   type: 'glyphRun';
   bbox: LayerBounds;
   source: LayerTextSourceSpan;
@@ -754,7 +763,14 @@ export interface LayerGlyphOutlinePath {
 }
 
 export interface LayerGlyphOutlineOp {
+  id?: string;
   type: 'glyphOutline';
+  /**
+   * Optional top-level sidecar anchor. variant.anchorOpId remains the canonical
+   * schema v1 location; readers accept both so Phase 2 sidecars can mirror the
+   * documented JSON shape.
+   */
+  anchorOpId?: string;
   bbox: LayerBounds;
   source: LayerTextSourceSpan;
   variant: LayerTextVariantMeta;

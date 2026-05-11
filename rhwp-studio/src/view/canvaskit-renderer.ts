@@ -2,8 +2,8 @@ import CanvasKitInit from 'canvaskit-wasm';
 import type { CanvasKit, Font, Image, Paint, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
-import { isKnownLayerPaintOp } from '@/core/types';
 import {
+  layerTextVariantOpsForLeaf,
   selectLayerTextVariantSets,
   selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
@@ -421,7 +421,7 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerLeafNode,
   ): void {
-    const ops = node.ops.filter(isKnownLayerPaintOp);
+    const ops = layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps);
     const selectedTextVariants = this.selectLayerTextVariantSets(ops);
     for (const op of ops) {
       if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
@@ -2159,7 +2159,7 @@ export class CanvasKitLayerRenderer {
 
     this.currentCacheHintStack.push(node.cacheHint);
     try {
-      const ops = node.ops.filter(isKnownLayerPaintOp);
+      const ops = layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps);
       const selectedTextVariants = this.selectLayerTextVariantSets(ops);
       return ops.some((op) => {
         if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
@@ -2220,7 +2220,7 @@ export class CanvasKitLayerRenderer {
       return;
     }
     this.withCacheHint(node.cacheHint, () => {
-      const ops = node.ops.filter(isKnownLayerPaintOp);
+      const ops = layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps);
       const selectedTextVariants = this.selectLayerTextVariantSets(ops);
       for (const op of ops) {
         if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {

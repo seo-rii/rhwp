@@ -2,8 +2,10 @@ import type {
   LayerGlyphOutlineOp,
   LayerGlyphRunOp,
   LayerPaintOp,
+  LayerPaintOpLike,
   LayerTextVariantMeta,
 } from './types';
+import { isKnownLayerPaintOp } from './types';
 
 export type LayerTextVariantSelection = ReadonlyMap<string, string>;
 
@@ -135,6 +137,58 @@ type VariantPartState = {
   fontVerification?: LayerTextVariantFontVerificationReport;
   outlineEligibility?: LayerTextVariantOutlineEligibilityReport;
 };
+
+export function layerTextVariantOpsForLeaf(
+  rootOps: readonly LayerPaintOpLike[],
+  variantOps: readonly LayerPaintOpLike[] | undefined,
+): LayerPaintOp[] {
+  const ops = rootOps.filter(isKnownLayerPaintOp);
+  if (!variantOps?.length) {
+    return ops;
+  }
+
+  const rootVariantKeys = new Set(
+    ops
+      .map((op) => variantPartKey(textVariantMetaForOp(op)))
+      .filter((key): key is string => !!key),
+  );
+  const sidecarsByAnchor = new Map<string, LayerPaintOp[]>();
+  for (const sidecar of variantOps) {
+    if (!isKnownLayerPaintOp(sidecar)) {
+      continue;
+    }
+    const anchorOpId = sidecarAnchorOpId(sidecar);
+    if (!anchorOpId) {
+      continue;
+    }
+    const sidecarKey = variantPartKey(textVariantMetaForOp(sidecar));
+    if (sidecarKey && rootVariantKeys.has(sidecarKey)) {
+      continue;
+    }
+    const anchored = sidecarsByAnchor.get(anchorOpId);
+    if (anchored) {
+      anchored.push(sidecar);
+    } else {
+      sidecarsByAnchor.set(anchorOpId, [sidecar]);
+    }
+  }
+
+  if (!sidecarsByAnchor.size) {
+    return ops;
+  }
+
+  const merged: LayerPaintOp[] = [];
+  for (const op of ops) {
+    merged.push(op);
+    const opId = layerPaintOpId(op);
+    const sidecars = opId ? sidecarsByAnchor.get(opId) : undefined;
+    if (!sidecars?.length) {
+      continue;
+    }
+    merged.push(...sidecars.sort(compareVariantPaintOrder));
+  }
+  return merged;
+}
 
 export function selectLayerTextVariantSetsWithReport(
   ops: readonly LayerPaintOp[],
@@ -339,6 +393,36 @@ function textVariantMetaForOp(op: LayerPaintOp): LayerTextVariantMeta | undefine
     return op.variant;
   }
   return undefined;
+}
+
+function sidecarAnchorOpId(op: LayerPaintOp): string | undefined {
+  if (op.type === 'glyphOutline') {
+    return op.anchorOpId ?? op.variant.anchorOpId;
+  }
+  return textVariantMetaForOp(op)?.anchorOpId;
+}
+
+function layerPaintOpId(op: LayerPaintOp): string | undefined {
+  const id = (op as { id?: unknown }).id;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
+}
+
+function variantPartKey(variant: LayerTextVariantMeta | undefined): string | undefined {
+  if (!variant) {
+    return undefined;
+  }
+  return [
+    variant.equivalenceGroup,
+    variant.variantId,
+    variant.partIndex ?? 0,
+  ].join('\u{1f}');
+}
+
+function compareVariantPaintOrder(a: LayerPaintOp, b: LayerPaintOp): number {
+  const variantA = textVariantMetaForOp(a);
+  const variantB = textVariantMetaForOp(b);
+  return (variantA?.localPaintOrder ?? variantA?.partIndex ?? 0)
+    - (variantB?.localPaintOrder ?? variantB?.partIndex ?? 0);
 }
 
 function partsComplete(variant: VariantPartState): boolean {

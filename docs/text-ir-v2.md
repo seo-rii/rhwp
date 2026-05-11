@@ -462,6 +462,12 @@ payloads should move to `variantOps` before color, bitmap, SVG-in-font, or
 other strict-only payloads are introduced. This does not introduce
 `paintOrderSlotId`; in schema v1, `anchorOpId` remains the paint-order slot
 until cross-leaf, cross-scope, or anchorless strict exports are required.
+Phase 2 starts this migration as a reader/scaffold only: Studio consumers accept
+a top-level `variantOps` array, attach sidecar text variants to the leaf that
+contains the referenced anchor op id, and ignore duplicate sidecar parts when
+the same variant part already exists in the root stream. The Rust writer still
+emits the current root `glyphOutline` representation until a richer outline
+payload needs the sidecar writer.
 
 The current validator keeps this conservative:
 

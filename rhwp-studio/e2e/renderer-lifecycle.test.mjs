@@ -1640,7 +1640,31 @@ runTest('Renderer lifecycle', async ({ page }) => {
         { type: 'closePath' },
       ],
     };
-    const makeTree = (outlineStyle = style, paths = [outlinePath]) => ({
+    const makeOutlineOp = (outlineStyle = style, paths = [outlinePath]) => ({
+      id: 'op-outline-root',
+      type: 'glyphOutline',
+      bbox: { x: 8, y: 8, width: 24, height: 24 },
+      source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+      variant: outlineVariant,
+      paintStyle: { ...outlineStyle, color: '#000000' },
+      placement: {
+        runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+        baselineY: 0,
+      },
+      paths,
+      diagnostics: {
+        quality: 'exact',
+        replayEligibility: 'portable',
+        strictVisualEligible: true,
+        maxOriginDeltaPx: 0,
+        maxAdvanceDeltaPx: 0,
+        maxResidualAfterAdjustmentPx: 0,
+        clusterMismatchCount: 0,
+        missingGlyphCount: 0,
+        usedFallbackFontCount: 0,
+      },
+    });
+    const makeTree = (outlineStyle = style, paths = [outlinePath], sidecar = false) => ({
       pageWidth: 80,
       pageHeight: 70,
       profile: 'screen',
@@ -1659,6 +1683,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         cacheHint: 'none',
         ops: [
           {
+            id: 'op-text-outline',
             type: 'textRun',
             bbox: { x: 8, y: 26, width: 40, height: 28 },
             source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
@@ -1672,31 +1697,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
             isVertical: false,
             orientation: 'horizontal',
           },
-          {
-            type: 'glyphOutline',
-            bbox: { x: 8, y: 8, width: 24, height: 24 },
-            source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
-            variant: outlineVariant,
-            paintStyle: { ...outlineStyle, color: '#000000' },
-            placement: {
-              runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
-              baselineY: 0,
-            },
-            paths,
-            diagnostics: {
-              quality: 'exact',
-              replayEligibility: 'portable',
-              strictVisualEligible: true,
-              maxOriginDeltaPx: 0,
-              maxAdvanceDeltaPx: 0,
-              maxResidualAfterAdjustmentPx: 0,
-              clusterMismatchCount: 0,
-              missingGlyphCount: 0,
-              usedFallbackFontCount: 0,
-            },
-          },
+          ...(sidecar ? [] : [makeOutlineOp(outlineStyle, paths)]),
         ],
       },
+      ...(sidecar ? { variantOps: [{ ...makeOutlineOp(outlineStyle, paths), id: 'op-outline-sidecar' }] } : {}),
     });
     const render = (tree, strict) => {
       const canvas = document.createElement('canvas');
@@ -1713,9 +1717,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     try {
       const fallback = render(makeTree(), false);
       const strict = render(makeTree(), true);
+      const strictSidecar = render(makeTree(style, [outlinePath], true), true);
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
       const unsupportedPayload = render(makeTree(style, []), true);
-      return { fallback, strict, unsupported, unsupportedPayload };
+      return { fallback, strict, strictSidecar, unsupported, unsupportedPayload };
     } finally {
       renderer.setStrictGlyphOutlineReplay(false);
     }
@@ -1773,6 +1778,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     ),
     `Canvas2D strict profile records replayed GlyphOutline part=${JSON.stringify(strictOutlineReport)}`,
   );
+  const strictSidecarOutlineReport = canvas2dGlyphOutlineProbe.strictSidecar?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    strictSidecarOutlineReport?.selectedVariantId === 'glyphOutline'
+      && strictSidecarOutlineReport?.selectedVariantKind === 'glyphOutline'
+      && strictSidecarOutlineReport?.selectedReason === 'glyphOutlineStrictProfile'
+      && strictSidecarOutlineReport?.anchorOpId === 'op-text-outline'
+      && strictSidecarOutlineReport?.partsExpected === 1
+      && strictSidecarOutlineReport?.partsReplayed === 1
+      && strictSidecarOutlineReport?.parts?.some(
+        (part) => part.variantId === 'glyphOutline'
+          && part.variantKind === 'glyphOutline'
+          && part.partIndex === 0
+          && part.replayable === true,
+      ),
+    `Canvas2D strict profile selects sidecar GlyphOutline=${JSON.stringify(strictSidecarOutlineReport)}`,
+  );
   const unsupportedOutlineReport = canvas2dGlyphOutlineProbe.unsupported?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',
   );
@@ -1809,9 +1832,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvas2dGlyphOutlineProbe.unsupported.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
   );
+  const strictSidecarOutlineBlackPixels = countPixels(
+    canvas2dGlyphOutlineProbe.strictSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
   assert(
     strictOutlineBlackPixels > 100 && unsupportedOutlineBlackPixels < 20,
     `Canvas2D strict outline paints only eligible paths black=${strictOutlineBlackPixels}, unsupportedBlack=${unsupportedOutlineBlackPixels}`,
+  );
+  assert(
+    strictSidecarOutlineBlackPixels > 100,
+    `Canvas2D strict outline paints variantOps sidecar paths black=${strictSidecarOutlineBlackPixels}`,
   );
 
   setTestCase('canvas-layer-clip-scope-parity');

@@ -1,5 +1,5 @@
-import { isKnownLayerPaintOp } from '@/core/types';
 import {
+  layerTextVariantOpsForLeaf,
   selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
   type LayerTextVariantGroupReport,
@@ -247,7 +247,7 @@ export class Canvas2DLayerRenderer {
   }
 
   private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {
-    const ops = node.ops.filter(isKnownLayerPaintOp);
+    const ops = layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps);
     const selectedResult = selectLayerTextVariantSetsWithReport(
       ops,
       () => ({ replayable: false, reason: 'backendDoesNotSupportVariant' }),
