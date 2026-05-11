@@ -467,7 +467,16 @@ a top-level `variantOps` array, attach sidecar text variants to the leaf that
 contains the referenced anchor op id, and ignore duplicate sidecar parts when
 the same variant part already exists in the root stream. The Rust writer still
 emits the current root `glyphOutline` representation until a richer outline
-payload needs the sidecar writer.
+payload needs the sidecar writer. Future writers that emit sidecar payloads
+should declare `text.variantOps` as an additive feature.
+
+The first richer payload discriminator is reserved but not replay-enabled:
+`payloadKind: "monochromeFill"` is the only schema-v1 replay-eligible outline
+payload, while `payloadKind: "monochromeFillStroke"` plus a stroke style is
+accepted by readers only so validators and renderers can reject it with
+`unsupportedOutlinePayload`. The stroke subset must not become replay-eligible
+until stroke width, join/cap/miter behavior, fill/stroke paint order, bbox
+inflation, SVG/Canvas2D/native fixtures, and fuzzy parity thresholds are fixed.
 
 The current validator keeps this conservative:
 
@@ -476,8 +485,9 @@ The current validator keeps this conservative:
 - consumers choose exactly one `variantId` per group and paint every selected
   part;
 - `glyphOutline` variants must carry `anchorOpId`;
-- schema v1 `glyphOutline` is monochrome fill-only: it may use fill color,
-  path `fillRule`, run-local outline paths, and source mapping;
+- schema v1 `glyphOutline` replay is monochrome fill-only:
+  `payloadKind: "monochromeFill"` may use fill color, path `fillRule`,
+  run-local outline paths, and source mapping;
 - each outline path carries `glyphId`, `glyphRange`, and a UTF-8 source range
   so SVG/Canvas2D strict replay can keep path-level provenance for debugging,
   search sidecars, and accessibility sidecars;

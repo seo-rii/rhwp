@@ -172,16 +172,19 @@ export class Canvas2DLayerRenderer {
   }
 
   private glyphOutlineReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
-    const replayable = this.strictGlyphOutlineReplay
-      && op.diagnostics.strictVisualEligible
-      && isFillOnlyGlyphOutlineStyle(op)
+    const payloadSupported = op.diagnostics.strictVisualEligible
+      && isMonochromeFillGlyphOutlinePayload(op)
       && op.paths.length > 0;
+    const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
+    const replayable = this.strictGlyphOutlineReplay
+      && payloadSupported
+      && paintStyleSupported;
     let reason: LayerTextVariantReplayStatus['reason'];
     if (!this.strictGlyphOutlineReplay) {
       reason = 'backendDoesNotSupportVariant';
-    } else if (!op.diagnostics.strictVisualEligible || op.paths.length === 0) {
+    } else if (!payloadSupported) {
       reason = 'unsupportedOutlinePayload';
-    } else if (!isFillOnlyGlyphOutlineStyle(op)) {
+    } else if (!paintStyleSupported) {
       reason = 'unsupportedPaintEffect';
     }
     return {
@@ -189,8 +192,8 @@ export class Canvas2DLayerRenderer {
       reason,
       outlineEligibility: {
         strictVisualEligible: op.diagnostics.strictVisualEligible,
-        payloadSupported: op.paths.length > 0,
-        paintStyleSupported: isFillOnlyGlyphOutlineStyle(op),
+        payloadSupported,
+        paintStyleSupported,
         replayEligible: replayable,
         reason,
       },
@@ -284,7 +287,7 @@ export class Canvas2DLayerRenderer {
         // keeps the TextRun fallback as its canonical replay path.
         return;
       case 'glyphOutline':
-        if (!isFillOnlyGlyphOutlineStyle(op)) {
+        if (!isMonochromeFillGlyphOutlinePayload(op) || !isFillOnlyGlyphOutlineStyle(op)) {
           return;
         }
         this.withCurrentOverlayClip(ctx, 0, () => {
@@ -1670,6 +1673,12 @@ function appendPathCommands(
         break;
     }
   }
+}
+
+function isMonochromeFillGlyphOutlinePayload(op: LayerGlyphOutlineOp): boolean {
+  return (op.payloadKind ?? 'monochromeFill') === 'monochromeFill'
+    && !op.stroke
+    && op.paths.length > 0;
 }
 
 function isFillOnlyGlyphOutlineStyle(op: LayerGlyphOutlineOp): boolean {

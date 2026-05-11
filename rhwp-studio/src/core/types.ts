@@ -150,6 +150,7 @@ export type LayerTreeFeature =
   | 'fontResources'
   | 'fontResources.blobFaceSplit'
   | 'text.variantGroups'
+  | 'text.variantOps'
   | 'text.shapeDiagnostics'
   | 'text.glyphRun'
   | 'text.outlineGlyph'
@@ -762,6 +763,28 @@ export interface LayerGlyphOutlinePath {
   fillRule?: CanvasFillRule;
 }
 
+export type LayerGlyphOutlinePayloadKind =
+  | 'monochromeFill'
+  | 'monochromeFillStroke';
+
+export type LayerGlyphOutlineStrokeJoin = 'miter' | 'round' | 'bevel';
+export type LayerGlyphOutlineStrokeCap = 'butt' | 'round' | 'square';
+export type LayerGlyphOutlinePaintOrder =
+  | 'fillOnly'
+  | 'strokeOnly'
+  | 'fillThenStroke'
+  | 'strokeThenFill';
+
+export interface LayerGlyphOutlineStrokeStyle {
+  widthPx: number;
+  color?: string;
+  opacity?: number;
+  join?: LayerGlyphOutlineStrokeJoin;
+  cap?: LayerGlyphOutlineStrokeCap;
+  miterLimit?: number;
+  paintOrder?: LayerGlyphOutlinePaintOrder;
+}
+
 export interface LayerGlyphOutlineOp {
   id?: string;
   type: 'glyphOutline';
@@ -775,6 +798,12 @@ export interface LayerGlyphOutlineOp {
   source: LayerTextSourceSpan;
   variant: LayerTextVariantMeta;
   paintStyle: LayerTextStyle;
+  /**
+   * Schema v1 readers accept the first richer payload discriminator, but only
+   * `monochromeFill` is replay-eligible until stroke-specific fixtures pass.
+   */
+  payloadKind?: LayerGlyphOutlinePayloadKind;
+  stroke?: LayerGlyphOutlineStrokeStyle;
   placement: LayerTextRunPlacement;
   paths: LayerGlyphOutlinePath[];
   diagnostics: LayerGlyphRunDiagnostics;
