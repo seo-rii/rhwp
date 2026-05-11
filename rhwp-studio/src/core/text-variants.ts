@@ -7,9 +7,72 @@ import type {
 
 export type LayerTextVariantSelection = ReadonlyMap<string, string>;
 
+export type LayerTextVariantBackendKind =
+  | 'nativeSkia'
+  | 'canvaskit'
+  | 'canvas2d'
+  | 'svg';
+
+export type LayerTextVariantSelectedReason =
+  | 'glyphRunStrictEligible'
+  | 'glyphOutlineStrictProfile'
+  | 'defaultTextRunFallback'
+  | 'noSupportedVariant';
+
+export type LayerTextVariantRejectReason =
+  | 'fontDigestMismatch'
+  | 'fontNotPortable'
+  | 'externalFontNotVerified'
+  | 'exactFaceUnavailable'
+  | 'faceIndexUnsupported'
+  | 'variationUnsupported'
+  | 'glyphIdOutOfRange'
+  | 'missingGlyph'
+  | 'clusterMismatch'
+  | 'incompleteVariantSet'
+  | 'unsupportedPaintEffect'
+  | 'unsupportedOutlinePayload'
+  | 'unsupportedColorGlyph'
+  | 'unsupportedBitmapGlyph'
+  | 'unsupportedSvgGlyph'
+  | 'positionAdjustedResidualTooLarge'
+  | 'backendDoesNotSupportVariant'
+  | 'variantUnsupported'
+  | 'variantPartCountMismatch'
+  | 'variantDuplicatePart'
+  | 'variantPartsIncomplete'
+  | 'defaultFallbackNotSelected'
+  | 'glyphOutlineUnsupported'
+  | (string & {});
+
+export interface LayerTextVariantFontVerificationReport {
+  faceKey?: string;
+  blobKey?: string;
+  portability?: string;
+  expectedDigest?: string;
+  blobResolved?: boolean;
+  digestMatched?: boolean;
+  exactFaceInstantiated?: boolean;
+  faceIndexSupported?: boolean;
+  variationSupported?: boolean;
+  replayEligible: boolean;
+  reason?: LayerTextVariantRejectReason;
+}
+
+export interface LayerTextVariantOutlineEligibilityReport {
+  strictVisualEligible: boolean;
+  payloadSupported: boolean;
+  paintStyleSupported: boolean;
+  replayEligible: boolean;
+  reason?: LayerTextVariantRejectReason;
+}
+
 export interface LayerTextVariantReplayStatus {
   replayable: boolean;
-  reason?: string;
+  reason?: LayerTextVariantRejectReason;
+  details?: string;
+  fontVerification?: LayerTextVariantFontVerificationReport;
+  outlineEligibility?: LayerTextVariantOutlineEligibilityReport;
 }
 
 export interface LayerTextVariantPartReport {
@@ -19,26 +82,43 @@ export interface LayerTextVariantPartReport {
   partIndex: number;
   partCount: number;
   replayable: boolean;
-  reason?: string;
+  reason?: LayerTextVariantRejectReason;
+  details?: string;
+  fontVerification?: LayerTextVariantFontVerificationReport;
+  outlineEligibility?: LayerTextVariantOutlineEligibilityReport;
 }
 
 export interface LayerTextVariantRejectedReport {
   variantId: string;
   variantKind: LayerTextVariantMeta['variantKind'];
-  reasons: string[];
+  reasons: LayerTextVariantRejectReason[];
+  details?: string[];
 }
 
 export interface LayerTextVariantGroupReport {
+  backend?: LayerTextVariantBackendKind;
+  renderProfile?: string;
   equivalenceGroup: string;
   selectedVariantId: string;
-  selectedReason: 'glyphRunEligible' | 'glyphOutlineEligible' | 'defaultFallback' | 'noSupportedVariant';
+  selectedVariantKind: LayerTextVariantMeta['variantKind'];
+  selectedReason: LayerTextVariantSelectedReason;
+  anchorOpId?: string;
+  partsExpected: number;
+  partsReplayed: number;
   rejectedVariants: LayerTextVariantRejectedReport[];
   parts: LayerTextVariantPartReport[];
+  fontVerification?: LayerTextVariantFontVerificationReport;
+  outlineEligibility?: LayerTextVariantOutlineEligibilityReport;
 }
 
 export interface LayerTextVariantSelectionResult {
   selected: Map<string, string>;
   reports: LayerTextVariantGroupReport[];
+}
+
+export interface LayerTextVariantSelectionContext {
+  backend?: LayerTextVariantBackendKind;
+  renderProfile?: string;
 }
 
 type VariantPartState = {
@@ -48,7 +128,11 @@ type VariantPartState = {
   parts: Set<number>;
   supported: boolean;
   isDefaultFallback: boolean;
-  reasons: Set<string>;
+  reasons: Set<LayerTextVariantRejectReason>;
+  details: Set<string>;
+  anchorOpId?: string;
+  fontVerification?: LayerTextVariantFontVerificationReport;
+  outlineEligibility?: LayerTextVariantOutlineEligibilityReport;
 };
 
 export function selectLayerTextVariantSetsWithReport(
@@ -58,6 +142,7 @@ export function selectLayerTextVariantSetsWithReport(
     replayable: false,
     reason: 'glyphOutlineUnsupported',
   }),
+  context: LayerTextVariantSelectionContext = {},
 ): LayerTextVariantSelectionResult {
   const selected = new Map<string, string>();
   const groupVariants = new Map<string, Map<string, VariantPartState>>();
@@ -92,10 +177,15 @@ export function selectLayerTextVariantSetsWithReport(
         parts: new Set<number>(),
         supported: true,
         isDefaultFallback: !!variant.isDefaultFallback,
-        reasons: new Set<string>(),
+        reasons: new Set<LayerTextVariantRejectReason>(),
+        details: new Set<string>(),
+        anchorOpId: variant.anchorOpId,
       };
       order += 1;
       variants.set(variantId, state);
+    }
+    if (!state.anchorOpId && variant.anchorOpId) {
+      state.anchorOpId = variant.anchorOpId;
     }
     if (state.expectedPartCount !== partCount || partCount <= 0) {
       state.supported = false;
@@ -109,7 +199,7 @@ export function selectLayerTextVariantSetsWithReport(
 
     let replayStatus: LayerTextVariantReplayStatus;
     if (op.type === 'textRun') {
-      replayStatus = { replayable: true, reason: 'defaultFallback' };
+      replayStatus = { replayable: true };
     } else if (op.type === 'glyphRun') {
       const status = glyphRunReplayStatus(op);
       replayStatus = typeof status === 'boolean' ? { replayable: status } : status;
@@ -123,6 +213,15 @@ export function selectLayerTextVariantSetsWithReport(
       state.supported = false;
       state.reasons.add(replayStatus.reason ?? 'variantUnsupported');
     }
+    if (replayStatus.details) {
+      state.details.add(replayStatus.details);
+    }
+    if (replayStatus.fontVerification) {
+      state.fontVerification = replayStatus.fontVerification;
+    }
+    if (replayStatus.outlineEligibility) {
+      state.outlineEligibility = replayStatus.outlineEligibility;
+    }
     partReports.push({
       equivalenceGroup: group,
       variantId,
@@ -131,6 +230,9 @@ export function selectLayerTextVariantSetsWithReport(
       partCount,
       replayable: replayStatus.replayable,
       reason: replayStatus.reason,
+      details: replayStatus.details,
+      fontVerification: replayStatus.fontVerification,
+      outlineEligibility: replayStatus.outlineEligibility,
     });
   }
 
@@ -148,17 +250,29 @@ export function selectLayerTextVariantSetsWithReport(
       }
     }
     const selectedVariantId = selected.get(group);
-    const selectedKind = selectedVariantId ? variants.get(selectedVariantId)?.variantKind : undefined;
+    const selectedState = selectedVariantId ? variants.get(selectedVariantId) : undefined;
+    const selectedKind = selectedState?.variantKind;
     const fallbackVariantId = defaultFallbacks.get(group) ?? 'textRun';
+    const fallbackState = defaultFallbacks.has(group) ? variants.get(fallbackVariantId) : undefined;
+    const reportedVariantId = selectedVariantId ?? fallbackVariantId;
+    const reportedState = selectedState ?? fallbackState;
+    const reportedKind = reportedState?.variantKind ?? 'textRun';
     const groupParts = partReports.filter((part) => part.equivalenceGroup === group);
+    const selectedParts = groupParts.filter((part) => part.variantId === reportedVariantId);
     reports.push({
+      backend: context.backend,
+      renderProfile: context.renderProfile,
       equivalenceGroup: group,
-      selectedVariantId: selectedVariantId ?? fallbackVariantId,
-      selectedReason: selectedKind === 'glyphOutline' ? 'glyphOutlineEligible'
-        : selectedKind === 'glyphRun' ? 'glyphRunEligible'
+      selectedVariantId: reportedVariantId,
+      selectedVariantKind: reportedKind,
+      selectedReason: selectedKind === 'glyphOutline' ? 'glyphOutlineStrictProfile'
+        : selectedKind === 'glyphRun' ? 'glyphRunStrictEligible'
           : defaultFallbacks.has(group)
-        ? 'defaultFallback'
+        ? 'defaultTextRunFallback'
         : 'noSupportedVariant',
+      anchorOpId: reportedState?.anchorOpId,
+      partsExpected: reportedState?.expectedPartCount ?? selectedParts.length,
+      partsReplayed: selectedParts.filter((part) => part.replayable).length,
       rejectedVariants: candidates
         .filter(([variantId, variant]) => variantId !== selectedVariantId && !variant.isDefaultFallback)
         .map(([variantId, variant]) => {
@@ -173,9 +287,18 @@ export function selectLayerTextVariantSetsWithReport(
             variantId,
             variantKind: variant.variantKind,
             reasons: [...reasons],
+            details: variant.details.size ? [...variant.details] : undefined,
           };
         }),
       parts: groupParts,
+      fontVerification: firstDefined(
+        reportedState?.fontVerification,
+        ...groupParts.map((part) => part.fontVerification),
+      ),
+      outlineEligibility: firstDefined(
+        reportedState?.outlineEligibility,
+        ...groupParts.map((part) => part.outlineEligibility),
+      ),
     });
   }
   return { selected, reports };
@@ -221,4 +344,8 @@ function partsComplete(variant: VariantPartState): boolean {
   return variant.parts.size === variant.expectedPartCount
     && Array.from({ length: variant.expectedPartCount }, (_, index) => index)
       .every((index) => variant.parts.has(index));
+}
+
+function firstDefined<T>(...values: (T | undefined)[]): T | undefined {
+  return values.find((value) => value !== undefined);
 }

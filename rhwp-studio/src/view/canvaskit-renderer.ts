@@ -8,6 +8,7 @@ import {
   selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
   type LayerTextVariantGroupReport,
+  type LayerTextVariantReplayStatus,
 } from '@/core/text-variants';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
@@ -269,15 +270,24 @@ export class CanvasKitLayerRenderer {
 
   getTextVariantSelectionDiagnostics(): readonly LayerTextVariantGroupReport[] {
     return this.textVariantSelectionDiagnostics.map((report) => ({
+      backend: report.backend,
+      renderProfile: report.renderProfile,
       equivalenceGroup: report.equivalenceGroup,
       selectedVariantId: report.selectedVariantId,
+      selectedVariantKind: report.selectedVariantKind,
       selectedReason: report.selectedReason,
+      anchorOpId: report.anchorOpId,
+      partsExpected: report.partsExpected,
+      partsReplayed: report.partsReplayed,
       rejectedVariants: report.rejectedVariants.map((variant) => ({
         variantId: variant.variantId,
         variantKind: variant.variantKind,
         reasons: [...variant.reasons],
+        details: variant.details ? [...variant.details] : undefined,
       })),
       parts: report.parts.map((part) => ({ ...part })),
+      fontVerification: report.fontVerification ? { ...report.fontVerification } : undefined,
+      outlineEligibility: report.outlineEligibility ? { ...report.outlineEligibility } : undefined,
     }));
   }
 
@@ -437,10 +447,35 @@ export class CanvasKitLayerRenderer {
     }
     const result = selectLayerTextVariantSetsWithReport(
       ops,
-      (op) => this.fontRegistry.glyphRunReplayStatus(op, this.lastRenderedTree?.fontResources),
+      (op) => this.glyphRunVariantReplayStatus(op),
+      undefined,
+      {
+        backend: 'canvaskit',
+        renderProfile: this.currentProfile,
+      },
     );
     this.textVariantSelectionDiagnostics.push(...result.reports);
     return result.selected;
+  }
+
+  private glyphRunVariantReplayStatus(op: LayerGlyphRunOp): LayerTextVariantReplayStatus {
+    const status = this.fontRegistry.glyphRunReplayStatus(op, this.lastRenderedTree?.fontResources);
+    return {
+      replayable: status.replayable,
+      reason: status.replayable ? undefined : status.reason,
+      fontVerification: {
+        faceKey: status.replayable ? status.face.id : op.shapeKey.fontInstance.faceKey,
+        blobKey: status.replayable ? status.blob.id : undefined,
+        portability: status.report.replayEligibility,
+        expectedDigest: status.replayable ? status.blob.digest?.value : undefined,
+        digestMatched: status.report.digestMatched,
+        exactFaceInstantiated: status.report.exactFaceInstantiated,
+        faceIndexSupported: status.report.faceIndexSupported,
+        variationSupported: status.report.variationSupported,
+        replayEligible: status.replayable,
+        reason: status.replayable ? undefined : status.reason,
+      },
+    };
   }
 
   private renderOp(

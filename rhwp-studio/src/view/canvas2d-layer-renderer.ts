@@ -1,7 +1,9 @@
 import { isKnownLayerPaintOp } from '@/core/types';
 import {
-  selectLayerTextVariantSets,
+  selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
+  type LayerTextVariantGroupReport,
+  type LayerTextVariantReplayStatus,
 } from '@/core/text-variants';
 import type { CanvasKitRenderMode } from './render-backend';
 import type {
@@ -93,6 +95,7 @@ export class Canvas2DLayerRenderer {
   private currentShowParagraphMarks = false;
   private currentShowControlCodes = false;
   private strictGlyphOutlineReplay = false;
+  private readonly textVariantSelectionDiagnostics: LayerTextVariantGroupReport[] = [];
   private rerenderScheduled = false;
   private asyncResourceReadyCallback: (() => void) | null = null;
 
@@ -114,6 +117,7 @@ export class Canvas2DLayerRenderer {
     this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
     this.currentShowParagraphMarks = tree.outputOptions?.showParagraphMarks ?? false;
     this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;
+    this.textVariantSelectionDiagnostics.length = 0;
     if (this.currentResourceTableId !== (tree.resources?.tableId ?? null)) {
       this.clearResourceImageCaches();
     }
@@ -144,11 +148,53 @@ export class Canvas2DLayerRenderer {
     return { ...this.imageEffectDiagnostics };
   }
 
-  private canReplayGlyphOutline(op: LayerGlyphOutlineOp): boolean {
-    return this.strictGlyphOutlineReplay
+  getTextVariantSelectionDiagnostics(): readonly LayerTextVariantGroupReport[] {
+    return this.textVariantSelectionDiagnostics.map((report) => ({
+      backend: report.backend,
+      renderProfile: report.renderProfile,
+      equivalenceGroup: report.equivalenceGroup,
+      selectedVariantId: report.selectedVariantId,
+      selectedVariantKind: report.selectedVariantKind,
+      selectedReason: report.selectedReason,
+      anchorOpId: report.anchorOpId,
+      partsExpected: report.partsExpected,
+      partsReplayed: report.partsReplayed,
+      rejectedVariants: report.rejectedVariants.map((variant) => ({
+        variantId: variant.variantId,
+        variantKind: variant.variantKind,
+        reasons: [...variant.reasons],
+        details: variant.details ? [...variant.details] : undefined,
+      })),
+      parts: report.parts.map((part) => ({ ...part })),
+      fontVerification: report.fontVerification ? { ...report.fontVerification } : undefined,
+      outlineEligibility: report.outlineEligibility ? { ...report.outlineEligibility } : undefined,
+    }));
+  }
+
+  private glyphOutlineReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
+    const replayable = this.strictGlyphOutlineReplay
       && op.diagnostics.strictVisualEligible
       && isFillOnlyGlyphOutlineStyle(op)
       && op.paths.length > 0;
+    let reason: LayerTextVariantReplayStatus['reason'];
+    if (!this.strictGlyphOutlineReplay) {
+      reason = 'backendDoesNotSupportVariant';
+    } else if (!op.diagnostics.strictVisualEligible || op.paths.length === 0) {
+      reason = 'unsupportedOutlinePayload';
+    } else if (!isFillOnlyGlyphOutlineStyle(op)) {
+      reason = 'unsupportedPaintEffect';
+    }
+    return {
+      replayable,
+      reason,
+      outlineEligibility: {
+        strictVisualEligible: op.diagnostics.strictVisualEligible,
+        payloadSupported: op.paths.length > 0,
+        paintStyleSupported: isFillOnlyGlyphOutlineStyle(op),
+        replayEligible: replayable,
+        reason,
+      },
+    };
   }
 
   resetImageEffectDiagnostics(): void {
@@ -202,11 +248,17 @@ export class Canvas2DLayerRenderer {
 
   private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {
     const ops = node.ops.filter(isKnownLayerPaintOp);
-    const selectedTextVariants = selectLayerTextVariantSets(
+    const selectedResult = selectLayerTextVariantSetsWithReport(
       ops,
-      () => false,
-      (op) => this.canReplayGlyphOutline(op),
+      () => ({ replayable: false, reason: 'backendDoesNotSupportVariant' }),
+      (op) => this.glyphOutlineReplayStatus(op),
+      {
+        backend: 'canvas2d',
+        renderProfile: this.lastRenderedTree?.profile,
+      },
     );
+    this.textVariantSelectionDiagnostics.push(...selectedResult.reports);
+    const selectedTextVariants = selectedResult.selected;
     for (const op of ops) {
       if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
         continue;

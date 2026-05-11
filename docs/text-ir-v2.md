@@ -477,12 +477,23 @@ in native Skia, fall back to `TextRun` in CanvasKit, and keep `TextRun` as the
 default in Canvas2D/SVG. Renderers that evaluate optional visual variants should
 therefore expose a report separate from the immutable layer export:
 
+- `backend` and `renderProfile`;
 - `equivalenceGroup`;
-- selected `variantId` and selected reason;
-- rejected variant ids with stable reasons such as
-  `glyphRunUnderlineUnsupported`, `fontBlobNotVerified`,
-  `fontFaceIndexUnsupported`, or `fontVariationUnsupported`;
-- per-part replay status for multi-part variant sets.
+- selected `variantId`, selected variant kind, and selected reason
+  (`glyphRunStrictEligible`, `glyphOutlineStrictProfile`,
+  `defaultTextRunFallback`, or `noSupportedVariant`);
+- `anchorOpId`, `partsExpected`, and `partsReplayed` so sidecar variants and
+  multi-part variant sets can be audited;
+- rejected variant ids with stable reasons such as `fontDigestMismatch`,
+  `fontNotPortable`, `externalFontNotVerified`, `exactFaceUnavailable`,
+  `faceIndexUnsupported`, `variationUnsupported`, `glyphIdOutOfRange`,
+  `missingGlyph`, `clusterMismatch`, `incompleteVariantSet`,
+  `unsupportedPaintEffect`, `unsupportedOutlinePayload`,
+  `unsupportedColorGlyph`, `unsupportedBitmapGlyph`, `unsupportedSvgGlyph`,
+  `positionAdjustedResidualTooLarge`, or `backendDoesNotSupportVariant`;
+- per-part replay status for multi-part variant sets;
+- optional font verification and outline eligibility details when a backend
+  evaluated `GlyphRun` or `GlyphOutline` candidates.
 
 CanvasKit also reports the eligibility gates that matter for portable glyph
 replay: digest match, exact face instantiation, face-index support, variation
@@ -490,6 +501,14 @@ support, and effect support. These are render diagnostics, not schema fields,
 because `ExternalVerified` fonts and backend capabilities are resolved at render
 time. Unsupported CanvasKit runs must select the `TextRun` fallback instead of
 painting an approximate glyph stream.
+
+The Studio selector uses the same report shape for CanvasKit and Canvas2D strict
+outline replay. Canvas2D reports `GlyphRun` rejection as
+`backendDoesNotSupportVariant`, and reports `GlyphOutline` rejections as
+`unsupportedOutlinePayload`, `unsupportedPaintEffect`, or
+`backendDoesNotSupportVariant` depending on the strict replay gate. Native Skia
+and SVG should use the same selected/rejected reason vocabulary as their variant
+paths are promoted to common diagnostics.
 
 ## Layout Profile Contract
 
