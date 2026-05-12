@@ -6,7 +6,7 @@
 //! sets. They are intentionally renderer-neutral and do not enable fallback-free
 //! or cross-scope emission by themselves.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::paint::{
     LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerTextRunPaint, PaintOp, TextVariantKind,
@@ -29,6 +29,61 @@ impl TextFallbackPolicy {
             Self::None => "none",
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct TextV2ValidationOptions {
+    pub require_paint_order_slot: bool,
+    pub allow_fallback_free: bool,
+}
+
+impl Default for TextV2ValidationOptions {
+    fn default() -> Self {
+        Self {
+            require_paint_order_slot: true,
+            allow_fallback_free: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextV2ValidationIssueCode {
+    MissingPaintOrderSlotId,
+    TextOpHasNoVariants,
+    DuplicateVariantId,
+    DefaultVariantMissing,
+    FallbackRequiredTextRunMissing,
+    FallbackFreeFeatureMissing,
+    VariantHasNoParts,
+    VariantPartCountInvalid,
+    VariantPartCountMismatch,
+    VariantDuplicatePart,
+}
+
+impl TextV2ValidationIssueCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingPaintOrderSlotId => "missingPaintOrderSlotId",
+            Self::TextOpHasNoVariants => "textOpHasNoVariants",
+            Self::DuplicateVariantId => "duplicateVariantId",
+            Self::DefaultVariantMissing => "defaultVariantMissing",
+            Self::FallbackRequiredTextRunMissing => "fallbackRequiredTextRunMissing",
+            Self::FallbackFreeFeatureMissing => "fallbackFreeFeatureMissing",
+            Self::VariantHasNoParts => "variantHasNoParts",
+            Self::VariantPartCountInvalid => "variantPartCountInvalid",
+            Self::VariantPartCountMismatch => "variantPartCountMismatch",
+            Self::VariantDuplicatePart => "variantDuplicatePart",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextV2ValidationIssue {
+    pub code: TextV2ValidationIssueCode,
+    pub op_id: String,
+    pub paint_order_slot_id: Option<PaintOrderSlotId>,
+    pub variant_id: Option<String>,
+    pub part_index: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +167,164 @@ pub fn lower_v1_leaf_text_variants_to_v2(ops: &[PaintOp]) -> Vec<LayerTextPaintO
             Some(build_text_op_v2(group_id, entries))
         })
         .collect()
+}
+
+pub fn validate_text_v2_op(
+    op: &LayerTextPaintOpV2,
+    options: &TextV2ValidationOptions,
+) -> Vec<TextV2ValidationIssue> {
+    let mut issues = Vec::new();
+    if options.require_paint_order_slot && op.paint_order_slot_id.is_empty() {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::MissingPaintOrderSlotId,
+            None,
+            None,
+        ));
+    }
+    if op.variants.is_empty() {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::TextOpHasNoVariants,
+            None,
+            None,
+        ));
+    }
+
+    let mut variant_ids = HashSet::<&str>::new();
+    for variant in &op.variants {
+        if !variant_ids.insert(&variant.variant_id) {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::DuplicateVariantId,
+                Some(&variant.variant_id),
+                None,
+            ));
+        }
+        validate_variant_parts(op, variant, &mut issues);
+    }
+
+    if let Some(default_variant_id) = &op.default_variant_id {
+        if !op
+            .variants
+            .iter()
+            .any(|variant| &variant.variant_id == default_variant_id)
+        {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::DefaultVariantMissing,
+                Some(default_variant_id),
+                None,
+            ));
+        }
+    } else {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::DefaultVariantMissing,
+            None,
+            None,
+        ));
+    }
+
+    if op.fallback_policy == TextFallbackPolicy::Required
+        && !op
+            .variants
+            .iter()
+            .any(|variant| variant.kind == TextVariantKind::TextRun)
+    {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::FallbackRequiredTextRunMissing,
+            None,
+            None,
+        ));
+    }
+    if op.fallback_policy == TextFallbackPolicy::None && !options.allow_fallback_free {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::FallbackFreeFeatureMissing,
+            None,
+            None,
+        ));
+    }
+
+    issues
+}
+
+fn validate_variant_parts(
+    op: &LayerTextPaintOpV2,
+    variant: &LayerTextVariantSet,
+    issues: &mut Vec<TextV2ValidationIssue>,
+) {
+    if variant.parts.is_empty() {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::VariantHasNoParts,
+            Some(&variant.variant_id),
+            None,
+        ));
+        return;
+    }
+
+    let expected = variant.parts[0].part_count;
+    let mut parts = HashSet::<u32>::new();
+    for part in &variant.parts {
+        if part.part_count == 0 {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::VariantPartCountInvalid,
+                Some(&variant.variant_id),
+                Some(part.part_index),
+            ));
+        }
+        if part.part_count != expected {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::VariantPartCountMismatch,
+                Some(&variant.variant_id),
+                Some(part.part_index),
+            ));
+        }
+        if !parts.insert(part.part_index) {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::VariantDuplicatePart,
+                Some(&variant.variant_id),
+                Some(part.part_index),
+            ));
+        }
+    }
+
+    if expected == 0
+        || parts.len() as u32 != expected
+        || !(0..expected).all(|idx| parts.contains(&idx))
+    {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::VariantPartCountMismatch,
+            Some(&variant.variant_id),
+            None,
+        ));
+    }
+}
+
+fn text_v2_issue(
+    op: &LayerTextPaintOpV2,
+    code: TextV2ValidationIssueCode,
+    variant_id: Option<&str>,
+    part_index: Option<u32>,
+) -> TextV2ValidationIssue {
+    TextV2ValidationIssue {
+        code,
+        op_id: op.id.clone(),
+        paint_order_slot_id: if op.paint_order_slot_id.is_empty() {
+            None
+        } else {
+            Some(op.paint_order_slot_id.clone())
+        },
+        variant_id: variant_id.map(str::to_string),
+        part_index,
+    }
 }
 
 fn text_variant_entry(order: usize, op: &PaintOp) -> Option<TextVariantEntry> {
@@ -414,5 +627,91 @@ mod tests {
         assert_eq!(outline_variant.parts[1].part_index, 1);
         assert_eq!(outline_variant.parts[0].part_count, 2);
         assert_eq!(outline_variant.parts[1].part_count, 2);
+    }
+
+    #[test]
+    fn validates_lowered_text_v2_slot_without_issues() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-3"));
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text]);
+
+        let issues = validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default());
+
+        assert!(issues.is_empty(), "{issues:?}");
+    }
+
+    #[test]
+    fn reports_missing_fallback_and_fallback_free_gate() {
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-4".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: Vec::new(),
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-4".to_string()),
+                local_paint_order: None,
+            },
+            0.0,
+        );
+        let mut text_op = lower_v1_leaf_text_variants_to_v2(&[outline]).remove(0);
+        text_op.default_variant_id = Some("missing".to_string());
+        text_op.fallback_policy = TextFallbackPolicy::None;
+
+        let issue_codes: Vec<_> =
+            validate_text_v2_op(&text_op, &TextV2ValidationOptions::default())
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::DefaultVariantMissing));
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::FallbackFreeFeatureMissing));
+    }
+
+    #[test]
+    fn reports_duplicate_or_incomplete_variant_parts() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5"));
+        let first_outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 2,
+                is_default_fallback: false,
+                requires: Vec::new(),
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5".to_string()),
+                local_paint_order: None,
+            },
+            0.0,
+        );
+        let duplicate_outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 2,
+                is_default_fallback: false,
+                requires: Vec::new(),
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5".to_string()),
+                local_paint_order: Some(1),
+            },
+            10.0,
+        );
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, first_outline, duplicate_outline]);
+
+        let issue_codes: Vec<_> =
+            validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default())
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::VariantDuplicatePart));
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::VariantPartCountMismatch));
     }
 }

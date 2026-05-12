@@ -683,6 +683,10 @@ Rust lowering mirrors that direction with a compatibility scaffold that groups
 one leaf's schema-v1 flattened text variants into `LayerTextPaintOpV2` slots.
 The scaffold preserves first-seen group order, collects variant-set parts under
 one paint slot, and keeps writer enablement separate from the v1 replay path.
+The Rust validator mirrors the first Studio diagnostics pass for those
+scaffolded slots: it checks paint-order slot presence, default/fallback policy,
+duplicate variant ids, complete part sets, and fallback-free gating before any
+v2 writer can treat the slot as exportable.
 The first validator pass is backend-local diagnostics rather than writer
 enforcement: renderers report missing default variants, missing required
 TextRun fallback, duplicate paint-order slots, duplicate or incomplete parts,

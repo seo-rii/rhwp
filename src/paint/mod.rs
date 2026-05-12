@@ -71,7 +71,8 @@ pub use text_shape::{
     TextShapeLowerer, TextShapeReport,
 };
 pub use text_v2::{
-    lower_v1_leaf_text_variants_to_v2, LayerTextPaintOpV2, LayerTextVariantPart,
-    LayerTextVariantPayload, LayerTextVariantSet, PaintOrderSlotId, TextFallbackPolicy,
+    lower_v1_leaf_text_variants_to_v2, validate_text_v2_op, LayerTextPaintOpV2,
+    LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, PaintOrderSlotId,
+    TextFallbackPolicy, TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions,
 };
 pub use text_variants::{validate_text_variant_scope, TextVariantScopeError};
