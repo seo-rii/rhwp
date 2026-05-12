@@ -201,6 +201,38 @@ pub fn lower_v1_leaf_text_variants_to_v2(ops: &[PaintOp]) -> Vec<LayerTextPaintO
         .collect()
 }
 
+/// Lowers root leaf ops plus sidecar `variantOps` into schema-v2 text slots.
+///
+/// This is the reader-side half of the v1-to-v2 migration. Writers still emit a
+/// given text variant in exactly one location, but readers can accept root
+/// `GlyphOutline` variants and sidecar variants together. If a sidecar repeats
+/// a part already present in the root stream, the root stream wins.
+pub fn lower_v1_leaf_text_variants_with_sidecars_to_v2(
+    ops: &[PaintOp],
+    sidecar_ops: &[PaintOp],
+) -> Vec<LayerTextPaintOpV2> {
+    let mut combined = Vec::with_capacity(ops.len() + sidecar_ops.len());
+    let mut seen_parts = HashSet::<(String, String, u32)>::new();
+
+    for op in ops {
+        if let Some(entry) = text_variant_entry(0, op) {
+            seen_parts.insert((entry.equivalence_group, entry.variant_id, entry.part_index));
+        }
+        combined.push(op.clone());
+    }
+
+    for op in sidecar_ops {
+        let Some(entry) = text_variant_entry(0, op) else {
+            continue;
+        };
+        if seen_parts.insert((entry.equivalence_group, entry.variant_id, entry.part_index)) {
+            combined.push(op.clone());
+        }
+    }
+
+    lower_v1_leaf_text_variants_to_v2(&combined)
+}
+
 pub fn lower_v1_layer_tree_text_variants_to_v2(tree: &PageLayerTree) -> Vec<LayerTextPaintOpV2> {
     lower_v1_layer_node_text_variants_to_v2(&tree.root)
 }
@@ -840,6 +872,68 @@ mod tests {
             text_op.variants[1].parts[0].payload,
             LayerTextVariantPayload::GlyphOutline(_)
         ));
+    }
+
+    #[test]
+    fn lowers_sidecar_variant_ops_into_text_v2_slot() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-1-sidecar"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-1-sidecar".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.monochromeFill".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-1-sidecar".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+
+        let text_ops = lower_v1_leaf_text_variants_with_sidecars_to_v2(&[text], &[outline]);
+        let outline_variant = text_ops[0]
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "glyphOutline")
+            .expect("sidecar glyphOutline variant");
+
+        assert_eq!(text_ops.len(), 1);
+        assert_eq!(outline_variant.parts.len(), 1);
+        assert_eq!(outline_variant.parts[0].part_index, 0);
+    }
+
+    #[test]
+    fn ignores_duplicate_sidecar_variant_parts() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-1-sidecar-dup"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-1-sidecar-dup".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.monochromeFill".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-1-sidecar-dup".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let duplicate_outline = outline.clone();
+
+        let text_ops =
+            lower_v1_leaf_text_variants_with_sidecars_to_v2(&[text, outline], &[duplicate_outline]);
+        let outline_variant = text_ops[0]
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "glyphOutline")
+            .expect("glyphOutline variant");
+
+        assert_eq!(outline_variant.parts.len(), 1);
     }
 
     #[test]

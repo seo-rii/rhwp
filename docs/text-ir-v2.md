@@ -687,6 +687,10 @@ schema-v1 flattened text variants into `LayerTextPaintOpV2` slots at leaf or
 tree scope. The scaffold preserves first-seen group order, collects variant-set
 parts under one paint slot, and keeps writer enablement separate from the v1
 replay path.
+`lower_v1_leaf_text_variants_with_sidecars_to_v2()` is the reader-side
+`variantOps` scaffold: it combines root leaf text variants with sidecar text
+variants and ignores duplicate sidecar parts when the root stream already
+contains the same `(equivalenceGroup, variantId, partIndex)`.
 `PageLayerTree::text_v2_slots()` and `validate_text_v2_slots()` expose that
 scaffold as the future writer/diagnostics entrypoint.
 `PageLayerTree::to_json_v2_compat()` is the first opt-in writer path: it keeps
