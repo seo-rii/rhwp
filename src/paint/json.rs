@@ -8,12 +8,13 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, GlyphCluster, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform,
-    LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextRunPaint,
-    LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
-    PaintOp, PaintTextStyle, PaintVariantMeta, ResourceArena, ShapeKey, TextClusterPlacement,
-    TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan,
-    TextSourceTable, TextV2ValidationIssue, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
+    CacheHint, ClipKind, GlyphCluster, GlyphOutlineStrokeStyle, GlyphRunDiagnostics,
+    GlyphTransform, LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic,
+    LayerTextPaintOpV2, LayerTextRunPaint, LayerTextVariantPart, LayerTextVariantPayload,
+    LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
+    ResourceArena, ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation,
+    TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
+    TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -848,6 +849,10 @@ impl PaintOp {
                     ",\"payloadKind\":{}",
                     json_escape(outline.payload_kind.as_str())
                 );
+                if let Some(stroke) = &outline.stroke {
+                    buf.push_str(",\"stroke\":");
+                    write_glyph_outline_stroke_style(buf, stroke);
+                }
                 buf.push_str(",\"paintStyle\":");
                 write_paint_text_style(buf, &outline.paint_style);
                 buf.push_str(",\"placement\":");
@@ -1430,6 +1435,23 @@ fn write_paint_text_style(buf: &mut String, style: &PaintTextStyle) {
         json_escape(&color_ref_to_css(style.strike_color)),
         json_escape(&color_ref_to_css(style.shade_color)),
     );
+    buf.push('}');
+}
+
+fn write_glyph_outline_stroke_style(buf: &mut String, stroke: &GlyphOutlineStrokeStyle) {
+    buf.push('{');
+    let _ = write!(
+        buf,
+        "\"color\":{},\"widthPx\":{:.6},\"join\":{},\"cap\":{},\"paintOrder\":{}",
+        json_escape(&color_ref_to_css(stroke.color)),
+        stroke.width_px,
+        json_escape(stroke.join.as_str()),
+        json_escape(stroke.cap.as_str()),
+        json_escape(stroke.paint_order.as_str())
+    );
+    if let Some(miter_limit) = stroke.miter_limit {
+        let _ = write!(buf, ",\"miterLimit\":{:.6}", miter_limit);
+    }
     buf.push('}');
 }
 
@@ -2282,8 +2304,9 @@ mod tests {
     use crate::model::image::ImageEffect;
     use crate::paint::{
         CacheHint, ClipKind, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
-        GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRange, GlyphRunDiagnostics,
-        GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
+        GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
+        GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
+        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
         LayerCharOverlapPaint, LayerEquationPaint, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
         LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode, LayerOutputOptions,
         LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTextControlMark,
@@ -3045,6 +3068,7 @@ mod tests {
                     local_paint_order: Some(0),
                 },
                 payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
+                stroke: None,
                 paint_style: PaintTextStyle::from(&TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -3123,6 +3147,31 @@ mod tests {
         assert!(v2_json.contains("\"variantId\":\"glyphOutline\",\"kind\":\"glyphOutline\",\"requiredFeatures\":[\"text.outlineGlyph\"],\"quality\":\"exact\""));
         assert!(v2_json.contains("\"payload\":{\"type\":\"glyphOutline\""));
         assert!(!v2_json.contains("\"ops\":[{\"type\":\"textRun\""));
+    }
+
+    #[test]
+    fn serializes_glyph_outline_stroke_style_payload() {
+        let mut json = String::new();
+        write_glyph_outline_stroke_style(
+            &mut json,
+            &GlyphOutlineStrokeStyle {
+                color: 0x112233,
+                width_px: 1.5,
+                join: GlyphOutlineStrokeJoin::Round,
+                cap: GlyphOutlineStrokeCap::Square,
+                miter_limit: Some(3.0),
+                paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+            },
+        );
+
+        assert_eq!(
+            json,
+            concat!(
+                "{\"color\":\"#332211\",\"widthPx\":1.500000,",
+                "\"join\":\"round\",\"cap\":\"square\",",
+                "\"paintOrder\":\"fillThenStroke\",\"miterLimit\":3.000000}"
+            )
+        );
     }
 
     #[test]

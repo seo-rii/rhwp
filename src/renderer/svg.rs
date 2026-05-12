@@ -16,10 +16,10 @@ use super::{
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    ClipKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint, LayerNode, LayerNodeKind,
-    LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole, LayerTextDecorationKind,
-    LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp, ResourceArena,
-    TextSourceEntry, TextSourceTable,
+    ClipKind, GlyphOutlinePayloadKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint,
+    LayerNode, LayerNodeKind, LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole,
+    LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp,
+    ResourceArena, TextSourceEntry, TextSourceTable,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant,
@@ -249,6 +249,16 @@ impl SvgRenderer {
                                         false,
                                         Some(VariantRejectReason::BackendDoesNotSupportVariant),
                                         true,
+                                        outline.paint_style.is_fill_only_glyph_replay(),
+                                    )
+                                } else if outline.payload_kind
+                                    != GlyphOutlinePayloadKind::MonochromeFill
+                                    || outline.stroke.is_some()
+                                {
+                                    (
+                                        false,
+                                        Some(VariantRejectReason::UnsupportedOutlinePayload),
+                                        false,
                                         outline.paint_style.is_fill_only_glyph_replay(),
                                     )
                                 } else if outline.variant.anchor_op_id.is_none()

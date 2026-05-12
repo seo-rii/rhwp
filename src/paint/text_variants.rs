@@ -317,6 +317,7 @@ mod tests {
                 },
                 variant,
                 payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
+                stroke: None,
                 paint_style: PaintTextStyle::from(&style),
                 placement: TextRunPlacement {
                     run_to_page: LayerAffineTransform {

@@ -483,11 +483,14 @@ should declare `text.variantOps` as an additive feature.
 
 The first richer payload discriminator is reserved but not replay-enabled:
 `payloadKind: "monochromeFill"` is the only schema-v1 replay-eligible outline
-payload, while `payloadKind: "monochromeFillStroke"` plus a stroke style is
-accepted by readers only so validators and renderers can reject it with
-`unsupportedOutlinePayload`. The stroke subset must not become replay-eligible
-until stroke width, join/cap/miter behavior, fill/stroke paint order, bbox
-inflation, SVG/Canvas2D/native fixtures, and fuzzy parity thresholds are fixed.
+payload. `payloadKind: "monochromeFillStroke"` is schema vocabulary for the
+first richer outline payload: it must carry an explicit `stroke` object, and the
+v2 validator only accepts the initial supported subset behind the richer-outline
+feature gate. That subset is finite positive stroke width, solid stroke color,
+finite non-negative optional miter limit, fixed join/cap vocabulary, and
+`paintOrder: "fillThenStroke"`. Renderers may still reject it with
+`unsupportedOutlinePayload` until stroke bbox inflation, SVG/Canvas2D/native
+fixtures, and fuzzy parity thresholds are fixed.
 
 The current validator keeps this conservative:
 
@@ -499,6 +502,9 @@ The current validator keeps this conservative:
 - schema v1 `glyphOutline` replay is monochrome fill-only:
   `payloadKind: "monochromeFill"` may use fill color, path `fillRule`,
   run-local outline paths, and source mapping;
+- `payloadKind: "monochromeFillStroke"` is reserved for the v2 richer-outline
+  gate and must include a supported `stroke` object before a validator may treat
+  it as well-formed;
 - each outline path carries `glyphId`, `glyphRange`, and a UTF-8 source range
   so SVG/Canvas2D strict replay can keep path-level provenance for debugging,
   search sidecars, and accessibility sidecars;
@@ -717,7 +723,10 @@ overloading the first fill-only path representation. Reserved payload kinds are
 defined as schema vocabulary but are rejected by the compatibility validator
 until their strict profile and feature gates land. The v2 validator reports
 `glyphOutlinePayloadKindFeatureMissing` for those richer payloads unless the
-caller explicitly enables that future feature gate.
+caller explicitly enables that future feature gate. For
+`monochromeFillStroke`, the validator also reports
+`glyphOutlineStrokeStyleUnsupported` unless the payload carries the supported
+initial stroke subset.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any

@@ -1,10 +1,12 @@
 use super::*;
 use crate::paint::{
-    GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRunDiagnostics, GlyphRunReplayEligibility,
-    LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
-    LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
-    PaintTextStyle, PaintVariantMeta, TextRunPlacement, TextSourceEntry, TextSourceId,
-    TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
+    GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap,
+    GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRunDiagnostics,
+    GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
+    LayerOutputOptions, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+    LayerTextOrientation, PaintTextStyle, PaintVariantMeta, TextRunPlacement, TextSourceEntry,
+    TextSourceId, TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind,
+    TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
@@ -505,10 +507,67 @@ fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
                 && !eligibility.replay_eligible
                 && eligibility.reason == Some(VariantRejectReason::UnsupportedPaintEffect)
         }));
+
+    let stroke_payload_tree = glyph_outline_fixture_tree_with_payload(
+        PaintTextStyle::from(&text_style),
+        GlyphOutlinePayloadKind::MonochromeFillStroke,
+        Some(GlyphOutlineStrokeStyle {
+            color: 0x000000,
+            width_px: 1.0,
+            join: GlyphOutlineStrokeJoin::Miter,
+            cap: GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+        }),
+        vec![glyph_outline_fixture_path()],
+    );
+    let mut stroke_payload_renderer = SvgRenderer::new();
+    stroke_payload_renderer.set_strict_glyph_outline_replay(true);
+    stroke_payload_renderer.render_layer_tree(&stroke_payload_tree);
+    let stroke_payload_output = stroke_payload_renderer.output();
+    assert!(stroke_payload_output.contains(">A</text>"));
+    assert!(!stroke_payload_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    let stroke_payload_report = stroke_payload_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict stroke payload report");
+    assert_eq!(stroke_payload_report.selected_variant_id, "textRun");
+    assert!(stroke_payload_report
+        .rejected_variants
+        .iter()
+        .any(|variant| {
+            variant.variant_id == "glyphOutline"
+                && variant
+                    .reasons
+                    .contains(&VariantRejectReason::UnsupportedOutlinePayload)
+        }));
+    assert!(stroke_payload_report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            !eligibility.payload_supported
+                && !eligibility.replay_eligible
+                && eligibility.reason == Some(VariantRejectReason::UnsupportedOutlinePayload)
+        }));
 }
 
 fn glyph_outline_fixture_tree(
     outline_paint_style: PaintTextStyle,
+    paths: Vec<LayerGlyphOutlinePath>,
+) -> PageLayerTree {
+    glyph_outline_fixture_tree_with_payload(
+        outline_paint_style,
+        GlyphOutlinePayloadKind::MonochromeFill,
+        None,
+        paths,
+    )
+}
+
+fn glyph_outline_fixture_tree_with_payload(
+    outline_paint_style: PaintTextStyle,
+    payload_kind: GlyphOutlinePayloadKind,
+    stroke: Option<GlyphOutlineStrokeStyle>,
     paths: Vec<LayerGlyphOutlinePath>,
 ) -> PageLayerTree {
     let bbox = BoundingBox::new(0.0, 0.0, 20.0, 20.0);
@@ -561,7 +620,8 @@ fn glyph_outline_fixture_tree(
                         stable_source_key: None,
                     },
                     variant: outline_variant,
-                    payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
+                    payload_kind,
+                    stroke,
                     paint_style: outline_paint_style,
                     placement: TextRunPlacement {
                         run_to_page: LayerAffineTransform {

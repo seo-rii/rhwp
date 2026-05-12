@@ -71,6 +71,7 @@ pub enum TextV2ValidationIssueCode {
     VariantDuplicatePart,
     CrossScopeVariantFeatureMissing,
     GlyphOutlinePayloadKindFeatureMissing,
+    GlyphOutlineStrokeStyleUnsupported,
     MixedPerGlyphFeatureMissing,
 }
 
@@ -90,6 +91,7 @@ impl TextV2ValidationIssueCode {
             Self::VariantDuplicatePart => "variantDuplicatePart",
             Self::CrossScopeVariantFeatureMissing => "crossScopeVariantFeatureMissing",
             Self::GlyphOutlinePayloadKindFeatureMissing => "glyphOutlinePayloadKindFeatureMissing",
+            Self::GlyphOutlineStrokeStyleUnsupported => "glyphOutlineStrokeStyleUnsupported",
             Self::MixedPerGlyphFeatureMissing => "mixedPerGlyphFeatureMissing",
         }
     }
@@ -498,6 +500,27 @@ fn validate_variant_parts(
                     Some(part.part_index),
                 ));
             }
+            if outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFillStroke {
+                if !outline
+                    .stroke
+                    .as_ref()
+                    .is_some_and(|stroke| stroke.is_supported_monochrome_subset())
+                {
+                    issues.push(text_v2_issue(
+                        op,
+                        TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported,
+                        Some(&variant.variant_id),
+                        Some(part.part_index),
+                    ));
+                }
+            } else if outline.stroke.is_some() {
+                issues.push(text_v2_issue(
+                    op,
+                    TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported,
+                    Some(&variant.variant_id),
+                    Some(part.part_index),
+                ));
+            }
         }
         if let LayerTextVariantPayload::GlyphRun(run) = &part.payload {
             if run.orientation == GlyphRunOrientation::MixedPerGlyph
@@ -687,11 +710,12 @@ mod tests {
     use super::*;
     use crate::paint::{
         CacheHint, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
-        GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRange, GlyphRunDiagnostics,
-        GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePath, LayerPoint,
-        LayerSemantic, LayerVector, PaintTextStyle, PaintVariantMeta, ShapeKey, ShapingEngineId,
-        TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
-        WritingMode,
+        GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
+        GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
+        GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
+        LayerGlyphOutlinePath, LayerPoint, LayerSemantic, LayerVector, PaintTextStyle,
+        PaintVariantMeta, ShapeKey, ShapingEngineId, TextDirection, TextRunPlacement, TextSourceId,
+        TextSourceRange, TextSourceSpan, WritingMode,
     };
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -722,6 +746,7 @@ mod tests {
                 },
                 variant,
                 payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
+                stroke: None,
                 paint_style: PaintTextStyle::from(&TextStyle::default()),
                 placement: TextRunPlacement {
                     run_to_page: LayerAffineTransform {
@@ -758,6 +783,17 @@ mod tests {
                     reason: None,
                 },
             },
+        }
+    }
+
+    fn supported_outline_stroke() -> GlyphOutlineStrokeStyle {
+        GlyphOutlineStrokeStyle {
+            color: 0x000000,
+            width_px: 1.0,
+            join: GlyphOutlineStrokeJoin::Miter,
+            cap: GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: GlyphOutlinePaintOrder::FillThenStroke,
         }
     }
 
@@ -1172,6 +1208,7 @@ mod tests {
             panic!("expected glyph outline payload");
         };
         outline.payload_kind = GlyphOutlinePayloadKind::MonochromeFillStroke;
+        outline.stroke = Some(supported_outline_stroke());
 
         let issue_codes: Vec<_> =
             validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default())
@@ -1187,6 +1224,47 @@ mod tests {
         options.allow_richer_glyph_outline_payloads = true;
         let issues = validate_text_v2_op(&text_ops[0], &options);
         assert!(issues.is_empty(), "{issues:?}");
+    }
+
+    #[test]
+    fn reports_unsupported_glyph_outline_stroke_style() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5-stroke"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-stroke".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.monochromeFillStroke".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5-stroke".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::MonochromeFillStroke;
+        let mut stroke = supported_outline_stroke();
+        stroke.width_px = 0.0;
+        outline.stroke = Some(stroke);
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_richer_glyph_outline_payloads = true;
+        let issue_codes: Vec<_> = validate_text_v2_op(&text_ops[0], &options)
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(
+            issue_codes.contains(&TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported)
+        );
     }
 
     #[test]

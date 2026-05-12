@@ -150,6 +150,7 @@ pub struct LayerGlyphOutlinePaint {
     pub source: TextSourceSpan,
     pub variant: PaintVariantMeta,
     pub payload_kind: GlyphOutlinePayloadKind,
+    pub stroke: Option<GlyphOutlineStrokeStyle>,
     pub paint_style: PaintTextStyle,
     pub placement: TextRunPlacement,
     pub paths: Vec<LayerGlyphOutlinePath>,
@@ -173,6 +174,81 @@ impl GlyphOutlinePayloadKind {
             Self::ColorLayers => "colorLayers",
             Self::BitmapGlyph => "bitmapGlyph",
             Self::SvgGlyph => "svgGlyph",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlyphOutlineStrokeStyle {
+    pub color: ColorRef,
+    pub width_px: f64,
+    pub join: GlyphOutlineStrokeJoin,
+    pub cap: GlyphOutlineStrokeCap,
+    pub miter_limit: Option<f64>,
+    pub paint_order: GlyphOutlinePaintOrder,
+}
+
+impl GlyphOutlineStrokeStyle {
+    pub fn is_supported_monochrome_subset(&self) -> bool {
+        self.width_px.is_finite()
+            && self.width_px > 0.0
+            && self
+                .miter_limit
+                .map(|limit| limit.is_finite() && limit >= 0.0)
+                .unwrap_or(true)
+            && self.paint_order == GlyphOutlinePaintOrder::FillThenStroke
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphOutlineStrokeJoin {
+    Miter,
+    Round,
+    Bevel,
+}
+
+impl GlyphOutlineStrokeJoin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Miter => "miter",
+            Self::Round => "round",
+            Self::Bevel => "bevel",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphOutlineStrokeCap {
+    Butt,
+    Round,
+    Square,
+}
+
+impl GlyphOutlineStrokeCap {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Butt => "butt",
+            Self::Round => "round",
+            Self::Square => "square",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphOutlinePaintOrder {
+    FillOnly,
+    StrokeOnly,
+    FillThenStroke,
+    StrokeThenFill,
+}
+
+impl GlyphOutlinePaintOrder {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FillOnly => "fillOnly",
+            Self::StrokeOnly => "strokeOnly",
+            Self::FillThenStroke => "fillThenStroke",
+            Self::StrokeThenFill => "strokeThenFill",
         }
     }
 }

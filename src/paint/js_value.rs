@@ -9,10 +9,10 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     font_blob_resource_key, image_resource_key, resource_digest_hex, svg_resource_key, CacheHint,
-    ClipKind, GlyphCluster, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
-    LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart,
-    LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp,
-    PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
+    ClipKind, GlyphCluster, GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform,
+    LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2,
+    LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
+    PaintOp, PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
     TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
     TextV2ValidationIssue, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
@@ -1218,6 +1218,13 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 paint_variant_meta_to_value(&outline.variant),
             );
             set_string(&value, "payloadKind", outline.payload_kind.as_str());
+            if let Some(stroke) = &outline.stroke {
+                set_value(
+                    &value,
+                    "stroke",
+                    glyph_outline_stroke_style_to_value(stroke),
+                );
+            }
             set_value(
                 &value,
                 "paintStyle",
@@ -1467,6 +1474,19 @@ fn paint_text_style_to_value(style: &PaintTextStyle) -> JsValue {
     );
     set_string(&value, "strikeColor", &color_ref_to_css(style.strike_color));
     set_string(&value, "shadeColor", &color_ref_to_css(style.shade_color));
+    value.into()
+}
+
+fn glyph_outline_stroke_style_to_value(stroke: &GlyphOutlineStrokeStyle) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "color", &color_ref_to_css(stroke.color));
+    set_number(&value, "widthPx", stroke.width_px);
+    set_string(&value, "join", stroke.join.as_str());
+    set_string(&value, "cap", stroke.cap.as_str());
+    if let Some(miter_limit) = stroke.miter_limit {
+        set_number(&value, "miterLimit", miter_limit);
+    }
+    set_string(&value, "paintOrder", stroke.paint_order.as_str());
     value.into()
 }
 
@@ -2877,6 +2897,25 @@ mod tests {
             string_prop(&reserved_payload_issue, "code"),
             "glyphOutlinePayloadKindFeatureMissing"
         );
+    }
+
+    #[wasm_bindgen_test]
+    fn exports_glyph_outline_stroke_style_to_js_value() {
+        let value = glyph_outline_stroke_style_to_value(&GlyphOutlineStrokeStyle {
+            color: 0x112233,
+            width_px: 1.5,
+            join: crate::paint::GlyphOutlineStrokeJoin::Round,
+            cap: crate::paint::GlyphOutlineStrokeCap::Square,
+            miter_limit: Some(3.0),
+            paint_order: crate::paint::GlyphOutlinePaintOrder::FillThenStroke,
+        });
+
+        assert_eq!(string_prop(&value, "color"), "#332211");
+        assert_eq!(number_prop(&value, "widthPx"), 1.5);
+        assert_eq!(string_prop(&value, "join"), "round");
+        assert_eq!(string_prop(&value, "cap"), "square");
+        assert_eq!(number_prop(&value, "miterLimit"), 3.0);
+        assert_eq!(string_prop(&value, "paintOrder"), "fillThenStroke");
     }
 
     #[wasm_bindgen_test]
