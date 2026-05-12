@@ -431,6 +431,17 @@ impl PaintVariantMeta {
             local_paint_order: None,
         }
     }
+
+    pub fn stable_op_id(&self) -> String {
+        if self.is_default_fallback {
+            format!("op-{}", self.equivalence_group)
+        } else {
+            format!(
+                "op-{}-{}-{}",
+                self.equivalence_group, self.variant_id, self.part_index
+            )
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

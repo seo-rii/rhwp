@@ -365,6 +365,7 @@ mod tests {
             profile: RenderProfile::default(),
             output_options: LayerOutputOptions::default(),
             root,
+            variant_ops: Vec::new(),
             resources: ResourceArena::default(),
             text_sources: TextSourceTable::default(),
         }

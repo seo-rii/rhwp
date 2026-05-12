@@ -273,6 +273,12 @@ pub struct PageLayerTree {
     pub profile: RenderProfile,
     pub output_options: LayerOutputOptions,
     pub root: LayerNode,
+    /// Schema-v1/Phase-2 sidecar variant payloads.
+    ///
+    /// Current writers normally keep text variants in the root leaf stream, but
+    /// readers and v2 compatibility lowering accept sidecar payloads anchored by
+    /// `PaintVariantMeta::anchor_op_id`.
+    pub variant_ops: Vec<PaintOp>,
     pub resources: ResourceArena,
     pub text_sources: TextSourceTable,
 }
@@ -347,6 +353,7 @@ pub struct PageLayerTreeBuilder {
     profile: RenderProfile,
     output_options: LayerOutputOptions,
     root: LayerNode,
+    variant_ops: Vec<PaintOp>,
     resources: ResourceArena,
     text_sources: Option<TextSourceTable>,
 }
@@ -359,6 +366,7 @@ impl PageLayerTreeBuilder {
             profile: RenderProfile::default(),
             output_options: LayerOutputOptions::default(),
             root,
+            variant_ops: Vec::new(),
             resources: ResourceArena::default(),
             text_sources: None,
         }
@@ -379,6 +387,11 @@ impl PageLayerTreeBuilder {
         self
     }
 
+    pub fn variant_ops(mut self, variant_ops: Vec<PaintOp>) -> Self {
+        self.variant_ops = variant_ops;
+        self
+    }
+
     pub fn text_sources(mut self, text_sources: TextSourceTable) -> Self {
         self.text_sources = Some(text_sources);
         self
@@ -395,6 +408,7 @@ impl PageLayerTreeBuilder {
             profile: self.profile,
             output_options: self.output_options,
             root,
+            variant_ops: self.variant_ops,
             resources: self.resources,
             text_sources,
         }

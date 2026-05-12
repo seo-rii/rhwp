@@ -236,12 +236,21 @@ pub fn lower_v1_leaf_text_variants_with_sidecars_to_v2(
 }
 
 pub fn lower_v1_layer_tree_text_variants_to_v2(tree: &PageLayerTree) -> Vec<LayerTextPaintOpV2> {
-    lower_v1_layer_node_text_variants_to_v2(&tree.root)
+    lower_v1_layer_node_text_variants_with_sidecars_to_v2(&tree.root, &tree.variant_ops)
 }
 
 pub fn lower_v1_layer_node_text_variants_to_v2(node: &LayerNode) -> Vec<LayerTextPaintOpV2> {
     let mut lowered = Vec::new();
     collect_text_v2_slots(node, &mut lowered);
+    lowered
+}
+
+pub fn lower_v1_layer_node_text_variants_with_sidecars_to_v2(
+    node: &LayerNode,
+    sidecar_ops: &[PaintOp],
+) -> Vec<LayerTextPaintOpV2> {
+    let mut lowered = Vec::new();
+    collect_text_v2_slots_with_sidecars(node, sidecar_ops, &mut lowered);
     lowered
 }
 
@@ -256,6 +265,64 @@ fn collect_text_v2_slots(node: &LayerNode, lowered: &mut Vec<LayerTextPaintOpV2>
         LayerNodeKind::Leaf { ops, .. } => {
             lowered.extend(lower_v1_leaf_text_variants_to_v2(ops));
         }
+    }
+}
+
+fn collect_text_v2_slots_with_sidecars(
+    node: &LayerNode,
+    sidecar_ops: &[PaintOp],
+    lowered: &mut Vec<LayerTextPaintOpV2>,
+) {
+    match &node.kind {
+        LayerNodeKind::Group { children, .. } => {
+            for child in children {
+                collect_text_v2_slots_with_sidecars(child, sidecar_ops, lowered);
+            }
+        }
+        LayerNodeKind::ClipRect { child, .. } => {
+            collect_text_v2_slots_with_sidecars(child, sidecar_ops, lowered);
+        }
+        LayerNodeKind::Leaf { ops, .. } => {
+            let sidecars = sidecars_for_leaf_ops(ops, sidecar_ops);
+            lowered.extend(lower_v1_leaf_text_variants_with_sidecars_to_v2(
+                ops, &sidecars,
+            ));
+        }
+    }
+}
+
+pub fn sidecars_for_leaf_ops(ops: &[PaintOp], sidecar_ops: &[PaintOp]) -> Vec<PaintOp> {
+    if sidecar_ops.is_empty() {
+        return Vec::new();
+    }
+    let anchor_ids: HashSet<_> = ops.iter().filter_map(text_variant_op_stable_id).collect();
+    if anchor_ids.is_empty() {
+        return Vec::new();
+    }
+    sidecar_ops
+        .iter()
+        .filter(|op| {
+            text_variant_anchor_op_id(op)
+                .is_some_and(|anchor_op_id| anchor_ids.contains(anchor_op_id))
+        })
+        .cloned()
+        .collect()
+}
+
+fn text_variant_op_stable_id(op: &PaintOp) -> Option<String> {
+    text_variant_meta_for_op(op).map(|variant| variant.stable_op_id())
+}
+
+fn text_variant_anchor_op_id(op: &PaintOp) -> Option<&str> {
+    text_variant_meta_for_op(op).and_then(|variant| variant.anchor_op_id.as_deref())
+}
+
+fn text_variant_meta_for_op(op: &PaintOp) -> Option<&crate::paint::PaintVariantMeta> {
+    match op {
+        PaintOp::TextRun { run, .. } => run.variant.as_ref(),
+        PaintOp::GlyphRun { run, .. } => Some(&run.variant),
+        PaintOp::GlyphOutline { outline, .. } => Some(&outline.variant),
+        _ => None,
     }
 }
 
@@ -935,6 +1002,44 @@ mod tests {
             .iter()
             .find(|variant| variant.variant_id == "glyphOutline")
             .expect("sidecar glyphOutline variant");
+
+        assert_eq!(text_ops.len(), 1);
+        assert_eq!(outline_variant.parts.len(), 1);
+        assert_eq!(outline_variant.parts[0].part_index, 0);
+    }
+
+    #[test]
+    fn lowers_page_layer_tree_sidecar_variant_ops_into_text_v2_slots() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-0"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-0".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.monochromeFill".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("op-text-0".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let tree = PageLayerTree::builder(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![text]),
+        )
+        .variant_ops(vec![outline])
+        .build();
+
+        let text_ops = tree.text_v2_slots();
+        let outline_variant = text_ops[0]
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "glyphOutline")
+            .expect("tree sidecar glyphOutline variant");
 
         assert_eq!(text_ops.len(), 1);
         assert_eq!(outline_variant.parts.len(), 1);

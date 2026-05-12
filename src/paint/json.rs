@@ -56,11 +56,21 @@ impl PageLayerTree {
         let mut text_source_state = TextSourceExportState::default();
         self.root
             .write_json(&mut buf, &self.resources, &mut text_source_state);
+        if !self.variant_ops.is_empty() {
+            buf.push_str(",\"variantOps\":[");
+            for (idx, op) in self.variant_ops.iter().enumerate() {
+                if idx > 0 {
+                    buf.push(',');
+                }
+                op.write_json(&mut buf, &self.resources, &mut text_source_state);
+            }
+            buf.push(']');
+        }
         buf.push_str(",\"textSources\":");
         write_text_source_entries(&mut buf, &self.text_sources);
         buf.push_str(",\"fontResources\":");
         write_font_resources(&mut buf, self.resources.font_resources());
-        write_text_export_metadata(&mut buf, &self.root);
+        write_text_export_metadata(&mut buf, &self.root, &self.variant_ops);
         buf.push('}');
         buf
     }
@@ -96,23 +106,28 @@ impl PageLayerTree {
             self.output_options.debug_overlay,
         );
         let mut text_source_state = TextSourceExportState::default();
-        self.root
-            .write_json_v2_compat(&mut buf, &self.resources, &mut text_source_state);
+        self.root.write_json_v2_compat(
+            &mut buf,
+            &self.resources,
+            &self.variant_ops,
+            &mut text_source_state,
+        );
         buf.push_str(",\"textSources\":");
         write_text_source_entries(&mut buf, &self.text_sources);
         buf.push_str(",\"fontResources\":");
         write_font_resources(&mut buf, self.resources.font_resources());
-        write_text_v2_compat_export_metadata(&mut buf, &self.root);
+        write_text_v2_compat_export_metadata(&mut buf, &self.root, &self.variant_ops);
         buf.push('}');
         Ok(buf)
     }
 }
 
-fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
+fn write_text_export_metadata(buf: &mut String, root: &LayerNode, variant_ops: &[PaintOp]) {
     let externalized_visuals = externalized_text_visuals(root);
-    let has_variant_groups = has_text_variant_groups(root);
-    let has_glyph_runs = has_glyph_runs(root);
-    let has_glyph_outlines = has_glyph_outlines(root);
+    let has_variant_groups = has_text_variant_groups(root) || has_text_variant_ops(variant_ops);
+    let has_sidecar_variants = !variant_ops.is_empty();
+    let has_glyph_runs = has_glyph_runs(root) || ops_have_glyph_runs(variant_ops);
+    let has_glyph_outlines = has_glyph_outlines(root) || ops_have_glyph_outlines(variant_ops);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
     if has_glyph_runs {
         buf.push_str(",\"fontResources\",\"text.glyphRun\"");
@@ -122,6 +137,9 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     }
     if has_variant_groups {
         buf.push_str(",\"text.variantGroups\"");
+    }
+    if has_sidecar_variants {
+        buf.push_str(",\"text.variantOps\"");
     }
     if externalized_visuals.contains(&"charOverlap") {
         buf.push_str(",\"text.charOverlapOp\"");
@@ -162,11 +180,15 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
     buf.push_str("]},\"textV2\":{\"profile\":\"compatibility\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"reserved\"}");
 }
 
-fn write_text_v2_compat_export_metadata(buf: &mut String, root: &LayerNode) {
+fn write_text_v2_compat_export_metadata(
+    buf: &mut String,
+    root: &LayerNode,
+    variant_ops: &[PaintOp],
+) {
     let externalized_visuals = externalized_text_visuals(root);
-    let has_variant_groups = has_text_variant_groups(root);
-    let has_glyph_runs = has_glyph_runs(root);
-    let has_glyph_outlines = has_glyph_outlines(root);
+    let has_variant_groups = has_text_variant_groups(root) || has_text_variant_ops(variant_ops);
+    let has_glyph_runs = has_glyph_runs(root) || ops_have_glyph_runs(variant_ops);
+    let has_glyph_outlines = has_glyph_outlines(root) || ops_have_glyph_outlines(variant_ops);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
     if has_glyph_runs {
         buf.push_str(",\"fontResources\",\"text.glyphRun\"");
@@ -273,6 +295,19 @@ fn has_glyph_runs(root: &LayerNode) -> bool {
         }
     }
     false
+}
+
+fn has_text_variant_ops(ops: &[PaintOp]) -> bool {
+    ops.iter().any(|op| text_v2_variant_group_id(op).is_some())
+}
+
+fn ops_have_glyph_runs(ops: &[PaintOp]) -> bool {
+    ops.iter().any(|op| matches!(op, PaintOp::GlyphRun { .. }))
+}
+
+fn ops_have_glyph_outlines(ops: &[PaintOp]) -> bool {
+    ops.iter()
+        .any(|op| matches!(op, PaintOp::GlyphOutline { .. }))
 }
 
 fn has_glyph_outlines(root: &LayerNode) -> bool {
@@ -437,6 +472,7 @@ impl LayerNode {
         &self,
         buf: &mut String,
         resources: &ResourceArena,
+        variant_ops: &[PaintOp],
         text_sources: &mut TextSourceExportState,
     ) {
         buf.push('{');
@@ -483,7 +519,7 @@ impl LayerNode {
                     if idx > 0 {
                         buf.push(',');
                     }
-                    child.write_json_v2_compat(buf, resources, text_sources);
+                    child.write_json_v2_compat(buf, resources, variant_ops, text_sources);
                 }
                 buf.push(']');
             }
@@ -503,7 +539,7 @@ impl LayerNode {
                     clip_policy.allow_horizontal_overflow_controls
                 );
                 buf.push_str(",\"child\":");
-                child.write_json_v2_compat(buf, resources, text_sources);
+                child.write_json_v2_compat(buf, resources, variant_ops, text_sources);
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
                 let _ = write!(
@@ -511,7 +547,8 @@ impl LayerNode {
                     ",\"kind\":\"leaf\",\"cacheHint\":{},\"ops\":[",
                     json_escape(cache_hint_str(*cache_hint))
                 );
-                write_leaf_ops_v2_compat(buf, ops, resources, text_sources);
+                let sidecars = crate::paint::sidecars_for_leaf_ops(ops, variant_ops);
+                write_leaf_ops_v2_compat(buf, ops, &sidecars, resources, text_sources);
                 buf.push(']');
             }
         }
@@ -522,10 +559,12 @@ impl LayerNode {
 fn write_leaf_ops_v2_compat(
     buf: &mut String,
     ops: &[PaintOp],
+    sidecar_ops: &[PaintOp],
     resources: &ResourceArena,
     text_sources: &mut TextSourceExportState,
 ) {
-    let text_slots = crate::paint::lower_v1_leaf_text_variants_to_v2(ops);
+    let text_slots =
+        crate::paint::lower_v1_leaf_text_variants_with_sidecars_to_v2(ops, sidecar_ops);
     let text_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = text_slots
         .iter()
         .map(|slot| (slot.id.as_str(), slot))
@@ -728,7 +767,7 @@ impl PaintOp {
             PaintOp::TextRun { bbox, run } => {
                 buf.push('{');
                 if let Some(variant) = &run.variant {
-                    let _ = write!(buf, "\"id\":{},", json_escape(&text_variant_op_id(variant)));
+                    let _ = write!(buf, "\"id\":{},", json_escape(&variant.stable_op_id()));
                 }
                 buf.push_str("\"type\":\"textRun\",\"bbox\":");
                 write_bbox(buf, *bbox);
@@ -794,11 +833,7 @@ impl PaintOp {
             }
             PaintOp::GlyphRun { bbox, run } => {
                 buf.push('{');
-                let _ = write!(
-                    buf,
-                    "\"id\":{},",
-                    json_escape(&text_variant_op_id(&run.variant))
-                );
+                let _ = write!(buf, "\"id\":{},", json_escape(&run.variant.stable_op_id()));
                 buf.push_str("\"type\":\"glyphRun\",\"bbox\":");
                 write_bbox(buf, *bbox);
                 buf.push_str(",\"source\":");
@@ -849,7 +884,7 @@ impl PaintOp {
                 let _ = write!(
                     buf,
                     "\"id\":{},",
-                    json_escape(&text_variant_op_id(&outline.variant))
+                    json_escape(&outline.variant.stable_op_id())
                 );
                 buf.push_str("\"type\":\"glyphOutline\",\"bbox\":");
                 write_bbox(buf, *bbox);
@@ -1361,17 +1396,6 @@ fn write_paint_variant_meta(buf: &mut String, variant: &PaintVariantMeta) {
         let _ = write!(buf, ",\"localPaintOrder\":{}", local_paint_order);
     }
     buf.push('}');
-}
-
-fn text_variant_op_id(variant: &PaintVariantMeta) -> String {
-    if variant.is_default_fallback {
-        format!("op-{}", variant.equivalence_group)
-    } else {
-        format!(
-            "op-{}-{}-{}",
-            variant.equivalence_group, variant.variant_id, variant.part_index
-        )
-    }
 }
 
 fn write_text_source_range(buf: &mut String, range: TextSourceRange) {
@@ -2337,8 +2361,8 @@ mod tests {
         LayerTextControlMarkKind, LayerTextDecorationKind, LayerTextDecorationPaint,
         LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintTextStyle, PaintVariantMeta,
         ResourceArena, ScriptTag, ShapeKey, ShapingEngineId, TextDirection, TextLegacyVisualState,
-        TextLegacyVisuals, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantQuality,
-        WritingMode, LAYER_TREE_SCHEMA,
+        TextLegacyVisuals, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantKind,
+        TextVariantQuality, WritingMode, LAYER_TREE_SCHEMA,
     };
     use crate::renderer::composer::CharOverlapInfo;
 
@@ -3175,6 +3199,107 @@ mod tests {
             "\"payload\":{\"id\":\"op-text-0-glyphOutline-0\",\"type\":\"glyphOutline\""
         ));
         assert!(!v2_json.contains("\"ops\":[{\"type\":\"textRun\""));
+    }
+
+    #[test]
+    fn serializes_sidecar_variant_ops_and_absorbs_them_into_v2_text_envelope() {
+        let source = TextSourceSpan {
+            id: TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source.clone()),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let glyph_outline = PaintOp::GlyphOutline {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            outline: LayerGlyphOutlinePaint {
+                source,
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["text.outlineGlyph".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some("op-text-0".to_string()),
+                    local_paint_order: Some(0),
+                },
+                payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
+                stroke: None,
+                paint_style: PaintTextStyle::from(&TextStyle::default()),
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 0.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                paths: vec![LayerGlyphOutlinePath {
+                    glyph_id: 42,
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    glyph_range: GlyphRange { start: 0, end: 1 },
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(1.0, 0.0),
+                        PathCommand::ClosePath,
+                    ],
+                    fill_rule: GlyphOutlineFillRule::NonZero,
+                }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let tree = PageLayerTree::builder(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![text_run]),
+        )
+        .variant_ops(vec![glyph_outline])
+        .build();
+
+        let json = tree.to_json();
+        assert!(json.contains(
+            "\"variantOps\":[{\"id\":\"op-text-0-glyphOutline-0\",\"type\":\"glyphOutline\""
+        ));
+        assert!(json.contains("\"text.variantOps\""));
+        assert!(json.contains("\"anchorOpId\":\"op-text-0\""));
+
+        let v2_json = tree.to_json_v2_compat().expect("valid v2 compat export");
+        assert!(!v2_json.contains("\"variantOps\""));
+        assert!(v2_json.contains("\"variantId\":\"glyphOutline\",\"kind\":\"glyphOutline\""));
+        assert!(v2_json.contains(
+            "\"payload\":{\"id\":\"op-text-0-glyphOutline-0\",\"type\":\"glyphOutline\""
+        ));
     }
 
     #[test]

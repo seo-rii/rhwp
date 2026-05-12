@@ -168,6 +168,13 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "root",
         layer_node_to_value(&tree.root, &mut text_source_state),
     );
+    if !tree.variant_ops.is_empty() {
+        set_value(
+            &value,
+            "variantOps",
+            paint_ops_to_value(&tree.variant_ops, &mut text_source_state),
+        );
+    }
     set_value(
         &value,
         "textSources",
@@ -179,9 +186,12 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         font_resources_to_value(tree.resources.font_resources()),
     );
     let externalized_visuals = externalized_text_visuals(&tree.root);
-    let has_variant_groups = has_text_variant_groups(&tree.root);
-    let has_glyph_runs = has_glyph_runs(&tree.root);
-    let has_glyph_outlines = has_glyph_outlines(&tree.root);
+    let has_variant_groups =
+        has_text_variant_groups(&tree.root) || has_text_variant_ops(&tree.variant_ops);
+    let has_sidecar_variants = !tree.variant_ops.is_empty();
+    let has_glyph_runs = has_glyph_runs(&tree.root) || ops_have_glyph_runs(&tree.variant_ops);
+    let has_glyph_outlines =
+        has_glyph_outlines(&tree.root) || ops_have_glyph_outlines(&tree.variant_ops);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -200,6 +210,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     }
     if has_variant_groups {
         used_features.push("text.variantGroups");
+    }
+    if has_sidecar_variants {
+        used_features.push("text.variantOps");
     }
     if externalized_visuals
         .iter()
@@ -390,9 +403,10 @@ pub fn page_layer_tree_to_js_value_v2_compat_with_resource_hints(
     set_value(
         &value,
         "root",
-        layer_node_to_value_v2_compat(&tree.root, &mut text_source_state),
+        layer_node_to_value_v2_compat(&tree.root, &tree.variant_ops, &mut text_source_state),
     );
-    set_text_v2_compat_metadata(&value, &tree.root);
+    let _ = Reflect::delete_property(&value, &JsValue::from_str("variantOps"));
+    set_text_v2_compat_metadata(&value, &tree.root, &tree.variant_ops);
     Ok(value.into())
 }
 
@@ -427,11 +441,11 @@ fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
         .collect()
 }
 
-fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode) {
+fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[PaintOp]) {
     let externalized_visuals = externalized_text_visuals(root);
-    let has_variant_groups = has_text_variant_groups(root);
-    let has_glyph_runs = has_glyph_runs(root);
-    let has_glyph_outlines = has_glyph_outlines(root);
+    let has_variant_groups = has_text_variant_groups(root) || has_text_variant_ops(variant_ops);
+    let has_glyph_runs = has_glyph_runs(root) || ops_have_glyph_runs(variant_ops);
+    let has_glyph_outlines = has_glyph_outlines(root) || ops_have_glyph_outlines(variant_ops);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -817,6 +831,7 @@ fn layer_nodes_to_value(
 
 fn layer_node_to_value_v2_compat(
     node: &LayerNode,
+    variant_ops: &[PaintOp],
     text_sources: &mut TextSourceExportState,
 ) -> JsValue {
     let value = Object::new();
@@ -858,7 +873,7 @@ fn layer_node_to_value_v2_compat(
             set_value(
                 &value,
                 "children",
-                layer_nodes_to_value_v2_compat(children, text_sources),
+                layer_nodes_to_value_v2_compat(children, variant_ops, text_sources),
             );
         }
         LayerNodeKind::ClipRect {
@@ -885,16 +900,17 @@ fn layer_node_to_value_v2_compat(
             set_value(
                 &value,
                 "child",
-                layer_node_to_value_v2_compat(child, text_sources),
+                layer_node_to_value_v2_compat(child, variant_ops, text_sources),
             );
         }
         LayerNodeKind::Leaf { ops, cache_hint } => {
             set_string(&value, "kind", "leaf");
             set_string(&value, "cacheHint", cache_hint_str(*cache_hint));
+            let sidecars = crate::paint::sidecars_for_leaf_ops(ops, variant_ops);
             set_value(
                 &value,
                 "ops",
-                paint_ops_to_value_v2_compat(ops, text_sources),
+                paint_ops_to_value_v2_compat(ops, &sidecars, text_sources),
             );
         }
     }
@@ -904,11 +920,16 @@ fn layer_node_to_value_v2_compat(
 
 fn layer_nodes_to_value_v2_compat(
     children: &[LayerNode],
+    variant_ops: &[PaintOp],
     text_sources: &mut TextSourceExportState,
 ) -> JsValue {
     let array = Array::new();
     for child in children {
-        array.push(&layer_node_to_value_v2_compat(child, text_sources));
+        array.push(&layer_node_to_value_v2_compat(
+            child,
+            variant_ops,
+            text_sources,
+        ));
     }
     array.into()
 }
@@ -923,9 +944,11 @@ fn paint_ops_to_value(ops: &[PaintOp], text_sources: &mut TextSourceExportState)
 
 fn paint_ops_to_value_v2_compat(
     ops: &[PaintOp],
+    sidecar_ops: &[PaintOp],
     text_sources: &mut TextSourceExportState,
 ) -> JsValue {
-    let text_slots = crate::paint::lower_v1_leaf_text_variants_to_v2(ops);
+    let text_slots =
+        crate::paint::lower_v1_leaf_text_variants_with_sidecars_to_v2(ops, sidecar_ops);
     let text_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = text_slots
         .iter()
         .map(|slot| (slot.id.as_str(), slot))
@@ -1104,7 +1127,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
         }
         PaintOp::TextRun { bbox, run } => {
             if let Some(variant) = &run.variant {
-                set_string(&value, "id", &text_variant_op_id(variant));
+                set_string(&value, "id", &variant.stable_op_id());
             }
             set_string(&value, "type", "textRun");
             set_value(&value, "bbox", bbox_to_value(*bbox));
@@ -1167,7 +1190,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             }
         }
         PaintOp::GlyphRun { bbox, run } => {
-            set_string(&value, "id", &text_variant_op_id(&run.variant));
+            set_string(&value, "id", &run.variant.stable_op_id());
             set_string(&value, "type", "glyphRun");
             set_value(&value, "bbox", bbox_to_value(*bbox));
             set_value(&value, "source", text_source_span_to_value(&run.source));
@@ -1213,7 +1236,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             );
         }
         PaintOp::GlyphOutline { bbox, outline } => {
-            set_string(&value, "id", &text_variant_op_id(&outline.variant));
+            set_string(&value, "id", &outline.variant.stable_op_id());
             set_string(&value, "type", "glyphOutline");
             set_value(&value, "bbox", bbox_to_value(*bbox));
             set_value(&value, "source", text_source_span_to_value(&outline.source));
@@ -1870,6 +1893,19 @@ fn has_glyph_runs(root: &LayerNode) -> bool {
     false
 }
 
+fn has_text_variant_ops(ops: &[PaintOp]) -> bool {
+    ops.iter().any(|op| text_v2_variant_group_id(op).is_some())
+}
+
+fn ops_have_glyph_runs(ops: &[PaintOp]) -> bool {
+    ops.iter().any(|op| matches!(op, PaintOp::GlyphRun { .. }))
+}
+
+fn ops_have_glyph_outlines(ops: &[PaintOp]) -> bool {
+    ops.iter()
+        .any(|op| matches!(op, PaintOp::GlyphOutline { .. }))
+}
+
 fn has_glyph_outlines(root: &LayerNode) -> bool {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
@@ -1967,17 +2003,6 @@ fn paint_variant_meta_to_value(variant: &PaintVariantMeta) -> JsValue {
         set_number(&value, "localPaintOrder", local_paint_order as f64);
     }
     value.into()
-}
-
-fn text_variant_op_id(variant: &PaintVariantMeta) -> String {
-    if variant.is_default_fallback {
-        format!("op-{}", variant.equivalence_group)
-    } else {
-        format!(
-            "op-{}-{}-{}",
-            variant.equivalence_group, variant.variant_id, variant.part_index
-        )
-    }
 }
 
 fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option<JsValue> {

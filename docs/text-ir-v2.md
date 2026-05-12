@@ -478,13 +478,16 @@ payloads should move to `variantOps` before color, bitmap, SVG-in-font, or
 other strict-only payloads are introduced. This does not introduce
 `paintOrderSlotId`; in schema v1, `anchorOpId` remains the paint-order slot
 until cross-leaf, cross-scope, or anchorless strict exports are required.
-Phase 2 starts this migration as a reader/scaffold only: Studio consumers accept
-a top-level `variantOps` array, attach sidecar text variants to the leaf that
-contains the referenced anchor op id, and ignore duplicate sidecar parts when
-the same variant part already exists in the root stream. The Rust writer still
-emits the current root `glyphOutline` representation until a richer outline
-payload needs the sidecar writer. Future writers that emit sidecar payloads
-should declare `text.variantOps` as an additive feature.
+Phase 2 starts this migration as a reader/scaffold only: Studio consumers and
+Rust `PageLayerTree` exports accept a top-level `variantOps` array, attach
+sidecar text variants to the leaf that contains the referenced anchor op id,
+and ignore duplicate sidecar parts when the same variant part already exists in
+the root stream. The default Rust writer still emits the current root
+`glyphOutline` representation until a richer outline payload needs the sidecar
+writer. Future writers that emit sidecar payloads should declare
+`text.variantOps` as an additive feature. Schema-v2 compatibility export
+absorbs sidecar variants into the canonical `Text` op rather than re-emitting a
+top-level `variantOps` array.
 
 The first richer payload discriminator is reserved but not replay-enabled:
 `payloadKind: "monochromeFill"` is the only schema-v1 replay-eligible outline
