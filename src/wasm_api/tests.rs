@@ -18,6 +18,19 @@ fn test_empty_document_info() {
 }
 
 #[test]
+fn test_page_layer_tree_v2_compat_export() {
+    let doc = HwpDocument::create_empty();
+    let json = match doc.get_page_layer_tree_v2_compat(0) {
+        Ok(json) => json,
+        Err(error) => panic!("v2 compat export failed: {error:?}"),
+    };
+
+    assert!(json.contains("\"schemaVersion\":2"));
+    assert!(json.contains("\"profile\":\"compatibility\""));
+    assert!(json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\"]"));
+}
+
+#[test]
 fn test_render_empty_page_svg() {
     let doc = HwpDocument::create_empty();
     let svg = doc.render_page_svg_native(0);

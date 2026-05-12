@@ -693,6 +693,9 @@ variant groups into canonical `type: "text"` envelopes.
 `page_layer_tree_to_js_value_v2_compat()` mirrors that opt-in envelope for
 direct WASM object exports, so Studio-side consumers can validate v2 text slots
 without going through stringified JSON.
+The public wasm/native API exposes this opt-in path as
+`getPageLayerTreeV2Compat*` and `getPageLayerTreeValueV2Compat*`; existing v1
+`getPageLayerTree*` calls remain unchanged.
 `text_v2_validation_issues_to_js_value()` exposes the same validator issue
 vocabulary to JS callers when an opt-in v2 export is rejected.
 `downgrade_text_v2_op_to_v1_compat()` is the first downgrade scaffold: it
