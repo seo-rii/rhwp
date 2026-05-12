@@ -74,7 +74,7 @@ pub use text_v2::{
     downgrade_text_v2_op_to_v1_compat, lower_v1_layer_node_text_variants_to_v2,
     lower_v1_layer_tree_text_variants_to_v2, lower_v1_leaf_text_variants_to_v2,
     validate_text_v2_op, validate_text_v2_ops, LayerTextPaintOpV2, LayerTextVariantPart,
-    LayerTextVariantPayload, LayerTextVariantSet, PaintOrderSlotId, TextFallbackPolicy,
-    TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions,
+    LayerTextVariantPayload, LayerTextVariantSet, PaintOrderSlotId, PaintScopeId,
+    TextFallbackPolicy, TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions,
 };
 pub use text_variants::{validate_text_variant_scope, TextVariantScopeError};

@@ -644,6 +644,9 @@ fn write_text_variant_part_v2_compat(
     if let Some(local_paint_order) = part.local_paint_order {
         let _ = write!(buf, ",\"localPaintOrder\":{}", local_paint_order);
     }
+    if let Some(scope_ref) = &part.scope_ref {
+        let _ = write!(buf, ",\"scopeRef\":{}", json_escape(scope_ref));
+    }
     buf.push_str(",\"payload\":");
     write_text_variant_payload_v2_compat(buf, part, resources, text_sources);
     buf.push('}');

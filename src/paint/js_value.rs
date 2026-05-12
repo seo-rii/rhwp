@@ -1035,6 +1035,9 @@ fn text_variant_part_v2_to_value(
     if let Some(local_paint_order) = part.local_paint_order {
         set_number(&value, "localPaintOrder", local_paint_order as f64);
     }
+    if let Some(scope_ref) = &part.scope_ref {
+        set_string(&value, "scopeRef", scope_ref);
+    }
     set_value(
         &value,
         "payload",

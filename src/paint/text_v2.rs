@@ -15,6 +15,7 @@ use crate::paint::{
 use crate::renderer::render_tree::BoundingBox;
 
 pub type PaintOrderSlotId = String;
+pub type PaintScopeId = String;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextFallbackPolicy {
@@ -35,6 +36,7 @@ impl TextFallbackPolicy {
 pub struct TextV2ValidationOptions {
     pub require_paint_order_slot: bool,
     pub allow_fallback_free: bool,
+    pub allow_cross_scope_variants: bool,
 }
 
 impl Default for TextV2ValidationOptions {
@@ -42,6 +44,7 @@ impl Default for TextV2ValidationOptions {
         Self {
             require_paint_order_slot: true,
             allow_fallback_free: false,
+            allow_cross_scope_variants: false,
         }
     }
 }
@@ -59,6 +62,7 @@ pub enum TextV2ValidationIssueCode {
     VariantPartCountInvalid,
     VariantPartCountMismatch,
     VariantDuplicatePart,
+    CrossScopeVariantFeatureMissing,
 }
 
 impl TextV2ValidationIssueCode {
@@ -75,6 +79,7 @@ impl TextV2ValidationIssueCode {
             Self::VariantPartCountInvalid => "variantPartCountInvalid",
             Self::VariantPartCountMismatch => "variantPartCountMismatch",
             Self::VariantDuplicatePart => "variantDuplicatePart",
+            Self::CrossScopeVariantFeatureMissing => "crossScopeVariantFeatureMissing",
         }
     }
 }
@@ -112,6 +117,7 @@ pub struct LayerTextVariantPart {
     pub part_index: u32,
     pub part_count: u32,
     pub local_paint_order: Option<u32>,
+    pub scope_ref: Option<PaintScopeId>,
     pub bbox: BoundingBox,
     pub payload: LayerTextVariantPayload,
 }
@@ -240,7 +246,7 @@ pub fn validate_text_v2_op(
                 None,
             ));
         }
-        validate_variant_parts(op, variant, &mut issues);
+        validate_variant_parts(op, variant, options, &mut issues);
     }
 
     if let Some(default_variant_id) = &op.default_variant_id {
@@ -359,6 +365,7 @@ fn text_v2_part_payload_to_v1_op(part: &LayerTextVariantPart) -> PaintOp {
 fn validate_variant_parts(
     op: &LayerTextPaintOpV2,
     variant: &LayerTextVariantSet,
+    options: &TextV2ValidationOptions,
     issues: &mut Vec<TextV2ValidationIssue>,
 ) {
     if variant.parts.is_empty() {
@@ -394,6 +401,14 @@ fn validate_variant_parts(
             issues.push(text_v2_issue(
                 op,
                 TextV2ValidationIssueCode::VariantDuplicatePart,
+                Some(&variant.variant_id),
+                Some(part.part_index),
+            ));
+        }
+        if part.scope_ref.is_some() && !options.allow_cross_scope_variants {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::CrossScopeVariantFeatureMissing,
                 Some(&variant.variant_id),
                 Some(part.part_index),
             ));
@@ -536,6 +551,7 @@ fn build_text_op_v2(group_id: String, entries: Vec<TextVariantEntry>) -> LayerTe
                     part_index: entry.part_index,
                     part_count: entry.part_count,
                     local_paint_order: entry.local_paint_order,
+                    scope_ref: None,
                     bbox: entry.bbox,
                     payload: entry.payload,
                 })
@@ -876,6 +892,26 @@ mod tests {
 
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::VariantDuplicatePart));
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::VariantPartCountMismatch));
+    }
+
+    #[test]
+    fn reports_cross_scope_variant_without_feature_gate() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5-scope"));
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text]);
+        text_ops[0].variants[0].parts[0].scope_ref = Some("scope-alt".to_string());
+
+        let issue_codes: Vec<_> =
+            validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default())
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::CrossScopeVariantFeatureMissing));
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_cross_scope_variants = true;
+        let issues = validate_text_v2_op(&text_ops[0], &options);
+        assert!(issues.is_empty(), "{issues:?}");
     }
 
     #[test]
