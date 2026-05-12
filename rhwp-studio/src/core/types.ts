@@ -823,7 +823,10 @@ export interface LayerGlyphOutlinePath {
 
 export type LayerGlyphOutlinePayloadKind =
   | 'monochromeFill'
-  | 'monochromeFillStroke';
+  | 'monochromeFillStroke'
+  | 'colorLayers'
+  | 'bitmapGlyph'
+  | 'svgGlyph';
 
 export type LayerGlyphOutlineStrokeJoin = 'miter' | 'round' | 'bevel';
 export type LayerGlyphOutlineStrokeCap = 'butt' | 'round' | 'square';

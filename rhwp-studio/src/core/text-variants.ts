@@ -8,6 +8,7 @@ import type {
   LayerTextRunOp,
   LayerTextVariantMeta,
   LayerTextVariantPayload,
+  LayerTreeFeature,
   PageLayerTree,
 } from './types';
 import { isKnownLayerPaintOp } from './types';
@@ -142,8 +143,10 @@ export type LayerTextV2ValidationIssueCode =
   | 'variantPartCountMismatch'
   | 'variantDuplicatePart'
   | 'variantPayloadKindMismatch'
-  | 'crossScopeVariantUnsupported'
-  | 'glyphOutlineStrokeFeatureMissing';
+  | 'crossScopeVariantFeatureMissing'
+  | 'glyphOutlinePayloadKindFeatureMissing'
+  | 'glyphOutlineStrokeStyleUnsupported'
+  | 'mixedPerGlyphFeatureMissing';
 
 export interface LayerTextV2ValidationIssue {
   code: LayerTextV2ValidationIssueCode;
@@ -159,6 +162,8 @@ export interface LayerTextV2ValidationOptions {
   requirePaintOrderSlot?: boolean;
   allowCrossScopeVariants?: boolean;
   allowFallbackFree?: boolean;
+  allowRicherGlyphOutlinePayloads?: boolean;
+  allowMixedPerGlyphOrientation?: boolean;
   requiredFeatures?: readonly string[];
 }
 
@@ -277,6 +282,15 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants');
   const allowFallbackFree = requiredFeatures.has('text.strictVisualFallbackFree')
     || tree.textV2?.strictVisualFallbackFree === true;
+  const richerGlyphOutlineFeatures: LayerTreeFeature[] = [
+    'text.glyphOutline.monochromeFillStroke',
+    'text.glyphOutline.colorLayers',
+    'text.glyphOutline.bitmapGlyph',
+    'text.glyphOutline.svgGlyph',
+  ];
+  const allowRicherGlyphOutlinePayloads = richerGlyphOutlineFeatures
+    .some((feature) => requiredFeatures.has(feature));
+  const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
   const stack: LayerNode[] = [tree.root];
 
   while (stack.length) {
@@ -301,6 +315,8 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
         requirePaintOrderSlot: tree.schemaVersion === 2 || tree.textV2?.paintOrderSlots === 'required',
         allowCrossScopeVariants,
         allowFallbackFree,
+        allowRicherGlyphOutlinePayloads,
+        allowMixedPerGlyphOrientation,
         requiredFeatures: tree.requiredFeatures,
       }));
       if (!op.paintOrderSlotId) {
@@ -418,7 +434,7 @@ export function validateLayerTextV2Op(
       }
       if (part.scopeRef && options.allowCrossScopeVariants !== true) {
         issues.push({
-          code: 'crossScopeVariantUnsupported',
+          code: 'crossScopeVariantFeatureMissing',
           message: `Text variant '${variant.variantId}' uses scopeRef without text.crossScopeVariants.`,
           opId: op.id,
           paintOrderSlotId: op.paintOrderSlotId,
@@ -426,15 +442,53 @@ export function validateLayerTextV2Op(
           partIndex,
         });
       }
+      if (part.payload.type === 'glyphOutline') {
+        const payloadKind = part.payload.payloadKind ?? 'monochromeFill';
+        const richerPayload = payloadKind !== 'monochromeFill';
+        const richerPayloadFeature =
+          requiredFeatures.has(`text.glyphOutline.${payloadKind}`)
+          || variant.requiredFeatures?.includes(`text.glyphOutline.${payloadKind}`)
+          || options.allowRicherGlyphOutlinePayloads === true;
+        if (richerPayload && !richerPayloadFeature) {
+          issues.push({
+            code: 'glyphOutlinePayloadKindFeatureMissing',
+            message: `Text variant '${variant.variantId}' uses ${payloadKind} without the matching required feature.`,
+            opId: op.id,
+            paintOrderSlotId: op.paintOrderSlotId,
+            variantId: variant.variantId,
+            partIndex,
+          });
+        }
+        if (payloadKind === 'monochromeFillStroke') {
+          if (!isSupportedGlyphOutlineStrokeStyle(part.payload.stroke)) {
+            issues.push({
+              code: 'glyphOutlineStrokeStyleUnsupported',
+              message: `Text variant '${variant.variantId}' uses an unsupported monochromeFillStroke style.`,
+              opId: op.id,
+              paintOrderSlotId: op.paintOrderSlotId,
+              variantId: variant.variantId,
+              partIndex,
+            });
+          }
+        } else if (part.payload.stroke) {
+          issues.push({
+            code: 'glyphOutlineStrokeStyleUnsupported',
+            message: `Text variant '${variant.variantId}' carries a stroke style outside monochromeFillStroke.`,
+            opId: op.id,
+            paintOrderSlotId: op.paintOrderSlotId,
+            variantId: variant.variantId,
+            partIndex,
+          });
+        }
+      }
       if (
-        part.payload.type === 'glyphOutline'
-        && part.payload.payloadKind === 'monochromeFillStroke'
-        && !requiredFeatures.has('text.glyphOutline.monochromeFillStroke')
-        && !variant.requiredFeatures?.includes('text.glyphOutline.monochromeFillStroke')
+        part.payload.type === 'glyphRun'
+        && part.payload.orientation === 'mixedPerGlyph'
+        && options.allowMixedPerGlyphOrientation !== true
       ) {
         issues.push({
-          code: 'glyphOutlineStrokeFeatureMissing',
-          message: `Text variant '${variant.variantId}' uses monochromeFillStroke without the matching required feature.`,
+          code: 'mixedPerGlyphFeatureMissing',
+          message: `Text variant '${variant.variantId}' uses mixedPerGlyph without text.vertical.mixedPerGlyph.`,
           opId: op.id,
           paintOrderSlotId: op.paintOrderSlotId,
           variantId: variant.variantId,
@@ -471,6 +525,17 @@ export function validateLayerTextV2Op(
   }
 
   return issues;
+}
+
+function isSupportedGlyphOutlineStrokeStyle(
+  stroke: LayerGlyphOutlineOp['stroke'] | undefined,
+): boolean {
+  return !!stroke
+    && Number.isFinite(stroke.widthPx)
+    && stroke.widthPx > 0
+    && (stroke.miterLimit === undefined
+      || (Number.isFinite(stroke.miterLimit) && stroke.miterLimit >= 0))
+    && (stroke.paintOrder ?? 'fillThenStroke') === 'fillThenStroke';
 }
 
 function isTextVariantPayload(payload: LayerTextVariantPayload): payload is LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp {
