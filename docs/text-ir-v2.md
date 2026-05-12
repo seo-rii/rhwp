@@ -680,9 +680,10 @@ The Studio reader accepts the first v2 text envelope shape by expanding a
 variant payloads before running the existing variant-set selection logic. This
 keeps the reader ahead of the writer while preserving v1 replay behavior.
 Rust lowering mirrors that direction with a compatibility scaffold that groups
-one leaf's schema-v1 flattened text variants into `LayerTextPaintOpV2` slots.
-The scaffold preserves first-seen group order, collects variant-set parts under
-one paint slot, and keeps writer enablement separate from the v1 replay path.
+schema-v1 flattened text variants into `LayerTextPaintOpV2` slots at leaf or
+tree scope. The scaffold preserves first-seen group order, collects variant-set
+parts under one paint slot, and keeps writer enablement separate from the v1
+replay path.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any

@@ -9,8 +9,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::paint::{
-    LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerTextRunPaint, PaintOp, TextVariantKind,
-    TextVariantQuality,
+    LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind, LayerTextRunPaint,
+    PageLayerTree, PaintOp, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::render_tree::BoundingBox;
 
@@ -169,6 +169,30 @@ pub fn lower_v1_leaf_text_variants_to_v2(ops: &[PaintOp]) -> Vec<LayerTextPaintO
             Some(build_text_op_v2(group_id, entries))
         })
         .collect()
+}
+
+pub fn lower_v1_layer_tree_text_variants_to_v2(tree: &PageLayerTree) -> Vec<LayerTextPaintOpV2> {
+    lower_v1_layer_node_text_variants_to_v2(&tree.root)
+}
+
+pub fn lower_v1_layer_node_text_variants_to_v2(node: &LayerNode) -> Vec<LayerTextPaintOpV2> {
+    let mut lowered = Vec::new();
+    collect_text_v2_slots(node, &mut lowered);
+    lowered
+}
+
+fn collect_text_v2_slots(node: &LayerNode, lowered: &mut Vec<LayerTextPaintOpV2>) {
+    match &node.kind {
+        LayerNodeKind::Group { children, .. } => {
+            for child in children {
+                collect_text_v2_slots(child, lowered);
+            }
+        }
+        LayerNodeKind::ClipRect { child, .. } => collect_text_v2_slots(child, lowered),
+        LayerNodeKind::Leaf { ops, .. } => {
+            lowered.extend(lower_v1_leaf_text_variants_to_v2(ops));
+        }
+    }
 }
 
 pub fn validate_text_v2_op(
@@ -494,9 +518,10 @@ fn union_bbox(left: BoundingBox, right: BoundingBox) -> BoundingBox {
 mod tests {
     use super::*;
     use crate::paint::{
-        GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
-        LayerAffineTransform, LayerGlyphOutlinePath, PaintTextStyle, PaintVariantMeta,
-        TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
+        CacheHint, GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics,
+        GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePath, LayerSemantic,
+        PaintTextStyle, PaintVariantMeta, TextRunPlacement, TextSourceId, TextSourceRange,
+        TextSourceSpan,
     };
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -758,5 +783,31 @@ mod tests {
                 .collect();
 
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::DuplicatePaintOrderSlotId));
+    }
+
+    #[test]
+    fn lowers_text_v2_slots_across_layer_tree_leaves() {
+        let first = text_op(PaintVariantMeta::text_run_default("text-8"));
+        let second = text_op(PaintVariantMeta::text_run_default("text-9"));
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::group(
+                bbox(0.0, 0.0, 100.0, 100.0),
+                None,
+                vec![
+                    LayerNode::leaf(bbox(0.0, 0.0, 10.0, 10.0), None, vec![first]),
+                    LayerNode::leaf(bbox(10.0, 0.0, 10.0, 10.0), None, vec![second]),
+                ],
+                CacheHint::None,
+                LayerSemantic::default(),
+            ),
+        );
+
+        let text_ops = lower_v1_layer_tree_text_variants_to_v2(&tree);
+
+        assert_eq!(text_ops.len(), 2);
+        assert_eq!(text_ops[0].id, "text-0");
+        assert_eq!(text_ops[1].id, "text-1");
     }
 }
