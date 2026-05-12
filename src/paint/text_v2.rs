@@ -49,6 +49,7 @@ impl Default for TextV2ValidationOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextV2ValidationIssueCode {
     MissingPaintOrderSlotId,
+    DuplicatePaintOrderSlotId,
     TextOpHasNoVariants,
     DuplicateVariantId,
     DefaultVariantMissing,
@@ -64,6 +65,7 @@ impl TextV2ValidationIssueCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MissingPaintOrderSlotId => "missingPaintOrderSlotId",
+            Self::DuplicatePaintOrderSlotId => "duplicatePaintOrderSlotId",
             Self::TextOpHasNoVariants => "textOpHasNoVariants",
             Self::DuplicateVariantId => "duplicateVariantId",
             Self::DefaultVariantMissing => "defaultVariantMissing",
@@ -248,6 +250,31 @@ pub fn validate_text_v2_op(
         ));
     }
 
+    issues
+}
+
+pub fn validate_text_v2_ops(
+    ops: &[LayerTextPaintOpV2],
+    options: &TextV2ValidationOptions,
+) -> Vec<TextV2ValidationIssue> {
+    let mut issues = Vec::new();
+    let mut paint_order_slots = HashMap::<&str, &str>::new();
+    for op in ops {
+        if !op.paint_order_slot_id.is_empty() {
+            if paint_order_slots
+                .insert(&op.paint_order_slot_id, &op.id)
+                .is_some()
+            {
+                issues.push(text_v2_issue(
+                    op,
+                    TextV2ValidationIssueCode::DuplicatePaintOrderSlotId,
+                    None,
+                    None,
+                ));
+            }
+        }
+        issues.extend(validate_text_v2_op(op, options));
+    }
     issues
 }
 
@@ -713,5 +740,23 @@ mod tests {
 
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::VariantDuplicatePart));
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::VariantPartCountMismatch));
+    }
+
+    #[test]
+    fn reports_duplicate_text_paint_order_slots_across_ops() {
+        let first = text_op(PaintVariantMeta::text_run_default("text-6"));
+        let second = text_op(PaintVariantMeta::text_run_default("text-7"));
+        let mut text_ops = Vec::new();
+        text_ops.extend(lower_v1_leaf_text_variants_to_v2(&[first]));
+        text_ops.extend(lower_v1_leaf_text_variants_to_v2(&[second]));
+        text_ops[1].paint_order_slot_id = text_ops[0].paint_order_slot_id.clone();
+
+        let issue_codes: Vec<_> =
+            validate_text_v2_ops(&text_ops, &TextV2ValidationOptions::default())
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::DuplicatePaintOrderSlotId));
     }
 }
