@@ -690,6 +690,9 @@ scaffold as the future writer/diagnostics entrypoint.
 the HWP-compatible layout and `TextRun` fallback policy, emits schemaVersion 2,
 requires `text.variants` and `text.paintOrderSlot`, and wraps flattened v1 text
 variant groups into canonical `type: "text"` envelopes.
+`page_layer_tree_to_js_value_v2_compat()` mirrors that opt-in envelope for
+direct WASM object exports, so Studio-side consumers can validate v2 text slots
+without going through stringified JSON.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any

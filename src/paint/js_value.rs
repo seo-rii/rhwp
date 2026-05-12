@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsValue;
@@ -10,9 +10,11 @@ use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     font_blob_resource_key, image_resource_key, resource_digest_hex, svg_resource_key, CacheHint,
     ClipKind, GlyphCluster, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
-    LayerNodeKind, LayerPoint, LayerSemantic, LayerVector, PageLayerTree, PaintOp, PaintTextStyle,
-    PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation,
-    TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
+    LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart,
+    LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp,
+    PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
+    TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
+    TextV2ValidationIssue, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -357,6 +359,42 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     value.into()
 }
 
+pub fn page_layer_tree_to_js_value_v2_compat(
+    tree: &PageLayerTree,
+) -> Result<JsValue, Vec<TextV2ValidationIssue>> {
+    page_layer_tree_to_js_value_v2_compat_with_resource_hints(
+        tree,
+        &LayerResourceExportHints::default(),
+    )
+}
+
+pub fn page_layer_tree_to_js_value_v2_compat_with_resource_hints(
+    tree: &PageLayerTree,
+    hints: &LayerResourceExportHints,
+) -> Result<JsValue, Vec<TextV2ValidationIssue>> {
+    let slots = tree.text_v2_slots();
+    let issues = crate::paint::validate_text_v2_ops(&slots, &TextV2ValidationOptions::default());
+    if !issues.is_empty() {
+        return Err(issues);
+    }
+
+    let value = Object::from(page_layer_tree_to_js_value_with_resource_hints(tree, hints));
+    set_number(&value, "schemaVersion", 2.0);
+    set_number(&value, "schemaMinorVersion", 0.0);
+    let schema = Object::new();
+    set_number(&schema, "major", 2.0);
+    set_number(&schema, "minor", 0.0);
+    set_value(&value, "schema", schema.into());
+    let mut text_source_state = TextSourceExportState::default();
+    set_value(
+        &value,
+        "root",
+        layer_node_to_value_v2_compat(&tree.root, &mut text_source_state),
+    );
+    set_text_v2_compat_metadata(&value, &tree.root);
+    Ok(value.into())
+}
+
 fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
     if value.is_null() || value.is_undefined() {
         return HashSet::new();
@@ -366,6 +404,71 @@ fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
         .iter()
         .filter_map(|item| item.as_string())
         .collect()
+}
+
+fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode) {
+    let externalized_visuals = externalized_text_visuals(root);
+    let has_variant_groups = has_text_variant_groups(root);
+    let has_glyph_runs = has_glyph_runs(root);
+    let has_glyph_outlines = has_glyph_outlines(root);
+    let mut used_features = vec![
+        "text.paintStyle",
+        "text.sourceTable",
+        "text.sourceSpan",
+        "text.variants",
+        "text.paintOrderSlot",
+        "text.v2.placement",
+        "text.v2.clusters",
+        "text.projectionKind",
+        "text.legacyVisuals",
+    ];
+    if has_glyph_runs {
+        used_features.push("fontResources");
+        used_features.push("text.glyphRun");
+    }
+    if has_glyph_outlines {
+        used_features.push("text.outlineGlyph");
+    }
+    if has_variant_groups {
+        used_features.push("text.variantGroups");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "charOverlap")
+    {
+        used_features.push("text.charOverlapOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "controlMarks")
+    {
+        used_features.push("text.controlMarkOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "tabLeaders")
+    {
+        used_features.push("text.tabLeaderOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "decorations")
+    {
+        used_features.push("text.decorationOp");
+    }
+    set_value(value, "usedFeatures", string_array_to_value(&used_features));
+    set_value(
+        value,
+        "requiredFeatures",
+        string_array_to_value(&["text.variants", "text.paintOrderSlot"]),
+    );
+
+    let text_v2_contract = Object::new();
+    set_string(&text_v2_contract, "canonicalOp", "text");
+    set_string(&text_v2_contract, "fallbackPolicy", "required");
+    set_bool(&text_v2_contract, "strictVisualFallbackFree", false);
+    set_string(&text_v2_contract, "paintOrderSlots", "required");
+    set_value(value, "textV2", text_v2_contract.into());
 }
 
 fn set_debug_backend_capability(backends: &Object, name: &str, overlay_paint: bool) {
@@ -690,12 +793,261 @@ fn layer_nodes_to_value(
     array.into()
 }
 
+fn layer_node_to_value_v2_compat(
+    node: &LayerNode,
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let value = Object::new();
+    set_value(&value, "bounds", bbox_to_value(node.bounds));
+    if let Some(source_node_id) = node.source_node_id {
+        set_number(&value, "sourceNodeId", source_node_id as f64);
+    }
+    if node.semantic != LayerSemantic::default() {
+        let semantic = Object::new();
+        set_string(&semantic, "role", node.semantic.role.as_str());
+        if let Some(section_index) = node.semantic.section_index {
+            set_number(&semantic, "sectionIndex", section_index as f64);
+        }
+        if let Some(column_index) = node.semantic.column_index {
+            set_number(&semantic, "columnIndex", column_index as f64);
+        }
+        if let Some(para_index) = node.semantic.para_index {
+            set_number(&semantic, "paraIndex", para_index as f64);
+        }
+        if let Some(control_index) = node.semantic.control_index {
+            set_number(&semantic, "controlIndex", control_index as f64);
+        }
+        if let Some(row_count) = node.semantic.row_count {
+            set_number(&semantic, "rowCount", row_count as f64);
+        }
+        if let Some(col_count) = node.semantic.col_count {
+            set_number(&semantic, "colCount", col_count as f64);
+        }
+        set_value(&value, "semantic", semantic.into());
+    }
+
+    match &node.kind {
+        LayerNodeKind::Group {
+            children,
+            cache_hint,
+        } => {
+            set_string(&value, "kind", "group");
+            set_string(&value, "cacheHint", cache_hint_str(*cache_hint));
+            set_value(
+                &value,
+                "children",
+                layer_nodes_to_value_v2_compat(children, text_sources),
+            );
+        }
+        LayerNodeKind::ClipRect {
+            clip,
+            child,
+            clip_kind,
+            clip_policy,
+        } => {
+            set_string(&value, "kind", "clipRect");
+            set_value(&value, "clip", bbox_to_value(*clip));
+            set_string(&value, "clipKind", clip_kind_str(*clip_kind));
+            let policy = Object::new();
+            set_number(
+                &policy,
+                "rightOverflowSlop",
+                clip_policy.right_overflow_slop,
+            );
+            set_bool(
+                &policy,
+                "allowHorizontalOverflowControls",
+                clip_policy.allow_horizontal_overflow_controls,
+            );
+            set_value(&value, "clipPolicy", policy.into());
+            set_value(
+                &value,
+                "child",
+                layer_node_to_value_v2_compat(child, text_sources),
+            );
+        }
+        LayerNodeKind::Leaf { ops, cache_hint } => {
+            set_string(&value, "kind", "leaf");
+            set_string(&value, "cacheHint", cache_hint_str(*cache_hint));
+            set_value(
+                &value,
+                "ops",
+                paint_ops_to_value_v2_compat(ops, text_sources),
+            );
+        }
+    }
+
+    value.into()
+}
+
+fn layer_nodes_to_value_v2_compat(
+    children: &[LayerNode],
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let array = Array::new();
+    for child in children {
+        array.push(&layer_node_to_value_v2_compat(child, text_sources));
+    }
+    array.into()
+}
+
 fn paint_ops_to_value(ops: &[PaintOp], text_sources: &mut TextSourceExportState) -> JsValue {
     let array = Array::new();
     for op in ops {
         array.push(&paint_op_to_value(op, text_sources));
     }
     array.into()
+}
+
+fn paint_ops_to_value_v2_compat(
+    ops: &[PaintOp],
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let text_slots = crate::paint::lower_v1_leaf_text_variants_to_v2(ops);
+    let text_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = text_slots
+        .iter()
+        .map(|slot| (slot.id.as_str(), slot))
+        .collect();
+    let mut written_groups = HashSet::<String>::new();
+    let array = Array::new();
+
+    for op in ops {
+        if let Some(group_id) = text_v2_variant_group_id(op) {
+            if let Some(text_slot) = text_slots_by_group.get(group_id) {
+                if written_groups.insert(group_id.to_string()) {
+                    array.push(&text_op_v2_to_value(text_slot, text_sources));
+                }
+                continue;
+            }
+        }
+
+        array.push(&paint_op_to_value(op, text_sources));
+    }
+
+    array.into()
+}
+
+fn text_v2_variant_group_id(op: &PaintOp) -> Option<&str> {
+    match op {
+        PaintOp::TextRun { run, .. } => run
+            .variant
+            .as_ref()
+            .map(|variant| variant.equivalence_group.as_str()),
+        PaintOp::GlyphRun { run, .. } => Some(run.variant.equivalence_group.as_str()),
+        PaintOp::GlyphOutline { outline, .. } => Some(outline.variant.equivalence_group.as_str()),
+        _ => None,
+    }
+}
+
+fn text_op_v2_to_value(
+    text_op: &LayerTextPaintOpV2,
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "id", &text_op.id);
+    set_string(&value, "type", "text");
+    set_value(&value, "bbox", bbox_to_value(text_op.bbox));
+    set_string(&value, "paintOrderSlotId", &text_op.paint_order_slot_id);
+    set_string(&value, "selectionPolicy", "exclusiveVariantSet");
+    set_string(
+        &value,
+        "defaultVariantId",
+        text_op.default_variant_id.as_deref().unwrap_or("textRun"),
+    );
+    set_string(&value, "fallbackPolicy", text_op.fallback_policy.as_str());
+    set_value(
+        &value,
+        "variants",
+        array_to_value(
+            text_op
+                .variants
+                .iter()
+                .map(|variant| text_variant_set_v2_to_value(variant, text_sources)),
+        ),
+    );
+    value.into()
+}
+
+fn text_variant_set_v2_to_value(
+    variant: &LayerTextVariantSet,
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "variantId", &variant.variant_id);
+    set_string(&value, "kind", variant.kind.as_str());
+    if !variant.required_features.is_empty() {
+        set_value(
+            &value,
+            "requiredFeatures",
+            array_to_value(
+                variant
+                    .required_features
+                    .iter()
+                    .map(|feature| JsValue::from_str(feature)),
+            ),
+        );
+    }
+    if let Some(quality) = variant.quality {
+        set_string(&value, "quality", quality.as_str());
+    }
+    set_value(
+        &value,
+        "parts",
+        array_to_value(
+            variant
+                .parts
+                .iter()
+                .map(|part| text_variant_part_v2_to_value(part, text_sources)),
+        ),
+    );
+    value.into()
+}
+
+fn text_variant_part_v2_to_value(
+    part: &LayerTextVariantPart,
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "partIndex", part.part_index as f64);
+    set_number(&value, "partCount", part.part_count as f64);
+    if let Some(local_paint_order) = part.local_paint_order {
+        set_number(&value, "localPaintOrder", local_paint_order as f64);
+    }
+    set_value(
+        &value,
+        "payload",
+        text_variant_payload_v2_to_value(part, text_sources),
+    );
+    value.into()
+}
+
+fn text_variant_payload_v2_to_value(
+    part: &LayerTextVariantPart,
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    match &part.payload {
+        LayerTextVariantPayload::TextRun(run) => paint_op_to_value(
+            &PaintOp::TextRun {
+                bbox: part.bbox,
+                run: run.clone(),
+            },
+            text_sources,
+        ),
+        LayerTextVariantPayload::GlyphRun(run) => paint_op_to_value(
+            &PaintOp::GlyphRun {
+                bbox: part.bbox,
+                run: run.clone(),
+            },
+            text_sources,
+        ),
+        LayerTextVariantPayload::GlyphOutline(outline) => paint_op_to_value(
+            &PaintOp::GlyphOutline {
+                bbox: part.bbox,
+                outline: outline.clone(),
+            },
+            text_sources,
+        ),
+    }
 }
 
 fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> JsValue {
@@ -2366,6 +2718,104 @@ mod tests {
         );
         assert_eq!(string_value(&font_blob_hashes.get(0)), font_digest);
         assert_eq!(string_value(&font_blob_keys.get(0)), font_key);
+    }
+
+    #[wasm_bindgen_test]
+    fn exports_json_and_js_value_v2_compat_schema_parity() {
+        let source = TextSourceSpan {
+            id: crate::paint::TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![PaintOp::TextRun {
+                    bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+                    run: LayerTextRunPaint {
+                        source: Some(source),
+                        variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                        text: "A".to_string(),
+                        style: TextStyle {
+                            font_family: "Test".to_string(),
+                            font_size: 12.0,
+                            ..Default::default()
+                        },
+                        positions: vec![0.0, 12.0],
+                        ..Default::default()
+                    },
+                }],
+            ),
+        );
+
+        let json_value = js_sys::JSON::parse(
+            &tree
+                .to_json_v2_compat()
+                .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}")),
+        )
+        .unwrap_or_else(|_| panic!("failed to parse v2 compat layer JSON export"));
+        let js_value = page_layer_tree_to_js_value_v2_compat(&tree)
+            .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}"));
+
+        assert_same_number(&json_value, &js_value, "schemaVersion");
+        assert_same_number(&json_value, &js_value, "schemaMinorVersion");
+        assert_eq!(number_prop(&js_value, "schemaVersion"), 2.0);
+        let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
+        let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
+        assert_eq!(json_required_features.length(), 2);
+        assert_eq!(
+            json_required_features.length(),
+            js_required_features.length()
+        );
+        let json_text_v2_contract = prop(&json_value, "textV2");
+        let js_text_v2_contract = prop(&js_value, "textV2");
+        assert_same_string(&json_text_v2_contract, &js_text_v2_contract, "canonicalOp");
+        assert_same_string(
+            &json_text_v2_contract,
+            &js_text_v2_contract,
+            "paintOrderSlots",
+        );
+
+        let json_ops = Array::from(&prop(&prop(&json_value, "root"), "ops"));
+        let js_ops = Array::from(&prop(&prop(&js_value, "root"), "ops"));
+        assert_eq!(json_ops.length(), 1);
+        assert_eq!(json_ops.length(), js_ops.length());
+        let json_text = json_ops.get(0);
+        let js_text = js_ops.get(0);
+        assert_same_string(&json_text, &js_text, "type");
+        assert_eq!(string_prop(&js_text, "type"), "text");
+        assert_same_string(&json_text, &js_text, "id");
+        assert_same_string(&json_text, &js_text, "paintOrderSlotId");
+        assert_same_string(&json_text, &js_text, "selectionPolicy");
+        assert_same_string(&json_text, &js_text, "defaultVariantId");
+        assert_same_string(&json_text, &js_text, "fallbackPolicy");
+
+        let json_variants = Array::from(&prop(&json_text, "variants"));
+        let js_variants = Array::from(&prop(&js_text, "variants"));
+        assert_eq!(json_variants.length(), 1);
+        assert_eq!(json_variants.length(), js_variants.length());
+        let json_variant = json_variants.get(0);
+        let js_variant = js_variants.get(0);
+        assert_same_string(&json_variant, &js_variant, "variantId");
+        assert_same_string(&json_variant, &js_variant, "kind");
+        let json_parts = Array::from(&prop(&json_variant, "parts"));
+        let js_parts = Array::from(&prop(&js_variant, "parts"));
+        assert_eq!(json_parts.length(), 1);
+        assert_eq!(json_parts.length(), js_parts.length());
+        let json_part = json_parts.get(0);
+        let js_part = js_parts.get(0);
+        assert_same_number(&json_part, &js_part, "partIndex");
+        assert_same_number(&json_part, &js_part, "partCount");
+        assert_same_string(
+            &prop(&json_part, "payload"),
+            &prop(&js_part, "payload"),
+            "type",
+        );
+        assert_eq!(string_prop(&prop(&js_part, "payload"), "type"), "textRun");
     }
 
     #[wasm_bindgen_test]
