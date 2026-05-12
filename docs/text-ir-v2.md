@@ -679,6 +679,10 @@ The Studio reader accepts the first v2 text envelope shape by expanding a
 `text` paint op into its concrete `TextRun`, `GlyphRun`, and `GlyphOutline`
 variant payloads before running the existing variant-set selection logic. This
 keeps the reader ahead of the writer while preserving v1 replay behavior.
+Rust lowering mirrors that direction with a compatibility scaffold that groups
+one leaf's schema-v1 flattened text variants into `LayerTextPaintOpV2` slots.
+The scaffold preserves first-seen group order, collects variant-set parts under
+one paint slot, and keeps writer enablement separate from the v1 replay path.
 The first validator pass is backend-local diagnostics rather than writer
 enforcement: renderers report missing default variants, missing required
 TextRun fallback, duplicate paint-order slots, duplicate or incomplete parts,

@@ -29,6 +29,7 @@ pub mod profile;
 pub mod resources;
 pub mod schema;
 pub mod text_shape;
+pub mod text_v2;
 pub mod text_variants;
 
 pub use builder::LayerBuilder;
@@ -68,5 +69,9 @@ pub use text_shape::{
     ResolvedGlyphRun, ShapedMeasurementLineReport, ShapedMeasurementPageSummary,
     ShapedMeasurementParagraphSummary, ShapedMeasurementRunReport, TextShapeDiagnostic,
     TextShapeLowerer, TextShapeReport,
+};
+pub use text_v2::{
+    lower_v1_leaf_text_variants_to_v2, LayerTextPaintOpV2, LayerTextVariantPart,
+    LayerTextVariantPayload, LayerTextVariantSet, PaintOrderSlotId, TextFallbackPolicy,
 };
 pub use text_variants::{validate_text_variant_scope, TextVariantScopeError};
