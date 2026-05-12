@@ -158,7 +158,7 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
         }
         let _ = write!(buf, "{}", json_escape(visual));
     }
-    buf.push_str("]},\"textV2\":{\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"reserved\"}");
+    buf.push_str("]},\"textV2\":{\"profile\":\"compatibility\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"reserved\"}");
 }
 
 fn write_text_v2_compat_export_metadata(buf: &mut String, root: &LayerNode) {
@@ -212,7 +212,7 @@ fn write_text_v2_compat_export_metadata(buf: &mut String, root: &LayerNode) {
         }
         let _ = write!(buf, "{}", json_escape(visual));
     }
-    buf.push_str("]},\"textV2\":{\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"required\"}");
+    buf.push_str("]},\"textV2\":{\"profile\":\"compatibility\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"required\"}");
 }
 
 fn has_text_variant_groups(root: &LayerNode) -> bool {
@@ -2333,7 +2333,7 @@ mod tests {
         assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"]"));
         assert!(json.contains("\"requiredFeatures\":[]"));
         assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}"));
-        assert!(json.contains("\"textV2\":{\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"reserved\"}"));
+        assert!(json.contains("\"textV2\":{\"profile\":\"compatibility\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"reserved\"}"));
         assert!(json.contains("\"fontResources\":{\"blobs\":[],\"faces\":[]}"));
     }
 
@@ -2986,7 +2986,7 @@ mod tests {
 
         assert!(json.contains("\"schemaVersion\":2"));
         assert!(json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\"]"));
-        assert!(json.contains("\"textV2\":{\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"required\"}"));
+        assert!(json.contains("\"textV2\":{\"profile\":\"compatibility\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"required\"}"));
         assert!(json.contains("\"ops\":[{\"id\":\"text-0\",\"type\":\"text\""));
         assert!(json.contains("\"paintOrderSlotId\":\"text-0\""));
         assert!(json.contains("\"selectionPolicy\":\"exclusiveVariantSet\""));

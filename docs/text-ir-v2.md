@@ -625,7 +625,7 @@ Schema v1 should close as a compatibility-safe text replay schema:
 Schema v1 minor 10 exports advertise the v2 direction without changing replay
 semantics. They keep `schemaVersion=1`, add only producer-known v2 feature names
 to `knownFeatures`, and include `textV2` metadata with
-`canonicalOp="text"`, `fallbackPolicy="required"`,
+`profile="compatibility"`, `canonicalOp="text"`, `fallbackPolicy="required"`,
 `strictVisualFallbackFree=false`, and `paintOrderSlots="reserved"`. This tells
 readers that the producer understands the Phase 2 text envelope while current
 v1 writers still emit flattened `TextRun`/`GlyphRun`/`glyphOutline` ops.

@@ -303,6 +303,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     );
     set_value(&value, "text", text_contract.into());
     let text_v2_contract = Object::new();
+    set_string(&text_v2_contract, "profile", "compatibility");
     set_string(&text_v2_contract, "canonicalOp", "text");
     set_string(&text_v2_contract, "fallbackPolicy", "required");
     set_bool(&text_v2_contract, "strictVisualFallbackFree", false);
@@ -484,6 +485,7 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode) {
     );
 
     let text_v2_contract = Object::new();
+    set_string(&text_v2_contract, "profile", "compatibility");
     set_string(&text_v2_contract, "canonicalOp", "text");
     set_string(&text_v2_contract, "fallbackPolicy", "required");
     set_bool(&text_v2_contract, "strictVisualFallbackFree", false);
@@ -2549,6 +2551,7 @@ mod tests {
         assert_eq!(json_externalized.length(), js_externalized.length());
         let json_text_v2_contract = prop(&json_value, "textV2");
         let js_text_v2_contract = prop(&js_value, "textV2");
+        assert_same_string(&json_text_v2_contract, &js_text_v2_contract, "profile");
         assert_same_string(&json_text_v2_contract, &js_text_v2_contract, "canonicalOp");
         assert_same_string(
             &json_text_v2_contract,
@@ -2793,6 +2796,7 @@ mod tests {
         );
         let json_text_v2_contract = prop(&json_value, "textV2");
         let js_text_v2_contract = prop(&js_value, "textV2");
+        assert_same_string(&json_text_v2_contract, &js_text_v2_contract, "profile");
         assert_same_string(&json_text_v2_contract, &js_text_v2_contract, "canonicalOp");
         assert_same_string(
             &json_text_v2_contract,
