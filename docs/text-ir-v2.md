@@ -698,6 +698,9 @@ vocabulary to JS callers when an opt-in v2 export is rejected.
 `downgrade_text_v2_op_to_v1_compat()` is the first downgrade scaffold: it
 flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.
+`GlyphOutline.payloadKind` is currently `monochromeFill`; it exists so later
+stroke, color-layer, bitmap, or SVG glyph payloads can be feature-gated without
+overloading the first fill-only path representation.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any

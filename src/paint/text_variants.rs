@@ -281,10 +281,11 @@ mod tests {
     use crate::paint::resources::ResourceArena;
     use crate::paint::RenderProfile;
     use crate::paint::{
-        GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
-        LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerNode,
-        LayerOutputOptions, LayerTextRunPaint, PaintTextStyle, TextRunPlacement, TextSourceId,
-        TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
+        GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRange, GlyphRunDiagnostics,
+        GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint,
+        LayerGlyphOutlinePath, LayerNode, LayerOutputOptions, LayerTextRunPaint, PaintTextStyle,
+        TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan, TextSourceTable,
+        TextVariantKind, TextVariantQuality,
     };
     use crate::renderer::render_tree::BoundingBox;
     use crate::renderer::{PathCommand, TextStyle};
@@ -312,6 +313,7 @@ mod tests {
                     stable_source_key: None,
                 },
                 variant,
+                payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
                 paint_style: PaintTextStyle::from(&style),
                 placement: TextRunPlacement {
                     run_to_page: LayerAffineTransform {

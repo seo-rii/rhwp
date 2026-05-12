@@ -1217,6 +1217,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 "variant",
                 paint_variant_meta_to_value(&outline.variant),
             );
+            set_string(&value, "payloadKind", outline.payload_kind.as_str());
             set_value(
                 &value,
                 "paintStyle",

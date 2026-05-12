@@ -588,7 +588,7 @@ fn union_bbox(left: BoundingBox, right: BoundingBox) -> BoundingBox {
 mod tests {
     use super::*;
     use crate::paint::{
-        CacheHint, GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics,
+        CacheHint, GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRange, GlyphRunDiagnostics,
         GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePath, LayerSemantic,
         PaintTextStyle, PaintVariantMeta, TextRunPlacement, TextSourceId, TextSourceRange,
         TextSourceSpan,
@@ -621,6 +621,7 @@ mod tests {
                     stable_source_key: None,
                 },
                 variant,
+                payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
                 paint_style: PaintTextStyle::from(&TextStyle::default()),
                 placement: TextRunPlacement {
                     run_to_page: LayerAffineTransform {

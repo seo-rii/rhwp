@@ -149,10 +149,24 @@ pub struct LayerGlyphRunPaint {
 pub struct LayerGlyphOutlinePaint {
     pub source: TextSourceSpan,
     pub variant: PaintVariantMeta,
+    pub payload_kind: GlyphOutlinePayloadKind,
     pub paint_style: PaintTextStyle,
     pub placement: TextRunPlacement,
     pub paths: Vec<LayerGlyphOutlinePath>,
     pub diagnostics: GlyphRunDiagnostics,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphOutlinePayloadKind {
+    MonochromeFill,
+}
+
+impl GlyphOutlinePayloadKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MonochromeFill => "monochromeFill",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

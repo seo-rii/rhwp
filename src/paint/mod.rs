@@ -46,17 +46,17 @@ pub use layer_tree::{
     TextSourceRange, TextSourceSpan, TextSourceTable,
 };
 pub use paint_op::{
-    GlyphCluster, GlyphClusterFlag, GlyphOutlineFillRule, GlyphRange, GlyphRunDiagnostics,
-    GlyphRunOrientation, GlyphRunPlacement, GlyphTransform, LayerAffineTransform,
-    LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint,
-    LayerFormObjectPaint, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint,
-    LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-    LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark,
-    LayerTextControlMarkKind, LayerTextControlMarkPaint, LayerTextDecorationKind,
-    LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
-    PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterBasis, TextClusterFlag,
-    TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
-    TextRunPlacement, TextVariantKind, TextVariantQuality,
+    GlyphCluster, GlyphClusterFlag, GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRange,
+    GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunPlacement, GlyphTransform,
+    LayerAffineTransform, LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint,
+    LayerFootnoteMarkerPaint, LayerFormObjectPaint, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
+    LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint,
+    LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint,
+    LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
+    LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint,
+    LayerVector, PaintBounds, PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterBasis,
+    TextClusterFlag, TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals,
+    TextProjectionKind, TextRunPlacement, TextVariantKind, TextVariantQuality,
 };
 pub use profile::RenderProfile;
 pub use resources::{

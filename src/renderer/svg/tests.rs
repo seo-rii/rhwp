@@ -1,10 +1,10 @@
 use super::*;
 use crate::paint::{
-    GlyphOutlineFillRule, GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
-    LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions, LayerRectanglePaint,
-    LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, PaintTextStyle,
-    PaintVariantMeta, TextRunPlacement, TextSourceEntry, TextSourceId, TextSourceRange,
-    TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
+    GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRunDiagnostics, GlyphRunReplayEligibility,
+    LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
+    LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
+    PaintTextStyle, PaintVariantMeta, TextRunPlacement, TextSourceEntry, TextSourceId,
+    TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
@@ -561,6 +561,7 @@ fn glyph_outline_fixture_tree(
                         stable_source_key: None,
                     },
                     variant: outline_variant,
+                    payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
                     paint_style: outline_paint_style,
                     placement: TextRunPlacement {
                         run_to_page: LayerAffineTransform {
