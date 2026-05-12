@@ -2,8 +2,10 @@ import {
   layerTextVariantOpsForLeaf,
   selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
+  validateLayerTextV2Tree,
   type LayerTextVariantGroupReport,
   type LayerTextVariantReplayStatus,
+  type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
 import type { CanvasKitRenderMode } from './render-backend';
 import type {
@@ -96,6 +98,7 @@ export class Canvas2DLayerRenderer {
   private currentShowControlCodes = false;
   private strictGlyphOutlineReplay = false;
   private readonly textVariantSelectionDiagnostics: LayerTextVariantGroupReport[] = [];
+  private readonly textV2ValidationDiagnostics: LayerTextV2ValidationIssue[] = [];
   private rerenderScheduled = false;
   private asyncResourceReadyCallback: (() => void) | null = null;
 
@@ -118,6 +121,8 @@ export class Canvas2DLayerRenderer {
     this.currentShowParagraphMarks = tree.outputOptions?.showParagraphMarks ?? false;
     this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;
     this.textVariantSelectionDiagnostics.length = 0;
+    this.textV2ValidationDiagnostics.length = 0;
+    this.textV2ValidationDiagnostics.push(...validateLayerTextV2Tree(tree));
     if (this.currentResourceTableId !== (tree.resources?.tableId ?? null)) {
       this.clearResourceImageCaches();
     }
@@ -169,6 +174,10 @@ export class Canvas2DLayerRenderer {
       fontVerification: report.fontVerification ? { ...report.fontVerification } : undefined,
       outlineEligibility: report.outlineEligibility ? { ...report.outlineEligibility } : undefined,
     }));
+  }
+
+  getTextV2ValidationDiagnostics(): readonly LayerTextV2ValidationIssue[] {
+    return this.textV2ValidationDiagnostics.map((issue) => ({ ...issue }));
   }
 
   private glyphOutlineReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {

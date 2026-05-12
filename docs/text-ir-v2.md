@@ -671,6 +671,12 @@ The Studio reader accepts the first v2 text envelope shape by expanding a
 `text` paint op into its concrete `TextRun`, `GlyphRun`, and `GlyphOutline`
 variant payloads before running the existing variant-set selection logic. This
 keeps the reader ahead of the writer while preserving v1 replay behavior.
+The first validator pass is backend-local diagnostics rather than writer
+enforcement: renderers report missing default variants, missing required
+TextRun fallback, duplicate paint-order slots, duplicate or incomplete parts,
+payload-kind mismatches, ungated cross-scope parts, and reserved stroke payloads
+without their required feature. Compatibility profile writers should treat
+those issues as hard errors before emitting schema v2 by default.
 
 ## Non-Goals For The Current Branch
 

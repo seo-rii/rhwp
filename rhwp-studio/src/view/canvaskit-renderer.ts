@@ -7,8 +7,10 @@ import {
   selectLayerTextVariantSets,
   selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
+  validateLayerTextV2Tree,
   type LayerTextVariantGroupReport,
   type LayerTextVariantReplayStatus,
+  type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
 import type { CanvasKitRenderMode } from '@/view/render-backend';
 import type {
@@ -130,6 +132,7 @@ export class CanvasKitLayerRenderer {
   private currentProfile: LayerRenderProfile = 'screen';
   private currentLayerTreeCacheKey = 'none';
   private readonly textVariantSelectionDiagnostics: LayerTextVariantGroupReport[] = [];
+  private readonly textV2ValidationDiagnostics: LayerTextV2ValidationIssue[] = [];
   private collectTextVariantSelectionDiagnostics = false;
   private rerenderScheduled = false;
   private disposed = false;
@@ -184,6 +187,8 @@ export class CanvasKitLayerRenderer {
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
     this.textVariantSelectionDiagnostics.length = 0;
+    this.textV2ValidationDiagnostics.length = 0;
+    this.textV2ValidationDiagnostics.push(...validateLayerTextV2Tree(tree));
 
     const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
 
@@ -289,6 +294,10 @@ export class CanvasKitLayerRenderer {
       fontVerification: report.fontVerification ? { ...report.fontVerification } : undefined,
       outlineEligibility: report.outlineEligibility ? { ...report.outlineEligibility } : undefined,
     }));
+  }
+
+  getTextV2ValidationDiagnostics(): readonly LayerTextV2ValidationIssue[] {
+    return this.textV2ValidationDiagnostics.map((issue) => ({ ...issue }));
   }
 
   private renderSurface(surface: Surface, tree: PageLayerTree, scale: number): void {

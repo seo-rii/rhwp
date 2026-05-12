@@ -1767,6 +1767,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         }],
       },
     });
+    const makeInvalidV2TextTree = () => {
+      const tree = makeV2TextTree();
+      const textOp = tree.root.ops[0];
+      textOp.variants = textOp.variants.filter((variant) => variant.variantId !== 'textRun');
+      return tree;
+    };
     const strokePayload = {
       payloadKind: 'monochromeFillStroke',
       stroke: {
@@ -1787,8 +1793,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       renderer.renderPage(tree, canvas, 1);
       const png = canvas.toDataURL('image/png');
       const diagnostics = renderer.getTextVariantSelectionDiagnostics();
+      const textV2Validation = renderer.getTextV2ValidationDiagnostics();
       canvas.remove();
-      return { png, diagnostics };
+      return { png, diagnostics, textV2Validation };
     };
     try {
       const fallback = render(makeTree(), false);
@@ -1816,6 +1823,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const strokePayloadSidecar = render(makeTree(style, [outlinePath], true, strokePayload), true);
       const v2Fallback = render(makeV2TextTree(), false);
       const v2Strict = render(makeV2TextTree(), true);
+      const invalidV2MissingFallback = render(makeInvalidV2TextTree(), false);
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
       const unsupportedPayload = render(makeTree(style, []), true);
       return {
@@ -1827,6 +1835,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         strokePayloadSidecar,
         v2Fallback,
         v2Strict,
+        invalidV2MissingFallback,
         unsupported,
         unsupportedPayload,
       };
@@ -1972,6 +1981,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && part.outlineEligibility?.replayEligible === true,
       ),
     `Canvas2D strict profile selects schema v2 Text GlyphOutline variant=${JSON.stringify(v2StrictReport)}`,
+  );
+  assert(
+    canvas2dGlyphOutlineProbe.v2Fallback?.textV2Validation?.length === 0
+      && canvas2dGlyphOutlineProbe.v2Strict?.textV2Validation?.length === 0,
+    `Canvas2D accepts valid schema v2 Text envelope validation=${JSON.stringify({
+      fallback: canvas2dGlyphOutlineProbe.v2Fallback?.textV2Validation,
+      strict: canvas2dGlyphOutlineProbe.v2Strict?.textV2Validation,
+    })}`,
+  );
+  const invalidV2IssueCodes = canvas2dGlyphOutlineProbe.invalidV2MissingFallback?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidV2IssueCodes.includes('defaultVariantMissing')
+      && invalidV2IssueCodes.includes('fallbackRequiredTextRunMissing'),
+    `Canvas2D reports invalid schema v2 Text fallback contract=${JSON.stringify(
+      canvas2dGlyphOutlineProbe.invalidV2MissingFallback?.textV2Validation,
+    )}`,
   );
   const unsupportedOutlineReport = canvas2dGlyphOutlineProbe.unsupported?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',

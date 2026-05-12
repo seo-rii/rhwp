@@ -1,11 +1,14 @@
 import type {
   LayerGlyphOutlineOp,
   LayerGlyphRunOp,
+  LayerNode,
   LayerPaintOp,
   LayerPaintOpLike,
+  LayerTextOp,
   LayerTextRunOp,
   LayerTextVariantMeta,
   LayerTextVariantPayload,
+  PageLayerTree,
 } from './types';
 import { isKnownLayerPaintOp } from './types';
 
@@ -126,6 +129,39 @@ export interface LayerTextVariantSelectionContext {
   renderProfile?: string;
 }
 
+export type LayerTextV2ValidationIssueCode =
+  | 'missingPaintOrderSlotId'
+  | 'duplicatePaintOrderSlotId'
+  | 'textOpHasNoVariants'
+  | 'duplicateVariantId'
+  | 'defaultVariantMissing'
+  | 'fallbackRequiredTextRunMissing'
+  | 'fallbackFreeFeatureMissing'
+  | 'variantHasNoParts'
+  | 'variantPartCountInvalid'
+  | 'variantPartCountMismatch'
+  | 'variantDuplicatePart'
+  | 'variantPayloadKindMismatch'
+  | 'crossScopeVariantUnsupported'
+  | 'glyphOutlineStrokeFeatureMissing';
+
+export interface LayerTextV2ValidationIssue {
+  code: LayerTextV2ValidationIssueCode;
+  message: string;
+  opId?: string;
+  paintOrderSlotId?: string;
+  variantId?: string;
+  partIndex?: number;
+}
+
+export interface LayerTextV2ValidationOptions {
+  fallbackPolicy?: LayerTextOp['fallbackPolicy'];
+  requirePaintOrderSlot?: boolean;
+  allowCrossScopeVariants?: boolean;
+  allowFallbackFree?: boolean;
+  requiredFeatures?: readonly string[];
+}
+
 type VariantPartState = {
   order: number;
   variantKind: LayerTextVariantMeta['variantKind'];
@@ -146,7 +182,7 @@ export function layerTextVariantOpsForLeaf(
 ): LayerPaintOp[] {
   const ops = rootOps
     .filter(isKnownLayerPaintOp)
-    .flatMap(expandTextPaintOp);
+    .flatMap(expandLayerTextOpVariants);
   if (!variantOps?.length) {
     return ops;
   }
@@ -194,7 +230,7 @@ export function layerTextVariantOpsForLeaf(
   return merged;
 }
 
-function expandTextPaintOp(op: LayerPaintOp): LayerPaintOp[] {
+export function expandLayerTextOpVariants(op: LayerPaintOp): LayerPaintOp[] {
   if (op.type !== 'text') {
     return [op];
   }
@@ -232,6 +268,209 @@ function expandTextPaintOp(op: LayerPaintOp): LayerPaintOp[] {
     }
   }
   return expanded;
+}
+
+export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2ValidationIssue[] {
+  const issues: LayerTextV2ValidationIssue[] = [];
+  const seenPaintSlots = new Map<string, string | undefined>();
+  const requiredFeatures = new Set(tree.requiredFeatures ?? []);
+  const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants');
+  const allowFallbackFree = requiredFeatures.has('text.strictVisualFallbackFree')
+    || tree.textV2?.strictVisualFallbackFree === true;
+  const stack: LayerNode[] = [tree.root];
+
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node) {
+      continue;
+    }
+    if (node.kind === 'group') {
+      stack.push(...node.children);
+      continue;
+    }
+    if (node.kind === 'clipRect') {
+      stack.push(node.child);
+      continue;
+    }
+    for (const op of node.ops) {
+      if (!isKnownLayerPaintOp(op) || op.type !== 'text') {
+        continue;
+      }
+      issues.push(...validateLayerTextV2Op(op, {
+        fallbackPolicy: tree.textV2?.fallbackPolicy,
+        requirePaintOrderSlot: tree.schemaVersion === 2 || tree.textV2?.paintOrderSlots === 'required',
+        allowCrossScopeVariants,
+        allowFallbackFree,
+        requiredFeatures: tree.requiredFeatures,
+      }));
+      if (!op.paintOrderSlotId) {
+        continue;
+      }
+      if (seenPaintSlots.has(op.paintOrderSlotId)) {
+        issues.push({
+          code: 'duplicatePaintOrderSlotId',
+          message: `Duplicate schema v2 text paint-order slot '${op.paintOrderSlotId}'.`,
+          opId: op.id,
+          paintOrderSlotId: op.paintOrderSlotId,
+        });
+        continue;
+      }
+      seenPaintSlots.set(op.paintOrderSlotId, op.id);
+    }
+  }
+
+  return issues;
+}
+
+export function validateLayerTextV2Op(
+  op: LayerTextOp,
+  options: LayerTextV2ValidationOptions = {},
+): LayerTextV2ValidationIssue[] {
+  const issues: LayerTextV2ValidationIssue[] = [];
+  const fallbackPolicy = op.fallbackPolicy ?? options.fallbackPolicy ?? 'required';
+  const requiredFeatures = new Set(options.requiredFeatures ?? []);
+
+  if (options.requirePaintOrderSlot !== false && !op.paintOrderSlotId) {
+    issues.push({
+      code: 'missingPaintOrderSlotId',
+      message: 'Schema v2 text op must have a paintOrderSlotId.',
+      opId: op.id,
+    });
+  }
+  if (!op.variants.length) {
+    issues.push({
+      code: 'textOpHasNoVariants',
+      message: 'Schema v2 text op must contain at least one variant set.',
+      opId: op.id,
+      paintOrderSlotId: op.paintOrderSlotId,
+    });
+    return issues;
+  }
+
+  const variantsById = new Map<string, LayerTextOp['variants'][number]>();
+  for (const variant of op.variants) {
+    if (variantsById.has(variant.variantId)) {
+      issues.push({
+        code: 'duplicateVariantId',
+        message: `Duplicate text variant id '${variant.variantId}'.`,
+        opId: op.id,
+        paintOrderSlotId: op.paintOrderSlotId,
+        variantId: variant.variantId,
+      });
+    } else {
+      variantsById.set(variant.variantId, variant);
+    }
+    if (!variant.parts.length) {
+      issues.push({
+        code: 'variantHasNoParts',
+        message: `Text variant '${variant.variantId}' must contain at least one part.`,
+        opId: op.id,
+        paintOrderSlotId: op.paintOrderSlotId,
+        variantId: variant.variantId,
+      });
+      continue;
+    }
+    const seenPartIndexes = new Set<number>();
+    const declaredPartCount = variant.parts.length;
+    for (const [index, part] of variant.parts.entries()) {
+      const partIndex = part.partIndex ?? index;
+      const partCount = part.partCount ?? declaredPartCount;
+      if (partCount <= 0 || partIndex < 0 || partIndex >= partCount) {
+        issues.push({
+          code: 'variantPartCountInvalid',
+          message: `Text variant '${variant.variantId}' has invalid part index/count.`,
+          opId: op.id,
+          paintOrderSlotId: op.paintOrderSlotId,
+          variantId: variant.variantId,
+          partIndex,
+        });
+      }
+      if (partCount !== declaredPartCount) {
+        issues.push({
+          code: 'variantPartCountMismatch',
+          message: `Text variant '${variant.variantId}' declares partCount ${partCount}, but has ${declaredPartCount} parts.`,
+          opId: op.id,
+          paintOrderSlotId: op.paintOrderSlotId,
+          variantId: variant.variantId,
+          partIndex,
+        });
+      }
+      if (seenPartIndexes.has(partIndex)) {
+        issues.push({
+          code: 'variantDuplicatePart',
+          message: `Text variant '${variant.variantId}' has duplicate partIndex ${partIndex}.`,
+          opId: op.id,
+          paintOrderSlotId: op.paintOrderSlotId,
+          variantId: variant.variantId,
+          partIndex,
+        });
+      }
+      seenPartIndexes.add(partIndex);
+      if (part.payload.type !== variant.kind) {
+        issues.push({
+          code: 'variantPayloadKindMismatch',
+          message: `Text variant '${variant.variantId}' has payload kind '${part.payload.type}' but declares '${variant.kind}'.`,
+          opId: op.id,
+          paintOrderSlotId: op.paintOrderSlotId,
+          variantId: variant.variantId,
+          partIndex,
+        });
+      }
+      if (part.scopeRef && options.allowCrossScopeVariants !== true) {
+        issues.push({
+          code: 'crossScopeVariantUnsupported',
+          message: `Text variant '${variant.variantId}' uses scopeRef without text.crossScopeVariants.`,
+          opId: op.id,
+          paintOrderSlotId: op.paintOrderSlotId,
+          variantId: variant.variantId,
+          partIndex,
+        });
+      }
+      if (
+        part.payload.type === 'glyphOutline'
+        && part.payload.payloadKind === 'monochromeFillStroke'
+        && !requiredFeatures.has('text.glyphOutline.monochromeFillStroke')
+        && !variant.requiredFeatures?.includes('text.glyphOutline.monochromeFillStroke')
+      ) {
+        issues.push({
+          code: 'glyphOutlineStrokeFeatureMissing',
+          message: `Text variant '${variant.variantId}' uses monochromeFillStroke without the matching required feature.`,
+          opId: op.id,
+          paintOrderSlotId: op.paintOrderSlotId,
+          variantId: variant.variantId,
+          partIndex,
+        });
+      }
+    }
+  }
+
+  if (!variantsById.has(op.defaultVariantId)) {
+    issues.push({
+      code: 'defaultVariantMissing',
+      message: `Default text variant '${op.defaultVariantId}' is not present.`,
+      opId: op.id,
+      paintOrderSlotId: op.paintOrderSlotId,
+      variantId: op.defaultVariantId,
+    });
+  }
+  if (fallbackPolicy === 'required' && !op.variants.some((variant) => variant.kind === 'textRun')) {
+    issues.push({
+      code: 'fallbackRequiredTextRunMissing',
+      message: 'Schema v2 compatibility text op requires a TextRun fallback variant.',
+      opId: op.id,
+      paintOrderSlotId: op.paintOrderSlotId,
+    });
+  }
+  if (fallbackPolicy === 'none' && options.allowFallbackFree !== true) {
+    issues.push({
+      code: 'fallbackFreeFeatureMissing',
+      message: 'fallbackPolicy=none requires text.strictVisualFallbackFree.',
+      opId: op.id,
+      paintOrderSlotId: op.paintOrderSlotId,
+    });
+  }
+
+  return issues;
 }
 
 function isTextVariantPayload(payload: LayerTextVariantPayload): payload is LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp {
