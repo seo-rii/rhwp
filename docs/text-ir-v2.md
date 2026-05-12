@@ -482,7 +482,10 @@ Phase 2 starts this migration as a reader/scaffold only: Studio consumers and
 Rust `PageLayerTree` exports accept a top-level `variantOps` array, attach
 sidecar text variants to the leaf that contains the referenced anchor op id,
 and ignore duplicate sidecar parts when the same variant part already exists in
-the root stream. The default Rust writer still emits the current root
+the root stream. The schema-v1 scope validator is stricter than the tolerant
+reader path: sidecar anchors must resolve to a root `TextRun` fallback in the
+same equivalence group, and root+sidecar duplicate emission is invalid for
+writer-produced exports. The default Rust writer still emits the current root
 `glyphOutline` representation until a richer outline payload needs the sidecar
 writer. Future writers that emit sidecar payloads should declare
 `text.variantOps` as an additive feature. Schema-v2 compatibility export

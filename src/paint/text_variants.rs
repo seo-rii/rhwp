@@ -49,6 +49,17 @@ pub enum TextVariantScopeError {
         variant_id: String,
         leaf: String,
     },
+    MissingSidecarAnchor {
+        equivalence_group: String,
+        variant_id: String,
+        anchor_op_id: String,
+    },
+    InvalidSidecarAnchor {
+        equivalence_group: String,
+        variant_id: String,
+        anchor_op_id: String,
+        leaf: String,
+    },
     UnsupportedGlyphOutlineStyle {
         equivalence_group: String,
         variant_id: String,
@@ -109,6 +120,23 @@ impl fmt::Display for TextVariantScopeError {
                 f,
                 "glyph outline variant `{variant_id}` in group `{equivalence_group}` at leaf `{leaf}` has no anchorOpId"
             ),
+            Self::MissingSidecarAnchor {
+                equivalence_group,
+                variant_id,
+                anchor_op_id,
+            } => write!(
+                f,
+                "sidecar text variant `{variant_id}` in group `{equivalence_group}` references missing anchor `{anchor_op_id}`"
+            ),
+            Self::InvalidSidecarAnchor {
+                equivalence_group,
+                variant_id,
+                anchor_op_id,
+                leaf,
+            } => write!(
+                f,
+                "sidecar text variant `{variant_id}` in group `{equivalence_group}` references non-fallback anchor `{anchor_op_id}` at leaf `{leaf}`"
+            ),
             Self::UnsupportedGlyphOutlineStyle {
                 equivalence_group,
                 variant_id,
@@ -141,26 +169,97 @@ struct VariantPartState {
 /// cross leaf boundaries, and each group must contain a default fallback so old
 /// and fallback-first consumers keep a faithful string replay path.
 pub fn validate_text_variant_scope(tree: &PageLayerTree) -> Result<(), TextVariantScopeError> {
+    let mut sidecars_by_anchor = HashMap::<String, Vec<&PaintOp>>::new();
+    for op in &tree.variant_ops {
+        let Some(variant) = op_variant(op) else {
+            continue;
+        };
+        let Some(anchor_op_id) = variant.anchor_op_id.as_deref() else {
+            return Err(TextVariantScopeError::MissingAnchorOpId {
+                equivalence_group: variant.equivalence_group.clone(),
+                variant_id: variant.variant_id.clone(),
+                leaf: "variantOps".to_string(),
+            });
+        };
+        sidecars_by_anchor
+            .entry(anchor_op_id.to_string())
+            .or_default()
+            .push(op);
+    }
+
     let mut group_leaf_paths = HashMap::new();
-    validate_node(&tree.root, "root".to_string(), &mut group_leaf_paths)
+    validate_node(
+        &tree.root,
+        "root".to_string(),
+        &mut group_leaf_paths,
+        &mut sidecars_by_anchor,
+    )?;
+
+    if let Some((anchor_op_id, sidecars)) = sidecars_by_anchor.into_iter().next() {
+        let variant = op_variant(sidecars[0]).expect("sidecar variants were indexed above");
+        return Err(TextVariantScopeError::MissingSidecarAnchor {
+            equivalence_group: variant.equivalence_group.clone(),
+            variant_id: variant.variant_id.clone(),
+            anchor_op_id,
+        });
+    }
+
+    Ok(())
 }
 
 fn validate_node(
     node: &LayerNode,
     path: String,
     group_leaf_paths: &mut HashMap<String, String>,
+    sidecars_by_anchor: &mut HashMap<String, Vec<&PaintOp>>,
 ) -> Result<(), TextVariantScopeError> {
     match &node.kind {
         LayerNodeKind::Group { children, .. } => {
             for (index, child) in children.iter().enumerate() {
-                validate_node(child, format!("{path}/group[{index}]"), group_leaf_paths)?;
+                validate_node(
+                    child,
+                    format!("{path}/group[{index}]"),
+                    group_leaf_paths,
+                    sidecars_by_anchor,
+                )?;
             }
         }
         LayerNodeKind::ClipRect { child, .. } => {
-            validate_node(child, format!("{path}/clip"), group_leaf_paths)?;
+            validate_node(
+                child,
+                format!("{path}/clip"),
+                group_leaf_paths,
+                sidecars_by_anchor,
+            )?;
         }
         LayerNodeKind::Leaf { ops, .. } => {
-            validate_leaf(ops, path, group_leaf_paths)?;
+            let mut anchored_sidecars = Vec::new();
+            for op in ops {
+                let Some(anchor_variant) = op_variant(op) else {
+                    continue;
+                };
+                let stable_op_id = anchor_variant.stable_op_id();
+                let Some(sidecars) = sidecars_by_anchor.remove(&stable_op_id) else {
+                    continue;
+                };
+                for sidecar in sidecars {
+                    let sidecar_variant =
+                        op_variant(sidecar).expect("sidecar variants were indexed above");
+                    if anchor_variant.variant_kind != TextVariantKind::TextRun
+                        || !anchor_variant.is_default_fallback
+                        || sidecar_variant.equivalence_group != anchor_variant.equivalence_group
+                    {
+                        return Err(TextVariantScopeError::InvalidSidecarAnchor {
+                            equivalence_group: sidecar_variant.equivalence_group.clone(),
+                            variant_id: sidecar_variant.variant_id.clone(),
+                            anchor_op_id: stable_op_id.clone(),
+                            leaf: path,
+                        });
+                    }
+                    anchored_sidecars.push(sidecar);
+                }
+            }
+            validate_leaf(ops, &anchored_sidecars, path, group_leaf_paths)?;
         }
     }
     Ok(())
@@ -168,11 +267,12 @@ fn validate_node(
 
 fn validate_leaf(
     ops: &[PaintOp],
+    sidecar_ops: &[&PaintOp],
     leaf_path: String,
     group_leaf_paths: &mut HashMap<String, String>,
 ) -> Result<(), TextVariantScopeError> {
     let mut groups = HashMap::<String, LeafGroupState>::new();
-    for op in ops {
+    for op in ops.iter().chain(sidecar_ops.iter().copied()) {
         let Some(variant) = op_variant(op) else {
             continue;
         };
@@ -359,13 +459,17 @@ mod tests {
     }
 
     fn tree(root: LayerNode) -> PageLayerTree {
+        tree_with_variant_ops(root, Vec::new())
+    }
+
+    fn tree_with_variant_ops(root: LayerNode, variant_ops: Vec<PaintOp>) -> PageLayerTree {
         PageLayerTree {
             page_width: 100.0,
             page_height: 100.0,
             profile: RenderProfile::default(),
             output_options: LayerOutputOptions::default(),
             root,
-            variant_ops: Vec::new(),
+            variant_ops,
             resources: ResourceArena::default(),
             text_sources: TextSourceTable::default(),
         }
@@ -529,6 +633,133 @@ mod tests {
             ],
         ));
         validate_text_variant_scope(&tree).unwrap();
+    }
+
+    #[test]
+    fn accepts_sidecar_glyph_outline_with_root_anchor() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-text-1".to_string()),
+            local_paint_order: Some(0),
+        };
+        let tree = tree_with_variant_ops(
+            LayerNode::leaf(
+                bbox(),
+                None,
+                vec![text_op(PaintVariantMeta::text_run_default("text-1"))],
+            ),
+            vec![outline_op(outline_part, TextStyle::default())],
+        );
+        validate_text_variant_scope(&tree).unwrap();
+    }
+
+    #[test]
+    fn rejects_sidecar_glyph_outline_with_missing_anchor() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-missing".to_string()),
+            local_paint_order: Some(0),
+        };
+        let tree = tree_with_variant_ops(
+            LayerNode::leaf(
+                bbox(),
+                None,
+                vec![text_op(PaintVariantMeta::text_run_default("text-1"))],
+            ),
+            vec![outline_op(outline_part, TextStyle::default())],
+        );
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::MissingSidecarAnchor { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_sidecar_glyph_outline_anchored_to_non_default_part() {
+        let glyph_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphRun".to_string(),
+            variant_kind: TextVariantKind::GlyphRun,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+            quality: None,
+            anchor_op_id: None,
+            local_paint_order: Some(0),
+        };
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-text-1-glyphRun-0".to_string()),
+            local_paint_order: Some(0),
+        };
+        let tree = tree_with_variant_ops(
+            LayerNode::leaf(
+                bbox(),
+                None,
+                vec![
+                    text_op(PaintVariantMeta::text_run_default("text-1")),
+                    text_op(glyph_part),
+                ],
+            ),
+            vec![outline_op(outline_part, TextStyle::default())],
+        );
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::InvalidSidecarAnchor { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_root_and_sidecar_variant_part() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.outlineGlyph".to_string()],
+            quality: None,
+            anchor_op_id: Some("op-text-1".to_string()),
+            local_paint_order: Some(0),
+        };
+        let tree = tree_with_variant_ops(
+            LayerNode::leaf(
+                bbox(),
+                None,
+                vec![
+                    text_op(PaintVariantMeta::text_run_default("text-1")),
+                    outline_op(outline_part.clone(), TextStyle::default()),
+                ],
+            ),
+            vec![outline_op(outline_part, TextStyle::default())],
+        );
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::DuplicatePart { .. })
+        ));
     }
 
     #[test]
