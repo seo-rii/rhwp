@@ -464,6 +464,11 @@ outline payloads to live as sidecar variants. A sidecar outline uses
 replaces. Within that slot, `localPaintOrder` is an optional stable order for
 multi-part outline payloads.
 
+Schema-v1 text variant ops carry stable additive `id` fields so sidecars can
+anchor without relying on array position. The fallback `TextRun` id is
+`op-<equivalenceGroup>`, and non-default text variant parts use
+`op-<equivalenceGroup>-<variantId>-<partIndex>`.
+
 The current writer may still emit `glyphOutline` in the root op stream because
 it is an explicit text variant, not a generic `Path`. The future `variantOps`
 migration should be dual-reader / single-writer: readers accept both root

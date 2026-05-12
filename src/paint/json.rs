@@ -727,6 +727,9 @@ impl PaintOp {
             }
             PaintOp::TextRun { bbox, run } => {
                 buf.push('{');
+                if let Some(variant) = &run.variant {
+                    let _ = write!(buf, "\"id\":{},", json_escape(&text_variant_op_id(variant)));
+                }
                 buf.push_str("\"type\":\"textRun\",\"bbox\":");
                 write_bbox(buf, *bbox);
                 let _ = write!(
@@ -791,6 +794,11 @@ impl PaintOp {
             }
             PaintOp::GlyphRun { bbox, run } => {
                 buf.push('{');
+                let _ = write!(
+                    buf,
+                    "\"id\":{},",
+                    json_escape(&text_variant_op_id(&run.variant))
+                );
                 buf.push_str("\"type\":\"glyphRun\",\"bbox\":");
                 write_bbox(buf, *bbox);
                 buf.push_str(",\"source\":");
@@ -838,6 +846,11 @@ impl PaintOp {
             }
             PaintOp::GlyphOutline { bbox, outline } => {
                 buf.push('{');
+                let _ = write!(
+                    buf,
+                    "\"id\":{},",
+                    json_escape(&text_variant_op_id(&outline.variant))
+                );
                 buf.push_str("\"type\":\"glyphOutline\",\"bbox\":");
                 write_bbox(buf, *bbox);
                 buf.push_str(",\"source\":");
@@ -1348,6 +1361,17 @@ fn write_paint_variant_meta(buf: &mut String, variant: &PaintVariantMeta) {
         let _ = write!(buf, ",\"localPaintOrder\":{}", local_paint_order);
     }
     buf.push('}');
+}
+
+fn text_variant_op_id(variant: &PaintVariantMeta) -> String {
+    if variant.is_default_fallback {
+        format!("op-{}", variant.equivalence_group)
+    } else {
+        format!(
+            "op-{}-{}-{}",
+            variant.equivalence_group, variant.variant_id, variant.part_index
+        )
+    }
 }
 
 fn write_text_source_range(buf: &mut String, range: TextSourceRange) {
@@ -3024,7 +3048,7 @@ mod tests {
         assert!(json.contains("\"selectionPolicy\":\"exclusiveVariantSet\""));
         assert!(json.contains("\"defaultVariantId\":\"textRun\""));
         assert!(json.contains("\"fallbackPolicy\":\"required\""));
-        assert!(json.contains("\"variants\":[{\"variantId\":\"textRun\",\"kind\":\"textRun\",\"parts\":[{\"partIndex\":0,\"partCount\":1,\"payload\":{\"type\":\"textRun\""));
+        assert!(json.contains("\"variants\":[{\"variantId\":\"textRun\",\"kind\":\"textRun\",\"parts\":[{\"partIndex\":0,\"partCount\":1,\"payload\":{\"id\":\"op-text-0\",\"type\":\"textRun\""));
         assert!(!json.contains("\"ops\":[{\"type\":\"textRun\""));
     }
 
@@ -3122,7 +3146,9 @@ mod tests {
         );
 
         let json = tree.to_json();
+        assert!(json.contains("\"id\":\"op-text-0\",\"type\":\"textRun\""));
         assert!(json.contains("\"type\":\"glyphOutline\""));
+        assert!(json.contains("\"id\":\"op-text-0-glyphOutline-0\",\"type\":\"glyphOutline\""));
         assert!(json.contains("\"text.outlineGlyph\""));
         assert!(json.contains("\"optionalFeatures\":[\"text.outlineGlyph\"]"));
         assert!(json.contains("\"requiredFeatures\":[]"));
@@ -3145,7 +3171,9 @@ mod tests {
         assert!(v2_json.contains("\"ops\":[{\"id\":\"text-0\",\"type\":\"text\""));
         assert!(v2_json.contains("\"paintOrderSlotId\":\"text-0\""));
         assert!(v2_json.contains("\"variantId\":\"glyphOutline\",\"kind\":\"glyphOutline\",\"requiredFeatures\":[\"text.outlineGlyph\"],\"quality\":\"exact\""));
-        assert!(v2_json.contains("\"payload\":{\"type\":\"glyphOutline\""));
+        assert!(v2_json.contains(
+            "\"payload\":{\"id\":\"op-text-0-glyphOutline-0\",\"type\":\"glyphOutline\""
+        ));
         assert!(!v2_json.contains("\"ops\":[{\"type\":\"textRun\""));
     }
 

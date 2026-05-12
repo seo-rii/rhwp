@@ -1103,6 +1103,9 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             }
         }
         PaintOp::TextRun { bbox, run } => {
+            if let Some(variant) = &run.variant {
+                set_string(&value, "id", &text_variant_op_id(variant));
+            }
             set_string(&value, "type", "textRun");
             set_value(&value, "bbox", bbox_to_value(*bbox));
             set_string(&value, "text", &run.text);
@@ -1164,6 +1167,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             }
         }
         PaintOp::GlyphRun { bbox, run } => {
+            set_string(&value, "id", &text_variant_op_id(&run.variant));
             set_string(&value, "type", "glyphRun");
             set_value(&value, "bbox", bbox_to_value(*bbox));
             set_value(&value, "source", text_source_span_to_value(&run.source));
@@ -1209,6 +1213,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             );
         }
         PaintOp::GlyphOutline { bbox, outline } => {
+            set_string(&value, "id", &text_variant_op_id(&outline.variant));
             set_string(&value, "type", "glyphOutline");
             set_value(&value, "bbox", bbox_to_value(*bbox));
             set_value(&value, "source", text_source_span_to_value(&outline.source));
@@ -1962,6 +1967,17 @@ fn paint_variant_meta_to_value(variant: &PaintVariantMeta) -> JsValue {
         set_number(&value, "localPaintOrder", local_paint_order as f64);
     }
     value.into()
+}
+
+fn text_variant_op_id(variant: &PaintVariantMeta) -> String {
+    if variant.is_default_fallback {
+        format!("op-{}", variant.equivalence_group)
+    } else {
+        format!(
+            "op-{}-{}-{}",
+            variant.equivalence_group, variant.variant_id, variant.part_index
+        )
+    }
 }
 
 fn text_legacy_visuals_to_value(run: &crate::paint::LayerTextRunPaint) -> Option<JsValue> {
@@ -2864,6 +2880,12 @@ mod tests {
             "type",
         );
         assert_eq!(string_prop(&prop(&js_part, "payload"), "type"), "textRun");
+        assert_same_string(
+            &prop(&json_part, "payload"),
+            &prop(&js_part, "payload"),
+            "id",
+        );
+        assert_eq!(string_prop(&prop(&js_part, "payload"), "id"), "op-text-0");
     }
 
     #[wasm_bindgen_test]
