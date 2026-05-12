@@ -196,6 +196,8 @@ impl GlyphOutlineStrokeStyle {
                 .miter_limit
                 .map(|limit| limit.is_finite() && limit >= 0.0)
                 .unwrap_or(true)
+            && self.join == GlyphOutlineStrokeJoin::Miter
+            && self.cap == GlyphOutlineStrokeCap::Butt
             && self.paint_order == GlyphOutlinePaintOrder::FillThenStroke
     }
 }

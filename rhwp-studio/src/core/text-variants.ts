@@ -535,6 +535,8 @@ function isSupportedGlyphOutlineStrokeStyle(
     && stroke.widthPx > 0
     && (stroke.miterLimit === undefined
       || (Number.isFinite(stroke.miterLimit) && stroke.miterLimit >= 0))
+    && (stroke.join ?? 'miter') === 'miter'
+    && (stroke.cap ?? 'butt') === 'butt'
     && (stroke.paintOrder ?? 'fillThenStroke') === 'fillThenStroke';
 }
 

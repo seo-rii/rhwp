@@ -1373,6 +1373,48 @@ mod tests {
     }
 
     #[test]
+    fn reports_unsupported_glyph_outline_stroke_join_cap_subset() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5-stroke-join"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-stroke-join".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.monochromeFillStroke".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5-stroke-join".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::MonochromeFillStroke;
+        let mut stroke = supported_outline_stroke();
+        stroke.join = GlyphOutlineStrokeJoin::Round;
+        stroke.cap = GlyphOutlineStrokeCap::Square;
+        outline.stroke = Some(stroke);
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_richer_glyph_outline_payloads = true;
+        let issue_codes: Vec<_> = validate_text_v2_op(&text_ops[0], &options)
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(
+            issue_codes.contains(&TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported)
+        );
+    }
+
+    #[test]
     fn reports_mixed_per_glyph_without_feature_gate() {
         let text = text_op(PaintVariantMeta::text_run_default("text-5-mixed"));
         let glyph_run = glyph_run_op(

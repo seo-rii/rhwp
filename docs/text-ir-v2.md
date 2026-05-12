@@ -495,7 +495,7 @@ payload. `payloadKind: "monochromeFillStroke"` is schema vocabulary for the
 first richer outline payload: it must carry an explicit `stroke` object, and the
 v2 validator only accepts the initial supported subset behind the richer-outline
 feature gate. That subset is finite positive stroke width, solid stroke color,
-finite non-negative optional miter limit, fixed join/cap vocabulary, and
+finite non-negative optional miter limit, `join: "miter"`, `cap: "butt"`, and
 `paintOrder: "fillThenStroke"`. Renderers may still reject it with
 `unsupportedOutlinePayload` until stroke bbox inflation, SVG/Canvas2D/native
 fixtures, and fuzzy parity thresholds are fixed.
