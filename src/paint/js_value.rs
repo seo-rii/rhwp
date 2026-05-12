@@ -247,15 +247,26 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         string_array_to_value(&[
             "fontResources",
             "fontResources.blobFaceSplit",
+            "text.variants",
+            "text.paintOrderSlot",
+            "text.strictVisualFallbackFree",
+            "text.crossScopeVariants",
             "text.variantGroups",
+            "text.variantOps",
             "text.shapeDiagnostics",
             "text.glyphRun",
             "text.outlineGlyph",
+            "text.glyphOutline.monochromeFill",
+            "text.glyphOutline.monochromeFillStroke",
+            "text.glyphOutline.colorLayers",
+            "text.glyphOutline.bitmapGlyph",
+            "text.glyphOutline.svgGlyph",
             "text.specialVisualOps",
             "text.charOverlapOp",
             "text.controlMarkOp",
             "text.tabLeaderOp",
             "text.decorationOp",
+            "text.layout.shapedModern",
             "text.vertical.mixedPerGlyph",
         ]),
     );
@@ -289,6 +300,12 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         string_array_to_value(&externalized_visuals),
     );
     set_value(&value, "text", text_contract.into());
+    let text_v2_contract = Object::new();
+    set_string(&text_v2_contract, "canonicalOp", "text");
+    set_string(&text_v2_contract, "fallbackPolicy", "required");
+    set_bool(&text_v2_contract, "strictVisualFallbackFree", false);
+    set_string(&text_v2_contract, "paintOrderSlots", "reserved");
+    set_value(&value, "textV2", text_v2_contract.into());
 
     let resources = Object::new();
     let images = Array::new();
@@ -2134,7 +2151,7 @@ mod tests {
         );
         let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
         let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
-        assert_eq!(json_known_features.length(), 12);
+        assert_eq!(json_known_features.length(), 23);
         assert_eq!(json_known_features.length(), js_known_features.length());
         let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
         let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
@@ -2158,6 +2175,24 @@ mod tests {
         let js_externalized = Array::from(&prop(&js_text_contract, "externalizedVisuals"));
         assert_eq!(json_externalized.length(), 0);
         assert_eq!(json_externalized.length(), js_externalized.length());
+        let json_text_v2_contract = prop(&json_value, "textV2");
+        let js_text_v2_contract = prop(&js_value, "textV2");
+        assert_same_string(&json_text_v2_contract, &js_text_v2_contract, "canonicalOp");
+        assert_same_string(
+            &json_text_v2_contract,
+            &js_text_v2_contract,
+            "fallbackPolicy",
+        );
+        assert_same_bool(
+            &json_text_v2_contract,
+            &js_text_v2_contract,
+            "strictVisualFallbackFree",
+        );
+        assert_same_string(
+            &json_text_v2_contract,
+            &js_text_v2_contract,
+            "paintOrderSlots",
+        );
         let json_font_resources = prop(&json_value, "fontResources");
         let js_font_resources = prop(&js_value, "fontResources");
         assert_eq!(

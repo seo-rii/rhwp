@@ -622,6 +622,14 @@ Schema v1 should close as a compatibility-safe text replay schema:
   range, explicit positions, and effect-specific eligibility.
 - shaped measurement remains report-only telemetry outside the replay schema.
 
+Schema v1 minor 10 exports advertise the v2 direction without changing replay
+semantics. They keep `schemaVersion=1`, add only producer-known v2 feature names
+to `knownFeatures`, and include `textV2` metadata with
+`canonicalOp="text"`, `fallbackPolicy="required"`,
+`strictVisualFallbackFree=false`, and `paintOrderSlots="reserved"`. This tells
+readers that the producer understands the Phase 2 text envelope while current
+v1 writers still emit flattened `TextRun`/`GlyphRun`/`glyphOutline` ops.
+
 Schema v2 is the Phase 2 envelope for larger changes: `PaintOp::Text {
 variants }`, fallback-free text exports, cross-scope variants,
 `paintOrderSlotId`, richer `GlyphOutline` payload kinds, public
