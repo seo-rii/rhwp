@@ -123,6 +123,19 @@ pub enum LayerTextVariantPayload {
     GlyphOutline(LayerGlyphOutlinePaint),
 }
 
+impl PageLayerTree {
+    pub fn text_v2_slots(&self) -> Vec<LayerTextPaintOpV2> {
+        lower_v1_layer_tree_text_variants_to_v2(self)
+    }
+
+    pub fn validate_text_v2_slots(
+        &self,
+        options: &TextV2ValidationOptions,
+    ) -> Vec<TextV2ValidationIssue> {
+        validate_text_v2_ops(&self.text_v2_slots(), options)
+    }
+}
+
 struct TextVariantEntry {
     order: usize,
     bbox: BoundingBox,
@@ -809,5 +822,21 @@ mod tests {
         assert_eq!(text_ops.len(), 2);
         assert_eq!(text_ops[0].id, "text-0");
         assert_eq!(text_ops[1].id, "text-1");
+    }
+
+    #[test]
+    fn page_layer_tree_exposes_text_v2_slot_validation_api() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-10"));
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(bbox(0.0, 0.0, 10.0, 10.0), None, vec![text]),
+        );
+
+        let slots = tree.text_v2_slots();
+        let issues = tree.validate_text_v2_slots(&TextV2ValidationOptions::default());
+
+        assert_eq!(slots.len(), 1);
+        assert!(issues.is_empty(), "{issues:?}");
     }
 }

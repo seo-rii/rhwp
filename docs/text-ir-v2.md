@@ -684,6 +684,8 @@ schema-v1 flattened text variants into `LayerTextPaintOpV2` slots at leaf or
 tree scope. The scaffold preserves first-seen group order, collects variant-set
 parts under one paint slot, and keeps writer enablement separate from the v1
 replay path.
+`PageLayerTree::text_v2_slots()` and `validate_text_v2_slots()` expose that
+scaffold as the future writer/diagnostics entrypoint.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any
