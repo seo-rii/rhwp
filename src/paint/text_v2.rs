@@ -9,8 +9,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::paint::{
-    LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind, LayerTextRunPaint,
-    PageLayerTree, PaintOp, TextVariantKind, TextVariantQuality,
+    GlyphOutlinePayloadKind, LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
+    LayerTextRunPaint, PageLayerTree, PaintOp, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::render_tree::BoundingBox;
 
@@ -37,6 +37,7 @@ pub struct TextV2ValidationOptions {
     pub require_paint_order_slot: bool,
     pub allow_fallback_free: bool,
     pub allow_cross_scope_variants: bool,
+    pub allow_richer_glyph_outline_payloads: bool,
 }
 
 impl Default for TextV2ValidationOptions {
@@ -45,6 +46,7 @@ impl Default for TextV2ValidationOptions {
             require_paint_order_slot: true,
             allow_fallback_free: false,
             allow_cross_scope_variants: false,
+            allow_richer_glyph_outline_payloads: false,
         }
     }
 }
@@ -63,6 +65,7 @@ pub enum TextV2ValidationIssueCode {
     VariantPartCountMismatch,
     VariantDuplicatePart,
     CrossScopeVariantFeatureMissing,
+    GlyphOutlinePayloadKindFeatureMissing,
 }
 
 impl TextV2ValidationIssueCode {
@@ -80,6 +83,7 @@ impl TextV2ValidationIssueCode {
             Self::VariantPartCountMismatch => "variantPartCountMismatch",
             Self::VariantDuplicatePart => "variantDuplicatePart",
             Self::CrossScopeVariantFeatureMissing => "crossScopeVariantFeatureMissing",
+            Self::GlyphOutlinePayloadKindFeatureMissing => "glyphOutlinePayloadKindFeatureMissing",
         }
     }
 }
@@ -412,6 +416,18 @@ fn validate_variant_parts(
                 Some(&variant.variant_id),
                 Some(part.part_index),
             ));
+        }
+        if let LayerTextVariantPayload::GlyphOutline(outline) = &part.payload {
+            if outline.payload_kind != GlyphOutlinePayloadKind::MonochromeFill
+                && !options.allow_richer_glyph_outline_payloads
+            {
+                issues.push(text_v2_issue(
+                    op,
+                    TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+                    Some(&variant.variant_id),
+                    Some(part.part_index),
+                ));
+            }
         }
     }
 
@@ -911,6 +927,48 @@ mod tests {
 
         let mut options = TextV2ValidationOptions::default();
         options.allow_cross_scope_variants = true;
+        let issues = validate_text_v2_op(&text_ops[0], &options);
+        assert!(issues.is_empty(), "{issues:?}");
+    }
+
+    #[test]
+    fn reports_richer_glyph_outline_payload_without_feature_gate() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5-payload"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-payload".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.monochromeFillStroke".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5-payload".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::MonochromeFillStroke;
+
+        let issue_codes: Vec<_> =
+            validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default())
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+        assert!(
+            issue_codes.contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing)
+        );
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_richer_glyph_outline_payloads = true;
         let issues = validate_text_v2_op(&text_ops[0], &options);
         assert!(issues.is_empty(), "{issues:?}");
     }

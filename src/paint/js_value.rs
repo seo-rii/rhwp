@@ -2848,23 +2848,35 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn exports_text_v2_validation_issues_to_js_value() {
-        let issues = vec![TextV2ValidationIssue {
+        let issues =
+            vec![TextV2ValidationIssue {
             code: crate::paint::TextV2ValidationIssueCode::DefaultVariantMissing,
             op_id: "text-0".to_string(),
             paint_order_slot_id: Some("slot-0".to_string()),
             variant_id: Some("glyphRun".to_string()),
             part_index: Some(2),
+        }, TextV2ValidationIssue {
+            code: crate::paint::TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+            op_id: "text-1".to_string(),
+            paint_order_slot_id: Some("slot-1".to_string()),
+            variant_id: Some("glyphOutline".to_string()),
+            part_index: Some(0),
         }];
 
         let value = text_v2_validation_issues_to_js_value(&issues);
         let array = Array::from(&value);
-        assert_eq!(array.length(), 1);
+        assert_eq!(array.length(), 2);
         let issue = array.get(0);
         assert_eq!(string_prop(&issue, "code"), "defaultVariantMissing");
         assert_eq!(string_prop(&issue, "opId"), "text-0");
         assert_eq!(string_prop(&issue, "paintOrderSlotId"), "slot-0");
         assert_eq!(string_prop(&issue, "variantId"), "glyphRun");
         assert_eq!(number_prop(&issue, "partIndex"), 2.0);
+        let reserved_payload_issue = array.get(1);
+        assert_eq!(
+            string_prop(&reserved_payload_issue, "code"),
+            "glyphOutlinePayloadKindFeatureMissing"
+        );
     }
 
     #[wasm_bindgen_test]

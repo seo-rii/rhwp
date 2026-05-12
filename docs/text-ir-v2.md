@@ -705,7 +705,9 @@ slot still has the required `TextRun` fallback and current v1 payload kinds.
 stroke, color-layer, bitmap, or SVG glyph payloads can be feature-gated without
 overloading the first fill-only path representation. Reserved payload kinds are
 defined as schema vocabulary but are rejected by the compatibility validator
-until their strict profile and feature gates land.
+until their strict profile and feature gates land. The v2 validator reports
+`glyphOutlinePayloadKindFeatureMissing` for those richer payloads unless the
+caller explicitly enables that future feature gate.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any
