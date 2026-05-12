@@ -7,7 +7,9 @@
 //! or cross-scope emission by themselves.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::Write as _;
 
+use crate::document_core::helpers::json_escape;
 use crate::paint::{
     GlyphOutlinePayloadKind, LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
     LayerTextRunPaint, PageLayerTree, PaintOp, TextVariantKind, TextVariantQuality,
@@ -347,6 +349,37 @@ pub fn downgrade_text_v2_op_to_v1_compat(
         }
     }
     Ok(ops)
+}
+
+pub fn text_v2_validation_issues_to_json(issues: &[TextV2ValidationIssue]) -> String {
+    let mut json = String::from("[");
+    for (idx, issue) in issues.iter().enumerate() {
+        if idx > 0 {
+            json.push(',');
+        }
+        let _ = write!(
+            json,
+            "{{\"code\":\"{}\",\"opId\":\"{}\"",
+            json_escape(issue.code.as_str()),
+            json_escape(&issue.op_id)
+        );
+        if let Some(paint_order_slot_id) = &issue.paint_order_slot_id {
+            let _ = write!(
+                json,
+                ",\"paintOrderSlotId\":\"{}\"",
+                json_escape(paint_order_slot_id)
+            );
+        }
+        if let Some(variant_id) = &issue.variant_id {
+            let _ = write!(json, ",\"variantId\":\"{}\"", json_escape(variant_id));
+        }
+        if let Some(part_index) = issue.part_index {
+            let _ = write!(json, ",\"partIndex\":{}", part_index);
+        }
+        json.push('}');
+    }
+    json.push(']');
+    json
 }
 
 fn text_v2_part_payload_to_v1_op(part: &LayerTextVariantPart) -> PaintOp {
@@ -971,6 +1004,30 @@ mod tests {
         options.allow_richer_glyph_outline_payloads = true;
         let issues = validate_text_v2_op(&text_ops[0], &options);
         assert!(issues.is_empty(), "{issues:?}");
+    }
+
+    #[test]
+    fn serializes_text_v2_validation_issues_to_json() {
+        let issues = vec![TextV2ValidationIssue {
+            code: TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+            op_id: "text-0".to_string(),
+            paint_order_slot_id: Some("slot-0".to_string()),
+            variant_id: Some("glyphOutline".to_string()),
+            part_index: Some(0),
+        }];
+
+        let json = text_v2_validation_issues_to_json(&issues);
+
+        assert_eq!(
+            json,
+            concat!(
+                "[{\"code\":\"glyphOutlinePayloadKindFeatureMissing\",",
+                "\"opId\":\"text-0\",",
+                "\"paintOrderSlotId\":\"slot-0\",",
+                "\"variantId\":\"glyphOutline\",",
+                "\"partIndex\":0}]"
+            )
+        );
     }
 
     #[test]

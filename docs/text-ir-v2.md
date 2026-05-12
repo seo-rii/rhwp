@@ -698,6 +698,9 @@ The public wasm/native API exposes this opt-in path as
 `getPageLayerTree*` calls remain unchanged.
 `text_v2_validation_issues_to_js_value()` exposes the same validator issue
 vocabulary to JS callers when an opt-in v2 export is rejected.
+`text_v2_validation_issues_to_json()` exposes that same issue shape for string
+JSON APIs, so validation failures use the same machine-readable codes instead
+of debug-formatted Rust structs.
 `downgrade_text_v2_op_to_v1_compat()` is the first downgrade scaffold: it
 flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.

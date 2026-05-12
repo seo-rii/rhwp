@@ -11,7 +11,7 @@ use crate::paint::js_value::{
     page_layer_tree_to_js_value_with_resource_hints, text_v2_validation_issues_to_js_value,
     LayerResourceExportHints,
 };
-use crate::paint::RenderProfile;
+use crate::paint::{text_v2_validation_issues_to_json, RenderProfile};
 
 use super::HwpDocument;
 
@@ -172,7 +172,7 @@ impl HwpDocument {
             .build_page_layer_tree_for_output(page_num, profile)
             .map_err(JsValue::from)?;
         tree.to_json_v2_compat()
-            .map_err(|issues| JsValue::from_str(&format!("text v2 validation failed: {issues:?}")))
+            .map_err(|issues| JsValue::from_str(&text_v2_validation_issues_to_json(&issues)))
     }
 
     /// 페이지 레이어 트리를 JS object로 반환한다.
