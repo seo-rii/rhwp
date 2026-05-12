@@ -11,8 +11,9 @@ use std::fmt::Write as _;
 
 use crate::document_core::helpers::json_escape;
 use crate::paint::{
-    GlyphOutlinePayloadKind, LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
-    LayerTextRunPaint, PageLayerTree, PaintOp, TextVariantKind, TextVariantQuality,
+    GlyphOutlinePayloadKind, GlyphRunOrientation, LayerGlyphOutlinePaint, LayerGlyphRunPaint,
+    LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree, PaintOp, TextVariantKind,
+    TextVariantQuality,
 };
 use crate::renderer::render_tree::BoundingBox;
 
@@ -40,6 +41,7 @@ pub struct TextV2ValidationOptions {
     pub allow_fallback_free: bool,
     pub allow_cross_scope_variants: bool,
     pub allow_richer_glyph_outline_payloads: bool,
+    pub allow_mixed_per_glyph_orientation: bool,
 }
 
 impl Default for TextV2ValidationOptions {
@@ -49,6 +51,7 @@ impl Default for TextV2ValidationOptions {
             allow_fallback_free: false,
             allow_cross_scope_variants: false,
             allow_richer_glyph_outline_payloads: false,
+            allow_mixed_per_glyph_orientation: false,
         }
     }
 }
@@ -68,6 +71,7 @@ pub enum TextV2ValidationIssueCode {
     VariantDuplicatePart,
     CrossScopeVariantFeatureMissing,
     GlyphOutlinePayloadKindFeatureMissing,
+    MixedPerGlyphFeatureMissing,
 }
 
 impl TextV2ValidationIssueCode {
@@ -86,6 +90,7 @@ impl TextV2ValidationIssueCode {
             Self::VariantDuplicatePart => "variantDuplicatePart",
             Self::CrossScopeVariantFeatureMissing => "crossScopeVariantFeatureMissing",
             Self::GlyphOutlinePayloadKindFeatureMissing => "glyphOutlinePayloadKindFeatureMissing",
+            Self::MixedPerGlyphFeatureMissing => "mixedPerGlyphFeatureMissing",
         }
     }
 }
@@ -462,6 +467,18 @@ fn validate_variant_parts(
                 ));
             }
         }
+        if let LayerTextVariantPayload::GlyphRun(run) = &part.payload {
+            if run.orientation == GlyphRunOrientation::MixedPerGlyph
+                && !options.allow_mixed_per_glyph_orientation
+            {
+                issues.push(text_v2_issue(
+                    op,
+                    TextV2ValidationIssueCode::MixedPerGlyphFeatureMissing,
+                    Some(&variant.variant_id),
+                    Some(part.part_index),
+                ));
+            }
+        }
     }
 
     if expected == 0
@@ -637,10 +654,12 @@ fn union_bbox(left: BoundingBox, right: BoundingBox) -> BoundingBox {
 mod tests {
     use super::*;
     use crate::paint::{
-        CacheHint, GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRange, GlyphRunDiagnostics,
-        GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePath, LayerSemantic,
-        PaintTextStyle, PaintVariantMeta, TextRunPlacement, TextSourceId, TextSourceRange,
-        TextSourceSpan,
+        CacheHint, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
+        GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRange, GlyphRunDiagnostics,
+        GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePath, LayerPoint,
+        LayerSemantic, LayerVector, PaintTextStyle, PaintVariantMeta, ShapeKey, ShapingEngineId,
+        TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
+        WritingMode,
     };
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -694,6 +713,76 @@ mod tests {
                     ],
                     fill_rule: GlyphOutlineFillRule::NonZero,
                 }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        }
+    }
+
+    fn glyph_run_op(variant: PaintVariantMeta, orientation: GlyphRunOrientation) -> PaintOp {
+        PaintOp::GlyphRun {
+            bbox: bbox(12.0, 0.0, 10.0, 10.0),
+            run: LayerGlyphRunPaint {
+                source: TextSourceSpan {
+                    id: TextSourceId(0),
+                    utf8_range: TextSourceRange::new(0, 1),
+                    utf16_range: TextSourceRange::new(0, 1),
+                    stable_source_key: None,
+                },
+                variant,
+                paint_style: PaintTextStyle::from(&TextStyle::default()),
+                shape_key: ShapeKey {
+                    font_instance: FontInstanceKey {
+                        face_key: FontFaceKey("face-0".to_string()),
+                        size_px: 12.0,
+                        variations: Vec::new(),
+                        synthetic_bold: false,
+                        synthetic_italic: false,
+                    },
+                    direction: TextDirection::Ltr,
+                    writing_mode: WritingMode::HorizontalTb,
+                    script: None,
+                    language: None,
+                    features: Vec::new(),
+                    shaping_engine: ShapingEngineId("test".to_string()),
+                    fallback_policy: FontFallbackPolicyId("none".to_string()),
+                },
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 0.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                glyph_ids: vec![1],
+                positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+                advances: Some(vec![LayerVector { dx: 10.0, dy: 0.0 }]),
+                clusters: vec![GlyphCluster {
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    source_range_utf16: Some(TextSourceRange::new(0, 1)),
+                    text_range_utf8: Some(TextSourceRange::new(0, 1)),
+                    glyph_range: GlyphRange { start: 0, end: 1 },
+                    flags: Vec::new(),
+                }],
+                direction: TextDirection::Ltr,
+                bidi_level: None,
+                writing_mode: WritingMode::HorizontalTb,
+                orientation,
+                glyph_transforms: None,
                 diagnostics: GlyphRunDiagnostics {
                     quality: TextVariantQuality::Exact,
                     replay_eligibility: GlyphRunReplayEligibility::Portable,
@@ -1002,6 +1091,40 @@ mod tests {
 
         let mut options = TextV2ValidationOptions::default();
         options.allow_richer_glyph_outline_payloads = true;
+        let issues = validate_text_v2_op(&text_ops[0], &options);
+        assert!(issues.is_empty(), "{issues:?}");
+    }
+
+    #[test]
+    fn reports_mixed_per_glyph_without_feature_gate() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5-mixed"));
+        let glyph_run = glyph_run_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-mixed".to_string(),
+                variant_id: "glyphRun".to_string(),
+                variant_kind: TextVariantKind::GlyphRun,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.vertical.mixedPerGlyph".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: None,
+                local_paint_order: Some(0),
+            },
+            GlyphRunOrientation::MixedPerGlyph,
+        );
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, glyph_run]);
+
+        let issue_codes: Vec<_> =
+            validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default())
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::MixedPerGlyphFeatureMissing));
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_mixed_per_glyph_orientation = true;
         let issues = validate_text_v2_op(&text_ops[0], &options);
         assert!(issues.is_empty(), "{issues:?}");
     }

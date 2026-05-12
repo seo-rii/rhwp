@@ -723,9 +723,10 @@ paint-order invariant that each text envelope owns one unique paint slot.
 The first validator pass is backend-local diagnostics rather than writer
 enforcement: renderers report missing default variants, missing required
 TextRun fallback, duplicate paint-order slots, duplicate or incomplete parts,
-payload-kind mismatches, ungated cross-scope parts, and reserved stroke payloads
-without their required feature. Compatibility profile writers should treat
-those issues as hard errors before emitting schema v2 by default.
+payload-kind mismatches, ungated cross-scope parts, reserved stroke payloads,
+and public `MixedPerGlyph` orientation without their required feature.
+Compatibility profile writers should treat those issues as hard errors before
+emitting schema v2 by default.
 `TextVariantPart.scopeRef` is reserved for schema-v2 cross-scope variants. It is
 serialized by JSON/JS v2 writers when present, but the default compatibility
 validator rejects it unless `text.crossScopeVariants`-style validation is
