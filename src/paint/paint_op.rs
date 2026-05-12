@@ -159,12 +159,20 @@ pub struct LayerGlyphOutlinePaint {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlyphOutlinePayloadKind {
     MonochromeFill,
+    MonochromeFillStroke,
+    ColorLayers,
+    BitmapGlyph,
+    SvgGlyph,
 }
 
 impl GlyphOutlinePayloadKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MonochromeFill => "monochromeFill",
+            Self::MonochromeFillStroke => "monochromeFillStroke",
+            Self::ColorLayers => "colorLayers",
+            Self::BitmapGlyph => "bitmapGlyph",
+            Self::SvgGlyph => "svgGlyph",
         }
     }
 }

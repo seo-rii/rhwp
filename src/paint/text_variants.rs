@@ -11,7 +11,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::paint::{
-    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintVariantMeta, TextVariantKind,
+    GlyphOutlinePayloadKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintVariantMeta,
+    TextVariantKind,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,7 +198,9 @@ fn validate_leaf(
             });
         }
         if let PaintOp::GlyphOutline { outline, .. } = op {
-            if !outline.paint_style.is_fill_only_glyph_replay() {
+            if outline.payload_kind != GlyphOutlinePayloadKind::MonochromeFill
+                || !outline.paint_style.is_fill_only_glyph_replay()
+            {
                 return Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle {
                     equivalence_group: outline.variant.equivalence_group.clone(),
                     variant_id: outline.variant.variant_id.clone(),
@@ -580,6 +583,44 @@ mod tests {
                 outline_op(outline_part, style),
             ],
         ));
+        assert!(matches!(
+            validate_text_variant_scope(&tree),
+            Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_reserved_glyph_outline_payload_kind() {
+        let outline_part = PaintVariantMeta {
+            equivalence_group: "text-1".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.glyphOutline.monochromeFillStroke".to_string()],
+            quality: Some(TextVariantQuality::Exact),
+            anchor_op_id: Some("op-text-1".to_string()),
+            local_paint_order: Some(0),
+        };
+        let mut outline = outline_op(outline_part, TextStyle::default());
+        let PaintOp::GlyphOutline {
+            outline: outline_paint,
+            ..
+        } = &mut outline
+        else {
+            panic!("expected glyph outline");
+        };
+        outline_paint.payload_kind = GlyphOutlinePayloadKind::MonochromeFillStroke;
+        let tree = tree(LayerNode::leaf(
+            bbox(),
+            None,
+            vec![
+                text_op(PaintVariantMeta::text_run_default("text-1")),
+                outline,
+            ],
+        ));
+
         assert!(matches!(
             validate_text_variant_scope(&tree),
             Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle { .. })
