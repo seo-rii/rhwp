@@ -129,6 +129,41 @@ pub struct ShapedMeasurementLineReport {
     pub cluster_mismatch_count_sum: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineBreakChangeRisk {
+    InsufficientContext,
+    NoChangeLikely,
+    ChangePossible,
+    ChangeLikely,
+}
+
+impl LineBreakChangeRisk {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InsufficientContext => "insufficientContext",
+            Self::NoChangeLikely => "noChangeLikely",
+            Self::ChangePossible => "changePossible",
+            Self::ChangeLikely => "changeLikely",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineBreakShadowReport {
+    pub document_id: Option<String>,
+    pub sample_id: Option<String>,
+    pub page_index: Option<u32>,
+    pub paragraph_id: Option<String>,
+    pub line_index: u32,
+    pub has_full_layout_context: bool,
+    pub legacy_available_width_px: Option<f64>,
+    pub legacy_line_width_px: f64,
+    pub shaped_line_width_px: f64,
+    pub overflow_delta_px: Option<f64>,
+    pub risk: LineBreakChangeRisk,
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapedMeasurementParagraphSummary {
     pub document_id: Option<String>,
@@ -167,6 +202,7 @@ pub struct TextShapeReport {
     pub diagnostics: Vec<TextShapeDiagnostic>,
     pub shaped_measurements: Vec<ShapedMeasurementRunReport>,
     pub shaped_measurement_lines: Vec<ShapedMeasurementLineReport>,
+    pub line_break_shadows: Vec<LineBreakShadowReport>,
     pub shaped_measurement_paragraphs: Vec<ShapedMeasurementParagraphSummary>,
     pub shaped_measurement_pages: Vec<ShapedMeasurementPageSummary>,
 }
@@ -439,6 +475,63 @@ impl TextShapeReport {
             buf.push_str(&line.vertical_metric_difference_count.to_string());
             write_field_prefix(&mut buf, "clusterMismatchCountSum", &mut first);
             buf.push_str(&line.cluster_mismatch_count_sum.to_string());
+            buf.push('}');
+        }
+        buf.push_str("],\"lineBreakShadows\":[");
+        for (idx, shadow) in self.line_break_shadows.iter().enumerate() {
+            if idx > 0 {
+                buf.push(',');
+            }
+            buf.push('{');
+            let mut first = true;
+            write_optional_string_field(
+                &mut buf,
+                "documentId",
+                shadow.document_id.as_deref(),
+                &mut first,
+            );
+            write_optional_string_field(
+                &mut buf,
+                "sampleId",
+                shadow.sample_id.as_deref(),
+                &mut first,
+            );
+            write_optional_u32_field(&mut buf, "pageIndex", shadow.page_index, &mut first);
+            write_optional_string_field(
+                &mut buf,
+                "paragraphId",
+                shadow.paragraph_id.as_deref(),
+                &mut first,
+            );
+            write_field_prefix(&mut buf, "lineIndex", &mut first);
+            buf.push_str(&shadow.line_index.to_string());
+            write_field_prefix(&mut buf, "hasFullLayoutContext", &mut first);
+            buf.push_str(if shadow.has_full_layout_context {
+                "true"
+            } else {
+                "false"
+            });
+            if let Some(width) = shadow.legacy_available_width_px {
+                write_f64_field(&mut buf, "legacyAvailableWidthPx", width, &mut first);
+            }
+            write_f64_field(
+                &mut buf,
+                "legacyLineWidthPx",
+                shadow.legacy_line_width_px,
+                &mut first,
+            );
+            write_f64_field(
+                &mut buf,
+                "shapedLineWidthPx",
+                shadow.shaped_line_width_px,
+                &mut first,
+            );
+            if let Some(delta) = shadow.overflow_delta_px {
+                write_f64_field(&mut buf, "overflowDeltaPx", delta, &mut first);
+            }
+            write_field_prefix(&mut buf, "risk", &mut first);
+            write_json_string(&mut buf, shadow.risk.as_str());
+            write_optional_string_field(&mut buf, "reason", shadow.reason.as_deref(), &mut first);
             buf.push('}');
         }
         buf.push_str("],\"shapedMeasurementParagraphs\":[");
@@ -1256,9 +1349,24 @@ mod tests {
         assert_eq!(report.shaped_measurement_pages[0].max_run_delta_px, 2.0);
         assert_eq!(report.shaped_measurement_pages[0].max_line_delta_px, 2.0);
         assert_eq!(report.shaped_measurement_pages[0].total_abs_delta_px, 2.0);
+        report.line_break_shadows.push(LineBreakShadowReport {
+            document_id: None,
+            sample_id: None,
+            page_index: Some(0),
+            paragraph_id: Some("paragraph-0".to_string()),
+            line_index: 0,
+            has_full_layout_context: false,
+            legacy_available_width_px: None,
+            legacy_line_width_px: 10.0,
+            shaped_line_width_px: 12.0,
+            overflow_delta_px: None,
+            risk: LineBreakChangeRisk::InsufficientContext,
+            reason: Some("missingParagraphWidth".to_string()),
+        });
         let measurement_json = report.shaped_measurements_json();
         assert!(measurement_json.contains("\"shapedMeasurements\""));
         assert!(measurement_json.contains("\"shapedMeasurementLines\""));
+        assert!(measurement_json.contains("\"lineBreakShadows\""));
         assert!(measurement_json.contains("\"shapedMeasurementParagraphs\""));
         assert!(measurement_json.contains("\"shapedMeasurementPages\""));
         assert!(measurement_json.contains("\"legacyWidthPx\":10"));
@@ -1269,6 +1377,9 @@ mod tests {
         assert!(measurement_json.contains("\"legacyLineWidthPx\":10"));
         assert!(measurement_json.contains("\"shapedLineWidthPx\":12"));
         assert!(measurement_json.contains("\"contributingRunCount\":1"));
+        assert!(measurement_json.contains("\"hasFullLayoutContext\":false"));
+        assert!(measurement_json.contains("\"risk\":\"insufficientContext\""));
+        assert!(measurement_json.contains("\"reason\":\"missingParagraphWidth\""));
         assert!(measurement_json.contains("\"paragraphCount\":1"));
         assert!(measurement_json.contains("\"totalAbsDeltaPx\":2"));
         assert!(!measurement_json.contains("lineBreakWouldChange"));

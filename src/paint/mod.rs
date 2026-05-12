@@ -65,10 +65,10 @@ pub use resources::{
 };
 pub use schema::{LayerTreeSchema, LAYER_TREE_SCHEMA};
 pub use text_shape::{
-    FontRequest, FontResolver, GlyphRunQuality, NoopFontResolver, ResolvedFontFace,
-    ResolvedGlyphRun, ShapedMeasurementLineReport, ShapedMeasurementPageSummary,
-    ShapedMeasurementParagraphSummary, ShapedMeasurementRunReport, TextShapeDiagnostic,
-    TextShapeLowerer, TextShapeReport,
+    FontRequest, FontResolver, GlyphRunQuality, LineBreakChangeRisk, LineBreakShadowReport,
+    NoopFontResolver, ResolvedFontFace, ResolvedGlyphRun, ShapedMeasurementLineReport,
+    ShapedMeasurementPageSummary, ShapedMeasurementParagraphSummary, ShapedMeasurementRunReport,
+    TextShapeDiagnostic, TextShapeLowerer, TextShapeReport,
 };
 pub use text_v2::{
     downgrade_text_v2_op_to_v1_compat, lower_v1_layer_node_text_variants_to_v2,

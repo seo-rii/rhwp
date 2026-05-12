@@ -657,7 +657,10 @@ The v1 closeout gate is:
 - native-vs-CanvasKit parity matrices stay report-only until thresholds and
   flakiness are understood;
 - shaped measurement stays telemetry outside the replay schema and does not
-  infer `lineBreakWouldChange`.
+  infer `lineBreakWouldChange`. When line-level context is incomplete,
+  diagnostics may record `lineBreakRisk`/`lineBreakShadows` values such as
+  `insufficientContext`, but those reports remain telemetry rather than layout
+  authority.
 
 Phase 2 now opens schema v2 early, but still chooses one explicit emission axis
 at a time. The preferred order is:
