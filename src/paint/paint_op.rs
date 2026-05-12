@@ -1014,13 +1014,19 @@ impl PaintOp {
                 expand(*bbox, amount)
             }
             PaintOp::GlyphOutline { bbox, outline } => {
+                let stroke_amount = outline
+                    .stroke
+                    .as_ref()
+                    .map(|stroke| stroke.width_px.max(0.0) * 0.5)
+                    .unwrap_or(0.0);
                 let amount = outline
                     .paint_style
                     .font_size
                     .max(outline.paint_style.shadow_offset_x.abs())
                     .max(outline.paint_style.shadow_offset_y.abs())
                     .max(1.0)
-                    * 0.2;
+                    * 0.2
+                    + stroke_amount;
                 expand(*bbox, amount)
             }
             PaintOp::CharOverlap { bbox, overlap } => {
@@ -1236,5 +1242,74 @@ mod tests {
         assert!(bounds.visual.x < bbox.x);
         assert!(bounds.visual.width > bbox.width + 8.0);
         assert!(bounds.visual.height > bbox.height);
+    }
+
+    #[test]
+    fn visual_bounds_include_glyph_outline_stroke_payload() {
+        let bbox = BoundingBox::new(10.0, 20.0, 20.0, 10.0);
+        let op = PaintOp::GlyphOutline {
+            bbox,
+            outline: LayerGlyphOutlinePaint {
+                source: TextSourceSpan {
+                    id: crate::paint::layer_tree::TextSourceId(0),
+                    utf8_range: TextSourceRange::new(0, 1),
+                    utf16_range: TextSourceRange::new(0, 1),
+                    stable_source_key: None,
+                },
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["text.glyphOutline.monochromeFillStroke".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some("op-text-0".to_string()),
+                    local_paint_order: Some(0),
+                },
+                payload_kind: GlyphOutlinePayloadKind::MonochromeFillStroke,
+                stroke: Some(GlyphOutlineStrokeStyle {
+                    color: 0,
+                    width_px: 12.0,
+                    join: GlyphOutlineStrokeJoin::Miter,
+                    cap: GlyphOutlineStrokeCap::Butt,
+                    miter_limit: Some(4.0),
+                    paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+                }),
+                paint_style: PaintTextStyle::from(&TextStyle {
+                    font_size: 0.0,
+                    ..Default::default()
+                }),
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 0.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                paths: Vec::new(),
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let bounds = op.paint_bounds();
+
+        assert!(bounds.visual.x <= bbox.x - 6.0);
+        assert!(bounds.visual.width >= bbox.width + 12.0);
     }
 }

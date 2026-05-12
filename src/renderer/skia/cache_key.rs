@@ -254,6 +254,14 @@ impl StaticSubtreeCacheKey {
             PaintOp::GlyphOutline { bbox, outline } => {
                 self.mix_u8(15);
                 self.mix_bbox(bbox);
+                self.mix_u8(match outline.payload_kind {
+                    crate::paint::GlyphOutlinePayloadKind::MonochromeFill => 0,
+                    crate::paint::GlyphOutlinePayloadKind::MonochromeFillStroke => 1,
+                    crate::paint::GlyphOutlinePayloadKind::ColorLayers => 2,
+                    crate::paint::GlyphOutlinePayloadKind::BitmapGlyph => 3,
+                    crate::paint::GlyphOutlinePayloadKind::SvgGlyph => 4,
+                });
+                self.mix_glyph_outline_stroke(outline.stroke.as_ref());
                 self.mix_paint_text_style(&outline.paint_style);
                 self.mix_text_run_placement(outline.placement);
                 self.mix_usize(outline.paths.len());
@@ -621,6 +629,39 @@ impl StaticSubtreeCacheKey {
         self.mix_u32(style.underline_color);
         self.mix_u32(style.strike_color);
         self.mix_u32(style.shade_color);
+    }
+
+    fn mix_glyph_outline_stroke(&mut self, stroke: Option<&crate::paint::GlyphOutlineStrokeStyle>) {
+        let Some(stroke) = stroke else {
+            self.mix_bool(false);
+            return;
+        };
+        self.mix_bool(true);
+        self.mix_u32(stroke.color);
+        self.mix_f64(stroke.width_px);
+        self.mix_u8(match stroke.join {
+            crate::paint::GlyphOutlineStrokeJoin::Miter => 0,
+            crate::paint::GlyphOutlineStrokeJoin::Round => 1,
+            crate::paint::GlyphOutlineStrokeJoin::Bevel => 2,
+        });
+        self.mix_u8(match stroke.cap {
+            crate::paint::GlyphOutlineStrokeCap::Butt => 0,
+            crate::paint::GlyphOutlineStrokeCap::Round => 1,
+            crate::paint::GlyphOutlineStrokeCap::Square => 2,
+        });
+        match stroke.miter_limit {
+            Some(limit) => {
+                self.mix_bool(true);
+                self.mix_f64(limit);
+            }
+            None => self.mix_bool(false),
+        }
+        self.mix_u8(match stroke.paint_order {
+            crate::paint::GlyphOutlinePaintOrder::FillOnly => 0,
+            crate::paint::GlyphOutlinePaintOrder::StrokeOnly => 1,
+            crate::paint::GlyphOutlinePaintOrder::FillThenStroke => 2,
+            crate::paint::GlyphOutlinePaintOrder::StrokeThenFill => 3,
+        });
     }
 
     fn mix_tab_leader(&mut self, tab_leader: &TabLeaderInfo) {

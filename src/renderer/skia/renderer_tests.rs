@@ -7,14 +7,16 @@ use crate::model::style::UnderlineType;
 use crate::paint::{
     BinaryResourceKind, BinaryResourceRef, CacheHint, ClipKind, FontBlobKey, FontBlobResource,
     FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey,
-    FontPortability, FontResourceSource, GlyphCluster, GlyphRange, GlyphRunDiagnostics,
-    GlyphRunOrientation, GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform,
-    LayerBuilder, LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode, LayerNodeKind,
-    LayerOutputOptions, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerSemantic,
-    LayerTextOrientation, LayerTextRunPaint, PageLayerTree, PaintOp, PaintTextStyle,
-    PaintVariantMeta, RenderProfile, ResourceArena, ShapeKey, ShapingEngineId, SvgResourceId,
-    TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
-    TextVariantKind, TextVariantQuality, WritingMode,
+    FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
+    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
+    GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerBuilder,
+    LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
+    LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
+    LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
+    PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResourceArena, ShapeKey,
+    ShapingEngineId, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
+    TextSourceSpan, TextVariantKind, TextVariantQuality, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -1463,6 +1465,99 @@ fn static_subtree_cache_key_uses_paint_text_style_projection() {
     let mut paint_key = StaticSubtreeCacheKey::new();
     paint_key.mix_layer_node(&make_node(base_style), &resources);
     assert_ne!(base_key, paint_key.finish());
+}
+
+#[test]
+fn static_subtree_cache_key_includes_glyph_outline_stroke_payload() {
+    let bbox = BoundingBox::new(2.0, 2.0, 24.0, 24.0);
+    let make_node = |stroke: Option<GlyphOutlineStrokeStyle>| {
+        LayerNode::leaf_with_hint(
+            bbox,
+            Some(301),
+            vec![PaintOp::GlyphOutline {
+                bbox,
+                outline: LayerGlyphOutlinePaint {
+                    source: TextSourceSpan {
+                        id: TextSourceId(0),
+                        utf8_range: TextSourceRange::new(0, 1),
+                        utf16_range: TextSourceRange::new(0, 1),
+                        stable_source_key: None,
+                    },
+                    variant: PaintVariantMeta {
+                        equivalence_group: "text-0".to_string(),
+                        variant_id: "glyphOutline".to_string(),
+                        variant_kind: TextVariantKind::GlyphOutline,
+                        part_index: 0,
+                        part_count: 1,
+                        is_default_fallback: false,
+                        requires: vec!["text.glyphOutline.monochromeFillStroke".to_string()],
+                        quality: Some(TextVariantQuality::Exact),
+                        anchor_op_id: Some("op-text-0".to_string()),
+                        local_paint_order: Some(0),
+                    },
+                    payload_kind: if stroke.is_some() {
+                        GlyphOutlinePayloadKind::MonochromeFillStroke
+                    } else {
+                        GlyphOutlinePayloadKind::MonochromeFill
+                    },
+                    stroke,
+                    paint_style: PaintTextStyle::from(&TextStyle::default()),
+                    placement: TextRunPlacement {
+                        run_to_page: LayerAffineTransform {
+                            a: 1.0,
+                            b: 0.0,
+                            c: 0.0,
+                            d: 1.0,
+                            e: 0.0,
+                            f: 0.0,
+                        },
+                        baseline_y: 0.0,
+                    },
+                    paths: vec![LayerGlyphOutlinePath {
+                        glyph_id: 1,
+                        source_range_utf8: TextSourceRange::new(0, 1),
+                        glyph_range: GlyphRange { start: 0, end: 1 },
+                        commands: vec![
+                            PathCommand::MoveTo(0.0, 0.0),
+                            PathCommand::LineTo(8.0, 0.0),
+                            PathCommand::ClosePath,
+                        ],
+                        fill_rule: GlyphOutlineFillRule::NonZero,
+                    }],
+                    diagnostics: GlyphRunDiagnostics {
+                        quality: TextVariantQuality::Exact,
+                        replay_eligibility: GlyphRunReplayEligibility::Portable,
+                        strict_visual_eligible: true,
+                        max_origin_delta_px: 0.0,
+                        max_advance_delta_px: 0.0,
+                        max_residual_after_adjustment_px: 0.0,
+                        cluster_mismatch_count: 0,
+                        missing_glyph_count: 0,
+                        used_fallback_font_count: 0,
+                        reason: None,
+                    },
+                },
+            }],
+            CacheHint::StaticSubtree,
+        )
+    };
+    let resources = ResourceArena::default();
+    let mut fill_key = StaticSubtreeCacheKey::new();
+    fill_key.mix_layer_node(&make_node(None), &resources);
+    let mut stroke_key = StaticSubtreeCacheKey::new();
+    stroke_key.mix_layer_node(
+        &make_node(Some(GlyphOutlineStrokeStyle {
+            color: 0x000000,
+            width_px: 2.0,
+            join: GlyphOutlineStrokeJoin::Miter,
+            cap: GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+        })),
+        &resources,
+    );
+
+    assert_ne!(fill_key.finish(), stroke_key.finish());
 }
 
 #[test]
