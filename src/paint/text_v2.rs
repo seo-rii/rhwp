@@ -315,6 +315,47 @@ pub fn validate_text_v2_ops(
     issues
 }
 
+pub fn downgrade_text_v2_op_to_v1_compat(
+    op: &LayerTextPaintOpV2,
+) -> Result<Vec<PaintOp>, Vec<TextV2ValidationIssue>> {
+    let issues = validate_text_v2_op(op, &TextV2ValidationOptions::default());
+    if !issues.is_empty() {
+        return Err(issues);
+    }
+
+    let mut ops = Vec::new();
+    for variant in &op.variants {
+        let mut parts: Vec<_> = variant.parts.iter().collect();
+        parts.sort_by_key(|part| {
+            (
+                part.local_paint_order.unwrap_or(part.part_index),
+                part.part_index,
+            )
+        });
+        for part in parts {
+            ops.push(text_v2_part_payload_to_v1_op(part));
+        }
+    }
+    Ok(ops)
+}
+
+fn text_v2_part_payload_to_v1_op(part: &LayerTextVariantPart) -> PaintOp {
+    match &part.payload {
+        LayerTextVariantPayload::TextRun(run) => PaintOp::TextRun {
+            bbox: part.bbox,
+            run: run.clone(),
+        },
+        LayerTextVariantPayload::GlyphRun(run) => PaintOp::GlyphRun {
+            bbox: part.bbox,
+            run: run.clone(),
+        },
+        LayerTextVariantPayload::GlyphOutline(outline) => PaintOp::GlyphOutline {
+            bbox: part.bbox,
+            outline: outline.clone(),
+        },
+    }
+}
+
 fn validate_variant_parts(
     op: &LayerTextPaintOpV2,
     variant: &LayerTextVariantSet,
@@ -702,6 +743,63 @@ mod tests {
         let issues = validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default());
 
         assert!(issues.is_empty(), "{issues:?}");
+    }
+
+    #[test]
+    fn downgrades_text_v2_slot_to_v1_compat_ops() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-3-downgrade"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-3-downgrade".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.monochromeFill".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-3-downgrade".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+
+        let downgraded = downgrade_text_v2_op_to_v1_compat(&text_ops[0])
+            .expect("compat text slot should downgrade");
+
+        assert_eq!(downgraded.len(), 2);
+        assert!(matches!(downgraded[0], PaintOp::TextRun { .. }));
+        assert!(matches!(downgraded[1], PaintOp::GlyphOutline { .. }));
+    }
+
+    #[test]
+    fn rejects_text_v2_downgrade_without_required_fallback() {
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-3-no-fallback".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: Vec::new(),
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-3-no-fallback".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[outline]);
+
+        let issue_codes: Vec<_> = downgrade_text_v2_op_to_v1_compat(&text_ops[0])
+            .expect_err("missing TextRun fallback must reject downgrade")
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::DefaultVariantMissing));
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::FallbackRequiredTextRunMissing));
     }
 
     #[test]

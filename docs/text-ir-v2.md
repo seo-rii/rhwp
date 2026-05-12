@@ -695,6 +695,9 @@ direct WASM object exports, so Studio-side consumers can validate v2 text slots
 without going through stringified JSON.
 `text_v2_validation_issues_to_js_value()` exposes the same validator issue
 vocabulary to JS callers when an opt-in v2 export is rejected.
+`downgrade_text_v2_op_to_v1_compat()` is the first downgrade scaffold: it
+flattens a validated v2 text slot back into v1 text variant ops only when the
+slot still has the required `TextRun` fallback and current v1 payload kinds.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any
