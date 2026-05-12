@@ -663,7 +663,8 @@ The v1 closeout gate is:
 - optional `GlyphRun` and `glyphOutline` variants never remove the root
   `TextRun` fallback in schema v1;
 - `glyphOutline` remains an explicit text variant, not a generic `Path`, and
-  current writers do not emit `variantOps` or `paintOrderSlotId`;
+  schema-v1 writers only emit `variantOps` for explicit sidecar payloads and
+  still do not emit `paintOrderSlotId`;
 - `glyphOutline` requires `anchorOpId`, a same-leaf text fallback, path-level
   source/glyph provenance, and monochrome fill-only style eligibility;
 - backend `VariantSelectionReport` remains the source of truth for why a
