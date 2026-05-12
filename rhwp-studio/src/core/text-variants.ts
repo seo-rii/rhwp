@@ -144,6 +144,9 @@ export type LayerTextV2ValidationIssueCode =
   | 'variantDuplicatePart'
   | 'variantPayloadKindMismatch'
   | 'crossScopeVariantFeatureMissing'
+  | 'missingSidecarAnchorOpId'
+  | 'missingSidecarAnchor'
+  | 'invalidSidecarAnchor'
   | 'glyphOutlinePayloadKindFeatureMissing'
   | 'glyphOutlineStrokeStyleUnsupported'
   | 'mixedPerGlyphFeatureMissing';
@@ -153,6 +156,7 @@ export interface LayerTextV2ValidationIssue {
   message: string;
   opId?: string;
   paintOrderSlotId?: string;
+  anchorOpId?: string;
   variantId?: string;
   partIndex?: number;
 }
@@ -278,6 +282,8 @@ export function expandLayerTextOpVariants(op: LayerPaintOp): LayerPaintOp[] {
 export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2ValidationIssue[] {
   const issues: LayerTextV2ValidationIssue[] = [];
   const seenPaintSlots = new Map<string, string | undefined>();
+  const rootAnchors = new Map<string, LayerTextVariantMeta>();
+  const rootVariantParts = new Set<string>();
   const requiredFeatures = new Set(tree.requiredFeatures ?? []);
   const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants');
   const allowFallbackFree = requiredFeatures.has('text.strictVisualFallbackFree')
@@ -306,6 +312,23 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
       stack.push(node.child);
       continue;
     }
+    const expandedRootOps = node.ops
+      .filter(isKnownLayerPaintOp)
+      .flatMap(expandLayerTextOpVariants);
+    for (const expandedOp of expandedRootOps) {
+      const variant = textVariantMetaForOp(expandedOp);
+      if (!variant) {
+        continue;
+      }
+      const partKey = variantPartKey(variant);
+      if (partKey) {
+        rootVariantParts.add(partKey);
+      }
+      const opId = layerPaintOpId(expandedOp);
+      if (opId) {
+        rootAnchors.set(opId, variant);
+      }
+    }
     for (const op of node.ops) {
       if (!isKnownLayerPaintOp(op) || op.type !== 'text') {
         continue;
@@ -333,6 +356,67 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
       }
       seenPaintSlots.set(op.paintOrderSlotId, op.id);
     }
+  }
+
+  const sidecarVariantParts = new Set<string>();
+  for (const sidecar of tree.variantOps ?? []) {
+    if (!isKnownLayerPaintOp(sidecar)) {
+      continue;
+    }
+    const variant = textVariantMetaForOp(sidecar);
+    if (!variant) {
+      continue;
+    }
+    const anchorOpId = sidecarAnchorOpId(sidecar);
+    if (!anchorOpId) {
+      issues.push({
+        code: 'missingSidecarAnchorOpId',
+        message: `Sidecar text variant '${variant.variantId}' must reference an anchorOpId.`,
+        opId: layerPaintOpId(sidecar),
+        variantId: variant.variantId,
+        partIndex: variant.partIndex,
+      });
+      continue;
+    }
+    const anchorVariant = rootAnchors.get(anchorOpId);
+    if (!anchorVariant) {
+      issues.push({
+        code: 'missingSidecarAnchor',
+        message: `Sidecar text variant '${variant.variantId}' references missing anchor '${anchorOpId}'.`,
+        opId: layerPaintOpId(sidecar),
+        anchorOpId,
+        variantId: variant.variantId,
+        partIndex: variant.partIndex,
+      });
+    } else if (
+      anchorVariant.variantKind !== 'textRun'
+      || !anchorVariant.isDefaultFallback
+      || anchorVariant.equivalenceGroup !== variant.equivalenceGroup
+    ) {
+      issues.push({
+        code: 'invalidSidecarAnchor',
+        message: `Sidecar text variant '${variant.variantId}' must anchor to a root TextRun fallback in the same equivalence group.`,
+        opId: layerPaintOpId(sidecar),
+        anchorOpId,
+        variantId: variant.variantId,
+        partIndex: variant.partIndex,
+      });
+    }
+    const sidecarPartKey = variantPartKey(variant);
+    if (!sidecarPartKey) {
+      continue;
+    }
+    if (rootVariantParts.has(sidecarPartKey) || sidecarVariantParts.has(sidecarPartKey)) {
+      issues.push({
+        code: 'variantDuplicatePart',
+        message: `Sidecar text variant '${variant.variantId}' duplicates an already emitted variant part.`,
+        opId: layerPaintOpId(sidecar),
+        anchorOpId,
+        variantId: variant.variantId,
+        partIndex: variant.partIndex,
+      });
+    }
+    sidecarVariantParts.add(sidecarPartKey);
   }
 
   return issues;

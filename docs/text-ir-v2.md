@@ -485,9 +485,12 @@ and ignore duplicate sidecar parts when the same variant part already exists in
 the root stream. The schema-v1 scope validator is stricter than the tolerant
 reader path: sidecar anchors must resolve to a root `TextRun` fallback in the
 same equivalence group, and root+sidecar duplicate emission is invalid for
-writer-produced exports. The default Rust writer still emits the current root
-`glyphOutline` representation until a richer outline payload needs the sidecar
-writer. Future writers that emit sidecar payloads should declare
+writer-produced exports. Studio's tree diagnostics report the same
+`missingSidecarAnchorOpId`, `missingSidecarAnchor`, `invalidSidecarAnchor`, and
+`variantDuplicatePart` conditions so backend renderers can stay tolerant while
+export validation remains strict. The default Rust writer still emits the
+current root `glyphOutline` representation until a richer outline payload needs
+the sidecar writer. Future writers that emit sidecar payloads should declare
 `text.variantOps` as an additive feature. Schema-v2 compatibility export
 absorbs sidecar variants into the canonical `Text` op rather than re-emitting a
 top-level `variantOps` array.
