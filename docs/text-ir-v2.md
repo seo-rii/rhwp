@@ -686,6 +686,10 @@ parts under one paint slot, and keeps writer enablement separate from the v1
 replay path.
 `PageLayerTree::text_v2_slots()` and `validate_text_v2_slots()` expose that
 scaffold as the future writer/diagnostics entrypoint.
+`PageLayerTree::to_json_v2_compat()` is the first opt-in writer path: it keeps
+the HWP-compatible layout and `TextRun` fallback policy, emits schemaVersion 2,
+requires `text.variants` and `text.paintOrderSlot`, and wraps flattened v1 text
+variant groups into canonical `type: "text"` envelopes.
 The Rust validator mirrors the first Studio diagnostics pass for those
 scaffolded slots: it checks paint-order slot presence, default/fallback policy,
 duplicate variant ids, complete part sets, and fallback-free gating before any

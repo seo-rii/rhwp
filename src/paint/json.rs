@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use base64::Engine;
@@ -8,10 +9,11 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     CacheHint, ClipKind, GlyphCluster, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform,
-    LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerTextRunPaint, LayerVector,
-    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, ResourceArena, ShapeKey,
-    TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange,
-    TextSourceSpan, TextSourceTable, LAYER_TREE_SCHEMA,
+    LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextRunPaint,
+    LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
+    PaintOp, PaintTextStyle, PaintVariantMeta, ResourceArena, ShapeKey, TextClusterPlacement,
+    TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan,
+    TextSourceTable, TextV2ValidationIssue, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -60,6 +62,48 @@ impl PageLayerTree {
         write_text_export_metadata(&mut buf, &self.root);
         buf.push('}');
         buf
+    }
+
+    pub fn to_json_v2_compat(&self) -> Result<String, Vec<TextV2ValidationIssue>> {
+        let slots = self.text_v2_slots();
+        let issues =
+            crate::paint::validate_text_v2_ops(&slots, &TextV2ValidationOptions::default());
+        if !issues.is_empty() {
+            return Err(issues);
+        }
+
+        let mut buf = String::with_capacity(32_768);
+        buf.push('{');
+        let _ = write!(
+            buf,
+            "\"schemaVersion\":2,\"schemaMinorVersion\":0,\"schema\":{{\"major\":2,\"minor\":0}},\"resourceTableVersion\":{},\"resourceTableMinorVersion\":{},\"resourceTable\":{{\"major\":{},\"minor\":{}}},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"layout\":{{\"profile\":\"hwpCompat\",\"measurementAuthority\":\"legacyHwpPositions\",\"shapedMeasurement\":\"diagnosticsOnly\"}},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"buildOptions\":{{\"showTransparentBorders\":{}}},\"debugOptions\":{{\"debugOverlay\":{}}},\"debugCapabilities\":{{\"overlayPaint\":false,\"semanticBounds\":true,\"genericLayerExport\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"backends\":{{\"svgLayer\":{{\"overlayPaint\":true,\"semanticBounds\":true}},\"canvas2d\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"canvaskit\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"nativeSkia\":{{\"overlayPaint\":false,\"semanticBounds\":true}}}}}},\"root\":",
+            LAYER_TREE_SCHEMA.resource_table_version,
+            LAYER_TREE_SCHEMA.resource_table_minor_version,
+            LAYER_TREE_SCHEMA.resource_table_version,
+            LAYER_TREE_SCHEMA.resource_table_minor_version,
+            json_escape(LAYER_TREE_SCHEMA.unit),
+            json_escape(LAYER_TREE_SCHEMA.coordinate_system),
+            self.page_width,
+            self.page_height,
+            json_escape(self.profile.as_str()),
+            self.output_options.show_paragraph_marks,
+            self.output_options.show_control_codes,
+            self.output_options.show_transparent_borders,
+            self.output_options.clip_enabled,
+            self.output_options.debug_overlay,
+            self.output_options.show_transparent_borders,
+            self.output_options.debug_overlay,
+        );
+        let mut text_source_state = TextSourceExportState::default();
+        self.root
+            .write_json_v2_compat(&mut buf, &self.resources, &mut text_source_state);
+        buf.push_str(",\"textSources\":");
+        write_text_source_entries(&mut buf, &self.text_sources);
+        buf.push_str(",\"fontResources\":");
+        write_font_resources(&mut buf, self.resources.font_resources());
+        write_text_v2_compat_export_metadata(&mut buf, &self.root);
+        buf.push('}');
+        Ok(buf)
     }
 }
 
@@ -115,6 +159,60 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode) {
         let _ = write!(buf, "{}", json_escape(visual));
     }
     buf.push_str("]},\"textV2\":{\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"reserved\"}");
+}
+
+fn write_text_v2_compat_export_metadata(buf: &mut String, root: &LayerNode) {
+    let externalized_visuals = externalized_text_visuals(root);
+    let has_variant_groups = has_text_variant_groups(root);
+    let has_glyph_runs = has_glyph_runs(root);
+    let has_glyph_outlines = has_glyph_outlines(root);
+    buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
+    if has_glyph_runs {
+        buf.push_str(",\"fontResources\",\"text.glyphRun\"");
+    }
+    if has_glyph_outlines {
+        buf.push_str(",\"text.outlineGlyph\"");
+    }
+    if has_variant_groups {
+        buf.push_str(",\"text.variantGroups\"");
+    }
+    if externalized_visuals.contains(&"charOverlap") {
+        buf.push_str(",\"text.charOverlapOp\"");
+    }
+    if externalized_visuals.contains(&"controlMarks") {
+        buf.push_str(",\"text.controlMarkOp\"");
+    }
+    if externalized_visuals.contains(&"tabLeaders") {
+        buf.push_str(",\"text.tabLeaderOp\"");
+    }
+    if externalized_visuals.contains(&"decorations") {
+        buf.push_str(",\"text.decorationOp\"");
+    }
+    buf.push_str("],\"optionalFeatures\":[");
+    if has_glyph_runs {
+        buf.push_str("\"fontResources\",\"text.glyphRun\"");
+        if has_glyph_outlines {
+            buf.push(',');
+        }
+    }
+    if has_glyph_outlines {
+        buf.push_str("\"text.outlineGlyph\"");
+    }
+    buf.push_str("],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\"],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"");
+    if has_glyph_runs {
+        buf.push_str(",\"glyphRun\"");
+    }
+    if has_glyph_outlines {
+        buf.push_str(",\"glyphOutline\"");
+    }
+    buf.push_str("],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[");
+    for (idx, visual) in externalized_visuals.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{}", json_escape(visual));
+    }
+    buf.push_str("]},\"textV2\":{\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"required\"}");
 }
 
 fn has_text_variant_groups(root: &LayerNode) -> bool {
@@ -332,6 +430,247 @@ impl LayerNode {
             }
         }
         buf.push('}');
+    }
+
+    fn write_json_v2_compat(
+        &self,
+        buf: &mut String,
+        resources: &ResourceArena,
+        text_sources: &mut TextSourceExportState,
+    ) {
+        buf.push('{');
+        buf.push_str("\"bounds\":");
+        write_bbox(buf, self.bounds);
+        if let Some(source_node_id) = self.source_node_id {
+            let _ = write!(buf, ",\"sourceNodeId\":{}", source_node_id);
+        }
+        if self.semantic != LayerSemantic::default() {
+            buf.push_str(",\"semantic\":{");
+            let _ = write!(buf, "\"role\":{}", json_escape(self.semantic.role.as_str()));
+            if let Some(section_index) = self.semantic.section_index {
+                let _ = write!(buf, ",\"sectionIndex\":{}", section_index);
+            }
+            if let Some(column_index) = self.semantic.column_index {
+                let _ = write!(buf, ",\"columnIndex\":{}", column_index);
+            }
+            if let Some(para_index) = self.semantic.para_index {
+                let _ = write!(buf, ",\"paraIndex\":{}", para_index);
+            }
+            if let Some(control_index) = self.semantic.control_index {
+                let _ = write!(buf, ",\"controlIndex\":{}", control_index);
+            }
+            if let Some(row_count) = self.semantic.row_count {
+                let _ = write!(buf, ",\"rowCount\":{}", row_count);
+            }
+            if let Some(col_count) = self.semantic.col_count {
+                let _ = write!(buf, ",\"colCount\":{}", col_count);
+            }
+            buf.push('}');
+        }
+
+        match &self.kind {
+            LayerNodeKind::Group {
+                children,
+                cache_hint,
+            } => {
+                let _ = write!(
+                    buf,
+                    ",\"kind\":\"group\",\"cacheHint\":{},\"children\":[",
+                    json_escape(cache_hint_str(*cache_hint))
+                );
+                for (idx, child) in children.iter().enumerate() {
+                    if idx > 0 {
+                        buf.push(',');
+                    }
+                    child.write_json_v2_compat(buf, resources, text_sources);
+                }
+                buf.push(']');
+            }
+            LayerNodeKind::ClipRect {
+                clip,
+                child,
+                clip_kind,
+                clip_policy,
+            } => {
+                buf.push_str(",\"kind\":\"clipRect\",\"clip\":");
+                write_bbox(buf, *clip);
+                let _ = write!(
+                    buf,
+                    ",\"clipKind\":{},\"clipPolicy\":{{\"rightOverflowSlop\":{},\"allowHorizontalOverflowControls\":{}}}",
+                    json_escape(clip_kind_str(*clip_kind)),
+                    clip_policy.right_overflow_slop,
+                    clip_policy.allow_horizontal_overflow_controls
+                );
+                buf.push_str(",\"child\":");
+                child.write_json_v2_compat(buf, resources, text_sources);
+            }
+            LayerNodeKind::Leaf { ops, cache_hint } => {
+                let _ = write!(
+                    buf,
+                    ",\"kind\":\"leaf\",\"cacheHint\":{},\"ops\":[",
+                    json_escape(cache_hint_str(*cache_hint))
+                );
+                write_leaf_ops_v2_compat(buf, ops, resources, text_sources);
+                buf.push(']');
+            }
+        }
+        buf.push('}');
+    }
+}
+
+fn write_leaf_ops_v2_compat(
+    buf: &mut String,
+    ops: &[PaintOp],
+    resources: &ResourceArena,
+    text_sources: &mut TextSourceExportState,
+) {
+    let text_slots = crate::paint::lower_v1_leaf_text_variants_to_v2(ops);
+    let text_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = text_slots
+        .iter()
+        .map(|slot| (slot.id.as_str(), slot))
+        .collect();
+    let mut written_groups = HashSet::<String>::new();
+    let mut wrote_op = false;
+
+    for op in ops {
+        if let Some(group_id) = text_v2_variant_group_id(op) {
+            if let Some(text_slot) = text_slots_by_group.get(group_id) {
+                if written_groups.insert(group_id.to_string()) {
+                    if wrote_op {
+                        buf.push(',');
+                    }
+                    write_text_op_v2_compat(buf, text_slot, resources, text_sources);
+                    wrote_op = true;
+                }
+                continue;
+            }
+        }
+
+        if wrote_op {
+            buf.push(',');
+        }
+        op.write_json(buf, resources, text_sources);
+        wrote_op = true;
+    }
+}
+
+fn text_v2_variant_group_id(op: &PaintOp) -> Option<&str> {
+    match op {
+        PaintOp::TextRun { run, .. } => run
+            .variant
+            .as_ref()
+            .map(|variant| variant.equivalence_group.as_str()),
+        PaintOp::GlyphRun { run, .. } => Some(run.variant.equivalence_group.as_str()),
+        PaintOp::GlyphOutline { outline, .. } => Some(outline.variant.equivalence_group.as_str()),
+        _ => None,
+    }
+}
+
+fn write_text_op_v2_compat(
+    buf: &mut String,
+    text_op: &LayerTextPaintOpV2,
+    resources: &ResourceArena,
+    text_sources: &mut TextSourceExportState,
+) {
+    buf.push('{');
+    let _ = write!(
+        buf,
+        "\"id\":{},\"type\":\"text\",\"bbox\":",
+        json_escape(&text_op.id)
+    );
+    write_bbox(buf, text_op.bbox);
+    let _ = write!(
+        buf,
+        ",\"paintOrderSlotId\":{},\"selectionPolicy\":\"exclusiveVariantSet\",\"defaultVariantId\":{},\"fallbackPolicy\":{},\"variants\":[",
+        json_escape(&text_op.paint_order_slot_id),
+        json_escape(text_op.default_variant_id.as_deref().unwrap_or("textRun")),
+        json_escape(text_op.fallback_policy.as_str()),
+    );
+    for (idx, variant) in text_op.variants.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        write_text_variant_set_v2_compat(buf, variant, resources, text_sources);
+    }
+    buf.push_str("]}");
+}
+
+fn write_text_variant_set_v2_compat(
+    buf: &mut String,
+    variant: &LayerTextVariantSet,
+    resources: &ResourceArena,
+    text_sources: &mut TextSourceExportState,
+) {
+    let _ = write!(
+        buf,
+        "{{\"variantId\":{},\"kind\":{}",
+        json_escape(&variant.variant_id),
+        json_escape(variant.kind.as_str()),
+    );
+    if !variant.required_features.is_empty() {
+        buf.push_str(",\"requiredFeatures\":[");
+        for (idx, feature) in variant.required_features.iter().enumerate() {
+            if idx > 0 {
+                buf.push(',');
+            }
+            let _ = write!(buf, "{}", json_escape(feature));
+        }
+        buf.push(']');
+    }
+    if let Some(quality) = variant.quality {
+        let _ = write!(buf, ",\"quality\":{}", json_escape(quality.as_str()));
+    }
+    buf.push_str(",\"parts\":[");
+    for (idx, part) in variant.parts.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        write_text_variant_part_v2_compat(buf, part, resources, text_sources);
+    }
+    buf.push_str("]}");
+}
+
+fn write_text_variant_part_v2_compat(
+    buf: &mut String,
+    part: &LayerTextVariantPart,
+    resources: &ResourceArena,
+    text_sources: &mut TextSourceExportState,
+) {
+    let _ = write!(
+        buf,
+        "{{\"partIndex\":{},\"partCount\":{}",
+        part.part_index, part.part_count
+    );
+    if let Some(local_paint_order) = part.local_paint_order {
+        let _ = write!(buf, ",\"localPaintOrder\":{}", local_paint_order);
+    }
+    buf.push_str(",\"payload\":");
+    write_text_variant_payload_v2_compat(buf, part, resources, text_sources);
+    buf.push('}');
+}
+
+fn write_text_variant_payload_v2_compat(
+    buf: &mut String,
+    part: &LayerTextVariantPart,
+    resources: &ResourceArena,
+    text_sources: &mut TextSourceExportState,
+) {
+    match &part.payload {
+        LayerTextVariantPayload::TextRun(run) => PaintOp::TextRun {
+            bbox: part.bbox,
+            run: run.clone(),
+        }
+        .write_json(buf, resources, text_sources),
+        LayerTextVariantPayload::GlyphRun(run) => PaintOp::GlyphRun {
+            bbox: part.bbox,
+            run: run.clone(),
+        }
+        .write_json(buf, resources, text_sources),
+        LayerTextVariantPayload::GlyphOutline(outline) => PaintOp::GlyphOutline {
+            bbox: part.bbox,
+            outline: outline.clone(),
+        }
+        .write_json(buf, resources, text_sources),
     }
 }
 
@@ -2615,6 +2954,49 @@ mod tests {
     }
 
     #[test]
+    fn serializes_v2_compat_text_envelope_with_text_run_fallback() {
+        let source = TextSourceSpan {
+            id: TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![text_run]),
+        );
+
+        let json = tree.to_json_v2_compat().expect("valid v2 compat export");
+
+        assert!(json.contains("\"schemaVersion\":2"));
+        assert!(json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\"]"));
+        assert!(json.contains("\"textV2\":{\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"required\"}"));
+        assert!(json.contains("\"ops\":[{\"id\":\"text-0\",\"type\":\"text\""));
+        assert!(json.contains("\"paintOrderSlotId\":\"text-0\""));
+        assert!(json.contains("\"selectionPolicy\":\"exclusiveVariantSet\""));
+        assert!(json.contains("\"defaultVariantId\":\"textRun\""));
+        assert!(json.contains("\"fallbackPolicy\":\"required\""));
+        assert!(json.contains("\"variants\":[{\"variantId\":\"textRun\",\"kind\":\"textRun\",\"parts\":[{\"partIndex\":0,\"partCount\":1,\"payload\":{\"type\":\"textRun\""));
+        assert!(!json.contains("\"ops\":[{\"type\":\"textRun\""));
+    }
+
+    #[test]
     fn serializes_optional_glyph_outline_variant_without_generic_path_fallback() {
         let source = TextSourceSpan {
             id: TextSourceId(0),
@@ -2722,6 +3104,14 @@ mod tests {
         assert!(!json.contains("\"type\":\"path\",\"commands\""));
         assert!(!json.contains("\"variantOps\""));
         assert!(!json.contains("\"paintOrderSlotId\""));
+
+        let v2_json = tree.to_json_v2_compat().expect("valid v2 compat export");
+        assert!(v2_json.contains("\"schemaVersion\":2"));
+        assert!(v2_json.contains("\"ops\":[{\"id\":\"text-0\",\"type\":\"text\""));
+        assert!(v2_json.contains("\"paintOrderSlotId\":\"text-0\""));
+        assert!(v2_json.contains("\"variantId\":\"glyphOutline\",\"kind\":\"glyphOutline\",\"requiredFeatures\":[\"text.outlineGlyph\"],\"quality\":\"exact\""));
+        assert!(v2_json.contains("\"payload\":{\"type\":\"glyphOutline\""));
+        assert!(!v2_json.contains("\"ops\":[{\"type\":\"textRun\""));
     }
 
     #[test]
