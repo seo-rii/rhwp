@@ -395,6 +395,26 @@ pub fn page_layer_tree_to_js_value_v2_compat_with_resource_hints(
     Ok(value.into())
 }
 
+pub fn text_v2_validation_issues_to_js_value(issues: &[TextV2ValidationIssue]) -> JsValue {
+    array_to_value(issues.iter().map(text_v2_validation_issue_to_value))
+}
+
+fn text_v2_validation_issue_to_value(issue: &TextV2ValidationIssue) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "code", issue.code.as_str());
+    set_string(&value, "opId", &issue.op_id);
+    if let Some(paint_order_slot_id) = &issue.paint_order_slot_id {
+        set_string(&value, "paintOrderSlotId", paint_order_slot_id);
+    }
+    if let Some(variant_id) = &issue.variant_id {
+        set_string(&value, "variantId", variant_id);
+    }
+    if let Some(part_index) = issue.part_index {
+        set_number(&value, "partIndex", part_index as f64);
+    }
+    value.into()
+}
+
 fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
     if value.is_null() || value.is_undefined() {
         return HashSet::new();
@@ -2816,6 +2836,27 @@ mod tests {
             "type",
         );
         assert_eq!(string_prop(&prop(&js_part, "payload"), "type"), "textRun");
+    }
+
+    #[wasm_bindgen_test]
+    fn exports_text_v2_validation_issues_to_js_value() {
+        let issues = vec![TextV2ValidationIssue {
+            code: crate::paint::TextV2ValidationIssueCode::DefaultVariantMissing,
+            op_id: "text-0".to_string(),
+            paint_order_slot_id: Some("slot-0".to_string()),
+            variant_id: Some("glyphRun".to_string()),
+            part_index: Some(2),
+        }];
+
+        let value = text_v2_validation_issues_to_js_value(&issues);
+        let array = Array::from(&value);
+        assert_eq!(array.length(), 1);
+        let issue = array.get(0);
+        assert_eq!(string_prop(&issue, "code"), "defaultVariantMissing");
+        assert_eq!(string_prop(&issue, "opId"), "text-0");
+        assert_eq!(string_prop(&issue, "paintOrderSlotId"), "slot-0");
+        assert_eq!(string_prop(&issue, "variantId"), "glyphRun");
+        assert_eq!(number_prop(&issue, "partIndex"), 2.0);
     }
 
     #[wasm_bindgen_test]
