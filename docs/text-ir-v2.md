@@ -578,9 +578,10 @@ The current validator keeps this conservative:
 - `glyphOutline` must never be exported as an already-known generic `Path`
   while a `TextRun` fallback exists.
 
-`paintOrderSlotId` is reserved for a later schema step if variants need to cross
-leaf, clip, transform, or cache boundaries. Until then, `anchorOpId` plus the
-same-leaf invariant is the compatibility contract.
+Flattened schema v1 variant ops do not carry `paintOrderSlotId`. The v2
+envelope introduces a text-owned paint-order slot, but v1 compatibility exports
+continue to rely on `anchorOpId` plus the same-leaf invariant; cross-leaf, clip,
+transform, or cache-boundary variants remain feature-gated v2 work.
 
 Current SVG/Canvas2D fixtures assert the conservative profile directly:
 default profile selects `TextRun`, strict profile selects `glyphOutline`,
