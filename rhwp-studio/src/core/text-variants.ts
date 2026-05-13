@@ -147,6 +147,7 @@ export type LayerTextV2ValidationIssueCode =
   | 'missingSidecarAnchorOpId'
   | 'missingSidecarAnchor'
   | 'invalidSidecarAnchor'
+  | 'strictVisualVariantMissing'
   | 'glyphOutlinePayloadKindFeatureMissing'
   | 'glyphOutlineStrokeStyleUnsupported'
   | 'mixedPerGlyphFeatureMissing';

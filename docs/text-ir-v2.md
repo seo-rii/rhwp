@@ -730,9 +730,11 @@ without going through stringified JSON.
 The public wasm/native API exposes this opt-in path as
 `getPageLayerTreeV2Compat*` and `getPageLayerTreeValueV2Compat*`; existing v1
 `getPageLayerTree*` calls remain unchanged.
-The strictVisual GlyphOutline string path is exposed separately as
-`getPageLayerTreeV2StrictGlyphOutline*`; it is intentionally not a JS object
-writer yet, so callers must opt in explicitly and handle validation failures.
+The strictVisual GlyphOutline path is exposed separately as
+`getPageLayerTreeV2StrictGlyphOutline*` for string JSON and
+`getPageLayerTreeValueV2StrictGlyphOutline*` for JS object transport. Both paths
+are opt-in, follow the same fail-closed selector gate, and the JS object mirror
+preserves the resource-key transport optimization used by compatibility exports.
 `text_v2_validation_issues_to_js_value()` exposes the same validator issue
 vocabulary to JS callers when an opt-in v2 export is rejected.
 `text_v2_validation_issues_to_json()` exposes that same issue shape for string

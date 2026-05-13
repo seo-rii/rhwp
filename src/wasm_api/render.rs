@@ -8,6 +8,8 @@ use web_sys::HtmlCanvasElement;
 use crate::paint::js_value::{
     page_layer_tree_to_js_value, page_layer_tree_to_js_value_v2_compat,
     page_layer_tree_to_js_value_v2_compat_with_resource_hints,
+    page_layer_tree_to_js_value_v2_strict_glyph_outline,
+    page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints,
     page_layer_tree_to_js_value_with_resource_hints, text_v2_validation_issues_to_js_value,
     LayerResourceExportHints,
 };
@@ -255,6 +257,36 @@ impl HwpDocument {
             .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
     }
 
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphOutline JS object로 반환한다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueV2StrictGlyphOutline)]
+    pub fn get_page_layer_tree_value_v2_strict_glyph_outline(
+        &self,
+        page_num: u32,
+    ) -> Result<JsValue, JsValue> {
+        self.get_page_layer_tree_value_v2_strict_glyph_outline_with_profile(
+            page_num,
+            RenderProfile::Screen.as_str(),
+        )
+    }
+
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphOutline JS object로 반환한다.
+    /// profile을 명시적으로 덮어쓸 수 있다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueV2StrictGlyphOutlineWithProfile)]
+    pub fn get_page_layer_tree_value_v2_strict_glyph_outline_with_profile(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+    ) -> Result<JsValue, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, profile)
+            .map_err(JsValue::from)?;
+        page_layer_tree_to_js_value_v2_strict_glyph_outline(&tree)
+            .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
+    }
+
     /// 페이지 레이어 트리를 JS object로 반환하되, 이미 JS가 가진 resource payload는 생략한다.
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen(js_name = getPageLayerTreeValueWithProfileAndResourceKeys)]
@@ -292,6 +324,26 @@ impl HwpDocument {
             .map_err(JsValue::from)?;
         let hints = LayerResourceExportHints::from_js_values(&known_image_keys, &known_svg_keys);
         page_layer_tree_to_js_value_v2_compat_with_resource_hints(&tree, &hints)
+            .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
+    }
+
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphOutline JS object로 반환하되,
+    /// 이미 JS가 가진 resource payload는 생략한다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueV2StrictGlyphOutlineWithProfileAndResourceKeys)]
+    pub fn get_page_layer_tree_value_v2_strict_glyph_outline_with_profile_and_resource_keys(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+        known_image_keys: JsValue,
+        known_svg_keys: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, profile)
+            .map_err(JsValue::from)?;
+        let hints = LayerResourceExportHints::from_js_values(&known_image_keys, &known_svg_keys);
+        page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints(&tree, &hints)
             .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
     }
 

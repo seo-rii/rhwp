@@ -14,7 +14,7 @@ use crate::paint::{
     LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
     PaintOp, PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
     TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
-    TextV2ValidationIssue, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
+    TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -410,6 +410,74 @@ pub fn page_layer_tree_to_js_value_v2_compat_with_resource_hints(
     Ok(value.into())
 }
 
+pub fn page_layer_tree_to_js_value_v2_strict_glyph_outline(
+    tree: &PageLayerTree,
+) -> Result<JsValue, Vec<TextV2ValidationIssue>> {
+    page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints(
+        tree,
+        &LayerResourceExportHints::default(),
+    )
+}
+
+pub fn page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints(
+    tree: &PageLayerTree,
+    hints: &LayerResourceExportHints,
+) -> Result<JsValue, Vec<TextV2ValidationIssue>> {
+    let compat_slots = tree.text_v2_slots();
+    let strict_slots = crate::paint::strict_glyph_outline_text_v2_slots(&compat_slots)?;
+    let strict_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = strict_slots
+        .iter()
+        .map(|slot| (slot.id.as_str(), slot))
+        .collect();
+    let mut issues = Vec::new();
+    let mut stack = vec![&tree.root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => stack.extend(children),
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                for op in ops {
+                    if matches!(op, PaintOp::TextRun { .. })
+                        && text_v2_variant_group_id(op).is_none()
+                    {
+                        issues.push(TextV2ValidationIssue {
+                            code: TextV2ValidationIssueCode::StrictVisualVariantMissing,
+                            op_id: "textRun".to_string(),
+                            paint_order_slot_id: None,
+                            variant_id: None,
+                            part_index: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if !issues.is_empty() {
+        return Err(issues);
+    }
+
+    let value = Object::from(page_layer_tree_to_js_value_with_resource_hints(tree, hints));
+    set_number(&value, "schemaVersion", 2.0);
+    set_number(&value, "schemaMinorVersion", 0.0);
+    let schema = Object::new();
+    set_number(&schema, "major", 2.0);
+    set_number(&schema, "minor", 0.0);
+    set_value(&value, "schema", schema.into());
+    let mut text_source_state = TextSourceExportState::default();
+    set_value(
+        &value,
+        "root",
+        layer_node_to_value_v2_strict_glyph_outline(
+            &tree.root,
+            &strict_slots_by_group,
+            &mut text_source_state,
+        ),
+    );
+    let _ = Reflect::delete_property(&value, &JsValue::from_str("variantOps"));
+    set_text_v2_strict_glyph_outline_metadata(&value, &tree.root);
+    Ok(value.into())
+}
+
 pub fn text_v2_validation_issues_to_js_value(issues: &[TextV2ValidationIssue]) -> JsValue {
     array_to_value(issues.iter().map(text_v2_validation_issue_to_value))
 }
@@ -503,6 +571,90 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[
     set_string(&text_v2_contract, "canonicalOp", "text");
     set_string(&text_v2_contract, "fallbackPolicy", "required");
     set_bool(&text_v2_contract, "strictVisualFallbackFree", false);
+    set_string(&text_v2_contract, "paintOrderSlots", "required");
+    set_value(value, "textV2", text_v2_contract.into());
+}
+
+fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
+    let externalized_visuals = externalized_text_visuals(root);
+    let mut used_features = vec![
+        "text.paintStyle",
+        "text.sourceTable",
+        "text.sourceSpan",
+        "text.variants",
+        "text.paintOrderSlot",
+        "text.strictVisualFallbackFree",
+        "text.v2.placement",
+        "text.v2.clusters",
+        "text.projectionKind",
+        "text.legacyVisuals",
+        "text.outlineGlyph",
+        "text.glyphOutline.monochromeFill",
+    ];
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "charOverlap")
+    {
+        used_features.push("text.charOverlapOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "controlMarks")
+    {
+        used_features.push("text.controlMarkOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "tabLeaders")
+    {
+        used_features.push("text.tabLeaderOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "decorations")
+    {
+        used_features.push("text.decorationOp");
+    }
+    set_value(value, "usedFeatures", string_array_to_value(&used_features));
+    set_value(
+        value,
+        "requiredFeatures",
+        string_array_to_value(&[
+            "text.variants",
+            "text.paintOrderSlot",
+            "text.strictVisualFallbackFree",
+            "text.outlineGlyph",
+            "text.glyphOutline.monochromeFill",
+        ]),
+    );
+    let text_contract = Object::new();
+    set_string(&text_contract, "defaultVariant", "glyphOutline");
+    set_value(
+        &text_contract,
+        "variants",
+        string_array_to_value(&["glyphOutline"]),
+    );
+    set_string(&text_contract, "variantSelection", "exclusiveVariantSet");
+    set_bool(&text_contract, "sourceTextPreserved", true);
+    set_value(
+        &text_contract,
+        "clusterEncoding",
+        string_array_to_value(&["utf8", "utf16"]),
+    );
+    set_bool(&text_contract, "fallbackRequired", false);
+    set_string(&text_contract, "placementAuthority", "strictVisual");
+    set_value(
+        &text_contract,
+        "externalizedVisuals",
+        string_array_to_value(&externalized_visuals),
+    );
+    set_value(value, "text", text_contract.into());
+
+    let text_v2_contract = Object::new();
+    set_string(&text_v2_contract, "profile", "strictVisual");
+    set_string(&text_v2_contract, "canonicalOp", "text");
+    set_string(&text_v2_contract, "fallbackPolicy", "none");
+    set_bool(&text_v2_contract, "strictVisualFallbackFree", true);
     set_string(&text_v2_contract, "paintOrderSlots", "required");
     set_value(value, "textV2", text_v2_contract.into());
 }
@@ -934,6 +1086,106 @@ fn layer_nodes_to_value_v2_compat(
     array.into()
 }
 
+fn layer_node_to_value_v2_strict_glyph_outline(
+    node: &LayerNode,
+    strict_slots_by_group: &HashMap<&str, &LayerTextPaintOpV2>,
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let value = Object::new();
+    set_value(&value, "bounds", bbox_to_value(node.bounds));
+    if let Some(source_node_id) = node.source_node_id {
+        set_number(&value, "sourceNodeId", source_node_id as f64);
+    }
+    if node.semantic != LayerSemantic::default() {
+        let semantic = Object::new();
+        set_string(&semantic, "role", node.semantic.role.as_str());
+        if let Some(section_index) = node.semantic.section_index {
+            set_number(&semantic, "sectionIndex", section_index as f64);
+        }
+        if let Some(column_index) = node.semantic.column_index {
+            set_number(&semantic, "columnIndex", column_index as f64);
+        }
+        if let Some(para_index) = node.semantic.para_index {
+            set_number(&semantic, "paraIndex", para_index as f64);
+        }
+        if let Some(control_index) = node.semantic.control_index {
+            set_number(&semantic, "controlIndex", control_index as f64);
+        }
+        if let Some(row_count) = node.semantic.row_count {
+            set_number(&semantic, "rowCount", row_count as f64);
+        }
+        if let Some(col_count) = node.semantic.col_count {
+            set_number(&semantic, "colCount", col_count as f64);
+        }
+        set_value(&value, "semantic", semantic.into());
+    }
+    match &node.kind {
+        LayerNodeKind::Group {
+            children,
+            cache_hint,
+        } => {
+            set_string(&value, "kind", "group");
+            set_string(&value, "cacheHint", cache_hint_str(*cache_hint));
+            set_value(
+                &value,
+                "children",
+                array_to_value(children.iter().map(|child| {
+                    layer_node_to_value_v2_strict_glyph_outline(
+                        child,
+                        strict_slots_by_group,
+                        text_sources,
+                    )
+                })),
+            );
+        }
+        LayerNodeKind::ClipRect {
+            clip,
+            child,
+            clip_kind,
+            clip_policy,
+        } => {
+            set_string(&value, "kind", "clipRect");
+            set_value(&value, "clip", bbox_to_value(*clip));
+            set_string(&value, "clipKind", clip_kind_str(*clip_kind));
+            let policy = Object::new();
+            set_number(
+                &policy,
+                "rightOverflowSlop",
+                clip_policy.right_overflow_slop,
+            );
+            set_bool(
+                &policy,
+                "allowHorizontalOverflowControls",
+                clip_policy.allow_horizontal_overflow_controls,
+            );
+            set_value(&value, "clipPolicy", policy.into());
+            set_value(
+                &value,
+                "child",
+                layer_node_to_value_v2_strict_glyph_outline(
+                    child,
+                    strict_slots_by_group,
+                    text_sources,
+                ),
+            );
+        }
+        LayerNodeKind::Leaf { ops, cache_hint } => {
+            set_string(&value, "kind", "leaf");
+            set_string(&value, "cacheHint", cache_hint_str(*cache_hint));
+            set_value(
+                &value,
+                "ops",
+                paint_ops_to_value_v2_strict_glyph_outline(
+                    ops,
+                    strict_slots_by_group,
+                    text_sources,
+                ),
+            );
+        }
+    }
+    value.into()
+}
+
 fn paint_ops_to_value(ops: &[PaintOp], text_sources: &mut TextSourceExportState) -> JsValue {
     let array = Array::new();
     for op in ops {
@@ -964,6 +1216,37 @@ fn paint_ops_to_value_v2_compat(
                 }
                 continue;
             }
+        }
+
+        array.push(&paint_op_to_value(op, text_sources));
+    }
+
+    array.into()
+}
+
+fn paint_ops_to_value_v2_strict_glyph_outline(
+    ops: &[PaintOp],
+    strict_slots_by_group: &HashMap<&str, &LayerTextPaintOpV2>,
+    text_sources: &mut TextSourceExportState,
+) -> JsValue {
+    let mut written_groups = HashSet::<String>::new();
+    let array = Array::new();
+
+    for op in ops {
+        if let Some(group_id) = text_v2_variant_group_id(op) {
+            if let Some(text_slot) = strict_slots_by_group.get(group_id) {
+                if written_groups.insert(group_id.to_string()) {
+                    array.push(&text_op_v2_to_value(text_slot, text_sources));
+                }
+            }
+            continue;
+        }
+
+        if matches!(
+            op,
+            PaintOp::TextRun { .. } | PaintOp::GlyphRun { .. } | PaintOp::GlyphOutline { .. }
+        ) {
+            continue;
         }
 
         array.push(&paint_op_to_value(op, text_sources));
