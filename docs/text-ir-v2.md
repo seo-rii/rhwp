@@ -714,9 +714,10 @@ reserved writer is enabled. The v2 closure bar is:
   `paintOrderSlotId` values;
 - explicit `fallbackPolicy` and `renderProfile` gates for compatibility versus
   strictVisual exports;
-- fallback-free strict text only when `text.strictVisualFallbackFree` and the
-  required variant features are declared; fallback-free text slots that contain
-  only `TextRun` variants are invalid and report `strictVisualVariantMissing`;
+- fallback-free strict text only when `textV2.profile="strictVisual"`,
+  `text.strictVisualFallbackFree`, and the required variant features are
+  declared; fallback-free text slots that contain only `TextRun` variants are
+  invalid and report `strictVisualVariantMissing`;
 - `GlyphRun` and `glyphOutline` strict writers available as opt-in paths, with
   backend diagnostics explaining any rejected variant;
 - `GlyphOutline.payloadKind` vocabulary covering `monochromeFill`,
@@ -829,18 +830,19 @@ requires `text.variants` and `text.paintOrderSlot`, and wraps flattened v1 text
 variant groups into canonical `type: "text"` envelopes.
 `PageLayerTree::to_json_v2_strict_glyph_outline()` is the first opt-in
 strictVisual string writer. It emits only strict-eligible `glyphOutline`
-variants, uses `fallbackPolicy="none"`, requires
-`text.strictVisualFallbackFree` and `text.glyphOutline.monochromeFill`, and
-returns `strictVisualVariantMissing` instead of leaking an unvariant `TextRun`
-fallback into a fallback-free export.
+variants, uses `textV2.profile="strictVisual"` and `fallbackPolicy="none"`,
+requires `text.strictVisualFallbackFree` and
+`text.glyphOutline.monochromeFill`, and returns `strictVisualVariantMissing`
+instead of leaking an unvariant `TextRun` fallback into a fallback-free export.
 When a strict outline variant uses the supported `monochromeFillStroke` subset,
 the writer keeps that payload and adds
 `text.glyphOutline.monochromeFillStroke` to `requiredFeatures`.
 `PageLayerTree::to_json_v2_strict_glyph_run()` is the matching opt-in
 strictVisual string writer for backend profiles that want a fallback-free
 `glyphRun` export. It emits only strict-eligible `GlyphRun` variants, uses
-`fallbackPolicy="none"`, requires `fontResources`, `text.glyphRun`, and
-`text.strictVisualFallbackFree`, and fails closed with
+`textV2.profile="strictVisual"` and `fallbackPolicy="none"`, requires
+`fontResources`, `text.glyphRun`, and `text.strictVisualFallbackFree`, and
+fails closed with
 `strictVisualVariantMissing` when a text slot has no strict-eligible glyph
 variant.
 `page_layer_tree_to_js_value_v2_compat()` mirrors that opt-in envelope for
