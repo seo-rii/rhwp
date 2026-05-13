@@ -40,6 +40,7 @@ export type LayerTextVariantRejectReason =
   | 'incompleteVariantSet'
   | 'unsupportedPaintEffect'
   | 'unsupportedOutlinePayload'
+  | 'glyphOutlineStrokeStyleUnsupported'
   | 'unsupportedColorGlyph'
   | 'unsupportedBitmapGlyph'
   | 'unsupportedSvgGlyph'
