@@ -674,6 +674,36 @@ variants }`, fallback-free text exports, cross-scope variants,
 mixed-per-glyph orientation, and shapedModern layout metadata. Those features
 remain profile/feature gated even after the schema shape exists.
 
+Schema v2 should close once the envelope and gates are stable, not when every
+reserved writer is enabled. The v2 closure bar is:
+
+- canonical `PaintOp::Text { variants }` text slots with unique
+  `paintOrderSlotId` values;
+- explicit `fallbackPolicy` and `renderProfile` gates for compatibility versus
+  strictVisual exports;
+- fallback-free strict text only when `text.strictVisualFallbackFree` and the
+  required variant features are declared;
+- `GlyphRun` and `glyphOutline` strict writers available as opt-in paths, with
+  backend diagnostics explaining any rejected variant;
+- `GlyphOutline.payloadKind` vocabulary covering `monochromeFill`,
+  `monochromeFillStroke`, `colorLayers`, `bitmapGlyph`, and `svgGlyph`, while
+  reserved richer payloads remain feature-gated until implemented;
+- exact font blob/face/instance keys represented in schema, with backend replay
+  eligibility still evaluated by the renderer;
+- shapedModern layout metadata present, but layout mutation still opt-in and
+  outside compatibility replay;
+- `text.crossScopeVariants` and `text.vertical.mixedPerGlyph` vocabulary
+  present, with default writers still same-scope and homogeneous-run based.
+
+Schema v3 should be reserved for a change in authority or core semantics:
+changing the fallback-free export model, redefining paint order or cross-scope
+composition, replacing the text variant selection model, making shapedModern
+the default layout authority, changing source/cluster identity, or discovering
+that COLR/bitmap/SVG glyph payloads cannot fit the v2 payload-kind/feature-gate
+model. Adding a gated stroke subset, a CanvasKit color-glyph smoke, line-break
+risk telemetry, mixed-per-glyph opt-in emission, or shapedModern opt-in width
+input is not by itself a v3 trigger.
+
 ## Phase 2 Entry Gate
 
 Phase 2 should not start by adding new payload expressiveness. It starts only
