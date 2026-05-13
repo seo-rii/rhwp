@@ -2201,6 +2201,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       textOp.fallbackPolicy = 'none';
       return tree;
     };
+    const makeV2FallbackFreeTextOnlyTree = () => {
+      const tree = makeV2FallbackFreeTree(true);
+      const textOp = tree.root.ops[0];
+      textOp.defaultVariantId = 'textRun';
+      textOp.variants = textOp.variants.filter((variant) => variant.variantId === 'textRun');
+      return tree;
+    };
     const strokePayload = {
       payloadKind: 'monochromeFillStroke',
       stroke: {
@@ -2281,6 +2288,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const allowedV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(true), false);
       const invalidV2FallbackFree = render(makeV2FallbackFreeTree(), false);
       const allowedV2FallbackFree = render(makeV2FallbackFreeTree(true), false);
+      const invalidV2FallbackFreeTextOnly = render(makeV2FallbackFreeTextOnlyTree(), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree('bitmapGlyph', 'text.glyphOutline.bitmapGlyph'),
@@ -2312,6 +2320,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         allowedV2MixedPerGlyph,
         invalidV2FallbackFree,
         allowedV2FallbackFree,
+        invalidV2FallbackFreeTextOnly,
         reservedV2ColorPayload,
         reservedV2BitmapPayload,
         reservedV2SvgPayload,
@@ -2586,6 +2595,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalid: canvas2dGlyphOutlineProbe.invalidV2FallbackFree?.textV2Validation,
       allowed: canvas2dGlyphOutlineProbe.allowedV2FallbackFree?.textV2Validation,
     })}`,
+  );
+  const invalidFallbackFreeTextOnlyIssueCodes = canvas2dGlyphOutlineProbe.invalidV2FallbackFreeTextOnly
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidFallbackFreeTextOnlyIssueCodes.includes('strictVisualVariantMissing')
+      && !invalidFallbackFreeTextOnlyIssueCodes.includes('fallbackFreeFeatureMissing'),
+    `Canvas2D schema v2 fallback-free text fails closed without strict visual variant=${JSON.stringify(
+      canvas2dGlyphOutlineProbe.invalidV2FallbackFreeTextOnly?.textV2Validation,
+    )}`,
   );
   const unsupportedOutlineReport = canvas2dGlyphOutlineProbe.unsupported?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',

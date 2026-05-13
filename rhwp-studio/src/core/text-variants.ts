@@ -628,6 +628,17 @@ export function validateLayerTextV2Op(
       paintOrderSlotId: op.paintOrderSlotId,
     });
   }
+  if (
+    fallbackPolicy === 'none'
+    && !op.variants.some((variant) => variant.kind === 'glyphRun' || variant.kind === 'glyphOutline')
+  ) {
+    issues.push({
+      code: 'strictVisualVariantMissing',
+      message: 'fallbackPolicy=none requires at least one strict visual text variant.',
+      opId: op.id,
+      paintOrderSlotId: op.paintOrderSlotId,
+    });
+  }
 
   return issues;
 }

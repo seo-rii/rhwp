@@ -406,6 +406,21 @@ pub fn validate_text_v2_op(
             None,
         ));
     }
+    if op.fallback_policy == TextFallbackPolicy::None
+        && !op.variants.iter().any(|variant| {
+            matches!(
+                variant.kind,
+                TextVariantKind::GlyphRun | TextVariantKind::GlyphOutline
+            )
+        })
+    {
+        issues.push(text_v2_issue(
+            op,
+            TextV2ValidationIssueCode::StrictVisualVariantMissing,
+            None,
+            None,
+        ));
+    }
 
     issues
 }
@@ -1428,6 +1443,25 @@ mod tests {
 
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::DefaultVariantMissing));
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::FallbackFreeFeatureMissing));
+    }
+
+    #[test]
+    fn reports_fallback_free_slot_without_strict_visual_variant() {
+        let mut text_op = lower_v1_leaf_text_variants_to_v2(&[text_op(
+            PaintVariantMeta::text_run_default("text-4-fallback-free-text-only"),
+        )])
+        .remove(0);
+        text_op.fallback_policy = TextFallbackPolicy::None;
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_fallback_free = true;
+        let issue_codes: Vec<_> = validate_text_v2_op(&text_op, &options)
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing));
+        assert!(!issue_codes.contains(&TextV2ValidationIssueCode::FallbackFreeFeatureMissing));
     }
 
     #[test]
