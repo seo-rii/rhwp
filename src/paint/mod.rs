@@ -80,7 +80,7 @@ pub use text_v2::{
     sidecars_for_leaf_ops, strict_glyph_outline_text_v2_slots, strict_glyph_run_text_v2_slots,
     text_v2_validation_issues_to_json, validate_text_v2_op, validate_text_v2_ops,
     LayerTextPaintOpV2, LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet,
-    PaintOrderSlotId, PaintScopeId, TextFallbackPolicy, TextV2ValidationIssue,
+    PaintOrderSlotId, PaintScopeId, TextFallbackPolicy, TextV2Profile, TextV2ValidationIssue,
     TextV2ValidationIssueCode, TextV2ValidationOptions,
 };
 pub use text_variants::{validate_text_variant_scope, TextVariantScopeError};

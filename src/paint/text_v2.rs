@@ -35,9 +35,16 @@ impl TextFallbackPolicy {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextV2Profile {
+    Compatibility,
+    StrictVisual,
+}
+
 #[derive(Debug, Clone)]
 pub struct TextV2ValidationOptions {
     pub require_paint_order_slot: bool,
+    pub profile: TextV2Profile,
     pub allow_fallback_free: bool,
     pub allow_cross_scope_variants: bool,
     pub allow_richer_glyph_outline_payloads: bool,
@@ -48,6 +55,7 @@ impl Default for TextV2ValidationOptions {
     fn default() -> Self {
         Self {
             require_paint_order_slot: true,
+            profile: TextV2Profile::Compatibility,
             allow_fallback_free: false,
             allow_cross_scope_variants: false,
             allow_richer_glyph_outline_payloads: false,
@@ -398,7 +406,9 @@ pub fn validate_text_v2_op(
             None,
         ));
     }
-    if op.fallback_policy == TextFallbackPolicy::None && !options.allow_fallback_free {
+    if op.fallback_policy == TextFallbackPolicy::None
+        && !(options.profile == TextV2Profile::StrictVisual && options.allow_fallback_free)
+    {
         issues.push(text_v2_issue(
             op,
             TextV2ValidationIssueCode::FallbackFreeFeatureMissing,
@@ -487,6 +497,7 @@ pub fn strict_glyph_outline_text_v2_slots(
             variants,
         };
         let mut options = TextV2ValidationOptions::default();
+        options.profile = TextV2Profile::StrictVisual;
         options.allow_fallback_free = true;
         options.allow_richer_glyph_outline_payloads = true;
         issues.extend(validate_text_v2_op(&strict_op, &options));
@@ -537,6 +548,7 @@ pub fn strict_glyph_run_text_v2_slots(
             variants,
         };
         let mut options = TextV2ValidationOptions::default();
+        options.profile = TextV2Profile::StrictVisual;
         options.allow_fallback_free = true;
         issues.extend(validate_text_v2_op(&strict_op, &options));
         strict_ops.push(strict_op);
@@ -1454,6 +1466,7 @@ mod tests {
         text_op.fallback_policy = TextFallbackPolicy::None;
 
         let mut options = TextV2ValidationOptions::default();
+        options.profile = TextV2Profile::StrictVisual;
         options.allow_fallback_free = true;
         let issue_codes: Vec<_> = validate_text_v2_op(&text_op, &options)
             .into_iter()
@@ -1462,6 +1475,41 @@ mod tests {
 
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing));
         assert!(!issue_codes.contains(&TextV2ValidationIssueCode::FallbackFreeFeatureMissing));
+    }
+
+    #[test]
+    fn reports_fallback_free_gate_without_strict_visual_profile() {
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-4-fallback-free-compat-profile".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec![
+                    "text.outlineGlyph".to_string(),
+                    "text.glyphOutline.monochromeFill".to_string(),
+                ],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("op-text-4-fallback-free-compat-profile".to_string()),
+                local_paint_order: Some(0),
+            },
+            0.0,
+        );
+        let mut text_op = lower_v1_leaf_text_variants_to_v2(&[outline]).remove(0);
+        text_op.default_variant_id = Some("glyphOutline".to_string());
+        text_op.fallback_policy = TextFallbackPolicy::None;
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_fallback_free = true;
+        let issue_codes: Vec<_> = validate_text_v2_op(&text_op, &options)
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::FallbackFreeFeatureMissing));
+        assert!(!issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing));
     }
 
     #[test]
