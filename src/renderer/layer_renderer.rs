@@ -1,7 +1,8 @@
 use crate::model::ColorRef;
 use crate::paint::{
-    PageLayerTree, PaintOp, ShapedMeasurementLineReport, ShapedMeasurementPageSummary,
-    ShapedMeasurementParagraphSummary, ShapedMeasurementRunReport, TextVariantKind,
+    LineBreakShadowReport, PageLayerTree, PaintOp, ShapedMeasurementLineReport,
+    ShapedMeasurementPageSummary, ShapedMeasurementParagraphSummary, ShapedMeasurementRunReport,
+    TextVariantKind,
 };
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -608,6 +609,7 @@ pub struct LayerRenderDiagnostics {
     pub variant_selections: Vec<VariantSelectionReport>,
     pub shaped_measurements: Vec<ShapedMeasurementRunReport>,
     pub shaped_measurement_lines: Vec<ShapedMeasurementLineReport>,
+    pub line_break_shadows: Vec<LineBreakShadowReport>,
     pub shaped_measurement_paragraphs: Vec<ShapedMeasurementParagraphSummary>,
     pub shaped_measurement_pages: Vec<ShapedMeasurementPageSummary>,
     pub layer_nodes_replayed: usize,
