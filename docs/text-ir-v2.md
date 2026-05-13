@@ -671,10 +671,12 @@ width, paragraph/container width, table-cell constraints, tab-stop summaries,
 justification mode, and whether legacy line segmentation was available. If the
 full layout context is missing, the serialized `risk` is forced to
 `insufficientContext` rather than pretending the report can answer a
-`lineBreakWouldChange` boolean. `TextShapeReport` can serialize these
-observations as a standalone shaped-measurement JSON artifact; that artifact is
-telemetry for local/nightly migration analysis and is not part of the layer
-replay schema.
+`lineBreakWouldChange` boolean. Context fields distinguish `known`,
+`knownAbsent`, and `unknown`: a confirmed absence of table constraints, tab
+stops, or justification can still satisfy the report, while unknown required
+context cannot. `TextShapeReport` can serialize these observations as a
+standalone shaped-measurement JSON artifact; that artifact is telemetry for
+local/nightly migration analysis and is not part of the layer replay schema.
 
 ## Schema v1 Closure Criteria
 
@@ -736,6 +738,11 @@ reserved writer is enabled. The v2 closure bar is:
   authority switch from `hwpCompat` to `shapedModern` is a v3-level decision;
 - `text.crossScopeVariants` and `text.vertical.mixedPerGlyph` vocabulary
   present, with default writers still same-scope and homogeneous-run based.
+- explicit v1/v2 compatibility policy: v1-to-v2 lowering may wrap flattened
+  text variants into `PaintOp::Text`, while v2-to-v1 downgrade is allowed only
+  when a faithful `TextRun` fallback and same-scope v1 payloads are present;
+  fallback-free strict exports or unsupported richer payloads must fail closed
+  instead of silently degrading.
 
 Schema v3 should be reserved for a change in authority or core semantics:
 changing the fallback-free export model, redefining paint order or cross-scope
