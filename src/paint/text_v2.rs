@@ -72,6 +72,7 @@ pub enum TextV2ValidationIssueCode {
     CrossScopeVariantFeatureMissing,
     GlyphOutlinePayloadKindFeatureMissing,
     GlyphOutlineStrokeStyleUnsupported,
+    StrictVisualVariantMissing,
     MixedPerGlyphFeatureMissing,
 }
 
@@ -92,6 +93,7 @@ impl TextV2ValidationIssueCode {
             Self::CrossScopeVariantFeatureMissing => "crossScopeVariantFeatureMissing",
             Self::GlyphOutlinePayloadKindFeatureMissing => "glyphOutlinePayloadKindFeatureMissing",
             Self::GlyphOutlineStrokeStyleUnsupported => "glyphOutlineStrokeStyleUnsupported",
+            Self::StrictVisualVariantMissing => "strictVisualVariantMissing",
             Self::MixedPerGlyphFeatureMissing => "mixedPerGlyphFeatureMissing",
         }
     }
@@ -431,6 +433,65 @@ pub fn validate_text_v2_ops(
         issues.extend(validate_text_v2_op(op, options));
     }
     issues
+}
+
+pub fn strict_glyph_outline_text_v2_slots(
+    ops: &[LayerTextPaintOpV2],
+) -> Result<Vec<LayerTextPaintOpV2>, Vec<TextV2ValidationIssue>> {
+    let mut strict_ops = Vec::new();
+    let mut issues = Vec::new();
+
+    for op in ops {
+        let variants: Vec<_> = op
+            .variants
+            .iter()
+            .filter(|variant| {
+                variant.kind == TextVariantKind::GlyphOutline
+                    && !variant.parts.is_empty()
+                    && variant.parts.iter().all(strict_glyph_outline_part_eligible)
+            })
+            .cloned()
+            .collect();
+        let Some(default_variant_id) = variants.first().map(|variant| variant.variant_id.clone())
+        else {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::StrictVisualVariantMissing,
+                None,
+                None,
+            ));
+            continue;
+        };
+
+        let strict_op = LayerTextPaintOpV2 {
+            id: op.id.clone(),
+            paint_order_slot_id: op.paint_order_slot_id.clone(),
+            bbox: op.bbox,
+            default_variant_id: Some(default_variant_id),
+            fallback_policy: TextFallbackPolicy::None,
+            variants,
+        };
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_fallback_free = true;
+        issues.extend(validate_text_v2_op(&strict_op, &options));
+        strict_ops.push(strict_op);
+    }
+
+    if issues.is_empty() {
+        Ok(strict_ops)
+    } else {
+        Err(issues)
+    }
+}
+
+fn strict_glyph_outline_part_eligible(part: &LayerTextVariantPart) -> bool {
+    let LayerTextVariantPayload::GlyphOutline(outline) = &part.payload else {
+        return false;
+    };
+    outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFill
+        && outline.stroke.is_none()
+        && outline.paint_style.is_fill_only_glyph_replay()
+        && outline.diagnostics.strict_visual_eligible
 }
 
 pub fn downgrade_text_v2_op_to_v1_compat(
@@ -1221,6 +1282,82 @@ mod tests {
 
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::DefaultVariantMissing));
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::FallbackFreeFeatureMissing));
+    }
+
+    #[test]
+    fn selects_strict_glyph_outline_fallback_free_slot() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-4-strict"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-4-strict".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec![
+                    "text.outlineGlyph".to_string(),
+                    "text.glyphOutline.monochromeFill".to_string(),
+                ],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("op-text-4-strict".to_string()),
+                local_paint_order: Some(0),
+            },
+            0.0,
+        );
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+
+        let strict_ops =
+            strict_glyph_outline_text_v2_slots(&text_ops).expect("strict outline variant");
+
+        assert_eq!(strict_ops.len(), 1);
+        assert_eq!(strict_ops[0].fallback_policy, TextFallbackPolicy::None);
+        assert_eq!(
+            strict_ops[0].default_variant_id.as_deref(),
+            Some("glyphOutline")
+        );
+        assert_eq!(strict_ops[0].variants.len(), 1);
+        assert_eq!(
+            strict_ops[0].variants[0].kind,
+            TextVariantKind::GlyphOutline
+        );
+    }
+
+    #[test]
+    fn rejects_strict_glyph_outline_slot_without_strict_eligible_outline() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-4-strict-missing"));
+        let mut outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-4-strict-missing".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.outlineGlyph".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("op-text-4-strict-missing".to_string()),
+                local_paint_order: Some(0),
+            },
+            0.0,
+        );
+        let PaintOp::GlyphOutline {
+            outline: outline_paint,
+            ..
+        } = &mut outline
+        else {
+            panic!("expected glyph outline");
+        };
+        outline_paint.diagnostics.strict_visual_eligible = false;
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+
+        let issue_codes: Vec<_> = strict_glyph_outline_text_v2_slots(&text_ops)
+            .expect_err("missing strict outline must reject")
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing));
     }
 
     #[test]

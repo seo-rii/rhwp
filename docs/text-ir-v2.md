@@ -729,6 +729,12 @@ vocabulary to JS callers when an opt-in v2 export is rejected.
 `text_v2_validation_issues_to_json()` exposes that same issue shape for string
 JSON APIs, so validation failures use the same machine-readable codes instead
 of debug-formatted Rust structs.
+`strict_glyph_outline_text_v2_slots()` is the first strictVisual selection gate:
+it derives fallback-free v2 text slots only from `glyphOutline` variants whose
+payload is `monochromeFill`, whose paint style is fill-only, and whose
+diagnostics are already strict-visual eligible. Slots without such a variant
+return `strictVisualVariantMissing`, so strict writer APIs can fail closed before
+emitting `fallbackPolicy="none"`.
 `downgrade_text_v2_op_to_v1_compat()` is the first downgrade scaffold: it
 flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.
