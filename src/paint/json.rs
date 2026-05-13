@@ -14,7 +14,7 @@ use crate::paint::{
     LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
     ResourceArena, ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation,
     TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
-    TextV2ValidationOptions, LAYER_TREE_SCHEMA,
+    TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -117,6 +117,78 @@ impl PageLayerTree {
         buf.push_str(",\"fontResources\":");
         write_font_resources(&mut buf, self.resources.font_resources());
         write_text_v2_compat_export_metadata(&mut buf, &self.root, &self.variant_ops);
+        buf.push('}');
+        Ok(buf)
+    }
+
+    pub fn to_json_v2_strict_glyph_outline(&self) -> Result<String, Vec<TextV2ValidationIssue>> {
+        let compat_slots = self.text_v2_slots();
+        let strict_slots = crate::paint::strict_glyph_outline_text_v2_slots(&compat_slots)?;
+        let strict_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = strict_slots
+            .iter()
+            .map(|slot| (slot.id.as_str(), slot))
+            .collect();
+        let mut issues = Vec::new();
+        let mut stack = vec![&self.root];
+        while let Some(node) = stack.pop() {
+            match &node.kind {
+                LayerNodeKind::Group { children, .. } => stack.extend(children),
+                LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+                LayerNodeKind::Leaf { ops, .. } => {
+                    for op in ops {
+                        if matches!(op, PaintOp::TextRun { .. })
+                            && text_v2_variant_group_id(op).is_none()
+                        {
+                            issues.push(TextV2ValidationIssue {
+                                code: TextV2ValidationIssueCode::StrictVisualVariantMissing,
+                                op_id: "textRun".to_string(),
+                                paint_order_slot_id: None,
+                                variant_id: None,
+                                part_index: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if !issues.is_empty() {
+            return Err(issues);
+        }
+
+        let mut buf = String::with_capacity(32_768);
+        buf.push('{');
+        let _ = write!(
+            buf,
+            "\"schemaVersion\":2,\"schemaMinorVersion\":0,\"schema\":{{\"major\":2,\"minor\":0}},\"resourceTableVersion\":{},\"resourceTableMinorVersion\":{},\"resourceTable\":{{\"major\":{},\"minor\":{}}},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"layout\":{{\"profile\":\"hwpCompat\",\"measurementAuthority\":\"legacyHwpPositions\",\"shapedMeasurement\":\"diagnosticsOnly\"}},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"buildOptions\":{{\"showTransparentBorders\":{}}},\"debugOptions\":{{\"debugOverlay\":{}}},\"debugCapabilities\":{{\"overlayPaint\":false,\"semanticBounds\":true,\"genericLayerExport\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"backends\":{{\"svgLayer\":{{\"overlayPaint\":true,\"semanticBounds\":true}},\"canvas2d\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"canvaskit\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"nativeSkia\":{{\"overlayPaint\":false,\"semanticBounds\":true}}}}}},\"root\":",
+            LAYER_TREE_SCHEMA.resource_table_version,
+            LAYER_TREE_SCHEMA.resource_table_minor_version,
+            LAYER_TREE_SCHEMA.resource_table_version,
+            LAYER_TREE_SCHEMA.resource_table_minor_version,
+            json_escape(LAYER_TREE_SCHEMA.unit),
+            json_escape(LAYER_TREE_SCHEMA.coordinate_system),
+            self.page_width,
+            self.page_height,
+            json_escape(self.profile.as_str()),
+            self.output_options.show_paragraph_marks,
+            self.output_options.show_control_codes,
+            self.output_options.show_transparent_borders,
+            self.output_options.clip_enabled,
+            self.output_options.debug_overlay,
+            self.output_options.show_transparent_borders,
+            self.output_options.debug_overlay,
+        );
+        let mut text_source_state = TextSourceExportState::default();
+        self.root.write_json_v2_strict_glyph_outline(
+            &mut buf,
+            &self.resources,
+            &strict_slots_by_group,
+            &mut text_source_state,
+        );
+        buf.push_str(",\"textSources\":");
+        write_text_source_entries(&mut buf, &self.text_sources);
+        buf.push_str(",\"fontResources\":");
+        write_font_resources(&mut buf, self.resources.font_resources());
+        write_text_v2_strict_glyph_outline_export_metadata(&mut buf, &self.root);
         buf.push('}');
         Ok(buf)
     }
@@ -236,6 +308,31 @@ fn write_text_v2_compat_export_metadata(
         let _ = write!(buf, "{}", json_escape(visual));
     }
     buf.push_str("]},\"textV2\":{\"profile\":\"compatibility\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"required\"}");
+}
+
+fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &LayerNode) {
+    let externalized_visuals = externalized_text_visuals(root);
+    buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");
+    if externalized_visuals.contains(&"charOverlap") {
+        buf.push_str(",\"text.charOverlapOp\"");
+    }
+    if externalized_visuals.contains(&"controlMarks") {
+        buf.push_str(",\"text.controlMarkOp\"");
+    }
+    if externalized_visuals.contains(&"tabLeaders") {
+        buf.push_str(",\"text.tabLeaderOp\"");
+    }
+    if externalized_visuals.contains(&"decorations") {
+        buf.push_str(",\"text.decorationOp\"");
+    }
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"],\"text\":{\"defaultVariant\":\"glyphOutline\",\"variants\":[\"glyphOutline\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
+    for (idx, visual) in externalized_visuals.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{}", json_escape(visual));
+    }
+    buf.push_str("]},\"textV2\":{\"profile\":\"strictVisual\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"none\",\"strictVisualFallbackFree\":true,\"paintOrderSlots\":\"required\"}");
 }
 
 fn has_text_variant_groups(root: &LayerNode) -> bool {
@@ -554,6 +651,108 @@ impl LayerNode {
         }
         buf.push('}');
     }
+
+    fn write_json_v2_strict_glyph_outline(
+        &self,
+        buf: &mut String,
+        resources: &ResourceArena,
+        strict_slots_by_group: &HashMap<&str, &LayerTextPaintOpV2>,
+        text_sources: &mut TextSourceExportState,
+    ) {
+        buf.push('{');
+        buf.push_str("\"bounds\":");
+        write_bbox(buf, self.bounds);
+        if let Some(source_node_id) = self.source_node_id {
+            let _ = write!(buf, ",\"sourceNodeId\":{}", source_node_id);
+        }
+        if self.semantic != LayerSemantic::default() {
+            buf.push_str(",\"semantic\":{");
+            let _ = write!(buf, "\"role\":{}", json_escape(self.semantic.role.as_str()));
+            if let Some(section_index) = self.semantic.section_index {
+                let _ = write!(buf, ",\"sectionIndex\":{}", section_index);
+            }
+            if let Some(column_index) = self.semantic.column_index {
+                let _ = write!(buf, ",\"columnIndex\":{}", column_index);
+            }
+            if let Some(para_index) = self.semantic.para_index {
+                let _ = write!(buf, ",\"paraIndex\":{}", para_index);
+            }
+            if let Some(control_index) = self.semantic.control_index {
+                let _ = write!(buf, ",\"controlIndex\":{}", control_index);
+            }
+            if let Some(row_count) = self.semantic.row_count {
+                let _ = write!(buf, ",\"rowCount\":{}", row_count);
+            }
+            if let Some(col_count) = self.semantic.col_count {
+                let _ = write!(buf, ",\"colCount\":{}", col_count);
+            }
+            buf.push('}');
+        }
+
+        match &self.kind {
+            LayerNodeKind::Group {
+                children,
+                cache_hint,
+            } => {
+                let _ = write!(
+                    buf,
+                    ",\"kind\":\"group\",\"cacheHint\":{},\"children\":[",
+                    json_escape(cache_hint_str(*cache_hint))
+                );
+                for (idx, child) in children.iter().enumerate() {
+                    if idx > 0 {
+                        buf.push(',');
+                    }
+                    child.write_json_v2_strict_glyph_outline(
+                        buf,
+                        resources,
+                        strict_slots_by_group,
+                        text_sources,
+                    );
+                }
+                buf.push(']');
+            }
+            LayerNodeKind::ClipRect {
+                clip,
+                child,
+                clip_kind,
+                clip_policy,
+            } => {
+                buf.push_str(",\"kind\":\"clipRect\",\"clip\":");
+                write_bbox(buf, *clip);
+                let _ = write!(
+                    buf,
+                    ",\"clipKind\":{},\"clipPolicy\":{{\"rightOverflowSlop\":{},\"allowHorizontalOverflowControls\":{}}}",
+                    json_escape(clip_kind_str(*clip_kind)),
+                    clip_policy.right_overflow_slop,
+                    clip_policy.allow_horizontal_overflow_controls
+                );
+                buf.push_str(",\"child\":");
+                child.write_json_v2_strict_glyph_outline(
+                    buf,
+                    resources,
+                    strict_slots_by_group,
+                    text_sources,
+                );
+            }
+            LayerNodeKind::Leaf { ops, cache_hint } => {
+                let _ = write!(
+                    buf,
+                    ",\"kind\":\"leaf\",\"cacheHint\":{},\"ops\":[",
+                    json_escape(cache_hint_str(*cache_hint))
+                );
+                write_leaf_ops_v2_strict_glyph_outline(
+                    buf,
+                    ops,
+                    strict_slots_by_group,
+                    resources,
+                    text_sources,
+                );
+                buf.push(']');
+            }
+        }
+        buf.push('}');
+    }
 }
 
 fn write_leaf_ops_v2_compat(
@@ -584,6 +783,45 @@ fn write_leaf_ops_v2_compat(
                 }
                 continue;
             }
+        }
+
+        if wrote_op {
+            buf.push(',');
+        }
+        op.write_json(buf, resources, text_sources);
+        wrote_op = true;
+    }
+}
+
+fn write_leaf_ops_v2_strict_glyph_outline(
+    buf: &mut String,
+    ops: &[PaintOp],
+    strict_slots_by_group: &HashMap<&str, &LayerTextPaintOpV2>,
+    resources: &ResourceArena,
+    text_sources: &mut TextSourceExportState,
+) {
+    let mut written_groups = HashSet::<String>::new();
+    let mut wrote_op = false;
+
+    for op in ops {
+        if let Some(group_id) = text_v2_variant_group_id(op) {
+            if let Some(text_slot) = strict_slots_by_group.get(group_id) {
+                if written_groups.insert(group_id.to_string()) {
+                    if wrote_op {
+                        buf.push(',');
+                    }
+                    write_text_op_v2_compat(buf, text_slot, resources, text_sources);
+                    wrote_op = true;
+                }
+            }
+            continue;
+        }
+
+        if matches!(
+            op,
+            PaintOp::TextRun { .. } | PaintOp::GlyphRun { .. } | PaintOp::GlyphOutline { .. }
+        ) {
+            continue;
         }
 
         if wrote_op {
@@ -3199,6 +3437,149 @@ mod tests {
             "\"payload\":{\"id\":\"op-text-0-glyphOutline-0\",\"type\":\"glyphOutline\""
         ));
         assert!(!v2_json.contains("\"ops\":[{\"type\":\"textRun\""));
+    }
+
+    #[test]
+    fn serializes_v2_strict_glyph_outline_export_without_text_run_fallback() {
+        let source = TextSourceSpan {
+            id: TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source.clone()),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let glyph_outline = PaintOp::GlyphOutline {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            outline: LayerGlyphOutlinePaint {
+                source,
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["text.outlineGlyph".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some("op-text-0".to_string()),
+                    local_paint_order: Some(0),
+                },
+                payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
+                stroke: None,
+                paint_style: PaintTextStyle::from(&TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                }),
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 12.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                paths: vec![LayerGlyphOutlinePath {
+                    glyph_id: 42,
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    glyph_range: GlyphRange { start: 0, end: 1 },
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(10.0, 0.0),
+                        PathCommand::LineTo(10.0, 10.0),
+                        PathCommand::ClosePath,
+                    ],
+                    fill_rule: GlyphOutlineFillRule::EvenOdd,
+                }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, glyph_outline],
+            ),
+        );
+
+        let json = tree
+            .to_json_v2_strict_glyph_outline()
+            .expect("valid strict glyph outline export");
+
+        assert!(json.contains("\"schemaVersion\":2"));
+        assert!(json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"]"));
+        assert!(json.contains("\"textV2\":{\"profile\":\"strictVisual\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"none\",\"strictVisualFallbackFree\":true,\"paintOrderSlots\":\"required\"}"));
+        assert!(json.contains("\"ops\":[{\"id\":\"text-0\",\"type\":\"text\""));
+        assert!(json.contains("\"defaultVariantId\":\"glyphOutline\""));
+        assert!(json.contains("\"fallbackPolicy\":\"none\""));
+        assert!(json
+            .contains("\"variants\":[{\"variantId\":\"glyphOutline\",\"kind\":\"glyphOutline\""));
+        assert!(json.contains(
+            "\"payload\":{\"id\":\"op-text-0-glyphOutline-0\",\"type\":\"glyphOutline\""
+        ));
+        assert!(json.contains("\"fallbackRequired\":false"));
+        assert!(!json.contains("\"variantId\":\"textRun\""));
+        assert!(!json.contains("\"type\":\"textRun\""));
+    }
+
+    #[test]
+    fn rejects_v2_strict_glyph_outline_export_without_strict_outline() {
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![text_run]),
+        );
+
+        let issues = tree
+            .to_json_v2_strict_glyph_outline()
+            .expect_err("strict glyph outline export must fail closed");
+
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == TextV2ValidationIssueCode::StrictVisualVariantMissing));
     }
 
     #[test]

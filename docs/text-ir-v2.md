@@ -718,12 +718,21 @@ scaffold as the future writer/diagnostics entrypoint.
 the HWP-compatible layout and `TextRun` fallback policy, emits schemaVersion 2,
 requires `text.variants` and `text.paintOrderSlot`, and wraps flattened v1 text
 variant groups into canonical `type: "text"` envelopes.
+`PageLayerTree::to_json_v2_strict_glyph_outline()` is the first opt-in
+strictVisual string writer. It emits only strict-eligible `glyphOutline`
+variants, uses `fallbackPolicy="none"`, requires
+`text.strictVisualFallbackFree` and `text.glyphOutline.monochromeFill`, and
+returns `strictVisualVariantMissing` instead of leaking an unvariant `TextRun`
+fallback into a fallback-free export.
 `page_layer_tree_to_js_value_v2_compat()` mirrors that opt-in envelope for
 direct WASM object exports, so Studio-side consumers can validate v2 text slots
 without going through stringified JSON.
 The public wasm/native API exposes this opt-in path as
 `getPageLayerTreeV2Compat*` and `getPageLayerTreeValueV2Compat*`; existing v1
 `getPageLayerTree*` calls remain unchanged.
+The strictVisual GlyphOutline string path is exposed separately as
+`getPageLayerTreeV2StrictGlyphOutline*`; it is intentionally not a JS object
+writer yet, so callers must opt in explicitly and handle validation failures.
 `text_v2_validation_issues_to_js_value()` exposes the same validator issue
 vocabulary to JS callers when an opt-in v2 export is rejected.
 `text_v2_validation_issues_to_json()` exposes that same issue shape for string
