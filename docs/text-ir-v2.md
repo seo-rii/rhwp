@@ -727,6 +727,24 @@ model. Adding a gated stroke subset, a CanvasKit color-glyph smoke, line-break
 risk telemetry, mixed-per-glyph opt-in emission, or shapedModern opt-in width
 input is not by itself a v3 trigger.
 
+Schema-v2 closeout should be tracked as a status checklist, not as a promise
+that every reserved writer is enabled:
+
+| Area | Closeout status |
+| --- | --- |
+| `PaintOp::Text { variants }` reader/compat writer | Required before v2 closeout |
+| unique `paintOrderSlotId` validation | Required before v2 closeout |
+| compatibility profile with `TextRun` fallback | Required before v2 closeout |
+| strictVisual fallback-free GlyphRun/GlyphOutline opt-in writers | Required before v2 closeout |
+| backend `VariantSelectionReport` selected/rejected vocabulary | Required before v2 closeout |
+| `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
+| `GlyphOutline` `colorLayers` / `bitmapGlyph` / `svgGlyph` | Vocabulary reserved; writer emission blocked |
+| CanvasKit color glyph smoke | Report-only backend capability smoke |
+| CanvasKit variation and TTC/OTC strict replay | Blocked until exact construction fixtures pass |
+| shaped measurement and `lineBreakRisk` telemetry | Report-only artifact outside replay schema |
+| shapedModern layout authority | Metadata reserved; opt-in layout migration only |
+| cross-scope variants and public `MixedPerGlyph` | Vocabulary and validator gate only |
+
 ## Phase 2 Entry Gate
 
 Phase 2 should not start by adding new payload expressiveness. It starts only

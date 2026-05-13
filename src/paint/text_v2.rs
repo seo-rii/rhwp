@@ -1364,6 +1364,42 @@ mod tests {
     }
 
     #[test]
+    fn rejects_text_v2_downgrade_for_fallback_free_strict_slot() {
+        let text = text_op(PaintVariantMeta::text_run_default(
+            "text-3-strict-downgrade",
+        ));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-3-strict-downgrade".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec![
+                    "text.outlineGlyph".to_string(),
+                    "text.glyphOutline.monochromeFill".to_string(),
+                ],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-3-strict-downgrade".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let strict_ops =
+            strict_glyph_outline_text_v2_slots(&text_ops).expect("strict outline slot");
+
+        let issue_codes: Vec<_> = downgrade_text_v2_op_to_v1_compat(&strict_ops[0])
+            .expect_err("fallback-free strict slot must not downgrade to schema v1 compat")
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::FallbackFreeFeatureMissing));
+    }
+
+    #[test]
     fn reports_missing_fallback_and_fallback_free_gate() {
         let outline = outline_op(
             PaintVariantMeta {

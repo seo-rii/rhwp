@@ -1583,6 +1583,182 @@ mod tests {
     }
 
     #[test]
+    fn summarizes_multiple_paragraphs_and_pages_as_report_only_telemetry() {
+        let mut report = TextShapeReport::default();
+        report.shaped_measurements.push(ShapedMeasurementRunReport {
+            document_id: Some("doc".to_string()),
+            sample_id: Some("sample".to_string()),
+            page_index: Some(0),
+            text_op_id: Some("text-0".to_string()),
+            source: None,
+            legacy_width_px: 10.0,
+            shaped_width_px: 12.0,
+            delta_px: 2.0,
+            delta_ratio: 0.2,
+            cluster_mismatch_count: 1,
+            fallback_font_difference: true,
+            vertical_metric_difference: false,
+            shaping_quality: Some(GlyphRunQuality::Exact),
+        });
+        report.shaped_measurements.push(ShapedMeasurementRunReport {
+            document_id: Some("doc".to_string()),
+            sample_id: Some("sample".to_string()),
+            page_index: Some(0),
+            text_op_id: Some("text-1".to_string()),
+            source: None,
+            legacy_width_px: 20.0,
+            shaped_width_px: 19.0,
+            delta_px: -1.0,
+            delta_ratio: -0.05,
+            cluster_mismatch_count: 2,
+            fallback_font_difference: false,
+            vertical_metric_difference: true,
+            shaping_quality: Some(GlyphRunQuality::PositionAdjusted),
+        });
+        report.shaped_measurements.push(ShapedMeasurementRunReport {
+            document_id: Some("doc".to_string()),
+            sample_id: Some("sample".to_string()),
+            page_index: Some(1),
+            text_op_id: Some("text-2".to_string()),
+            source: None,
+            legacy_width_px: 30.0,
+            shaped_width_px: 33.0,
+            delta_px: 3.0,
+            delta_ratio: 0.1,
+            cluster_mismatch_count: 0,
+            fallback_font_difference: false,
+            vertical_metric_difference: false,
+            shaping_quality: Some(GlyphRunQuality::Exact),
+        });
+
+        assert!(report
+            .summarize_shaped_measurement_line(
+                Some("doc".to_string()),
+                Some("sample".to_string()),
+                Some(0),
+                Some("p0".to_string()),
+                0,
+                &[0, 1],
+            )
+            .is_some());
+        assert!(report
+            .summarize_shaped_measurement_line(
+                Some("doc".to_string()),
+                Some("sample".to_string()),
+                Some(1),
+                Some("p1".to_string()),
+                0,
+                &[2],
+            )
+            .is_some());
+        assert!(report
+            .summarize_shaped_measurement_line(None, None, Some(9), None, 99, &[99])
+            .is_none());
+        assert_eq!(report.shaped_measurement_lines.len(), 2);
+        assert_eq!(
+            report.shaped_measurement_lines[0].legacy_line_width_px,
+            30.0
+        );
+        assert_eq!(
+            report.shaped_measurement_lines[0].shaped_line_width_px,
+            31.0
+        );
+        assert_eq!(report.shaped_measurement_lines[0].delta_px, 1.0);
+        assert_eq!(report.shaped_measurement_lines[0].contributing_run_count, 2);
+        assert_eq!(report.shaped_measurement_lines[0].max_run_delta_px, 2.0);
+        assert_eq!(
+            report.shaped_measurement_lines[0].fallback_font_difference_count,
+            1
+        );
+        assert_eq!(
+            report.shaped_measurement_lines[0].vertical_metric_difference_count,
+            1
+        );
+        assert_eq!(
+            report.shaped_measurement_lines[0].cluster_mismatch_count_sum,
+            3
+        );
+
+        assert!(report
+            .summarize_shaped_measurement_paragraph(
+                Some("doc".to_string()),
+                Some("sample".to_string()),
+                Some(0),
+                Some("p0".to_string()),
+                &[0],
+            )
+            .is_some());
+        assert!(report
+            .summarize_shaped_measurement_paragraph(
+                Some("doc".to_string()),
+                Some("sample".to_string()),
+                Some(1),
+                Some("p1".to_string()),
+                &[1],
+            )
+            .is_some());
+        assert!(report
+            .summarize_shaped_measurement_paragraph(None, None, Some(9), None, &[99])
+            .is_none());
+        assert_eq!(report.shaped_measurement_paragraphs.len(), 2);
+        assert_eq!(report.shaped_measurement_paragraphs[0].line_count, 1);
+        assert_eq!(report.shaped_measurement_paragraphs[0].run_count, 2);
+        assert_eq!(
+            report.shaped_measurement_paragraphs[0].total_abs_delta_px,
+            1.0
+        );
+
+        assert!(report
+            .summarize_shaped_measurement_page(
+                Some("doc".to_string()),
+                Some("sample".to_string()),
+                Some(0),
+                &[0],
+            )
+            .is_some());
+        assert!(report
+            .summarize_shaped_measurement_page(
+                Some("doc".to_string()),
+                Some("sample".to_string()),
+                Some(1),
+                &[1],
+            )
+            .is_some());
+        assert!(report
+            .summarize_shaped_measurement_page(None, None, Some(9), &[99])
+            .is_none());
+        assert_eq!(report.shaped_measurement_pages.len(), 2);
+        assert_eq!(report.shaped_measurement_pages[0].paragraph_count, 1);
+        assert_eq!(report.shaped_measurement_pages[0].line_count, 1);
+        assert_eq!(report.shaped_measurement_pages[0].run_count, 2);
+        assert_eq!(report.shaped_measurement_pages[0].max_run_delta_px, 2.0);
+        assert_eq!(report.shaped_measurement_pages[0].max_line_delta_px, 1.0);
+        assert_eq!(report.shaped_measurement_pages[0].total_abs_delta_px, 1.0);
+        assert_eq!(
+            report.shaped_measurement_pages[0].fallback_font_difference_count,
+            1
+        );
+        assert_eq!(
+            report.shaped_measurement_pages[0].vertical_metric_difference_count,
+            1
+        );
+        assert_eq!(
+            report.shaped_measurement_pages[0].cluster_mismatch_count_sum,
+            3
+        );
+        assert_eq!(report.shaped_measurement_pages[1].page_index, Some(1));
+        assert_eq!(report.shaped_measurement_pages[1].max_run_delta_px, 3.0);
+        assert_eq!(report.shaped_measurement_pages[1].max_line_delta_px, 3.0);
+        assert_eq!(report.shaped_measurement_pages[1].total_abs_delta_px, 3.0);
+
+        let measurement_json = report.shaped_measurements_json();
+        assert!(measurement_json.contains("\"shapedMeasurementPages\""));
+        assert!(measurement_json.contains("\"pageIndex\":1"));
+        assert!(measurement_json.contains("\"textOpId\":\"text-2\""));
+        assert!(!measurement_json.contains("lineBreakWouldChange"));
+    }
+
+    #[test]
     fn lowerer_keeps_text_fallback_when_glyph_run_effects_are_not_fill_only() {
         let mut text_run = sourced_text_run("A");
         text_run.style.underline = crate::model::style::UnderlineType::Bottom;

@@ -1160,7 +1160,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       glyphOp(variationTree),
       variationTree.fontResources,
     );
-    const variationPng = renderTree(variationTree);
+    const variationRenderResult = renderTreeWithDiagnostics(variationTree);
+    const variationPng = variationRenderResult.png;
+    const variationSelectionDiagnostics = variationRenderResult.textVariantSelectionDiagnostics;
 
     const faceIndexTree = structuredClone(tree);
     assignFontIdentity(faceIndexTree, 'face-index', 'fixture-font-digest-face-index');
@@ -1169,7 +1171,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       glyphOp(faceIndexTree),
       faceIndexTree.fontResources,
     );
-    const faceIndexPng = renderTree(faceIndexTree);
+    const faceIndexRenderResult = renderTreeWithDiagnostics(faceIndexTree);
+    const faceIndexPng = faceIndexRenderResult.png;
+    const faceIndexSelectionDiagnostics = faceIndexRenderResult.textVariantSelectionDiagnostics;
 
     const positionAdjustedTree = structuredClone(tree);
     assignFontIdentity(
@@ -1385,8 +1389,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outOfRangeStatus,
       outOfRangePng,
       variationStatus,
+      variationSelectionDiagnostics,
       variationPng,
       faceIndexStatus,
+      faceIndexSelectionDiagnostics,
       faceIndexPng,
       positionAdjustedStatus,
       positionAdjustedPng,
@@ -1635,6 +1641,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && portableGlyphRunProbe.variationStatus?.reason === 'fontVariationUnsupported',
     `CanvasKit GlyphRun rejects unsupported variation instances=${JSON.stringify(portableGlyphRunProbe.variationStatus)}`,
   );
+  const variationSelectionReport = portableGlyphRunProbe.variationSelectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    variationSelectionReport?.selectedVariantId === 'textRun'
+      && variationSelectionReport?.selectedReason === 'defaultTextRunFallback'
+      && variationSelectionReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphRun'
+          && variant.reasons.includes('fontVariationUnsupported'),
+      )
+      && variationSelectionReport?.fontVerification?.variationSupported === false
+      && variationSelectionReport?.fontVerification?.reason === 'fontVariationUnsupported',
+    `CanvasKit variation fallback records VariantSelectionReport=${JSON.stringify(variationSelectionReport)}`,
+  );
   const variationRedPixels = countPixels(
     portableGlyphRunProbe.variationPng,
     (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
@@ -1651,6 +1671,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     portableGlyphRunProbe.faceIndexStatus?.replayable === false
       && portableGlyphRunProbe.faceIndexStatus?.reason === 'fontFaceIndexUnsupported',
     `CanvasKit GlyphRun rejects TTC/OTC-style non-zero face index=${JSON.stringify(portableGlyphRunProbe.faceIndexStatus)}`,
+  );
+  const faceIndexSelectionReport = portableGlyphRunProbe.faceIndexSelectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    faceIndexSelectionReport?.selectedVariantId === 'textRun'
+      && faceIndexSelectionReport?.selectedReason === 'defaultTextRunFallback'
+      && faceIndexSelectionReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphRun'
+          && variant.reasons.includes('fontFaceIndexUnsupported'),
+      )
+      && faceIndexSelectionReport?.fontVerification?.faceIndexSupported === false
+      && faceIndexSelectionReport?.fontVerification?.exactFaceInstantiated === false
+      && faceIndexSelectionReport?.fontVerification?.reason === 'fontFaceIndexUnsupported',
+    `CanvasKit faceIndex fallback records VariantSelectionReport=${JSON.stringify(faceIndexSelectionReport)}`,
   );
   const faceIndexRedPixels = countPixels(
     portableGlyphRunProbe.faceIndexPng,
