@@ -860,8 +860,9 @@ export interface LayerGlyphOutlineOp {
   variant: LayerTextVariantMeta;
   paintStyle: LayerTextStyle;
   /**
-   * Schema v1 readers accept the first richer payload discriminator, but only
-   * `monochromeFill` is replay-eligible until stroke-specific fixtures pass.
+   * Schema v2 vocabulary reserves richer payload families, but current strict
+   * replay only accepts `monochromeFill` and the gated `monochromeFillStroke`
+   * subset.
    */
   payloadKind?: LayerGlyphOutlinePayloadKind;
   stroke?: LayerGlyphOutlineStrokeStyle;

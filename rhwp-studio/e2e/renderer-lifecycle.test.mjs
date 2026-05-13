@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -658,6 +659,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const colorGlyphFontPath = path.join(RHWP_ROOT, 'tests', 'fixtures', 'fonts', 'RHWPColorSmokeCOLRv0.ttf');
   const colorGlyphFontBytes = [...fs.readFileSync(colorGlyphFontPath)];
   const colorGlyphFontDigest = '07aba86fc0f09361a59a4df361362e895e7e77cc8f20dd24ee5493cd1c85aac0';
+  const colorGlyphFontActualDigest = crypto
+    .createHash('sha256')
+    .update(Buffer.from(colorGlyphFontBytes))
+    .digest('hex');
+  assert(
+    colorGlyphFontActualDigest === colorGlyphFontDigest,
+    `CanvasKit color glyph fixture digest matches actual=${colorGlyphFontActualDigest}`,
+  );
+  assert(
+    fs.existsSync(path.join(RHWP_ROOT, 'tests', 'fixtures', 'fonts', 'RHWPColorSmokeCOLRv0.LICENSE.md')),
+    'CanvasKit color glyph fixture license file exists',
+  );
   const portableGlyphRunProbe = await page.evaluate(({ fontBytes, colorFontBytes, colorFontDigest }) => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
@@ -2033,6 +2046,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       textOp.variants = textOp.variants.filter((variant) => variant.variantId !== 'textRun');
       return tree;
     };
+    const makeReservedV2ColorPayloadTree = () => {
+      const tree = makeV2TextTree();
+      const outlineVariant = tree.root.ops[0].variants.find(
+        (variant) => variant.variantId === 'glyphOutline',
+      );
+      outlineVariant.requiredFeatures = ['text.outlineGlyph', 'text.glyphOutline.colorLayers'];
+      outlineVariant.parts[0].payload = {
+        ...outlineVariant.parts[0].payload,
+        payloadKind: 'colorLayers',
+      };
+      return tree;
+    };
     const strokePayload = {
       payloadKind: 'monochromeFillStroke',
       stroke: {
@@ -2092,9 +2117,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
         makeTree(style, [outlinePath], true, unsupportedStrokePayload),
         true,
       );
+      const reservedColorPayloadSidecar = render(
+        makeTree(style, [outlinePath], true, { payloadKind: 'colorLayers' }),
+        true,
+      );
       const v2Fallback = render(makeV2TextTree(), false);
       const v2Strict = render(makeV2TextTree(), true);
       const invalidV2MissingFallback = render(makeInvalidV2TextTree(), false);
+      const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
       const unsupportedPayload = render(makeTree(style, []), true);
       return {
@@ -2105,9 +2135,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidAnchorSidecar,
         strokePayloadSidecar,
         unsupportedStrokePayloadSidecar,
+        reservedColorPayloadSidecar,
         v2Fallback,
         v2Strict,
         invalidV2MissingFallback,
+        reservedV2ColorPayload,
         unsupported,
         unsupportedPayload,
       };
@@ -2240,6 +2272,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `Canvas2D strict profile rejects unsupported stroke outline payload=${JSON.stringify(
       unsupportedStrokePayloadSidecarReport,
     )}`,
+  );
+  const reservedColorPayloadSidecarReport = canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  const reservedV2ColorPayloadIssueCodes = canvas2dGlyphOutlineProbe.reservedV2ColorPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
+      && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedColorGlyph'),
+      )
+      && reservedColorPayloadSidecarReport?.outlineEligibility?.payloadSupported === false
+      && reservedColorPayloadSidecarReport?.outlineEligibility?.reason === 'unsupportedColorGlyph'
+      && reservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+    `Canvas2D strict profile rejects reserved color outline payload=${JSON.stringify({
+      report: reservedColorPayloadSidecarReport,
+      sidecarValidation: canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.textV2Validation,
+      v2Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayload?.textV2Validation,
+    })}`,
   );
   const v2FallbackReport = canvas2dGlyphOutlineProbe.v2Fallback?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'op-text-v2-outline',

@@ -208,8 +208,15 @@ pub struct LineBreakShadowReport {
 }
 
 impl LineBreakShadowReport {
+    pub fn has_minimum_layout_context(&self) -> bool {
+        self.has_full_layout_context
+            && self.legacy_available_width_px.is_some()
+            && (self.paragraph_width_px.is_some() || self.container_width_px.is_some())
+            && self.legacy_line_segmentation_available
+    }
+
     pub fn reported_risk(&self) -> LineBreakChangeRisk {
-        if self.has_full_layout_context {
+        if self.has_minimum_layout_context() {
             self.risk
         } else {
             LineBreakChangeRisk::InsufficientContext
@@ -1502,6 +1509,26 @@ mod tests {
             risk: LineBreakChangeRisk::ChangeLikely,
             reason: Some("missingFullLayoutContext".to_string()),
         });
+        report.line_break_shadows.push(LineBreakShadowReport {
+            document_id: None,
+            sample_id: None,
+            page_index: Some(0),
+            paragraph_id: Some("paragraph-2".to_string()),
+            line_index: 2,
+            has_full_layout_context: true,
+            legacy_available_width_px: None,
+            paragraph_width_px: Some(16.0),
+            container_width_px: None,
+            table_cell_constraint: None,
+            tab_stop_summary: None,
+            justification: None,
+            legacy_line_segmentation_available: false,
+            legacy_line_width_px: 10.0,
+            shaped_line_width_px: 12.0,
+            overflow_delta_px: None,
+            risk: LineBreakChangeRisk::ChangeLikely,
+            reason: Some("missingWidthAndLineSegmentationContext".to_string()),
+        });
         let measurement_json = report.shaped_measurements_json();
         assert!(measurement_json.contains("\"shapedMeasurements\""));
         assert!(measurement_json.contains("\"shapedMeasurementLines\""));
@@ -1535,6 +1562,8 @@ mod tests {
         assert!(measurement_json.contains("\"legacyLineSegmentationAvailable\":false"));
         assert!(measurement_json.contains("\"risk\":\"insufficientContext\""));
         assert!(measurement_json.contains("\"reason\":\"missingFullLayoutContext\""));
+        assert!(measurement_json.contains("\"paragraphId\":\"paragraph-2\""));
+        assert!(measurement_json.contains("\"reason\":\"missingWidthAndLineSegmentationContext\""));
         assert!(measurement_json.contains("\"paragraphCount\":1"));
         assert!(measurement_json.contains("\"totalAbsDeltaPx\":2"));
         assert!(!measurement_json.contains("lineBreakWouldChange"));

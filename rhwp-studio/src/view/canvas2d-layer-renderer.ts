@@ -1724,6 +1724,15 @@ function glyphOutlinePayloadStatus(
       reason: 'glyphOutlineStrokeStyleUnsupported',
     };
   }
+  if (payloadKind === 'colorLayers') {
+    return { supported: false, reason: 'unsupportedColorGlyph' };
+  }
+  if (payloadKind === 'bitmapGlyph') {
+    return { supported: false, reason: 'unsupportedBitmapGlyph' };
+  }
+  if (payloadKind === 'svgGlyph') {
+    return { supported: false, reason: 'unsupportedSvgGlyph' };
+  }
   return { supported: false, reason: 'unsupportedOutlinePayload' };
 }
 

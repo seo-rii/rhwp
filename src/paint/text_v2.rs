@@ -1485,6 +1485,59 @@ mod tests {
     }
 
     #[test]
+    fn rejects_strict_glyph_outline_reserved_payload_families() {
+        for payload_kind in [
+            GlyphOutlinePayloadKind::ColorLayers,
+            GlyphOutlinePayloadKind::BitmapGlyph,
+            GlyphOutlinePayloadKind::SvgGlyph,
+        ] {
+            let text = text_op(PaintVariantMeta::text_run_default(format!(
+                "text-4-strict-reserved-{}",
+                payload_kind.as_str()
+            )));
+            let outline = outline_op(
+                PaintVariantMeta {
+                    equivalence_group: format!("text-4-strict-reserved-{}", payload_kind.as_str()),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec![
+                        "text.outlineGlyph".to_string(),
+                        format!("text.glyphOutline.{}", payload_kind.as_str()),
+                    ],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some(format!(
+                        "op-text-4-strict-reserved-{}",
+                        payload_kind.as_str()
+                    )),
+                    local_paint_order: Some(0),
+                },
+                0.0,
+            );
+            let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+            let LayerTextVariantPayload::GlyphOutline(outline) =
+                &mut text_ops[0].variants[1].parts[0].payload
+            else {
+                panic!("expected glyph outline payload");
+            };
+            outline.payload_kind = payload_kind;
+
+            let issue_codes: Vec<_> = strict_glyph_outline_text_v2_slots(&text_ops)
+                .expect_err("reserved outline payload family should not be strict eligible")
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+            assert!(
+                issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing),
+                "reserved payload family {payload_kind:?} should fail closed"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_strict_glyph_outline_slot_without_strict_eligible_outline() {
         let text = text_op(PaintVariantMeta::text_run_default("text-4-strict-missing"));
         let mut outline = outline_op(

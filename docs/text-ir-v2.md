@@ -743,7 +743,8 @@ The v1 closeout gate is:
   schema-v1 writers only emit `variantOps` for explicit sidecar payloads and
   still do not emit `paintOrderSlotId`;
 - `glyphOutline` requires `anchorOpId`, a same-leaf text fallback, path-level
-  source/glyph provenance, and monochrome fill-only style eligibility;
+  source/glyph provenance, and either monochrome fill-only style eligibility or
+  the explicitly gated initial `monochromeFillStroke` subset;
 - backend `VariantSelectionReport` remains the source of truth for why a
   backend selected or rejected `TextRun`, `GlyphRun`, or `glyphOutline`;
 - native-vs-CanvasKit parity matrices stay report-only until thresholds and
@@ -752,7 +753,10 @@ The v1 closeout gate is:
   infer `lineBreakWouldChange`. When line-level context is incomplete,
   diagnostics may record `lineBreakRisk`/`lineBreakShadows` values such as
   `insufficientContext`, but those reports remain telemetry rather than layout
-  authority.
+  authority. A line-break risk report needs at least full-context intent,
+  legacy available width, paragraph or container width, and legacy line
+  segmentation availability before it may report anything other than
+  `insufficientContext`.
 
 Phase 2 now opens schema v2 early, but still chooses one explicit emission axis
 at a time. The preferred order is:
