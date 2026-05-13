@@ -149,6 +149,23 @@ impl LineBreakChangeRisk {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum LineBreakContextValue<T> {
+    Known(T),
+    KnownAbsent,
+    Unknown,
+}
+
+impl<T> LineBreakContextValue<T> {
+    pub fn is_known(&self) -> bool {
+        matches!(self, Self::Known(_))
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TableCellConstraintSummary {
     pub cell_width_px: Option<f64>,
     pub content_width_px: Option<f64>,
@@ -193,13 +210,13 @@ pub struct LineBreakShadowReport {
     pub paragraph_id: Option<String>,
     pub line_index: u32,
     pub has_full_layout_context: bool,
-    pub legacy_available_width_px: Option<f64>,
-    pub paragraph_width_px: Option<f64>,
-    pub container_width_px: Option<f64>,
-    pub table_cell_constraint: Option<TableCellConstraintSummary>,
-    pub tab_stop_summary: Option<TabStopSummary>,
-    pub justification: Option<JustificationMode>,
-    pub legacy_line_segmentation_available: bool,
+    pub legacy_available_width_px: LineBreakContextValue<f64>,
+    pub paragraph_width_px: LineBreakContextValue<f64>,
+    pub container_width_px: LineBreakContextValue<f64>,
+    pub table_cell_constraint: LineBreakContextValue<TableCellConstraintSummary>,
+    pub tab_stop_summary: LineBreakContextValue<TabStopSummary>,
+    pub justification: LineBreakContextValue<JustificationMode>,
+    pub legacy_line_segmentation_available: LineBreakContextValue<bool>,
     pub legacy_line_width_px: f64,
     pub shaped_line_width_px: f64,
     pub overflow_delta_px: Option<f64>,
@@ -210,9 +227,12 @@ pub struct LineBreakShadowReport {
 impl LineBreakShadowReport {
     pub fn has_minimum_layout_context(&self) -> bool {
         self.has_full_layout_context
-            && self.legacy_available_width_px.is_some()
-            && (self.paragraph_width_px.is_some() || self.container_width_px.is_some())
-            && self.legacy_line_segmentation_available
+            && self.legacy_available_width_px.is_known()
+            && (self.paragraph_width_px.is_known() || self.container_width_px.is_known())
+            && !self.table_cell_constraint.is_unknown()
+            && !self.tab_stop_summary.is_unknown()
+            && !self.justification.is_unknown()
+            && !self.legacy_line_segmentation_available.is_unknown()
     }
 
     pub fn reported_risk(&self) -> LineBreakChangeRisk {
@@ -571,33 +591,32 @@ impl TextShapeReport {
             } else {
                 "false"
             });
-            if let Some(width) = shadow.legacy_available_width_px {
-                write_f64_field(&mut buf, "legacyAvailableWidthPx", width, &mut first);
-            }
-            if let Some(width) = shadow.paragraph_width_px {
-                write_f64_field(&mut buf, "paragraphWidthPx", width, &mut first);
-            }
-            if let Some(width) = shadow.container_width_px {
-                write_f64_field(&mut buf, "containerWidthPx", width, &mut first);
-            }
-            if let Some(constraint) = &shadow.table_cell_constraint {
-                write_field_prefix(&mut buf, "tableCellConstraint", &mut first);
-                write_table_cell_constraint_json(&mut buf, constraint);
-            }
-            if let Some(summary) = &shadow.tab_stop_summary {
-                write_field_prefix(&mut buf, "tabStopSummary", &mut first);
-                write_tab_stop_summary_json(&mut buf, summary);
-            }
-            if let Some(justification) = shadow.justification {
-                write_field_prefix(&mut buf, "justification", &mut first);
-                write_json_string(&mut buf, justification.as_str());
-            }
+            write_field_prefix(&mut buf, "legacyAvailableWidthPx", &mut first);
+            write_context_value_json(&mut buf, &shadow.legacy_available_width_px, write_f64_json);
+            write_field_prefix(&mut buf, "paragraphWidthPx", &mut first);
+            write_context_value_json(&mut buf, &shadow.paragraph_width_px, write_f64_json);
+            write_field_prefix(&mut buf, "containerWidthPx", &mut first);
+            write_context_value_json(&mut buf, &shadow.container_width_px, write_f64_json);
+            write_field_prefix(&mut buf, "tableCellConstraint", &mut first);
+            write_context_value_json(
+                &mut buf,
+                &shadow.table_cell_constraint,
+                write_table_cell_constraint_json,
+            );
+            write_field_prefix(&mut buf, "tabStopSummary", &mut first);
+            write_context_value_json(
+                &mut buf,
+                &shadow.tab_stop_summary,
+                write_tab_stop_summary_json,
+            );
+            write_field_prefix(&mut buf, "justification", &mut first);
+            write_context_value_json(&mut buf, &shadow.justification, write_justification_json);
             write_field_prefix(&mut buf, "legacyLineSegmentationAvailable", &mut first);
-            buf.push_str(if shadow.legacy_line_segmentation_available {
-                "true"
-            } else {
-                "false"
-            });
+            write_context_value_json(
+                &mut buf,
+                &shadow.legacy_line_segmentation_available,
+                write_bool_json,
+            );
             write_f64_field(
                 &mut buf,
                 "legacyLineWidthPx",
@@ -791,6 +810,42 @@ fn write_shaped_measurement_json(buf: &mut String, measurement: &ShapedMeasureme
         write_json_string(buf, quality.as_str());
     }
     buf.push('}');
+}
+
+fn write_context_value_json<T>(
+    buf: &mut String,
+    value: &LineBreakContextValue<T>,
+    write_known: fn(&mut String, &T),
+) {
+    match value {
+        LineBreakContextValue::Known(value) => {
+            buf.push_str("{\"state\":\"known\",\"value\":");
+            write_known(buf, value);
+            buf.push('}');
+        }
+        LineBreakContextValue::KnownAbsent => {
+            buf.push_str("{\"state\":\"knownAbsent\"}");
+        }
+        LineBreakContextValue::Unknown => {
+            buf.push_str("{\"state\":\"unknown\"}");
+        }
+    }
+}
+
+fn write_f64_json(buf: &mut String, value: &f64) {
+    if value.is_finite() {
+        buf.push_str(&value.to_string());
+    } else {
+        buf.push_str("null");
+    }
+}
+
+fn write_bool_json(buf: &mut String, value: &bool) {
+    buf.push_str(if *value { "true" } else { "false" });
+}
+
+fn write_justification_json(buf: &mut String, value: &JustificationMode) {
+    write_json_string(buf, value.as_str());
 }
 
 fn write_table_cell_constraint_json(buf: &mut String, constraint: &TableCellConstraintSummary) {
@@ -1468,21 +1523,21 @@ mod tests {
             paragraph_id: Some("paragraph-0".to_string()),
             line_index: 0,
             has_full_layout_context: true,
-            legacy_available_width_px: Some(14.0),
-            paragraph_width_px: Some(16.0),
-            container_width_px: Some(18.0),
-            table_cell_constraint: Some(TableCellConstraintSummary {
+            legacy_available_width_px: LineBreakContextValue::Known(14.0),
+            paragraph_width_px: LineBreakContextValue::Known(16.0),
+            container_width_px: LineBreakContextValue::Known(18.0),
+            table_cell_constraint: LineBreakContextValue::Known(TableCellConstraintSummary {
                 cell_width_px: Some(20.0),
                 content_width_px: Some(18.0),
                 available_width_px: Some(14.0),
             }),
-            tab_stop_summary: Some(TabStopSummary {
+            tab_stop_summary: LineBreakContextValue::Known(TabStopSummary {
                 count: 2,
                 next_tab_stop_px: Some(24.0),
                 has_leaders: true,
             }),
-            justification: Some(JustificationMode::Justify),
-            legacy_line_segmentation_available: true,
+            justification: LineBreakContextValue::Known(JustificationMode::Justify),
+            legacy_line_segmentation_available: LineBreakContextValue::Known(true),
             legacy_line_width_px: 10.0,
             shaped_line_width_px: 12.0,
             overflow_delta_px: Some(-2.0),
@@ -1496,13 +1551,13 @@ mod tests {
             paragraph_id: Some("paragraph-1".to_string()),
             line_index: 1,
             has_full_layout_context: false,
-            legacy_available_width_px: None,
-            paragraph_width_px: None,
-            container_width_px: None,
-            table_cell_constraint: None,
-            tab_stop_summary: None,
-            justification: None,
-            legacy_line_segmentation_available: false,
+            legacy_available_width_px: LineBreakContextValue::Unknown,
+            paragraph_width_px: LineBreakContextValue::Unknown,
+            container_width_px: LineBreakContextValue::Unknown,
+            table_cell_constraint: LineBreakContextValue::Unknown,
+            tab_stop_summary: LineBreakContextValue::Unknown,
+            justification: LineBreakContextValue::Unknown,
+            legacy_line_segmentation_available: LineBreakContextValue::Unknown,
             legacy_line_width_px: 10.0,
             shaped_line_width_px: 12.0,
             overflow_delta_px: None,
@@ -1516,18 +1571,38 @@ mod tests {
             paragraph_id: Some("paragraph-2".to_string()),
             line_index: 2,
             has_full_layout_context: true,
-            legacy_available_width_px: None,
-            paragraph_width_px: Some(16.0),
-            container_width_px: None,
-            table_cell_constraint: None,
-            tab_stop_summary: None,
-            justification: None,
-            legacy_line_segmentation_available: false,
+            legacy_available_width_px: LineBreakContextValue::Unknown,
+            paragraph_width_px: LineBreakContextValue::Known(16.0),
+            container_width_px: LineBreakContextValue::KnownAbsent,
+            table_cell_constraint: LineBreakContextValue::KnownAbsent,
+            tab_stop_summary: LineBreakContextValue::KnownAbsent,
+            justification: LineBreakContextValue::KnownAbsent,
+            legacy_line_segmentation_available: LineBreakContextValue::Known(false),
             legacy_line_width_px: 10.0,
             shaped_line_width_px: 12.0,
             overflow_delta_px: None,
             risk: LineBreakChangeRisk::ChangeLikely,
             reason: Some("missingWidthAndLineSegmentationContext".to_string()),
+        });
+        report.line_break_shadows.push(LineBreakShadowReport {
+            document_id: None,
+            sample_id: None,
+            page_index: Some(0),
+            paragraph_id: Some("paragraph-3".to_string()),
+            line_index: 3,
+            has_full_layout_context: true,
+            legacy_available_width_px: LineBreakContextValue::Known(14.0),
+            paragraph_width_px: LineBreakContextValue::Known(16.0),
+            container_width_px: LineBreakContextValue::KnownAbsent,
+            table_cell_constraint: LineBreakContextValue::KnownAbsent,
+            tab_stop_summary: LineBreakContextValue::KnownAbsent,
+            justification: LineBreakContextValue::KnownAbsent,
+            legacy_line_segmentation_available: LineBreakContextValue::Known(false),
+            legacy_line_width_px: 13.0,
+            shaped_line_width_px: 14.5,
+            overflow_delta_px: Some(0.5),
+            risk: LineBreakChangeRisk::ChangePossible,
+            reason: Some("knownAbsentContextStillUsable".to_string()),
         });
         let measurement_json = report.shaped_measurements_json();
         assert!(measurement_json.contains("\"shapedMeasurements\""));
@@ -1544,9 +1619,14 @@ mod tests {
         assert!(measurement_json.contains("\"shapedLineWidthPx\":12"));
         assert!(measurement_json.contains("\"contributingRunCount\":1"));
         assert!(measurement_json.contains("\"hasFullLayoutContext\":true"));
-        assert!(measurement_json.contains("\"legacyAvailableWidthPx\":14"));
-        assert!(measurement_json.contains("\"paragraphWidthPx\":16"));
-        assert!(measurement_json.contains("\"containerWidthPx\":18"));
+        assert!(measurement_json
+            .contains("\"legacyAvailableWidthPx\":{\"state\":\"known\",\"value\":14}"));
+        assert!(
+            measurement_json.contains("\"paragraphWidthPx\":{\"state\":\"known\",\"value\":16}")
+        );
+        assert!(
+            measurement_json.contains("\"containerWidthPx\":{\"state\":\"known\",\"value\":18}")
+        );
         assert!(measurement_json.contains("\"tableCellConstraint\""));
         assert!(measurement_json.contains("\"cellWidthPx\":20"));
         assert!(measurement_json.contains("\"contentWidthPx\":18"));
@@ -1554,16 +1634,24 @@ mod tests {
         assert!(measurement_json.contains("\"tabStopSummary\""));
         assert!(measurement_json.contains("\"nextTabStopPx\":24"));
         assert!(measurement_json.contains("\"hasLeaders\":true"));
-        assert!(measurement_json.contains("\"justification\":\"justify\""));
-        assert!(measurement_json.contains("\"legacyLineSegmentationAvailable\":true"));
+        assert!(measurement_json
+            .contains("\"justification\":{\"state\":\"known\",\"value\":\"justify\"}"));
+        assert!(measurement_json
+            .contains("\"legacyLineSegmentationAvailable\":{\"state\":\"known\",\"value\":true}"));
+        assert!(measurement_json.contains("\"state\":\"knownAbsent\""));
+        assert!(measurement_json.contains("\"state\":\"unknown\""));
         assert!(measurement_json.contains("\"overflowDeltaPx\":-2"));
         assert!(measurement_json.contains("\"risk\":\"noChangeLikely\""));
         assert!(measurement_json.contains("\"reason\":\"withinLegacyAvailableWidth\""));
-        assert!(measurement_json.contains("\"legacyLineSegmentationAvailable\":false"));
+        assert!(measurement_json
+            .contains("\"legacyLineSegmentationAvailable\":{\"state\":\"known\",\"value\":false}"));
         assert!(measurement_json.contains("\"risk\":\"insufficientContext\""));
         assert!(measurement_json.contains("\"reason\":\"missingFullLayoutContext\""));
         assert!(measurement_json.contains("\"paragraphId\":\"paragraph-2\""));
         assert!(measurement_json.contains("\"reason\":\"missingWidthAndLineSegmentationContext\""));
+        assert!(measurement_json.contains("\"paragraphId\":\"paragraph-3\""));
+        assert!(measurement_json.contains("\"risk\":\"changePossible\""));
+        assert!(measurement_json.contains("\"reason\":\"knownAbsentContextStillUsable\""));
         assert!(measurement_json.contains("\"paragraphCount\":1"));
         assert!(measurement_json.contains("\"totalAbsDeltaPx\":2"));
         assert!(!measurement_json.contains("lineBreakWouldChange"));

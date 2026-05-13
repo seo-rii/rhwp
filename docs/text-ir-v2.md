@@ -400,6 +400,10 @@ variant diagnostics plus red/blue/fallback pixel counts as a report-only smoke.
 Setting `RHWP_CANVASKIT_COLOR_GLYPH_SMOKE=1` promotes that local probe to hard
 assertions. This does not make color glyphs `GlyphOutline`-eligible; `ColorLayers`,
 bitmap glyphs, and SVG-in-font payloads remain reserved richer-outline work.
+The smoke may start CanvasKit-only, but strictVisual color glyph eligibility
+requires a stable native reference or equivalent baseline, deterministic
+diagnostics, and a stable fuzzy threshold. Successful smoke output is therefore
+backend capability evidence, not an automatic strictVisual gate.
 
 ## Migration Phases
 
@@ -529,14 +533,20 @@ The reserved families are intentionally separate payload families:
 
 - `ColorLayers` should normalize COLR/COLRv1-style color glyphs into a layer or
   paint-graph payload with `colorFormat`, source font provenance, palette
-  reference, glyph range, and source range. COLRv0 can start as a solid palette
-  layer stack; COLRv1 needs a separate graph gate for gradients, transforms, and
+  reference, glyph range, and source range. The normalized graph is the primary
+  portable replay payload; native COLR table references are provenance,
+  diagnostics, or cache keys only. COLRv0 can start as a solid palette layer
+  stack; COLRv1 needs a separate graph gate for gradients, transforms, and
   compositing.
 - `BitmapGlyph` should reference an image subresource with placement,
-  transform-to-run, optional ppem, pixel format, and color-space metadata. It is
-  not a path payload.
+  transform-to-run, producer-resolved strike/ppem, strike-selection policy,
+  alpha mode, scaling/filtering policy, pixel format, and color-space metadata.
+  It is not a path payload, and backends must not silently reselect a different
+  bitmap strike for strict replay.
 - `SvgGlyph` should reference a sanitized static vector subresource. Strict
-  visual replay must keep external resources, script, and animation disabled.
+  visual replay must keep external resources, script, animation, links, and
+  interactivity disabled; raw SVG-in-font replay is not the strictVisual
+  contract.
 
 The current validator keeps this conservative:
 
@@ -714,7 +724,9 @@ reserved writer is enabled. The v2 closure bar is:
 - exact font blob/face/instance keys represented in schema, with backend replay
   eligibility still evaluated by the renderer;
 - shapedModern layout metadata present, but layout mutation still opt-in and
-  outside compatibility replay;
+  outside compatibility replay. Detailed shaped measurement and line-break risk
+  reports remain telemetry artifacts outside the replay schema, and a default
+  authority switch from `hwpCompat` to `shapedModern` is a v3-level decision;
 - `text.crossScopeVariants` and `text.vertical.mixedPerGlyph` vocabulary
   present, with default writers still same-scope and homogeneous-run based.
 
@@ -771,10 +783,13 @@ The v1 closeout gate is:
   infer `lineBreakWouldChange`. When line-level context is incomplete,
   diagnostics may record `lineBreakRisk`/`lineBreakShadows` values such as
   `insufficientContext`, but those reports remain telemetry rather than layout
-  authority. A line-break risk report needs at least full-context intent,
-  legacy available width, paragraph or container width, and legacy line
-  segmentation availability before it may report anything other than
-  `insufficientContext`.
+  authority. A line-break risk report records context as `known`,
+  `knownAbsent`, or `unknown`; `knownAbsent` is different from missing data and
+  can satisfy context for things like table constraints or tab stops. A report
+  needs at least full-context intent, known legacy available width, known
+  paragraph or container width, non-unknown table/tab/justification context, and
+  known legacy line-segmentation availability before it may report anything
+  other than `insufficientContext`.
 
 Phase 2 now opens schema v2 early, but still chooses one explicit emission axis
 at a time. The preferred order is:
@@ -862,8 +877,9 @@ and exact external font verification remain renderer-side selection gates.
 `downgrade_text_v2_op_to_v1_compat()` is the first downgrade scaffold: it
 flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.
-`GlyphOutline.payloadKind` is currently `monochromeFill`; it exists so later
-stroke, color-layer, bitmap, or SVG glyph payloads can be feature-gated without
+`GlyphOutline.payloadKind` currently implements `monochromeFill` plus the
+feature-gated `monochromeFillStroke` subset; the field exists so later
+color-layer, bitmap, or SVG glyph payloads can be feature-gated without
 overloading the first fill-only path representation. Reserved payload kinds are
 defined as schema vocabulary but are rejected by the compatibility validator
 until their strict profile and feature gates land. The v2 validator reports
