@@ -629,9 +629,15 @@ paragraph and page summaries with counts, maximum deltas, total absolute deltas,
 and mismatch/fallback counters. These summaries do not infer line membership,
 paragraph membership, page membership, or decide `lineBreakWouldChange`; those
 remain out of scope until the layout migration milestone because they need
-paragraph/container context. `TextShapeReport` can serialize these observations
-as a standalone shaped-measurement JSON artifact; that artifact is telemetry for
-local/nightly migration analysis and is not part of the layer replay schema.
+paragraph/container context. Line-break shadow telemetry may record available
+width, paragraph/container width, table-cell constraints, tab-stop summaries,
+justification mode, and whether legacy line segmentation was available. If the
+full layout context is missing, the serialized `risk` is forced to
+`insufficientContext` rather than pretending the report can answer a
+`lineBreakWouldChange` boolean. `TextShapeReport` can serialize these
+observations as a standalone shaped-measurement JSON artifact; that artifact is
+telemetry for local/nightly migration analysis and is not part of the layer
+replay schema.
 
 ## Schema v1 Closure Criteria
 

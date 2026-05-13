@@ -149,6 +149,43 @@ impl LineBreakChangeRisk {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TableCellConstraintSummary {
+    pub cell_width_px: Option<f64>,
+    pub content_width_px: Option<f64>,
+    pub available_width_px: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabStopSummary {
+    pub count: u32,
+    pub next_tab_stop_px: Option<f64>,
+    pub has_leaders: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JustificationMode {
+    None,
+    Left,
+    Right,
+    Center,
+    Justify,
+    Distributed,
+}
+
+impl JustificationMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Center => "center",
+            Self::Justify => "justify",
+            Self::Distributed => "distributed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct LineBreakShadowReport {
     pub document_id: Option<String>,
     pub sample_id: Option<String>,
@@ -157,11 +194,27 @@ pub struct LineBreakShadowReport {
     pub line_index: u32,
     pub has_full_layout_context: bool,
     pub legacy_available_width_px: Option<f64>,
+    pub paragraph_width_px: Option<f64>,
+    pub container_width_px: Option<f64>,
+    pub table_cell_constraint: Option<TableCellConstraintSummary>,
+    pub tab_stop_summary: Option<TabStopSummary>,
+    pub justification: Option<JustificationMode>,
+    pub legacy_line_segmentation_available: bool,
     pub legacy_line_width_px: f64,
     pub shaped_line_width_px: f64,
     pub overflow_delta_px: Option<f64>,
     pub risk: LineBreakChangeRisk,
     pub reason: Option<String>,
+}
+
+impl LineBreakShadowReport {
+    pub fn reported_risk(&self) -> LineBreakChangeRisk {
+        if self.has_full_layout_context {
+            self.risk
+        } else {
+            LineBreakChangeRisk::InsufficientContext
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -514,6 +567,30 @@ impl TextShapeReport {
             if let Some(width) = shadow.legacy_available_width_px {
                 write_f64_field(&mut buf, "legacyAvailableWidthPx", width, &mut first);
             }
+            if let Some(width) = shadow.paragraph_width_px {
+                write_f64_field(&mut buf, "paragraphWidthPx", width, &mut first);
+            }
+            if let Some(width) = shadow.container_width_px {
+                write_f64_field(&mut buf, "containerWidthPx", width, &mut first);
+            }
+            if let Some(constraint) = &shadow.table_cell_constraint {
+                write_field_prefix(&mut buf, "tableCellConstraint", &mut first);
+                write_table_cell_constraint_json(&mut buf, constraint);
+            }
+            if let Some(summary) = &shadow.tab_stop_summary {
+                write_field_prefix(&mut buf, "tabStopSummary", &mut first);
+                write_tab_stop_summary_json(&mut buf, summary);
+            }
+            if let Some(justification) = shadow.justification {
+                write_field_prefix(&mut buf, "justification", &mut first);
+                write_json_string(&mut buf, justification.as_str());
+            }
+            write_field_prefix(&mut buf, "legacyLineSegmentationAvailable", &mut first);
+            buf.push_str(if shadow.legacy_line_segmentation_available {
+                "true"
+            } else {
+                "false"
+            });
             write_f64_field(
                 &mut buf,
                 "legacyLineWidthPx",
@@ -530,7 +607,7 @@ impl TextShapeReport {
                 write_f64_field(&mut buf, "overflowDeltaPx", delta, &mut first);
             }
             write_field_prefix(&mut buf, "risk", &mut first);
-            write_json_string(&mut buf, shadow.risk.as_str());
+            write_json_string(&mut buf, shadow.reported_risk().as_str());
             write_optional_string_field(&mut buf, "reason", shadow.reason.as_deref(), &mut first);
             buf.push('}');
         }
@@ -706,6 +783,34 @@ fn write_shaped_measurement_json(buf: &mut String, measurement: &ShapedMeasureme
         write_field_prefix(buf, "shapingQuality", &mut first);
         write_json_string(buf, quality.as_str());
     }
+    buf.push('}');
+}
+
+fn write_table_cell_constraint_json(buf: &mut String, constraint: &TableCellConstraintSummary) {
+    buf.push('{');
+    let mut first = true;
+    if let Some(width) = constraint.cell_width_px {
+        write_f64_field(buf, "cellWidthPx", width, &mut first);
+    }
+    if let Some(width) = constraint.content_width_px {
+        write_f64_field(buf, "contentWidthPx", width, &mut first);
+    }
+    if let Some(width) = constraint.available_width_px {
+        write_f64_field(buf, "availableWidthPx", width, &mut first);
+    }
+    buf.push('}');
+}
+
+fn write_tab_stop_summary_json(buf: &mut String, summary: &TabStopSummary) {
+    buf.push('{');
+    let mut first = true;
+    write_field_prefix(buf, "count", &mut first);
+    buf.push_str(&summary.count.to_string());
+    if let Some(width) = summary.next_tab_stop_px {
+        write_f64_field(buf, "nextTabStopPx", width, &mut first);
+    }
+    write_field_prefix(buf, "hasLeaders", &mut first);
+    buf.push_str(if summary.has_leaders { "true" } else { "false" });
     buf.push('}');
 }
 
@@ -1355,13 +1460,47 @@ mod tests {
             page_index: Some(0),
             paragraph_id: Some("paragraph-0".to_string()),
             line_index: 0,
+            has_full_layout_context: true,
+            legacy_available_width_px: Some(14.0),
+            paragraph_width_px: Some(16.0),
+            container_width_px: Some(18.0),
+            table_cell_constraint: Some(TableCellConstraintSummary {
+                cell_width_px: Some(20.0),
+                content_width_px: Some(18.0),
+                available_width_px: Some(14.0),
+            }),
+            tab_stop_summary: Some(TabStopSummary {
+                count: 2,
+                next_tab_stop_px: Some(24.0),
+                has_leaders: true,
+            }),
+            justification: Some(JustificationMode::Justify),
+            legacy_line_segmentation_available: true,
+            legacy_line_width_px: 10.0,
+            shaped_line_width_px: 12.0,
+            overflow_delta_px: Some(-2.0),
+            risk: LineBreakChangeRisk::NoChangeLikely,
+            reason: Some("withinLegacyAvailableWidth".to_string()),
+        });
+        report.line_break_shadows.push(LineBreakShadowReport {
+            document_id: None,
+            sample_id: None,
+            page_index: Some(0),
+            paragraph_id: Some("paragraph-1".to_string()),
+            line_index: 1,
             has_full_layout_context: false,
             legacy_available_width_px: None,
+            paragraph_width_px: None,
+            container_width_px: None,
+            table_cell_constraint: None,
+            tab_stop_summary: None,
+            justification: None,
+            legacy_line_segmentation_available: false,
             legacy_line_width_px: 10.0,
             shaped_line_width_px: 12.0,
             overflow_delta_px: None,
-            risk: LineBreakChangeRisk::InsufficientContext,
-            reason: Some("missingParagraphWidth".to_string()),
+            risk: LineBreakChangeRisk::ChangeLikely,
+            reason: Some("missingFullLayoutContext".to_string()),
         });
         let measurement_json = report.shaped_measurements_json();
         assert!(measurement_json.contains("\"shapedMeasurements\""));
@@ -1377,9 +1516,25 @@ mod tests {
         assert!(measurement_json.contains("\"legacyLineWidthPx\":10"));
         assert!(measurement_json.contains("\"shapedLineWidthPx\":12"));
         assert!(measurement_json.contains("\"contributingRunCount\":1"));
-        assert!(measurement_json.contains("\"hasFullLayoutContext\":false"));
+        assert!(measurement_json.contains("\"hasFullLayoutContext\":true"));
+        assert!(measurement_json.contains("\"legacyAvailableWidthPx\":14"));
+        assert!(measurement_json.contains("\"paragraphWidthPx\":16"));
+        assert!(measurement_json.contains("\"containerWidthPx\":18"));
+        assert!(measurement_json.contains("\"tableCellConstraint\""));
+        assert!(measurement_json.contains("\"cellWidthPx\":20"));
+        assert!(measurement_json.contains("\"contentWidthPx\":18"));
+        assert!(measurement_json.contains("\"availableWidthPx\":14"));
+        assert!(measurement_json.contains("\"tabStopSummary\""));
+        assert!(measurement_json.contains("\"nextTabStopPx\":24"));
+        assert!(measurement_json.contains("\"hasLeaders\":true"));
+        assert!(measurement_json.contains("\"justification\":\"justify\""));
+        assert!(measurement_json.contains("\"legacyLineSegmentationAvailable\":true"));
+        assert!(measurement_json.contains("\"overflowDeltaPx\":-2"));
+        assert!(measurement_json.contains("\"risk\":\"noChangeLikely\""));
+        assert!(measurement_json.contains("\"reason\":\"withinLegacyAvailableWidth\""));
+        assert!(measurement_json.contains("\"legacyLineSegmentationAvailable\":false"));
         assert!(measurement_json.contains("\"risk\":\"insufficientContext\""));
-        assert!(measurement_json.contains("\"reason\":\"missingParagraphWidth\""));
+        assert!(measurement_json.contains("\"reason\":\"missingFullLayoutContext\""));
         assert!(measurement_json.contains("\"paragraphCount\":1"));
         assert!(measurement_json.contains("\"totalAbsDeltaPx\":2"));
         assert!(!measurement_json.contains("lineBreakWouldChange"));
