@@ -8,7 +8,6 @@ import type {
   LayerTextRunOp,
   LayerTextVariantMeta,
   LayerTextVariantPayload,
-  LayerTreeFeature,
   PageLayerTree,
 } from './types';
 import { isKnownLayerPaintOp } from './types';
@@ -290,14 +289,8 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants');
   const allowFallbackFree = requiredFeatures.has('text.strictVisualFallbackFree')
     || tree.textV2?.strictVisualFallbackFree === true;
-  const richerGlyphOutlineFeatures: LayerTreeFeature[] = [
-    'text.glyphOutline.monochromeFillStroke',
-    'text.glyphOutline.colorLayers',
-    'text.glyphOutline.bitmapGlyph',
-    'text.glyphOutline.svgGlyph',
-  ];
-  const allowRicherGlyphOutlinePayloads = richerGlyphOutlineFeatures
-    .some((feature) => requiredFeatures.has(feature));
+  const allowRicherGlyphOutlinePayloads =
+    requiredFeatures.has('text.glyphOutline.monochromeFillStroke');
   const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
   const stack: LayerNode[] = [tree.root];
 
@@ -530,41 +523,68 @@ export function validateLayerTextV2Op(
       }
       if (part.payload.type === 'glyphOutline') {
         const payloadKind = part.payload.payloadKind ?? 'monochromeFill';
-        const richerPayload = payloadKind !== 'monochromeFill';
-        const richerPayloadFeature =
-          requiredFeatures.has(`text.glyphOutline.${payloadKind}`)
-          || variant.requiredFeatures?.includes(`text.glyphOutline.${payloadKind}`)
-          || options.allowRicherGlyphOutlinePayloads === true;
-        if (richerPayload && !richerPayloadFeature) {
-          issues.push({
-            code: 'glyphOutlinePayloadKindFeatureMissing',
-            message: `Text variant '${variant.variantId}' uses ${payloadKind} without the matching required feature.`,
-            opId: op.id,
-            paintOrderSlotId: op.paintOrderSlotId,
-            variantId: variant.variantId,
-            partIndex,
-          });
-        }
-        if (payloadKind === 'monochromeFillStroke') {
-          if (!isSupportedGlyphOutlineStrokeStyle(part.payload.stroke)) {
+        switch (payloadKind) {
+          case 'monochromeFill':
+            if (part.payload.stroke) {
+              issues.push({
+                code: 'glyphOutlineStrokeStyleUnsupported',
+                message: `Text variant '${variant.variantId}' carries a stroke style outside monochromeFillStroke.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            break;
+          case 'monochromeFillStroke': {
+            const richerPayloadFeature =
+              requiredFeatures.has('text.glyphOutline.monochromeFillStroke')
+              || variant.requiredFeatures?.includes('text.glyphOutline.monochromeFillStroke')
+              || options.allowRicherGlyphOutlinePayloads === true;
+            if (!richerPayloadFeature) {
+              issues.push({
+                code: 'glyphOutlinePayloadKindFeatureMissing',
+                message: `Text variant '${variant.variantId}' uses ${payloadKind} without the matching required feature.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            if (!isSupportedGlyphOutlineStrokeStyle(part.payload.stroke)) {
+              issues.push({
+                code: 'glyphOutlineStrokeStyleUnsupported',
+                message: `Text variant '${variant.variantId}' uses an unsupported monochromeFillStroke style.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            break;
+          }
+          case 'colorLayers':
+          case 'bitmapGlyph':
+          case 'svgGlyph':
             issues.push({
-              code: 'glyphOutlineStrokeStyleUnsupported',
-              message: `Text variant '${variant.variantId}' uses an unsupported monochromeFillStroke style.`,
+              code: 'glyphOutlinePayloadKindFeatureMissing',
+              message: `Text variant '${variant.variantId}' uses reserved glyphOutline payload family '${payloadKind}' before its writer gate is implemented.`,
               opId: op.id,
               paintOrderSlotId: op.paintOrderSlotId,
               variantId: variant.variantId,
               partIndex,
             });
-          }
-        } else if (part.payload.stroke) {
-          issues.push({
-            code: 'glyphOutlineStrokeStyleUnsupported',
-            message: `Text variant '${variant.variantId}' carries a stroke style outside monochromeFillStroke.`,
-            opId: op.id,
-            paintOrderSlotId: op.paintOrderSlotId,
-            variantId: variant.variantId,
-            partIndex,
-          });
+            if (part.payload.stroke) {
+              issues.push({
+                code: 'glyphOutlineStrokeStyleUnsupported',
+                message: `Text variant '${variant.variantId}' carries a stroke style outside monochromeFillStroke.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            break;
         }
       }
       if (

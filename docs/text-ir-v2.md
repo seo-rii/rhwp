@@ -517,6 +517,27 @@ are rejected with `glyphOutlineStrokeStyleUnsupported`. Other backends may still
 reject the stroke payload until their own bbox, fixture, and fuzzy parity gates
 land.
 
+`payloadKind: "colorLayers"`, `"bitmapGlyph"`, and `"svgGlyph"` are v2
+vocabulary only. Current writers must not emit them, and current validators keep
+them gated even when the generic richer-outline option is enabled. They report
+`glyphOutlinePayloadKindFeatureMissing` until each family gets its own payload
+schema, writer gate, strict replay fixture, and deterministic fallback path.
+This keeps the v2 envelope from pretending that all richer outline families are
+implemented just because `monochromeFillStroke` is available.
+
+The reserved families are intentionally separate payload families:
+
+- `ColorLayers` should normalize COLR/COLRv1-style color glyphs into a layer or
+  paint-graph payload with `colorFormat`, source font provenance, palette
+  reference, glyph range, and source range. COLRv0 can start as a solid palette
+  layer stack; COLRv1 needs a separate graph gate for gradients, transforms, and
+  compositing.
+- `BitmapGlyph` should reference an image subresource with placement,
+  transform-to-run, optional ppem, pixel format, and color-space metadata. It is
+  not a path payload.
+- `SvgGlyph` should reference a sanitized static vector subresource. Strict
+  visual replay must keep external resources, script, and animation disabled.
+
 The current validator keeps this conservative:
 
 - every variant in an `equivalenceGroup` remains in one leaf / paint-order
@@ -530,6 +551,8 @@ The current validator keeps this conservative:
 - `payloadKind: "monochromeFillStroke"` is reserved for the v2 richer-outline
   gate and must include a supported `stroke` object before a validator may treat
   it as well-formed;
+- `payloadKind: "colorLayers"`, `"bitmapGlyph"`, and `"svgGlyph"` remain
+  reserved and are rejected until their family-specific gates land;
 - each outline path carries `glyphId`, `glyphRange`, and a UTF-8 source range
   so SVG/Canvas2D strict replay can keep path-level provenance for debugging,
   search sidecars, and accessibility sidecars;
@@ -822,9 +845,11 @@ stroke, color-layer, bitmap, or SVG glyph payloads can be feature-gated without
 overloading the first fill-only path representation. Reserved payload kinds are
 defined as schema vocabulary but are rejected by the compatibility validator
 until their strict profile and feature gates land. The v2 validator reports
-`glyphOutlinePayloadKindFeatureMissing` for those richer payloads unless the
-caller explicitly enables that future feature gate. For
-`monochromeFillStroke`, the validator also reports
+`glyphOutlinePayloadKindFeatureMissing` for `colorLayers`, `bitmapGlyph`, and
+`svgGlyph` regardless of the generic richer-outline option because those
+families do not have implemented writer gates yet. For `monochromeFillStroke`,
+the validator reports `glyphOutlinePayloadKindFeatureMissing` until the stroke
+feature gate is enabled, and it also reports
 `glyphOutlineStrokeStyleUnsupported` unless the payload carries the supported
 initial stroke subset.
 The Rust validator mirrors the first Studio diagnostics pass for those

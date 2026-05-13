@@ -715,36 +715,49 @@ fn validate_variant_parts(
             ));
         }
         if let LayerTextVariantPayload::GlyphOutline(outline) = &part.payload {
-            if outline.payload_kind != GlyphOutlinePayloadKind::MonochromeFill
-                && !options.allow_richer_glyph_outline_payloads
-            {
-                issues.push(text_v2_issue(
-                    op,
-                    TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
-                    Some(&variant.variant_id),
-                    Some(part.part_index),
-                ));
-            }
-            if outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFillStroke {
-                if !outline
-                    .stroke
-                    .as_ref()
-                    .is_some_and(|stroke| stroke.is_supported_monochrome_subset())
-                {
+            match outline.payload_kind {
+                GlyphOutlinePayloadKind::MonochromeFill => {
+                    if outline.stroke.is_some() {
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    }
+                }
+                GlyphOutlinePayloadKind::MonochromeFillStroke => {
+                    if !options.allow_richer_glyph_outline_payloads {
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    }
+                    if !outline
+                        .stroke
+                        .as_ref()
+                        .is_some_and(|stroke| stroke.is_supported_monochrome_subset())
+                    {
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    }
+                }
+                GlyphOutlinePayloadKind::ColorLayers
+                | GlyphOutlinePayloadKind::BitmapGlyph
+                | GlyphOutlinePayloadKind::SvgGlyph => {
                     issues.push(text_v2_issue(
                         op,
-                        TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported,
+                        TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
                         Some(&variant.variant_id),
                         Some(part.part_index),
                     ));
                 }
-            } else if outline.stroke.is_some() {
-                issues.push(text_v2_issue(
-                    op,
-                    TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported,
-                    Some(&variant.variant_id),
-                    Some(part.part_index),
-                ));
             }
         }
         if let LayerTextVariantPayload::GlyphRun(run) = &part.payload {
@@ -1683,6 +1696,55 @@ mod tests {
         options.allow_richer_glyph_outline_payloads = true;
         let issues = validate_text_v2_op(&text_ops[0], &options);
         assert!(issues.is_empty(), "{issues:?}");
+    }
+
+    #[test]
+    fn reports_reserved_glyph_outline_payload_families_without_writer_gate() {
+        for payload_kind in [
+            GlyphOutlinePayloadKind::ColorLayers,
+            GlyphOutlinePayloadKind::BitmapGlyph,
+            GlyphOutlinePayloadKind::SvgGlyph,
+        ] {
+            let text = text_op(PaintVariantMeta::text_run_default(format!(
+                "text-5-reserved-{}",
+                payload_kind.as_str()
+            )));
+            let outline = outline_op(
+                PaintVariantMeta {
+                    equivalence_group: format!("text-5-reserved-{}", payload_kind.as_str()),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec![format!("text.glyphOutline.{}", payload_kind.as_str())],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some(format!("text-anchor-5-reserved-{}", payload_kind.as_str())),
+                    local_paint_order: Some(0),
+                },
+                12.0,
+            );
+            let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+            let LayerTextVariantPayload::GlyphOutline(outline) =
+                &mut text_ops[0].variants[1].parts[0].payload
+            else {
+                panic!("expected glyph outline payload");
+            };
+            outline.payload_kind = payload_kind;
+
+            let mut options = TextV2ValidationOptions::default();
+            options.allow_richer_glyph_outline_payloads = true;
+            let issue_codes: Vec<_> = validate_text_v2_op(&text_ops[0], &options)
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+            assert!(
+                issue_codes
+                    .contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing),
+                "reserved payload family {payload_kind:?} should stay gated"
+            );
+        }
     }
 
     #[test]
