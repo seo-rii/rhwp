@@ -715,7 +715,8 @@ reserved writer is enabled. The v2 closure bar is:
 - explicit `fallbackPolicy` and `renderProfile` gates for compatibility versus
   strictVisual exports;
 - fallback-free strict text only when `text.strictVisualFallbackFree` and the
-  required variant features are declared;
+  required variant features are declared; fallback-free text slots that contain
+  only `TextRun` variants are invalid and report `strictVisualVariantMissing`;
 - `GlyphRun` and `glyphOutline` strict writers available as opt-in paths, with
   backend diagnostics explaining any rejected variant;
 - `GlyphOutline.payloadKind` vocabulary covering `monochromeFill`,
@@ -862,6 +863,10 @@ vocabulary to JS callers when an opt-in v2 export is rejected.
 `text_v2_validation_issues_to_json()` exposes that same issue shape for string
 JSON APIs, so validation failures use the same machine-readable codes instead
 of debug-formatted Rust structs.
+The validator also fails closed when a `fallbackPolicy="none"` text slot has no
+strict visual `GlyphRun` or `glyphOutline` variant, reporting
+`strictVisualVariantMissing` instead of allowing an unvariant `TextRun`-only
+fallback-free slot.
 `strict_glyph_outline_text_v2_slots()` is the first strictVisual selection gate:
 it derives fallback-free v2 text slots only from `glyphOutline` variants whose
 payload is `monochromeFill`, whose paint style is fill-only, and whose
