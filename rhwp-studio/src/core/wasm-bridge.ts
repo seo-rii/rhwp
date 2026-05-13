@@ -44,7 +44,7 @@ function substituteCssFontFamily(cssFont: string): string {
 }
 
 type LayerTreeExportStats = {
-  transport: 'js-value-resource-keys' | 'js-value' | 'json';
+  transport: 'js-value-resource-keys' | 'js-value' | 'json' | 'json-v2-strict-glyph-outline';
   wasmExportMs: number;
   resourceNormalizeMs: number;
   totalMs: number;
@@ -280,6 +280,35 @@ export class WasmBridge {
     const tree = this.normalizeLayerResources(rawTree);
     this.lastLayerTreeExportStats = {
       transport: 'json',
+      wasmExportMs,
+      resourceNormalizeMs: performance.now() - normalizeStartedAt,
+      totalMs: performance.now() - startedAt,
+      pageNum,
+      profile,
+    };
+    return tree;
+  }
+
+  getPageLayerTreeV2StrictGlyphOutline(pageNum: number, profile: LayerRenderProfile = 'screen'): PageLayerTree {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const doc = this.doc as any;
+    const strictGetter = doc.getPageLayerTreeV2StrictGlyphOutlineWithProfile
+      ?? doc.getPageLayerTreeV2StrictGlyphOutline;
+    if (typeof strictGetter !== 'function') {
+      throw new Error('schema v2 strict GlyphOutline export is not available in this WASM build');
+    }
+
+    const startedAt = performance.now();
+    const exportStartedAt = performance.now();
+    const json = typeof doc.getPageLayerTreeV2StrictGlyphOutlineWithProfile === 'function'
+      ? strictGetter.call(this.doc, pageNum, profile)
+      : strictGetter.call(this.doc, pageNum);
+    const rawTree = JSON.parse(json);
+    const wasmExportMs = performance.now() - exportStartedAt;
+    const normalizeStartedAt = performance.now();
+    const tree = this.normalizeLayerResources(rawTree);
+    this.lastLayerTreeExportStats = {
+      transport: 'json-v2-strict-glyph-outline',
       wasmExportMs,
       resourceNormalizeMs: performance.now() - normalizeStartedAt,
       totalMs: performance.now() - startedAt,
