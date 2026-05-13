@@ -626,7 +626,8 @@ export function validateLayerTextV2Op(
   if (fallbackPolicy === 'none' && options.allowFallbackFree !== true) {
     issues.push({
       code: 'fallbackFreeFeatureMissing',
-      message: 'fallbackPolicy=none requires strictVisual profile and text.strictVisualFallbackFree.',
+      message:
+        'fallbackPolicy=none requires strictVisual profile, strictVisualFallbackFree metadata, and text.strictVisualFallbackFree.',
       opId: op.id,
       paintOrderSlotId: op.paintOrderSlotId,
     });
