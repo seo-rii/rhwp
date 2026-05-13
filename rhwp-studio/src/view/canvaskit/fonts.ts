@@ -277,7 +277,7 @@ export class CanvasKitFontRegistry {
       });
     }
     if (run.shapeKey.fontInstance.variations?.length) {
-      return this.glyphRunReplayFailure(run, 'fontVariationUnsupported', {
+      return this.glyphRunReplayFailure(run, 'variationUnsupported', {
         variationSupported: false,
       });
     }
@@ -296,7 +296,7 @@ export class CanvasKitFontRegistry {
       });
     }
     if (face.faceIndex !== 0) {
-      return this.glyphRunReplayFailure(run, 'fontFaceIndexUnsupported', {
+      return this.glyphRunReplayFailure(run, 'faceIndexUnsupported', {
         exactFaceInstantiated: false,
         faceIndexSupported: false,
       });

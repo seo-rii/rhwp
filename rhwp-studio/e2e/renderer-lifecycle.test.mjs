@@ -1638,7 +1638,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     portableGlyphRunProbe.variationStatus?.replayable === false
-      && portableGlyphRunProbe.variationStatus?.reason === 'fontVariationUnsupported',
+      && portableGlyphRunProbe.variationStatus?.reason === 'variationUnsupported',
     `CanvasKit GlyphRun rejects unsupported variation instances=${JSON.stringify(portableGlyphRunProbe.variationStatus)}`,
   );
   const variationSelectionReport = portableGlyphRunProbe.variationSelectionDiagnostics?.find(
@@ -1649,10 +1649,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && variationSelectionReport?.selectedReason === 'defaultTextRunFallback'
       && variationSelectionReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphRun'
-          && variant.reasons.includes('fontVariationUnsupported'),
+          && variant.reasons.includes('variationUnsupported'),
       )
       && variationSelectionReport?.fontVerification?.variationSupported === false
-      && variationSelectionReport?.fontVerification?.reason === 'fontVariationUnsupported',
+      && variationSelectionReport?.fontVerification?.reason === 'variationUnsupported',
     `CanvasKit variation fallback records VariantSelectionReport=${JSON.stringify(variationSelectionReport)}`,
   );
   const variationRedPixels = countPixels(
@@ -1669,7 +1669,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     portableGlyphRunProbe.faceIndexStatus?.replayable === false
-      && portableGlyphRunProbe.faceIndexStatus?.reason === 'fontFaceIndexUnsupported',
+      && portableGlyphRunProbe.faceIndexStatus?.reason === 'faceIndexUnsupported',
     `CanvasKit GlyphRun rejects TTC/OTC-style non-zero face index=${JSON.stringify(portableGlyphRunProbe.faceIndexStatus)}`,
   );
   const faceIndexSelectionReport = portableGlyphRunProbe.faceIndexSelectionDiagnostics?.find(
@@ -1680,11 +1680,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && faceIndexSelectionReport?.selectedReason === 'defaultTextRunFallback'
       && faceIndexSelectionReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphRun'
-          && variant.reasons.includes('fontFaceIndexUnsupported'),
+          && variant.reasons.includes('faceIndexUnsupported'),
       )
       && faceIndexSelectionReport?.fontVerification?.faceIndexSupported === false
       && faceIndexSelectionReport?.fontVerification?.exactFaceInstantiated === false
-      && faceIndexSelectionReport?.fontVerification?.reason === 'fontFaceIndexUnsupported',
+      && faceIndexSelectionReport?.fontVerification?.reason === 'faceIndexUnsupported',
     `CanvasKit faceIndex fallback records VariantSelectionReport=${JSON.stringify(faceIndexSelectionReport)}`,
   );
   const faceIndexRedPixels = countPixels(
