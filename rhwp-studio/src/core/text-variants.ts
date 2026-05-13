@@ -287,7 +287,9 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const rootVariantParts = new Set<string>();
   const requiredFeatures = new Set(tree.requiredFeatures ?? []);
   const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants');
-  const allowFallbackFree = requiredFeatures.has('text.strictVisualFallbackFree');
+  const allowFallbackFree =
+    tree.textV2?.profile === 'strictVisual'
+    && requiredFeatures.has('text.strictVisualFallbackFree');
   const allowRicherGlyphOutlinePayloads =
     requiredFeatures.has('text.glyphOutline.monochromeFillStroke');
   const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
@@ -623,7 +625,7 @@ export function validateLayerTextV2Op(
   if (fallbackPolicy === 'none' && options.allowFallbackFree !== true) {
     issues.push({
       code: 'fallbackFreeFeatureMissing',
-      message: 'fallbackPolicy=none requires text.strictVisualFallbackFree.',
+      message: 'fallbackPolicy=none requires strictVisual profile and text.strictVisualFallbackFree.',
       opId: op.id,
       paintOrderSlotId: op.paintOrderSlotId,
     });

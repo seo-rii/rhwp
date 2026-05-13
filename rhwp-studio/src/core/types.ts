@@ -134,6 +134,7 @@ export interface PageLayerTree {
    * compatibility exports keep the flattened TextRun/GlyphRun/GlyphOutline ops.
    */
   textV2?: {
+    profile?: 'compatibility' | 'strictVisual';
     canonicalOp?: 'text';
     fallbackPolicy?: LayerTextFallbackPolicy;
     strictVisualFallbackFree?: boolean;

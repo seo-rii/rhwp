@@ -2030,6 +2030,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       pageHeight: 70,
       profile: 'screen',
       textV2: {
+        profile: 'compatibility',
         canonicalOp: 'text',
         fallbackPolicy: 'required',
         strictVisualFallbackFree: false,
@@ -2193,12 +2194,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       }
       tree.textV2 = {
         ...tree.textV2,
+        profile: 'strictVisual',
         fallbackPolicy: 'none',
         strictVisualFallbackFree: true,
       };
       const textOp = tree.root.ops[0];
       textOp.defaultVariantId = 'glyphOutline';
       textOp.fallbackPolicy = 'none';
+      return tree;
+    };
+    const makeV2FallbackFreeCompatibilityProfileTree = () => {
+      const tree = makeV2FallbackFreeTree(true);
+      tree.textV2.profile = 'compatibility';
       return tree;
     };
     const makeV2FallbackFreeTextOnlyTree = () => {
@@ -2288,6 +2295,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const allowedV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(true), false);
       const invalidV2FallbackFree = render(makeV2FallbackFreeTree(), false);
       const allowedV2FallbackFree = render(makeV2FallbackFreeTree(true), false);
+      const invalidV2FallbackFreeCompatibilityProfile = render(
+        makeV2FallbackFreeCompatibilityProfileTree(),
+        false,
+      );
       const invalidV2FallbackFreeTextOnly = render(makeV2FallbackFreeTextOnlyTree(), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const reservedV2BitmapPayload = render(
@@ -2320,6 +2331,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         allowedV2MixedPerGlyph,
         invalidV2FallbackFree,
         allowedV2FallbackFree,
+        invalidV2FallbackFreeCompatibilityProfile,
         invalidV2FallbackFreeTextOnly,
         reservedV2ColorPayload,
         reservedV2BitmapPayload,
@@ -2595,6 +2607,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalid: canvas2dGlyphOutlineProbe.invalidV2FallbackFree?.textV2Validation,
       allowed: canvas2dGlyphOutlineProbe.allowedV2FallbackFree?.textV2Validation,
     })}`,
+  );
+  const invalidFallbackFreeCompatibilityIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidV2FallbackFreeCompatibilityProfile
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidFallbackFreeCompatibilityIssueCodes.includes('fallbackFreeFeatureMissing'),
+    `Canvas2D schema v2 fallback-free text requires strictVisual profile=${JSON.stringify(
+      canvas2dGlyphOutlineProbe.invalidV2FallbackFreeCompatibilityProfile?.textV2Validation,
+    )}`,
   );
   const invalidFallbackFreeTextOnlyIssueCodes = canvas2dGlyphOutlineProbe.invalidV2FallbackFreeTextOnly
     ?.textV2Validation
