@@ -2093,6 +2093,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       };
       return tree;
     };
+    const makeReservedV2OutlinePayloadTree = (payloadKind, feature) => {
+      const tree = makeV2TextTree();
+      const outlineVariant = tree.root.ops[0].variants.find(
+        (variant) => variant.variantId === 'glyphOutline',
+      );
+      outlineVariant.requiredFeatures = ['text.outlineGlyph', feature];
+      outlineVariant.parts[0].payload = {
+        ...outlineVariant.parts[0].payload,
+        payloadKind,
+      };
+      return tree;
+    };
     const strokePayload = {
       payloadKind: 'monochromeFillStroke',
       stroke: {
@@ -2156,10 +2168,26 @@ runTest('Renderer lifecycle', async ({ page }) => {
         makeTree(style, [outlinePath], true, { payloadKind: 'colorLayers' }),
         true,
       );
+      const reservedBitmapPayloadSidecar = render(
+        makeTree(style, [outlinePath], true, { payloadKind: 'bitmapGlyph' }),
+        true,
+      );
+      const reservedSvgPayloadSidecar = render(
+        makeTree(style, [outlinePath], true, { payloadKind: 'svgGlyph' }),
+        true,
+      );
       const v2Fallback = render(makeV2TextTree(), false);
       const v2Strict = render(makeV2TextTree(), true);
       const invalidV2MissingFallback = render(makeInvalidV2TextTree(), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
+      const reservedV2BitmapPayload = render(
+        makeReservedV2OutlinePayloadTree('bitmapGlyph', 'text.glyphOutline.bitmapGlyph'),
+        true,
+      );
+      const reservedV2SvgPayload = render(
+        makeReservedV2OutlinePayloadTree('svgGlyph', 'text.glyphOutline.svgGlyph'),
+        true,
+      );
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
       const unsupportedPayload = render(makeTree(style, []), true);
       return {
@@ -2171,10 +2199,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
         strokePayloadSidecar,
         unsupportedStrokePayloadSidecar,
         reservedColorPayloadSidecar,
+        reservedBitmapPayloadSidecar,
+        reservedSvgPayloadSidecar,
         v2Fallback,
         v2Strict,
         invalidV2MissingFallback,
         reservedV2ColorPayload,
+        reservedV2BitmapPayload,
+        reservedV2SvgPayload,
         unsupported,
         unsupportedPayload,
       };
@@ -2329,6 +2361,41 @@ runTest('Renderer lifecycle', async ({ page }) => {
       v2Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayload?.textV2Validation,
     })}`,
   );
+  const reservedOutlinePayloadFamilies = [
+    {
+      name: 'bitmap',
+      sidecar: canvas2dGlyphOutlineProbe.reservedBitmapPayloadSidecar,
+      v2: canvas2dGlyphOutlineProbe.reservedV2BitmapPayload,
+      reason: 'unsupportedBitmapGlyph',
+    },
+    {
+      name: 'svg',
+      sidecar: canvas2dGlyphOutlineProbe.reservedSvgPayloadSidecar,
+      v2: canvas2dGlyphOutlineProbe.reservedV2SvgPayload,
+      reason: 'unsupportedSvgGlyph',
+    },
+  ];
+  for (const family of reservedOutlinePayloadFamilies) {
+    const report = family.sidecar?.diagnostics?.find(
+      (diagnostic) => diagnostic.equivalenceGroup === 'outline-fixture-0',
+    );
+    const issueCodes = family.v2?.textV2Validation?.map((issue) => issue.code) ?? [];
+    assert(
+      report?.selectedVariantId === 'textRun'
+        && report?.rejectedVariants?.some(
+          (variant) => variant.variantId === 'glyphOutline'
+            && variant.reasons.includes(family.reason),
+        )
+        && report?.outlineEligibility?.payloadSupported === false
+        && report?.outlineEligibility?.reason === family.reason
+        && issueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+      `Canvas2D strict profile rejects reserved ${family.name} outline payload=${JSON.stringify({
+        report,
+        sidecarValidation: family.sidecar?.textV2Validation,
+        v2Validation: family.v2?.textV2Validation,
+      })}`,
+    );
+  }
   const v2FallbackReport = canvas2dGlyphOutlineProbe.v2Fallback?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'op-text-v2-outline',
   );
