@@ -3197,6 +3197,213 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    fn exports_json_and_js_value_v2_strict_glyph_outline_schema_parity() {
+        let source = TextSourceSpan {
+            id: crate::paint::TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source.clone()),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let glyph_outline = PaintOp::GlyphOutline {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            outline: crate::paint::LayerGlyphOutlinePaint {
+                source,
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: crate::paint::TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["text.outlineGlyph".to_string()],
+                    quality: Some(crate::paint::TextVariantQuality::Exact),
+                    anchor_op_id: Some("op-text-0".to_string()),
+                    local_paint_order: Some(0),
+                },
+                payload_kind: crate::paint::GlyphOutlinePayloadKind::MonochromeFill,
+                stroke: None,
+                paint_style: PaintTextStyle::from(&TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                }),
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 12.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                paths: vec![crate::paint::LayerGlyphOutlinePath {
+                    glyph_id: 42,
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    glyph_range: crate::paint::GlyphRange { start: 0, end: 1 },
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(10.0, 0.0),
+                        PathCommand::LineTo(10.0, 10.0),
+                        PathCommand::ClosePath,
+                    ],
+                    fill_rule: crate::paint::GlyphOutlineFillRule::EvenOdd,
+                }],
+                diagnostics: GlyphRunDiagnostics {
+                    quality: crate::paint::TextVariantQuality::Exact,
+                    replay_eligibility: crate::paint::GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, glyph_outline],
+            ),
+        );
+
+        let json_value = js_sys::JSON::parse(
+            &tree
+                .to_json_v2_strict_glyph_outline()
+                .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}")),
+        )
+        .unwrap_or_else(|_| panic!("failed to parse v2 strict layer JSON export"));
+        let js_value = page_layer_tree_to_js_value_v2_strict_glyph_outline(&tree)
+            .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}"));
+
+        assert_same_number(&json_value, &js_value, "schemaVersion");
+        assert_eq!(number_prop(&js_value, "schemaVersion"), 2.0);
+        let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
+        let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
+        assert_eq!(json_required_features.length(), 5);
+        assert_eq!(
+            json_required_features.length(),
+            js_required_features.length()
+        );
+        let json_text_contract = prop(&json_value, "text");
+        let js_text_contract = prop(&js_value, "text");
+        assert_same_string(&json_text_contract, &js_text_contract, "defaultVariant");
+        assert_eq!(
+            string_prop(&js_text_contract, "defaultVariant"),
+            "glyphOutline"
+        );
+        assert_same_bool(&json_text_contract, &js_text_contract, "fallbackRequired");
+        assert_eq!(bool_prop(&js_text_contract, "fallbackRequired"), false);
+        let json_text_v2_contract = prop(&json_value, "textV2");
+        let js_text_v2_contract = prop(&js_value, "textV2");
+        assert_same_string(
+            &json_text_v2_contract,
+            &js_text_v2_contract,
+            "fallbackPolicy",
+        );
+        assert_eq!(string_prop(&js_text_v2_contract, "fallbackPolicy"), "none");
+        assert_same_bool(
+            &json_text_v2_contract,
+            &js_text_v2_contract,
+            "strictVisualFallbackFree",
+        );
+        assert_eq!(
+            bool_prop(&js_text_v2_contract, "strictVisualFallbackFree"),
+            true
+        );
+
+        let json_ops = Array::from(&prop(&prop(&json_value, "root"), "ops"));
+        let js_ops = Array::from(&prop(&prop(&js_value, "root"), "ops"));
+        assert_eq!(json_ops.length(), 1);
+        assert_eq!(json_ops.length(), js_ops.length());
+        let json_text = json_ops.get(0);
+        let js_text = js_ops.get(0);
+        assert_same_string(&json_text, &js_text, "type");
+        assert_eq!(string_prop(&js_text, "type"), "text");
+        assert_same_string(&json_text, &js_text, "defaultVariantId");
+        assert_eq!(string_prop(&js_text, "defaultVariantId"), "glyphOutline");
+        assert_same_string(&json_text, &js_text, "fallbackPolicy");
+        assert_eq!(string_prop(&js_text, "fallbackPolicy"), "none");
+
+        let json_variants = Array::from(&prop(&json_text, "variants"));
+        let js_variants = Array::from(&prop(&js_text, "variants"));
+        assert_eq!(json_variants.length(), 1);
+        assert_eq!(json_variants.length(), js_variants.length());
+        let json_variant = json_variants.get(0);
+        let js_variant = js_variants.get(0);
+        assert_same_string(&json_variant, &js_variant, "variantId");
+        assert_eq!(string_prop(&js_variant, "variantId"), "glyphOutline");
+        assert_same_string(&json_variant, &js_variant, "kind");
+        assert_eq!(string_prop(&js_variant, "kind"), "glyphOutline");
+
+        let js_part = Array::from(&prop(&js_variant, "parts")).get(0);
+        let payload = prop(&js_part, "payload");
+        assert_eq!(string_prop(&payload, "type"), "glyphOutline");
+        assert_eq!(string_prop(&payload, "payloadKind"), "monochromeFill");
+        let path = Array::from(&prop(&payload, "paths")).get(0);
+        assert_eq!(number_prop(&path, "glyphId"), 42.0);
+        assert_eq!(number_prop(&prop(&path, "sourceRangeUtf8"), "end"), 1.0);
+        assert_eq!(number_prop(&prop(&path, "glyphRange"), "end"), 1.0);
+    }
+
+    #[wasm_bindgen_test]
+    fn rejects_js_value_v2_strict_glyph_outline_without_strict_outline() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![PaintOp::TextRun {
+                    bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+                    run: LayerTextRunPaint {
+                        text: "A".to_string(),
+                        style: TextStyle {
+                            font_family: "Test".to_string(),
+                            font_size: 12.0,
+                            ..Default::default()
+                        },
+                        positions: vec![0.0, 12.0],
+                        ..Default::default()
+                    },
+                }],
+            ),
+        );
+
+        let issues = match page_layer_tree_to_js_value_v2_strict_glyph_outline(&tree) {
+            Ok(_) => panic!("strict GlyphOutline JS value export should reject TextRun fallback"),
+            Err(issues) => issues,
+        };
+        assert_eq!(issues.len(), 1);
+        assert_eq!(
+            issues[0].code,
+            TextV2ValidationIssueCode::StrictVisualVariantMissing
+        );
+    }
+
+    #[wasm_bindgen_test]
     fn exports_text_v2_validation_issues_to_js_value() {
         let issues =
             vec![TextV2ValidationIssue {
