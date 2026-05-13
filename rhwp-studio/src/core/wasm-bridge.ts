@@ -50,7 +50,10 @@ type LayerTreeExportStats = {
     | 'json'
     | 'js-value-v2-strict-glyph-outline-resource-keys'
     | 'js-value-v2-strict-glyph-outline'
-    | 'json-v2-strict-glyph-outline';
+    | 'json-v2-strict-glyph-outline'
+    | 'js-value-v2-strict-glyph-run-resource-keys'
+    | 'js-value-v2-strict-glyph-run'
+    | 'json-v2-strict-glyph-run';
   wasmExportMs: number;
   resourceNormalizeMs: number;
   totalMs: number;
@@ -356,6 +359,76 @@ export class WasmBridge {
     const tree = this.normalizeLayerResources(rawTree);
     this.lastLayerTreeExportStats = {
       transport: 'json-v2-strict-glyph-outline',
+      wasmExportMs,
+      resourceNormalizeMs: performance.now() - normalizeStartedAt,
+      totalMs: performance.now() - startedAt,
+      pageNum,
+      profile,
+    };
+    return tree;
+  }
+
+  getPageLayerTreeV2StrictGlyphRun(pageNum: number, profile: LayerRenderProfile = 'screen'): PageLayerTree {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const doc = this.doc as any;
+    const startedAt = performance.now();
+    if (typeof doc.getPageLayerTreeValueV2StrictGlyphRunWithProfileAndResourceKeys === 'function') {
+      const exportStartedAt = performance.now();
+      const rawTree = doc.getPageLayerTreeValueV2StrictGlyphRunWithProfileAndResourceKeys(
+        pageNum,
+        profile,
+        this.layerResourceStore.knownImageKeys(),
+        this.layerResourceStore.knownSvgKeys(),
+      ) as PageLayerTree;
+      const wasmExportMs = performance.now() - exportStartedAt;
+      const normalizeStartedAt = performance.now();
+      const tree = this.normalizeLayerResources(rawTree);
+      this.lastLayerTreeExportStats = {
+        transport: 'js-value-v2-strict-glyph-run-resource-keys',
+        wasmExportMs,
+        resourceNormalizeMs: performance.now() - normalizeStartedAt,
+        totalMs: performance.now() - startedAt,
+        pageNum,
+        profile,
+      };
+      return tree;
+    }
+    const valueGetter = doc.getPageLayerTreeValueV2StrictGlyphRunWithProfile
+      ?? doc.getPageLayerTreeValueV2StrictGlyphRun;
+    if (typeof valueGetter === 'function') {
+      const exportStartedAt = performance.now();
+      const rawTree = typeof doc.getPageLayerTreeValueV2StrictGlyphRunWithProfile === 'function'
+        ? valueGetter.call(this.doc, pageNum, profile) as PageLayerTree
+        : valueGetter.call(this.doc, pageNum) as PageLayerTree;
+      const wasmExportMs = performance.now() - exportStartedAt;
+      const normalizeStartedAt = performance.now();
+      const tree = this.normalizeLayerResources(rawTree);
+      this.lastLayerTreeExportStats = {
+        transport: 'js-value-v2-strict-glyph-run',
+        wasmExportMs,
+        resourceNormalizeMs: performance.now() - normalizeStartedAt,
+        totalMs: performance.now() - startedAt,
+        pageNum,
+        profile,
+      };
+      return tree;
+    }
+    const strictGetter = doc.getPageLayerTreeV2StrictGlyphRunWithProfile
+      ?? doc.getPageLayerTreeV2StrictGlyphRun;
+    if (typeof strictGetter !== 'function') {
+      throw new Error('schema v2 strict GlyphRun export is not available in this WASM build');
+    }
+
+    const exportStartedAt = performance.now();
+    const json = typeof doc.getPageLayerTreeV2StrictGlyphRunWithProfile === 'function'
+      ? strictGetter.call(this.doc, pageNum, profile)
+      : strictGetter.call(this.doc, pageNum);
+    const rawTree = JSON.parse(json);
+    const wasmExportMs = performance.now() - exportStartedAt;
+    const normalizeStartedAt = performance.now();
+    const tree = this.normalizeLayerResources(rawTree);
+    this.lastLayerTreeExportStats = {
+      transport: 'json-v2-strict-glyph-run',
       wasmExportMs,
       resourceNormalizeMs: performance.now() - normalizeStartedAt,
       totalMs: performance.now() - startedAt,

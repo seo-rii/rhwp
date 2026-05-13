@@ -730,6 +730,13 @@ fallback into a fallback-free export.
 When a strict outline variant uses the supported `monochromeFillStroke` subset,
 the writer keeps that payload and adds
 `text.glyphOutline.monochromeFillStroke` to `requiredFeatures`.
+`PageLayerTree::to_json_v2_strict_glyph_run()` is the matching opt-in
+strictVisual string writer for backend profiles that want a fallback-free
+`glyphRun` export. It emits only strict-eligible `GlyphRun` variants, uses
+`fallbackPolicy="none"`, requires `fontResources`, `text.glyphRun`, and
+`text.strictVisualFallbackFree`, and fails closed with
+`strictVisualVariantMissing` when a text slot has no strict-eligible glyph
+variant.
 `page_layer_tree_to_js_value_v2_compat()` mirrors that opt-in envelope for
 direct WASM object exports, so Studio-side consumers can validate v2 text slots
 without going through stringified JSON.
@@ -741,6 +748,10 @@ The strictVisual GlyphOutline path is exposed separately as
 `getPageLayerTreeValueV2StrictGlyphOutline*` for JS object transport. Both paths
 are opt-in, follow the same fail-closed selector gate, and the JS object mirror
 preserves the resource-key transport optimization used by compatibility exports.
+The strictVisual GlyphRun path is exposed separately as
+`getPageLayerTreeV2StrictGlyphRun*` for string JSON and
+`getPageLayerTreeValueV2StrictGlyphRun*` for JS object transport. It is also
+opt-in and uses the same validation issue vocabulary as the outline strict path.
 `text_v2_validation_issues_to_js_value()` exposes the same validator issue
 vocabulary to JS callers when an opt-in v2 export is rejected.
 `text_v2_validation_issues_to_json()` exposes that same issue shape for string
@@ -752,6 +763,12 @@ payload is `monochromeFill`, whose paint style is fill-only, and whose
 diagnostics are already strict-visual eligible. Slots without such a variant
 return `strictVisualVariantMissing`, so strict writer APIs can fail closed before
 emitting `fallbackPolicy="none"`.
+`strict_glyph_run_text_v2_slots()` is the corresponding GlyphRun-only gate: it
+derives fallback-free v2 text slots only from `GlyphRun` variants whose paint
+style is still supported by the fill-only strict replay contract, whose
+orientation is not public `MixedPerGlyph`, and whose diagnostics are already
+strict-visual eligible. Backend-specific checks such as CanvasKit glyph-id range
+and exact external font verification remain renderer-side selection gates.
 `downgrade_text_v2_op_to_v1_compat()` is the first downgrade scaffold: it
 flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.

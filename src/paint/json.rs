@@ -179,7 +179,7 @@ impl PageLayerTree {
             self.output_options.debug_overlay,
         );
         let mut text_source_state = TextSourceExportState::default();
-        self.root.write_json_v2_strict_glyph_outline(
+        self.root.write_json_v2_strict_text_variant(
             &mut buf,
             &self.resources,
             &strict_slots_by_group,
@@ -190,6 +190,78 @@ impl PageLayerTree {
         buf.push_str(",\"fontResources\":");
         write_font_resources(&mut buf, self.resources.font_resources());
         write_text_v2_strict_glyph_outline_export_metadata(&mut buf, &self.root);
+        buf.push('}');
+        Ok(buf)
+    }
+
+    pub fn to_json_v2_strict_glyph_run(&self) -> Result<String, Vec<TextV2ValidationIssue>> {
+        let compat_slots = self.text_v2_slots();
+        let strict_slots = crate::paint::strict_glyph_run_text_v2_slots(&compat_slots)?;
+        let strict_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = strict_slots
+            .iter()
+            .map(|slot| (slot.id.as_str(), slot))
+            .collect();
+        let mut issues = Vec::new();
+        let mut stack = vec![&self.root];
+        while let Some(node) = stack.pop() {
+            match &node.kind {
+                LayerNodeKind::Group { children, .. } => stack.extend(children),
+                LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+                LayerNodeKind::Leaf { ops, .. } => {
+                    for op in ops {
+                        if matches!(op, PaintOp::TextRun { .. })
+                            && text_v2_variant_group_id(op).is_none()
+                        {
+                            issues.push(TextV2ValidationIssue {
+                                code: TextV2ValidationIssueCode::StrictVisualVariantMissing,
+                                op_id: "textRun".to_string(),
+                                paint_order_slot_id: None,
+                                variant_id: None,
+                                part_index: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if !issues.is_empty() {
+            return Err(issues);
+        }
+
+        let mut buf = String::with_capacity(32_768);
+        buf.push('{');
+        let _ = write!(
+            buf,
+            "\"schemaVersion\":2,\"schemaMinorVersion\":0,\"schema\":{{\"major\":2,\"minor\":0}},\"resourceTableVersion\":{},\"resourceTableMinorVersion\":{},\"resourceTable\":{{\"major\":{},\"minor\":{}}},\"unit\":{},\"coordinateSystem\":{},\"pageWidth\":{:.6},\"pageHeight\":{:.6},\"profile\":{},\"layout\":{{\"profile\":\"hwpCompat\",\"measurementAuthority\":\"legacyHwpPositions\",\"shapedMeasurement\":\"diagnosticsOnly\"}},\"outputOptions\":{{\"showParagraphMarks\":{},\"showControlCodes\":{},\"showTransparentBorders\":{},\"clipEnabled\":{},\"debugOverlay\":{}}},\"buildOptions\":{{\"showTransparentBorders\":{}}},\"debugOptions\":{{\"debugOverlay\":{}}},\"debugCapabilities\":{{\"overlayPaint\":false,\"semanticBounds\":true,\"genericLayerExport\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"backends\":{{\"svgLayer\":{{\"overlayPaint\":true,\"semanticBounds\":true}},\"canvas2d\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"canvaskit\":{{\"overlayPaint\":false,\"semanticBounds\":true}},\"nativeSkia\":{{\"overlayPaint\":false,\"semanticBounds\":true}}}}}},\"root\":",
+            LAYER_TREE_SCHEMA.resource_table_version,
+            LAYER_TREE_SCHEMA.resource_table_minor_version,
+            LAYER_TREE_SCHEMA.resource_table_version,
+            LAYER_TREE_SCHEMA.resource_table_minor_version,
+            json_escape(LAYER_TREE_SCHEMA.unit),
+            json_escape(LAYER_TREE_SCHEMA.coordinate_system),
+            self.page_width,
+            self.page_height,
+            json_escape(self.profile.as_str()),
+            self.output_options.show_paragraph_marks,
+            self.output_options.show_control_codes,
+            self.output_options.show_transparent_borders,
+            self.output_options.clip_enabled,
+            self.output_options.debug_overlay,
+            self.output_options.show_transparent_borders,
+            self.output_options.debug_overlay,
+        );
+        let mut text_source_state = TextSourceExportState::default();
+        self.root.write_json_v2_strict_text_variant(
+            &mut buf,
+            &self.resources,
+            &strict_slots_by_group,
+            &mut text_source_state,
+        );
+        buf.push_str(",\"textSources\":");
+        write_text_source_entries(&mut buf, &self.text_sources);
+        buf.push_str(",\"fontResources\":");
+        write_font_resources(&mut buf, self.resources.font_resources());
+        write_text_v2_strict_glyph_run_export_metadata(&mut buf, &self.root);
         buf.push('}');
         Ok(buf)
     }
@@ -335,6 +407,31 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
         buf.push_str(",\"text.glyphOutline.monochromeFillStroke\"");
     }
     buf.push_str("],\"text\":{\"defaultVariant\":\"glyphOutline\",\"variants\":[\"glyphOutline\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
+    for (idx, visual) in externalized_visuals.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{}", json_escape(visual));
+    }
+    buf.push_str("]},\"textV2\":{\"profile\":\"strictVisual\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"none\",\"strictVisualFallbackFree\":true,\"paintOrderSlots\":\"required\"}");
+}
+
+fn write_text_v2_strict_glyph_run_export_metadata(buf: &mut String, root: &LayerNode) {
+    let externalized_visuals = externalized_text_visuals(root);
+    buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"fontResources\",\"text.glyphRun\"");
+    if externalized_visuals.contains(&"charOverlap") {
+        buf.push_str(",\"text.charOverlapOp\"");
+    }
+    if externalized_visuals.contains(&"controlMarks") {
+        buf.push_str(",\"text.controlMarkOp\"");
+    }
+    if externalized_visuals.contains(&"tabLeaders") {
+        buf.push_str(",\"text.tabLeaderOp\"");
+    }
+    if externalized_visuals.contains(&"decorations") {
+        buf.push_str(",\"text.decorationOp\"");
+    }
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"fontResources\",\"text.glyphRun\"],\"text\":{\"defaultVariant\":\"glyphRun\",\"variants\":[\"glyphRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
@@ -661,7 +758,7 @@ impl LayerNode {
         buf.push('}');
     }
 
-    fn write_json_v2_strict_glyph_outline(
+    fn write_json_v2_strict_text_variant(
         &self,
         buf: &mut String,
         resources: &ResourceArena,
@@ -712,7 +809,7 @@ impl LayerNode {
                     if idx > 0 {
                         buf.push(',');
                     }
-                    child.write_json_v2_strict_glyph_outline(
+                    child.write_json_v2_strict_text_variant(
                         buf,
                         resources,
                         strict_slots_by_group,
@@ -737,7 +834,7 @@ impl LayerNode {
                     clip_policy.allow_horizontal_overflow_controls
                 );
                 buf.push_str(",\"child\":");
-                child.write_json_v2_strict_glyph_outline(
+                child.write_json_v2_strict_text_variant(
                     buf,
                     resources,
                     strict_slots_by_group,
@@ -750,7 +847,7 @@ impl LayerNode {
                     ",\"kind\":\"leaf\",\"cacheHint\":{},\"ops\":[",
                     json_escape(cache_hint_str(*cache_hint))
                 );
-                write_leaf_ops_v2_strict_glyph_outline(
+                write_leaf_ops_v2_strict_text_variant(
                     buf,
                     ops,
                     strict_slots_by_group,
@@ -802,7 +899,7 @@ fn write_leaf_ops_v2_compat(
     }
 }
 
-fn write_leaf_ops_v2_strict_glyph_outline(
+fn write_leaf_ops_v2_strict_text_variant(
     buf: &mut String,
     ops: &[PaintOp],
     strict_slots_by_group: &HashMap<&str, &LayerTextPaintOpV2>,
@@ -3591,6 +3688,134 @@ mod tests {
     }
 
     #[test]
+    fn serializes_v2_strict_glyph_run_export_without_text_run_fallback() {
+        let source = TextSourceSpan {
+            id: TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let shape_key = ShapeKey {
+            font_instance: FontInstanceKey {
+                face_key: FontFaceKey("face-0".to_string()),
+                size_px: 12.0,
+                variations: Vec::new(),
+                synthetic_bold: false,
+                synthetic_italic: false,
+            },
+            direction: TextDirection::Ltr,
+            writing_mode: WritingMode::HorizontalTb,
+            script: None,
+            language: None,
+            features: Vec::new(),
+            shaping_engine: ShapingEngineId("test".to_string()),
+            fallback_policy: FontFallbackPolicyId("none".to_string()),
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source.clone()),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let glyph_run = PaintOp::GlyphRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerGlyphRunPaint {
+                source,
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphRun".to_string(),
+                    variant_kind: TextVariantKind::GlyphRun,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: None,
+                    local_paint_order: Some(0),
+                },
+                paint_style: PaintTextStyle::from(&TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                }),
+                shape_key,
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 12.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                glyph_ids: vec![42],
+                positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+                advances: None,
+                clusters: vec![GlyphCluster {
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    source_range_utf16: Some(TextSourceRange::new(0, 1)),
+                    text_range_utf8: Some(TextSourceRange::new(0, 1)),
+                    glyph_range: GlyphRange::new(0, 1),
+                    flags: Vec::new(),
+                }],
+                direction: TextDirection::Ltr,
+                bidi_level: None,
+                writing_mode: WritingMode::HorizontalTb,
+                orientation: GlyphRunOrientation::Horizontal,
+                glyph_transforms: None,
+                diagnostics: GlyphRunDiagnostics {
+                    quality: TextVariantQuality::Exact,
+                    replay_eligibility: GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, glyph_run],
+            ),
+        );
+
+        let json = tree
+            .to_json_v2_strict_glyph_run()
+            .expect("valid strict glyph run export");
+
+        assert!(json.contains("\"schemaVersion\":2"));
+        assert!(json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"fontResources\",\"text.glyphRun\"]"));
+        assert!(json.contains("\"textV2\":{\"profile\":\"strictVisual\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"none\",\"strictVisualFallbackFree\":true,\"paintOrderSlots\":\"required\"}"));
+        assert!(json.contains("\"ops\":[{\"id\":\"text-0\",\"type\":\"text\""));
+        assert!(json.contains("\"defaultVariantId\":\"glyphRun\""));
+        assert!(json.contains("\"fallbackPolicy\":\"none\""));
+        assert!(json.contains("\"variants\":[{\"variantId\":\"glyphRun\",\"kind\":\"glyphRun\""));
+        assert!(json.contains("\"payload\":{\"id\":\"op-text-0-glyphRun-0\",\"type\":\"glyphRun\""));
+        assert!(json.contains("\"fallbackRequired\":false"));
+        assert!(!json.contains("\"variantId\":\"textRun\""));
+        assert!(!json.contains("\"type\":\"textRun\""));
+    }
+
+    #[test]
     fn rejects_v2_strict_glyph_outline_export_without_strict_outline() {
         let text_run = PaintOp::TextRun {
             bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
@@ -3614,6 +3839,36 @@ mod tests {
         let issues = tree
             .to_json_v2_strict_glyph_outline()
             .expect_err("strict glyph outline export must fail closed");
+
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == TextV2ValidationIssueCode::StrictVisualVariantMissing));
+    }
+
+    #[test]
+    fn rejects_v2_strict_glyph_run_export_without_strict_glyph_run() {
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(BoundingBox::new(0.0, 0.0, 40.0, 40.0), None, vec![text_run]),
+        );
+
+        let issues = tree
+            .to_json_v2_strict_glyph_run()
+            .expect_err("strict glyph run export must fail closed");
 
         assert!(issues
             .iter()

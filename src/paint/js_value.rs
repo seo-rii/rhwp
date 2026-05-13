@@ -468,7 +468,7 @@ pub fn page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints(
     set_value(
         &value,
         "root",
-        layer_node_to_value_v2_strict_glyph_outline(
+        layer_node_to_value_v2_strict_text_variant(
             &tree.root,
             &strict_slots_by_group,
             &mut text_source_state,
@@ -476,6 +476,74 @@ pub fn page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints(
     );
     let _ = Reflect::delete_property(&value, &JsValue::from_str("variantOps"));
     set_text_v2_strict_glyph_outline_metadata(&value, &tree.root);
+    Ok(value.into())
+}
+
+pub fn page_layer_tree_to_js_value_v2_strict_glyph_run(
+    tree: &PageLayerTree,
+) -> Result<JsValue, Vec<TextV2ValidationIssue>> {
+    page_layer_tree_to_js_value_v2_strict_glyph_run_with_resource_hints(
+        tree,
+        &LayerResourceExportHints::default(),
+    )
+}
+
+pub fn page_layer_tree_to_js_value_v2_strict_glyph_run_with_resource_hints(
+    tree: &PageLayerTree,
+    hints: &LayerResourceExportHints,
+) -> Result<JsValue, Vec<TextV2ValidationIssue>> {
+    let compat_slots = tree.text_v2_slots();
+    let strict_slots = crate::paint::strict_glyph_run_text_v2_slots(&compat_slots)?;
+    let strict_slots_by_group: HashMap<&str, &LayerTextPaintOpV2> = strict_slots
+        .iter()
+        .map(|slot| (slot.id.as_str(), slot))
+        .collect();
+    let mut issues = Vec::new();
+    let mut stack = vec![&tree.root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => stack.extend(children),
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                for op in ops {
+                    if matches!(op, PaintOp::TextRun { .. })
+                        && text_v2_variant_group_id(op).is_none()
+                    {
+                        issues.push(TextV2ValidationIssue {
+                            code: TextV2ValidationIssueCode::StrictVisualVariantMissing,
+                            op_id: "textRun".to_string(),
+                            paint_order_slot_id: None,
+                            variant_id: None,
+                            part_index: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if !issues.is_empty() {
+        return Err(issues);
+    }
+
+    let value = Object::from(page_layer_tree_to_js_value_with_resource_hints(tree, hints));
+    set_number(&value, "schemaVersion", 2.0);
+    set_number(&value, "schemaMinorVersion", 0.0);
+    let schema = Object::new();
+    set_number(&schema, "major", 2.0);
+    set_number(&schema, "minor", 0.0);
+    set_value(&value, "schema", schema.into());
+    let mut text_source_state = TextSourceExportState::default();
+    set_value(
+        &value,
+        "root",
+        layer_node_to_value_v2_strict_text_variant(
+            &tree.root,
+            &strict_slots_by_group,
+            &mut text_source_state,
+        ),
+    );
+    let _ = Reflect::delete_property(&value, &JsValue::from_str("variantOps"));
+    set_text_v2_strict_glyph_run_metadata(&value, &tree.root);
     Ok(value.into())
 }
 
@@ -642,6 +710,90 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
         &text_contract,
         "variants",
         string_array_to_value(&["glyphOutline"]),
+    );
+    set_string(&text_contract, "variantSelection", "exclusiveVariantSet");
+    set_bool(&text_contract, "sourceTextPreserved", true);
+    set_value(
+        &text_contract,
+        "clusterEncoding",
+        string_array_to_value(&["utf8", "utf16"]),
+    );
+    set_bool(&text_contract, "fallbackRequired", false);
+    set_string(&text_contract, "placementAuthority", "strictVisual");
+    set_value(
+        &text_contract,
+        "externalizedVisuals",
+        string_array_to_value(&externalized_visuals),
+    );
+    set_value(value, "text", text_contract.into());
+
+    let text_v2_contract = Object::new();
+    set_string(&text_v2_contract, "profile", "strictVisual");
+    set_string(&text_v2_contract, "canonicalOp", "text");
+    set_string(&text_v2_contract, "fallbackPolicy", "none");
+    set_bool(&text_v2_contract, "strictVisualFallbackFree", true);
+    set_string(&text_v2_contract, "paintOrderSlots", "required");
+    set_value(value, "textV2", text_v2_contract.into());
+}
+
+fn set_text_v2_strict_glyph_run_metadata(value: &Object, root: &LayerNode) {
+    let externalized_visuals = externalized_text_visuals(root);
+    let mut used_features = vec![
+        "text.paintStyle",
+        "text.sourceTable",
+        "text.sourceSpan",
+        "text.variants",
+        "text.paintOrderSlot",
+        "text.strictVisualFallbackFree",
+        "text.v2.placement",
+        "text.v2.clusters",
+        "text.projectionKind",
+        "text.legacyVisuals",
+        "fontResources",
+        "text.glyphRun",
+    ];
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "charOverlap")
+    {
+        used_features.push("text.charOverlapOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "controlMarks")
+    {
+        used_features.push("text.controlMarkOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "tabLeaders")
+    {
+        used_features.push("text.tabLeaderOp");
+    }
+    if externalized_visuals
+        .iter()
+        .any(|visual| *visual == "decorations")
+    {
+        used_features.push("text.decorationOp");
+    }
+    set_value(value, "usedFeatures", string_array_to_value(&used_features));
+    set_value(
+        value,
+        "requiredFeatures",
+        string_array_to_value(&[
+            "text.variants",
+            "text.paintOrderSlot",
+            "text.strictVisualFallbackFree",
+            "fontResources",
+            "text.glyphRun",
+        ]),
+    );
+    let text_contract = Object::new();
+    set_string(&text_contract, "defaultVariant", "glyphRun");
+    set_value(
+        &text_contract,
+        "variants",
+        string_array_to_value(&["glyphRun"]),
     );
     set_string(&text_contract, "variantSelection", "exclusiveVariantSet");
     set_bool(&text_contract, "sourceTextPreserved", true);
@@ -1095,7 +1247,7 @@ fn layer_nodes_to_value_v2_compat(
     array.into()
 }
 
-fn layer_node_to_value_v2_strict_glyph_outline(
+fn layer_node_to_value_v2_strict_text_variant(
     node: &LayerNode,
     strict_slots_by_group: &HashMap<&str, &LayerTextPaintOpV2>,
     text_sources: &mut TextSourceExportState,
@@ -1139,7 +1291,7 @@ fn layer_node_to_value_v2_strict_glyph_outline(
                 &value,
                 "children",
                 array_to_value(children.iter().map(|child| {
-                    layer_node_to_value_v2_strict_glyph_outline(
+                    layer_node_to_value_v2_strict_text_variant(
                         child,
                         strict_slots_by_group,
                         text_sources,
@@ -1171,7 +1323,7 @@ fn layer_node_to_value_v2_strict_glyph_outline(
             set_value(
                 &value,
                 "child",
-                layer_node_to_value_v2_strict_glyph_outline(
+                layer_node_to_value_v2_strict_text_variant(
                     child,
                     strict_slots_by_group,
                     text_sources,
@@ -1184,11 +1336,7 @@ fn layer_node_to_value_v2_strict_glyph_outline(
             set_value(
                 &value,
                 "ops",
-                paint_ops_to_value_v2_strict_glyph_outline(
-                    ops,
-                    strict_slots_by_group,
-                    text_sources,
-                ),
+                paint_ops_to_value_v2_strict_text_variant(ops, strict_slots_by_group, text_sources),
             );
         }
     }
@@ -1233,7 +1381,7 @@ fn paint_ops_to_value_v2_compat(
     array.into()
 }
 
-fn paint_ops_to_value_v2_strict_glyph_outline(
+fn paint_ops_to_value_v2_strict_text_variant(
     ops: &[PaintOp],
     strict_slots_by_group: &HashMap<&str, &LayerTextPaintOpV2>,
     text_sources: &mut TextSourceExportState,
@@ -3429,6 +3577,179 @@ mod tests {
         let stroke = prop(&stroke_payload, "stroke");
         assert_eq!(number_prop(&stroke, "widthPx"), 1.0);
         assert_eq!(string_prop(&stroke, "join"), "miter");
+    }
+
+    #[wasm_bindgen_test]
+    fn exports_json_and_js_value_v2_strict_glyph_run_schema_parity() {
+        let source = TextSourceSpan {
+            id: crate::paint::TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        };
+        let shape_key = ShapeKey {
+            font_instance: crate::paint::FontInstanceKey {
+                face_key: crate::paint::FontFaceKey("face-0".to_string()),
+                size_px: 12.0,
+                variations: Vec::new(),
+                synthetic_bold: false,
+                synthetic_italic: false,
+            },
+            direction: crate::paint::TextDirection::Ltr,
+            writing_mode: crate::paint::WritingMode::HorizontalTb,
+            script: None,
+            language: None,
+            features: Vec::new(),
+            shaping_engine: crate::paint::ShapingEngineId("test".to_string()),
+            fallback_policy: crate::paint::FontFallbackPolicyId("none".to_string()),
+        };
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: LayerTextRunPaint {
+                source: Some(source.clone()),
+                variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                text: "A".to_string(),
+                style: TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 12.0],
+                ..Default::default()
+            },
+        };
+        let glyph_run = PaintOp::GlyphRun {
+            bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+            run: crate::paint::LayerGlyphRunPaint {
+                source,
+                variant: PaintVariantMeta {
+                    equivalence_group: "text-0".to_string(),
+                    variant_id: "glyphRun".to_string(),
+                    variant_kind: crate::paint::TextVariantKind::GlyphRun,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                    quality: Some(crate::paint::TextVariantQuality::Exact),
+                    anchor_op_id: None,
+                    local_paint_order: Some(0),
+                },
+                paint_style: PaintTextStyle::from(&TextStyle {
+                    font_family: "Test".to_string(),
+                    font_size: 12.0,
+                    ..Default::default()
+                }),
+                shape_key,
+                placement: TextRunPlacement {
+                    run_to_page: LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 0.0,
+                        f: 12.0,
+                    },
+                    baseline_y: 0.0,
+                },
+                glyph_ids: vec![42],
+                positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+                advances: None,
+                clusters: vec![GlyphCluster {
+                    source_range_utf8: TextSourceRange::new(0, 1),
+                    source_range_utf16: Some(TextSourceRange::new(0, 1)),
+                    text_range_utf8: Some(TextSourceRange::new(0, 1)),
+                    glyph_range: crate::paint::GlyphRange::new(0, 1),
+                    flags: Vec::new(),
+                }],
+                direction: crate::paint::TextDirection::Ltr,
+                bidi_level: None,
+                writing_mode: crate::paint::WritingMode::HorizontalTb,
+                orientation: crate::paint::GlyphRunOrientation::Horizontal,
+                glyph_transforms: None,
+                diagnostics: GlyphRunDiagnostics {
+                    quality: crate::paint::TextVariantQuality::Exact,
+                    replay_eligibility: crate::paint::GlyphRunReplayEligibility::Portable,
+                    strict_visual_eligible: true,
+                    max_origin_delta_px: 0.0,
+                    max_advance_delta_px: 0.0,
+                    max_residual_after_adjustment_px: 0.0,
+                    cluster_mismatch_count: 0,
+                    missing_glyph_count: 0,
+                    used_fallback_font_count: 0,
+                    reason: None,
+                },
+            },
+        };
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, glyph_run],
+            ),
+        );
+
+        let json_value = js_sys::JSON::parse(
+            &tree
+                .to_json_v2_strict_glyph_run()
+                .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}")),
+        )
+        .unwrap_or_else(|_| panic!("failed to parse v2 strict glyph run JSON export"));
+        let js_value = page_layer_tree_to_js_value_v2_strict_glyph_run(&tree)
+            .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}"));
+
+        assert_same_number(&json_value, &js_value, "schemaVersion");
+        assert_eq!(number_prop(&js_value, "schemaVersion"), 2.0);
+        let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
+        let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
+        assert_eq!(json_required_features.length(), 5);
+        assert_eq!(
+            json_required_features.length(),
+            js_required_features.length()
+        );
+        assert_eq!(
+            js_required_features.get(3).as_string().as_deref(),
+            Some("fontResources")
+        );
+        assert_eq!(
+            js_required_features.get(4).as_string().as_deref(),
+            Some("text.glyphRun")
+        );
+        let js_text_contract = prop(&js_value, "text");
+        assert_eq!(string_prop(&js_text_contract, "defaultVariant"), "glyphRun");
+        assert_eq!(bool_prop(&js_text_contract, "fallbackRequired"), false);
+        let js_text_v2_contract = prop(&js_value, "textV2");
+        assert_eq!(string_prop(&js_text_v2_contract, "fallbackPolicy"), "none");
+        assert_eq!(
+            bool_prop(&js_text_v2_contract, "strictVisualFallbackFree"),
+            true
+        );
+
+        let json_ops = Array::from(&prop(&prop(&json_value, "root"), "ops"));
+        let js_ops = Array::from(&prop(&prop(&js_value, "root"), "ops"));
+        assert_eq!(json_ops.length(), 1);
+        assert_eq!(json_ops.length(), js_ops.length());
+        let js_text = js_ops.get(0);
+        assert_eq!(string_prop(&js_text, "type"), "text");
+        assert_eq!(string_prop(&js_text, "defaultVariantId"), "glyphRun");
+        assert_eq!(string_prop(&js_text, "fallbackPolicy"), "none");
+
+        let js_variants = Array::from(&prop(&js_text, "variants"));
+        assert_eq!(js_variants.length(), 1);
+        let js_variant = js_variants.get(0);
+        assert_eq!(string_prop(&js_variant, "variantId"), "glyphRun");
+        assert_eq!(string_prop(&js_variant, "kind"), "glyphRun");
+        let js_part = Array::from(&prop(&js_variant, "parts")).get(0);
+        let payload = prop(&js_part, "payload");
+        assert_eq!(string_prop(&payload, "type"), "glyphRun");
+        assert_eq!(
+            Array::from(&prop(&payload, "glyphIds"))
+                .get(0)
+                .as_f64()
+                .unwrap_or_else(|| panic!("glyph id must be numeric")),
+            42.0
+        );
     }
 
     #[wasm_bindgen_test]

@@ -10,6 +10,8 @@ use crate::paint::js_value::{
     page_layer_tree_to_js_value_v2_compat_with_resource_hints,
     page_layer_tree_to_js_value_v2_strict_glyph_outline,
     page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints,
+    page_layer_tree_to_js_value_v2_strict_glyph_run,
+    page_layer_tree_to_js_value_v2_strict_glyph_run_with_resource_hints,
     page_layer_tree_to_js_value_with_resource_hints, text_v2_validation_issues_to_js_value,
     LayerResourceExportHints,
 };
@@ -205,6 +207,34 @@ impl HwpDocument {
             .map_err(|issues| JsValue::from_str(&text_v2_validation_issues_to_json(&issues)))
     }
 
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphRun JSON 문자열로 반환한다.
+    #[wasm_bindgen(js_name = getPageLayerTreeV2StrictGlyphRun)]
+    pub fn get_page_layer_tree_v2_strict_glyph_run(
+        &self,
+        page_num: u32,
+    ) -> Result<String, JsValue> {
+        self.get_page_layer_tree_v2_strict_glyph_run_with_profile(
+            page_num,
+            RenderProfile::Screen.as_str(),
+        )
+    }
+
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphRun JSON 문자열로 반환한다.
+    /// profile을 명시적으로 덮어쓸 수 있다.
+    #[wasm_bindgen(js_name = getPageLayerTreeV2StrictGlyphRunWithProfile)]
+    pub fn get_page_layer_tree_v2_strict_glyph_run_with_profile(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+    ) -> Result<String, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, profile)
+            .map_err(JsValue::from)?;
+        tree.to_json_v2_strict_glyph_run()
+            .map_err(|issues| JsValue::from_str(&text_v2_validation_issues_to_json(&issues)))
+    }
+
     /// 페이지 레이어 트리를 JS object로 반환한다.
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen(js_name = getPageLayerTreeValue)]
@@ -287,6 +317,36 @@ impl HwpDocument {
             .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
     }
 
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphRun JS object로 반환한다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueV2StrictGlyphRun)]
+    pub fn get_page_layer_tree_value_v2_strict_glyph_run(
+        &self,
+        page_num: u32,
+    ) -> Result<JsValue, JsValue> {
+        self.get_page_layer_tree_value_v2_strict_glyph_run_with_profile(
+            page_num,
+            RenderProfile::Screen.as_str(),
+        )
+    }
+
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphRun JS object로 반환한다.
+    /// profile을 명시적으로 덮어쓸 수 있다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueV2StrictGlyphRunWithProfile)]
+    pub fn get_page_layer_tree_value_v2_strict_glyph_run_with_profile(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+    ) -> Result<JsValue, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, profile)
+            .map_err(JsValue::from)?;
+        page_layer_tree_to_js_value_v2_strict_glyph_run(&tree)
+            .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
+    }
+
     /// 페이지 레이어 트리를 JS object로 반환하되, 이미 JS가 가진 resource payload는 생략한다.
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen(js_name = getPageLayerTreeValueWithProfileAndResourceKeys)]
@@ -344,6 +404,26 @@ impl HwpDocument {
             .map_err(JsValue::from)?;
         let hints = LayerResourceExportHints::from_js_values(&known_image_keys, &known_svg_keys);
         page_layer_tree_to_js_value_v2_strict_glyph_outline_with_resource_hints(&tree, &hints)
+            .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
+    }
+
+    /// 페이지 레이어 트리를 schema v2 strictVisual GlyphRun JS object로 반환하되,
+    /// 이미 JS가 가진 resource payload는 생략한다.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = getPageLayerTreeValueV2StrictGlyphRunWithProfileAndResourceKeys)]
+    pub fn get_page_layer_tree_value_v2_strict_glyph_run_with_profile_and_resource_keys(
+        &self,
+        page_num: u32,
+        profile_name: &str,
+        known_image_keys: JsValue,
+        known_svg_keys: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        let tree = self
+            .build_page_layer_tree_for_output(page_num, profile)
+            .map_err(JsValue::from)?;
+        let hints = LayerResourceExportHints::from_js_values(&known_image_keys, &known_svg_keys);
+        page_layer_tree_to_js_value_v2_strict_glyph_run_with_resource_hints(&tree, &hints)
             .map_err(|issues| text_v2_validation_issues_to_js_value(&issues))
     }
 

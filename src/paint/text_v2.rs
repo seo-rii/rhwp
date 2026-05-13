@@ -485,11 +485,73 @@ pub fn strict_glyph_outline_text_v2_slots(
     }
 }
 
+pub fn strict_glyph_run_text_v2_slots(
+    ops: &[LayerTextPaintOpV2],
+) -> Result<Vec<LayerTextPaintOpV2>, Vec<TextV2ValidationIssue>> {
+    let mut strict_ops = Vec::new();
+    let mut issues = Vec::new();
+
+    for op in ops {
+        let variants: Vec<_> = op
+            .variants
+            .iter()
+            .filter(|variant| {
+                variant.kind == TextVariantKind::GlyphRun
+                    && !variant.parts.is_empty()
+                    && variant.parts.iter().all(strict_glyph_run_part_eligible)
+            })
+            .cloned()
+            .collect();
+        let Some(default_variant_id) = variants.first().map(|variant| variant.variant_id.clone())
+        else {
+            issues.push(text_v2_issue(
+                op,
+                TextV2ValidationIssueCode::StrictVisualVariantMissing,
+                None,
+                None,
+            ));
+            continue;
+        };
+
+        let strict_op = LayerTextPaintOpV2 {
+            id: op.id.clone(),
+            paint_order_slot_id: op.paint_order_slot_id.clone(),
+            bbox: op.bbox,
+            default_variant_id: Some(default_variant_id),
+            fallback_policy: TextFallbackPolicy::None,
+            variants,
+        };
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_fallback_free = true;
+        issues.extend(validate_text_v2_op(&strict_op, &options));
+        strict_ops.push(strict_op);
+    }
+
+    if issues.is_empty() {
+        Ok(strict_ops)
+    } else {
+        Err(issues)
+    }
+}
+
 fn strict_glyph_outline_part_eligible(part: &LayerTextVariantPart) -> bool {
     let LayerTextVariantPayload::GlyphOutline(outline) = &part.payload else {
         return false;
     };
     strict_glyph_outline_paint_eligible(outline)
+}
+
+fn strict_glyph_run_part_eligible(part: &LayerTextVariantPart) -> bool {
+    let LayerTextVariantPayload::GlyphRun(run) = &part.payload else {
+        return false;
+    };
+    strict_glyph_run_paint_eligible(run)
+}
+
+fn strict_glyph_run_paint_eligible(run: &LayerGlyphRunPaint) -> bool {
+    run.orientation != GlyphRunOrientation::MixedPerGlyph
+        && run.paint_style.is_fill_only_glyph_replay()
+        && run.diagnostics.strict_visual_eligible
 }
 
 fn strict_glyph_outline_paint_eligible(outline: &LayerGlyphOutlinePaint) -> bool {
@@ -1439,6 +1501,75 @@ mod tests {
 
         let issue_codes: Vec<_> = strict_glyph_outline_text_v2_slots(&text_ops)
             .expect_err("missing strict outline must reject")
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+
+        assert!(issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing));
+    }
+
+    #[test]
+    fn selects_strict_glyph_run_fallback_free_slot() {
+        let text = text_op(PaintVariantMeta::text_run_default(
+            "text-4-glyph-run-strict",
+        ));
+        let glyph_run = glyph_run_op(
+            PaintVariantMeta {
+                equivalence_group: "text-4-glyph-run-strict".to_string(),
+                variant_id: "glyphRun".to_string(),
+                variant_kind: TextVariantKind::GlyphRun,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: None,
+                local_paint_order: Some(0),
+            },
+            GlyphRunOrientation::Horizontal,
+        );
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, glyph_run]);
+
+        let strict_ops = strict_glyph_run_text_v2_slots(&text_ops).expect("strict glyph run");
+
+        assert_eq!(strict_ops.len(), 1);
+        assert_eq!(strict_ops[0].fallback_policy, TextFallbackPolicy::None);
+        assert_eq!(
+            strict_ops[0].default_variant_id.as_deref(),
+            Some("glyphRun")
+        );
+        assert_eq!(strict_ops[0].variants.len(), 1);
+        assert_eq!(strict_ops[0].variants[0].kind, TextVariantKind::GlyphRun);
+    }
+
+    #[test]
+    fn rejects_strict_glyph_run_slot_without_strict_eligible_run() {
+        let text = text_op(PaintVariantMeta::text_run_default(
+            "text-4-glyph-run-missing",
+        ));
+        let mut glyph_run = glyph_run_op(
+            PaintVariantMeta {
+                equivalence_group: "text-4-glyph-run-missing".to_string(),
+                variant_id: "glyphRun".to_string(),
+                variant_kind: TextVariantKind::GlyphRun,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: None,
+                local_paint_order: Some(0),
+            },
+            GlyphRunOrientation::Horizontal,
+        );
+        let PaintOp::GlyphRun { run, .. } = &mut glyph_run else {
+            panic!("expected glyph run");
+        };
+        run.diagnostics.strict_visual_eligible = false;
+        let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, glyph_run]);
+
+        let issue_codes: Vec<_> = strict_glyph_run_text_v2_slots(&text_ops)
+            .expect_err("missing strict glyph run should fail closed")
             .into_iter()
             .map(|issue| issue.code)
             .collect();
