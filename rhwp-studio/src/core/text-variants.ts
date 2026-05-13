@@ -612,7 +612,7 @@ export function validateLayerTextV2Op(
   return issues;
 }
 
-function isSupportedGlyphOutlineStrokeStyle(
+export function isSupportedGlyphOutlineStrokeStyle(
   stroke: LayerGlyphOutlineOp['stroke'] | undefined,
 ): boolean {
   return !!stroke

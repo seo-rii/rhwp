@@ -502,9 +502,10 @@ first richer outline payload: it must carry an explicit `stroke` object, and the
 v2 validator only accepts the initial supported subset behind the richer-outline
 feature gate. That subset is finite positive stroke width, solid stroke color,
 finite non-negative optional miter limit, `join: "miter"`, `cap: "butt"`, and
-`paintOrder: "fillThenStroke"`. Renderers may still reject it with
-`unsupportedOutlinePayload` until stroke bbox inflation, SVG/Canvas2D/native
-fixtures, and fuzzy parity thresholds are fixed.
+`paintOrder: "fillThenStroke"`. Canvas2D strict replay accepts this subset once
+`strictGlyphOutlineReplay` is enabled; unsupported stroke styles are rejected
+with `glyphOutlineStrokeStyleUnsupported`. Other backends may still reject the
+stroke payload until their own bbox, fixture, and fuzzy parity gates land.
 
 The current validator keeps this conservative:
 
@@ -523,10 +524,11 @@ The current validator keeps this conservative:
   so SVG/Canvas2D strict replay can keep path-level provenance for debugging,
   search sidecars, and accessibility sidecars;
 - `glyphOutline` rejects text effects and non-outline glyph formats until each
-  has a strict profile. Shadow, stroke/outline, emboss/engrave,
-  underline/strike/emphasis, tab leaders, ratio/shade adjustments, color glyphs,
-  bitmap glyphs, and SVG-in-font glyphs are not outline-eligible in the first
-  profile;
+  has a strict profile. Canvas2D strict replay currently accepts only the
+  `monochromeFill` profile and the initial `monochromeFillStroke` stroke subset.
+  Shadow, emboss/engrave, underline/strike/emphasis, tab leaders, ratio/shade
+  adjustments, color glyphs, bitmap glyphs, and SVG-in-font glyphs are not
+  outline-eligible in the first profiles;
 - `glyphOutline` must never be exported as an already-known generic `Path`
   while a `TextRun` fallback exists.
 

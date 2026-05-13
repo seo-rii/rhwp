@@ -1784,6 +1784,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
         paintOrder: 'fillThenStroke',
       },
     };
+    const unsupportedStrokePayload = {
+      payloadKind: 'monochromeFillStroke',
+      stroke: {
+        ...strokePayload.stroke,
+        widthPx: 0,
+      },
+    };
     const render = (tree, strict) => {
       const canvas = document.createElement('canvas');
       canvas.width = tree.pageWidth;
@@ -1821,6 +1828,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         }],
       ), true);
       const strokePayloadSidecar = render(makeTree(style, [outlinePath], true, strokePayload), true);
+      const unsupportedStrokePayloadSidecar = render(
+        makeTree(style, [outlinePath], true, unsupportedStrokePayload),
+        true,
+      );
       const v2Fallback = render(makeV2TextTree(), false);
       const v2Strict = render(makeV2TextTree(), true);
       const invalidV2MissingFallback = render(makeInvalidV2TextTree(), false);
@@ -1833,6 +1844,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         duplicateSidecar,
         invalidAnchorSidecar,
         strokePayloadSidecar,
+        unsupportedStrokePayloadSidecar,
         v2Fallback,
         v2Strict,
         invalidV2MissingFallback,
@@ -1939,15 +1951,35 @@ runTest('Renderer lifecycle', async ({ page }) => {
     (report) => report.equivalenceGroup === 'outline-fixture-0',
   );
   assert(
-    strokePayloadSidecarReport?.selectedVariantId === 'textRun'
-      && strokePayloadSidecarReport?.rejectedVariants?.some(
-        (variant) => variant.variantId === 'glyphOutline'
-          && variant.reasons.includes('unsupportedOutlinePayload'),
-      )
-      && strokePayloadSidecarReport?.outlineEligibility?.payloadSupported === false
+    strokePayloadSidecarReport?.selectedVariantId === 'glyphOutline'
+      && strokePayloadSidecarReport?.selectedVariantKind === 'glyphOutline'
+      && strokePayloadSidecarReport?.selectedReason === 'glyphOutlineStrictProfile'
+      && strokePayloadSidecarReport?.outlineEligibility?.payloadSupported === true
       && strokePayloadSidecarReport?.outlineEligibility?.paintStyleSupported === true
-      && strokePayloadSidecarReport?.outlineEligibility?.replayEligible === false,
-    `Canvas2D strict profile rejects reserved stroke outline payload=${JSON.stringify(strokePayloadSidecarReport)}`,
+      && strokePayloadSidecarReport?.outlineEligibility?.replayEligible === true
+      && strokePayloadSidecarReport?.parts?.some(
+        (part) => part.variantId === 'glyphOutline'
+          && part.variantKind === 'glyphOutline'
+          && part.replayable === true
+          && part.outlineEligibility?.replayEligible === true,
+      ),
+    `Canvas2D strict profile replays supported stroke outline payload=${JSON.stringify(strokePayloadSidecarReport)}`,
+  );
+  const unsupportedStrokePayloadSidecarReport = canvas2dGlyphOutlineProbe.unsupportedStrokePayloadSidecar?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    unsupportedStrokePayloadSidecarReport?.selectedVariantId === 'textRun'
+      && unsupportedStrokePayloadSidecarReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('glyphOutlineStrokeStyleUnsupported'),
+      )
+      && unsupportedStrokePayloadSidecarReport?.outlineEligibility?.payloadSupported === false
+      && unsupportedStrokePayloadSidecarReport?.outlineEligibility?.paintStyleSupported === true
+      && unsupportedStrokePayloadSidecarReport?.outlineEligibility?.replayEligible === false,
+    `Canvas2D strict profile rejects unsupported stroke outline payload=${JSON.stringify(
+      unsupportedStrokePayloadSidecarReport,
+    )}`,
   );
   const v2FallbackReport = canvas2dGlyphOutlineProbe.v2Fallback?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'op-text-v2-outline',
@@ -2043,6 +2075,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvas2dGlyphOutlineProbe.strokePayloadSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
   );
+  const unsupportedStrokePayloadBlackPixels = countPixels(
+    canvas2dGlyphOutlineProbe.unsupportedStrokePayloadSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
   const v2StrictBlackPixels = countPixels(
     canvas2dGlyphOutlineProbe.v2Strict.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
@@ -2056,8 +2092,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `Canvas2D strict outline paints variantOps sidecar paths black=${strictSidecarOutlineBlackPixels}`,
   );
   assert(
-    strokePayloadBlackPixels < 20,
-    `Canvas2D strict outline does not replay reserved stroke payload black=${strokePayloadBlackPixels}`,
+    strokePayloadBlackPixels > 100,
+    `Canvas2D strict outline paints supported stroke payload black=${strokePayloadBlackPixels}`,
+  );
+  assert(
+    unsupportedStrokePayloadBlackPixels < 20,
+    `Canvas2D strict outline does not replay unsupported stroke payload black=${unsupportedStrokePayloadBlackPixels}`,
   );
   assert(
     v2StrictBlackPixels > 100,

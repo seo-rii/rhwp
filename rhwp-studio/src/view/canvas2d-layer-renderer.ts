@@ -1,4 +1,5 @@
 import {
+  isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
   selectLayerTextVariantSetsWithReport,
   shouldRenderLayerTextVariant,
@@ -181,8 +182,9 @@ export class Canvas2DLayerRenderer {
   }
 
   private glyphOutlineReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
+    const payloadStatus = glyphOutlinePayloadStatus(op);
     const payloadSupported = op.diagnostics.strictVisualEligible
-      && isMonochromeFillGlyphOutlinePayload(op)
+      && payloadStatus.supported
       && op.paths.length > 0;
     const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
     const replayable = this.strictGlyphOutlineReplay
@@ -192,7 +194,7 @@ export class Canvas2DLayerRenderer {
     if (!this.strictGlyphOutlineReplay) {
       reason = 'backendDoesNotSupportVariant';
     } else if (!payloadSupported) {
-      reason = 'unsupportedOutlinePayload';
+      reason = payloadStatus.reason;
     } else if (!paintStyleSupported) {
       reason = 'unsupportedPaintEffect';
     }
@@ -300,7 +302,7 @@ export class Canvas2DLayerRenderer {
         // keeps the TextRun fallback as its canonical replay path.
         return;
       case 'glyphOutline':
-        if (!isMonochromeFillGlyphOutlinePayload(op) || !isFillOnlyGlyphOutlineStyle(op)) {
+        if (!glyphOutlinePayloadStatus(op).supported || !isFillOnlyGlyphOutlineStyle(op)) {
           return;
         }
         this.withCurrentOverlayClip(ctx, 0, () => {
@@ -315,10 +317,25 @@ export class Canvas2DLayerRenderer {
             transform.f,
           );
           ctx.fillStyle = op.paintStyle.color;
+          const stroke = (op.payloadKind ?? 'monochromeFill') === 'monochromeFillStroke'
+            ? op.stroke
+            : undefined;
+          if (stroke) {
+            ctx.strokeStyle = applyCssAlpha(stroke.color ?? op.paintStyle.color, stroke.opacity ?? 1);
+            ctx.lineWidth = stroke.widthPx;
+            ctx.lineJoin = stroke.join ?? 'miter';
+            ctx.lineCap = stroke.cap ?? 'butt';
+            if (typeof stroke.miterLimit === 'number') {
+              ctx.miterLimit = stroke.miterLimit;
+            }
+          }
           for (const path of op.paths) {
             ctx.beginPath();
             appendPathCommands(ctx, path.commands);
             ctx.fill(path.fillRule ?? 'nonzero');
+            if (stroke) {
+              ctx.stroke();
+            }
           }
           ctx.restore();
         }, op.bbox);
@@ -1688,10 +1705,26 @@ function appendPathCommands(
   }
 }
 
-function isMonochromeFillGlyphOutlinePayload(op: LayerGlyphOutlineOp): boolean {
-  return (op.payloadKind ?? 'monochromeFill') === 'monochromeFill'
-    && !op.stroke
-    && op.paths.length > 0;
+function glyphOutlinePayloadStatus(
+  op: LayerGlyphOutlineOp,
+): { supported: boolean; reason?: LayerTextVariantReplayStatus['reason'] } {
+  if (op.paths.length === 0) {
+    return { supported: false, reason: 'unsupportedOutlinePayload' };
+  }
+  const payloadKind = op.payloadKind ?? 'monochromeFill';
+  if (payloadKind === 'monochromeFill') {
+    return {
+      supported: !op.stroke,
+      reason: op.stroke ? 'glyphOutlineStrokeStyleUnsupported' : undefined,
+    };
+  }
+  if (payloadKind === 'monochromeFillStroke') {
+    return {
+      supported: isSupportedGlyphOutlineStrokeStyle(op.stroke),
+      reason: 'glyphOutlineStrokeStyleUnsupported',
+    };
+  }
+  return { supported: false, reason: 'unsupportedOutlinePayload' };
 }
 
 function isFillOnlyGlyphOutlineStyle(op: LayerGlyphOutlineOp): boolean {
