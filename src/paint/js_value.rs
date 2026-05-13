@@ -8,11 +8,12 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    font_blob_resource_key, image_resource_key, resource_digest_hex, svg_resource_key, CacheHint,
-    ClipKind, GlyphCluster, GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform,
-    LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2,
-    LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
-    PaintOp, PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
+    font_blob_resource_key, has_supported_strict_glyph_outline_stroke, image_resource_key,
+    resource_digest_hex, svg_resource_key, CacheHint, ClipKind, GlyphCluster,
+    GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
+    LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart,
+    LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp,
+    PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
     TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
     TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
@@ -577,6 +578,7 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[
 
 fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
+    let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -591,6 +593,9 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
         "text.outlineGlyph",
         "text.glyphOutline.monochromeFill",
     ];
+    if has_outline_stroke {
+        used_features.push("text.glyphOutline.monochromeFillStroke");
+    }
     if externalized_visuals
         .iter()
         .any(|visual| *visual == "charOverlap")
@@ -616,16 +621,20 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
         used_features.push("text.decorationOp");
     }
     set_value(value, "usedFeatures", string_array_to_value(&used_features));
+    let mut required_features = vec![
+        "text.variants",
+        "text.paintOrderSlot",
+        "text.strictVisualFallbackFree",
+        "text.outlineGlyph",
+        "text.glyphOutline.monochromeFill",
+    ];
+    if has_outline_stroke {
+        required_features.push("text.glyphOutline.monochromeFillStroke");
+    }
     set_value(
         value,
         "requiredFeatures",
-        string_array_to_value(&[
-            "text.variants",
-            "text.paintOrderSlot",
-            "text.strictVisualFallbackFree",
-            "text.outlineGlyph",
-            "text.glyphOutline.monochromeFill",
-        ]),
+        string_array_to_value(&required_features),
     );
     let text_contract = Object::new();
     set_string(&text_contract, "defaultVariant", "glyphOutline");
@@ -3279,6 +3288,28 @@ mod tests {
                 },
             },
         };
+        let mut stroke_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut stroke_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = crate::paint::GlyphOutlinePayloadKind::MonochromeFillStroke;
+        outline.stroke = Some(crate::paint::GlyphOutlineStrokeStyle {
+            color: 0x000000,
+            width_px: 1.0,
+            join: crate::paint::GlyphOutlineStrokeJoin::Miter,
+            cap: crate::paint::GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: crate::paint::GlyphOutlinePaintOrder::FillThenStroke,
+        });
+        let stroke_tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run.clone(), stroke_glyph_outline],
+            ),
+        );
         let tree = PageLayerTree::new(
             40.0,
             40.0,
@@ -3366,6 +3397,38 @@ mod tests {
         assert_eq!(number_prop(&path, "glyphId"), 42.0);
         assert_eq!(number_prop(&prop(&path, "sourceRangeUtf8"), "end"), 1.0);
         assert_eq!(number_prop(&prop(&path, "glyphRange"), "end"), 1.0);
+
+        let stroke_json_value = js_sys::JSON::parse(
+            &stroke_tree
+                .to_json_v2_strict_glyph_outline()
+                .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}")),
+        )
+        .unwrap_or_else(|_| panic!("failed to parse v2 strict stroke layer JSON export"));
+        let stroke_js_value = page_layer_tree_to_js_value_v2_strict_glyph_outline(&stroke_tree)
+            .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}"));
+        let stroke_json_required_features =
+            Array::from(&prop(&stroke_json_value, "requiredFeatures"));
+        let stroke_js_required_features = Array::from(&prop(&stroke_js_value, "requiredFeatures"));
+        assert_eq!(stroke_json_required_features.length(), 6);
+        assert_eq!(
+            stroke_json_required_features.length(),
+            stroke_js_required_features.length()
+        );
+        assert_eq!(
+            stroke_js_required_features.get(5).as_string().as_deref(),
+            Some("text.glyphOutline.monochromeFillStroke")
+        );
+        let stroke_text = Array::from(&prop(&prop(&stroke_js_value, "root"), "ops")).get(0);
+        let stroke_variant = Array::from(&prop(&stroke_text, "variants")).get(0);
+        let stroke_part = Array::from(&prop(&stroke_variant, "parts")).get(0);
+        let stroke_payload = prop(&stroke_part, "payload");
+        assert_eq!(
+            string_prop(&stroke_payload, "payloadKind"),
+            "monochromeFillStroke"
+        );
+        let stroke = prop(&stroke_payload, "stroke");
+        assert_eq!(number_prop(&stroke, "widthPx"), 1.0);
+        assert_eq!(string_prop(&stroke, "join"), "miter");
     }
 
     #[wasm_bindgen_test]

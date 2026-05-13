@@ -8,13 +8,14 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    CacheHint, ClipKind, GlyphCluster, GlyphOutlineStrokeStyle, GlyphRunDiagnostics,
-    GlyphTransform, LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic,
-    LayerTextPaintOpV2, LayerTextRunPaint, LayerTextVariantPart, LayerTextVariantPayload,
-    LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
-    ResourceArena, ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation,
-    TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
-    TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
+    has_supported_strict_glyph_outline_stroke, CacheHint, ClipKind, GlyphCluster,
+    GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
+    LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextRunPaint,
+    LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
+    PaintOp, PaintTextStyle, PaintVariantMeta, ResourceArena, ShapeKey, TextClusterPlacement,
+    TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan,
+    TextSourceTable, TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions,
+    LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -312,7 +313,11 @@ fn write_text_v2_compat_export_metadata(
 
 fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
+    let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");
+    if has_outline_stroke {
+        buf.push_str(",\"text.glyphOutline.monochromeFillStroke\"");
+    }
     if externalized_visuals.contains(&"charOverlap") {
         buf.push_str(",\"text.charOverlapOp\"");
     }
@@ -325,7 +330,11 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     if externalized_visuals.contains(&"decorations") {
         buf.push_str(",\"text.decorationOp\"");
     }
-    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"],\"text\":{\"defaultVariant\":\"glyphOutline\",\"variants\":[\"glyphOutline\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");
+    if has_outline_stroke {
+        buf.push_str(",\"text.glyphOutline.monochromeFillStroke\"");
+    }
+    buf.push_str("],\"text\":{\"defaultVariant\":\"glyphOutline\",\"variants\":[\"glyphOutline\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
@@ -3522,6 +3531,28 @@ mod tests {
                 },
             },
         };
+        let mut stroke_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut stroke_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::MonochromeFillStroke;
+        outline.stroke = Some(GlyphOutlineStrokeStyle {
+            color: 0x000000,
+            width_px: 1.0,
+            join: GlyphOutlineStrokeJoin::Miter,
+            cap: GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+        });
+        let stroke_tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run.clone(), stroke_glyph_outline],
+            ),
+        );
         let tree = PageLayerTree::new(
             40.0,
             40.0,
@@ -3550,6 +3581,13 @@ mod tests {
         assert!(json.contains("\"fallbackRequired\":false"));
         assert!(!json.contains("\"variantId\":\"textRun\""));
         assert!(!json.contains("\"type\":\"textRun\""));
+
+        let stroke_json = stroke_tree
+            .to_json_v2_strict_glyph_outline()
+            .expect("valid strict stroke glyph outline export");
+        assert!(stroke_json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\"]"));
+        assert!(stroke_json.contains("\"payloadKind\":\"monochromeFillStroke\""));
+        assert!(stroke_json.contains("\"stroke\":{\"color\":\"#000000\",\"widthPx\":1.000000,\"join\":\"miter\",\"cap\":\"butt\",\"paintOrder\":\"fillThenStroke\",\"miterLimit\":4.000000}"));
     }
 
     #[test]

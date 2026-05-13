@@ -727,6 +727,9 @@ variants, uses `fallbackPolicy="none"`, requires
 `text.strictVisualFallbackFree` and `text.glyphOutline.monochromeFill`, and
 returns `strictVisualVariantMissing` instead of leaking an unvariant `TextRun`
 fallback into a fallback-free export.
+When a strict outline variant uses the supported `monochromeFillStroke` subset,
+the writer keeps that payload and adds
+`text.glyphOutline.monochromeFillStroke` to `requiredFeatures`.
 `page_layer_tree_to_js_value_v2_compat()` mirrors that opt-in envelope for
 direct WASM object exports, so Studio-side consumers can validate v2 text slots
 without going through stringified JSON.

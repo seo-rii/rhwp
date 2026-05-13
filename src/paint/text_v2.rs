@@ -473,6 +473,7 @@ pub fn strict_glyph_outline_text_v2_slots(
         };
         let mut options = TextV2ValidationOptions::default();
         options.allow_fallback_free = true;
+        options.allow_richer_glyph_outline_payloads = true;
         issues.extend(validate_text_v2_op(&strict_op, &options));
         strict_ops.push(strict_op);
     }
@@ -488,10 +489,44 @@ fn strict_glyph_outline_part_eligible(part: &LayerTextVariantPart) -> bool {
     let LayerTextVariantPayload::GlyphOutline(outline) = &part.payload else {
         return false;
     };
-    outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFill
-        && outline.stroke.is_none()
+    strict_glyph_outline_paint_eligible(outline)
+}
+
+fn strict_glyph_outline_paint_eligible(outline: &LayerGlyphOutlinePaint) -> bool {
+    let payload_supported = match outline.payload_kind {
+        GlyphOutlinePayloadKind::MonochromeFill => outline.stroke.is_none(),
+        GlyphOutlinePayloadKind::MonochromeFillStroke => outline
+            .stroke
+            .as_ref()
+            .is_some_and(|stroke| stroke.is_supported_monochrome_subset()),
+        _ => false,
+    };
+    payload_supported
         && outline.paint_style.is_fill_only_glyph_replay()
         && outline.diagnostics.strict_visual_eligible
+}
+
+pub fn has_supported_strict_glyph_outline_stroke(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => stack.extend(children),
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                for op in ops {
+                    let PaintOp::GlyphOutline { outline, .. } = op else {
+                        continue;
+                    };
+                    if outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFillStroke
+                        && strict_glyph_outline_paint_eligible(outline)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 pub fn downgrade_text_v2_op_to_v1_compat(
@@ -1321,6 +1356,57 @@ mod tests {
             strict_ops[0].variants[0].kind,
             TextVariantKind::GlyphOutline
         );
+    }
+
+    #[test]
+    fn selects_strict_glyph_outline_stroke_subset_fallback_free_slot() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-4-strict-stroke"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-4-strict-stroke".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec![
+                    "text.outlineGlyph".to_string(),
+                    "text.glyphOutline.monochromeFillStroke".to_string(),
+                ],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("op-text-4-strict-stroke".to_string()),
+                local_paint_order: Some(0),
+            },
+            0.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::MonochromeFillStroke;
+        outline.stroke = Some(supported_outline_stroke());
+
+        let strict_ops =
+            strict_glyph_outline_text_v2_slots(&text_ops).expect("strict stroke outline variant");
+
+        assert_eq!(strict_ops.len(), 1);
+        assert_eq!(strict_ops[0].fallback_policy, TextFallbackPolicy::None);
+        assert_eq!(
+            strict_ops[0].default_variant_id.as_deref(),
+            Some("glyphOutline")
+        );
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &strict_ops[0].variants[0].parts[0].payload
+        else {
+            panic!("expected strict glyph outline payload");
+        };
+        assert_eq!(
+            outline.payload_kind,
+            GlyphOutlinePayloadKind::MonochromeFillStroke
+        );
+        assert!(outline.stroke.is_some());
     }
 
     #[test]
