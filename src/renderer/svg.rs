@@ -251,16 +251,6 @@ impl SvgRenderer {
                                         true,
                                         outline.paint_style.is_fill_only_glyph_replay(),
                                     )
-                                } else if outline.payload_kind
-                                    != GlyphOutlinePayloadKind::MonochromeFill
-                                    || outline.stroke.is_some()
-                                {
-                                    (
-                                        false,
-                                        Some(VariantRejectReason::UnsupportedOutlinePayload),
-                                        false,
-                                        outline.paint_style.is_fill_only_glyph_replay(),
-                                    )
                                 } else if outline.variant.anchor_op_id.is_none()
                                     || outline.paths.is_empty()
                                 {
@@ -270,15 +260,56 @@ impl SvgRenderer {
                                         false,
                                         outline.paint_style.is_fill_only_glyph_replay(),
                                     )
-                                } else if !outline.paint_style.is_fill_only_glyph_replay() {
-                                    (
-                                        false,
-                                        Some(VariantRejectReason::UnsupportedPaintEffect),
-                                        true,
-                                        false,
-                                    )
                                 } else {
-                                    (true, None, true, true)
+                                    let (payload_supported, payload_reason) = match outline
+                                        .payload_kind
+                                    {
+                                        GlyphOutlinePayloadKind::MonochromeFill => {
+                                            if outline.stroke.is_some() {
+                                                (
+                                                    false,
+                                                    Some(VariantRejectReason::UnsupportedOutlinePayload),
+                                                )
+                                            } else {
+                                                (true, None)
+                                            }
+                                        }
+                                        GlyphOutlinePayloadKind::MonochromeFillStroke => {
+                                            if outline.stroke.as_ref().is_some_and(|stroke| {
+                                                stroke.is_supported_monochrome_subset()
+                                            }) {
+                                                (true, None)
+                                            } else {
+                                                (
+                                                    false,
+                                                    Some(
+                                                        VariantRejectReason::GlyphOutlineStrokeStyleUnsupported,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                        _ => (
+                                            false,
+                                            Some(VariantRejectReason::UnsupportedOutlinePayload),
+                                        ),
+                                    };
+                                    if !payload_supported {
+                                        (
+                                            false,
+                                            payload_reason,
+                                            false,
+                                            outline.paint_style.is_fill_only_glyph_replay(),
+                                        )
+                                    } else if !outline.paint_style.is_fill_only_glyph_replay() {
+                                        (
+                                            false,
+                                            Some(VariantRejectReason::UnsupportedPaintEffect),
+                                            true,
+                                            false,
+                                        )
+                                    } else {
+                                        (true, None, true, true)
+                                    }
                                 };
                             VariantReplayStatus {
                                 replayable,
@@ -331,6 +362,25 @@ impl SvgRenderer {
                 }
                 let transform = outline.placement.run_to_page;
                 let fill = color_to_svg(outline.paint_style.color);
+                let stroke_attrs = match (outline.payload_kind, outline.stroke.as_ref()) {
+                    (GlyphOutlinePayloadKind::MonochromeFillStroke, Some(stroke))
+                        if stroke.is_supported_monochrome_subset() =>
+                    {
+                        let miter_limit = stroke
+                            .miter_limit
+                            .map(|limit| format!(" stroke-miterlimit=\"{}\"", limit))
+                            .unwrap_or_default();
+                        format!(
+                            " stroke=\"{}\" stroke-width=\"{}\" stroke-linejoin=\"{}\" stroke-linecap=\"{}\"{}",
+                            color_to_svg(stroke.color),
+                            stroke.width_px,
+                            stroke.join.as_str(),
+                            stroke.cap.as_str(),
+                            miter_limit
+                        )
+                    }
+                    _ => String::new(),
+                };
                 self.output.push_str(&format!(
                     "<g transform=\"matrix({} {} {} {} {} {})\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\">",
                     transform.a,
@@ -367,9 +417,10 @@ impl SvgRenderer {
                         }
                     }
                     self.output.push_str(&format!(
-                        "<path d=\"{}\" fill=\"{}\" fill-rule=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed glyph outline</desc></path>\n",
+                        "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed glyph outline</desc></path>\n",
                         d.trim(),
                         fill,
+                        stroke_attrs,
                         path.fill_rule.as_str(),
                         path.glyph_id,
                         path.glyph_range.start,

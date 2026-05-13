@@ -525,30 +525,71 @@ fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
     stroke_payload_renderer.set_strict_glyph_outline_replay(true);
     stroke_payload_renderer.render_layer_tree(&stroke_payload_tree);
     let stroke_payload_output = stroke_payload_renderer.output();
-    assert!(stroke_payload_output.contains(">A</text>"));
-    assert!(!stroke_payload_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    assert!(!stroke_payload_output.contains(">A</text>"));
+    assert!(stroke_payload_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    assert!(stroke_payload_output.contains("stroke=\"#000000\""));
+    assert!(stroke_payload_output.contains("stroke-width=\"1\""));
+    assert!(stroke_payload_output.contains("stroke-linejoin=\"miter\""));
+    assert!(stroke_payload_output.contains("stroke-linecap=\"butt\""));
+    assert!(stroke_payload_output.contains("stroke-miterlimit=\"4\""));
     let stroke_payload_report = stroke_payload_renderer
         .text_variant_selection_diagnostics()
         .iter()
         .find(|report| report.equivalence_group == "text-0")
         .expect("svg strict stroke payload report");
-    assert_eq!(stroke_payload_report.selected_variant_id, "textRun");
+    assert_eq!(stroke_payload_report.selected_variant_id, "glyphOutline");
+    assert!(stroke_payload_report.rejected_variants.is_empty());
     assert!(stroke_payload_report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            eligibility.payload_supported
+                && eligibility.replay_eligible
+                && eligibility.reason.is_none()
+        }));
+
+    let unsupported_stroke_tree = glyph_outline_fixture_tree_with_payload(
+        PaintTextStyle::from(&text_style),
+        GlyphOutlinePayloadKind::MonochromeFillStroke,
+        Some(GlyphOutlineStrokeStyle {
+            color: 0x000000,
+            width_px: 0.0,
+            join: GlyphOutlineStrokeJoin::Miter,
+            cap: GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+        }),
+        vec![glyph_outline_fixture_path()],
+    );
+    let mut unsupported_stroke_renderer = SvgRenderer::new();
+    unsupported_stroke_renderer.set_strict_glyph_outline_replay(true);
+    unsupported_stroke_renderer.render_layer_tree(&unsupported_stroke_tree);
+    let unsupported_stroke_output = unsupported_stroke_renderer.output();
+    assert!(unsupported_stroke_output.contains(">A</text>"));
+    assert!(!unsupported_stroke_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    let unsupported_stroke_report = unsupported_stroke_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict unsupported stroke report");
+    assert_eq!(unsupported_stroke_report.selected_variant_id, "textRun");
+    assert!(unsupported_stroke_report
         .rejected_variants
         .iter()
         .any(|variant| {
             variant.variant_id == "glyphOutline"
                 && variant
                     .reasons
-                    .contains(&VariantRejectReason::UnsupportedOutlinePayload)
+                    .contains(&VariantRejectReason::GlyphOutlineStrokeStyleUnsupported)
         }));
-    assert!(stroke_payload_report
+    assert!(unsupported_stroke_report
         .outline_eligibility
         .as_ref()
         .is_some_and(|eligibility| {
             !eligibility.payload_supported
                 && !eligibility.replay_eligible
-                && eligibility.reason == Some(VariantRejectReason::UnsupportedOutlinePayload)
+                && eligibility.reason
+                    == Some(VariantRejectReason::GlyphOutlineStrokeStyleUnsupported)
         }));
 }
 
