@@ -712,7 +712,7 @@ reserved writer is enabled. The v2 closure bar is:
 
 - canonical `PaintOp::Text { variants }` text slots with unique
   `paintOrderSlotId` values;
-- explicit `fallbackPolicy` and `renderProfile` gates for compatibility versus
+- explicit `textV2.profile` and `fallbackPolicy` gates for compatibility versus
   strictVisual exports;
 - fallback-free strict text only when `textV2.profile="strictVisual"`,
   `textV2.strictVisualFallbackFree=true`, `text.strictVisualFallbackFree`, and
@@ -832,18 +832,19 @@ variant groups into canonical `type: "text"` envelopes.
 `PageLayerTree::to_json_v2_strict_glyph_outline()` is the first opt-in
 strictVisual string writer. It emits only strict-eligible `glyphOutline`
 variants, uses `textV2.profile="strictVisual"` and `fallbackPolicy="none"`,
-requires `text.strictVisualFallbackFree` and
-`text.glyphOutline.monochromeFill`, and returns `strictVisualVariantMissing`
-instead of leaking an unvariant `TextRun` fallback into a fallback-free export.
+sets `textV2.strictVisualFallbackFree=true`, requires
+`text.strictVisualFallbackFree` and `text.glyphOutline.monochromeFill`, and
+returns `strictVisualVariantMissing` instead of leaking an unvariant `TextRun`
+fallback into a fallback-free export.
 When a strict outline variant uses the supported `monochromeFillStroke` subset,
 the writer keeps that payload and adds
 `text.glyphOutline.monochromeFillStroke` to `requiredFeatures`.
 `PageLayerTree::to_json_v2_strict_glyph_run()` is the matching opt-in
 strictVisual string writer for backend profiles that want a fallback-free
 `glyphRun` export. It emits only strict-eligible `GlyphRun` variants, uses
-`textV2.profile="strictVisual"` and `fallbackPolicy="none"`, requires
-`fontResources`, `text.glyphRun`, and `text.strictVisualFallbackFree`, and
-fails closed with
+`textV2.profile="strictVisual"` and `fallbackPolicy="none"`, sets
+`textV2.strictVisualFallbackFree=true`, requires `fontResources`,
+`text.glyphRun`, and `text.strictVisualFallbackFree`, and fails closed with
 `strictVisualVariantMissing` when a text slot has no strict-eligible glyph
 variant.
 `page_layer_tree_to_js_value_v2_compat()` mirrors that opt-in envelope for
