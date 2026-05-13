@@ -2075,6 +2075,62 @@ runTest('Renderer lifecycle', async ({ page }) => {
         }],
       },
     });
+    const makeV2GlyphRunOp = (orientation = 'horizontal') => ({
+      id: 'op-glyph-run-v2-payload',
+      type: 'glyphRun',
+      bbox: { x: 8, y: 8, width: 24, height: 24 },
+      source: { id: 17, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+      variant: {
+        equivalenceGroup: 'op-text-v2-outline',
+        variantId: 'glyphRun',
+        variantKind: 'glyphRun',
+        partIndex: 0,
+        partCount: 1,
+        isDefaultFallback: false,
+        quality: 'exact',
+      },
+      paintStyle: { ...style, color: '#000000' },
+      shapeKey: {
+        fontInstance: {
+          faceKey: 'fixture-face',
+          sizePx: 20,
+          variations: [],
+          syntheticBold: false,
+          syntheticItalic: false,
+        },
+        direction: 'ltr',
+        writingMode: 'horizontal-tb',
+        shapingEngine: 'fixture',
+        fallbackPolicy: 'none',
+      },
+      placement: {
+        runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 26 },
+        baselineY: 0,
+      },
+      glyphIds: [42],
+      positions: [{ x: 0, y: 0 }],
+      advances: [{ dx: 18, dy: 0 }],
+      clusters: [{
+        sourceRangeUtf8: { start: 0, end: 1 },
+        sourceRangeUtf16: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        flags: [],
+      }],
+      direction: 'ltr',
+      writingMode: 'horizontal-tb',
+      orientation,
+      diagnostics: {
+        quality: 'exact',
+        replayEligibility: 'portable',
+        strictVisualEligible: true,
+        maxOriginDeltaPx: 0,
+        maxAdvanceDeltaPx: 0,
+        maxResidualAfterAdjustmentPx: 0,
+        clusterMismatchCount: 0,
+        missingGlyphCount: 0,
+        usedFallbackFontCount: 0,
+      },
+    });
     const makeInvalidV2TextTree = () => {
       const tree = makeV2TextTree();
       const textOp = tree.root.ops[0];
@@ -2103,6 +2159,31 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ...outlineVariant.parts[0].payload,
         payloadKind,
       };
+      return tree;
+    };
+    const makeV2CrossScopeTree = (featureEnabled = false) => {
+      const tree = makeV2TextTree();
+      if (featureEnabled) {
+        tree.requiredFeatures = ['text.crossScopeVariants'];
+      }
+      const outlineVariant = tree.root.ops[0].variants.find(
+        (variant) => variant.variantId === 'glyphOutline',
+      );
+      outlineVariant.parts[0].scopeRef = 'alternate-text-scope';
+      return tree;
+    };
+    const makeV2MixedPerGlyphTree = (featureEnabled = false) => {
+      const tree = makeV2TextTree();
+      if (featureEnabled) {
+        tree.requiredFeatures = ['text.vertical.mixedPerGlyph'];
+      }
+      tree.root.ops[0].variants.push({
+        variantId: 'glyphRunMixed',
+        kind: 'glyphRun',
+        requiredFeatures: ['fontResources', 'text.glyphRun'],
+        quality: 'exact',
+        parts: [{ payload: makeV2GlyphRunOp('mixedPerGlyph') }],
+      });
       return tree;
     };
     const strokePayload = {
@@ -2179,6 +2260,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const v2Fallback = render(makeV2TextTree(), false);
       const v2Strict = render(makeV2TextTree(), true);
       const invalidV2MissingFallback = render(makeInvalidV2TextTree(), false);
+      const invalidV2CrossScope = render(makeV2CrossScopeTree(), false);
+      const allowedV2CrossScope = render(makeV2CrossScopeTree(true), false);
+      const invalidV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(), false);
+      const allowedV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(true), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree('bitmapGlyph', 'text.glyphOutline.bitmapGlyph'),
@@ -2204,6 +2289,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         v2Fallback,
         v2Strict,
         invalidV2MissingFallback,
+        invalidV2CrossScope,
+        allowedV2CrossScope,
+        invalidV2MixedPerGlyph,
+        allowedV2MixedPerGlyph,
         reservedV2ColorPayload,
         reservedV2BitmapPayload,
         reservedV2SvgPayload,
@@ -2445,6 +2534,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `Canvas2D reports invalid schema v2 Text fallback contract=${JSON.stringify(
       canvas2dGlyphOutlineProbe.invalidV2MissingFallback?.textV2Validation,
     )}`,
+  );
+  const invalidCrossScopeIssueCodes = canvas2dGlyphOutlineProbe.invalidV2CrossScope
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidCrossScopeIssueCodes.includes('crossScopeVariantFeatureMissing')
+      && canvas2dGlyphOutlineProbe.allowedV2CrossScope?.textV2Validation?.length === 0,
+    `Canvas2D schema v2 cross-scope variants require feature gate=${JSON.stringify({
+      invalid: canvas2dGlyphOutlineProbe.invalidV2CrossScope?.textV2Validation,
+      allowed: canvas2dGlyphOutlineProbe.allowedV2CrossScope?.textV2Validation,
+    })}`,
+  );
+  const invalidMixedPerGlyphIssueCodes = canvas2dGlyphOutlineProbe.invalidV2MixedPerGlyph
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidMixedPerGlyphIssueCodes.includes('mixedPerGlyphFeatureMissing')
+      && canvas2dGlyphOutlineProbe.allowedV2MixedPerGlyph?.textV2Validation?.length === 0,
+    `Canvas2D schema v2 mixed-per-glyph orientation requires feature gate=${JSON.stringify({
+      invalid: canvas2dGlyphOutlineProbe.invalidV2MixedPerGlyph?.textV2Validation,
+      allowed: canvas2dGlyphOutlineProbe.allowedV2MixedPerGlyph?.textV2Validation,
+    })}`,
   );
   const unsupportedOutlineReport = canvas2dGlyphOutlineProbe.unsupported?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',
