@@ -392,6 +392,15 @@ not a pass/fail gate for the fast path. It records per-profile/per-sample
 summaries and the highest-delta comparisons so larger nightly matrices can be
 triaged without promoting them to PR gates.
 
+CanvasKit color glyph coverage follows the same report-first rule. The checked
+in `tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf` fixture is a tiny synthetic
+single-face COLRv0 font with fixed digest and metadata. The Studio lifecycle
+probe renders it only through the `GlyphRun` path and records selected/rejected
+variant diagnostics plus red/blue/fallback pixel counts as a report-only smoke.
+Setting `RHWP_CANVASKIT_COLOR_GLYPH_SMOKE=1` promotes that local probe to hard
+assertions. This does not make color glyphs `GlyphOutline`-eligible; `ColorLayers`,
+bitmap glyphs, and SVG-in-font payloads remain reserved richer-outline work.
+
 ## Migration Phases
 
 1. Keep `TextRun` fallback and expose `paintStyle`.

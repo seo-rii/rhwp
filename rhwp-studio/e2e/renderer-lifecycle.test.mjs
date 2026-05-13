@@ -14,6 +14,7 @@ import { PNG } from 'pngjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RHWP_ROOT = path.resolve(__dirname, '..', '..');
+const CANVASKIT_COLOR_GLYPH_SMOKE_GATE = process.env.RHWP_CANVASKIT_COLOR_GLYPH_SMOKE === '1';
 const PATTERN_REFERENCE_FIXTURE = loadPatternReferenceFixture();
 const ORDERED_DITHER_8X8 = [
   0, 48, 12, 60, 3, 51, 15, 63,
@@ -654,7 +655,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   setTestCase('canvaskit-portable-glyph-run');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const glyphRunFontBytes = [...fs.readFileSync(path.join(RHWP_ROOT, 'web', 'fonts', 'NotoSansKR-Regular.woff2'))];
-  const portableGlyphRunProbe = await page.evaluate(({ fontBytes }) => {
+  const colorGlyphFontPath = path.join(RHWP_ROOT, 'tests', 'fixtures', 'fonts', 'RHWPColorSmokeCOLRv0.ttf');
+  const colorGlyphFontBytes = [...fs.readFileSync(colorGlyphFontPath)];
+  const colorGlyphFontDigest = '07aba86fc0f09361a59a4df361362e895e7e77cc8f20dd24ee5493cd1c85aac0';
+  const portableGlyphRunProbe = await page.evaluate(({ fontBytes, colorFontBytes, colorFontDigest }) => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
     if (!canvaskitRenderer) {
@@ -673,6 +677,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
     typeface.delete();
     if (glyphIds.length !== 1 || glyphIds[0] === 0) {
       return { error: `invalid glyph id ${JSON.stringify(glyphIds)}` };
+    }
+    const colorBytes = new Uint8Array(colorFontBytes);
+    const colorTypeface = canvasKit.Typeface.MakeTypefaceFromData(colorBytes.buffer.slice(0))
+      ?? canvasKit.Typeface.MakeFreeTypeFaceFromData(colorBytes.buffer.slice(0));
+    let colorGlyphIds = [];
+    if (colorTypeface) {
+      const colorFont = new canvasKit.Font(colorTypeface, 72);
+      colorGlyphIds = Array.from(colorFont.getGlyphIDs('\uE000') ?? []);
+      colorFont.delete();
+      colorTypeface.delete();
     }
 
     const style = (color) => ({
@@ -877,6 +891,184 @@ runTest('Renderer lifecycle', async ({ page }) => {
         }
       }
     };
+    const colorGlyphReport = !colorGlyphIds.length || colorGlyphIds[0] === 0
+      ? {
+          available: false,
+          reason: colorTypeface
+            ? `invalid color glyph id ${JSON.stringify(colorGlyphIds)}`
+            : 'color typeface unavailable',
+        }
+      : (() => {
+          const colorStyle = (color) => ({
+            ...style(color),
+            fontFamily: 'RHWP Color Smoke',
+            fontSize: 72,
+          });
+          const colorSource = {
+            id: 1,
+            utf8Range: { start: 0, end: 3 },
+            utf16Range: { start: 0, end: 1 },
+          };
+          const colorTree = {
+            pageWidth: 112,
+            pageHeight: 100,
+            profile: 'screen',
+            outputOptions: {
+              showParagraphMarks: false,
+              showControlCodes: false,
+              showTransparentBorders: false,
+              clipEnabled: true,
+              debugOverlay: false,
+            },
+            resources: {
+              tableId: 1802,
+              images: [],
+              imageHashes: [],
+              imageKeys: [],
+              svgFragments: [],
+              svgHashes: [],
+              svgKeys: [],
+              fontBlobs: [colorFontBytes],
+              fontBlobHashes: [colorFontDigest],
+              fontBlobKeys: [`font:fixture:${colorFontBytes.length}:${colorFontDigest}`],
+            },
+            fontResources: {
+              blobs: [{
+                id: 'color-smoke-font-blob',
+                source: 'bundled',
+                portability: 'portableBlob',
+                digest: { algorithm: 'sha256', value: colorFontDigest },
+                dataRef: { kind: 'fontBlob', id: '0' },
+              }],
+              faces: [{
+                id: 'color-smoke-face',
+                blobKey: 'color-smoke-font-blob',
+                faceIndex: 0,
+                postscriptName: 'RHWPColorSmoke-Regular',
+                familyNames: [{ value: 'RHWP Color Smoke' }],
+                styleNames: [{ value: 'Regular' }],
+              }],
+            },
+            textSources: [{
+              id: 1,
+              text: '\uE000',
+              utf8Range: { start: 0, end: 3 },
+              utf16Range: { start: 0, end: 1 },
+              annotations: [],
+            }],
+            root: {
+              kind: 'leaf',
+              sourceNodeId: 2,
+              bounds: { x: 0, y: 0, width: 112, height: 100 },
+              cacheHint: 'none',
+              ops: [
+                {
+                  type: 'pageBackground',
+                  bbox: { x: 0, y: 0, width: 112, height: 100 },
+                  backgroundColor: '#ffffff',
+                  borderWidth: 0,
+                },
+                {
+                  type: 'textRun',
+                  bbox: { x: 12, y: 8, width: 88, height: 80 },
+                  source: colorSource,
+                  variant: {
+                    equivalenceGroup: 'color-glyph-smoke-0',
+                    variantId: 'textRun',
+                    variantKind: 'textRun',
+                    partIndex: 0,
+                    partCount: 1,
+                    isDefaultFallback: true,
+                  },
+                  text: '\uE000',
+                  baseline: 76,
+                  rotation: 0,
+                  isVertical: false,
+                  orientation: 'horizontal',
+                  projectionKind: 'verbatim',
+                  clusterBasis: 'legacyPosition',
+                  style: colorStyle('#00cc00'),
+                  paintStyle: colorStyle('#00cc00'),
+                  positions: [0, 72],
+                  controlMarks: [],
+                  tabLeaders: [],
+                },
+                {
+                  type: 'glyphRun',
+                  bbox: { x: 12, y: 8, width: 88, height: 80 },
+                  source: colorSource,
+                  variant: {
+                    equivalenceGroup: 'color-glyph-smoke-0',
+                    variantId: 'glyphRun',
+                    variantKind: 'glyphRun',
+                    partIndex: 0,
+                    partCount: 1,
+                    isDefaultFallback: false,
+                    requires: ['fontResources', 'text.glyphRun'],
+                    quality: 'exact',
+                  },
+                  paintStyle: colorStyle('#000000'),
+                  shapeKey: {
+                    fontInstance: {
+                      faceKey: 'color-smoke-face',
+                      sizePx: 72,
+                      variations: [],
+                      syntheticBold: false,
+                      syntheticItalic: false,
+                    },
+                    direction: 'ltr',
+                    writingMode: 'horizontal-tb',
+                    shapingEngine: 'fixture',
+                    fallbackPolicy: 'none',
+                  },
+                  placement: {
+                    runToPage: { a: 1, b: 0, c: 0, d: 1, e: 16, f: 82 },
+                    baselineY: 0,
+                  },
+                  glyphIds: colorGlyphIds,
+                  positions: [{ x: 0, y: 0 }],
+                  clusters: [{
+                    sourceRangeUtf8: { start: 0, end: 3 },
+                    sourceRangeUtf16: { start: 0, end: 1 },
+                    glyphRange: { start: 0, end: 1 },
+                    flags: [],
+                  }],
+                  direction: 'ltr',
+                  writingMode: 'horizontal-tb',
+                  orientation: 'horizontal',
+                  diagnostics: {
+                    quality: 'exact',
+                    replayEligibility: 'portable',
+                    strictVisualEligible: true,
+                    maxOriginDeltaPx: 0,
+                    maxAdvanceDeltaPx: 0,
+                    maxResidualAfterAdjustmentPx: 0,
+                    clusterMismatchCount: 0,
+                    missingGlyphCount: 0,
+                    usedFallbackFontCount: 0,
+                  },
+                },
+              ],
+            },
+          };
+          const colorStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+            colorTree.root.ops[2],
+            colorTree.fontResources,
+          );
+          const colorRenderResult = renderTreeWithDiagnostics(colorTree);
+          const renderedColorStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+            colorTree.root.ops[2],
+            colorTree.fontResources,
+          );
+          return {
+            available: true,
+            glyphIds: colorGlyphIds,
+            status: colorStatus,
+            renderedStatus: renderedColorStatus,
+            png: colorRenderResult.png,
+            selectionDiagnostics: colorRenderResult.textVariantSelectionDiagnostics,
+          };
+        })();
 
     const status = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(tree.root.ops[2], tree.fontResources);
     const renderResult = renderTreeWithDiagnostics(tree);
@@ -1206,8 +1398,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       verticalUprightPng,
       verticalSidewaysStatus,
       verticalSidewaysPng,
+      colorGlyphReport,
     };
-  }, { fontBytes: glyphRunFontBytes });
+  }, { fontBytes: glyphRunFontBytes, colorFontBytes: colorGlyphFontBytes, colorFontDigest: colorGlyphFontDigest });
 
   assert(
     !portableGlyphRunProbe.error,
@@ -1250,6 +1443,73 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && selectedReport?.fontVerification?.effectSupported === true,
     `CanvasKit records selected GlyphRun variant=${JSON.stringify(selectedReport)}`,
   );
+  const colorGlyphReport = portableGlyphRunProbe.colorGlyphReport;
+  const colorGlyphRedPixels = colorGlyphReport?.png
+    ? countPixels(
+        colorGlyphReport.png,
+        (pixel) => pixel.alpha > 32 && pixel.red > 150 && pixel.green < 120 && pixel.blue < 120,
+      )
+    : 0;
+  const colorGlyphBluePixels = colorGlyphReport?.png
+    ? countPixels(
+        colorGlyphReport.png,
+        (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 120 && pixel.green < 120,
+      )
+    : 0;
+  const colorGlyphFallbackPixels = colorGlyphReport?.png
+    ? countPixels(
+        colorGlyphReport.png,
+        (pixel) => pixel.alpha > 32 && pixel.green > 150 && pixel.red < 120 && pixel.blue < 120,
+      )
+    : 0;
+  const colorGlyphSelectedReport = colorGlyphReport?.selectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'color-glyph-smoke-0',
+  );
+  const colorGlyphSmokeSummary = {
+    available: colorGlyphReport?.available === true,
+    reason: colorGlyphReport?.reason,
+    glyphIds: colorGlyphReport?.glyphIds,
+    selectedVariantId: colorGlyphSelectedReport?.selectedVariantId,
+    selectedReason: colorGlyphSelectedReport?.selectedReason,
+    digestMatched: colorGlyphSelectedReport?.fontVerification?.digestMatched,
+    exactFaceInstantiated: colorGlyphSelectedReport?.fontVerification?.exactFaceInstantiated,
+    redPixels: colorGlyphRedPixels,
+    bluePixels: colorGlyphBluePixels,
+    fallbackPixels: colorGlyphFallbackPixels,
+  };
+  console.log(`[report-only] CanvasKit color glyph smoke ${JSON.stringify(colorGlyphSmokeSummary)}`);
+  if (CANVASKIT_COLOR_GLYPH_SMOKE_GATE) {
+    assert(
+      colorGlyphReport?.available === true,
+      `CanvasKit color glyph smoke fixture available=${JSON.stringify(colorGlyphSmokeSummary)}`,
+    );
+    assert(
+      colorGlyphReport?.status?.replayable === false
+        && colorGlyphReport?.status?.reason === 'fontBlobNotVerified',
+      `CanvasKit color glyph status stays unverified before render=${JSON.stringify(colorGlyphReport?.status)}`,
+    );
+    assert(
+      colorGlyphReport?.renderedStatus?.replayable === true
+        && colorGlyphReport?.renderedStatus?.report?.digestMatched === true
+        && colorGlyphReport?.renderedStatus?.report?.exactFaceInstantiated === true,
+      `CanvasKit color glyph verified status=${JSON.stringify(colorGlyphReport?.renderedStatus)}`,
+    );
+    assert(
+      colorGlyphSelectedReport?.selectedVariantId === 'glyphRun'
+        && colorGlyphSelectedReport?.selectedReason === 'glyphRunStrictEligible'
+        && colorGlyphSelectedReport?.fontVerification?.digestMatched === true
+        && colorGlyphSelectedReport?.fontVerification?.exactFaceInstantiated === true,
+      `CanvasKit color glyph selection report=${JSON.stringify(colorGlyphSelectedReport)}`,
+    );
+    assert(
+      colorGlyphRedPixels > 20 && colorGlyphBluePixels > 20,
+      `CanvasKit COLRv0 smoke expected colored pixels=${JSON.stringify(colorGlyphSmokeSummary)}`,
+    );
+    assert(
+      colorGlyphFallbackPixels < 5,
+      `CanvasKit COLRv0 smoke suppressed fallback=${JSON.stringify(colorGlyphSmokeSummary)}`,
+    );
+  }
   assert(
     portableGlyphRunProbe.renderedStatus?.report?.digestMatched === true
       && portableGlyphRunProbe.renderedStatus?.report?.exactFaceInstantiated === true
