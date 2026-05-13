@@ -1487,11 +1487,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const colorGlyphSmokeSummary = {
     available: colorGlyphReport?.available === true,
     reason: colorGlyphReport?.reason,
+    statusReason: colorGlyphReport?.status?.reason,
+    renderedReplayable: colorGlyphReport?.renderedStatus?.replayable,
+    renderedReason: colorGlyphReport?.renderedStatus?.reason,
+    renderedDigestMatched: colorGlyphReport?.renderedStatus?.report?.digestMatched,
+    renderedExactFaceInstantiated: colorGlyphReport?.renderedStatus?.report?.exactFaceInstantiated,
+    renderedEffectSupported: colorGlyphReport?.renderedStatus?.report?.effectSupported,
     glyphIds: colorGlyphReport?.glyphIds,
     selectedVariantId: colorGlyphSelectedReport?.selectedVariantId,
     selectedReason: colorGlyphSelectedReport?.selectedReason,
+    partsExpected: colorGlyphSelectedReport?.partsExpected,
+    partsReplayed: colorGlyphSelectedReport?.partsReplayed,
+    rejectedVariantCount: colorGlyphSelectedReport?.rejectedVariants?.length,
     digestMatched: colorGlyphSelectedReport?.fontVerification?.digestMatched,
     exactFaceInstantiated: colorGlyphSelectedReport?.fontVerification?.exactFaceInstantiated,
+    replayEligible: colorGlyphSelectedReport?.fontVerification?.replayEligible,
+    effectSupported: colorGlyphSelectedReport?.fontVerification?.effectSupported,
     redPixels: colorGlyphRedPixels,
     bluePixels: colorGlyphBluePixels,
     fallbackPixels: colorGlyphFallbackPixels,
@@ -1510,15 +1521,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
     assert(
       colorGlyphReport?.renderedStatus?.replayable === true
         && colorGlyphReport?.renderedStatus?.report?.digestMatched === true
-        && colorGlyphReport?.renderedStatus?.report?.exactFaceInstantiated === true,
+        && colorGlyphReport?.renderedStatus?.report?.exactFaceInstantiated === true
+        && colorGlyphReport?.renderedStatus?.report?.effectSupported === true,
       `CanvasKit color glyph verified status=${JSON.stringify(colorGlyphReport?.renderedStatus)}`,
     );
     assert(
       colorGlyphSelectedReport?.selectedVariantId === 'glyphRun'
         && colorGlyphSelectedReport?.selectedReason === 'glyphRunStrictEligible'
+        && colorGlyphSelectedReport?.partsExpected === 1
+        && colorGlyphSelectedReport?.partsReplayed === 1
+        && (colorGlyphSelectedReport?.rejectedVariants?.length ?? 0) === 0
         && colorGlyphSelectedReport?.fontVerification?.digestMatched === true
-        && colorGlyphSelectedReport?.fontVerification?.exactFaceInstantiated === true,
+        && colorGlyphSelectedReport?.fontVerification?.exactFaceInstantiated === true
+        && colorGlyphSelectedReport?.fontVerification?.replayEligible === true
+        && colorGlyphSelectedReport?.fontVerification?.effectSupported === true,
       `CanvasKit color glyph selection report=${JSON.stringify(colorGlyphSelectedReport)}`,
+    );
+    const colorGlyphRunPart = colorGlyphSelectedReport?.parts?.find(
+      (part) => part.variantId === 'glyphRun' && part.variantKind === 'glyphRun',
+    );
+    assert(
+      colorGlyphRunPart?.replayable === true
+        && colorGlyphRunPart?.fontVerification?.replayEligible === true
+        && colorGlyphRunPart?.fontVerification?.effectSupported === true,
+      `CanvasKit color glyph part replay report=${JSON.stringify(colorGlyphRunPart)}`,
     );
     assert(
       colorGlyphRedPixels > 20 && colorGlyphBluePixels > 20,
@@ -1644,9 +1670,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const variationSelectionReport = portableGlyphRunProbe.variationSelectionDiagnostics?.find(
     (report) => report.equivalenceGroup === 'glyph-fixture-0',
   );
+  const variationTextPart = variationSelectionReport?.parts?.find(
+    (part) => part.variantId === 'textRun' && part.variantKind === 'textRun',
+  );
+  const variationGlyphPart = variationSelectionReport?.parts?.find(
+    (part) => part.variantId === 'glyphRun' && part.variantKind === 'glyphRun',
+  );
   assert(
     variationSelectionReport?.selectedVariantId === 'textRun'
       && variationSelectionReport?.selectedReason === 'defaultTextRunFallback'
+      && variationSelectionReport?.partsExpected === 1
+      && variationSelectionReport?.partsReplayed === 1
       && variationSelectionReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphRun'
           && variant.reasons.includes('variationUnsupported'),
@@ -1654,6 +1688,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && variationSelectionReport?.fontVerification?.variationSupported === false
       && variationSelectionReport?.fontVerification?.reason === 'variationUnsupported',
     `CanvasKit variation fallback records VariantSelectionReport=${JSON.stringify(variationSelectionReport)}`,
+  );
+  assert(
+    variationTextPart?.replayable === true
+      && variationGlyphPart?.replayable === false
+      && variationGlyphPart?.reason === 'variationUnsupported',
+    `CanvasKit variation fallback records per-part replay status=${JSON.stringify(variationSelectionReport?.parts)}`,
   );
   const variationRedPixels = countPixels(
     portableGlyphRunProbe.variationPng,
@@ -1675,9 +1715,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const faceIndexSelectionReport = portableGlyphRunProbe.faceIndexSelectionDiagnostics?.find(
     (report) => report.equivalenceGroup === 'glyph-fixture-0',
   );
+  const faceIndexTextPart = faceIndexSelectionReport?.parts?.find(
+    (part) => part.variantId === 'textRun' && part.variantKind === 'textRun',
+  );
+  const faceIndexGlyphPart = faceIndexSelectionReport?.parts?.find(
+    (part) => part.variantId === 'glyphRun' && part.variantKind === 'glyphRun',
+  );
   assert(
     faceIndexSelectionReport?.selectedVariantId === 'textRun'
       && faceIndexSelectionReport?.selectedReason === 'defaultTextRunFallback'
+      && faceIndexSelectionReport?.partsExpected === 1
+      && faceIndexSelectionReport?.partsReplayed === 1
       && faceIndexSelectionReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphRun'
           && variant.reasons.includes('faceIndexUnsupported'),
@@ -1686,6 +1734,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && faceIndexSelectionReport?.fontVerification?.exactFaceInstantiated === false
       && faceIndexSelectionReport?.fontVerification?.reason === 'faceIndexUnsupported',
     `CanvasKit faceIndex fallback records VariantSelectionReport=${JSON.stringify(faceIndexSelectionReport)}`,
+  );
+  assert(
+    faceIndexTextPart?.replayable === true
+      && faceIndexGlyphPart?.replayable === false
+      && faceIndexGlyphPart?.reason === 'faceIndexUnsupported',
+    `CanvasKit faceIndex fallback records per-part replay status=${JSON.stringify(faceIndexSelectionReport?.parts)}`,
   );
   const faceIndexRedPixels = countPixels(
     portableGlyphRunProbe.faceIndexPng,
