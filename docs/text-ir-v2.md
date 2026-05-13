@@ -715,9 +715,10 @@ reserved writer is enabled. The v2 closure bar is:
 - explicit `fallbackPolicy` and `renderProfile` gates for compatibility versus
   strictVisual exports;
 - fallback-free strict text only when `textV2.profile="strictVisual"`,
-  `text.strictVisualFallbackFree`, and the required variant features are
-  declared; fallback-free text slots that contain only `TextRun` variants are
-  invalid and report `strictVisualVariantMissing`;
+  `textV2.strictVisualFallbackFree=true`, `text.strictVisualFallbackFree`, and
+  the required variant features are declared; fallback-free text slots that
+  contain only `TextRun` variants are invalid and report
+  `strictVisualVariantMissing`;
 - `GlyphRun` and `glyphOutline` strict writers available as opt-in paths, with
   backend diagnostics explaining any rejected variant;
 - `GlyphOutline.payloadKind` vocabulary covering `monochromeFill`,

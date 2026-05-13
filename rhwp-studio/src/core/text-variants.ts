@@ -289,6 +289,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants');
   const allowFallbackFree =
     tree.textV2?.profile === 'strictVisual'
+    && tree.textV2?.strictVisualFallbackFree === true
     && requiredFeatures.has('text.strictVisualFallbackFree');
   const allowRicherGlyphOutlinePayloads =
     requiredFeatures.has('text.glyphOutline.monochromeFillStroke');

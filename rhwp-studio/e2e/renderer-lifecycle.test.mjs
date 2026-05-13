@@ -2208,6 +2208,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       tree.textV2.profile = 'compatibility';
       return tree;
     };
+    const makeV2FallbackFreeDisabledFlagTree = () => {
+      const tree = makeV2FallbackFreeTree(true);
+      tree.textV2.strictVisualFallbackFree = false;
+      return tree;
+    };
     const makeV2FallbackFreeTextOnlyTree = () => {
       const tree = makeV2FallbackFreeTree(true);
       const textOp = tree.root.ops[0];
@@ -2299,6 +2304,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         makeV2FallbackFreeCompatibilityProfileTree(),
         false,
       );
+      const invalidV2FallbackFreeDisabledFlag = render(
+        makeV2FallbackFreeDisabledFlagTree(),
+        false,
+      );
       const invalidV2FallbackFreeTextOnly = render(makeV2FallbackFreeTextOnlyTree(), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const reservedV2BitmapPayload = render(
@@ -2332,6 +2341,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidV2FallbackFree,
         allowedV2FallbackFree,
         invalidV2FallbackFreeCompatibilityProfile,
+        invalidV2FallbackFreeDisabledFlag,
         invalidV2FallbackFreeTextOnly,
         reservedV2ColorPayload,
         reservedV2BitmapPayload,
@@ -2616,6 +2626,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
     invalidFallbackFreeCompatibilityIssueCodes.includes('fallbackFreeFeatureMissing'),
     `Canvas2D schema v2 fallback-free text requires strictVisual profile=${JSON.stringify(
       canvas2dGlyphOutlineProbe.invalidV2FallbackFreeCompatibilityProfile?.textV2Validation,
+    )}`,
+  );
+  const invalidFallbackFreeDisabledFlagIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidV2FallbackFreeDisabledFlag
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidFallbackFreeDisabledFlagIssueCodes.includes('fallbackFreeFeatureMissing'),
+    `Canvas2D schema v2 fallback-free text requires strictVisualFallbackFree metadata=${JSON.stringify(
+      canvas2dGlyphOutlineProbe.invalidV2FallbackFreeDisabledFlag?.textV2Validation,
     )}`,
   );
   const invalidFallbackFreeTextOnlyIssueCodes = canvas2dGlyphOutlineProbe.invalidV2FallbackFreeTextOnly
