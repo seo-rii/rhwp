@@ -2186,6 +2186,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
       });
       return tree;
     };
+    const makeV2FallbackFreeTree = (featureEnabled = false) => {
+      const tree = makeV2TextTree();
+      if (featureEnabled) {
+        tree.requiredFeatures = ['text.strictVisualFallbackFree'];
+      }
+      tree.textV2 = {
+        ...tree.textV2,
+        fallbackPolicy: 'none',
+        strictVisualFallbackFree: true,
+      };
+      const textOp = tree.root.ops[0];
+      textOp.defaultVariantId = 'glyphOutline';
+      textOp.fallbackPolicy = 'none';
+      return tree;
+    };
     const strokePayload = {
       payloadKind: 'monochromeFillStroke',
       stroke: {
@@ -2264,6 +2279,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const allowedV2CrossScope = render(makeV2CrossScopeTree(true), false);
       const invalidV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(), false);
       const allowedV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(true), false);
+      const invalidV2FallbackFree = render(makeV2FallbackFreeTree(), false);
+      const allowedV2FallbackFree = render(makeV2FallbackFreeTree(true), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree('bitmapGlyph', 'text.glyphOutline.bitmapGlyph'),
@@ -2293,6 +2310,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
         allowedV2CrossScope,
         invalidV2MixedPerGlyph,
         allowedV2MixedPerGlyph,
+        invalidV2FallbackFree,
+        allowedV2FallbackFree,
         reservedV2ColorPayload,
         reservedV2BitmapPayload,
         reservedV2SvgPayload,
@@ -2555,6 +2574,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `Canvas2D schema v2 mixed-per-glyph orientation requires feature gate=${JSON.stringify({
       invalid: canvas2dGlyphOutlineProbe.invalidV2MixedPerGlyph?.textV2Validation,
       allowed: canvas2dGlyphOutlineProbe.allowedV2MixedPerGlyph?.textV2Validation,
+    })}`,
+  );
+  const invalidFallbackFreeIssueCodes = canvas2dGlyphOutlineProbe.invalidV2FallbackFree
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidFallbackFreeIssueCodes.includes('fallbackFreeFeatureMissing')
+      && canvas2dGlyphOutlineProbe.allowedV2FallbackFree?.textV2Validation?.length === 0,
+    `Canvas2D schema v2 fallback-free text requires strictVisual feature gate=${JSON.stringify({
+      invalid: canvas2dGlyphOutlineProbe.invalidV2FallbackFree?.textV2Validation,
+      allowed: canvas2dGlyphOutlineProbe.allowedV2FallbackFree?.textV2Validation,
     })}`,
   );
   const unsupportedOutlineReport = canvas2dGlyphOutlineProbe.unsupported?.diagnostics?.find(

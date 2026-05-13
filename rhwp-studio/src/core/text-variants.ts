@@ -287,8 +287,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const rootVariantParts = new Set<string>();
   const requiredFeatures = new Set(tree.requiredFeatures ?? []);
   const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants');
-  const allowFallbackFree = requiredFeatures.has('text.strictVisualFallbackFree')
-    || tree.textV2?.strictVisualFallbackFree === true;
+  const allowFallbackFree = requiredFeatures.has('text.strictVisualFallbackFree');
   const allowRicherGlyphOutlinePayloads =
     requiredFeatures.has('text.glyphOutline.monochromeFillStroke');
   const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
