@@ -2197,7 +2197,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const outlineVariant = tree.root.ops[0].variants.find(
         (variant) => variant.variantId === 'glyphOutline',
       );
-      outlineVariant.requiredFeatures = ['text.outlineGlyph', 'text.glyphOutline.colorLayers'];
+      outlineVariant.requiredFeatures = [
+        'text.outlineGlyph',
+        'text.glyphOutline.colorLayers',
+        'text.glyphOutline.colorLayers.colrV0',
+      ];
       outlineVariant.parts[0].payload = {
         ...outlineVariant.parts[0].payload,
         ...reservedPayloadEnvelopes.colorLayers,
