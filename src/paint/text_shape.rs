@@ -1328,6 +1328,48 @@ mod tests {
         }
     }
 
+    #[test]
+    fn line_break_shadow_risk_distinguishes_known_absent_from_unknown_context() {
+        let mut shadow = LineBreakShadowReport {
+            document_id: None,
+            sample_id: None,
+            page_index: Some(0),
+            paragraph_id: Some("paragraph-0".to_string()),
+            line_index: 0,
+            has_full_layout_context: true,
+            legacy_available_width_px: LineBreakContextValue::Known(128.0),
+            paragraph_width_px: LineBreakContextValue::Known(160.0),
+            container_width_px: LineBreakContextValue::KnownAbsent,
+            table_cell_constraint: LineBreakContextValue::KnownAbsent,
+            tab_stop_summary: LineBreakContextValue::KnownAbsent,
+            justification: LineBreakContextValue::KnownAbsent,
+            legacy_line_segmentation_available: LineBreakContextValue::Known(true),
+            legacy_line_width_px: 96.0,
+            shaped_line_width_px: 98.0,
+            overflow_delta_px: Some(-30.0),
+            risk: LineBreakChangeRisk::NoChangeLikely,
+            reason: Some("knownAbsentOptionalContexts".to_string()),
+        };
+
+        assert!(shadow.has_minimum_layout_context());
+        assert_eq!(shadow.reported_risk(), LineBreakChangeRisk::NoChangeLikely);
+
+        shadow.tab_stop_summary = LineBreakContextValue::Unknown;
+        assert!(!shadow.has_minimum_layout_context());
+        assert_eq!(
+            shadow.reported_risk(),
+            LineBreakChangeRisk::InsufficientContext
+        );
+
+        shadow.tab_stop_summary = LineBreakContextValue::KnownAbsent;
+        shadow.legacy_available_width_px = LineBreakContextValue::Unknown;
+        assert!(!shadow.has_minimum_layout_context());
+        assert_eq!(
+            shadow.reported_risk(),
+            LineBreakChangeRisk::InsufficientContext
+        );
+    }
+
     struct EmittingResolver;
 
     impl FontResolver for EmittingResolver {
