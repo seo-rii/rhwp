@@ -408,6 +408,17 @@ requires a stable native reference or equivalent baseline, deterministic
 diagnostics, and a stable fuzzy threshold. Successful smoke output is therefore
 backend capability evidence, not an automatic strictVisual gate.
 
+GlyphOutline `ColorLayers.ColrV0` is the only richer-outline writer candidate
+that should be considered in Phase 2 before the broader payload families are
+opened. It must remain a v2 feature addition, not a v3 trigger: the writer may
+emit only resolved COLRv0 solid palette layers with resolved path commands,
+resolved fill color, fill rule, layer index, source glyph provenance, and
+palette provenance. The consumer must replay those resolved layer records
+instead of reinterpreting COLR/CPAL font tables. Even with
+`text.glyphOutline.colorLayers` and `text.glyphOutline.colorLayers.colrV0`
+declared, writer/backend capability must still explicitly opt in before the
+payload is strictVisual eligible.
+
 ## Migration Phases
 
 1. Keep `TextRun` fallback and expose `paintStyle`.
@@ -788,7 +799,8 @@ that every reserved writer is enabled:
 | strictVisual fallback-free GlyphRun/GlyphOutline opt-in writers | Required before v2 closeout |
 | backend `VariantSelectionReport` selected/rejected vocabulary | Required before v2 closeout |
 | `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
-| `GlyphOutline` `colorLayers` / `bitmapGlyph` / `svgGlyph` | Vocabulary reserved; writer emission blocked |
+| `GlyphOutline` `colorLayers.colrV0` | V2 feature addition candidate; writer requires resolved layer fixtures and explicit capability gate |
+| `GlyphOutline` `colorLayers.colrV1` / `bitmapGlyph` / `svgGlyph` | Vocabulary reserved; writer emission blocked |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
 | CanvasKit variation and TTC/OTC strict replay | Blocked until exact construction fixtures pass |
 | shaped measurement and `lineBreakRisk` telemetry | Report-only artifact outside replay schema |
@@ -839,10 +851,17 @@ at a time. The preferred order is:
 - v2 compatibility writer as an opt-in path with `TextRun` fallback required;
 - strictVisual writer only when required features are complete and
   `fallbackPolicy=none` is explicitly requested;
-- richer `GlyphOutline` payload design, starting with a stroke subset only if
-  bbox inflation, fill/stroke order, SVG/Canvas2D/native fixtures, and reject
-  reasons are fixed;
+- richer `GlyphOutline` payload design, starting with the already gated stroke
+  subset and then a COLRv0 `ColorLayers` writer only after resolved-layer
+  fixtures and capability gates are fixed;
+- `BitmapGlyph` and `SvgGlyph` remain vocabulary-only until their image/vector
+  resource validators, negative fixtures, and strict replay profiles are
+  designed separately;
 - small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
+- CanvasKit variation/TTC support remains fallback-only until exact
+  construction proof fixtures pass;
+- cross-scope variants and public `MixedPerGlyph` remain writer-blocked until
+  actual use cases and vertical/transform semantics are stable;
 - shapedModern layout work as a separate opt-in layout migration milestone.
 
 The Studio reader accepts the first v2 text envelope shape by expanding a
