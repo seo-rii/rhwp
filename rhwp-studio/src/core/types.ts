@@ -173,6 +173,8 @@ export type LayerTreeFeature =
   | 'text.glyphOutline.monochromeFill'
   | 'text.glyphOutline.monochromeFillStroke'
   | 'text.glyphOutline.colorLayers'
+  | 'text.glyphOutline.colorLayers.colrV0'
+  | 'text.glyphOutline.colorLayers.colrV1'
   | 'text.glyphOutline.bitmapGlyph'
   | 'text.glyphOutline.svgGlyph'
   | 'text.specialVisualOps'

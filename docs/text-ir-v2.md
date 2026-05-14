@@ -545,7 +545,10 @@ The reserved families are intentionally separate payload families:
   portable replay payload; native COLR table references are provenance,
   diagnostics, or cache keys only. COLRv0 can start as a solid palette layer
   stack; COLRv1 needs a separate graph gate for gradients, transforms, and
-  compositing.
+  compositing. The feature vocabulary is split as
+  `text.glyphOutline.colorLayers`, `text.glyphOutline.colorLayers.colrV0`, and
+  `text.glyphOutline.colorLayers.colrV1` so the solid-layer subset can stabilize
+  before the full paint graph is writer-enabled.
 - `BitmapGlyph` should reference an image subresource with placement,
   transform-to-run, producer-resolved strike/ppem, strike-selection policy,
   alpha mode, scaling/filtering policy, pixel format, and color-space metadata.

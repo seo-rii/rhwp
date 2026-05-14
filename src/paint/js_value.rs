@@ -275,6 +275,8 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
             "text.glyphOutline.monochromeFill",
             "text.glyphOutline.monochromeFillStroke",
             "text.glyphOutline.colorLayers",
+            "text.glyphOutline.colorLayers.colrV0",
+            "text.glyphOutline.colorLayers.colrV1",
             "text.glyphOutline.bitmapGlyph",
             "text.glyphOutline.svgGlyph",
             "text.specialVisualOps",
