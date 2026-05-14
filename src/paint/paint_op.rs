@@ -207,14 +207,25 @@ pub struct FontColorGlyphRef {
 pub struct PaletteRef {
     pub id: Option<String>,
     pub index: Option<u16>,
+    pub cpal_digest: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedColor {
+    pub color_space: Option<String>,
+    pub rgba: [f32; 4],
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorLayerNode {
+    pub layer_index: Option<u32>,
     pub glyph_id: Option<u32>,
     pub glyph_range: Option<GlyphRange>,
     pub source_range_utf8: Option<TextSourceRange>,
     pub path_index: Option<u32>,
+    pub commands: Option<Vec<PathCommand>>,
+    pub fill: Option<ResolvedColor>,
+    pub fill_rule: Option<GlyphOutlineFillRule>,
     pub palette_index: Option<u16>,
     pub color: Option<ColorRef>,
     pub opacity: Option<f64>,
@@ -263,6 +274,9 @@ impl BitmapAlphaMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BitmapGlyphScalingPolicy {
+    NoScale,
+    ScaleToEm,
+    ExplicitTransform,
     Nearest,
     Linear,
     BackendDefault,
@@ -271,6 +285,9 @@ pub enum BitmapGlyphScalingPolicy {
 impl BitmapGlyphScalingPolicy {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::NoScale => "noScale",
+            Self::ScaleToEm => "scaleToEm",
+            Self::ExplicitTransform => "explicitTransform",
             Self::Nearest => "nearest",
             Self::Linear => "linear",
             Self::BackendDefault => "backendDefault",
@@ -324,6 +341,20 @@ impl SvgGlyphSecurityMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SvgGlyphViewBox {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SvgGlyphIntrinsicSize {
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SvgGlyphPayload {
     pub vector_resource_id: SvgResourceId,
@@ -331,6 +362,8 @@ pub struct SvgGlyphPayload {
     pub glyph_range: Option<GlyphRange>,
     pub placement: Option<TextRunPlacement>,
     pub transform_to_run: Option<LayerAffineTransform>,
+    pub view_box: Option<SvgGlyphViewBox>,
+    pub intrinsic_size: Option<SvgGlyphIntrinsicSize>,
     pub security_mode: SvgGlyphSecurityMode,
     pub script_allowed: bool,
     pub animation_allowed: bool,
@@ -1501,6 +1534,12 @@ mod tests {
         );
         assert_eq!(BitmapAlphaMode::Premultiplied.as_str(), "premultiplied");
         assert_eq!(BitmapAlphaMode::Straight.as_str(), "straight");
+        assert_eq!(BitmapGlyphScalingPolicy::NoScale.as_str(), "noScale");
+        assert_eq!(BitmapGlyphScalingPolicy::ScaleToEm.as_str(), "scaleToEm");
+        assert_eq!(
+            BitmapGlyphScalingPolicy::ExplicitTransform.as_str(),
+            "explicitTransform"
+        );
         assert_eq!(BitmapGlyphScalingPolicy::Nearest.as_str(), "nearest");
         assert_eq!(BitmapGlyphScalingPolicy::Linear.as_str(), "linear");
         assert_eq!(

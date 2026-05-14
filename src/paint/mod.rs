@@ -58,9 +58,10 @@ pub use paint_op::{
     LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark,
     LayerTextControlMarkKind, LayerTextControlMarkPaint, LayerTextDecorationKind,
     LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
-    PaintOp, PaintTextStyle, PaintVariantMeta, PaletteRef, SvgGlyphPayload, SvgGlyphSecurityMode,
-    TextClusterBasis, TextClusterFlag, TextClusterPlacement, TextLegacyVisualState,
-    TextLegacyVisuals, TextProjectionKind, TextRunPlacement, TextVariantKind, TextVariantQuality,
+    PaintOp, PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor, SvgGlyphIntrinsicSize,
+    SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextClusterBasis, TextClusterFlag,
+    TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
+    TextRunPlacement, TextVariantKind, TextVariantQuality,
 };
 pub use profile::RenderProfile;
 pub use resources::{

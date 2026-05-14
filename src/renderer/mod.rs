@@ -340,7 +340,7 @@ pub enum ArrowStyle {
 }
 
 /// 패스 커맨드 (벡터 도형용)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PathCommand {
     MoveTo(f64, f64),
     LineTo(f64, f64),

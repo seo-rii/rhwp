@@ -870,13 +870,23 @@ export interface LayerGlyphOutlineFontColorGlyphRef {
 export interface LayerGlyphOutlinePaletteRef {
   id?: string;
   index?: number;
+  cpalDigest?: string;
+}
+
+export interface LayerGlyphOutlineResolvedColor {
+  colorSpace?: string;
+  rgba: [number, number, number, number];
 }
 
 export interface LayerGlyphOutlineColorLayerNode {
+  layerIndex?: number;
   glyphId?: number;
   glyphRange?: { start: number; end: number };
   sourceRangeUtf8?: LayerTextSourceRange;
   pathIndex?: number;
+  commands?: LayerPathCommand[];
+  fill?: LayerGlyphOutlineResolvedColor;
+  fillRule?: CanvasFillRule;
   paletteIndex?: number;
   color?: string;
   opacity?: number;
@@ -897,6 +907,9 @@ export type LayerBitmapStrikeSelection =
   | 'diagnosticOnly';
 export type LayerBitmapAlphaMode = 'premultiplied' | 'straight';
 export type LayerBitmapGlyphScalingPolicy =
+  | 'noScale'
+  | 'scaleToEm'
+  | 'explicitTransform'
   | 'nearest'
   | 'linear'
   | 'backendDefault';
@@ -922,12 +935,26 @@ export interface LayerGlyphOutlineBitmapGlyphPayload {
 
 export type LayerSvgGlyphSecurityMode = 'staticSanitized';
 
+export interface LayerSvgGlyphViewBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface LayerSvgGlyphIntrinsicSize {
+  width: number;
+  height: number;
+}
+
 export interface LayerGlyphOutlineSvgGlyphPayload {
   vectorResourceId: string | number;
   sourceRangeUtf8?: LayerTextSourceRange;
   glyphRange?: { start: number; end: number };
   placement?: LayerTextRunPlacement;
   transformToRun?: LayerAffineTransform;
+  viewBox?: LayerSvgGlyphViewBox;
+  intrinsicSize?: LayerSvgGlyphIntrinsicSize;
   securityMode: LayerSvgGlyphSecurityMode;
   scriptAllowed?: false;
   animationAllowed?: false;
