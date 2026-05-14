@@ -543,9 +543,14 @@ The reserved families are intentionally separate payload families:
   paint-graph payload with `colorFormat`, source font provenance, palette
   reference, glyph range, and source range. The normalized graph is the primary
   portable replay payload; native COLR table references are provenance,
-  diagnostics, or cache keys only. COLRv0 can start as a solid palette layer
-  stack; COLRv1 needs a separate graph gate for gradients, transforms, and
-  compositing. The feature vocabulary is split as
+  diagnostics, or cache keys only. A COLRv0 layer should carry resolved visual
+  data (`layerIndex`, path `commands`, resolved `fill`, `fillRule`, and
+  `transformToRun`) plus provenance (`glyphId`, `glyphRange`,
+  `sourceRangeUtf8`, `paletteIndex`, and optional CPAL digest on `paletteRef`).
+  Consumers must replay the resolved color/path data rather than re-resolving
+  the font palette for strict visual output. COLRv0 can start as a solid
+  palette layer stack; COLRv1 needs a separate graph gate for gradients,
+  transforms, and compositing. The feature vocabulary is split as
   `text.glyphOutline.colorLayers`, `text.glyphOutline.colorLayers.colrV0`, and
   `text.glyphOutline.colorLayers.colrV1` so the solid-layer subset can stabilize
   before the full paint graph is writer-enabled.
@@ -553,11 +558,17 @@ The reserved families are intentionally separate payload families:
   transform-to-run, producer-resolved strike/ppem, strike-selection policy,
   alpha mode, scaling/filtering policy, pixel format, and color-space metadata.
   It is not a path payload, and backends must not silently reselect a different
-  bitmap strike for strict replay.
+  bitmap strike for strict replay. Strict visual payloads should prefer
+  deterministic scaling policies such as `noScale`, `scaleToEm`, or
+  `explicitTransform`; `backendDefault` is only suitable for compatibility or
+  diagnostic profiles because it delegates strict replay semantics to the
+  renderer.
 - `SvgGlyph` should reference a sanitized static vector subresource. Strict
   visual replay must keep external resources, script, animation, links, and
   interactivity disabled; raw SVG-in-font replay is not the strictVisual
-  contract.
+  contract. The payload should record `viewBox` and optional `intrinsicSize`
+  because mapping the vector resource into run-local glyph coordinates is part
+  of strict visual replay, not a backend-local guess.
 
 The current validator keeps this conservative:
 
