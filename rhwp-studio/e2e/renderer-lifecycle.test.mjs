@@ -2200,11 +2200,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outlineVariant.requiredFeatures = ['text.outlineGlyph', 'text.glyphOutline.colorLayers'];
       outlineVariant.parts[0].payload = {
         ...outlineVariant.parts[0].payload,
-        payloadKind: 'colorLayers',
+        ...reservedPayloadEnvelopes.colorLayers,
       };
       return tree;
     };
-    const makeReservedV2OutlinePayloadTree = (payloadKind, feature) => {
+    const makeReservedV2OutlinePayloadTree = (payloadKind, feature, envelope) => {
       const tree = makeV2TextTree();
       const outlineVariant = tree.root.ops[0].variants.find(
         (variant) => variant.variantId === 'glyphOutline',
@@ -2212,7 +2212,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outlineVariant.requiredFeatures = ['text.outlineGlyph', feature];
       outlineVariant.parts[0].payload = {
         ...outlineVariant.parts[0].payload,
-        payloadKind,
+        ...(envelope ?? { payloadKind }),
       };
       return tree;
     };
@@ -2292,6 +2292,60 @@ runTest('Renderer lifecycle', async ({ page }) => {
         widthPx: 0,
       },
     };
+    const reservedPayloadEnvelopes = {
+      colorLayers: {
+        payloadKind: 'colorLayers',
+        colorLayers: {
+          colorFormat: 'colrV0',
+          sourceFontRef: {
+            faceKey: 'fixture-face',
+            glyphId: 42,
+            paletteIndex: 0,
+            colorFormat: 'colrV0',
+          },
+          paletteRef: { id: 'fixture-palette', index: 0 },
+          sourceRangeUtf8: { start: 0, end: 1 },
+          glyphRange: { start: 0, end: 1 },
+          layers: [{
+            glyphId: 42,
+            glyphRange: { start: 0, end: 1 },
+            sourceRangeUtf8: { start: 0, end: 1 },
+            pathIndex: 0,
+            paletteIndex: 0,
+            color: '#0000ff',
+            opacity: 1,
+            transformToRun: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+          }],
+        },
+      },
+      bitmapGlyph: {
+        payloadKind: 'bitmapGlyph',
+        bitmapGlyph: {
+          imageResourceId: 'bitmap-glyph-fixture',
+          sourceRangeUtf8: { start: 0, end: 1 },
+          glyphRange: { start: 0, end: 1 },
+          strikePpem: [16, 16],
+          strikeSelection: 'producerResolved',
+          colorSpace: 'srgb',
+          alphaMode: 'premultiplied',
+          scalingPolicy: 'nearest',
+          filtering: 'nearest',
+        },
+      },
+      svgGlyph: {
+        payloadKind: 'svgGlyph',
+        svgGlyph: {
+          vectorResourceId: 'svg-glyph-fixture',
+          sourceRangeUtf8: { start: 0, end: 1 },
+          glyphRange: { start: 0, end: 1 },
+          securityMode: 'staticSanitized',
+          scriptAllowed: false,
+          animationAllowed: false,
+          externalResourcesAllowed: false,
+          interactivityAllowed: false,
+        },
+      },
+    };
     const render = (tree, strict) => {
       const canvas = document.createElement('canvas');
       canvas.width = tree.pageWidth;
@@ -2334,15 +2388,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
         true,
       );
       const reservedColorPayloadSidecar = render(
-        makeTree(style, [outlinePath], true, { payloadKind: 'colorLayers' }),
+        makeTree(style, [outlinePath], true, reservedPayloadEnvelopes.colorLayers),
         true,
       );
       const reservedBitmapPayloadSidecar = render(
-        makeTree(style, [outlinePath], true, { payloadKind: 'bitmapGlyph' }),
+        makeTree(style, [outlinePath], true, reservedPayloadEnvelopes.bitmapGlyph),
         true,
       );
       const reservedSvgPayloadSidecar = render(
-        makeTree(style, [outlinePath], true, { payloadKind: 'svgGlyph' }),
+        makeTree(style, [outlinePath], true, reservedPayloadEnvelopes.svgGlyph),
         true,
       );
       const v2Fallback = render(makeV2TextTree(), false);
@@ -2365,11 +2419,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const invalidV2FallbackFreeTextOnly = render(makeV2FallbackFreeTextOnlyTree(), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const reservedV2BitmapPayload = render(
-        makeReservedV2OutlinePayloadTree('bitmapGlyph', 'text.glyphOutline.bitmapGlyph'),
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          reservedPayloadEnvelopes.bitmapGlyph,
+        ),
         true,
       );
       const reservedV2SvgPayload = render(
-        makeReservedV2OutlinePayloadTree('svgGlyph', 'text.glyphOutline.svgGlyph'),
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          reservedPayloadEnvelopes.svgGlyph,
+        ),
         true,
       );
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
