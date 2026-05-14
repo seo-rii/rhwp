@@ -1557,4 +1557,114 @@ mod tests {
             "staticSanitized"
         );
     }
+
+    #[test]
+    fn reserved_glyph_payload_envelopes_carry_canonical_fields() {
+        let source_range = TextSourceRange::new(0, 1);
+        let glyph_range = GlyphRange::new(0, 1);
+        let identity = LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        };
+        let placement = TextRunPlacement {
+            run_to_page: identity,
+            baseline_y: 12.0,
+        };
+        let color_layers = ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV0,
+            source_font_ref: Some(FontColorGlyphRef {
+                face_key: Some("fixture-face".to_string()),
+                glyph_id: Some(42),
+                palette_index: Some(0),
+                color_format: Some(ColorGlyphFormat::ColrV0),
+            }),
+            palette_ref: Some(PaletteRef {
+                id: Some("fixture-palette".to_string()),
+                index: Some(0),
+                cpal_digest: Some("sha256:fixture-cpal".to_string()),
+            }),
+            layers: vec![ColorLayerNode {
+                layer_index: Some(0),
+                glyph_id: Some(42),
+                glyph_range: Some(glyph_range),
+                source_range_utf8: Some(source_range),
+                path_index: Some(0),
+                commands: Some(vec![
+                    PathCommand::MoveTo(0.0, 0.0),
+                    PathCommand::LineTo(10.0, 0.0),
+                    PathCommand::ClosePath,
+                ]),
+                fill: Some(ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba: [0.0, 0.0, 1.0, 1.0],
+                }),
+                fill_rule: Some(GlyphOutlineFillRule::NonZero),
+                palette_index: Some(0),
+                color: Some(0x00ff0000),
+                opacity: Some(1.0),
+                transform_to_run: Some(identity),
+            }],
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(glyph_range),
+        };
+        let bitmap_glyph = BitmapGlyphPayload {
+            image_resource_id: ImageResourceId(7),
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(glyph_range),
+            placement: Some(placement),
+            transform_to_run: Some(identity),
+            strike_ppem: Some((16, 16)),
+            strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: Some("srgb".to_string()),
+            alpha_mode: Some(BitmapAlphaMode::Premultiplied),
+            scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(BitmapGlyphFiltering::Linear),
+        };
+        let svg_glyph = SvgGlyphPayload {
+            vector_resource_id: SvgResourceId(3),
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(glyph_range),
+            placement: Some(placement),
+            transform_to_run: Some(identity),
+            view_box: Some(SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+            intrinsic_size: Some(SvgGlyphIntrinsicSize {
+                width: 10.0,
+                height: 10.0,
+            }),
+            security_mode: SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        };
+
+        assert_eq!(color_layers.layers[0].fill.as_ref().unwrap().rgba[2], 1.0);
+        assert_eq!(
+            color_layers
+                .palette_ref
+                .as_ref()
+                .and_then(|palette| palette.cpal_digest.as_deref()),
+            Some("sha256:fixture-cpal")
+        );
+        assert_eq!(
+            bitmap_glyph.scaling_policy,
+            Some(BitmapGlyphScalingPolicy::ExplicitTransform)
+        );
+        assert_eq!(bitmap_glyph.filtering, Some(BitmapGlyphFiltering::Linear));
+        assert_eq!(svg_glyph.view_box.unwrap().width, 10.0);
+        assert!(!svg_glyph.script_allowed);
+        assert!(!svg_glyph.animation_allowed);
+        assert!(!svg_glyph.external_resources_allowed);
+        assert!(!svg_glyph.interactivity_allowed);
+    }
 }
