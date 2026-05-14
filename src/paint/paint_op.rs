@@ -242,6 +242,26 @@ pub struct ColorLayersPayload {
     pub glyph_range: Option<GlyphRange>,
 }
 
+impl ColorLayersPayload {
+    pub fn has_colrv0_resolved_layer_contract(&self) -> bool {
+        self.color_format == ColorGlyphFormat::ColrV0
+            && !self.layers.is_empty()
+            && self.layers.iter().all(|layer| {
+                layer.layer_index.is_some()
+                    && layer
+                        .commands
+                        .as_ref()
+                        .is_some_and(|commands| !commands.is_empty())
+                    && layer.fill.is_some()
+                    && layer.fill_rule.is_some()
+                    && layer.glyph_id.is_some()
+                    && layer.glyph_range.is_some()
+                    && layer.source_range_utf8.is_some()
+                    && layer.palette_index.is_some()
+            })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BitmapStrikeSelection {
     ProducerResolved,
@@ -293,6 +313,10 @@ impl BitmapGlyphScalingPolicy {
             Self::BackendDefault => "backendDefault",
         }
     }
+
+    pub fn is_strict_deterministic(self) -> bool {
+        !matches!(self, Self::BackendDefault)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,6 +334,10 @@ impl BitmapGlyphFiltering {
             Self::BackendDefault => "backendDefault",
         }
     }
+
+    pub fn is_strict_deterministic(self) -> bool {
+        !matches!(self, Self::BackendDefault)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -326,6 +354,22 @@ pub struct BitmapGlyphPayload {
     pub alpha_mode: Option<BitmapAlphaMode>,
     pub scaling_policy: Option<BitmapGlyphScalingPolicy>,
     pub filtering: Option<BitmapGlyphFiltering>,
+}
+
+impl BitmapGlyphPayload {
+    pub fn has_strict_visual_contract(&self) -> bool {
+        self.source_range_utf8.is_some()
+            && self.glyph_range.is_some()
+            && self.placement.is_some()
+            && self.strike_selection == Some(BitmapStrikeSelection::ProducerResolved)
+            && self.alpha_mode.is_some()
+            && self
+                .scaling_policy
+                .is_some_and(BitmapGlyphScalingPolicy::is_strict_deterministic)
+            && self
+                .filtering
+                .is_some_and(BitmapGlyphFiltering::is_strict_deterministic)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -369,6 +413,20 @@ pub struct SvgGlyphPayload {
     pub animation_allowed: bool,
     pub external_resources_allowed: bool,
     pub interactivity_allowed: bool,
+}
+
+impl SvgGlyphPayload {
+    pub fn has_static_sanitized_contract(&self) -> bool {
+        self.source_range_utf8.is_some()
+            && self.glyph_range.is_some()
+            && self.placement.is_some()
+            && self.view_box.is_some()
+            && self.security_mode == SvgGlyphSecurityMode::StaticSanitized
+            && !self.script_allowed
+            && !self.animation_allowed
+            && !self.external_resources_allowed
+            && !self.interactivity_allowed
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1556,6 +1614,10 @@ mod tests {
             SvgGlyphSecurityMode::StaticSanitized.as_str(),
             "staticSanitized"
         );
+        assert!(BitmapGlyphScalingPolicy::ExplicitTransform.is_strict_deterministic());
+        assert!(BitmapGlyphFiltering::Linear.is_strict_deterministic());
+        assert!(!BitmapGlyphScalingPolicy::BackendDefault.is_strict_deterministic());
+        assert!(!BitmapGlyphFiltering::BackendDefault.is_strict_deterministic());
     }
 
     #[test]
@@ -1666,5 +1728,20 @@ mod tests {
         assert!(!svg_glyph.animation_allowed);
         assert!(!svg_glyph.external_resources_allowed);
         assert!(!svg_glyph.interactivity_allowed);
+        assert!(color_layers.has_colrv0_resolved_layer_contract());
+        assert!(bitmap_glyph.has_strict_visual_contract());
+        assert!(svg_glyph.has_static_sanitized_contract());
+
+        let mut incomplete_color_layers = color_layers.clone();
+        incomplete_color_layers.layers[0].fill = None;
+        assert!(!incomplete_color_layers.has_colrv0_resolved_layer_contract());
+
+        let mut backend_default_bitmap = bitmap_glyph.clone();
+        backend_default_bitmap.filtering = Some(BitmapGlyphFiltering::BackendDefault);
+        assert!(!backend_default_bitmap.has_strict_visual_contract());
+
+        let mut unsafe_svg = svg_glyph;
+        unsafe_svg.animation_allowed = true;
+        assert!(!unsafe_svg.has_static_sanitized_contract());
     }
 }
