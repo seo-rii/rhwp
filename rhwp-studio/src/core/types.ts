@@ -847,6 +847,83 @@ export interface LayerGlyphOutlineStrokeStyle {
   paintOrder?: LayerGlyphOutlinePaintOrder;
 }
 
+export type LayerGlyphOutlineColorFormat = 'colrV0' | 'colrV1' | 'other';
+
+export interface LayerGlyphOutlineFontColorGlyphRef {
+  faceKey?: string;
+  glyphId?: number;
+  paletteIndex?: number;
+  colorFormat?: LayerGlyphOutlineColorFormat;
+}
+
+export interface LayerGlyphOutlinePaletteRef {
+  id?: string;
+  index?: number;
+}
+
+export interface LayerGlyphOutlineColorLayerNode {
+  glyphId?: number;
+  glyphRange?: { start: number; end: number };
+  sourceRangeUtf8?: LayerTextSourceRange;
+  pathIndex?: number;
+  paletteIndex?: number;
+  color?: string;
+  opacity?: number;
+  transformToRun?: LayerAffineTransform;
+}
+
+export interface LayerGlyphOutlineColorLayersPayload {
+  colorFormat: LayerGlyphOutlineColorFormat;
+  sourceFontRef?: LayerGlyphOutlineFontColorGlyphRef;
+  paletteRef?: LayerGlyphOutlinePaletteRef;
+  layers: LayerGlyphOutlineColorLayerNode[];
+  sourceRangeUtf8?: LayerTextSourceRange;
+  glyphRange?: { start: number; end: number };
+}
+
+export type LayerBitmapStrikeSelection =
+  | 'producerResolved'
+  | 'diagnosticOnly';
+export type LayerBitmapAlphaMode = 'premultiplied' | 'straight';
+export type LayerBitmapGlyphScalingPolicy =
+  | 'nearest'
+  | 'linear'
+  | 'backendDefault';
+export type LayerBitmapGlyphFiltering =
+  | 'nearest'
+  | 'linear'
+  | 'backendDefault';
+
+export interface LayerGlyphOutlineBitmapGlyphPayload {
+  imageResourceId: string | number;
+  sourceRangeUtf8?: LayerTextSourceRange;
+  glyphRange?: { start: number; end: number };
+  placement?: LayerTextRunPlacement;
+  transformToRun?: LayerAffineTransform;
+  strikePpem?: [number, number];
+  strikeSelection?: LayerBitmapStrikeSelection;
+  pixelFormat?: string;
+  colorSpace?: string;
+  alphaMode?: LayerBitmapAlphaMode;
+  scalingPolicy?: LayerBitmapGlyphScalingPolicy;
+  filtering?: LayerBitmapGlyphFiltering;
+}
+
+export type LayerSvgGlyphSecurityMode = 'staticSanitized';
+
+export interface LayerGlyphOutlineSvgGlyphPayload {
+  vectorResourceId: string | number;
+  sourceRangeUtf8?: LayerTextSourceRange;
+  glyphRange?: { start: number; end: number };
+  placement?: LayerTextRunPlacement;
+  transformToRun?: LayerAffineTransform;
+  securityMode: LayerSvgGlyphSecurityMode;
+  scriptAllowed?: false;
+  animationAllowed?: false;
+  externalResourcesAllowed?: false;
+  interactivityAllowed?: false;
+}
+
 export interface LayerGlyphOutlineOp {
   id?: string;
   type: 'glyphOutline';
@@ -867,6 +944,14 @@ export interface LayerGlyphOutlineOp {
    */
   payloadKind?: LayerGlyphOutlinePayloadKind;
   stroke?: LayerGlyphOutlineStrokeStyle;
+  /**
+   * Reserved richer payload envelopes. They document schema v2 payload family
+   * shape, but current writers must not emit them and current strict replay
+   * rejects them through payloadKind feature gates.
+   */
+  colorLayers?: LayerGlyphOutlineColorLayersPayload;
+  bitmapGlyph?: LayerGlyphOutlineBitmapGlyphPayload;
+  svgGlyph?: LayerGlyphOutlineSvgGlyphPayload;
   placement: LayerTextRunPlacement;
   paths: LayerGlyphOutlinePath[];
   diagnostics: LayerGlyphRunDiagnostics;

@@ -531,6 +531,10 @@ them gated even when the generic richer-outline option is enabled. They report
 schema, writer gate, strict replay fixture, and deterministic fallback path.
 This keeps the v2 envelope from pretending that all richer outline families are
 implemented just because `monochromeFillStroke` is available.
+Studio JSON types may expose reserved payload envelopes such as `colorLayers`,
+`bitmapGlyph`, or `svgGlyph` so readers and diagnostics agree on the future
+shape, but those fields are not writer-enabled and do not make the payload
+strict-replay eligible.
 
 The reserved families are intentionally separate payload families:
 
