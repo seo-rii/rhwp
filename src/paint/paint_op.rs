@@ -178,6 +178,120 @@ impl GlyphOutlinePayloadKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorGlyphFormat {
+    ColrV0,
+    ColrV1,
+    Other,
+}
+
+impl ColorGlyphFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ColrV0 => "colrV0",
+            Self::ColrV1 => "colrV1",
+            Self::Other => "other",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FontColorGlyphRef {
+    pub face_key: Option<String>,
+    pub glyph_id: Option<u32>,
+    pub palette_index: Option<u16>,
+    pub color_format: Option<ColorGlyphFormat>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaletteRef {
+    pub id: Option<String>,
+    pub index: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorLayerNode {
+    pub glyph_id: Option<u32>,
+    pub glyph_range: Option<GlyphRange>,
+    pub source_range_utf8: Option<TextSourceRange>,
+    pub path_index: Option<u32>,
+    pub palette_index: Option<u16>,
+    pub color: Option<ColorRef>,
+    pub opacity: Option<f64>,
+    pub transform_to_run: Option<LayerAffineTransform>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorLayersPayload {
+    pub color_format: ColorGlyphFormat,
+    pub source_font_ref: Option<FontColorGlyphRef>,
+    pub palette_ref: Option<PaletteRef>,
+    pub layers: Vec<ColorLayerNode>,
+    pub source_range_utf8: Option<TextSourceRange>,
+    pub glyph_range: Option<GlyphRange>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BitmapStrikeSelection {
+    ProducerResolved,
+    DiagnosticOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BitmapAlphaMode {
+    Premultiplied,
+    Straight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BitmapGlyphScalingPolicy {
+    Nearest,
+    Linear,
+    BackendDefault,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BitmapGlyphFiltering {
+    Nearest,
+    Linear,
+    BackendDefault,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BitmapGlyphPayload {
+    pub image_resource_id: ImageResourceId,
+    pub source_range_utf8: Option<TextSourceRange>,
+    pub glyph_range: Option<GlyphRange>,
+    pub placement: Option<TextRunPlacement>,
+    pub transform_to_run: Option<LayerAffineTransform>,
+    pub strike_ppem: Option<(u16, u16)>,
+    pub strike_selection: Option<BitmapStrikeSelection>,
+    pub pixel_format: Option<String>,
+    pub color_space: Option<String>,
+    pub alpha_mode: Option<BitmapAlphaMode>,
+    pub scaling_policy: Option<BitmapGlyphScalingPolicy>,
+    pub filtering: Option<BitmapGlyphFiltering>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SvgGlyphSecurityMode {
+    StaticSanitized,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SvgGlyphPayload {
+    pub vector_resource_id: SvgResourceId,
+    pub source_range_utf8: Option<TextSourceRange>,
+    pub glyph_range: Option<GlyphRange>,
+    pub placement: Option<TextRunPlacement>,
+    pub transform_to_run: Option<LayerAffineTransform>,
+    pub security_mode: SvgGlyphSecurityMode,
+    pub script_allowed: bool,
+    pub animation_allowed: bool,
+    pub external_resources_allowed: bool,
+    pub interactivity_allowed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlyphOutlineStrokeStyle {
     pub color: ColorRef,

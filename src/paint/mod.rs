@@ -46,6 +46,8 @@ pub use layer_tree::{
     TextSourceRange, TextSourceSpan, TextSourceTable,
 };
 pub use paint_op::{
+    BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
+    BitmapStrikeSelection, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload, FontColorGlyphRef,
     GlyphCluster, GlyphClusterFlag, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
     GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
@@ -56,9 +58,9 @@ pub use paint_op::{
     LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint, LayerTextControlMark,
     LayerTextControlMarkKind, LayerTextControlMarkPaint, LayerTextDecorationKind,
     LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
-    PaintOp, PaintTextStyle, PaintVariantMeta, TextClusterBasis, TextClusterFlag,
-    TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
-    TextRunPlacement, TextVariantKind, TextVariantQuality,
+    PaintOp, PaintTextStyle, PaintVariantMeta, PaletteRef, SvgGlyphPayload, SvgGlyphSecurityMode,
+    TextClusterBasis, TextClusterFlag, TextClusterPlacement, TextLegacyVisualState,
+    TextLegacyVisuals, TextProjectionKind, TextRunPlacement, TextVariantKind, TextVariantQuality,
 };
 pub use profile::RenderProfile;
 pub use resources::{
