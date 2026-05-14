@@ -237,10 +237,28 @@ pub enum BitmapStrikeSelection {
     DiagnosticOnly,
 }
 
+impl BitmapStrikeSelection {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ProducerResolved => "producerResolved",
+            Self::DiagnosticOnly => "diagnosticOnly",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BitmapAlphaMode {
     Premultiplied,
     Straight,
+}
+
+impl BitmapAlphaMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Premultiplied => "premultiplied",
+            Self::Straight => "straight",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -250,11 +268,31 @@ pub enum BitmapGlyphScalingPolicy {
     BackendDefault,
 }
 
+impl BitmapGlyphScalingPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Nearest => "nearest",
+            Self::Linear => "linear",
+            Self::BackendDefault => "backendDefault",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BitmapGlyphFiltering {
     Nearest,
     Linear,
     BackendDefault,
+}
+
+impl BitmapGlyphFiltering {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Nearest => "nearest",
+            Self::Linear => "linear",
+            Self::BackendDefault => "backendDefault",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -276,6 +314,14 @@ pub struct BitmapGlyphPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SvgGlyphSecurityMode {
     StaticSanitized,
+}
+
+impl SvgGlyphSecurityMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StaticSanitized => "staticSanitized",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1438,5 +1484,38 @@ mod tests {
 
         assert!(bounds.visual.x <= bbox.x - 6.0);
         assert!(bounds.visual.width >= bbox.width + 12.0);
+    }
+
+    #[test]
+    fn reserved_glyph_payload_helper_enums_have_stable_strings() {
+        assert_eq!(ColorGlyphFormat::ColrV0.as_str(), "colrV0");
+        assert_eq!(ColorGlyphFormat::ColrV1.as_str(), "colrV1");
+        assert_eq!(ColorGlyphFormat::Other.as_str(), "other");
+        assert_eq!(
+            BitmapStrikeSelection::ProducerResolved.as_str(),
+            "producerResolved"
+        );
+        assert_eq!(
+            BitmapStrikeSelection::DiagnosticOnly.as_str(),
+            "diagnosticOnly"
+        );
+        assert_eq!(BitmapAlphaMode::Premultiplied.as_str(), "premultiplied");
+        assert_eq!(BitmapAlphaMode::Straight.as_str(), "straight");
+        assert_eq!(BitmapGlyphScalingPolicy::Nearest.as_str(), "nearest");
+        assert_eq!(BitmapGlyphScalingPolicy::Linear.as_str(), "linear");
+        assert_eq!(
+            BitmapGlyphScalingPolicy::BackendDefault.as_str(),
+            "backendDefault"
+        );
+        assert_eq!(BitmapGlyphFiltering::Nearest.as_str(), "nearest");
+        assert_eq!(BitmapGlyphFiltering::Linear.as_str(), "linear");
+        assert_eq!(
+            BitmapGlyphFiltering::BackendDefault.as_str(),
+            "backendDefault"
+        );
+        assert_eq!(
+            SvgGlyphSecurityMode::StaticSanitized.as_str(),
+            "staticSanitized"
+        );
     }
 }
