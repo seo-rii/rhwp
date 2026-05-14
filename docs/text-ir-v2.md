@@ -663,6 +663,11 @@ drive measurement and line breaking. That profile must ship with separate corpus
 reports and reference expectations; it must not become the default as part of
 GlyphRun/GlyphOutline renderer work. Until then, shaped measurement deltas are
 diagnostics or shadow reports, not CI gates for the compatibility renderer.
+The v2 vocabulary reserves `measurementAuthority: "shapedClusterAdvances"` plus
+`shapedMeasurement: "widthInput"` and `"lineBreakingInput"` for that opt-in
+rollout; current compatibility writers still emit
+`measurementAuthority: "legacyHwpPositions"` and
+`shapedMeasurement: "diagnosticsOnly"`.
 The current report-only hook records run-level shaped measurement observations
 when `TextShapeLowerer` obtains shaped data: legacy width from existing TextRun
 positions, shaped width from explicit glyph positions/advances, delta, cluster

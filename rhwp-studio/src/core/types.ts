@@ -38,8 +38,17 @@ export interface LayerBounds {
 }
 
 export type LayerLayoutProfile = 'hwpCompat' | 'shapedModern';
-export type LayerLayoutMeasurementAuthority = 'legacyHwpPositions' | 'shapedAdvances';
-export type LayerShapedMeasurementMode = 'none' | 'diagnosticsOnly' | 'shadowReport' | 'authoritative';
+export type LayerLayoutMeasurementAuthority =
+  | 'legacyHwpPositions'
+  | 'shapedAdvances'
+  | 'shapedClusterAdvances';
+export type LayerShapedMeasurementMode =
+  | 'none'
+  | 'diagnosticsOnly'
+  | 'shadowReport'
+  | 'widthInput'
+  | 'lineBreakingInput'
+  | 'authoritative';
 
 export interface PageLayerTree {
   schemaVersion?: number;
