@@ -48,6 +48,7 @@ pub struct TextV2ValidationOptions {
     pub allow_fallback_free: bool,
     pub allow_cross_scope_variants: bool,
     pub allow_richer_glyph_outline_payloads: bool,
+    pub allow_colrv0_color_layers_payloads: bool,
     pub allow_mixed_per_glyph_orientation: bool,
 }
 
@@ -59,6 +60,7 @@ impl Default for TextV2ValidationOptions {
             allow_fallback_free: false,
             allow_cross_scope_variants: false,
             allow_richer_glyph_outline_payloads: false,
+            allow_colrv0_color_layers_payloads: false,
             allow_mixed_per_glyph_orientation: false,
         }
     }
@@ -79,6 +81,7 @@ pub enum TextV2ValidationIssueCode {
     VariantDuplicatePart,
     CrossScopeVariantFeatureMissing,
     GlyphOutlinePayloadKindFeatureMissing,
+    GlyphOutlinePayloadContractInvalid,
     GlyphOutlineStrokeStyleUnsupported,
     StrictVisualVariantMissing,
     MixedPerGlyphFeatureMissing,
@@ -100,6 +103,7 @@ impl TextV2ValidationIssueCode {
             Self::VariantDuplicatePart => "variantDuplicatePart",
             Self::CrossScopeVariantFeatureMissing => "crossScopeVariantFeatureMissing",
             Self::GlyphOutlinePayloadKindFeatureMissing => "glyphOutlinePayloadKindFeatureMissing",
+            Self::GlyphOutlinePayloadContractInvalid => "glyphOutlinePayloadContractInvalid",
             Self::GlyphOutlineStrokeStyleUnsupported => "glyphOutlineStrokeStyleUnsupported",
             Self::StrictVisualVariantMissing => "strictVisualVariantMissing",
             Self::MixedPerGlyphFeatureMissing => "mixedPerGlyphFeatureMissing",
@@ -500,6 +504,7 @@ pub fn strict_glyph_outline_text_v2_slots(
         options.profile = TextV2Profile::StrictVisual;
         options.allow_fallback_free = true;
         options.allow_richer_glyph_outline_payloads = true;
+        options.allow_colrv0_color_layers_payloads = true;
         issues.extend(validate_text_v2_op(&strict_op, &options));
         strict_ops.push(strict_op);
     }
@@ -588,6 +593,13 @@ fn strict_glyph_outline_paint_eligible(outline: &LayerGlyphOutlinePaint) -> bool
             .stroke
             .as_ref()
             .is_some_and(|stroke| stroke.is_supported_monochrome_subset()),
+        GlyphOutlinePayloadKind::ColorLayers => {
+            outline.stroke.is_none()
+                && outline
+                    .color_layers
+                    .as_ref()
+                    .is_some_and(|payload| payload.has_colrv0_resolved_layer_contract())
+        }
         _ => false,
     };
     payload_supported
@@ -596,6 +608,23 @@ fn strict_glyph_outline_paint_eligible(outline: &LayerGlyphOutlinePaint) -> bool
 }
 
 pub fn has_supported_strict_glyph_outline_stroke(root: &LayerNode) -> bool {
+    has_supported_strict_glyph_outline_payload(root, |outline| {
+        outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFillStroke
+            && strict_glyph_outline_paint_eligible(outline)
+    })
+}
+
+pub fn has_supported_strict_glyph_outline_colrv0(root: &LayerNode) -> bool {
+    has_supported_strict_glyph_outline_payload(root, |outline| {
+        outline.payload_kind == GlyphOutlinePayloadKind::ColorLayers
+            && strict_glyph_outline_paint_eligible(outline)
+    })
+}
+
+fn has_supported_strict_glyph_outline_payload(
+    root: &LayerNode,
+    supported: impl Fn(&LayerGlyphOutlinePaint) -> bool,
+) -> bool {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         match &node.kind {
@@ -606,9 +635,7 @@ pub fn has_supported_strict_glyph_outline_stroke(root: &LayerNode) -> bool {
                     let PaintOp::GlyphOutline { outline, .. } = op else {
                         continue;
                     };
-                    if outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFillStroke
-                        && strict_glyph_outline_paint_eligible(outline)
-                    {
+                    if supported(outline) {
                         return true;
                     }
                 }
@@ -775,9 +802,70 @@ fn validate_variant_parts(
                         ));
                     }
                 }
-                GlyphOutlinePayloadKind::ColorLayers
-                | GlyphOutlinePayloadKind::BitmapGlyph
-                | GlyphOutlinePayloadKind::SvgGlyph => {
+                GlyphOutlinePayloadKind::ColorLayers => {
+                    if !options.allow_colrv0_color_layers_payloads
+                        || !variant
+                            .required_features
+                            .iter()
+                            .any(|feature| feature == "text.glyphOutline.colorLayers")
+                        || !variant
+                            .required_features
+                            .iter()
+                            .any(|feature| feature == "text.glyphOutline.colorLayers.colrV0")
+                        || !outline
+                            .color_layers
+                            .as_ref()
+                            .is_some_and(|payload| payload.has_colrv0_resolved_layer_contract())
+                    {
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    }
+                    if outline.stroke.is_some() {
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlineStrokeStyleUnsupported,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    }
+                }
+                GlyphOutlinePayloadKind::BitmapGlyph => {
+                    if !outline
+                        .bitmap_glyph
+                        .as_ref()
+                        .is_some_and(|payload| payload.has_strict_visual_contract())
+                    {
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    }
+                    issues.push(text_v2_issue(
+                        op,
+                        TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+                        Some(&variant.variant_id),
+                        Some(part.part_index),
+                    ));
+                }
+                GlyphOutlinePayloadKind::SvgGlyph => {
+                    if !outline
+                        .svg_glyph
+                        .as_ref()
+                        .is_some_and(|payload| payload.has_static_sanitized_contract())
+                    {
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    }
                     issues.push(text_v2_issue(
                         op,
                         TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
@@ -974,13 +1062,16 @@ fn union_bbox(left: BoundingBox, right: BoundingBox) -> BoundingBox {
 mod tests {
     use super::*;
     use crate::paint::{
-        CacheHint, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
+        BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
+        BitmapStrikeSelection, CacheHint, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload,
+        FontColorGlyphRef, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
         GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
         GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
-        GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
+        GlyphRunDiagnostics, GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform,
         LayerGlyphOutlinePath, LayerPoint, LayerSemantic, LayerVector, PaintTextStyle,
-        PaintVariantMeta, ShapeKey, ShapingEngineId, TextDirection, TextRunPlacement, TextSourceId,
-        TextSourceRange, TextSourceSpan, WritingMode,
+        PaintVariantMeta, ResolvedColor, ShapeKey, ShapingEngineId, SvgGlyphPayload,
+        SvgGlyphSecurityMode, SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement,
+        TextSourceId, TextSourceRange, TextSourceSpan, WritingMode,
     };
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -1012,6 +1103,9 @@ mod tests {
                 variant,
                 payload_kind: GlyphOutlinePayloadKind::MonochromeFill,
                 stroke: None,
+                color_layers: None,
+                bitmap_glyph: None,
+                svg_glyph: None,
                 paint_style: PaintTextStyle::from(&TextStyle::default()),
                 placement: TextRunPlacement {
                     run_to_page: LayerAffineTransform {
@@ -1059,6 +1153,121 @@ mod tests {
             cap: GlyphOutlineStrokeCap::Butt,
             miter_limit: Some(4.0),
             paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+        }
+    }
+
+    fn colrv0_color_layers_payload() -> ColorLayersPayload {
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV0,
+            source_font_ref: Some(FontColorGlyphRef {
+                face_key: Some("fixture-face".to_string()),
+                glyph_id: Some(42),
+                palette_index: Some(0),
+                color_format: Some(ColorGlyphFormat::ColrV0),
+            }),
+            palette_ref: None,
+            layers: vec![ColorLayerNode {
+                layer_index: Some(0),
+                glyph_id: Some(42),
+                glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                source_font_ref: Some(FontColorGlyphRef {
+                    face_key: Some("fixture-face".to_string()),
+                    glyph_id: Some(42),
+                    palette_index: Some(0),
+                    color_format: Some(ColorGlyphFormat::ColrV0),
+                }),
+                path_index: Some(0),
+                commands: Some(vec![
+                    PathCommand::MoveTo(0.0, 0.0),
+                    PathCommand::LineTo(1.0, 0.0),
+                    PathCommand::ClosePath,
+                ]),
+                fill: Some(ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba: [0.0, 0.0, 1.0, 1.0],
+                }),
+                fill_rule: Some(GlyphOutlineFillRule::NonZero),
+                palette_index: Some(0),
+                color: Some(0x0000ff),
+                opacity: Some(1.0),
+                transform_to_run: None,
+            }],
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+        }
+    }
+
+    fn bitmap_glyph_payload() -> BitmapGlyphPayload {
+        BitmapGlyphPayload {
+            image_resource_id: ImageResourceId(7),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 0.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: Some(LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 0.0,
+                f: 0.0,
+            }),
+            strike_ppem: Some((16, 16)),
+            strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: Some("srgb".to_string()),
+            alpha_mode: Some(BitmapAlphaMode::Premultiplied),
+            scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(BitmapGlyphFiltering::Linear),
+        }
+    }
+
+    fn svg_glyph_payload() -> SvgGlyphPayload {
+        SvgGlyphPayload {
+            vector_resource_id: SvgResourceId(3),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 0.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: Some(LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 0.0,
+                f: 0.0,
+            }),
+            view_box: Some(SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+            intrinsic_size: None,
+            security_mode: SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
         }
     }
 
@@ -1919,6 +2128,95 @@ mod tests {
     }
 
     #[test]
+    fn reserved_bitmap_and_svg_payloads_still_validate_their_strict_contracts() {
+        for payload_kind in [
+            GlyphOutlinePayloadKind::BitmapGlyph,
+            GlyphOutlinePayloadKind::SvgGlyph,
+        ] {
+            let payload_issue_codes = |valid_contract: bool| {
+                let text = text_op(PaintVariantMeta::text_run_default(format!(
+                    "text-5-reserved-contract-{}",
+                    payload_kind.as_str()
+                )));
+                let outline = outline_op(
+                    PaintVariantMeta {
+                        equivalence_group: format!(
+                            "text-5-reserved-contract-{}",
+                            payload_kind.as_str()
+                        ),
+                        variant_id: "glyphOutline".to_string(),
+                        variant_kind: TextVariantKind::GlyphOutline,
+                        part_index: 0,
+                        part_count: 1,
+                        is_default_fallback: false,
+                        requires: vec![format!("text.glyphOutline.{}", payload_kind.as_str())],
+                        quality: Some(TextVariantQuality::Exact),
+                        anchor_op_id: Some(format!(
+                            "text-anchor-5-reserved-contract-{}",
+                            payload_kind.as_str()
+                        )),
+                        local_paint_order: Some(0),
+                    },
+                    12.0,
+                );
+                let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+                let LayerTextVariantPayload::GlyphOutline(outline) =
+                    &mut text_ops[0].variants[1].parts[0].payload
+                else {
+                    panic!("expected glyph outline payload");
+                };
+                outline.payload_kind = payload_kind;
+                match payload_kind {
+                    GlyphOutlinePayloadKind::BitmapGlyph => {
+                        let mut payload = bitmap_glyph_payload();
+                        if !valid_contract {
+                            payload.filtering = Some(BitmapGlyphFiltering::BackendDefault);
+                        }
+                        outline.bitmap_glyph = Some(payload);
+                    }
+                    GlyphOutlinePayloadKind::SvgGlyph => {
+                        let mut payload = svg_glyph_payload();
+                        if !valid_contract {
+                            payload.animation_allowed = true;
+                        }
+                        outline.svg_glyph = Some(payload);
+                    }
+                    _ => unreachable!("test only covers reserved bitmap/svg payloads"),
+                }
+
+                validate_text_v2_op(&text_ops[0], &TextV2ValidationOptions::default())
+                    .into_iter()
+                    .map(|issue| issue.code)
+                    .collect::<Vec<_>>()
+            };
+
+            let valid_codes = payload_issue_codes(true);
+            assert!(
+                valid_codes
+                    .contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing),
+                "reserved {payload_kind:?} writer gate should remain closed"
+            );
+            assert!(
+                !valid_codes
+                    .contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid),
+                "reserved {payload_kind:?} with a complete contract should not report contract invalid"
+            );
+
+            let invalid_codes = payload_issue_codes(false);
+            assert!(
+                invalid_codes
+                    .contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing),
+                "reserved {payload_kind:?} writer gate should remain closed"
+            );
+            assert!(
+                invalid_codes
+                    .contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid),
+                "reserved {payload_kind:?} with an invalid contract must report contract invalid"
+            );
+        }
+    }
+
+    #[test]
     fn reports_colr_glyph_outline_payloads_without_writer_gate() {
         for color_format_feature in [
             "text.glyphOutline.colorLayers.colrV0",
@@ -1973,6 +2271,62 @@ mod tests {
                 "{color_format_feature} vocabulary must not imply writer eligibility"
             );
         }
+    }
+
+    #[test]
+    fn accepts_colrv0_color_layers_with_resolved_layer_contract() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5-colrv0"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-colrv0".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec![
+                    "text.glyphOutline.colorLayers".to_string(),
+                    "text.glyphOutline.colorLayers.colrV0".to_string(),
+                ],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5-colrv0".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::ColorLayers;
+        outline.color_layers = Some(colrv0_color_layers_payload());
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_colrv0_color_layers_payloads = true;
+        let issues = validate_text_v2_op(&text_ops[0], &options);
+        assert!(issues.is_empty(), "{issues:?}");
+
+        let strict_slots =
+            strict_glyph_outline_text_v2_slots(&text_ops).expect("strict colrv0 outline slot");
+        assert_eq!(
+            strict_slots[0].default_variant_id.as_deref(),
+            Some("glyphOutline")
+        );
+        let LayerTextVariantPayload::GlyphOutline(strict_outline) =
+            &strict_slots[0].variants[0].parts[0].payload
+        else {
+            panic!("expected strict glyph outline payload");
+        };
+        assert_eq!(
+            strict_outline.payload_kind,
+            GlyphOutlinePayloadKind::ColorLayers
+        );
+        assert!(strict_outline
+            .color_layers
+            .as_ref()
+            .is_some_and(ColorLayersPayload::has_colrv0_resolved_layer_contract));
     }
 
     #[test]

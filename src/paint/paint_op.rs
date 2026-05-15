@@ -151,6 +151,9 @@ pub struct LayerGlyphOutlinePaint {
     pub variant: PaintVariantMeta,
     pub payload_kind: GlyphOutlinePayloadKind,
     pub stroke: Option<GlyphOutlineStrokeStyle>,
+    pub color_layers: Option<ColorLayersPayload>,
+    pub bitmap_glyph: Option<BitmapGlyphPayload>,
+    pub svg_glyph: Option<SvgGlyphPayload>,
     pub paint_style: PaintTextStyle,
     pub placement: TextRunPlacement,
     pub paths: Vec<LayerGlyphOutlinePath>,
@@ -222,6 +225,7 @@ pub struct ColorLayerNode {
     pub glyph_id: Option<u32>,
     pub glyph_range: Option<GlyphRange>,
     pub source_range_utf8: Option<TextSourceRange>,
+    pub source_font_ref: Option<FontColorGlyphRef>,
     pub path_index: Option<u32>,
     pub commands: Option<Vec<PathCommand>>,
     pub fill: Option<ResolvedColor>,
@@ -257,6 +261,7 @@ impl ColorLayersPayload {
                     && layer.glyph_id.is_some()
                     && layer.glyph_range.is_some()
                     && layer.source_range_utf8.is_some()
+                    && layer.source_font_ref.is_some()
                     && layer.palette_index.is_some()
             })
     }
@@ -1541,6 +1546,9 @@ mod tests {
                     miter_limit: Some(4.0),
                     paint_order: GlyphOutlinePaintOrder::FillThenStroke,
                 }),
+                color_layers: None,
+                bitmap_glyph: None,
+                svg_glyph: None,
                 paint_style: PaintTextStyle::from(&TextStyle {
                     font_size: 0.0,
                     ..Default::default()
@@ -1654,6 +1662,12 @@ mod tests {
                 glyph_id: Some(42),
                 glyph_range: Some(glyph_range),
                 source_range_utf8: Some(source_range),
+                source_font_ref: Some(FontColorGlyphRef {
+                    face_key: Some("fixture-face".to_string()),
+                    glyph_id: Some(42),
+                    palette_index: Some(0),
+                    color_format: Some(ColorGlyphFormat::ColrV0),
+                }),
                 path_index: Some(0),
                 commands: Some(vec![
                     PathCommand::MoveTo(0.0, 0.0),

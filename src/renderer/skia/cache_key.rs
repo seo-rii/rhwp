@@ -117,6 +117,16 @@ impl StaticSubtreeCacheKey {
         }
     }
 
+    fn mix_option_str(&mut self, value: Option<&str>) {
+        match value {
+            Some(value) => {
+                self.mix_bool(true);
+                self.mix_str(value);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
     fn mix_bbox(&mut self, bbox: &BoundingBox) {
         self.mix_f64(bbox.x);
         self.mix_f64(bbox.y);
@@ -262,6 +272,9 @@ impl StaticSubtreeCacheKey {
                     crate::paint::GlyphOutlinePayloadKind::SvgGlyph => 4,
                 });
                 self.mix_glyph_outline_stroke(outline.stroke.as_ref());
+                self.mix_glyph_outline_color_layers(outline.color_layers.as_ref());
+                self.mix_glyph_outline_bitmap_glyph(outline.bitmap_glyph.as_ref());
+                self.mix_glyph_outline_svg_glyph(outline.svg_glyph.as_ref());
                 self.mix_paint_text_style(&outline.paint_style);
                 self.mix_text_run_placement(outline.placement);
                 self.mix_usize(outline.paths.len());
@@ -662,6 +675,280 @@ impl StaticSubtreeCacheKey {
             crate::paint::GlyphOutlinePaintOrder::FillThenStroke => 2,
             crate::paint::GlyphOutlinePaintOrder::StrokeThenFill => 3,
         });
+    }
+
+    fn mix_glyph_outline_color_layers(
+        &mut self,
+        payload: Option<&crate::paint::ColorLayersPayload>,
+    ) {
+        let Some(payload) = payload else {
+            self.mix_bool(false);
+            return;
+        };
+        self.mix_bool(true);
+        self.mix_u8(match payload.color_format {
+            crate::paint::ColorGlyphFormat::ColrV0 => 0,
+            crate::paint::ColorGlyphFormat::ColrV1 => 1,
+            crate::paint::ColorGlyphFormat::Other => 2,
+        });
+        if let Some(source) = &payload.source_font_ref {
+            self.mix_bool(true);
+            self.mix_option_str(source.face_key.as_deref());
+            self.mix_option_u32(source.glyph_id);
+            self.mix_option_u16(source.palette_index);
+            match source.color_format {
+                Some(format) => {
+                    self.mix_bool(true);
+                    self.mix_u8(match format {
+                        crate::paint::ColorGlyphFormat::ColrV0 => 0,
+                        crate::paint::ColorGlyphFormat::ColrV1 => 1,
+                        crate::paint::ColorGlyphFormat::Other => 2,
+                    });
+                }
+                None => self.mix_bool(false),
+            }
+        } else {
+            self.mix_bool(false);
+        }
+        if let Some(palette) = &payload.palette_ref {
+            self.mix_bool(true);
+            self.mix_option_str(palette.id.as_deref());
+            self.mix_option_u16(palette.index);
+            self.mix_option_str(palette.cpal_digest.as_deref());
+        } else {
+            self.mix_bool(false);
+        }
+        self.mix_text_source_range_option(payload.source_range_utf8);
+        self.mix_glyph_range_option(payload.glyph_range);
+        self.mix_usize(payload.layers.len());
+        for layer in &payload.layers {
+            self.mix_option_u32(layer.layer_index);
+            self.mix_option_u32(layer.glyph_id);
+            self.mix_glyph_range_option(layer.glyph_range);
+            self.mix_text_source_range_option(layer.source_range_utf8);
+            if let Some(source) = &layer.source_font_ref {
+                self.mix_bool(true);
+                self.mix_option_str(source.face_key.as_deref());
+                self.mix_option_u32(source.glyph_id);
+                self.mix_option_u16(source.palette_index);
+                match source.color_format {
+                    Some(format) => {
+                        self.mix_bool(true);
+                        self.mix_u8(match format {
+                            crate::paint::ColorGlyphFormat::ColrV0 => 0,
+                            crate::paint::ColorGlyphFormat::ColrV1 => 1,
+                            crate::paint::ColorGlyphFormat::Other => 2,
+                        });
+                    }
+                    None => self.mix_bool(false),
+                }
+            } else {
+                self.mix_bool(false);
+            }
+            self.mix_option_u32(layer.path_index);
+            if let Some(commands) = &layer.commands {
+                self.mix_bool(true);
+                self.mix_usize(commands.len());
+                for command in commands {
+                    self.mix_path_command(command);
+                }
+            } else {
+                self.mix_bool(false);
+            }
+            if let Some(fill) = &layer.fill {
+                self.mix_bool(true);
+                self.mix_option_str(fill.color_space.as_deref());
+                for channel in fill.rgba {
+                    self.mix_u32(channel.to_bits());
+                }
+            } else {
+                self.mix_bool(false);
+            }
+            match layer.fill_rule {
+                Some(crate::paint::GlyphOutlineFillRule::NonZero) => {
+                    self.mix_bool(true);
+                    self.mix_u8(0);
+                }
+                Some(crate::paint::GlyphOutlineFillRule::EvenOdd) => {
+                    self.mix_bool(true);
+                    self.mix_u8(1);
+                }
+                None => self.mix_bool(false),
+            }
+            self.mix_option_u16(layer.palette_index);
+            self.mix_option_u32(layer.color);
+            match layer.opacity {
+                Some(opacity) => {
+                    self.mix_bool(true);
+                    self.mix_f64(opacity);
+                }
+                None => self.mix_bool(false),
+            }
+            self.mix_layer_affine_transform_option(layer.transform_to_run);
+        }
+    }
+
+    fn mix_glyph_outline_bitmap_glyph(
+        &mut self,
+        payload: Option<&crate::paint::BitmapGlyphPayload>,
+    ) {
+        let Some(payload) = payload else {
+            self.mix_bool(false);
+            return;
+        };
+        self.mix_bool(true);
+        self.mix_usize(payload.image_resource_id.0);
+        self.mix_text_source_range_option(payload.source_range_utf8);
+        self.mix_glyph_range_option(payload.glyph_range);
+        match payload.placement {
+            Some(placement) => {
+                self.mix_bool(true);
+                self.mix_text_run_placement(placement);
+            }
+            None => self.mix_bool(false),
+        }
+        self.mix_layer_affine_transform_option(payload.transform_to_run);
+        match payload.strike_ppem {
+            Some((x, y)) => {
+                self.mix_bool(true);
+                self.mix_u16(x);
+                self.mix_u16(y);
+            }
+            None => self.mix_bool(false),
+        }
+        match payload.strike_selection {
+            Some(crate::paint::BitmapStrikeSelection::ProducerResolved) => {
+                self.mix_bool(true);
+                self.mix_u8(0);
+            }
+            Some(crate::paint::BitmapStrikeSelection::DiagnosticOnly) => {
+                self.mix_bool(true);
+                self.mix_u8(1);
+            }
+            None => self.mix_bool(false),
+        }
+        self.mix_option_str(payload.pixel_format.as_deref());
+        self.mix_option_str(payload.color_space.as_deref());
+        match payload.alpha_mode {
+            Some(crate::paint::BitmapAlphaMode::Premultiplied) => {
+                self.mix_bool(true);
+                self.mix_u8(0);
+            }
+            Some(crate::paint::BitmapAlphaMode::Straight) => {
+                self.mix_bool(true);
+                self.mix_u8(1);
+            }
+            None => self.mix_bool(false),
+        }
+        match payload.scaling_policy {
+            Some(policy) => {
+                self.mix_bool(true);
+                self.mix_u8(match policy {
+                    crate::paint::BitmapGlyphScalingPolicy::NoScale => 0,
+                    crate::paint::BitmapGlyphScalingPolicy::ScaleToEm => 1,
+                    crate::paint::BitmapGlyphScalingPolicy::ExplicitTransform => 2,
+                    crate::paint::BitmapGlyphScalingPolicy::Nearest => 3,
+                    crate::paint::BitmapGlyphScalingPolicy::Linear => 4,
+                    crate::paint::BitmapGlyphScalingPolicy::BackendDefault => 5,
+                });
+            }
+            None => self.mix_bool(false),
+        }
+        match payload.filtering {
+            Some(filtering) => {
+                self.mix_bool(true);
+                self.mix_u8(match filtering {
+                    crate::paint::BitmapGlyphFiltering::Nearest => 0,
+                    crate::paint::BitmapGlyphFiltering::Linear => 1,
+                    crate::paint::BitmapGlyphFiltering::BackendDefault => 2,
+                });
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_glyph_outline_svg_glyph(&mut self, payload: Option<&crate::paint::SvgGlyphPayload>) {
+        let Some(payload) = payload else {
+            self.mix_bool(false);
+            return;
+        };
+        self.mix_bool(true);
+        self.mix_usize(payload.vector_resource_id.0);
+        self.mix_text_source_range_option(payload.source_range_utf8);
+        self.mix_glyph_range_option(payload.glyph_range);
+        match payload.placement {
+            Some(placement) => {
+                self.mix_bool(true);
+                self.mix_text_run_placement(placement);
+            }
+            None => self.mix_bool(false),
+        }
+        self.mix_layer_affine_transform_option(payload.transform_to_run);
+        match payload.view_box {
+            Some(view_box) => {
+                self.mix_bool(true);
+                self.mix_f64(view_box.x);
+                self.mix_f64(view_box.y);
+                self.mix_f64(view_box.width);
+                self.mix_f64(view_box.height);
+            }
+            None => self.mix_bool(false),
+        }
+        match payload.intrinsic_size {
+            Some(size) => {
+                self.mix_bool(true);
+                self.mix_f64(size.width);
+                self.mix_f64(size.height);
+            }
+            None => self.mix_bool(false),
+        }
+        self.mix_u8(match payload.security_mode {
+            crate::paint::SvgGlyphSecurityMode::StaticSanitized => 0,
+        });
+        self.mix_bool(payload.script_allowed);
+        self.mix_bool(payload.animation_allowed);
+        self.mix_bool(payload.external_resources_allowed);
+        self.mix_bool(payload.interactivity_allowed);
+    }
+
+    fn mix_text_source_range_option(&mut self, range: Option<crate::paint::TextSourceRange>) {
+        match range {
+            Some(range) => {
+                self.mix_bool(true);
+                self.mix_u32(range.start);
+                self.mix_u32(range.end);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_glyph_range_option(&mut self, range: Option<crate::paint::GlyphRange>) {
+        match range {
+            Some(range) => {
+                self.mix_bool(true);
+                self.mix_u32(range.start);
+                self.mix_u32(range.end);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_layer_affine_transform_option(
+        &mut self,
+        transform: Option<crate::paint::LayerAffineTransform>,
+    ) {
+        match transform {
+            Some(transform) => {
+                self.mix_bool(true);
+                self.mix_f64(transform.a);
+                self.mix_f64(transform.b);
+                self.mix_f64(transform.c);
+                self.mix_f64(transform.d);
+                self.mix_f64(transform.e);
+                self.mix_f64(transform.f);
+            }
+            None => self.mix_bool(false),
+        }
     }
 
     fn mix_tab_leader(&mut self, tab_leader: &TabLeaderInfo) {

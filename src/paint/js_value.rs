@@ -8,14 +8,15 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    font_blob_resource_key, has_supported_strict_glyph_outline_stroke, image_resource_key,
-    resource_digest_hex, svg_resource_key, CacheHint, ClipKind, GlyphCluster,
-    GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
-    LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart,
-    LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp,
-    PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
-    TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
-    TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
+    font_blob_resource_key, has_supported_strict_glyph_outline_colrv0,
+    has_supported_strict_glyph_outline_stroke, image_resource_key, resource_digest_hex,
+    svg_resource_key, CacheHint, ClipKind, GlyphCluster, GlyphOutlineStrokeStyle,
+    GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode, LayerNodeKind,
+    LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart, LayerTextVariantPayload,
+    LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
+    ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry,
+    TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
+    TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
@@ -649,6 +650,7 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[
 fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
+    let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -665,6 +667,10 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     ];
     if has_outline_stroke {
         used_features.push("text.glyphOutline.monochromeFillStroke");
+    }
+    if has_colrv0_color_layers {
+        used_features.push("text.glyphOutline.colorLayers");
+        used_features.push("text.glyphOutline.colorLayers.colrV0");
     }
     if externalized_visuals
         .iter()
@@ -700,6 +706,10 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     ];
     if has_outline_stroke {
         required_features.push("text.glyphOutline.monochromeFillStroke");
+    }
+    if has_colrv0_color_layers {
+        required_features.push("text.glyphOutline.colorLayers");
+        required_features.push("text.glyphOutline.colorLayers.colrV0");
     }
     set_value(
         value,
@@ -1695,6 +1705,27 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                     glyph_outline_stroke_style_to_value(stroke),
                 );
             }
+            if let Some(color_layers) = &outline.color_layers {
+                set_value(
+                    &value,
+                    "colorLayers",
+                    glyph_outline_color_layers_payload_to_value(color_layers),
+                );
+            }
+            if let Some(bitmap_glyph) = &outline.bitmap_glyph {
+                set_value(
+                    &value,
+                    "bitmapGlyph",
+                    glyph_outline_bitmap_glyph_payload_to_value(bitmap_glyph),
+                );
+            }
+            if let Some(svg_glyph) = &outline.svg_glyph {
+                set_value(
+                    &value,
+                    "svgGlyph",
+                    glyph_outline_svg_glyph_payload_to_value(svg_glyph),
+                );
+            }
             set_value(
                 &value,
                 "paintStyle",
@@ -1957,6 +1988,259 @@ fn glyph_outline_stroke_style_to_value(stroke: &GlyphOutlineStrokeStyle) -> JsVa
         set_number(&value, "miterLimit", miter_limit);
     }
     set_string(&value, "paintOrder", stroke.paint_order.as_str());
+    value.into()
+}
+
+fn glyph_outline_color_layers_payload_to_value(
+    payload: &crate::paint::ColorLayersPayload,
+) -> JsValue {
+    let value = Object::new();
+    set_string(&value, "colorFormat", payload.color_format.as_str());
+    if let Some(source_font_ref) = &payload.source_font_ref {
+        set_value(
+            &value,
+            "sourceFontRef",
+            glyph_outline_font_color_glyph_ref_to_value(source_font_ref),
+        );
+    }
+    if let Some(palette_ref) = &payload.palette_ref {
+        set_value(
+            &value,
+            "paletteRef",
+            glyph_outline_palette_ref_to_value(palette_ref),
+        );
+    }
+    if let Some(range) = payload.source_range_utf8 {
+        set_value(&value, "sourceRangeUtf8", text_source_range_to_value(range));
+    }
+    if let Some(range) = payload.glyph_range {
+        let range_value = Object::new();
+        set_number(&range_value, "start", range.start as f64);
+        set_number(&range_value, "end", range.end as f64);
+        set_value(&value, "glyphRange", range_value.into());
+    }
+    set_value(
+        &value,
+        "layers",
+        array_to_value(
+            payload
+                .layers
+                .iter()
+                .map(glyph_outline_color_layer_node_to_value),
+        ),
+    );
+    value.into()
+}
+
+fn glyph_outline_font_color_glyph_ref_to_value(
+    source: &crate::paint::FontColorGlyphRef,
+) -> JsValue {
+    let value = Object::new();
+    if let Some(face_key) = &source.face_key {
+        set_string(&value, "faceKey", face_key);
+    }
+    if let Some(glyph_id) = source.glyph_id {
+        set_number(&value, "glyphId", glyph_id as f64);
+    }
+    if let Some(palette_index) = source.palette_index {
+        set_number(&value, "paletteIndex", palette_index as f64);
+    }
+    if let Some(color_format) = source.color_format {
+        set_string(&value, "colorFormat", color_format.as_str());
+    }
+    value.into()
+}
+
+fn glyph_outline_palette_ref_to_value(palette: &crate::paint::PaletteRef) -> JsValue {
+    let value = Object::new();
+    if let Some(id) = &palette.id {
+        set_string(&value, "id", id);
+    }
+    if let Some(index) = palette.index {
+        set_number(&value, "index", index as f64);
+    }
+    if let Some(cpal_digest) = &palette.cpal_digest {
+        set_string(&value, "cpalDigest", cpal_digest);
+    }
+    value.into()
+}
+
+fn glyph_outline_color_layer_node_to_value(layer: &crate::paint::ColorLayerNode) -> JsValue {
+    let value = Object::new();
+    if let Some(layer_index) = layer.layer_index {
+        set_number(&value, "layerIndex", layer_index as f64);
+    }
+    if let Some(glyph_id) = layer.glyph_id {
+        set_number(&value, "glyphId", glyph_id as f64);
+    }
+    if let Some(range) = layer.glyph_range {
+        let range_value = Object::new();
+        set_number(&range_value, "start", range.start as f64);
+        set_number(&range_value, "end", range.end as f64);
+        set_value(&value, "glyphRange", range_value.into());
+    }
+    if let Some(range) = layer.source_range_utf8 {
+        set_value(&value, "sourceRangeUtf8", text_source_range_to_value(range));
+    }
+    if let Some(source_font_ref) = &layer.source_font_ref {
+        set_value(
+            &value,
+            "sourceFontRef",
+            glyph_outline_font_color_glyph_ref_to_value(source_font_ref),
+        );
+    }
+    if let Some(path_index) = layer.path_index {
+        set_number(&value, "pathIndex", path_index as f64);
+    }
+    if let Some(commands) = &layer.commands {
+        set_value(&value, "commands", path_commands_to_value(commands));
+    }
+    if let Some(fill) = &layer.fill {
+        set_value(&value, "fill", resolved_color_to_value(fill));
+    }
+    if let Some(fill_rule) = layer.fill_rule {
+        set_string(&value, "fillRule", fill_rule.as_str());
+    }
+    if let Some(palette_index) = layer.palette_index {
+        set_number(&value, "paletteIndex", palette_index as f64);
+    }
+    if let Some(color) = layer.color {
+        set_string(&value, "color", &color_ref_to_css(color));
+    }
+    if let Some(opacity) = layer.opacity {
+        set_number(&value, "opacity", opacity);
+    }
+    if let Some(transform) = layer.transform_to_run {
+        set_value(
+            &value,
+            "transformToRun",
+            affine_transform_to_value(transform),
+        );
+    }
+    value.into()
+}
+
+fn resolved_color_to_value(color: &crate::paint::ResolvedColor) -> JsValue {
+    let value = Object::new();
+    if let Some(color_space) = &color.color_space {
+        set_string(&value, "colorSpace", color_space);
+    }
+    let rgba = Array::new();
+    for channel in color.rgba {
+        rgba.push(&JsValue::from_f64(channel as f64));
+    }
+    set_value(&value, "rgba", rgba.into());
+    value.into()
+}
+
+fn glyph_outline_bitmap_glyph_payload_to_value(
+    payload: &crate::paint::BitmapGlyphPayload,
+) -> JsValue {
+    let value = Object::new();
+    set_number(
+        &value,
+        "imageResourceId",
+        payload.image_resource_id.0 as f64,
+    );
+    if let Some(range) = payload.source_range_utf8 {
+        set_value(&value, "sourceRangeUtf8", text_source_range_to_value(range));
+    }
+    if let Some(range) = payload.glyph_range {
+        let range_value = Object::new();
+        set_number(&range_value, "start", range.start as f64);
+        set_number(&range_value, "end", range.end as f64);
+        set_value(&value, "glyphRange", range_value.into());
+    }
+    if let Some(placement) = payload.placement {
+        set_value(&value, "placement", text_run_placement_to_value(placement));
+    }
+    if let Some(transform) = payload.transform_to_run {
+        set_value(
+            &value,
+            "transformToRun",
+            affine_transform_to_value(transform),
+        );
+    }
+    if let Some((x, y)) = payload.strike_ppem {
+        let strike = Array::new();
+        strike.push(&JsValue::from_f64(x as f64));
+        strike.push(&JsValue::from_f64(y as f64));
+        set_value(&value, "strikePpem", strike.into());
+    }
+    if let Some(selection) = payload.strike_selection {
+        set_string(&value, "strikeSelection", selection.as_str());
+    }
+    if let Some(pixel_format) = &payload.pixel_format {
+        set_string(&value, "pixelFormat", pixel_format);
+    }
+    if let Some(color_space) = &payload.color_space {
+        set_string(&value, "colorSpace", color_space);
+    }
+    if let Some(alpha_mode) = payload.alpha_mode {
+        set_string(&value, "alphaMode", alpha_mode.as_str());
+    }
+    if let Some(scaling_policy) = payload.scaling_policy {
+        set_string(&value, "scalingPolicy", scaling_policy.as_str());
+    }
+    if let Some(filtering) = payload.filtering {
+        set_string(&value, "filtering", filtering.as_str());
+    }
+    value.into()
+}
+
+fn glyph_outline_svg_glyph_payload_to_value(payload: &crate::paint::SvgGlyphPayload) -> JsValue {
+    let value = Object::new();
+    set_number(
+        &value,
+        "vectorResourceId",
+        payload.vector_resource_id.0 as f64,
+    );
+    if let Some(range) = payload.source_range_utf8 {
+        set_value(&value, "sourceRangeUtf8", text_source_range_to_value(range));
+    }
+    if let Some(range) = payload.glyph_range {
+        let range_value = Object::new();
+        set_number(&range_value, "start", range.start as f64);
+        set_number(&range_value, "end", range.end as f64);
+        set_value(&value, "glyphRange", range_value.into());
+    }
+    if let Some(placement) = payload.placement {
+        set_value(&value, "placement", text_run_placement_to_value(placement));
+    }
+    if let Some(transform) = payload.transform_to_run {
+        set_value(
+            &value,
+            "transformToRun",
+            affine_transform_to_value(transform),
+        );
+    }
+    if let Some(view_box) = payload.view_box {
+        let view_box_value = Object::new();
+        set_number(&view_box_value, "x", view_box.x);
+        set_number(&view_box_value, "y", view_box.y);
+        set_number(&view_box_value, "width", view_box.width);
+        set_number(&view_box_value, "height", view_box.height);
+        set_value(&value, "viewBox", view_box_value.into());
+    }
+    if let Some(size) = payload.intrinsic_size {
+        let size_value = Object::new();
+        set_number(&size_value, "width", size.width);
+        set_number(&size_value, "height", size.height);
+        set_value(&value, "intrinsicSize", size_value.into());
+    }
+    set_string(&value, "securityMode", payload.security_mode.as_str());
+    set_bool(&value, "scriptAllowed", payload.script_allowed);
+    set_bool(&value, "animationAllowed", payload.animation_allowed);
+    set_bool(
+        &value,
+        "externalResourcesAllowed",
+        payload.external_resources_allowed,
+    );
+    set_bool(
+        &value,
+        "interactivityAllowed",
+        payload.interactivity_allowed,
+    );
     value.into()
 }
 
@@ -3396,6 +3680,9 @@ mod tests {
                 },
                 payload_kind: crate::paint::GlyphOutlinePayloadKind::MonochromeFill,
                 stroke: None,
+                color_layers: None,
+                bitmap_glyph: None,
+                svg_glyph: None,
                 paint_style: PaintTextStyle::from(&TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,

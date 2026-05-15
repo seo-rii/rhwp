@@ -1501,6 +1501,9 @@ fn static_subtree_cache_key_includes_glyph_outline_stroke_payload() {
                         GlyphOutlinePayloadKind::MonochromeFill
                     },
                     stroke,
+                    color_layers: None,
+                    bitmap_glyph: None,
+                    svg_glyph: None,
                     paint_style: PaintTextStyle::from(&TextStyle::default()),
                     placement: TextRunPlacement {
                         run_to_page: LayerAffineTransform {

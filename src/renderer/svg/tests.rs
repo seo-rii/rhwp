@@ -1,10 +1,11 @@
 use super::*;
 use crate::paint::{
-    GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap,
-    GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRunDiagnostics,
-    GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
-    LayerOutputOptions, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextOrientation, PaintTextStyle, PaintVariantMeta, TextRunPlacement, TextSourceEntry,
+    ColorGlyphFormat, ColorLayerNode, ColorLayersPayload, FontColorGlyphRef, GlyphOutlineFillRule,
+    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
+    LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
+    LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
+    PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor, TextRunPlacement, TextSourceEntry,
     TextSourceId, TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind,
     TextVariantQuality,
 };
@@ -593,6 +594,105 @@ fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
         }));
 }
 
+#[test]
+fn test_layer_svg_strict_glyph_outline_replays_colrv0_color_layers() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let tree = glyph_outline_fixture_tree_with_color_layers(
+        PaintTextStyle::from(&text_style),
+        color_layers_fixture_payload(true, ColorGlyphFormat::ColrV0),
+    );
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(!output.contains(">A</text>"));
+    assert!(output.contains("<path d=\"M0 0 L8 0 L8 8 Z\""));
+    assert!(output.contains("fill=\"#0000ff\""));
+    assert!(output.contains("fill-rule=\"nonzero\""));
+    assert!(output.contains("data-rhwp-color-layer-index=\"0\""));
+    assert!(output.contains("data-rhwp-palette-index=\"3\""));
+    assert!(output.contains("data-rhwp-source-font-face-key=\"fixture-face\""));
+    assert!(output.contains("source-backed COLRv0 glyph color layer"));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict color layer report");
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert!(report.rejected_variants.is_empty());
+    assert!(report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            eligibility.payload_supported
+                && eligibility.replay_eligible
+                && eligibility.reason.is_none()
+        }));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_rejects_invalid_colrv0_color_layers() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let missing_provenance_tree = glyph_outline_fixture_tree_with_color_layers(
+        PaintTextStyle::from(&text_style),
+        color_layers_fixture_payload(false, ColorGlyphFormat::ColrV0),
+    );
+    let mut missing_provenance_renderer = SvgRenderer::new();
+    missing_provenance_renderer.set_strict_glyph_outline_replay(true);
+    missing_provenance_renderer.render_layer_tree(&missing_provenance_tree);
+    let missing_provenance_output = missing_provenance_renderer.output();
+    assert!(missing_provenance_output.contains(">A</text>"));
+    let missing_provenance_report = missing_provenance_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict missing color provenance report");
+    assert_eq!(missing_provenance_report.selected_variant_id, "textRun");
+    assert!(missing_provenance_report
+        .rejected_variants
+        .iter()
+        .any(|variant| {
+            variant.variant_id == "glyphOutline"
+                && variant
+                    .reasons
+                    .contains(&VariantRejectReason::UnsupportedColorGlyph)
+        }));
+    assert!(missing_provenance_report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            !eligibility.payload_supported
+                && !eligibility.replay_eligible
+                && eligibility.reason == Some(VariantRejectReason::UnsupportedColorGlyph)
+        }));
+
+    let colrv1_tree = glyph_outline_fixture_tree_with_color_layers(
+        PaintTextStyle::from(&text_style),
+        color_layers_fixture_payload(true, ColorGlyphFormat::ColrV1),
+    );
+    let mut colrv1_renderer = SvgRenderer::new();
+    colrv1_renderer.set_strict_glyph_outline_replay(true);
+    colrv1_renderer.render_layer_tree(&colrv1_tree);
+    let colrv1_report = colrv1_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict colrv1 color layer report");
+    assert_eq!(colrv1_report.selected_variant_id, "textRun");
+    assert!(colrv1_report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedColorGlyph)
+    }));
+}
+
 fn glyph_outline_fixture_tree(
     outline_paint_style: PaintTextStyle,
     paths: Vec<LayerGlyphOutlinePath>,
@@ -617,6 +717,11 @@ fn glyph_outline_fixture_tree_with_payload(
         ..Default::default()
     };
     let text_variant = PaintVariantMeta::text_run_default("text-0");
+    let mut outline_requires = vec!["text.outlineGlyph".to_string()];
+    if payload_kind == GlyphOutlinePayloadKind::ColorLayers {
+        outline_requires.push("text.glyphOutline.colorLayers".to_string());
+        outline_requires.push("text.glyphOutline.colorLayers.colrV0".to_string());
+    }
     let outline_variant = PaintVariantMeta {
         equivalence_group: "text-0".to_string(),
         variant_id: "glyphOutline".to_string(),
@@ -624,7 +729,7 @@ fn glyph_outline_fixture_tree_with_payload(
         part_index: 0,
         part_count: 1,
         is_default_fallback: false,
-        requires: vec!["text.outlineGlyph".to_string()],
+        requires: outline_requires,
         quality: Some(TextVariantQuality::Exact),
         anchor_op_id: Some("op-text-0".to_string()),
         local_paint_order: Some(0),
@@ -663,6 +768,9 @@ fn glyph_outline_fixture_tree_with_payload(
                     variant: outline_variant,
                     payload_kind,
                     stroke,
+                    color_layers: None,
+                    bitmap_glyph: None,
+                    svg_glyph: None,
                     paint_style: outline_paint_style,
                     placement: TextRunPlacement {
                         run_to_page: LayerAffineTransform {
@@ -704,6 +812,82 @@ fn glyph_outline_fixture_tree_with_payload(
             }],
         })
         .build()
+}
+
+fn glyph_outline_fixture_tree_with_color_layers(
+    outline_paint_style: PaintTextStyle,
+    color_layers: ColorLayersPayload,
+) -> PageLayerTree {
+    let mut tree = glyph_outline_fixture_tree_with_payload(
+        outline_paint_style,
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Vec::new(),
+    );
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
+            panic!("expected glyph outline");
+        };
+        outline.color_layers = Some(color_layers);
+    }
+    tree
+}
+
+fn color_layers_fixture_payload(
+    include_layer_source_font_ref: bool,
+    color_format: ColorGlyphFormat,
+) -> ColorLayersPayload {
+    ColorLayersPayload {
+        color_format,
+        source_font_ref: Some(FontColorGlyphRef {
+            face_key: Some("fixture-face".to_string()),
+            glyph_id: Some(42),
+            palette_index: Some(3),
+            color_format: Some(color_format),
+        }),
+        palette_ref: Some(PaletteRef {
+            id: Some("fixture-palette".to_string()),
+            index: Some(0),
+            cpal_digest: Some("blake3:fixture-cpal".to_string()),
+        }),
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+        layers: vec![ColorLayerNode {
+            layer_index: Some(0),
+            glyph_id: Some(42),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            source_font_ref: include_layer_source_font_ref.then(|| FontColorGlyphRef {
+                face_key: Some("fixture-face".to_string()),
+                glyph_id: Some(42),
+                palette_index: Some(3),
+                color_format: Some(color_format),
+            }),
+            path_index: Some(0),
+            commands: Some(vec![
+                PathCommand::MoveTo(0.0, 0.0),
+                PathCommand::LineTo(8.0, 0.0),
+                PathCommand::LineTo(8.0, 8.0),
+                PathCommand::ClosePath,
+            ]),
+            fill: Some(ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba: [0.0, 0.0, 1.0, 1.0],
+            }),
+            fill_rule: Some(GlyphOutlineFillRule::NonZero),
+            palette_index: Some(3),
+            color: Some(0x00ff0000),
+            opacity: Some(1.0),
+            transform_to_run: Some(LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 0.0,
+                f: 0.0,
+            }),
+        }],
+    }
 }
 
 fn glyph_outline_fixture_path() -> LayerGlyphOutlinePath {

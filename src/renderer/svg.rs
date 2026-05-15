@@ -16,10 +16,10 @@ use super::{
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    ClipKind, GlyphOutlinePayloadKind, LayerEquationPaint, LayerFormObjectPaint, LayerImagePaint,
-    LayerNode, LayerNodeKind, LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole,
-    LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp,
-    ResourceArena, TextSourceEntry, TextSourceTable,
+    ClipKind, GlyphOutlineFillRule, GlyphOutlinePayloadKind, LayerEquationPaint,
+    LayerFormObjectPaint, LayerImagePaint, LayerNode, LayerNodeKind, LayerPageBackgroundPaint,
+    LayerSemantic, LayerSemanticRole, LayerTextDecorationKind, LayerTextDecorationPaint,
+    LayerTextRunPaint, PageLayerTree, PaintOp, ResourceArena, TextSourceEntry, TextSourceTable,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant,
@@ -251,9 +251,7 @@ impl SvgRenderer {
                                         true,
                                         outline.paint_style.is_fill_only_glyph_replay(),
                                     )
-                                } else if outline.variant.anchor_op_id.is_none()
-                                    || outline.paths.is_empty()
-                                {
+                                } else if outline.variant.anchor_op_id.is_none() {
                                     (
                                         false,
                                         Some(VariantRejectReason::UnsupportedOutlinePayload),
@@ -265,7 +263,14 @@ impl SvgRenderer {
                                         .payload_kind
                                     {
                                         GlyphOutlinePayloadKind::MonochromeFill => {
-                                            if outline.stroke.is_some() {
+                                            if outline.paths.is_empty() {
+                                                (
+                                                    false,
+                                                    Some(
+                                                        VariantRejectReason::UnsupportedOutlinePayload,
+                                                    ),
+                                                )
+                                            } else if outline.stroke.is_some() {
                                                 (
                                                     false,
                                                     Some(VariantRejectReason::UnsupportedOutlinePayload),
@@ -275,9 +280,16 @@ impl SvgRenderer {
                                             }
                                         }
                                         GlyphOutlinePayloadKind::MonochromeFillStroke => {
-                                            if outline.stroke.as_ref().is_some_and(|stroke| {
-                                                stroke.is_supported_monochrome_subset()
-                                            }) {
+                                            if outline.paths.is_empty() {
+                                                (
+                                                    false,
+                                                    Some(
+                                                        VariantRejectReason::UnsupportedOutlinePayload,
+                                                    ),
+                                                )
+                                            } else if outline.stroke.as_ref().is_some_and(
+                                                |stroke| stroke.is_supported_monochrome_subset(),
+                                            ) {
                                                 (true, None)
                                             } else {
                                                 (
@@ -288,10 +300,40 @@ impl SvgRenderer {
                                                 )
                                             }
                                         }
-                                        _ => (
+                                        GlyphOutlinePayloadKind::ColorLayers => {
+                                            let has_colrv0_features =
+                                                outline.variant.requires.iter().any(|feature| {
+                                                    feature == "text.glyphOutline.colorLayers"
+                                                }) && outline.variant.requires.iter().any(
+                                                    |feature| {
+                                                        feature
+                                                        == "text.glyphOutline.colorLayers.colrV0"
+                                                    },
+                                                );
+                                            if has_colrv0_features
+                                                && outline.color_layers.as_ref().is_some_and(
+                                                    |payload| {
+                                                        payload.has_colrv0_resolved_layer_contract()
+                                                    },
+                                                )
+                                            {
+                                                (true, None)
+                                            } else {
+                                                (
+                                                    false,
+                                                    Some(
+                                                        VariantRejectReason::UnsupportedColorGlyph,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                        GlyphOutlinePayloadKind::BitmapGlyph => (
                                             false,
-                                            Some(VariantRejectReason::UnsupportedOutlinePayload),
+                                            Some(VariantRejectReason::UnsupportedBitmapGlyph),
                                         ),
+                                        GlyphOutlinePayloadKind::SvgGlyph => {
+                                            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+                                        }
                                     };
                                     if !payload_supported {
                                         (
@@ -392,9 +434,9 @@ impl SvgRenderer {
                     escape_xml(&outline.variant.equivalence_group),
                     escape_xml(&outline.variant.variant_id),
                 ));
-                for path in &outline.paths {
+                let path_data = |commands: &[PathCommand]| {
                     let mut d = String::new();
-                    for command in &path.commands {
+                    for command in commands {
                         match command {
                             PathCommand::MoveTo(x, y) => d.push_str(&format!("M{} {} ", x, y)),
                             PathCommand::LineTo(x, y) => d.push_str(&format!("L{} {} ", x, y)),
@@ -416,9 +458,80 @@ impl SvgRenderer {
                             PathCommand::ClosePath => d.push_str("Z "),
                         }
                     }
+                    d
+                };
+                if outline.payload_kind == GlyphOutlinePayloadKind::ColorLayers {
+                    if let Some(color_layers) = outline.color_layers.as_ref() {
+                        for layer in &color_layers.layers {
+                            let (Some(commands), Some(fill), Some(glyph_range), Some(source_range)) = (
+                                layer.commands.as_ref(),
+                                layer.fill.as_ref(),
+                                layer.glyph_range,
+                                layer.source_range_utf8,
+                            ) else {
+                                continue;
+                            };
+                            let channel = |component: f32| -> u8 {
+                                (component.clamp(0.0, 1.0) * 255.0).round() as u8
+                            };
+                            let alpha = (fill.rgba[3] * layer.opacity.unwrap_or(1.0) as f32)
+                                .clamp(0.0, 1.0);
+                            let fill_opacity = if alpha < 1.0 {
+                                format!(" fill-opacity=\"{}\"", alpha)
+                            } else {
+                                String::new()
+                            };
+                            let fill_color = format!(
+                                "#{:02x}{:02x}{:02x}",
+                                channel(fill.rgba[0]),
+                                channel(fill.rgba[1]),
+                                channel(fill.rgba[2])
+                            );
+                            let palette_attr = layer
+                                .palette_index
+                                .map(|index| format!(" data-rhwp-palette-index=\"{}\"", index))
+                                .unwrap_or_default();
+                            let source_face_attr = layer
+                                .source_font_ref
+                                .as_ref()
+                                .and_then(|font_ref| font_ref.face_key.as_ref())
+                                .map(|face_key| {
+                                    format!(
+                                        " data-rhwp-source-font-face-key=\"{}\"",
+                                        escape_xml(face_key)
+                                    )
+                                })
+                                .unwrap_or_default();
+                            self.output.push_str(&format!(
+                                "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\" data-rhwp-color-layer-index=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\"{}{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed COLRv0 glyph color layer</desc></path>\n",
+                                path_data(commands).trim(),
+                                fill_color,
+                                fill_opacity,
+                                layer
+                                    .fill_rule
+                                    .unwrap_or(GlyphOutlineFillRule::NonZero)
+                                    .as_str(),
+                                layer.layer_index.unwrap_or(0),
+                                layer.glyph_id.unwrap_or(0),
+                                glyph_range.start,
+                                glyph_range.end,
+                                outline.source.id.0,
+                                source_range.start,
+                                source_range.end,
+                                palette_attr,
+                                source_face_attr,
+                                escape_xml(&outline.variant.equivalence_group),
+                                escape_xml(&outline.variant.variant_id),
+                            ));
+                        }
+                    }
+                    self.output.push_str("</g>\n");
+                    return;
+                }
+                for path in &outline.paths {
                     self.output.push_str(&format!(
                         "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed glyph outline</desc></path>\n",
-                        d.trim(),
+                        path_data(&path.commands).trim(),
                         fill,
                         stroke_attrs,
                         path.fill_rule.as_str(),
