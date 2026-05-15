@@ -1,4 +1,5 @@
 import {
+  hasColrv0ColorLayersContract,
   isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
   selectLayerTextVariantSetsWithReport,
@@ -183,9 +184,12 @@ export class Canvas2DLayerRenderer {
 
   private glyphOutlineReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
     const payloadStatus = glyphOutlinePayloadStatus(op);
+    const hasReplayPayload = (op.payloadKind ?? 'monochromeFill') === 'colorLayers'
+      ? payloadStatus.supported
+      : op.paths.length > 0;
     const payloadSupported = op.diagnostics.strictVisualEligible
       && payloadStatus.supported
-      && op.paths.length > 0;
+      && hasReplayPayload;
     const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
     const replayable = this.strictGlyphOutlineReplay
       && payloadSupported
@@ -317,7 +321,21 @@ export class Canvas2DLayerRenderer {
             transform.f,
           );
           ctx.fillStyle = op.paintStyle.color;
-          const stroke = (op.payloadKind ?? 'monochromeFill') === 'monochromeFillStroke'
+          const payloadKind = op.payloadKind ?? 'monochromeFill';
+          if (payloadKind === 'colorLayers') {
+            for (const layer of op.colorLayers?.layers ?? []) {
+              if (!layer.commands || !layer.fill) {
+                continue;
+              }
+              ctx.beginPath();
+              appendPathCommands(ctx, layer.commands);
+              ctx.fillStyle = resolvedColorToCss(layer.fill);
+              ctx.fill(layer.fillRule ?? 'nonzero');
+            }
+            ctx.restore();
+            return;
+          }
+          const stroke = payloadKind === 'monochromeFillStroke'
             ? op.stroke
             : undefined;
           if (stroke) {
@@ -1708,10 +1726,18 @@ function appendPathCommands(
 function glyphOutlinePayloadStatus(
   op: LayerGlyphOutlineOp,
 ): { supported: boolean; reason?: LayerTextVariantReplayStatus['reason'] } {
+  const payloadKind = op.payloadKind ?? 'monochromeFill';
+  if (payloadKind === 'colorLayers') {
+    return {
+      supported: op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
+        && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV0') === true
+        && hasColrv0ColorLayersContract(op),
+      reason: 'unsupportedColorGlyph',
+    };
+  }
   if (op.paths.length === 0) {
     return { supported: false, reason: 'unsupportedOutlinePayload' };
   }
-  const payloadKind = op.payloadKind ?? 'monochromeFill';
   if (payloadKind === 'monochromeFill') {
     return {
       supported: !op.stroke,
@@ -1724,9 +1750,6 @@ function glyphOutlinePayloadStatus(
       reason: 'glyphOutlineStrokeStyleUnsupported',
     };
   }
-  if (payloadKind === 'colorLayers') {
-    return { supported: false, reason: 'unsupportedColorGlyph' };
-  }
   if (payloadKind === 'bitmapGlyph') {
     return { supported: false, reason: 'unsupportedBitmapGlyph' };
   }
@@ -1734,6 +1757,13 @@ function glyphOutlinePayloadStatus(
     return { supported: false, reason: 'unsupportedSvgGlyph' };
   }
   return { supported: false, reason: 'unsupportedOutlinePayload' };
+}
+
+function resolvedColorToCss(fill: { colorSpace?: string; rgba: [number, number, number, number] }): string {
+  const [r, g, b, a] = fill.rgba;
+  const clamp255 = (value: number) => Math.max(0, Math.min(255, Math.round(value * 255)));
+  const alpha = Math.max(0, Math.min(1, a));
+  return `rgba(${clamp255(r)}, ${clamp255(g)}, ${clamp255(b)}, ${alpha})`;
 }
 
 function isFillOnlyGlyphOutlineStyle(op: LayerGlyphOutlineOp): boolean {

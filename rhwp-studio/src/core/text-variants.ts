@@ -149,6 +149,7 @@ export type LayerTextV2ValidationIssueCode =
   | 'invalidSidecarAnchor'
   | 'strictVisualVariantMissing'
   | 'glyphOutlinePayloadKindFeatureMissing'
+  | 'glyphOutlinePayloadContractInvalid'
   | 'glyphOutlineStrokeStyleUnsupported'
   | 'mixedPerGlyphFeatureMissing';
 
@@ -168,6 +169,7 @@ export interface LayerTextV2ValidationOptions {
   allowCrossScopeVariants?: boolean;
   allowFallbackFree?: boolean;
   allowRicherGlyphOutlinePayloads?: boolean;
+  allowColrv0ColorLayersPayloads?: boolean;
   allowMixedPerGlyphOrientation?: boolean;
   requiredFeatures?: readonly string[];
 }
@@ -293,6 +295,9 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
     && requiredFeatures.has('text.strictVisualFallbackFree');
   const allowRicherGlyphOutlinePayloads =
     requiredFeatures.has('text.glyphOutline.monochromeFillStroke');
+  const allowColrv0ColorLayersPayloads =
+    requiredFeatures.has('text.glyphOutline.colorLayers')
+    && requiredFeatures.has('text.glyphOutline.colorLayers.colrV0');
   const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
   const stack: LayerNode[] = [tree.root];
 
@@ -336,6 +341,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
         allowCrossScopeVariants,
         allowFallbackFree,
         allowRicherGlyphOutlinePayloads,
+        allowColrv0ColorLayersPayloads,
         allowMixedPerGlyphOrientation,
         requiredFeatures: tree.requiredFeatures,
       }));
@@ -565,9 +571,79 @@ export function validateLayerTextV2Op(
             }
             break;
           }
-          case 'colorLayers':
+          case 'colorLayers': {
+            const colrv0Feature =
+              requiredFeatures.has('text.glyphOutline.colorLayers')
+              && requiredFeatures.has('text.glyphOutline.colorLayers.colrV0')
+              && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers')
+              && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers.colrV0');
+            if (
+              options.allowColrv0ColorLayersPayloads !== true
+              || !colrv0Feature
+              || !hasColrv0ColorLayersContract(part.payload)
+            ) {
+              issues.push({
+                code: 'glyphOutlinePayloadKindFeatureMissing',
+                message: `Text variant '${variant.variantId}' uses colorLayers without the COLRv0 resolved-layer writer gate.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            if (part.payload.stroke) {
+              issues.push({
+                code: 'glyphOutlineStrokeStyleUnsupported',
+                message: `Text variant '${variant.variantId}' carries a stroke style outside monochromeFillStroke.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            break;
+          }
           case 'bitmapGlyph':
+            if (!hasStrictBitmapGlyphContract(part.payload)) {
+              issues.push({
+                code: 'glyphOutlinePayloadContractInvalid',
+                message: `Text variant '${variant.variantId}' carries a bitmapGlyph payload without the strict deterministic image-strike contract.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            issues.push({
+              code: 'glyphOutlinePayloadKindFeatureMissing',
+              message: `Text variant '${variant.variantId}' uses reserved glyphOutline payload family '${payloadKind}' before its writer gate is implemented.`,
+              opId: op.id,
+              paintOrderSlotId: op.paintOrderSlotId,
+              variantId: variant.variantId,
+              partIndex,
+            });
+            if (part.payload.stroke) {
+              issues.push({
+                code: 'glyphOutlineStrokeStyleUnsupported',
+                message: `Text variant '${variant.variantId}' carries a stroke style outside monochromeFillStroke.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            break;
           case 'svgGlyph':
+            if (!hasStaticSanitizedSvgGlyphContract(part.payload)) {
+              issues.push({
+                code: 'glyphOutlinePayloadContractInvalid',
+                message: `Text variant '${variant.variantId}' carries an svgGlyph payload without the static sanitized vector contract.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
             issues.push({
               code: 'glyphOutlinePayloadKindFeatureMissing',
               message: `Text variant '${variant.variantId}' uses reserved glyphOutline payload family '${payloadKind}' before its writer gate is implemented.`,
@@ -658,6 +734,57 @@ export function isSupportedGlyphOutlineStrokeStyle(
     && (stroke.join ?? 'miter') === 'miter'
     && (stroke.cap ?? 'butt') === 'butt'
     && (stroke.paintOrder ?? 'fillThenStroke') === 'fillThenStroke';
+}
+
+export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): boolean {
+  const colorLayers = payload.colorLayers;
+  return payload.payloadKind === 'colorLayers'
+    && !payload.stroke
+    && colorLayers?.colorFormat === 'colrV0'
+    && Array.isArray(colorLayers.layers)
+    && colorLayers.layers.length > 0
+    && colorLayers.layers.every((layer) =>
+      layer.layerIndex !== undefined
+      && layer.glyphId !== undefined
+      && layer.glyphRange !== undefined
+      && layer.sourceRangeUtf8 !== undefined
+      && layer.sourceFontRef !== undefined
+      && Array.isArray(layer.commands)
+      && layer.commands.length > 0
+      && layer.fill !== undefined
+      && layer.fillRule !== undefined
+      && layer.paletteIndex !== undefined,
+    );
+}
+
+export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): boolean {
+  const bitmapGlyph = payload.bitmapGlyph;
+  return payload.payloadKind === 'bitmapGlyph'
+    && bitmapGlyph !== undefined
+    && bitmapGlyph.sourceRangeUtf8 !== undefined
+    && bitmapGlyph.glyphRange !== undefined
+    && bitmapGlyph.placement !== undefined
+    && bitmapGlyph.strikeSelection === 'producerResolved'
+    && bitmapGlyph.alphaMode !== undefined
+    && bitmapGlyph.scalingPolicy !== undefined
+    && bitmapGlyph.scalingPolicy !== 'backendDefault'
+    && bitmapGlyph.filtering !== undefined
+    && bitmapGlyph.filtering !== 'backendDefault';
+}
+
+export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp): boolean {
+  const svgGlyph = payload.svgGlyph;
+  return payload.payloadKind === 'svgGlyph'
+    && svgGlyph !== undefined
+    && svgGlyph.sourceRangeUtf8 !== undefined
+    && svgGlyph.glyphRange !== undefined
+    && svgGlyph.placement !== undefined
+    && svgGlyph.viewBox !== undefined
+    && svgGlyph.securityMode === 'staticSanitized'
+    && svgGlyph.scriptAllowed === false
+    && svgGlyph.animationAllowed === false
+    && svgGlyph.externalResourcesAllowed === false
+    && svgGlyph.interactivityAllowed === false;
 }
 
 function isTextVariantPayload(payload: LayerTextVariantPayload): payload is LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp {

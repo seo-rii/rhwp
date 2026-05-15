@@ -883,6 +883,7 @@ export interface LayerGlyphOutlineColorLayerNode {
   glyphId?: number;
   glyphRange?: { start: number; end: number };
   sourceRangeUtf8?: LayerTextSourceRange;
+  sourceFontRef?: LayerGlyphOutlineFontColorGlyphRef;
   pathIndex?: number;
   commands?: LayerPathCommand[];
   fill?: LayerGlyphOutlineResolvedColor;
