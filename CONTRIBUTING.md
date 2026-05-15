@@ -153,7 +153,7 @@ cargo run --bin rhwp -- dump sample.hwp -s 0 -p 45
 - **Layer SVG**: `RHWP_RENDER_PATH=layer-svg cargo run --bin rhwp -- export-svg sample.hwp`
 - **Native Skia PNG**: `cargo run --features native-skia --bin rhwp -- export-png sample.hwp`
 - **Browser Canvas2D / CanvasKit**: `rhwp-studio`에서 기본은 layered Canvas2D, `http://localhost:7700/?renderer=canvaskit`로 CanvasKit 비교
-  - CanvasKit 래스터 모드: `?canvaskitMode=compat`(기본, Canvas2D 유사도 우선) 또는 `?canvaskitMode=default`(CanvasKit 기본 동작)
+  - CanvasKit 래스터 모드: `?canvaskitMode=default`(기본, direct Skia replay 우선) 또는 `?canvaskitMode=compat`(전환기 Canvas2D overlay fallback 허용)
   - 두 browser backend는 모두 `getPageLayerTree()`를 통해 같은 `PageLayerTree`를 replay합니다. 예전 `renderPageToCanvas()` 경로는 하위 호환용으로만 남아 있습니다.
 
 레이어 기반 출력은 `RHWP_RENDER_PROFILE`로 기본 프로파일을 덮어쓸 수 있습니다.

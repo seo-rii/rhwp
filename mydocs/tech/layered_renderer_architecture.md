@@ -219,21 +219,21 @@ CanvasKit에는 현재 두 가지 모드가 있다.
 
 | 모드 | 의미 | 기본값 |
 |---|---|---|
-| `default` | CanvasKit 기본 동작 우선 | 아님 |
-| `compat` | Canvas2D와의 시각적 유사도 우선 | 기본 |
+| `default` | direct CanvasKit/Skia replay 우선 | 기본 |
+| `compat` | Canvas2D와의 시각적 유사도 우선, 전환기 overlay fallback 허용 | 아님 |
 
 `rhwp-studio/src/view/render-backend.ts`에서 query param과 localStorage를 통해 이 값을 결정한다.
 같은 파일에서 layered `renderProfile`도 함께 관리한다.
 
-`compat`가 기본인 이유는 다음과 같다.
+`default`가 기본인 이유는 다음과 같다.
 
-- 브라우저 baseline은 아직 Canvas2D다.
-- 텍스트 rasterization, font fallback, glyph positioning에서 CanvasKit과 Canvas2D는 그대로는 많이 다를 수 있다.
-- 사용자가 backend를 바꿨을 때 “렌더링이 달라 보인다”는 인상을 최소화해야 한다.
+- CanvasKit을 browser Canvas2D-assisted preview가 아니라 native Skia로 이어지는 독립 replay backend로 키우기 위해서다.
+- 지원 가능한 raster image, equation/form object, text effect replay는 Canvas2D overlay 없이 CanvasKit 경로에서 직접 처리해야 한다.
+- direct replay가 기존 Canvas2D와 의도적으로 다르면 fixture와 diagnostics에서 `Skia strict replay improvement`로 구분한다.
 
-현재 compat mode는 특히 텍스트 계열에서 Canvas2D overlay/fallback을 사용해
-CanvasKit의 순수 raster 차이를 흡수한다.
-이 로직은 browser-specific compatibility layer이며, Rust core의 layout 자체를 바꾸는 것은 아니다.
+`compat` mode는 사용자가 명시적으로 선택한 안정성 모드다.
+특히 텍스트 계열에서 Canvas2D overlay/fallback을 사용해 CanvasKit의 순수 raster 차이를 흡수할 수 있다.
+이 로직은 browser-specific transition layer이며, Rust core의 layout 자체를 바꾸는 것은 아니다.
 
 ## 8. Parity와 diff 전략
 

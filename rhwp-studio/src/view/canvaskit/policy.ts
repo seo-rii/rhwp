@@ -76,17 +76,7 @@ export function shouldOverlayTextRun(
     );
   }
 
-  const clusters = splitIntoClusters(op.text);
-  if (
-    (context.insideTableCell && op.style.bold)
-    || op.isVertical
-    || !op.text.trim()
-  ) {
-    return true;
-  }
-  return clusters.some((cluster) =>
-    startsWithInvalidControl(cluster.text),
-  );
+  return false;
 }
 
 export function shouldOverlayRectangle(
@@ -96,15 +86,14 @@ export function shouldOverlayRectangle(
   if (context.hasCacheHint('preferVectorRecording')) {
     return false;
   }
+  if (context.renderMode === 'default') {
+    return false;
+  }
 
   const isSimpleTableCellFill =
     context.insideTableCell
     && !!op.style.fillColor
     && !op.style.strokeColor;
-
-  if (context.renderMode === 'default' && isSimpleTableCellFill) {
-    return false;
-  }
 
   return op.cornerRadius === 0
     && !op.gradient

@@ -2,14 +2,12 @@ import type { CanvasKit, Image as CanvasKitImage } from 'canvaskit-wasm';
 
 import type { LayerImageOp, LayerPatternFill, PageLayerTree } from '@/core/types';
 import {
-  applyLayerImageEffect,
+  applyLayerImageEffectPixels,
   decodeBase64,
   encodeBase64,
   inferImageMime,
-  rasterizePatternTileToPngBytes,
   resetLayerImageEffectDiagnostics,
   type LayerImageEffectDiagnostics,
-  type LayerImageEffectCache,
   type LayerImageEffectSourceRect,
 } from '../layer-canvas-utils';
 
@@ -21,7 +19,6 @@ export class CanvasKitResourceCache {
   readonly equationSvgDomImageCache = new Map<string, HTMLImageElement>();
   readonly equationSvgImageCache = new Map<string, CanvasKitImage>();
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
-  private readonly imageEffectSourceCache: LayerImageEffectCache = new WeakMap();
   private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
     cacheHits: 0,
     cacheMisses: 0,
@@ -129,28 +126,93 @@ export class CanvasKitResourceCache {
       this.imageEffectDiagnostics.cacheHits += 1;
       return cached;
     }
+    this.imageEffectDiagnostics.cacheMisses += 1;
+    const preprocessStartMs = typeof performance !== 'undefined' ? performance.now() : 0;
 
-    const domImage = this.domImage(resourceId, base64);
-    if (!domImage) {
+    const original = this.image(resourceId, base64);
+    if (!original) {
       return null;
     }
 
-    const source = applyLayerImageEffect(
-      domImage,
-      effect,
-      this.imageEffectSourceCache,
-      this.imageEffectDiagnostics,
-      sourceRect,
-    );
-    if (source === domImage) {
-      return this.image(resourceId, base64);
+    const imageWidth = original.width();
+    const imageHeight = original.height();
+    const sx = sourceRect?.x ?? 0;
+    const sy = sourceRect?.y ?? 0;
+    const sw = sourceRect?.width ?? imageWidth;
+    const sh = sourceRect?.height ?? imageHeight;
+    if (
+      !Number.isFinite(sx)
+      || !Number.isFinite(sy)
+      || !Number.isFinite(sw)
+      || !Number.isFinite(sh)
+      || sw <= 0
+      || sh <= 0
+    ) {
+      this.imageEffectDiagnostics.preprocessFailures += 1;
+      this.imageEffectDiagnostics.fallbackToOriginal += 1;
+      return original;
     }
 
-    const image = this.canvasKit.MakeImageFromCanvasImageSource(source);
-    if (!image) {
+    const outputWidth = Math.max(1, Math.round(sw));
+    const outputHeight = Math.max(1, Math.round(sh));
+    const surface = this.canvasKit.MakeSurface(outputWidth, outputHeight);
+    if (!surface) {
+      this.imageEffectDiagnostics.preprocessFailures += 1;
       this.imageEffectDiagnostics.fallbackToOriginal += 1;
-      return this.image(resourceId, base64);
+      return original;
     }
+
+    const paint = new this.canvasKit.Paint();
+    const canvas = surface.getCanvas();
+    canvas.drawImageRect(
+      original,
+      this.canvasKit.XYWHRect(sx, sy, sw, sh),
+      this.canvasKit.XYWHRect(0, 0, outputWidth, outputHeight),
+      paint,
+      false,
+    );
+    paint.delete();
+    surface.flush();
+
+    const imageInfo = {
+      width: outputWidth,
+      height: outputHeight,
+      colorType: this.canvasKit.ColorType.RGBA_8888,
+      alphaType: this.canvasKit.AlphaType.Unpremul,
+      colorSpace: this.canvasKit.ColorSpace.SRGB,
+    };
+    const snapshot = surface.makeImageSnapshot();
+    const pixels = snapshot.readPixels(0, 0, imageInfo);
+    snapshot.delete();
+    surface.delete();
+    if (!(pixels instanceof Uint8Array)) {
+      this.imageEffectDiagnostics.preprocessFailures += 1;
+      this.imageEffectDiagnostics.fallbackToOriginal += 1;
+      return original;
+    }
+
+    applyLayerImageEffectPixels(pixels, outputWidth, effect, Math.floor(sx), Math.floor(sy));
+    const image = this.canvasKit.MakeImage(imageInfo, pixels, outputWidth * 4);
+    if (!image) {
+      this.imageEffectDiagnostics.preprocessFailures += 1;
+      this.imageEffectDiagnostics.fallbackToOriginal += 1;
+      return original;
+    }
+    const elapsedMs = typeof performance !== 'undefined'
+      ? Math.max(0, performance.now() - preprocessStartMs)
+      : 0;
+    const processedBytes = outputWidth * outputHeight * 4;
+    this.imageEffectDiagnostics.preprocessedPixels += outputWidth * outputHeight;
+    this.imageEffectDiagnostics.preprocessedBytes += processedBytes;
+    this.imageEffectDiagnostics.maxPreprocessedBytes = Math.max(
+      this.imageEffectDiagnostics.maxPreprocessedBytes,
+      processedBytes,
+    );
+    this.imageEffectDiagnostics.preprocessTimeMs += elapsedMs;
+    this.imageEffectDiagnostics.maxPreprocessTimeMs = Math.max(
+      this.imageEffectDiagnostics.maxPreprocessTimeMs,
+      elapsedMs,
+    );
     this.imageEffectCache.set(effectCacheKey, image);
     return image;
   }
@@ -213,8 +275,7 @@ export class CanvasKitResourceCache {
       return this.patternImageCache.get(cacheKey) ?? null;
     }
 
-    const bytes = rasterizePatternTileToPngBytes(pattern);
-    const image = bytes ? this.canvasKit.MakeImageFromEncoded(bytes) : null;
+    const image = this.makePatternImage(pattern);
     this.patternImageCache.set(cacheKey, image);
     return image;
   }
@@ -276,6 +337,56 @@ export class CanvasKitResourceCache {
       : base64
         ? decodeBase64(base64)
         : undefined;
+  }
+
+  private makePatternImage(pattern: LayerPatternFill): CanvasKitImage | null {
+    const surface = this.canvasKit.MakeSurface(6, 6);
+    if (!surface) {
+      return null;
+    }
+
+    const canvas = surface.getCanvas();
+    const fillPaint = new this.canvasKit.Paint();
+    fillPaint.setStyle(this.canvasKit.PaintStyle.Fill);
+    fillPaint.setColor(this.canvasKit.parseColorString(pattern.backgroundColor));
+    canvas.drawRect(this.canvasKit.XYWHRect(0, 0, 6, 6), fillPaint);
+    fillPaint.delete();
+
+    const strokePaint = new this.canvasKit.Paint();
+    strokePaint.setStyle(this.canvasKit.PaintStyle.Stroke);
+    strokePaint.setStrokeWidth(1);
+    strokePaint.setColor(this.canvasKit.parseColorString(pattern.patternColor));
+
+    switch (pattern.patternType) {
+      case 0:
+        canvas.drawLine(0, 3, 6, 3, strokePaint);
+        break;
+      case 1:
+        canvas.drawLine(3, 0, 3, 6, strokePaint);
+        break;
+      case 2:
+        canvas.drawLine(6, 0, 0, 6, strokePaint);
+        break;
+      case 3:
+        canvas.drawLine(0, 0, 6, 6, strokePaint);
+        break;
+      case 4:
+        canvas.drawLine(3, 0, 3, 6, strokePaint);
+        canvas.drawLine(0, 3, 6, 3, strokePaint);
+        break;
+      case 5:
+        canvas.drawLine(0, 0, 6, 6, strokePaint);
+        canvas.drawLine(6, 0, 0, 6, strokePaint);
+        break;
+      default:
+        break;
+    }
+
+    strokePaint.delete();
+    surface.flush();
+    const image = surface.makeImageSnapshot();
+    surface.delete();
+    return image;
   }
 
   private hashString(value: string): string {

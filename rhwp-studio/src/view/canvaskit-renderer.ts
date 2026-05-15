@@ -28,7 +28,6 @@ import type {
   LayerImageOp,
   LayerLeafNode,
   LayerLineOp,
-  LayerLineStyle,
   LayerNode,
   LayerPageBackgroundOp,
   LayerPaintOp,
@@ -155,7 +154,7 @@ export class CanvasKitLayerRenderer {
     this.fontAliases = this.fontRegistry.aliases;
   }
 
-  static async create(renderMode: CanvasKitRenderMode = 'compat'): Promise<CanvasKitLayerRenderer> {
+  static async create(renderMode: CanvasKitRenderMode = 'default'): Promise<CanvasKitLayerRenderer> {
     const canvasKit = await CanvasKitInit({
       locateFile: (file) => file === 'canvaskit.wasm' ? canvaskitWasmUrl : file,
     });
@@ -1665,7 +1664,9 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
   ): void {
-    const svgContent = this.resourceCache.svgFragment(op.svgResourceId, op.svgContent);
+    const svgContent = this.renderMode === 'compat'
+      ? this.resourceCache.svgFragment(op.svgResourceId, op.svgContent)
+      : null;
     if (svgContent && op.bbox.width > 0 && op.bbox.height > 0) {
       const svgWidth = Math.max(op.bbox.width, 1);
       const svgHeight = Math.max(op.bbox.height, 1);

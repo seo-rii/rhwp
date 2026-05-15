@@ -3900,9 +3900,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     imageEffectCropProbe.canvas2d.diagnostics.offscreenCanvasPreprocesses
-      + imageEffectCropProbe.canvas2d.diagnostics.htmlCanvasPreprocesses === 1
-      && imageEffectCropProbe.canvaskit.diagnostics.offscreenCanvasPreprocesses
-      + imageEffectCropProbe.canvaskit.diagnostics.htmlCanvasPreprocesses === 1,
+      + imageEffectCropProbe.canvas2d.diagnostics.htmlCanvasPreprocesses === 1,
+    `image effect canvas2d preprocessing canvas diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  assert(
+    imageEffectCropProbe.canvaskit.diagnostics.offscreenCanvasPreprocesses
+      + imageEffectCropProbe.canvaskit.diagnostics.htmlCanvasPreprocesses === 0,
     `image effect preprocessing canvas backend diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
   );
   assert(

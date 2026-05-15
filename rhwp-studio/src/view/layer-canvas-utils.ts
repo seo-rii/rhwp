@@ -188,6 +188,37 @@ function imageEffectCacheKey(effect: NonNullable<LayerImageOp['effect']>, source
   ].join(':');
 }
 
+export function applyLayerImageEffectPixels(
+  data: Uint8Array | Uint8ClampedArray,
+  width: number,
+  effect: LayerImageOp['effect'] | undefined,
+  patternPhaseX = 0,
+  patternPhaseY = 0,
+): boolean {
+  if (!effect || effect === 'realPic' || !Number.isFinite(width) || width <= 0) {
+    return false;
+  }
+
+  for (let index = 0; index < data.length; index += 4) {
+    const luma = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+    let value = luma;
+    if (effect === 'blackWhite') {
+      value = luma >= 128 ? 255 : 0;
+    } else if (effect === 'pattern8x8') {
+      const pixel = index / 4;
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      const matrix = ORDERED_DITHER_8X8[((y + patternPhaseY) & 7) * 8 + ((x + patternPhaseX) & 7)];
+      const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
+      value = luma > threshold ? 255 : 0;
+    }
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  return true;
+}
+
 export function applyLayerImageEffect(
   image: LayerCanvasImageSource,
   effect: LayerImageOp['effect'] | undefined,
@@ -281,24 +312,7 @@ export function applyLayerImageEffect(
     return image;
   }
 
-  const data = pixels.data;
-  for (let index = 0; index < data.length; index += 4) {
-    const luma = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
-    let value = luma;
-    if (effect === 'blackWhite') {
-      value = luma >= 128 ? 255 : 0;
-    } else if (effect === 'pattern8x8') {
-      const pixel = index / 4;
-      const x = pixel % canvasWidth;
-      const y = Math.floor(pixel / canvasWidth);
-      const matrix = ORDERED_DITHER_8X8[((y + patternPhaseY) & 7) * 8 + ((x + patternPhaseX) & 7)];
-      const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
-      value = luma > threshold ? 255 : 0;
-    }
-    data[index] = value;
-    data[index + 1] = value;
-    data[index + 2] = value;
-  }
+  applyLayerImageEffectPixels(pixels.data, canvasWidth, effect, patternPhaseX, patternPhaseY);
   ctx.putImageData(pixels, 0, 0);
   if (diagnostics) {
     const elapsedMs = typeof performance !== 'undefined'

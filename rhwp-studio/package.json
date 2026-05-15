@@ -7,13 +7,13 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "e2e": "node e2e/image-diff.test.mjs && node e2e/font-mapping-parity.test.mjs && node e2e/text-flow.test.mjs && node e2e/canvaskit-render.test.mjs && RHWP_CANVASKIT_MODE=default node e2e/canvaskit-render.test.mjs && node e2e/renderer-lifecycle.test.mjs",
-    "e2e:headless": "node e2e/image-diff.test.mjs --mode=headless && node e2e/font-mapping-parity.test.mjs --mode=headless && node e2e/text-flow.test.mjs --mode=headless && node e2e/canvaskit-render.test.mjs --mode=headless && RHWP_CANVASKIT_MODE=default node e2e/canvaskit-render.test.mjs --mode=headless && node e2e/renderer-lifecycle.test.mjs --mode=headless",
+    "e2e": "node e2e/image-diff.test.mjs && node e2e/font-mapping-parity.test.mjs && node e2e/text-flow.test.mjs && RHWP_CANVASKIT_MODE=compat node e2e/canvaskit-render.test.mjs && node e2e/canvaskit-render.test.mjs && node e2e/renderer-lifecycle.test.mjs",
+    "e2e:headless": "node e2e/image-diff.test.mjs --mode=headless && node e2e/font-mapping-parity.test.mjs --mode=headless && node e2e/text-flow.test.mjs --mode=headless && RHWP_CANVASKIT_MODE=compat node e2e/canvaskit-render.test.mjs --mode=headless && node e2e/canvaskit-render.test.mjs --mode=headless && node e2e/renderer-lifecycle.test.mjs --mode=headless",
     "e2e:ci": "node e2e/run-ci.mjs",
     "e2e:ci:full": "RHWP_RENDER_SAMPLE_SCOPE=full node e2e/run-ci.mjs",
     "e2e:baseline:headless": "node e2e/renderer-baseline.mjs --mode=headless",
-    "e2e:render:full": "RHWP_RENDER_SAMPLE_SCOPE=full node e2e/canvaskit-render.test.mjs && RHWP_RENDER_SAMPLE_SCOPE=full RHWP_CANVASKIT_MODE=default node e2e/canvaskit-render.test.mjs",
-    "e2e:render:full:headless": "RHWP_RENDER_SAMPLE_SCOPE=full node e2e/canvaskit-render.test.mjs --mode=headless && RHWP_RENDER_SAMPLE_SCOPE=full RHWP_CANVASKIT_MODE=default node e2e/canvaskit-render.test.mjs --mode=headless",
+    "e2e:render:full": "RHWP_RENDER_SAMPLE_SCOPE=full RHWP_CANVASKIT_MODE=compat node e2e/canvaskit-render.test.mjs && RHWP_RENDER_SAMPLE_SCOPE=full node e2e/canvaskit-render.test.mjs",
+    "e2e:render:full:headless": "RHWP_RENDER_SAMPLE_SCOPE=full RHWP_CANVASKIT_MODE=compat node e2e/canvaskit-render.test.mjs --mode=headless && RHWP_RENDER_SAMPLE_SCOPE=full node e2e/canvaskit-render.test.mjs --mode=headless",
     "bench:image-effects": "node e2e/image-effect-benchmark.mjs --mode=headless"
   },
   "devDependencies": {

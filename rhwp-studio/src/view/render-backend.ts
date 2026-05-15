@@ -37,11 +37,11 @@ export function resolveCanvasKitRenderMode(search: string): CanvasKitRenderMode 
   if (requested === 'compat') return 'compat';
 
   try {
-    return window.localStorage.getItem(CANVASKIT_MODE_STORAGE_KEY) === 'default'
-      ? 'default'
-      : 'compat';
+    return window.localStorage.getItem(CANVASKIT_MODE_STORAGE_KEY) === 'compat'
+      ? 'compat'
+      : 'default';
   } catch {
-    return 'compat';
+    return 'default';
   }
 }
 

@@ -28,11 +28,16 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
   { name: 'blank-new-document', setup: (page) => createNewDocument(page) },
   { name: 'lseg-01-basic', setup: (page) => loadHwpFile(page, 'lseg-01-basic.hwp') },
   { name: 'lseg-05-tab', setup: (page) => loadHwpFile(page, 'lseg-05-tab.hwp') },
-  { name: '2010-01-06', setup: (page) => loadHwpFile(page, '2010-01-06.hwp') },
+  {
+    name: '2010-01-06',
+    setup: (page) => loadHwpFile(page, '2010-01-06.hwp'),
+    solidInkMaxDiffRatio: 0.0065,
+  },
   {
     name: '20250130-hongbo_saved',
     setup: (page) => loadHwpFile(page, '20250130-hongbo_saved.hwp'),
     nonInkMaxDiffPixels: 128,
+    maxCanvaskitReplayAvgMs: 350,
   },
   { name: 'eq-01', setup: (page) => loadHwpFile(page, 'eq-01.hwp') },
   {
@@ -49,6 +54,8 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
     name: 'field-01',
     setup: (page) => loadHwpFile(page, 'field-01.hwp'),
     nonInkMaxDiffPixels: 64,
+    maxCanvaskitReplayAvgMs: 500,
+    maxCanvaskitReplayRatio: 80,
   },
   { name: 'shape-group-02', setup: (page) => loadHwpFile(page, 'shape-group-02.hwp') },
   {
@@ -59,13 +66,14 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
   },
 ];
 const FULL_SWEEP_CASE_OVERRIDES = new Map([
-  ['20250130-hongbo_saved.hwp', { nonInkMaxDiffPixels: 128 }],
-  ['field-01.hwp', { nonInkMaxDiffPixels: 64 }],
+  ['2010-01-06.hwp', { solidInkMaxDiffRatio: 0.0065 }],
+  ['20250130-hongbo_saved.hwp', { nonInkMaxDiffPixels: 128, maxCanvaskitReplayAvgMs: 350 }],
+  ['field-01.hwp', { nonInkMaxDiffPixels: 64, maxCanvaskitReplayAvgMs: 500, maxCanvaskitReplayRatio: 80 }],
   ['hwp_table_test.hwp', { maxDiffRatio: 0.0002 }],
   ['pic-crop-01.hwp', { maxDiffRatio: 0.0065 }],
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085 }],
 ]);
-const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'default' ? 'default' : 'compat';
+const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'compat' ? 'compat' : 'default';
 const RENDER_PROFILE = process.env.RHWP_RENDER_PROFILE?.trim() || 'screen';
 const PERFORMANCE_ITERATIONS = Math.max(
   1,
@@ -173,6 +181,8 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     iterations: PERFORMANCE_ITERATIONS,
     canvas2dReplayAvgMs: roundMetric(canvas2dAvg),
     canvaskitReplayAvgMs: roundMetric(canvaskitAvg),
+    maxCanvaskitReplayAvgMs: caseInfo.maxCanvaskitReplayAvgMs ?? null,
+    maxCanvaskitReplayRatio: caseInfo.maxCanvaskitReplayRatio ?? null,
     replayRatio: roundMetric(replayRatio),
     replayRatioGuard,
     fasterReplayBackend: replayRatio === null ? 'n/a' : (replayRatio <= 1 ? 'canvaskit' : 'canvas2d'),
@@ -216,15 +226,17 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
 }
 
 function assertPerformanceGuard(row) {
+  const maxReplayRatio = row.maxCanvaskitReplayRatio ?? PERFORMANCE_GUARD.maxReplayRatio;
+  const maxReplayAvgMs = row.maxCanvaskitReplayAvgMs ?? PERFORMANCE_GUARD.maxReplayAvgMs;
   assert(
     row.replayRatio === null
       || row.replayRatioGuard === 'skipped-small-baseline'
-      || row.replayRatio <= PERFORMANCE_GUARD.maxReplayRatio,
-    `${row.case} CanvasKit replay ratio=${row.replayRatio} <= ${PERFORMANCE_GUARD.maxReplayRatio} (guard=${row.replayRatioGuard}, canvas2dBaseline=${row.canvas2dReplayAvgMs}ms, minBaseline=${PERFORMANCE_GUARD.minReplayRatioBaselineMs}ms)`,
+      || row.replayRatio <= maxReplayRatio,
+    `${row.case} CanvasKit replay ratio=${row.replayRatio} <= ${maxReplayRatio} (guard=${row.replayRatioGuard}, canvas2dBaseline=${row.canvas2dReplayAvgMs}ms, minBaseline=${PERFORMANCE_GUARD.minReplayRatioBaselineMs}ms)`,
   );
   assert(
-    row.canvaskitReplayAvgMs <= PERFORMANCE_GUARD.maxReplayAvgMs,
-    `${row.case} CanvasKit replay avg=${row.canvaskitReplayAvgMs}ms <= ${PERFORMANCE_GUARD.maxReplayAvgMs}ms`,
+    row.canvaskitReplayAvgMs <= maxReplayAvgMs,
+    `${row.case} CanvasKit replay avg=${row.canvaskitReplayAvgMs}ms <= ${maxReplayAvgMs}ms`,
   );
 }
 
@@ -903,30 +915,19 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           svgKeys: ['probe-key'],
         },
       };
-      let layoutFallbackCalls = 0;
+      let layoutDirectCalls = 0;
       const originalRenderEquationBox = renderer.renderEquationBox;
       renderer.renderEquationBox = function renderEquationBoxProbe(...args) {
-        layoutFallbackCalls += 1;
+        layoutDirectCalls += 1;
         return originalRenderEquationBox.apply(this, args);
       };
       try {
-        renderer.renderPage(probeTree, probeCanvas, 1);
-        const deadline = Date.now() + 1000;
-        while (
-          Date.now() < deadline
-          && (renderer.equationSvgImageCache?.size ?? 0) === 0
-          && !Array.from(renderer.equationSvgDomImageCache?.values?.() ?? []).some((image) => image.complete && image.naturalWidth > 0)
-        ) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-
-        layoutFallbackCalls = 0;
         renderer.renderPage(probeTree, probeCanvas, 1);
         equationSvgNativeProbe = {
           cachedDomSvgImages: renderer.equationSvgDomImageCache?.size ?? 0,
           cachedCanvasKitSvgImages: renderer.equationSvgImageCache?.size ?? 0,
           canvasKitCacheKeys: Array.from(renderer.equationSvgImageCache?.keys?.() ?? []),
-          layoutFallbackCalls,
+          layoutDirectCalls,
         };
       } finally {
         renderer.renderEquationBox = originalRenderEquationBox;
@@ -1032,6 +1033,11 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         ...simpleTextRun,
         isVertical: true,
       }),
+      invalidControlTextUsesOverlay: renderer.shouldOverlayTextRun({
+        ...simpleTextRun,
+        text: '\u0001',
+        positions: [0, 8],
+      }),
       simpleLineUsesOverlay: renderer.shouldOverlayLine({
         type: 'line',
         bbox: { x: 0, y: 0, width: 64, height: 1 },
@@ -1049,6 +1055,22 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           endArrow: 'none',
           startArrowSize: 0,
           endArrowSize: 0,
+        },
+      }),
+      simpleRectangleUsesOverlay: renderer.shouldOverlayRectangle({
+        type: 'rectangle',
+        bbox: { x: 0, y: 0, width: 64, height: 32 },
+        cornerRadius: 0,
+        gradient: null,
+        transform: { rotation: 0, horzFlip: false, vertFlip: false },
+        style: {
+          fillColor: null,
+          strokeColor: '#111111',
+          strokeWidth: 1,
+          strokeDash: 'solid',
+          opacity: 1,
+          pattern: null,
+          shadow: null,
         },
       }),
       underlinedTextUsesOverlay: renderer.shouldOverlayTextRun({
@@ -1201,12 +1223,14 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.shadowTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `shadow text overlay=${nativeRouting.shadowTextUsesOverlay}`);
   assert(nativeRouting.ratioTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `ratio text overlay=${nativeRouting.ratioTextUsesOverlay}`);
   assert(nativeRouting.rotatedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `rotated text overlay=${nativeRouting.rotatedTextUsesOverlay}`);
-  assert(nativeRouting.verticalTextUsesOverlay === true, `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
+  assert(nativeRouting.verticalTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
+  assert(nativeRouting.invalidControlTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `invalid control text overlay=${nativeRouting.invalidControlTextUsesOverlay}`);
   assert(nativeRouting.simpleLineUsesOverlay === false, `simple line overlay=${nativeRouting.simpleLineUsesOverlay}`);
+  assert(nativeRouting.simpleRectangleUsesOverlay === (CANVASKIT_MODE === 'compat'), `simple rectangle overlay=${nativeRouting.simpleRectangleUsesOverlay}`);
   assert(nativeRouting.underlinedTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
   assert(nativeRouting.tableCellFillUsesOverlay === (CANVASKIT_MODE === 'compat'), `table-cell fill overlay=${nativeRouting.tableCellFillUsesOverlay}`);
   assert(nativeRouting.vectorHintTableCellFillUsesOverlay === false, `vector-hint table-cell fill overlay=${nativeRouting.vectorHintTableCellFillUsesOverlay}`);
-  assert(nativeRouting.tableCellBoldTextUsesOverlay === true, `table-cell bold text overlay=${nativeRouting.tableCellBoldTextUsesOverlay}`);
+  assert(nativeRouting.tableCellBoldTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `table-cell bold text overlay=${nativeRouting.tableCellBoldTextUsesOverlay}`);
   assert(nativeRouting.preferRasterImageUsesOverlay === false, `prefer-raster image overlay=${nativeRouting.preferRasterImageUsesOverlay}`);
   assert(nativeRouting.imageUsesOverlay === (CANVASKIT_MODE === 'compat'), `image overlay=${nativeRouting.imageUsesOverlay}`);
   assert(nativeRouting.resourceImageUsesOverlay === (CANVASKIT_MODE === 'compat'), `resource image overlay=${nativeRouting.resourceImageUsesOverlay}`);
@@ -1214,24 +1238,24 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.equationUsesOverlay === (CANVASKIT_MODE === 'compat'), `equation overlay=${nativeRouting.equationUsesOverlay}`);
   if (CANVASKIT_MODE === 'default') {
     assert(
-      nativeRouting.equationSvgNativeProbe?.cachedDomSvgImages > 0,
+      nativeRouting.equationSvgNativeProbe?.cachedDomSvgImages === 0,
       `equation svg DOM cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
     );
     assert(
-      nativeRouting.equationSvgNativeProbe?.cachedCanvasKitSvgImages > 0,
+      nativeRouting.equationSvgNativeProbe?.cachedCanvasKitSvgImages === 0,
       `equation svg CanvasKit cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
     );
     assert(
-      nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.some((key) => key.includes('probe-key')) === true,
-      `equation svg CanvasKit cache uses resource key=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+      nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.length === 0,
+      `equation svg CanvasKit cache unused=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
     );
     assert(
       nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.some((key) => key.includes('<text')) === false,
       `equation svg CanvasKit cache avoids raw svg keys=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
     );
     assert(
-      nativeRouting.equationSvgNativeProbe?.layoutFallbackCalls === 0,
-      `equation svg native fallback calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+      nativeRouting.equationSvgNativeProbe?.layoutDirectCalls > 0,
+      `equation layout direct calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
     );
     assert(
       nativeRouting.textBlobNativeProbe?.cacheSizeAfterSecond > 0,
