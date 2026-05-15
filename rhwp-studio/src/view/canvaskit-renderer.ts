@@ -2136,6 +2136,9 @@ export class CanvasKitLayerRenderer {
   }
 
   private renderFallbackOverlays(node: LayerNode, targetCanvas: HTMLCanvasElement, scale: number): void {
+    if (this.renderMode !== 'compat') {
+      return;
+    }
     if (!this.hasFallbackOverlayNode(node)) {
       return;
     }
