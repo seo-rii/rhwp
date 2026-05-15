@@ -539,14 +539,15 @@ reject the stroke payload until their own bbox, fixture, and fuzzy parity gates
 land.
 
 `payloadKind: "colorLayers"` is v2 vocabulary with a resolved COLRv0
-strict-export gate; `colorLayers.colrV1`, `"bitmapGlyph"`, and `"svgGlyph"` are
-still vocabulary only. Current validators keep those reserved families gated
-even when the generic richer-outline option is enabled. They report
+strict-export gate; `payloadKind: "bitmapGlyph"` is now a family-specific
+strict gate for one producer-selected image strike; `colorLayers.colrV1` and
+`"svgGlyph"` remain vocabulary only. Current validators keep reserved families
+gated even when the generic richer-outline option is enabled. They report
 `glyphOutlinePayloadKindFeatureMissing` until each family gets its own payload
 schema, writer gate, strict replay fixture, and deterministic fallback path.
 This keeps the v2 envelope from pretending that all richer outline families are
-implemented just because `monochromeFillStroke` or the COLRv0 resolved-layer
-contract is available.
+implemented just because `monochromeFillStroke`, the COLRv0 resolved-layer
+contract, or the BitmapGlyph image-strike contract is available.
 Rust paint types and Studio JSON types may expose reserved payload envelopes
 such as `ColorLayersPayload`/`colorLayers`, `BitmapGlyphPayload`/`bitmapGlyph`,
 or `SvgGlyphPayload`/`svgGlyph` so readers and diagnostics agree on the future
@@ -604,14 +605,13 @@ implicitly change schema authority:
   later clip/reusable-graph stage, with cycle detection and node/depth limits.
   It becomes a v3 concern only if it forces a new text variant selection model,
   paint-order/compositing semantics, or source/cluster identity model.
-- `BitmapGlyph` writer emission is blocked until the image-resource replay
-  profile exists. The canonical payload is one producer-selected strike;
-  available strikes and missing ideal strikes are diagnostics/provenance only.
-  Strict visual replay requires explicit `alphaMode`, deterministic
-  `scalingPolicy`, deterministic `filtering`, and no backend strike
-  reselection. Missing color space may default to sRGB only if diagnostics
-  record that default. Canvas2D/SVG strict replay should be proven before native
-  or CanvasKit bitmap replay.
+- `BitmapGlyph` writer emission starts with Canvas2D/SVG strict replay of a
+  single producer-selected image strike. Available strikes and missing ideal
+  strikes are diagnostics/provenance only. Strict visual replay requires
+  explicit `alphaMode`, deterministic `scalingPolicy`, deterministic
+  `filtering`, and no backend strike reselection. Missing color space defaults
+  to sRGB only when diagnostics or replay metadata record that default. Native
+  and CanvasKit bitmap replay remain follow-up backend gates.
 - `SvgGlyph` writer emission is blocked until the vector-resource/sanitizer
   pipeline exists. The producer is responsible for sanitizing to
   `securityMode: staticSanitized`; strict validators must require
@@ -639,15 +639,20 @@ The current validator keeps this conservative:
   it as well-formed;
 - `payloadKind: "colorLayers"` is accepted only for the resolved
   `ColorLayers.ColrV0` contract behind its family-specific gates;
-- `payloadKind: "bitmapGlyph"` and `"svgGlyph"` remain reserved and are
-  rejected until their family-specific gates land;
+- `payloadKind: "bitmapGlyph"` is accepted only behind
+  `text.glyphOutline.bitmapGlyph` when it carries the strict deterministic
+  image-strike contract and the target backend can resolve the referenced image
+  resource;
+- `payloadKind: "svgGlyph"` remains reserved and is rejected until its
+  family-specific gate lands;
 - each outline path carries `glyphId`, `glyphRange`, and a UTF-8 source range
   so SVG/Canvas2D strict replay can keep path-level provenance for debugging,
   search sidecars, and accessibility sidecars;
 - `glyphOutline` rejects text effects and non-outline glyph formats until each
   has a strict profile. SVG and Canvas2D strict replay currently accept the
   `monochromeFill` profile, the initial `monochromeFillStroke` stroke subset,
-  and the gated resolved `ColorLayers.ColrV0` layer subset.
+  the gated resolved `ColorLayers.ColrV0` layer subset, and the gated
+  BitmapGlyph image-strike subset for SVG/Canvas2D.
   Shadow, emboss/engrave, underline/strike/emphasis, tab leaders, ratio/shade
   adjustments, color glyphs, bitmap glyphs, and SVG-in-font glyphs are not
   outline-eligible in the first profiles;
@@ -873,7 +878,8 @@ that every reserved writer is enabled:
 | backend `VariantSelectionReport` selected/rejected vocabulary | Required before v2 closeout |
 | `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
 | `GlyphOutline` `colorLayers.colrV0` | V2 feature addition; strict export supports resolved-layer payloads, and native producer-side COLR/CPAL decoding can generate the resolved layers |
-| `GlyphOutline` `colorLayers.colrV1` / `bitmapGlyph` / `svgGlyph` | Vocabulary reserved; writer emission blocked |
+| `GlyphOutline` `bitmapGlyph` | V2 feature addition; SVG/Canvas2D strict replay supports one producer-selected image strike |
+| `GlyphOutline` `colorLayers.colrV1` / `svgGlyph` | Vocabulary reserved; writer emission blocked |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
 | CanvasKit variation and TTC/OTC strict replay | Blocked until exact construction fixtures pass |
 | shaped measurement and `lineBreakRisk` telemetry | Report-only artifact outside replay schema |
@@ -927,9 +933,10 @@ at a time. The preferred order is:
 - richer `GlyphOutline` payload design, starting with the already gated stroke
   subset and COLRv0 `ColorLayers` resolved-layer writer/replay coverage once
   capability gates are fixed;
-- `BitmapGlyph` and `SvgGlyph` remain vocabulary-only until their image/vector
-  resource validators, negative fixtures, and strict replay profiles are
-  designed separately;
+- `BitmapGlyph` SVG/Canvas2D strict replay for one producer-selected image
+  strike, while native and CanvasKit bitmap replay remain backend follow-ups;
+- `SvgGlyph` remains vocabulary-only until its vector-resource validator,
+  negative fixture, and strict replay profile are designed separately;
 - small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
 - CanvasKit variation/TTC support remains fallback-only until exact
   construction proof fixtures pass;
@@ -1016,22 +1023,26 @@ flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.
 `GlyphOutline.payloadKind` currently implements `monochromeFill`, the
 feature-gated `monochromeFillStroke` subset, and the feature-gated
-`ColorLayers.ColrV0` resolved-layer subset; the field exists so later COLRv1,
-bitmap, or SVG glyph payloads can be feature-gated without overloading the
-first fill-only path representation. Reserved payload kinds are defined as
-schema vocabulary but are rejected by the compatibility validator until their
-strict profile and feature gates land. The v2 validator reports
+`ColorLayers.ColrV0` resolved-layer subset; the field also implements the
+feature-gated `BitmapGlyph` image-strike subset for SVG/Canvas2D strict replay.
+The field exists so later COLRv1 or SVG glyph payloads can be feature-gated
+without overloading the first fill-only path representation. Reserved payload
+kinds are defined as schema vocabulary but are rejected by the compatibility
+validator until their strict profile and feature gates land. The v2 validator reports
 `glyphOutlinePayloadKindFeatureMissing` for `colorLayers` unless both
 `text.glyphOutline.colorLayers` and
 `text.glyphOutline.colorLayers.colrV0` are declared and the resolved-layer
 contract is complete. It still reports that issue for `colorLayers.colrV1`,
-`bitmapGlyph`, and `svgGlyph` because those families do not have implemented
-writer gates yet. For `bitmapGlyph` and `svgGlyph`, the validator also reports
-`glyphOutlinePayloadContractInvalid` when the reserved payload lacks the
-producer-resolved bitmap strike fields, deterministic strict visual
-scaling/filtering, required placement and ranges, or static-sanitized SVG
-contract flags. A complete reserved payload still fails the writer gate, but it
-does not report a contract-invalid issue. For `monochromeFillStroke`, the
+and `svgGlyph` because those families do not have implemented writer gates yet.
+For `bitmapGlyph`, it accepts `text.glyphOutline.bitmapGlyph` only when the
+producer-resolved strike fields, deterministic strict visual
+`alphaMode`/`scalingPolicy`/`filtering`, required placement, and source/glyph
+ranges are complete. For malformed bitmap payloads and reserved `svgGlyph`
+payloads, the validator reports `glyphOutlinePayloadContractInvalid` when the
+payload lacks the producer-resolved bitmap strike fields, deterministic strict
+visual scaling/filtering, required placement and ranges, or static-sanitized
+SVG contract flags. A complete reserved SVG payload still fails the writer gate,
+but it does not report a contract-invalid issue. For `monochromeFillStroke`, the
 validator reports
 `glyphOutlinePayloadKindFeatureMissing` until the stroke feature gate is
 enabled, and it also reports `glyphOutlineStrokeStyleUnsupported` unless the

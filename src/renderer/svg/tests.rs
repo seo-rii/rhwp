@@ -1,13 +1,14 @@
 use super::*;
 use crate::paint::{
-    ColorGlyphFormat, ColorLayerNode, ColorLayersPayload, FontColorGlyphRef, GlyphOutlineFillRule,
-    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
-    GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
-    LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
-    LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
-    PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor, TextRunPlacement, TextSourceEntry,
-    TextSourceId, TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind,
-    TextVariantQuality,
+    BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
+    BitmapStrikeSelection, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload, FontColorGlyphRef,
+    GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap,
+    GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics,
+    GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
+    LayerOutputOptions, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
+    LayerTextOrientation, PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor,
+    ResourceArena, TextRunPlacement, TextSourceEntry, TextSourceId, TextSourceRange,
+    TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
@@ -693,6 +694,71 @@ fn test_layer_svg_strict_glyph_outline_rejects_invalid_colrv0_color_layers() {
     }));
 }
 
+#[test]
+fn test_layer_svg_strict_glyph_outline_replays_bitmap_glyph() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let tree =
+        glyph_outline_fixture_tree_with_bitmap_glyph(PaintTextStyle::from(&text_style), true);
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(!output.contains(">A</text>"));
+    assert!(output.contains("<image "));
+    assert!(output.contains("href=\"data:image/png;base64,"));
+    assert!(output.contains("image-rendering=\"pixelated\""));
+    assert!(output.contains("data-rhwp-image-resource-id=\"0\""));
+    assert!(output.contains("data-rhwp-color-space=\"sRGB\""));
+    assert!(output.contains("data-rhwp-color-space-defaulted=\"true\""));
+    assert!(output.contains("source-backed bitmap glyph"));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict bitmap glyph report");
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert!(report.rejected_variants.is_empty());
+    assert!(report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            eligibility.payload_supported
+                && eligibility.replay_eligible
+                && eligibility.reason.is_none()
+        }));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_without_resource() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let tree =
+        glyph_outline_fixture_tree_with_bitmap_glyph(PaintTextStyle::from(&text_style), false);
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(output.contains(">A</text>"));
+    assert!(!output.contains("source-backed bitmap glyph"));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict bitmap glyph missing resource report");
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
+    }));
+}
+
 fn glyph_outline_fixture_tree(
     outline_paint_style: PaintTextStyle,
     paths: Vec<LayerGlyphOutlinePath>,
@@ -721,6 +787,8 @@ fn glyph_outline_fixture_tree_with_payload(
     if payload_kind == GlyphOutlinePayloadKind::ColorLayers {
         outline_requires.push("text.glyphOutline.colorLayers".to_string());
         outline_requires.push("text.glyphOutline.colorLayers.colrV0".to_string());
+    } else if payload_kind == GlyphOutlinePayloadKind::BitmapGlyph {
+        outline_requires.push("text.glyphOutline.bitmapGlyph".to_string());
     }
     let outline_variant = PaintVariantMeta {
         equivalence_group: "text-0".to_string(),
@@ -813,6 +881,51 @@ fn glyph_outline_fixture_tree_with_payload(
         })
         .build()
 }
+
+fn glyph_outline_fixture_tree_with_bitmap_glyph(
+    outline_paint_style: PaintTextStyle,
+    include_resource: bool,
+) -> PageLayerTree {
+    let mut tree = glyph_outline_fixture_tree_with_payload(
+        outline_paint_style,
+        GlyphOutlinePayloadKind::BitmapGlyph,
+        None,
+        Vec::new(),
+    );
+    if include_resource {
+        let mut resources = ResourceArena::default();
+        resources.intern_image_bytes(FIXTURE_PNG_1X1);
+        tree.resources = resources;
+    }
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
+            panic!("expected glyph outline");
+        };
+        outline.bitmap_glyph = Some(BitmapGlyphPayload {
+            image_resource_id: crate::paint::ImageResourceId(0),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            placement: Some(outline.placement),
+            transform_to_run: None,
+            strike_ppem: Some((12, 12)),
+            strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: None,
+            alpha_mode: Some(BitmapAlphaMode::Straight),
+            scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(BitmapGlyphFiltering::Nearest),
+        });
+    }
+    tree
+}
+
+const FIXTURE_PNG_1X1: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0,
+    0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99, 0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+    0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+];
 
 fn glyph_outline_fixture_tree_with_color_layers(
     outline_paint_style: PaintTextStyle,

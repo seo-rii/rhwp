@@ -1,5 +1,6 @@
 import {
   hasColrv0ColorLayersContract,
+  hasStrictBitmapGlyphContract,
   isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
   selectLayerTextVariantSetsWithReport,
@@ -30,6 +31,7 @@ import type {
   LayerPathOp,
   LayerPatternFill,
   LayerRectangleOp,
+  LayerResources,
   LayerShapeShadow,
   LayerTabLeader,
   LayerTabLeaderOp,
@@ -183,10 +185,12 @@ export class Canvas2DLayerRenderer {
   }
 
   private glyphOutlineReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
-    const payloadStatus = glyphOutlinePayloadStatus(op);
+    const payloadStatus = glyphOutlinePayloadStatus(op, this.currentResources);
     const hasReplayPayload = (op.payloadKind ?? 'monochromeFill') === 'colorLayers'
       ? payloadStatus.supported
-      : op.paths.length > 0;
+      : (op.payloadKind ?? 'monochromeFill') === 'bitmapGlyph'
+        ? payloadStatus.supported
+        : op.paths.length > 0;
     const payloadSupported = op.diagnostics.strictVisualEligible
       && payloadStatus.supported
       && hasReplayPayload;
@@ -306,10 +310,32 @@ export class Canvas2DLayerRenderer {
         // keeps the TextRun fallback as its canonical replay path.
         return;
       case 'glyphOutline':
-        if (!glyphOutlinePayloadStatus(op).supported || !isFillOnlyGlyphOutlineStyle(op)) {
+        if (
+          !glyphOutlinePayloadStatus(op, this.currentResources).supported
+          || !isFillOnlyGlyphOutlineStyle(op)
+        ) {
           return;
         }
         this.withCurrentOverlayClip(ctx, 0, () => {
+          const payloadKind = op.payloadKind ?? 'monochromeFill';
+          if (payloadKind === 'bitmapGlyph') {
+            const payload = op.bitmapGlyph;
+            if (!payload || !hasStrictBitmapGlyphContract(op) || typeof payload.imageResourceId !== 'number') {
+              return;
+            }
+            const image = this.getDomImage(payload.imageResourceId);
+            if (!image) {
+              return;
+            }
+            const previousImageSmoothingEnabled = ctx.imageSmoothingEnabled;
+            try {
+              ctx.imageSmoothingEnabled = payload.filtering !== 'nearest';
+              this.drawDomImage(ctx, image, op.bbox, 'stretch');
+            } finally {
+              ctx.imageSmoothingEnabled = previousImageSmoothingEnabled;
+            }
+            return;
+          }
           ctx.save();
           const transform = op.placement.runToPage;
           ctx.transform(
@@ -321,7 +347,6 @@ export class Canvas2DLayerRenderer {
             transform.f,
           );
           ctx.fillStyle = op.paintStyle.color;
-          const payloadKind = op.payloadKind ?? 'monochromeFill';
           if (payloadKind === 'colorLayers') {
             for (const layer of op.colorLayers?.layers ?? []) {
               if (!layer.commands || !layer.fill) {
@@ -1725,6 +1750,7 @@ function appendPathCommands(
 
 function glyphOutlinePayloadStatus(
   op: LayerGlyphOutlineOp,
+  resources?: LayerResources | null,
 ): { supported: boolean; reason?: LayerTextVariantReplayStatus['reason'] } {
   const payloadKind = op.payloadKind ?? 'monochromeFill';
   if (payloadKind === 'colorLayers') {
@@ -1751,7 +1777,14 @@ function glyphOutlinePayloadStatus(
     };
   }
   if (payloadKind === 'bitmapGlyph') {
-    return { supported: false, reason: 'unsupportedBitmapGlyph' };
+    const resourceId = op.bitmapGlyph?.imageResourceId;
+    return {
+      supported: hasStrictBitmapGlyphContract(op)
+        && op.variant.requires?.includes('text.glyphOutline.bitmapGlyph') === true
+        && typeof resourceId === 'number'
+        && resources?.images?.[resourceId] !== undefined,
+      reason: 'unsupportedBitmapGlyph',
+    };
   }
   if (payloadKind === 'svgGlyph') {
     return { supported: false, reason: 'unsupportedSvgGlyph' };

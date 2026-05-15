@@ -503,6 +503,22 @@ export class WasmBridge {
       return docResourceId;
     };
 
+    const rewriteGlyphOutlineResources = (op: LayerPaintOp): void => {
+      if (op.type !== 'glyphOutline') return;
+      if (op.bitmapGlyph && typeof op.bitmapGlyph.imageResourceId === 'number') {
+        const resourceId = mapImageResourceId(op.bitmapGlyph.imageResourceId);
+        if (resourceId !== undefined) {
+          op.bitmapGlyph.imageResourceId = resourceId;
+        }
+      }
+      if (op.svgGlyph && typeof op.svgGlyph.vectorResourceId === 'number') {
+        const resourceId = mapSvgResourceId(op.svgGlyph.vectorResourceId);
+        if (resourceId !== undefined) {
+          op.svgGlyph.vectorResourceId = resourceId;
+        }
+      }
+    };
+
     const rewriteOp = (op: LayerPaintOp): void => {
       if (op.type === 'pageBackground') {
         if (op.image) {
@@ -516,6 +532,20 @@ export class WasmBridge {
       }
       if (op.type === 'equation') {
         op.svgResourceId = mapSvgResourceId(op.svgResourceId);
+        return;
+      }
+      if (op.type === 'glyphOutline') {
+        rewriteGlyphOutlineResources(op);
+        return;
+      }
+      if (op.type === 'text') {
+        for (const variant of op.variants) {
+          for (const part of variant.parts) {
+            if (part.payload.type === 'glyphOutline') {
+              rewriteGlyphOutlineResources(part.payload);
+            }
+          }
+        }
       }
     };
 

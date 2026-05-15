@@ -16,10 +16,11 @@ use super::{
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    ClipKind, GlyphOutlineFillRule, GlyphOutlinePayloadKind, LayerEquationPaint,
-    LayerFormObjectPaint, LayerImagePaint, LayerNode, LayerNodeKind, LayerPageBackgroundPaint,
-    LayerSemantic, LayerSemanticRole, LayerTextDecorationKind, LayerTextDecorationPaint,
-    LayerTextRunPaint, PageLayerTree, PaintOp, ResourceArena, TextSourceEntry, TextSourceTable,
+    BitmapGlyphFiltering, ClipKind, GlyphOutlineFillRule, GlyphOutlinePayloadKind,
+    LayerEquationPaint, LayerFormObjectPaint, LayerGlyphOutlinePaint, LayerImagePaint, LayerNode,
+    LayerNodeKind, LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole,
+    LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp,
+    ResourceArena, TextSourceEntry, TextSourceTable,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant,
@@ -327,10 +328,33 @@ impl SvgRenderer {
                                                 )
                                             }
                                         }
-                                        GlyphOutlinePayloadKind::BitmapGlyph => (
-                                            false,
-                                            Some(VariantRejectReason::UnsupportedBitmapGlyph),
-                                        ),
+                                        GlyphOutlinePayloadKind::BitmapGlyph => {
+                                            let has_bitmap_feature =
+                                                outline.variant.requires.iter().any(|feature| {
+                                                    feature == "text.glyphOutline.bitmapGlyph"
+                                                });
+                                            let supported = has_bitmap_feature
+                                                && outline.bitmap_glyph.as_ref().is_some_and(
+                                                    |payload| {
+                                                        payload.has_strict_visual_contract()
+                                                            && resources
+                                                                .image_bytes(
+                                                                    payload.image_resource_id,
+                                                                )
+                                                                .is_some()
+                                                    },
+                                                );
+                                            if supported {
+                                                (true, None)
+                                            } else {
+                                                (
+                                                    false,
+                                                    Some(
+                                                        VariantRejectReason::UnsupportedBitmapGlyph,
+                                                    ),
+                                                )
+                                            }
+                                        }
                                         GlyphOutlinePayloadKind::SvgGlyph => {
                                             (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
                                         }
@@ -398,8 +422,12 @@ impl SvgRenderer {
                 // Optional GlyphRun variants are paired with TextRun fallback
                 // in schema v1; SVG keeps the searchable TextRun default.
             }
-            PaintOp::GlyphOutline { outline, .. } => {
+            PaintOp::GlyphOutline { bbox, outline } => {
                 if !self.strict_glyph_outline_replay {
+                    return;
+                }
+                if outline.payload_kind == GlyphOutlinePayloadKind::BitmapGlyph {
+                    self.render_layer_glyph_outline_bitmap(*bbox, outline, resources);
                     return;
                 }
                 let transform = outline.placement.run_to_page;
@@ -1832,6 +1860,80 @@ impl SvgRenderer {
         if temp.transform.has_transform() {
             self.output.push_str("</g>\n");
         }
+    }
+
+    fn render_layer_glyph_outline_bitmap(
+        &mut self,
+        bbox: BoundingBox,
+        outline: &LayerGlyphOutlinePaint,
+        resources: &ResourceArena,
+    ) {
+        let Some(payload) = outline.bitmap_glyph.as_ref() else {
+            return;
+        };
+        if !payload.has_strict_visual_contract() {
+            return;
+        }
+        let Some(bytes) = resources.image_bytes(payload.image_resource_id) else {
+            return;
+        };
+        let (Some(glyph_range), Some(source_range)) =
+            (payload.glyph_range, payload.source_range_utf8)
+        else {
+            return;
+        };
+        let base64_data = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let mime_type = detect_image_mime_type(bytes);
+        let data_uri = format!("data:{};base64,{}", mime_type, base64_data);
+        let image_rendering = match payload.filtering {
+            Some(BitmapGlyphFiltering::Nearest) => " image-rendering=\"pixelated\"",
+            _ => "",
+        };
+        let color_space_defaulted = payload.color_space.is_none();
+        let color_space_attr = payload
+            .color_space
+            .as_ref()
+            .map(|color_space| {
+                format!(
+                    " data-rhwp-color-space=\"{}\"",
+                    escape_xml(color_space.as_str())
+                )
+            })
+            .unwrap_or_else(|| " data-rhwp-color-space=\"sRGB\"".to_string());
+        let alpha_mode_attr = payload
+            .alpha_mode
+            .map(|alpha_mode| format!(" data-rhwp-alpha-mode=\"{}\"", alpha_mode.as_str()))
+            .unwrap_or_default();
+        let scaling_policy_attr = payload
+            .scaling_policy
+            .map(|policy| format!(" data-rhwp-scaling-policy=\"{}\"", policy.as_str()))
+            .unwrap_or_default();
+        let filtering_attr = payload
+            .filtering
+            .map(|filtering| format!(" data-rhwp-filtering=\"{}\"", filtering.as_str()))
+            .unwrap_or_default();
+        self.output.push_str(&format!(
+            "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"{} data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-image-resource-id=\"{}\" data-rhwp-color-space-defaulted=\"{}\"{}{}{}{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed bitmap glyph</desc></image>\n",
+            bbox.x,
+            bbox.y,
+            bbox.width,
+            bbox.height,
+            data_uri,
+            image_rendering,
+            glyph_range.start,
+            glyph_range.end,
+            outline.source.id.0,
+            source_range.start,
+            source_range.end,
+            payload.image_resource_id.0,
+            color_space_defaulted,
+            color_space_attr,
+            alpha_mode_attr,
+            scaling_policy_attr,
+            filtering_attr,
+            escape_xml(&outline.variant.equivalence_group),
+            escape_xml(&outline.variant.variant_id),
+        ));
     }
 
     fn render_layer_equation(

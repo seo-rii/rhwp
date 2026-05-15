@@ -170,6 +170,7 @@ export interface LayerTextV2ValidationOptions {
   allowFallbackFree?: boolean;
   allowRicherGlyphOutlinePayloads?: boolean;
   allowColrv0ColorLayersPayloads?: boolean;
+  allowBitmapGlyphPayloads?: boolean;
   allowMixedPerGlyphOrientation?: boolean;
   requiredFeatures?: readonly string[];
 }
@@ -298,6 +299,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const allowColrv0ColorLayersPayloads =
     requiredFeatures.has('text.glyphOutline.colorLayers')
     && requiredFeatures.has('text.glyphOutline.colorLayers.colrV0');
+  const allowBitmapGlyphPayloads = requiredFeatures.has('text.glyphOutline.bitmapGlyph');
   const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
   const stack: LayerNode[] = [tree.root];
 
@@ -342,6 +344,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
         allowFallbackFree,
         allowRicherGlyphOutlinePayloads,
         allowColrv0ColorLayersPayloads,
+        allowBitmapGlyphPayloads,
         allowMixedPerGlyphOrientation,
         requiredFeatures: tree.requiredFeatures,
       }));
@@ -638,14 +641,19 @@ export function validateLayerTextV2Op(
                 partIndex,
               });
             }
-            issues.push({
-              code: 'glyphOutlinePayloadKindFeatureMissing',
-              message: `Text variant '${variant.variantId}' uses reserved glyphOutline payload family '${payloadKind}' before its writer gate is implemented.`,
-              opId: op.id,
-              paintOrderSlotId: op.paintOrderSlotId,
-              variantId: variant.variantId,
-              partIndex,
-            });
+            if (
+              options.allowBitmapGlyphPayloads !== true
+              || variant.requiredFeatures?.includes('text.glyphOutline.bitmapGlyph') !== true
+            ) {
+              issues.push({
+                code: 'glyphOutlinePayloadKindFeatureMissing',
+                message: `Text variant '${variant.variantId}' uses bitmapGlyph without the deterministic image-strike writer gate.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
             if (part.payload.stroke) {
               issues.push({
                 code: 'glyphOutlineStrokeStyleUnsupported',

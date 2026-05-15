@@ -2277,8 +2277,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       };
       return tree;
     };
-    const makeReservedV2OutlinePayloadTree = (payloadKind, feature, envelope) => {
+    const makeReservedV2OutlinePayloadTree = (payloadKind, feature, envelope, featureEnabled = false) => {
       const tree = makeV2TextTree();
+      if (featureEnabled) {
+        tree.requiredFeatures = [feature];
+      }
       const outlineVariant = tree.root.ops[0].variants.find(
         (variant) => variant.variantId === 'glyphOutline',
       );
@@ -2553,6 +2556,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           'bitmapGlyph',
           'text.glyphOutline.bitmapGlyph',
           reservedPayloadEnvelopes.bitmapGlyph,
+          true,
         ),
         true,
       );
@@ -2567,6 +2571,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               filtering: 'backendDefault',
             },
           },
+          true,
         ),
         true,
       );
@@ -2814,6 +2819,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       v2: canvas2dGlyphOutlineProbe.reservedV2BitmapPayload,
       invalidV2: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapPayload,
       reason: 'unsupportedBitmapGlyph',
+      featureMissingExpected: false,
     },
     {
       name: 'svg',
@@ -2821,6 +2827,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       v2: canvas2dGlyphOutlineProbe.reservedV2SvgPayload,
       invalidV2: canvas2dGlyphOutlineProbe.invalidReservedV2SvgPayload,
       reason: 'unsupportedSvgGlyph',
+      featureMissingExpected: true,
     },
   ];
   for (const family of reservedOutlinePayloadFamilies) {
@@ -2837,9 +2844,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         )
         && report?.outlineEligibility?.payloadSupported === false
         && report?.outlineEligibility?.reason === family.reason
-        && issueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+        && issueCodes.includes('glyphOutlinePayloadKindFeatureMissing') === family.featureMissingExpected
         && !issueCodes.includes('glyphOutlinePayloadContractInvalid')
-        && invalidIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+        && invalidIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing') === family.featureMissingExpected
         && invalidIssueCodes.includes('glyphOutlinePayloadContractInvalid'),
       `Canvas2D strict profile rejects reserved ${family.name} outline payload=${JSON.stringify({
         report,
