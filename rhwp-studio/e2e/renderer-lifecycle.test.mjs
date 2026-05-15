@@ -1163,6 +1163,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const variationRenderResult = renderTreeWithDiagnostics(variationTree);
     const variationPng = variationRenderResult.png;
     const variationSelectionDiagnostics = variationRenderResult.textVariantSelectionDiagnostics;
+    const variationNegativeStatuses = {};
+    for (const [name, variations] of [
+      ['unsupportedAxis', [{ tag: 'ZZZZ', value: 1 }]],
+      ['outOfRangeAxis', [{ tag: 'wght', value: 9999 }]],
+      ['explicitDefaultAxis', [{ tag: 'wght', value: 400 }]],
+      ['differentAxisTuple', [{ tag: 'wdth', value: 75 }]],
+    ]) {
+      const candidate = structuredClone(tree);
+      assignFontIdentity(candidate, `variation-${name}`, `fixture-font-digest-variation-${name}`);
+      glyphOp(candidate).shapeKey.fontInstance.variations = variations;
+      variationNegativeStatuses[name] = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+        glyphOp(candidate),
+        candidate.fontResources,
+      );
+    }
 
     const faceIndexTree = structuredClone(tree);
     assignFontIdentity(faceIndexTree, 'face-index', 'fixture-font-digest-face-index');
@@ -1389,6 +1404,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outOfRangeStatus,
       outOfRangePng,
       variationStatus,
+      variationNegativeStatuses,
       variationSelectionDiagnostics,
       variationPng,
       faceIndexStatus,
@@ -1666,6 +1682,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     portableGlyphRunProbe.variationStatus?.replayable === false
       && portableGlyphRunProbe.variationStatus?.reason === 'variationUnsupported',
     `CanvasKit GlyphRun rejects unsupported variation instances=${JSON.stringify(portableGlyphRunProbe.variationStatus)}`,
+  );
+  assert(
+    Object.entries(portableGlyphRunProbe.variationNegativeStatuses ?? {}).every(
+      ([, status]) => status?.replayable === false && status?.reason === 'variationUnsupported',
+    ),
+    `CanvasKit rejects every explicit variation tuple until exact construction is proven=${JSON.stringify(portableGlyphRunProbe.variationNegativeStatuses)}`,
   );
   const variationSelectionReport = portableGlyphRunProbe.variationSelectionDiagnostics?.find(
     (report) => report.equivalenceGroup === 'glyph-fixture-0',

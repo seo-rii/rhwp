@@ -626,6 +626,11 @@ implicitly change schema authority:
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the
   fallback variant, even if native Skia can already replay the same export.
+  The negative fixture matrix treats every explicit variation tuple as
+  unsupported for now, including unsupported axis tags, out-of-range axis
+  values, explicit default-axis tuples, and alternate axis tuples; omission of
+  the variation tuple is the only CanvasKit strict path until exact
+  construction is proven.
 
 The current validator keeps this conservative:
 
@@ -1046,8 +1051,8 @@ producer-resolved strike fields, deterministic strict visual
 ranges are complete. For `svgGlyph`, it accepts
 `text.glyphOutline.svgGlyph` only when the static sanitized vector contract,
 viewBox, placement, and source/glyph ranges are complete. For malformed bitmap
-or SVG glyph
-payloads, the validator reports `glyphOutlinePayloadContractInvalid` when the
+or SVG glyph payloads, the validator reports
+`glyphOutlinePayloadContractInvalid` when the
 payload lacks the producer-resolved bitmap strike fields, deterministic strict
 visual scaling/filtering, required placement and ranges, or static-sanitized
 SVG contract flags. For `monochromeFillStroke`, the
