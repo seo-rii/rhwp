@@ -595,11 +595,15 @@ implicitly change schema authority:
 - `ColorLayers.ColrV1` remains a v2 feature addition, not a v3 trigger, as long
   as it fits the existing payload-kind and feature-gate model. It should start
   with a native/internal deterministic reference fixture before SVG or Canvas2D
-  exporters are enabled. The graph can then grow in stages: solid
+  exporters are enabled. Stage 1 is tree-only: a transform chain resolves to one
+  `solidPath` reference layer, rejects unreachable nodes/cycles, and carries the
+  composed run-local affine transform without changing paint order or
+  clip/effect/cache scope. The graph can then grow in stages: solid
   color+transform, linear/radial gradients, sweep gradients, composite/blend,
-  then clip or reusable graph nodes. It becomes a v3 concern only if it forces a
-  new text variant selection model, paint-order/compositing semantics, or
-  source/cluster identity model.
+  then clip or reusable graph nodes. Reusable graph/DAG behavior belongs to the
+  later clip/reusable-graph stage, with cycle detection and node/depth limits.
+  It becomes a v3 concern only if it forces a new text variant selection model,
+  paint-order/compositing semantics, or source/cluster identity model.
 - `BitmapGlyph` writer emission is blocked until the image-resource replay
   profile exists. The canonical payload is one producer-selected strike;
   available strikes and missing ideal strikes are diagnostics/provenance only.

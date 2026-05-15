@@ -285,34 +285,81 @@ pub struct ColorPaintGraphPayload {
 
 impl ColorPaintGraphPayload {
     pub fn has_colrv1_stage1_contract(&self) -> bool {
-        use std::collections::HashSet;
+        self.colrv1_stage1_reference_layer().is_some()
+    }
 
-        let mut node_ids = HashSet::new();
+    pub fn colrv1_stage1_reference_layer(&self) -> Option<ColorLayerNode> {
+        use std::collections::{HashMap, HashSet};
+
+        let mut nodes_by_id = HashMap::with_capacity(self.nodes.len());
         for node in &self.nodes {
-            if !node_ids.insert(node.node_id) {
-                return false;
+            if nodes_by_id.insert(node.node_id, node).is_some() {
+                return None;
             }
-        }
-        if !node_ids.contains(&self.root_node_id) {
-            return false;
         }
 
-        self.nodes.iter().all(|node| match node.kind {
-            ColorPaintGraphNodeKind::SolidPath => node.solid_path.as_ref().is_some_and(|solid| {
-                !solid.commands.is_empty()
-                    && node.transform.is_none()
-                    && node.source_range_utf8.is_some()
-                    && node.glyph_range.is_some()
-                    && node.source_font_ref.is_some()
-            }),
-            ColorPaintGraphNodeKind::Transform => {
-                node.solid_path.is_none()
-                    && node.transform.as_ref().is_some_and(|transform| {
-                        node_ids.contains(&transform.child_node_id)
-                            && transform.child_node_id != node.node_id
-                    })
+        let mut visited = HashSet::new();
+        let mut node_id = self.root_node_id;
+        let mut transform_to_run = None;
+        loop {
+            if !visited.insert(node_id) {
+                return None;
             }
-        })
+            let node = nodes_by_id.get(&node_id)?;
+            match node.kind {
+                ColorPaintGraphNodeKind::SolidPath => {
+                    if visited.len() != self.nodes.len() || node.transform.is_some() {
+                        return None;
+                    }
+                    let solid = node.solid_path.as_ref()?;
+                    if solid.commands.is_empty() {
+                        return None;
+                    }
+                    if node.source_range_utf8.is_none()
+                        || node.glyph_range.is_none()
+                        || node.source_font_ref.is_none()
+                    {
+                        return None;
+                    }
+                    return Some(ColorLayerNode {
+                        layer_index: Some(0),
+                        glyph_id: solid.source_glyph_id,
+                        glyph_range: node.glyph_range,
+                        source_range_utf8: node.source_range_utf8,
+                        source_font_ref: node.source_font_ref.clone(),
+                        path_index: Some(0),
+                        commands: Some(solid.commands.clone()),
+                        fill: Some(solid.fill.clone()),
+                        fill_rule: Some(solid.fill_rule),
+                        palette_index: solid.palette_index,
+                        color: None,
+                        opacity: Some(f64::from(solid.fill.rgba[3])),
+                        transform_to_run,
+                    });
+                }
+                ColorPaintGraphNodeKind::Transform => {
+                    if node.solid_path.is_some() {
+                        return None;
+                    }
+                    let transform = node.transform.as_ref()?;
+                    transform_to_run = Some(match transform_to_run {
+                        Some(existing) => {
+                            let next = transform.transform;
+                            LayerAffineTransform {
+                                a: existing.a * next.a + existing.c * next.b,
+                                b: existing.b * next.a + existing.d * next.b,
+                                c: existing.a * next.c + existing.c * next.d,
+                                d: existing.b * next.c + existing.d * next.d,
+                                e: existing.a * next.e + existing.c * next.f + existing.e,
+                                f: existing.b * next.e + existing.d * next.f + existing.f,
+                            }
+                        }
+                        None => transform.transform,
+                    });
+                    node_id = transform.child_node_id;
+                }
+            }
+        }
     }
 }
 
@@ -356,6 +403,20 @@ impl ColorLayersPayload {
             && self.source_font_ref.is_some()
             && self.source_range_utf8.is_some()
             && self.glyph_range.is_some()
+    }
+
+    pub fn colrv1_stage1_reference_layers(&self) -> Option<Vec<ColorLayerNode>> {
+        if self.color_format != ColorGlyphFormat::ColrV1
+            || self.source_font_ref.is_none()
+            || self.source_range_utf8.is_none()
+            || self.glyph_range.is_none()
+        {
+            return None;
+        }
+        Some(vec![self
+            .paint_graph
+            .as_ref()?
+            .colrv1_stage1_reference_layer()?])
     }
 }
 
@@ -1895,6 +1956,15 @@ mod tests {
         assert!(!svg_glyph.interactivity_allowed);
         assert!(color_layers.has_colrv0_resolved_layer_contract());
         assert!(color_layers_colrv1.has_colrv1_stage1_graph_contract());
+        let colrv1_reference = color_layers_colrv1
+            .colrv1_stage1_reference_layers()
+            .expect("COLRv1 stage-1 reference layer");
+        assert_eq!(colrv1_reference.len(), 1);
+        assert_eq!(colrv1_reference[0].layer_index, Some(0));
+        assert_eq!(colrv1_reference[0].glyph_id, Some(77));
+        assert_eq!(colrv1_reference[0].palette_index, Some(1));
+        assert_eq!(colrv1_reference[0].fill.as_ref().unwrap().rgba[1], 1.0);
+        assert_eq!(colrv1_reference[0].transform_to_run, Some(identity));
         assert!(bitmap_glyph.has_strict_visual_contract());
         assert!(svg_glyph.has_static_sanitized_contract());
 
@@ -1905,6 +1975,48 @@ mod tests {
         let mut incomplete_graph = color_layers_colrv1.clone();
         incomplete_graph.paint_graph.as_mut().unwrap().nodes[0].source_range_utf8 = None;
         assert!(!incomplete_graph.has_colrv1_stage1_graph_contract());
+
+        let mut unreachable_graph = color_layers_colrv1.clone();
+        unreachable_graph
+            .paint_graph
+            .as_mut()
+            .unwrap()
+            .nodes
+            .push(ColorPaintGraphNode {
+                node_id: 2,
+                kind: ColorPaintGraphNodeKind::SolidPath,
+                solid_path: Some(ColorPaintSolidPathNode {
+                    commands: vec![PathCommand::MoveTo(20.0, 20.0)],
+                    fill: ResolvedColor {
+                        color_space: Some("srgb".to_string()),
+                        rgba: [1.0, 0.0, 0.0, 1.0],
+                    },
+                    fill_rule: GlyphOutlineFillRule::NonZero,
+                    source_glyph_id: Some(78),
+                    palette_index: Some(2),
+                }),
+                transform: None,
+                source_range_utf8: Some(source_range),
+                glyph_range: Some(glyph_range),
+                source_font_ref: Some(FontColorGlyphRef {
+                    face_key: Some("fixture-face".to_string()),
+                    glyph_id: Some(78),
+                    palette_index: Some(2),
+                    color_format: Some(ColorGlyphFormat::ColrV1),
+                }),
+            });
+        assert!(!unreachable_graph.has_colrv1_stage1_graph_contract());
+
+        let mut cyclic_graph = color_layers_colrv1.clone();
+        cyclic_graph.paint_graph.as_mut().unwrap().nodes[0].kind =
+            ColorPaintGraphNodeKind::Transform;
+        cyclic_graph.paint_graph.as_mut().unwrap().nodes[0].solid_path = None;
+        cyclic_graph.paint_graph.as_mut().unwrap().nodes[0].transform =
+            Some(ColorPaintTransformNode {
+                child_node_id: 1,
+                transform: identity,
+            });
+        assert!(!cyclic_graph.has_colrv1_stage1_graph_contract());
 
         let mut backend_default_bitmap = bitmap_glyph.clone();
         backend_default_bitmap.filtering = Some(BitmapGlyphFiltering::BackendDefault);
