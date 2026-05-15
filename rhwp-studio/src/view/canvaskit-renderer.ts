@@ -12,7 +12,7 @@ import {
   type LayerTextVariantReplayStatus,
   type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
-import type { CanvasKitRenderMode } from '@/view/render-backend';
+import type { CanvasKitRenderMode, CanvasKitSurfacePreference } from '@/view/render-backend';
 import type {
   LayerBounds,
   LayerCharOverlapOp,
@@ -76,7 +76,7 @@ import {
 } from './canvaskit/policy';
 import { CanvasKitResourceCache } from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
-import { CanvasKitSurfaceCache } from './canvaskit/surface-cache';
+import { CanvasKitSurfaceCache, type CanvasKitSurfaceDiagnostics } from './canvaskit/surface-cache';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
@@ -141,9 +141,10 @@ export class CanvasKitLayerRenderer {
     private readonly canvasKit: CanvasKit,
     private readonly fontProvider: TypefaceFontProvider,
     private readonly renderMode: CanvasKitRenderMode,
+    surfacePreference: CanvasKitSurfacePreference,
   ) {
     this.resourceCache = new CanvasKitResourceCache(canvasKit, () => this.scheduleRerender());
-    this.surfaceCache = new CanvasKitSurfaceCache(canvasKit);
+    this.surfaceCache = new CanvasKitSurfaceCache(canvasKit, surfacePreference);
     this.fontRegistry = new CanvasKitFontRegistry(canvasKit, fontProvider);
     this.imageCache = this.resourceCache.imageCache;
     this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
@@ -154,12 +155,15 @@ export class CanvasKitLayerRenderer {
     this.fontAliases = this.fontRegistry.aliases;
   }
 
-  static async create(renderMode: CanvasKitRenderMode = 'default'): Promise<CanvasKitLayerRenderer> {
+  static async create(
+    renderMode: CanvasKitRenderMode = 'default',
+    surfacePreference: CanvasKitSurfacePreference = 'auto',
+  ): Promise<CanvasKitLayerRenderer> {
     const canvasKit = await CanvasKitInit({
       locateFile: (file) => file === 'canvaskit.wasm' ? canvaskitWasmUrl : file,
     });
     const fontProvider = canvasKit.TypefaceFontProvider.Make();
-    const renderer = new CanvasKitLayerRenderer(canvasKit, fontProvider, renderMode);
+    const renderer = new CanvasKitLayerRenderer(canvasKit, fontProvider, renderMode, surfacePreference);
     await renderer.fontRegistry.registerFonts();
     return renderer;
   }
@@ -265,6 +269,10 @@ export class CanvasKitLayerRenderer {
       htmlCanvasPreprocesses: resourceDiagnostics.htmlCanvasPreprocesses
         + this.overlayImageEffectDiagnostics.htmlCanvasPreprocesses,
     };
+  }
+
+  getSurfaceDiagnostics(): Readonly<CanvasKitSurfaceDiagnostics> {
+    return this.surfaceCache.getDiagnostics();
   }
 
   resetImageEffectDiagnostics(): void {

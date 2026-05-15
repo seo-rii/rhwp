@@ -235,6 +235,24 @@ CanvasKit에는 현재 두 가지 모드가 있다.
 특히 텍스트 계열에서 Canvas2D overlay/fallback을 사용해 CanvasKit의 순수 raster 차이를 흡수할 수 있다.
 이 로직은 browser-specific transition layer이며, Rust core의 layout 자체를 바꾸는 것은 아니다.
 
+CanvasKit surface backend는 render mode와 별도의 진단 축이다.
+`canvaskitMode`는 query param과 localStorage로 유지되지만,
+`canvaskitSurface`는 테스트/진단용 query-only override로 유지한다.
+
+| surface 값 | 의미 |
+|---|---|
+| `auto` | 기본. 명시적으로 `MakeWebGLCanvasSurface`를 먼저 시도하고 실패하면 `MakeSWCanvasSurface`로 fallback |
+| `webgl` | WebGL surface 경로를 우선 검증. 실패하면 software fallback |
+| `software` | WebGL surface 생성을 생략하고 software surface만 사용 |
+
+renderer는 surface preference, 실제 선택된 surface helper, WebGL/software attempt/fallback 횟수를 diagnostics로 노출한다.
+이 값은 CanvasKit이 어떤 helper path로 surface를 만들었는지 검증하기 위한 것이며,
+future native parity 점검에서는 `software` 모드가 browser GPU 차이를 줄이는 기준점이 된다.
+
+CanvasKit package에는 WebGPU API/type surface가 존재하지만 rhwp는 아직 WebGPU를 적용하지 않는다.
+WebGPU는 async GPU device/context lifecycle과 CanvasKit 초기화 계약을 별도로 잡아야 하므로,
+현재 browser CanvasKit backend의 기본 목표는 WebGL/software surface에서 Canvas2D overlay 없이 `PageLayerTree`를 직접 replay하는 것이다.
+
 ## 8. Parity와 diff 전략
 
 렌더러 parity는 “무조건 exact diff 0”만으로 관리하지 않는다.
@@ -369,7 +387,7 @@ Rust layout core로 역류하면 안 된다.
 2. `ResourceArena`를 실제 shared image/font/pattern resource cache로 채워 backend replay 중복을 줄이기
 3. `RenderProfile`과 `CacheHint`를 SVG/Skia/browser backend가 실제 품질 분기와 캐시 정책에 쓰도록 관통시키기
 4. native raster export와 browser replay 경로의 공통 계약을 더 정리해 새 backend 추가 시 진입점이 흔들리지 않게 만들기
-5. CanvasKit 쪽 page-layer cache, JSON 경계 축소, GPU surface 선택 같은 성능 후속 작업 마무리하기
+5. CanvasKit 쪽 page-layer cache, JSON 경계 축소, WebGPU 적용 여부 같은 성능 후속 작업 마무리하기
 6. CI에서 native Skia, layered browser parity, representative screenshot sweep를 항상 자동 검증하도록 유지하기
 
 즉 현재 단계는 “layered 멀티 백엔드의 골격은 완성”된 상태이고,

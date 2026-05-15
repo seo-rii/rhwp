@@ -2,6 +2,7 @@ import type { LayerRenderProfile, PageInfo } from '@/core/types';
 
 export type RenderBackend = 'canvas2d' | 'canvaskit';
 export type CanvasKitRenderMode = 'default' | 'compat';
+export type CanvasKitSurfacePreference = 'auto' | 'webgl' | 'software';
 
 const STORAGE_KEY = 'rhwp-render-backend';
 const CANVASKIT_MODE_STORAGE_KEY = 'rhwp-canvaskit-render-mode';
@@ -51,6 +52,15 @@ export function persistCanvasKitRenderMode(mode: CanvasKitRenderMode): void {
   } catch {
     // private mode / disabled storage: 무시하고 query-param 선택만 사용한다.
   }
+}
+
+export function resolveCanvasKitSurfacePreference(search: string): CanvasKitSurfacePreference {
+  const params = new URLSearchParams(search);
+  const requested = params.get('canvaskitSurface') ?? params.get('canvaskitSurfaceBackend');
+
+  if (requested === 'webgl') return 'webgl';
+  if (requested === 'software' || requested === 'sw') return 'software';
+  return 'auto';
 }
 
 export function resolveRenderProfile(search: string): LayerRenderProfile {

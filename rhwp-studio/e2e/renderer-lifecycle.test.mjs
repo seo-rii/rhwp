@@ -355,7 +355,102 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(staticPictureProbe.afterClear === 0, `static picture cache released with layer tree cache=${staticPictureProbe.afterClear}`);
 
+  setTestCase('canvaskit-software-surface-backend');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
+  const softwareSurfaceProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = (_pageIdx, profile = 'screen') => ({
+      pageWidth: 64,
+      pageHeight: 64,
+      profile,
+      resources: { tableId: 3, images: [], svgFragments: [] },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 3000,
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'rectangle',
+          bbox: { x: 8, y: 8, width: 24, height: 24 },
+          cornerRadius: 0,
+          gradient: null,
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          style: {
+            fillColor: '#336699',
+            strokeColor: null,
+            strokeWidth: 0,
+            strokeDash: 'solid',
+            opacity: 1,
+            pattern: null,
+            shadow: null,
+          },
+        }],
+      },
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const pageInfo = {
+      pageIndex: 0,
+      width: 64,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      const before = renderer.getSurfaceDiagnostics();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      const afterFirst = renderer.getSurfaceDiagnostics();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      const afterSecond = renderer.getSurfaceDiagnostics();
+      return {
+        preference: window.__canvaskitSurfacePreference,
+        before,
+        afterFirst,
+        afterSecond,
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+      canvas.remove();
+    }
+  });
+
+  assert(!softwareSurfaceProbe.error, softwareSurfaceProbe.error || 'canvaskit software surface probe available');
+  assert(softwareSurfaceProbe.preference === 'software', `surface preference exposed=${JSON.stringify(softwareSurfaceProbe)}`);
+  assert(
+    softwareSurfaceProbe.afterFirst.backend === 'software'
+      && softwareSurfaceProbe.afterFirst.usedGpuSurface === false,
+    `software surface selected=${JSON.stringify(softwareSurfaceProbe)}`,
+  );
+  assert(
+    softwareSurfaceProbe.afterFirst.webglAttempts === 0
+      && softwareSurfaceProbe.afterFirst.softwareAttempts === 1
+      && softwareSurfaceProbe.afterFirst.createdSurfaces === 1,
+    `software surface avoids WebGL path=${JSON.stringify(softwareSurfaceProbe)}`,
+  );
+  assert(
+    softwareSurfaceProbe.afterSecond.reusedSurfaces > softwareSurfaceProbe.afterFirst.reusedSurfaces
+      && softwareSurfaceProbe.afterSecond.createdSurfaces === softwareSurfaceProbe.afterFirst.createdSurfaces,
+    `software surface cache reuses matching canvas=${JSON.stringify(softwareSurfaceProbe)}`,
+  );
+
   setTestCase('layer-resource-cache-invalidation');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=auto');
   await loadHwpFile(page, '20250130-hongbo_saved.hwp');
   const resourceInvalidationProbe = await page.evaluate(() => {
     const canvasView = window.__canvasView;
