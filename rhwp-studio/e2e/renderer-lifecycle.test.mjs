@@ -3161,6 +3161,306 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `Canvas2D strict outline paints schema v2 Text variant path black=${v2StrictBlackPixels}`,
   );
 
+  setTestCase('canvaskit-glyph-outline-strict-profile');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
+  const canvaskitGlyphOutlineProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!renderer) {
+      return { error: 'CanvasKit renderer unavailable' };
+    }
+
+    const style = (color) => ({
+      fontFamily: 'Noto Sans KR',
+      fontSize: 20,
+      color,
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: color,
+      strikeColor: color,
+      shadeColor: '#ffffff',
+    });
+    const source = { id: 1901, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } };
+    const outlinePath = {
+      glyphId: 42,
+      sourceRangeUtf8: { start: 0, end: 1 },
+      glyphRange: { start: 0, end: 1 },
+      fillRule: 'nonzero',
+      commands: [
+        { type: 'moveTo', x: 0, y: 0 },
+        { type: 'lineTo', x: 18, y: 0 },
+        { type: 'lineTo', x: 18, y: 18 },
+        { type: 'lineTo', x: 0, y: 18 },
+        { type: 'closePath' },
+      ],
+    };
+    const variantFor = (group, kind, extra = {}) => ({
+      equivalenceGroup: group,
+      variantId: kind,
+      variantKind: kind,
+      partIndex: 0,
+      partCount: 1,
+      isDefaultFallback: kind === 'textRun',
+      quality: 'exact',
+      ...extra,
+    });
+    const textRunFor = (group) => ({
+      id: `op-text-${group}`,
+      type: 'textRun',
+      bbox: { x: 8, y: 22, width: 40, height: 28 },
+      source,
+      variant: variantFor(group, 'textRun'),
+      text: 'A',
+      baseline: 44,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      projectionKind: 'verbatim',
+      clusterBasis: 'legacyPosition',
+      style: style('#dd0000'),
+      paintStyle: style('#dd0000'),
+      positions: [0, 22],
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const outlineFor = (group, overrides = {}) => ({
+      id: `op-outline-${group}`,
+      type: 'glyphOutline',
+      bbox: { x: 8, y: 8, width: 24, height: 24 },
+      source,
+      variant: variantFor(group, 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.monochromeFill'],
+        anchorOpId: `op-text-${group}`,
+        localPaintOrder: 0,
+      }),
+      paintStyle: style('#000000'),
+      placement: {
+        runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+        baselineY: 0,
+      },
+      paths: [outlinePath],
+      diagnostics: {
+        quality: 'exact',
+        replayEligibility: 'portable',
+        strictVisualEligible: true,
+        maxOriginDeltaPx: 0,
+        maxAdvanceDeltaPx: 0,
+        maxResidualAfterAdjustmentPx: 0,
+        clusterMismatchCount: 0,
+        missingGlyphCount: 0,
+        usedFallbackFontCount: 0,
+      },
+      ...overrides,
+    });
+    const treeFor = (outline) => ({
+      pageWidth: 64,
+      pageHeight: 64,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1901,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [{
+        id: 1901,
+        text: 'A',
+        utf8Range: { start: 0, end: 1 },
+        utf16Range: { start: 0, end: 1 },
+        annotations: [],
+      }],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1901,
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 64, height: 64 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          textRunFor(outline.variant.equivalenceGroup),
+          outline,
+        ],
+      },
+    });
+    const render = (tree) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      const png = canvas.toDataURL('image/png');
+      const diagnostics = renderer.getTextVariantSelectionDiagnostics();
+      canvas.remove();
+      return { png, diagnostics };
+    };
+
+    const strokeOutline = outlineFor('canvaskit-outline-stroke', {
+      payloadKind: 'monochromeFillStroke',
+      variant: variantFor('canvaskit-outline-stroke', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.monochromeFillStroke'],
+        anchorOpId: 'op-text-canvaskit-outline-stroke',
+        localPaintOrder: 0,
+      }),
+      stroke: {
+        widthPx: 3,
+        color: '#0000ff',
+        opacity: 1,
+        join: 'miter',
+        cap: 'butt',
+        miterLimit: 4,
+        paintOrder: 'fillThenStroke',
+      },
+    });
+    const colorOutline = outlineFor('canvaskit-outline-color', {
+      payloadKind: 'colorLayers',
+      variant: variantFor('canvaskit-outline-color', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.colorLayers', 'text.glyphOutline.colorLayers.colrV0'],
+        anchorOpId: 'op-text-canvaskit-outline-color',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      colorLayers: {
+        colorFormat: 'colrV0',
+        sourceFontRef: { faceKey: 'fixture-face', glyphId: 42, colorFormat: 'colrV0' },
+        paletteRef: { index: 0, cpalDigest: 'fixture-cpal' },
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        layers: [{
+          layerIndex: 0,
+          glyphId: 77,
+          glyphRange: { start: 0, end: 1 },
+          sourceRangeUtf8: { start: 0, end: 1 },
+          sourceFontRef: { faceKey: 'fixture-face', glyphId: 77, paletteIndex: 3, colorFormat: 'colrV0' },
+          commands: outlinePath.commands,
+          fill: { rgba: [0, 0, 1, 1] },
+          fillRule: 'nonzero',
+          paletteIndex: 3,
+        }],
+      },
+    });
+    const unsupportedBitmapOutline = outlineFor('canvaskit-outline-bitmap', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        imageResourceId: 0,
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+          baselineY: 0,
+        },
+        strikePpem: [16, 16],
+        strikeSelection: 'producerResolved',
+        alphaMode: 'premultiplied',
+        scalingPolicy: 'scaleToEm',
+        filtering: 'nearest',
+      },
+    });
+
+    return {
+      monochrome: render(treeFor(outlineFor('canvaskit-outline-mono'))),
+      stroke: render(treeFor(strokeOutline)),
+      colorLayers: render(treeFor(colorOutline)),
+      unsupportedBitmap: render(treeFor(unsupportedBitmapOutline)),
+    };
+  });
+  assert(!canvaskitGlyphOutlineProbe.error, canvaskitGlyphOutlineProbe.error || 'CanvasKit glyph outline probe available');
+  const canvaskitMonochromeReport = canvaskitGlyphOutlineProbe.monochrome?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'canvaskit-outline-mono',
+  );
+  assert(
+    canvaskitMonochromeReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitMonochromeReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects monochrome GlyphOutline=${JSON.stringify(canvaskitMonochromeReport)}`,
+  );
+  const canvaskitStrokeReport = canvaskitGlyphOutlineProbe.stroke?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'canvaskit-outline-stroke',
+  );
+  assert(
+    canvaskitStrokeReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitStrokeReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects stroke GlyphOutline=${JSON.stringify(canvaskitStrokeReport)}`,
+  );
+  const canvaskitColorReport = canvaskitGlyphOutlineProbe.colorLayers?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'canvaskit-outline-color',
+  );
+  assert(
+    canvaskitColorReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitColorReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects COLRv0 ColorLayers GlyphOutline=${JSON.stringify(canvaskitColorReport)}`,
+  );
+  const canvaskitUnsupportedBitmapReport = canvaskitGlyphOutlineProbe.unsupportedBitmap?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'canvaskit-outline-bitmap',
+  );
+  assert(
+    canvaskitUnsupportedBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline' && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit keeps BitmapGlyph fallback=${JSON.stringify(canvaskitUnsupportedBitmapReport)}`,
+  );
+  const canvaskitMonochromeBlackPixels = countPixels(
+    canvaskitGlyphOutlineProbe.monochrome.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const canvaskitMonochromeRedPixels = countPixels(
+    canvaskitGlyphOutlineProbe.monochrome.png,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const canvaskitStrokeBluePixels = countPixels(
+    canvaskitGlyphOutlineProbe.stroke.png,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 100 && pixel.green < 120,
+  );
+  const canvaskitColorBluePixels = countPixels(
+    canvaskitGlyphOutlineProbe.colorLayers.png,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 100 && pixel.green < 120,
+  );
+  assert(
+    canvaskitMonochromeBlackPixels > 100 && canvaskitMonochromeRedPixels < 5,
+    `CanvasKit strict outline paints monochrome path and suppresses fallback black=${canvaskitMonochromeBlackPixels}, red=${canvaskitMonochromeRedPixels}`,
+  );
+  assert(
+    canvaskitStrokeBluePixels > 20,
+    `CanvasKit strict outline paints stroke path blue=${canvaskitStrokeBluePixels}`,
+  );
+  assert(
+    canvaskitColorBluePixels > 100,
+    `CanvasKit strict outline paints COLRv0 color layer blue=${canvaskitColorBluePixels}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {
