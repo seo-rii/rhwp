@@ -162,6 +162,7 @@ pub fn decode_colrv0_color_layers_payload(
             )),
         }),
         layers,
+        paint_graph: None,
         source_range_utf8: Some(options.source_range_utf8),
         glyph_range: Some(options.glyph_range),
     })

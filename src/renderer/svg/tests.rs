@@ -887,6 +887,7 @@ fn color_layers_fixture_payload(
                 f: 0.0,
             }),
         }],
+        paint_graph: None,
     }
 }
 

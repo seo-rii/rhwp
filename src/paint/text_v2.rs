@@ -803,18 +803,40 @@ fn validate_variant_parts(
                     }
                 }
                 GlyphOutlinePayloadKind::ColorLayers => {
-                    if !options.allow_colrv0_color_layers_payloads
-                        || !variant
-                            .required_features
-                            .iter()
-                            .any(|feature| feature == "text.glyphOutline.colorLayers")
-                        || !variant
-                            .required_features
-                            .iter()
-                            .any(|feature| feature == "text.glyphOutline.colorLayers.colrV0")
-                        || !outline
-                            .color_layers
-                            .as_ref()
+                    let has_color_layers_feature = variant
+                        .required_features
+                        .iter()
+                        .any(|feature| feature == "text.glyphOutline.colorLayers");
+                    let has_colrv0_feature = variant
+                        .required_features
+                        .iter()
+                        .any(|feature| feature == "text.glyphOutline.colorLayers.colrV0");
+                    let has_colrv1_feature = variant
+                        .required_features
+                        .iter()
+                        .any(|feature| feature == "text.glyphOutline.colorLayers.colrV1");
+                    let color_layers = outline.color_layers.as_ref();
+                    if has_color_layers_feature && has_colrv1_feature {
+                        if !color_layers
+                            .is_some_and(|payload| payload.has_colrv1_stage1_graph_contract())
+                        {
+                            issues.push(text_v2_issue(
+                                op,
+                                TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid,
+                                Some(&variant.variant_id),
+                                Some(part.part_index),
+                            ));
+                        }
+                        issues.push(text_v2_issue(
+                            op,
+                            TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+                            Some(&variant.variant_id),
+                            Some(part.part_index),
+                        ));
+                    } else if !options.allow_colrv0_color_layers_payloads
+                        || !has_color_layers_feature
+                        || !has_colrv0_feature
+                        || !color_layers
                             .is_some_and(|payload| payload.has_colrv0_resolved_layer_contract())
                     {
                         issues.push(text_v2_issue(
@@ -1064,14 +1086,16 @@ mod tests {
     use crate::paint::{
         BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
         BitmapStrikeSelection, CacheHint, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload,
-        FontColorGlyphRef, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
-        GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
-        GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
-        GlyphRunDiagnostics, GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform,
-        LayerGlyphOutlinePath, LayerPoint, LayerSemantic, LayerVector, PaintTextStyle,
-        PaintVariantMeta, ResolvedColor, ShapeKey, ShapingEngineId, SvgGlyphPayload,
-        SvgGlyphSecurityMode, SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement,
-        TextSourceId, TextSourceRange, TextSourceSpan, WritingMode,
+        ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
+        ColorPaintSolidPathNode, ColorPaintTransformNode, FontColorGlyphRef, FontFaceKey,
+        FontFallbackPolicyId, FontInstanceKey, GlyphCluster, GlyphOutlineFillRule,
+        GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap,
+        GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics,
+        GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerGlyphOutlinePath,
+        LayerPoint, LayerSemantic, LayerVector, PaintTextStyle, PaintVariantMeta, ResolvedColor,
+        ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
+        SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
+        TextSourceSpan, WritingMode,
     };
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -1193,8 +1217,74 @@ mod tests {
                 opacity: Some(1.0),
                 transform_to_run: None,
             }],
+            paint_graph: None,
             source_range_utf8: Some(TextSourceRange::new(0, 1)),
             glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+        }
+    }
+
+    fn colrv1_stage1_color_layers_payload() -> ColorLayersPayload {
+        let source_range = TextSourceRange::new(0, 1);
+        let glyph_range = GlyphRange { start: 0, end: 1 };
+        let source_font_ref = FontColorGlyphRef {
+            face_key: Some("fixture-face".to_string()),
+            glyph_id: Some(42),
+            palette_index: Some(0),
+            color_format: Some(ColorGlyphFormat::ColrV1),
+        };
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 1,
+                nodes: vec![
+                    ColorPaintGraphNode {
+                        node_id: 0,
+                        kind: ColorPaintGraphNodeKind::SolidPath,
+                        solid_path: Some(ColorPaintSolidPathNode {
+                            commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(1.0, 0.0),
+                                PathCommand::ClosePath,
+                            ],
+                            fill: ResolvedColor {
+                                color_space: Some("srgb".to_string()),
+                                rgba: [0.0, 1.0, 0.0, 1.0],
+                            },
+                            fill_rule: GlyphOutlineFillRule::NonZero,
+                            source_glyph_id: Some(42),
+                            palette_index: Some(0),
+                        }),
+                        transform: None,
+                        source_range_utf8: Some(source_range),
+                        glyph_range: Some(glyph_range),
+                        source_font_ref: Some(source_font_ref.clone()),
+                    },
+                    ColorPaintGraphNode {
+                        node_id: 1,
+                        kind: ColorPaintGraphNodeKind::Transform,
+                        solid_path: None,
+                        transform: Some(ColorPaintTransformNode {
+                            child_node_id: 0,
+                            transform: LayerAffineTransform {
+                                a: 1.0,
+                                b: 0.0,
+                                c: 0.0,
+                                d: 1.0,
+                                e: 0.0,
+                                f: 0.0,
+                            },
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                ],
+            }),
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(glyph_range),
         }
     }
 
@@ -2271,6 +2361,71 @@ mod tests {
                 "{color_format_feature} vocabulary must not imply writer eligibility"
             );
         }
+    }
+
+    #[test]
+    fn validates_colrv1_stage1_graph_contract_before_writer_gate() {
+        let payload_issue_codes = |valid_contract: bool| {
+            let text = text_op(PaintVariantMeta::text_run_default("text-5-colrv1"));
+            let outline = outline_op(
+                PaintVariantMeta {
+                    equivalence_group: "text-5-colrv1".to_string(),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec![
+                        "text.glyphOutline.colorLayers".to_string(),
+                        "text.glyphOutline.colorLayers.colrV1".to_string(),
+                    ],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some("text-anchor-5-colrv1".to_string()),
+                    local_paint_order: Some(0),
+                },
+                12.0,
+            );
+            let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+            let LayerTextVariantPayload::GlyphOutline(outline) =
+                &mut text_ops[0].variants[1].parts[0].payload
+            else {
+                panic!("expected glyph outline payload");
+            };
+            outline.payload_kind = GlyphOutlinePayloadKind::ColorLayers;
+            let mut payload = colrv1_stage1_color_layers_payload();
+            if !valid_contract {
+                payload.paint_graph.as_mut().unwrap().nodes[0].source_range_utf8 = None;
+            }
+            outline.color_layers = Some(payload);
+
+            let mut options = TextV2ValidationOptions::default();
+            options.allow_richer_glyph_outline_payloads = true;
+            validate_text_v2_op(&text_ops[0], &options)
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect::<Vec<_>>()
+        };
+
+        let valid_codes = payload_issue_codes(true);
+        assert!(
+            valid_codes.contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing),
+            "COLRv1 graph writer gate should remain closed"
+        );
+        assert!(
+            !valid_codes.contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid),
+            "complete COLRv1 stage-1 graph should not report contract invalid"
+        );
+
+        let invalid_codes = payload_issue_codes(false);
+        assert!(
+            invalid_codes
+                .contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing),
+            "COLRv1 graph writer gate should remain closed"
+        );
+        assert!(
+            invalid_codes.contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid),
+            "invalid COLRv1 stage-1 graph must report contract invalid"
+        );
     }
 
     #[test]

@@ -894,11 +894,44 @@ export interface LayerGlyphOutlineColorLayerNode {
   transformToRun?: LayerAffineTransform;
 }
 
+export type LayerGlyphOutlineColorPaintGraphNodeKind =
+  | 'solidPath'
+  | 'transform';
+
+export interface LayerGlyphOutlineColorSolidPathNode {
+  commands: LayerPathCommand[];
+  fill: LayerGlyphOutlineResolvedColor;
+  fillRule: CanvasFillRule;
+  sourceGlyphId?: number;
+  paletteIndex?: number;
+}
+
+export interface LayerGlyphOutlineColorTransformNode {
+  childNodeId: number;
+  transform: LayerAffineTransform;
+}
+
+export interface LayerGlyphOutlineColorPaintGraphNode {
+  nodeId: number;
+  kind: LayerGlyphOutlineColorPaintGraphNodeKind;
+  solidPath?: LayerGlyphOutlineColorSolidPathNode;
+  transform?: LayerGlyphOutlineColorTransformNode;
+  sourceRangeUtf8?: LayerTextSourceRange;
+  glyphRange?: { start: number; end: number };
+  sourceFontRef?: LayerGlyphOutlineFontColorGlyphRef;
+}
+
+export interface LayerGlyphOutlineColorPaintGraphPayload {
+  rootNodeId: number;
+  nodes: LayerGlyphOutlineColorPaintGraphNode[];
+}
+
 export interface LayerGlyphOutlineColorLayersPayload {
   colorFormat: LayerGlyphOutlineColorFormat;
   sourceFontRef?: LayerGlyphOutlineFontColorGlyphRef;
   paletteRef?: LayerGlyphOutlinePaletteRef;
   layers: LayerGlyphOutlineColorLayerNode[];
+  paintGraph?: LayerGlyphOutlineColorPaintGraphPayload;
   sourceRangeUtf8?: LayerTextSourceRange;
   glyphRange?: { start: number; end: number };
 }

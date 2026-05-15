@@ -2029,6 +2029,99 @@ fn glyph_outline_color_layers_payload_to_value(
                 .map(glyph_outline_color_layer_node_to_value),
         ),
     );
+    if let Some(graph) = &payload.paint_graph {
+        set_value(
+            &value,
+            "paintGraph",
+            glyph_outline_color_paint_graph_to_value(graph),
+        );
+    }
+    value.into()
+}
+
+fn glyph_outline_color_paint_graph_to_value(
+    graph: &crate::paint::ColorPaintGraphPayload,
+) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "rootNodeId", graph.root_node_id as f64);
+    set_value(
+        &value,
+        "nodes",
+        array_to_value(
+            graph
+                .nodes
+                .iter()
+                .map(glyph_outline_color_paint_graph_node_to_value),
+        ),
+    );
+    value.into()
+}
+
+fn glyph_outline_color_paint_graph_node_to_value(
+    node: &crate::paint::ColorPaintGraphNode,
+) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "nodeId", node.node_id as f64);
+    set_string(&value, "kind", node.kind.as_str());
+    if let Some(solid) = &node.solid_path {
+        set_value(
+            &value,
+            "solidPath",
+            glyph_outline_color_solid_path_node_to_value(solid),
+        );
+    }
+    if let Some(transform) = &node.transform {
+        set_value(
+            &value,
+            "transform",
+            glyph_outline_color_transform_node_to_value(transform),
+        );
+    }
+    if let Some(range) = node.source_range_utf8 {
+        set_value(&value, "sourceRangeUtf8", text_source_range_to_value(range));
+    }
+    if let Some(range) = node.glyph_range {
+        let range_value = Object::new();
+        set_number(&range_value, "start", range.start as f64);
+        set_number(&range_value, "end", range.end as f64);
+        set_value(&value, "glyphRange", range_value.into());
+    }
+    if let Some(source_font_ref) = &node.source_font_ref {
+        set_value(
+            &value,
+            "sourceFontRef",
+            glyph_outline_font_color_glyph_ref_to_value(source_font_ref),
+        );
+    }
+    value.into()
+}
+
+fn glyph_outline_color_solid_path_node_to_value(
+    solid: &crate::paint::ColorPaintSolidPathNode,
+) -> JsValue {
+    let value = Object::new();
+    set_value(&value, "commands", path_commands_to_value(&solid.commands));
+    set_value(&value, "fill", resolved_color_to_value(&solid.fill));
+    set_string(&value, "fillRule", solid.fill_rule.as_str());
+    if let Some(source_glyph_id) = solid.source_glyph_id {
+        set_number(&value, "sourceGlyphId", source_glyph_id as f64);
+    }
+    if let Some(palette_index) = solid.palette_index {
+        set_number(&value, "paletteIndex", palette_index as f64);
+    }
+    value.into()
+}
+
+fn glyph_outline_color_transform_node_to_value(
+    transform: &crate::paint::ColorPaintTransformNode,
+) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "childNodeId", transform.child_node_id as f64);
+    set_value(
+        &value,
+        "transform",
+        affine_transform_to_value(transform.transform),
+    );
     value.into()
 }
 

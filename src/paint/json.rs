@@ -1901,7 +1901,94 @@ fn write_glyph_outline_color_layers_payload(
         }
         write_glyph_outline_color_layer_node(buf, layer);
     }
+    buf.push(']');
+    if let Some(graph) = &payload.paint_graph {
+        buf.push_str(",\"paintGraph\":");
+        write_glyph_outline_color_paint_graph(buf, graph);
+    }
+    buf.push('}');
+}
+
+fn write_glyph_outline_color_paint_graph(
+    buf: &mut String,
+    graph: &crate::paint::ColorPaintGraphPayload,
+) {
+    let _ = write!(buf, "{{\"rootNodeId\":{},\"nodes\":[", graph.root_node_id);
+    for (idx, node) in graph.nodes.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        write_glyph_outline_color_paint_graph_node(buf, node);
+    }
     buf.push_str("]}");
+}
+
+fn write_glyph_outline_color_paint_graph_node(
+    buf: &mut String,
+    node: &crate::paint::ColorPaintGraphNode,
+) {
+    let _ = write!(
+        buf,
+        "{{\"nodeId\":{},\"kind\":{}",
+        node.node_id,
+        json_escape(node.kind.as_str())
+    );
+    if let Some(solid) = &node.solid_path {
+        buf.push_str(",\"solidPath\":");
+        write_glyph_outline_color_solid_path_node(buf, solid);
+    }
+    if let Some(transform) = &node.transform {
+        buf.push_str(",\"transform\":");
+        write_glyph_outline_color_transform_node(buf, transform);
+    }
+    if let Some(range) = node.source_range_utf8 {
+        buf.push_str(",\"sourceRangeUtf8\":");
+        write_text_source_range(buf, range);
+    }
+    if let Some(range) = node.glyph_range {
+        let _ = write!(
+            buf,
+            ",\"glyphRange\":{{\"start\":{},\"end\":{}}}",
+            range.start, range.end
+        );
+    }
+    if let Some(source_font_ref) = &node.source_font_ref {
+        buf.push_str(",\"sourceFontRef\":");
+        write_glyph_outline_font_color_glyph_ref(buf, source_font_ref);
+    }
+    buf.push('}');
+}
+
+fn write_glyph_outline_color_solid_path_node(
+    buf: &mut String,
+    solid: &crate::paint::ColorPaintSolidPathNode,
+) {
+    buf.push_str("{\"commands\":");
+    write_path_commands(buf, &solid.commands);
+    buf.push_str(",\"fill\":");
+    write_resolved_color(buf, &solid.fill);
+    let _ = write!(
+        buf,
+        ",\"fillRule\":{}",
+        json_escape(solid.fill_rule.as_str())
+    );
+    if let Some(source_glyph_id) = solid.source_glyph_id {
+        let _ = write!(buf, ",\"sourceGlyphId\":{}", source_glyph_id);
+    }
+    if let Some(palette_index) = solid.palette_index {
+        let _ = write!(buf, ",\"paletteIndex\":{}", palette_index);
+    }
+    buf.push('}');
+}
+
+fn write_glyph_outline_color_transform_node(
+    buf: &mut String,
+    transform: &crate::paint::ColorPaintTransformNode,
+) {
+    let _ = write!(buf, "{{\"childNodeId\":{}", transform.child_node_id);
+    buf.push_str(",\"transform\":");
+    write_affine_transform(buf, transform.transform);
+    buf.push('}');
 }
 
 fn write_glyph_outline_font_color_glyph_ref(
@@ -4048,6 +4135,7 @@ mod tests {
                 opacity: Some(1.0),
                 transform_to_run: None,
             }],
+            paint_graph: None,
         });
         let color_tree = PageLayerTree::new(
             40.0,

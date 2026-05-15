@@ -2214,6 +2214,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
     const makeReservedV2ColorPayloadColrV1Tree = () => {
       const tree = makeV2TextTree();
+      tree.requiredFeatures = [
+        'text.glyphOutline.colorLayers',
+        'text.glyphOutline.colorLayers.colrV1',
+      ];
       const outlineVariant = tree.root.ops[0].variants.find(
         (variant) => variant.variantId === 'glyphOutline',
       );
@@ -2231,6 +2235,43 @@ runTest('Renderer lifecycle', async ({ page }) => {
           sourceFontRef: {
             ...reservedPayloadEnvelopes.colorLayers.colorLayers.sourceFontRef,
             colorFormat: 'colrV1',
+          },
+          layers: [],
+          paintGraph: {
+            rootNodeId: 1,
+            nodes: [
+              {
+                nodeId: 0,
+                kind: 'solidPath',
+                solidPath: {
+                  commands: [
+                    { type: 'moveTo', x: 0, y: 0 },
+                    { type: 'lineTo', x: 10, y: 0 },
+                    { type: 'closePath' },
+                  ],
+                  fill: { colorSpace: 'srgb', rgba: [0, 1, 0, 1] },
+                  fillRule: 'nonzero',
+                  sourceGlyphId: 42,
+                  paletteIndex: 0,
+                },
+                sourceRangeUtf8: { start: 0, end: 1 },
+                glyphRange: { start: 0, end: 1 },
+                sourceFontRef: {
+                  faceKey: 'fixture-face',
+                  glyphId: 42,
+                  paletteIndex: 0,
+                  colorFormat: 'colrV1',
+                },
+              },
+              {
+                nodeId: 1,
+                kind: 'transform',
+                transform: {
+                  childNodeId: 0,
+                  transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+                },
+              },
+            ],
           },
         },
       };
@@ -2494,6 +2535,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const invalidV2FallbackFreeTextOnly = render(makeV2FallbackFreeTextOnlyTree(), false);
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const reservedV2ColorPayloadColrV1 = render(makeReservedV2ColorPayloadColrV1Tree(), true);
+      const invalidReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      delete invalidReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph
+        .nodes[0]
+        .sourceRangeUtf8;
+      const invalidReservedV2ColorPayloadColrV1 = render(
+        invalidReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -2566,6 +2620,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidV2FallbackFreeTextOnly,
         reservedV2ColorPayload,
         reservedV2ColorPayloadColrV1,
+        invalidReservedV2ColorPayloadColrV1,
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
         reservedV2SvgPayload,
@@ -2725,6 +2780,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .reservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
       && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
@@ -2734,12 +2793,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && reservedColorPayloadSidecarReport?.outlineEligibility?.payloadSupported === false
       && reservedColorPayloadSidecarReport?.outlineEligibility?.reason === 'unsupportedColorGlyph'
       && !reservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
-      && reservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+      && reservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && !reservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
     `Canvas2D strict profile rejects reserved color outline payload=${JSON.stringify({
       report: reservedColorPayloadSidecarReport,
       sidecarValidation: canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.textV2Validation,
       v2Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayload?.textV2Validation,
       v2ColrV1Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayloadColrV1?.textV2Validation,
+      invalidV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
     })}`,
   );
   const reservedOutlinePayloadFamilies = [

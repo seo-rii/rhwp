@@ -236,12 +236,93 @@ pub struct ColorLayerNode {
     pub transform_to_run: Option<LayerAffineTransform>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorPaintGraphNodeKind {
+    SolidPath,
+    Transform,
+}
+
+impl ColorPaintGraphNodeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SolidPath => "solidPath",
+            Self::Transform => "transform",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorPaintSolidPathNode {
+    pub commands: Vec<PathCommand>,
+    pub fill: ResolvedColor,
+    pub fill_rule: GlyphOutlineFillRule,
+    pub source_glyph_id: Option<u32>,
+    pub palette_index: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorPaintTransformNode {
+    pub child_node_id: u32,
+    pub transform: LayerAffineTransform,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorPaintGraphNode {
+    pub node_id: u32,
+    pub kind: ColorPaintGraphNodeKind,
+    pub solid_path: Option<ColorPaintSolidPathNode>,
+    pub transform: Option<ColorPaintTransformNode>,
+    pub source_range_utf8: Option<TextSourceRange>,
+    pub glyph_range: Option<GlyphRange>,
+    pub source_font_ref: Option<FontColorGlyphRef>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorPaintGraphPayload {
+    pub root_node_id: u32,
+    pub nodes: Vec<ColorPaintGraphNode>,
+}
+
+impl ColorPaintGraphPayload {
+    pub fn has_colrv1_stage1_contract(&self) -> bool {
+        use std::collections::HashSet;
+
+        let mut node_ids = HashSet::new();
+        for node in &self.nodes {
+            if !node_ids.insert(node.node_id) {
+                return false;
+            }
+        }
+        if !node_ids.contains(&self.root_node_id) {
+            return false;
+        }
+
+        self.nodes.iter().all(|node| match node.kind {
+            ColorPaintGraphNodeKind::SolidPath => node.solid_path.as_ref().is_some_and(|solid| {
+                !solid.commands.is_empty()
+                    && node.transform.is_none()
+                    && node.source_range_utf8.is_some()
+                    && node.glyph_range.is_some()
+                    && node.source_font_ref.is_some()
+            }),
+            ColorPaintGraphNodeKind::Transform => {
+                node.solid_path.is_none()
+                    && node.transform.as_ref().is_some_and(|transform| {
+                        node_ids.contains(&transform.child_node_id)
+                            && transform.child_node_id != node.node_id
+                    })
+            }
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColorLayersPayload {
     pub color_format: ColorGlyphFormat,
     pub source_font_ref: Option<FontColorGlyphRef>,
     pub palette_ref: Option<PaletteRef>,
     pub layers: Vec<ColorLayerNode>,
+    pub paint_graph: Option<ColorPaintGraphPayload>,
     pub source_range_utf8: Option<TextSourceRange>,
     pub glyph_range: Option<GlyphRange>,
 }
@@ -264,6 +345,17 @@ impl ColorLayersPayload {
                     && layer.source_font_ref.is_some()
                     && layer.palette_index.is_some()
             })
+    }
+
+    pub fn has_colrv1_stage1_graph_contract(&self) -> bool {
+        self.color_format == ColorGlyphFormat::ColrV1
+            && self
+                .paint_graph
+                .as_ref()
+                .is_some_and(ColorPaintGraphPayload::has_colrv1_stage1_contract)
+            && self.source_font_ref.is_some()
+            && self.source_range_utf8.is_some()
+            && self.glyph_range.is_some()
     }
 }
 
@@ -1684,8 +1776,67 @@ mod tests {
                 opacity: Some(1.0),
                 transform_to_run: Some(identity),
             }],
+            paint_graph: None,
             source_range_utf8: Some(source_range),
             glyph_range: Some(glyph_range),
+        };
+        let color_graph = ColorPaintGraphPayload {
+            root_node_id: 1,
+            nodes: vec![
+                ColorPaintGraphNode {
+                    node_id: 0,
+                    kind: ColorPaintGraphNodeKind::SolidPath,
+                    solid_path: Some(ColorPaintSolidPathNode {
+                        commands: vec![
+                            PathCommand::MoveTo(0.0, 0.0),
+                            PathCommand::LineTo(10.0, 0.0),
+                            PathCommand::ClosePath,
+                        ],
+                        fill: ResolvedColor {
+                            color_space: Some("srgb".to_string()),
+                            rgba: [0.0, 1.0, 0.0, 1.0],
+                        },
+                        fill_rule: GlyphOutlineFillRule::NonZero,
+                        source_glyph_id: Some(77),
+                        palette_index: Some(1),
+                    }),
+                    transform: None,
+                    source_range_utf8: Some(source_range),
+                    glyph_range: Some(glyph_range),
+                    source_font_ref: Some(FontColorGlyphRef {
+                        face_key: Some("fixture-face".to_string()),
+                        glyph_id: Some(77),
+                        palette_index: Some(1),
+                        color_format: Some(ColorGlyphFormat::ColrV1),
+                    }),
+                },
+                ColorPaintGraphNode {
+                    node_id: 1,
+                    kind: ColorPaintGraphNodeKind::Transform,
+                    solid_path: None,
+                    transform: Some(ColorPaintTransformNode {
+                        child_node_id: 0,
+                        transform: identity,
+                    }),
+                    source_range_utf8: None,
+                    glyph_range: None,
+                    source_font_ref: None,
+                },
+            ],
+        };
+        let color_layers_colrv1 = ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(FontColorGlyphRef {
+                face_key: Some("fixture-face".to_string()),
+                glyph_id: Some(77),
+                palette_index: Some(1),
+                color_format: Some(ColorGlyphFormat::ColrV1),
+            }),
+            palette_ref: None,
+            layers: Vec::new(),
+            paint_graph: Some(color_graph),
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(GlyphRange { start: 1, end: 2 }),
         };
         let bitmap_glyph = BitmapGlyphPayload {
             image_resource_id: ImageResourceId(7),
@@ -1743,12 +1894,17 @@ mod tests {
         assert!(!svg_glyph.external_resources_allowed);
         assert!(!svg_glyph.interactivity_allowed);
         assert!(color_layers.has_colrv0_resolved_layer_contract());
+        assert!(color_layers_colrv1.has_colrv1_stage1_graph_contract());
         assert!(bitmap_glyph.has_strict_visual_contract());
         assert!(svg_glyph.has_static_sanitized_contract());
 
         let mut incomplete_color_layers = color_layers.clone();
         incomplete_color_layers.layers[0].fill = None;
         assert!(!incomplete_color_layers.has_colrv0_resolved_layer_contract());
+
+        let mut incomplete_graph = color_layers_colrv1.clone();
+        incomplete_graph.paint_graph.as_mut().unwrap().nodes[0].source_range_utf8 = None;
+        assert!(!incomplete_graph.has_colrv1_stage1_graph_contract());
 
         let mut backend_default_bitmap = bitmap_glyph.clone();
         backend_default_bitmap.filtering = Some(BitmapGlyphFiltering::BackendDefault);

@@ -577,7 +577,31 @@ export function validateLayerTextV2Op(
               && requiredFeatures.has('text.glyphOutline.colorLayers.colrV0')
               && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers')
               && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers.colrV0');
-            if (
+            const colrv1Feature =
+              requiredFeatures.has('text.glyphOutline.colorLayers')
+              && requiredFeatures.has('text.glyphOutline.colorLayers.colrV1')
+              && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers')
+              && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers.colrV1');
+            if (colrv1Feature) {
+              if (!hasColrv1Stage1ColorGraphContract(part.payload)) {
+                issues.push({
+                  code: 'glyphOutlinePayloadContractInvalid',
+                  message: `Text variant '${variant.variantId}' carries a COLRv1 colorLayers payload without the stage-1 normalized graph contract.`,
+                  opId: op.id,
+                  paintOrderSlotId: op.paintOrderSlotId,
+                  variantId: variant.variantId,
+                  partIndex,
+                });
+              }
+              issues.push({
+                code: 'glyphOutlinePayloadKindFeatureMissing',
+                message: `Text variant '${variant.variantId}' uses colorLayers without the COLRv1 normalized graph writer gate.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            } else if (
               options.allowColrv0ColorLayersPayloads !== true
               || !colrv0Feature
               || !hasColrv0ColorLayersContract(part.payload)
@@ -755,6 +779,56 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
       && layer.fillRule !== undefined
       && layer.paletteIndex !== undefined,
     );
+}
+
+export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp): boolean {
+  const colorLayers = payload.colorLayers;
+  const graph = colorLayers?.paintGraph;
+  if (
+    payload.payloadKind !== 'colorLayers'
+    || payload.stroke
+    || colorLayers?.colorFormat !== 'colrV1'
+    || colorLayers.sourceFontRef === undefined
+    || colorLayers.sourceRangeUtf8 === undefined
+    || colorLayers.glyphRange === undefined
+    || graph === undefined
+    || !Array.isArray(graph.nodes)
+    || graph.nodes.length === 0
+  ) {
+    return false;
+  }
+
+  const nodeIds = new Set<number>();
+  for (const node of graph.nodes) {
+    if (nodeIds.has(node.nodeId)) {
+      return false;
+    }
+    nodeIds.add(node.nodeId);
+  }
+  if (!nodeIds.has(graph.rootNodeId)) {
+    return false;
+  }
+
+  return graph.nodes.every((node) => {
+    if (node.kind === 'solidPath') {
+      return node.solidPath !== undefined
+        && node.transform === undefined
+        && Array.isArray(node.solidPath.commands)
+        && node.solidPath.commands.length > 0
+        && node.solidPath.fill !== undefined
+        && node.solidPath.fillRule !== undefined
+        && node.sourceRangeUtf8 !== undefined
+        && node.glyphRange !== undefined
+        && node.sourceFontRef !== undefined;
+    }
+    if (node.kind === 'transform') {
+      return node.solidPath === undefined
+        && node.transform !== undefined
+        && nodeIds.has(node.transform.childNodeId)
+        && node.transform.childNodeId !== node.nodeId;
+    }
+    return false;
+  });
 }
 
 export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): boolean {

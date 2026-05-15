@@ -565,8 +565,11 @@ The reserved families are intentionally separate payload families:
   `sourceRangeUtf8`, `paletteIndex`, and optional CPAL digest on `paletteRef`).
   Consumers must replay the resolved color/path data rather than re-resolving
   the font palette for strict visual output. COLRv0 can start as a solid
-  palette layer stack; COLRv1 needs a separate graph gate for gradients,
-  transforms, and compositing. The feature vocabulary is split as
+  palette layer stack. COLRv1 uses a separate normalized paint graph envelope:
+  the stage-1 skeleton admits solid path nodes and transform nodes with source
+  range, glyph range, and source-font provenance, while gradients, blending,
+  clips, and reusable graph nodes stay behind later feature additions. The
+  feature vocabulary is split as
   `text.glyphOutline.colorLayers`, `text.glyphOutline.colorLayers.colrV0`, and
   `text.glyphOutline.colorLayers.colrV1` so the solid-layer subset can stabilize
   before the full paint graph is writer-enabled.
