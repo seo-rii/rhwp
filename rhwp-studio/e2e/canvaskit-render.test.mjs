@@ -916,10 +916,16 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         },
       };
       let layoutDirectCalls = 0;
+      let fallbackOverlayScanCalls = 0;
       const originalRenderEquationBox = renderer.renderEquationBox;
+      const originalHasFallbackOverlayNode = renderer.hasFallbackOverlayNode;
       renderer.renderEquationBox = function renderEquationBoxProbe(...args) {
         layoutDirectCalls += 1;
         return originalRenderEquationBox.apply(this, args);
+      };
+      renderer.hasFallbackOverlayNode = function hasFallbackOverlayNodeProbe(...args) {
+        fallbackOverlayScanCalls += 1;
+        return originalHasFallbackOverlayNode.apply(this, args);
       };
       try {
         renderer.renderPage(probeTree, probeCanvas, 1);
@@ -928,9 +934,11 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
           cachedCanvasKitSvgImages: renderer.equationSvgImageCache?.size ?? 0,
           canvasKitCacheKeys: Array.from(renderer.equationSvgImageCache?.keys?.() ?? []),
           layoutDirectCalls,
+          fallbackOverlayScanCalls,
         };
       } finally {
         renderer.renderEquationBox = originalRenderEquationBox;
+        renderer.hasFallbackOverlayNode = originalHasFallbackOverlayNode;
       }
     }
 
@@ -1256,6 +1264,10 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     assert(
       nativeRouting.equationSvgNativeProbe?.layoutDirectCalls > 0,
       `equation layout direct calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.equationSvgNativeProbe?.fallbackOverlayScanCalls === 0,
+      `default fallback overlay scan calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
     );
     assert(
       nativeRouting.textBlobNativeProbe?.cacheSizeAfterSecond > 0,
