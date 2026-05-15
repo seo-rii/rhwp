@@ -2580,6 +2580,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           'svgGlyph',
           'text.glyphOutline.svgGlyph',
           reservedPayloadEnvelopes.svgGlyph,
+          true,
         ),
         true,
       );
@@ -2594,6 +2595,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               animationAllowed: true,
             },
           },
+          true,
         ),
         true,
       );
@@ -2827,7 +2829,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       v2: canvas2dGlyphOutlineProbe.reservedV2SvgPayload,
       invalidV2: canvas2dGlyphOutlineProbe.invalidReservedV2SvgPayload,
       reason: 'unsupportedSvgGlyph',
-      featureMissingExpected: true,
+      featureMissingExpected: false,
     },
   ];
   for (const family of reservedOutlinePayloadFamilies) {

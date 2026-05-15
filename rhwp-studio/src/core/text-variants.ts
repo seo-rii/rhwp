@@ -171,6 +171,7 @@ export interface LayerTextV2ValidationOptions {
   allowRicherGlyphOutlinePayloads?: boolean;
   allowColrv0ColorLayersPayloads?: boolean;
   allowBitmapGlyphPayloads?: boolean;
+  allowSvgGlyphPayloads?: boolean;
   allowMixedPerGlyphOrientation?: boolean;
   requiredFeatures?: readonly string[];
 }
@@ -300,6 +301,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
     requiredFeatures.has('text.glyphOutline.colorLayers')
     && requiredFeatures.has('text.glyphOutline.colorLayers.colrV0');
   const allowBitmapGlyphPayloads = requiredFeatures.has('text.glyphOutline.bitmapGlyph');
+  const allowSvgGlyphPayloads = requiredFeatures.has('text.glyphOutline.svgGlyph');
   const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
   const stack: LayerNode[] = [tree.root];
 
@@ -345,6 +347,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
         allowRicherGlyphOutlinePayloads,
         allowColrv0ColorLayersPayloads,
         allowBitmapGlyphPayloads,
+        allowSvgGlyphPayloads,
         allowMixedPerGlyphOrientation,
         requiredFeatures: tree.requiredFeatures,
       }));
@@ -676,14 +679,19 @@ export function validateLayerTextV2Op(
                 partIndex,
               });
             }
-            issues.push({
-              code: 'glyphOutlinePayloadKindFeatureMissing',
-              message: `Text variant '${variant.variantId}' uses reserved glyphOutline payload family '${payloadKind}' before its writer gate is implemented.`,
-              opId: op.id,
-              paintOrderSlotId: op.paintOrderSlotId,
-              variantId: variant.variantId,
-              partIndex,
-            });
+            if (
+              options.allowSvgGlyphPayloads !== true
+              || variant.requiredFeatures?.includes('text.glyphOutline.svgGlyph') !== true
+            ) {
+              issues.push({
+                code: 'glyphOutlinePayloadKindFeatureMissing',
+                message: `Text variant '${variant.variantId}' uses svgGlyph without the static sanitized vector writer gate.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
             if (part.payload.stroke) {
               issues.push({
                 code: 'glyphOutlineStrokeStyleUnsupported',

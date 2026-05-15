@@ -356,7 +356,29 @@ impl SvgRenderer {
                                             }
                                         }
                                         GlyphOutlinePayloadKind::SvgGlyph => {
-                                            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+                                            let has_svg_feature =
+                                                outline.variant.requires.iter().any(|feature| {
+                                                    feature == "text.glyphOutline.svgGlyph"
+                                                });
+                                            let supported = has_svg_feature
+                                                && outline.svg_glyph.as_ref().is_some_and(
+                                                    |payload| {
+                                                        payload.has_static_sanitized_contract()
+                                                            && resources
+                                                                .svg_fragment(
+                                                                    payload.vector_resource_id,
+                                                                )
+                                                                .is_some()
+                                                    },
+                                                );
+                                            if supported {
+                                                (true, None)
+                                            } else {
+                                                (
+                                                    false,
+                                                    Some(VariantRejectReason::UnsupportedSvgGlyph),
+                                                )
+                                            }
                                         }
                                     };
                                     if !payload_supported {
@@ -428,6 +450,10 @@ impl SvgRenderer {
                 }
                 if outline.payload_kind == GlyphOutlinePayloadKind::BitmapGlyph {
                     self.render_layer_glyph_outline_bitmap(*bbox, outline, resources);
+                    return;
+                }
+                if outline.payload_kind == GlyphOutlinePayloadKind::SvgGlyph {
+                    self.render_layer_glyph_outline_svg(*bbox, outline, resources);
                     return;
                 }
                 let transform = outline.placement.run_to_page;
@@ -1934,6 +1960,53 @@ impl SvgRenderer {
             escape_xml(&outline.variant.equivalence_group),
             escape_xml(&outline.variant.variant_id),
         ));
+    }
+
+    fn render_layer_glyph_outline_svg(
+        &mut self,
+        bbox: BoundingBox,
+        outline: &LayerGlyphOutlinePaint,
+        resources: &ResourceArena,
+    ) {
+        let Some(payload) = outline.svg_glyph.as_ref() else {
+            return;
+        };
+        if !payload.has_static_sanitized_contract() {
+            return;
+        }
+        let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
+            return;
+        };
+        let (Some(glyph_range), Some(source_range), Some(view_box)) = (
+            payload.glyph_range,
+            payload.source_range_utf8,
+            payload.view_box,
+        ) else {
+            return;
+        };
+
+        self.output.push_str(&format!(
+            "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\" overflow=\"visible\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-vector-resource-id=\"{}\" data-rhwp-security-mode=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed static sanitized SVG glyph</desc>",
+            bbox.x,
+            bbox.y,
+            bbox.width,
+            bbox.height,
+            view_box.x,
+            view_box.y,
+            view_box.width,
+            view_box.height,
+            glyph_range.start,
+            glyph_range.end,
+            outline.source.id.0,
+            source_range.start,
+            source_range.end,
+            payload.vector_resource_id.0,
+            payload.security_mode.as_str(),
+            escape_xml(&outline.variant.equivalence_group),
+            escape_xml(&outline.variant.variant_id),
+        ));
+        self.output.push_str(fragment);
+        self.output.push_str("</svg>\n");
     }
 
     fn render_layer_equation(
