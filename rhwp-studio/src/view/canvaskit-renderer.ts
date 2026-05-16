@@ -4,6 +4,7 @@ import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import {
   hasColrv0ColorLayersContract,
+  hasColrv1Stage1ColorGraphContract,
   hasStrictBitmapGlyphContract,
   isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
@@ -1018,6 +1019,10 @@ export class CanvasKitLayerRenderer {
     ]);
     try {
       if (payloadKind === 'colorLayers') {
+        if (op.colorLayers?.colorFormat === 'colrV1' && op.colorLayers.paintGraph) {
+          this.renderColorPaintGraph(canvas, op.colorLayers.paintGraph);
+          return;
+        }
         for (const layer of op.colorLayers?.layers ?? []) {
           if (!layer.commands || !layer.fill) {
             continue;
@@ -1075,6 +1080,66 @@ export class CanvasKitLayerRenderer {
     } finally {
       canvas.restore();
     }
+  }
+
+  private renderColorPaintGraph(
+    canvas: ReturnType<Surface['getCanvas']>,
+    graph: NonNullable<LayerGlyphOutlineOp['colorLayers']>['paintGraph'],
+  ): void {
+    if (!graph) {
+      return;
+    }
+    const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
+    const renderNode = (nodeId: number, stack: Set<number>): void => {
+      if (stack.has(nodeId)) {
+        return;
+      }
+      const node = nodesById.get(nodeId);
+      if (!node) {
+        return;
+      }
+      if (node.kind === 'solidPath') {
+        const solidPath = node.solidPath;
+        if (!solidPath) {
+          return;
+        }
+        const path = this.makePath(solidPath.commands);
+        this.applyPathFillRule(path, solidPath.fillRule);
+        const paint = this.makeResolvedColorPaint(solidPath.fill);
+        canvas.drawPath(path, paint);
+        paint.delete();
+        path.delete();
+        return;
+      }
+      if (node.kind === 'transform') {
+        const transformNode = node.transform;
+        if (!transformNode) {
+          return;
+        }
+        const transform = transformNode.transform;
+        canvas.save();
+        canvas.concat([
+          transform.a,
+          transform.c,
+          transform.e,
+          transform.b,
+          transform.d,
+          transform.f,
+          0,
+          0,
+          1,
+        ]);
+        stack.add(nodeId);
+        try {
+          renderNode(transformNode.childNodeId, stack);
+        } finally {
+          stack.delete(nodeId);
+          canvas.restore();
+        }
+      }
+    };
+
+    renderNode(graph.rootNodeId, new Set());
   }
 
   private renderBitmapGlyphOutline(
@@ -2577,10 +2642,14 @@ function glyphOutlinePayloadStatus(
 ): { supported: boolean; reason?: LayerTextVariantReplayStatus['reason'] } {
   const payloadKind = op.payloadKind ?? 'monochromeFill';
   if (payloadKind === 'colorLayers') {
+    const supportsColrv0 = op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
+      && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV0') === true
+      && hasColrv0ColorLayersContract(op);
+    const supportsColrv1 = op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
+      && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV1') === true
+      && hasColrv1Stage1ColorGraphContract(op);
     return {
-      supported: op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
-        && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV0') === true
-        && hasColrv0ColorLayersContract(op),
+      supported: supportsColrv0 || supportsColrv1,
       reason: 'unsupportedColorGlyph',
     };
   }

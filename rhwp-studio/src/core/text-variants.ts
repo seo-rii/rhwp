@@ -170,6 +170,7 @@ export interface LayerTextV2ValidationOptions {
   allowFallbackFree?: boolean;
   allowRicherGlyphOutlinePayloads?: boolean;
   allowColrv0ColorLayersPayloads?: boolean;
+  allowColrv1Stage1ColorGraphPayloads?: boolean;
   allowBitmapGlyphPayloads?: boolean;
   allowSvgGlyphPayloads?: boolean;
   allowMixedPerGlyphOrientation?: boolean;
@@ -300,6 +301,9 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const allowColrv0ColorLayersPayloads =
     requiredFeatures.has('text.glyphOutline.colorLayers')
     && requiredFeatures.has('text.glyphOutline.colorLayers.colrV0');
+  const allowColrv1Stage1ColorGraphPayloads =
+    requiredFeatures.has('text.glyphOutline.colorLayers')
+    && requiredFeatures.has('text.glyphOutline.colorLayers.colrV1');
   const allowBitmapGlyphPayloads = requiredFeatures.has('text.glyphOutline.bitmapGlyph');
   const allowSvgGlyphPayloads = requiredFeatures.has('text.glyphOutline.svgGlyph');
   const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph');
@@ -346,6 +350,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
         allowFallbackFree,
         allowRicherGlyphOutlinePayloads,
         allowColrv0ColorLayersPayloads,
+        allowColrv1Stage1ColorGraphPayloads,
         allowBitmapGlyphPayloads,
         allowSvgGlyphPayloads,
         allowMixedPerGlyphOrientation,
@@ -599,14 +604,16 @@ export function validateLayerTextV2Op(
                   partIndex,
                 });
               }
-              issues.push({
-                code: 'glyphOutlinePayloadKindFeatureMissing',
-                message: `Text variant '${variant.variantId}' uses colorLayers without the COLRv1 normalized graph writer gate.`,
-                opId: op.id,
-                paintOrderSlotId: op.paintOrderSlotId,
-                variantId: variant.variantId,
-                partIndex,
-              });
+              if (options.allowColrv1Stage1ColorGraphPayloads !== true) {
+                issues.push({
+                  code: 'glyphOutlinePayloadKindFeatureMissing',
+                  message: `Text variant '${variant.variantId}' uses colorLayers without the COLRv1 normalized graph writer gate.`,
+                  opId: op.id,
+                  paintOrderSlotId: op.paintOrderSlotId,
+                  variantId: variant.variantId,
+                  partIndex,
+                });
+              }
             } else if (
               options.allowColrv0ColorLayersPayloads !== true
               || !colrv0Feature

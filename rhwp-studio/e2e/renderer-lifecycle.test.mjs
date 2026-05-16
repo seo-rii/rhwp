@@ -2926,9 +2926,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && reservedColorPayloadSidecarReport?.outlineEligibility?.payloadSupported === false
       && reservedColorPayloadSidecarReport?.outlineEligibility?.reason === 'unsupportedColorGlyph'
       && !reservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
-      && reservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && !reservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && !reservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
-      && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && !invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
     `Canvas2D strict profile rejects reserved color outline payload=${JSON.stringify({
       report: reservedColorPayloadSidecarReport,
@@ -3408,6 +3408,54 @@ runTest('Renderer lifecycle', async ({ page }) => {
         }],
       },
     });
+    const colorV1Outline = outlineFor('canvaskit-outline-color-v1', {
+      payloadKind: 'colorLayers',
+      variant: variantFor('canvaskit-outline-color-v1', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.colorLayers', 'text.glyphOutline.colorLayers.colrV1'],
+        anchorOpId: 'op-text-canvaskit-outline-color-v1',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      colorLayers: {
+        colorFormat: 'colrV1',
+        sourceFontRef: { faceKey: 'fixture-face', glyphId: 42, colorFormat: 'colrV1' },
+        paletteRef: { index: 0, cpalDigest: 'fixture-cpal' },
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        layers: [],
+        paintGraph: {
+          rootNodeId: 1,
+          nodes: [
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 2,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 4, f: 4 },
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 42, colorFormat: 'colrV1' },
+            },
+            {
+              nodeId: 2,
+              kind: 'solidPath',
+              solidPath: {
+                commands: outlinePath.commands,
+                fill: { rgba: [0, 0.75, 0, 1] },
+                fillRule: 'nonzero',
+                sourceGlyphId: 77,
+                paletteIndex: 5,
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 77, paletteIndex: 5, colorFormat: 'colrV1' },
+            },
+          ],
+        },
+      },
+    });
     const bitmapOutline = outlineFor('canvaskit-outline-bitmap', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap', 'glyphOutline', {
@@ -3436,6 +3484,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
       stroke: await render(treeFor(strokeOutline)),
       colorLayers: await render(treeFor(colorOutline)),
+      colorLayersColrV1: await render(treeFor(colorV1Outline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
     };
   });
@@ -3464,6 +3513,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitColorReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects COLRv0 ColorLayers GlyphOutline=${JSON.stringify(canvaskitColorReport)}`,
   );
+  const canvaskitColorV1Report = canvaskitGlyphOutlineProbe.colorLayersColrV1?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'canvaskit-outline-color-v1',
+  );
+  assert(
+    canvaskitColorV1Report?.selectedVariantId === 'glyphOutline'
+      && canvaskitColorV1Report?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects COLRv1 stage-1 ColorLayers GlyphOutline=${JSON.stringify(canvaskitColorV1Report)}`,
+  );
   const canvaskitBitmapReport = canvaskitGlyphOutlineProbe.bitmapGlyph?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'canvaskit-outline-bitmap',
   );
@@ -3488,6 +3545,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitGlyphOutlineProbe.colorLayers.png,
     (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 100 && pixel.green < 120,
   );
+  const canvaskitColorV1GreenPixels = countPixels(
+    canvaskitGlyphOutlineProbe.colorLayersColrV1.png,
+    (pixel) => pixel.alpha > 32 && pixel.green > 120 && pixel.red < 100 && pixel.blue < 100,
+  );
   const canvaskitBitmapBlackPixels = canvaskitGlyphOutlineProbe.bitmapGlyph.blackPixels;
   assert(
     canvaskitMonochromeBlackPixels > 100 && canvaskitMonochromeRedPixels < 5,
@@ -3500,6 +3561,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitColorBluePixels > 100,
     `CanvasKit strict outline paints COLRv0 color layer blue=${canvaskitColorBluePixels}`,
+  );
+  assert(
+    canvaskitColorV1GreenPixels > 100,
+    `CanvasKit strict outline paints COLRv1 stage-1 color graph green=${canvaskitColorV1GreenPixels}`,
   );
   assert(
     canvaskitBitmapBlackPixels > 100,
