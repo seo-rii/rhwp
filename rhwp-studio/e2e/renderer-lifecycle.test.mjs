@@ -6097,6 +6097,122 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text visual line parity exact=${textVisualLineDiff.exactDiffPixels}, tolerant=${textVisualLineDiff.rawTolerantDiffPixels}, ink=${textVisualLineDiff.rawInkMaskDiffPixels}, max_channel_delta=${textVisualLineDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-decoration-options-parity');
+  const textDecorationOptionsParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const decoration = (kind, y, overrides = {}) => ({
+      type: 'textDecoration',
+      bbox: { x: 12, y, width: 66, height: 14 },
+      decoration: {
+        kind,
+        baseline: 10,
+        rotation: 0,
+        fontSize: 12,
+        ratio: 1,
+        color: '#202020',
+        shape: 0,
+        underline: kind === 'underline' ? 'bottom' : 'none',
+        emphasisDot: 0,
+        positions: [0, 16, 32, 48, 64],
+        ...overrides,
+      },
+    });
+    const tree = {
+      pageWidth: 92,
+      pageHeight: 64,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1916,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1916,
+        bounds: { x: 0, y: 0, width: 92, height: 64 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 92, height: 64 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          decoration('underline', 8, { underline: 'top' }),
+          decoration('strikethrough', 27, { rotation: -12 }),
+          decoration('emphasisDot', 48, {
+            bbox: { x: 12, y: 48, width: 66, height: 14 },
+            baseline: 10,
+            color: '#cc0066',
+            emphasisDot: 1,
+            fontSize: 16,
+          }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !textDecorationOptionsParityProbe.error,
+    textDecorationOptionsParityProbe.error || 'text decoration options parity probe available',
+  );
+  const textDecorationCanvas2dMagentaPixels = countPixels(
+    textDecorationOptionsParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.red > 150 && pixel.blue > 80 && pixel.green < 120,
+  );
+  const textDecorationCanvaskitMagentaPixels = countPixels(
+    textDecorationOptionsParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.red > 150 && pixel.blue > 80 && pixel.green < 120,
+  );
+  assert(
+    textDecorationCanvas2dMagentaPixels > 8 && textDecorationCanvaskitMagentaPixels > 8,
+    `text decoration emphasis dots draw magenta pixels canvas2d=${textDecorationCanvas2dMagentaPixels}, canvaskit=${textDecorationCanvaskitMagentaPixels}`,
+  );
+  const textDecorationOptionsDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textDecorationOptionsParityProbe.canvas2d),
+    pngBufferFromDataUrl(textDecorationOptionsParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-decoration-options-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.2,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textDecorationOptionsDiff.passed,
+    `text decoration options parity exact=${textDecorationOptionsDiff.exactDiffPixels}, tolerant=${textDecorationOptionsDiff.rawTolerantDiffPixels}, ink=${textDecorationOptionsDiff.rawInkMaskDiffPixels}, max_channel_delta=${textDecorationOptionsDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {

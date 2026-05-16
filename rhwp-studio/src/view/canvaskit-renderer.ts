@@ -873,25 +873,11 @@ export class CanvasKitLayerRenderer {
       }
 
       if (emphasisDot > 0) {
-        const dotChar =
-          emphasisDot === 1 ? '●'
-            : emphasisDot === 2 ? '○'
-              : emphasisDot === 3 ? 'ˇ'
-                : emphasisDot === 4 ? '˜'
-                  : emphasisDot === 5 ? '･'
-                    : emphasisDot === 6 ? '˸'
-                      : '';
-        if (dotChar) {
-          const dotSize = op.style.fontSize * 0.3;
-          const dotY = originY - op.style.fontSize * 1.05;
-          const dotObjects = this.makeTextObjects('Noto Sans KR', dotSize, false, false, op.style.color);
-          for (const position of op.positions.slice(0, -1)) {
-            const dotX = originX + position + (op.style.fontSize * ratio * 0.5);
-            canvas.drawText(dotChar, dotX, dotY, dotObjects.paint, dotObjects.font);
-          }
-          dotObjects.paint.delete();
-          dotObjects.font.delete();
-          dotObjects.typeface.delete();
+        const dotSize = op.style.fontSize * 0.3;
+        const dotY = originY - op.style.fontSize * 1.05;
+        for (const position of op.positions.slice(0, -1)) {
+          const dotX = originX + position + (op.style.fontSize * ratio * 0.5);
+          this.drawEmphasisMark(canvas, emphasisDot, dotX, dotY, dotSize, op.style.color);
         }
       }
 
@@ -1301,17 +1287,34 @@ export class CanvasKitLayerRenderer {
       if (!dotChar) {
         return;
       }
+      const dotSize = op.decoration.fontSize * 0.3;
+      const dotY = baselineY - op.decoration.fontSize * 1.05;
+      if (op.decoration.emphasisDot === 1 || op.decoration.emphasisDot === 2) {
+        for (const position of op.decoration.positions.slice(0, -1)) {
+          const dotX = originX + position + op.decoration.fontSize * op.decoration.ratio * 0.5;
+          this.drawEmphasisMark(canvas, op.decoration.emphasisDot, dotX, dotY, dotSize, op.decoration.color);
+        }
+        return;
+      }
       const dotObjects = this.makeTextObjects(
         'Noto Sans KR',
-        op.decoration.fontSize * 0.3,
+        dotSize,
         false,
         false,
         op.decoration.color,
       );
-      const dotY = baselineY - op.decoration.fontSize * 1.05;
       for (const position of op.decoration.positions.slice(0, -1)) {
         const dotX = originX + position + op.decoration.fontSize * op.decoration.ratio * 0.5;
-        canvas.drawText(dotChar, dotX, dotY, dotObjects.paint, dotObjects.font);
+        this.drawEmphasisMark(
+          canvas,
+          op.decoration.emphasisDot,
+          dotX,
+          dotY,
+          dotSize,
+          op.decoration.color,
+          dotChar,
+          dotObjects,
+        );
       }
       dotObjects.paint.delete();
       dotObjects.font.delete();
@@ -1330,6 +1333,46 @@ export class CanvasKitLayerRenderer {
       return;
     }
     drawDecoration(op.bbox.x, op.bbox.y + op.decoration.baseline);
+  }
+
+  private drawEmphasisMark(
+    canvas: ReturnType<Surface['getCanvas']>,
+    emphasisDot: number,
+    x: number,
+    baselineY: number,
+    size: number,
+    color: string,
+    fallbackChar?: string,
+    fallbackObjects?: { typeface: Typeface; font: Font; paint: Paint },
+  ): void {
+    if (emphasisDot === 1 || emphasisDot === 2) {
+      const radius = Math.max(size * 0.32, 1);
+      const centerY = baselineY - size * 0.45;
+      const paint = this.makePaint(color, emphasisDot === 1 ? 'fill' : 'stroke');
+      if (emphasisDot === 2) {
+        paint.setStrokeWidth(Math.max(size * 0.12, 0.75));
+      }
+      canvas.drawCircle(x, centerY, radius, paint);
+      paint.delete();
+      return;
+    }
+
+    const dotChar = fallbackChar
+      ?? (emphasisDot === 3 ? 'ˇ'
+        : emphasisDot === 4 ? '˜'
+          : emphasisDot === 5 ? '･'
+            : emphasisDot === 6 ? '˸'
+              : '');
+    if (!dotChar) {
+      return;
+    }
+    const objects = fallbackObjects ?? this.makeTextObjects('Noto Sans KR', size, false, false, color);
+    canvas.drawText(dotChar, x, baselineY, objects.paint, objects.font);
+    if (!fallbackObjects) {
+      objects.paint.delete();
+      objects.font.delete();
+      objects.typeface.delete();
+    }
   }
 
   private renderFootnoteMarker(canvas: ReturnType<Surface['getCanvas']>, op: Extract<LayerPaintOp, { type: 'footnoteMarker' }>): void {
