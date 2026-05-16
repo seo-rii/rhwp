@@ -4,8 +4,6 @@ import type { LayerImageOp, LayerPatternFill, PageLayerTree } from '@/core/types
 import {
   applyLayerImageEffectPixels,
   decodeBase64,
-  encodeBase64,
-  inferImageMime,
   resetLayerImageEffectDiagnostics,
   type LayerImageEffectDiagnostics,
   type LayerImageEffectSourceRect,
@@ -15,7 +13,6 @@ export class CanvasKitResourceCache {
   readonly imageCache = new Map<string, CanvasKitImage>();
   readonly mipmappedImageCache = new Map<string, CanvasKitImage>();
   readonly imageEffectCache = new Map<string, CanvasKitImage>();
-  readonly domImageCache = new Map<string, HTMLImageElement>();
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
   private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
     cacheHits: 0,
@@ -36,10 +33,7 @@ export class CanvasKitResourceCache {
   private resources: PageLayerTree['resources'] | null = null;
   private resourceTableId: number | null = null;
 
-  constructor(
-    private readonly canvasKit: CanvasKit,
-    private readonly scheduleRerender: () => void,
-  ) {}
+  constructor(private readonly canvasKit: CanvasKit) {}
 
   setResources(resources: PageLayerTree['resources'] | null | undefined): void {
     const nextResources = resources ?? null;
@@ -205,30 +199,6 @@ export class CanvasKitResourceCache {
     resetLayerImageEffectDiagnostics(this.imageEffectDiagnostics);
   }
 
-  domImage(resourceId?: number, base64?: string): HTMLImageElement | null {
-    const cacheKey = this.imageResourceCacheKey(resourceId, base64);
-    if (!cacheKey) {
-      return null;
-    }
-
-    const cached = this.domImageCache.get(cacheKey);
-    if (cached) {
-      return cached.complete && cached.naturalWidth > 0 ? cached : null;
-    }
-
-    const bytes = this.imageBytes(resourceId, base64);
-    if (!bytes) {
-      return null;
-    }
-    const image = new Image();
-    const mimeType = inferImageMime(bytes);
-    image.decoding = 'sync';
-    image.onload = () => this.scheduleRerender();
-    image.src = `data:${mimeType};base64,${typeof resourceId === 'number' ? encodeBase64(bytes) : base64}`;
-    this.domImageCache.set(cacheKey, image);
-    return image.complete && image.naturalWidth > 0 ? image : null;
-  }
-
   patternImage(pattern: LayerPatternFill): CanvasKitImage | null {
     const cacheKey = `${pattern.patternType}:${pattern.patternColor}:${pattern.backgroundColor}`;
     if (this.patternImageCache.has(cacheKey)) {
@@ -264,12 +234,6 @@ export class CanvasKitResourceCache {
     }
     this.imageCache.clear();
 
-    for (const image of this.domImageCache.values()) {
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-    }
-    this.domImageCache.clear();
   }
 
   private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
@@ -358,15 +322,6 @@ export class CanvasKitResourceCache {
       }
       image.delete();
       this.imageCache.delete(key);
-    }
-    for (const [key, image] of this.domImageCache) {
-      if (!key.startsWith('res:')) {
-        continue;
-      }
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-      this.domImageCache.delete(key);
     }
   }
 }

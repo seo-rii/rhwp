@@ -84,7 +84,6 @@ export class CanvasKitLayerRenderer {
   private readonly fontRegistry: CanvasKitFontRegistry;
   private readonly imageCache: Map<string, Image>;
   private readonly mipmappedImageCache: Map<string, Image>;
-  private readonly domImageCache: Map<string, HTMLImageElement>;
   private readonly patternImageCache: Map<string, Image | null>;
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new CanvasKitStaticPictureCache();
@@ -104,9 +103,7 @@ export class CanvasKitLayerRenderer {
   private readonly textVariantSelectionDiagnostics: LayerTextVariantGroupReport[] = [];
   private readonly textV2ValidationDiagnostics: LayerTextV2ValidationIssue[] = [];
   private collectTextVariantSelectionDiagnostics = false;
-  private rerenderScheduled = false;
   private disposed = false;
-  private asyncResourceReadyCallback: (() => void) | null = null;
 
   private constructor(
     private readonly canvasKit: CanvasKit,
@@ -114,12 +111,11 @@ export class CanvasKitLayerRenderer {
     private readonly renderMode: CanvasKitRenderMode,
     surfacePreference: CanvasKitSurfacePreference,
   ) {
-    this.resourceCache = new CanvasKitResourceCache(canvasKit, () => this.scheduleRerender());
+    this.resourceCache = new CanvasKitResourceCache(canvasKit);
     this.surfaceCache = new CanvasKitSurfaceCache(canvasKit, surfacePreference);
     this.fontRegistry = new CanvasKitFontRegistry(canvasKit, fontProvider);
     this.imageCache = this.resourceCache.imageCache;
     this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
-    this.domImageCache = this.resourceCache.domImageCache;
     this.patternImageCache = this.resourceCache.patternImageCache;
     this.fontAliases = this.fontRegistry.aliases;
   }
@@ -198,8 +194,8 @@ export class CanvasKitLayerRenderer {
     }
   }
 
-  setAsyncResourceReadyCallback(callback: (() => void) | null): void {
-    this.asyncResourceReadyCallback = callback;
+  setAsyncResourceReadyCallback(_callback: (() => void) | null): void {
+    void _callback;
   }
 
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
@@ -2072,24 +2068,6 @@ export class CanvasKitLayerRenderer {
     return layout.height > 0 ? layout.height : baseFontSize;
   }
 
-  private scheduleRerender(): void {
-    if (this.asyncResourceReadyCallback && this.lastTargetCanvas?.parentElement) {
-      this.asyncResourceReadyCallback();
-      return;
-    }
-    if (this.disposed || this.rerenderScheduled || !this.lastRenderedTree || !this.lastTargetCanvas) {
-      return;
-    }
-    this.rerenderScheduled = true;
-    requestAnimationFrame(() => {
-      this.rerenderScheduled = false;
-      if (this.disposed || !this.lastRenderedTree || !this.lastTargetCanvas) {
-        return;
-      }
-      this.renderPage(this.lastRenderedTree, this.lastTargetCanvas, this.lastScale);
-    });
-  }
-
   private strokeDashPattern(dash: string, width: number): number[] {
     const stroke = Math.max(width, 0.5);
     switch (dash) {
@@ -2523,8 +2501,6 @@ export class CanvasKitLayerRenderer {
     this.lastScale = 1;
     this.currentProfile = 'screen';
     this.currentLayerTreeCacheKey = 'none';
-    this.rerenderScheduled = false;
-    this.asyncResourceReadyCallback = null;
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
     this.currentClipEnabled = true;

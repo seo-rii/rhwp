@@ -1078,6 +1078,15 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       hasRenderFallbackOverlays: typeof renderer.renderFallbackOverlays === 'function',
       hasRenderFallbackOverlayNode: typeof renderer.renderFallbackOverlayNode === 'function',
     };
+    const nativeResourceCacheProbe = {
+      hasDomImageCache: renderer.resourceCache
+        ? Object.prototype.hasOwnProperty.call(renderer.resourceCache, 'domImageCache')
+        : false,
+      hasDomImageMethod: renderer.resourceCache
+        ? typeof renderer.resourceCache.domImage === 'function'
+        : false,
+      hasRendererDomImageCache: Object.prototype.hasOwnProperty.call(renderer, 'domImageCache'),
+    };
 
     const nativeDispatchProbe = (() => {
       const onePixelPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7s8AAAAASUVORK5CYII=';
@@ -1255,6 +1264,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       textProjectionNativeProbe,
       pageBackgroundImageNativeProbe,
       fallbackOverlayPassProbe,
+      nativeResourceCacheProbe,
       nativeDispatchProbe,
     };
   });
@@ -1304,6 +1314,12 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       && nativeRouting.fallbackOverlayPassProbe?.hasRenderFallbackOverlays === false
       && nativeRouting.fallbackOverlayPassProbe?.hasRenderFallbackOverlayNode === false,
     `fallback overlay pass methods removed=${JSON.stringify(nativeRouting.fallbackOverlayPassProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceCacheProbe?.hasDomImageCache === false
+      && nativeRouting.nativeResourceCacheProbe?.hasDomImageMethod === false
+      && nativeRouting.nativeResourceCacheProbe?.hasRendererDomImageCache === false,
+    `CanvasKit DOM image cache removed=${JSON.stringify(nativeRouting.nativeResourceCacheProbe)}`,
   );
   for (const [method, calls] of Object.entries(nativeRouting.nativeDispatchProbe?.calls ?? {})) {
     assert(calls > 0, `${method} native dispatch calls=${JSON.stringify(nativeRouting.nativeDispatchProbe)}`);
