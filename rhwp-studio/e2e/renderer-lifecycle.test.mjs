@@ -2354,52 +2354,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ];
       outlineVariant.parts[0].payload = {
         ...outlineVariant.parts[0].payload,
-        ...reservedPayloadEnvelopes.colorLayers,
-        colorLayers: {
-          ...reservedPayloadEnvelopes.colorLayers.colorLayers,
-          colorFormat: 'colrV1',
-          sourceFontRef: {
-            ...reservedPayloadEnvelopes.colorLayers.colorLayers.sourceFontRef,
-            colorFormat: 'colrV1',
-          },
-          layers: [],
-          paintGraph: {
-            rootNodeId: 1,
-            nodes: [
-              {
-                nodeId: 0,
-                kind: 'solidPath',
-                solidPath: {
-                  commands: [
-                    { type: 'moveTo', x: 0, y: 0 },
-                    { type: 'lineTo', x: 10, y: 0 },
-                    { type: 'closePath' },
-                  ],
-                  fill: { colorSpace: 'srgb', rgba: [0, 1, 0, 1] },
-                  fillRule: 'nonzero',
-                  sourceGlyphId: 42,
-                  paletteIndex: 0,
-                },
-                sourceRangeUtf8: { start: 0, end: 1 },
-                glyphRange: { start: 0, end: 1 },
-                sourceFontRef: {
-                  faceKey: 'fixture-face',
-                  glyphId: 42,
-                  paletteIndex: 0,
-                  colorFormat: 'colrV1',
-                },
-              },
-              {
-                nodeId: 1,
-                kind: 'transform',
-                transform: {
-                  childNodeId: 0,
-                  transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
-                },
-              },
-            ],
-          },
-        },
+        ...colrV1PayloadEnvelope,
       };
       return tree;
     };
@@ -2577,6 +2532,55 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     };
+    const colrV1PayloadEnvelope = {
+      ...reservedPayloadEnvelopes.colorLayers,
+      colorLayers: {
+        ...reservedPayloadEnvelopes.colorLayers.colorLayers,
+        colorFormat: 'colrV1',
+        sourceFontRef: {
+          ...reservedPayloadEnvelopes.colorLayers.colorLayers.sourceFontRef,
+          colorFormat: 'colrV1',
+        },
+        layers: [],
+        paintGraph: {
+          rootNodeId: 1,
+          nodes: [
+            {
+              nodeId: 0,
+              kind: 'solidPath',
+              solidPath: {
+                commands: [
+                  { type: 'moveTo', x: 0, y: 0 },
+                  { type: 'lineTo', x: 10, y: 0 },
+                  { type: 'lineTo', x: 10, y: 10 },
+                  { type: 'closePath' },
+                ],
+                fill: { colorSpace: 'srgb', rgba: [0, 1, 0, 1] },
+                fillRule: 'nonzero',
+                sourceGlyphId: 42,
+                paletteIndex: 0,
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: {
+                faceKey: 'fixture-face',
+                glyphId: 42,
+                paletteIndex: 0,
+                colorFormat: 'colrV1',
+              },
+            },
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 0,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+              },
+            },
+          ],
+        },
+      },
+    };
     const render = (tree, strict) => {
       const canvas = document.createElement('canvas');
       canvas.width = tree.pageWidth;
@@ -2627,6 +2631,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
               'text.outlineGlyph',
               'text.glyphOutline.colorLayers',
               'text.glyphOutline.colorLayers.colrV0',
+            ],
+          },
+        }),
+        true,
+      );
+      const colorV1PayloadSidecar = render(
+        makeTree(style, [], true, {
+          ...colrV1PayloadEnvelope,
+          variant: {
+            ...outlineVariant,
+            requires: [
+              'text.outlineGlyph',
+              'text.glyphOutline.colorLayers',
+              'text.glyphOutline.colorLayers.colrV1',
             ],
           },
         }),
@@ -2736,6 +2754,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         strokePayloadSidecar,
         unsupportedStrokePayloadSidecar,
         colorPayloadSidecar,
+        colorV1PayloadSidecar,
         reservedColorPayloadSidecar,
         reservedBitmapPayloadSidecar,
         reservedSvgPayloadSidecar,
@@ -2901,6 +2920,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && colorPayloadSidecarReport?.outlineEligibility?.replayEligible === true,
     `Canvas2D strict profile replays COLRv0 color layer outline payload=${JSON.stringify(
       colorPayloadSidecarReport,
+    )}`,
+  );
+  const colorV1PayloadSidecarReport = canvas2dGlyphOutlineProbe.colorV1PayloadSidecar?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    colorV1PayloadSidecarReport?.selectedVariantId === 'glyphOutline'
+      && colorV1PayloadSidecarReport?.rejectedVariants?.length === 0
+      && colorV1PayloadSidecarReport?.outlineEligibility?.payloadSupported === true
+      && colorV1PayloadSidecarReport?.outlineEligibility?.replayEligible === true,
+    `Canvas2D strict profile replays COLRv1 stage-1 color graph outline payload=${JSON.stringify(
+      colorV1PayloadSidecarReport,
     )}`,
   );
   const reservedColorPayloadSidecarReport = canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.diagnostics?.find(
@@ -3141,6 +3172,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvas2dGlyphOutlineProbe.strokePayloadSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
   );
+  const colorPayloadBluePixels = countPixels(
+    canvas2dGlyphOutlineProbe.colorPayloadSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 100 && pixel.green < 120,
+  );
+  const colorV1PayloadGreenPixels = countPixels(
+    canvas2dGlyphOutlineProbe.colorV1PayloadSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.green > 120 && pixel.red < 100 && pixel.blue < 100,
+  );
   const unsupportedStrokePayloadBlackPixels = countPixels(
     canvas2dGlyphOutlineProbe.unsupportedStrokePayloadSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
@@ -3160,6 +3199,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     strokePayloadBlackPixels > 100,
     `Canvas2D strict outline paints supported stroke payload black=${strokePayloadBlackPixels}`,
+  );
+  assert(
+    colorPayloadBluePixels > 20,
+    `Canvas2D strict outline paints COLRv0 color payload blue=${colorPayloadBluePixels}`,
+  );
+  assert(
+    colorV1PayloadGreenPixels > 20,
+    `Canvas2D strict outline paints COLRv1 stage-1 color graph green=${colorV1PayloadGreenPixels}`,
   );
   assert(
     unsupportedStrokePayloadBlackPixels < 20,

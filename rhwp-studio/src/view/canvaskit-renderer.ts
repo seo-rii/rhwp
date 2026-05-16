@@ -1020,7 +1020,57 @@ export class CanvasKitLayerRenderer {
     try {
       if (payloadKind === 'colorLayers') {
         if (op.colorLayers?.colorFormat === 'colrV1' && op.colorLayers.paintGraph) {
-          this.renderColorPaintGraph(canvas, op.colorLayers.paintGraph);
+          const graph = op.colorLayers.paintGraph;
+          const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
+          const renderNode = (nodeId: number, stack: Set<number>): void => {
+            if (stack.has(nodeId)) {
+              return;
+            }
+            const node = nodesById.get(nodeId);
+            if (!node) {
+              return;
+            }
+            if (node.kind === 'solidPath') {
+              const solidPath = node.solidPath;
+              if (!solidPath) {
+                return;
+              }
+              const path = this.makePath(solidPath.commands);
+              this.applyPathFillRule(path, solidPath.fillRule);
+              const paint = this.makeResolvedColorPaint(solidPath.fill);
+              canvas.drawPath(path, paint);
+              paint.delete();
+              path.delete();
+              return;
+            }
+            if (node.kind === 'transform') {
+              const transformNode = node.transform;
+              if (!transformNode) {
+                return;
+              }
+              const transform = transformNode.transform;
+              canvas.save();
+              canvas.concat([
+                transform.a,
+                transform.c,
+                transform.e,
+                transform.b,
+                transform.d,
+                transform.f,
+                0,
+                0,
+                1,
+              ]);
+              stack.add(nodeId);
+              try {
+                renderNode(transformNode.childNodeId, stack);
+              } finally {
+                stack.delete(nodeId);
+                canvas.restore();
+              }
+            }
+          };
+          renderNode(graph.rootNodeId, new Set());
           return;
         }
         for (const layer of op.colorLayers?.layers ?? []) {
@@ -1080,66 +1130,6 @@ export class CanvasKitLayerRenderer {
     } finally {
       canvas.restore();
     }
-  }
-
-  private renderColorPaintGraph(
-    canvas: ReturnType<Surface['getCanvas']>,
-    graph: NonNullable<LayerGlyphOutlineOp['colorLayers']>['paintGraph'],
-  ): void {
-    if (!graph) {
-      return;
-    }
-    const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
-    const renderNode = (nodeId: number, stack: Set<number>): void => {
-      if (stack.has(nodeId)) {
-        return;
-      }
-      const node = nodesById.get(nodeId);
-      if (!node) {
-        return;
-      }
-      if (node.kind === 'solidPath') {
-        const solidPath = node.solidPath;
-        if (!solidPath) {
-          return;
-        }
-        const path = this.makePath(solidPath.commands);
-        this.applyPathFillRule(path, solidPath.fillRule);
-        const paint = this.makeResolvedColorPaint(solidPath.fill);
-        canvas.drawPath(path, paint);
-        paint.delete();
-        path.delete();
-        return;
-      }
-      if (node.kind === 'transform') {
-        const transformNode = node.transform;
-        if (!transformNode) {
-          return;
-        }
-        const transform = transformNode.transform;
-        canvas.save();
-        canvas.concat([
-          transform.a,
-          transform.c,
-          transform.e,
-          transform.b,
-          transform.d,
-          transform.f,
-          0,
-          0,
-          1,
-        ]);
-        stack.add(nodeId);
-        try {
-          renderNode(transformNode.childNodeId, stack);
-        } finally {
-          stack.delete(nodeId);
-          canvas.restore();
-        }
-      }
-    };
-
-    renderNode(graph.rootNodeId, new Set());
   }
 
   private renderBitmapGlyphOutline(

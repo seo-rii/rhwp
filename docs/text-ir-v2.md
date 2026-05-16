@@ -704,7 +704,7 @@ The current validator keeps this conservative:
   has a strict profile. Strict replay currently accepts the
   `monochromeFill` profile, the initial `monochromeFillStroke` stroke subset,
   the gated resolved `ColorLayers.ColrV0` layer subset, the gated
-  `ColorLayers.ColrV1` stage-1 graph subset for CanvasKit, and the gated
+  `ColorLayers.ColrV1` stage-1 graph subset for CanvasKit/Canvas2D, and the gated
   BitmapGlyph image-strike subset for CanvasKit and SVG/Canvas2D.
   Shadow, emboss/engrave, underline/strike/emphasis, tab leaders, ratio/shade
   adjustments, color glyphs, bitmap glyphs, and SVG-in-font glyphs are not
@@ -932,7 +932,7 @@ that every reserved writer is enabled:
 | `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
 | `GlyphOutline` `colorLayers.colrV0` | V2 feature addition; strict export supports resolved-layer payloads, and native producer-side COLR/CPAL decoding can generate the resolved layers |
 | `GlyphOutline` `bitmapGlyph` | V2 feature addition; CanvasKit and SVG/Canvas2D strict replay support one producer-selected image strike |
-| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; CanvasKit strict replay supports the stage-1 solid-path + transform graph subset |
+| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; CanvasKit/Canvas2D strict replay supports the stage-1 solid-path + transform graph subset |
 | `GlyphOutline` `svgGlyph` | V2 feature addition; SVG strict replay supports sanitized static vector resources |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
 | CanvasKit variation and TTC/OTC strict replay | Blocked until exact construction fixtures pass |
@@ -1077,7 +1077,7 @@ flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.
 `GlyphOutline.payloadKind` currently implements `monochromeFill`, the
 feature-gated `monochromeFillStroke` subset, the feature-gated
-`ColorLayers.ColrV0` resolved-layer subset, and the CanvasKit
+`ColorLayers.ColrV0` resolved-layer subset, and the CanvasKit/Canvas2D
 `ColorLayers.ColrV1` stage-1 solid-path + transform graph subset; the field
 also implements the feature-gated `BitmapGlyph` image-strike subset for
 CanvasKit and SVG/Canvas2D strict replay.

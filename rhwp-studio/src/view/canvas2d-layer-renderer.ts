@@ -1,5 +1,6 @@
 import {
   hasColrv0ColorLayersContract,
+  hasColrv1Stage1ColorGraphContract,
   hasStrictBitmapGlyphContract,
   isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
@@ -23,7 +24,6 @@ import type {
   LayerImageOp,
   LayerLeafNode,
   LayerLineOp,
-  LayerLineStyle,
   LayerNode,
   LayerPageBackgroundOp,
   LayerPaintOp,
@@ -348,6 +348,56 @@ export class Canvas2DLayerRenderer {
           );
           ctx.fillStyle = op.paintStyle.color;
           if (payloadKind === 'colorLayers') {
+            if (op.colorLayers?.colorFormat === 'colrV1' && op.colorLayers.paintGraph) {
+              const graph = op.colorLayers.paintGraph;
+              const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
+              const renderNode = (nodeId: number, stack: Set<number>): void => {
+                if (stack.has(nodeId)) {
+                  return;
+                }
+                const node = nodesById.get(nodeId);
+                if (!node) {
+                  return;
+                }
+                if (node.kind === 'solidPath') {
+                  const solidPath = node.solidPath;
+                  if (!solidPath) {
+                    return;
+                  }
+                  ctx.beginPath();
+                  appendPathCommands(ctx, solidPath.commands);
+                  ctx.fillStyle = resolvedColorToCss(solidPath.fill);
+                  ctx.fill(solidPath.fillRule);
+                  return;
+                }
+                if (node.kind === 'transform') {
+                  const transformNode = node.transform;
+                  if (!transformNode) {
+                    return;
+                  }
+                  const transform = transformNode.transform;
+                  ctx.save();
+                  ctx.transform(
+                    transform.a,
+                    transform.b,
+                    transform.c,
+                    transform.d,
+                    transform.e,
+                    transform.f,
+                  );
+                  stack.add(nodeId);
+                  try {
+                    renderNode(transformNode.childNodeId, stack);
+                  } finally {
+                    stack.delete(nodeId);
+                    ctx.restore();
+                  }
+                }
+              };
+              renderNode(graph.rootNodeId, new Set());
+              ctx.restore();
+              return;
+            }
             for (const layer of op.colorLayers?.layers ?? []) {
               if (!layer.commands || !layer.fill) {
                 continue;
@@ -1754,10 +1804,14 @@ function glyphOutlinePayloadStatus(
 ): { supported: boolean; reason?: LayerTextVariantReplayStatus['reason'] } {
   const payloadKind = op.payloadKind ?? 'monochromeFill';
   if (payloadKind === 'colorLayers') {
+    const supportsColrv0 = op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
+      && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV0') === true
+      && hasColrv0ColorLayersContract(op);
+    const supportsColrv1 = op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
+      && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV1') === true
+      && hasColrv1Stage1ColorGraphContract(op);
     return {
-      supported: op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
-        && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV0') === true
-        && hasColrv0ColorLayersContract(op),
+      supported: supportsColrv0 || supportsColrv1,
       reason: 'unsupportedColorGlyph',
     };
   }
