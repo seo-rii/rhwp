@@ -2582,7 +2582,7 @@ export class CanvasKitLayerRenderer {
       return null;
     }
 
-    const paint = this.makePaint(fillColor ?? '#ffffff', 'fill', opacity);
+    const paint = this.makePaint(fillColor ?? '#ffffff', 'fill', shader ? opacity : opacity * opacity);
     if (shader) {
       paint.setShader(shader);
       paint.setAlphaf(opacity);

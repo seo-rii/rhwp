@@ -4411,6 +4411,116 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `vector paint parity exact=${vectorPaintDiff.exactDiffPixels}, tolerant=${vectorPaintDiff.rawTolerantDiffPixels}, ink=${vectorPaintDiff.rawInkMaskDiffPixels}, max_channel_delta=${vectorPaintDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-shape-opacity-parity');
+  const shapeOpacityParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const transform = { rotation: 0, horzFlip: false, vertFlip: false };
+    const style = (fillColor) => ({
+      fillColor,
+      strokeColor: null,
+      strokeWidth: 0,
+      strokeDash: 'solid',
+      opacity: 0.5,
+      shadow: null,
+    });
+    const tree = {
+      pageWidth: 64,
+      pageHeight: 28,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1912,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1912,
+        bounds: { x: 0, y: 0, width: 64, height: 28 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 64, height: 28 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'rectangle',
+            bbox: { x: 4, y: 4, width: 24, height: 16 },
+            cornerRadius: 0,
+            style: style('#0000ff'),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'rectangle',
+            bbox: { x: 36, y: 4, width: 24, height: 16 },
+            cornerRadius: 0,
+            style: style(null),
+            gradient: {
+              gradientType: 0,
+              angle: 0,
+              centerX: 50,
+              centerY: 50,
+              colors: ['#000000', '#000000'],
+              positions: [0, 1],
+            },
+            transform,
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!shapeOpacityParityProbe.error, shapeOpacityParityProbe.error || 'shape opacity parity probe available');
+  const channelDelta = (a, b) => Math.max(
+    Math.abs(a.red - b.red),
+    Math.abs(a.green - b.green),
+    Math.abs(a.blue - b.blue),
+    Math.abs(a.alpha - b.alpha),
+  );
+  const solidOpacityCanvas2d = pixelAt(shapeOpacityParityProbe.canvas2d, 12, 12);
+  const solidOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 12, 12);
+  const shaderOpacityCanvas2d = pixelAt(shapeOpacityParityProbe.canvas2d, 44, 12);
+  const shaderOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 44, 12);
+  assert(
+    channelDelta(solidOpacityCanvas2d, solidOpacityCanvaskit) <= 4,
+    `solid shape opacity parity canvas2d=${JSON.stringify(solidOpacityCanvas2d)}, canvaskit=${JSON.stringify(solidOpacityCanvaskit)}`,
+  );
+  assert(
+    channelDelta(shaderOpacityCanvas2d, shaderOpacityCanvaskit) <= 4,
+    `shader shape opacity parity canvas2d=${JSON.stringify(shaderOpacityCanvas2d)}, canvaskit=${JSON.stringify(shaderOpacityCanvaskit)}`,
+  );
+
   setTestCase('canvas-layer-svg-arc-path-parity');
   const svgArcPathParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
