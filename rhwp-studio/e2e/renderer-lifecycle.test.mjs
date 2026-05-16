@@ -3937,6 +3937,110 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-form-object-parity');
+  const formObjectParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const makeForm = (formType, bbox, overrides = {}) => ({
+      type: 'formObject',
+      bbox,
+      formType,
+      caption: '',
+      text: '',
+      foreColor: '#202020',
+      backColor: '#f7f7f7',
+      value: 0,
+      enabled: true,
+      ...overrides,
+    });
+    const tree = {
+      pageWidth: 72,
+      pageHeight: 36,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1903,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1903,
+        bounds: { x: 0, y: 0, width: 72, height: 36 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 72, height: 36 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          makeForm('pushButton', { x: 2, y: 2, width: 22, height: 10 }, { backColor: '#d6d6d6' }),
+          makeForm('checkBox', { x: 28, y: 2, width: 14, height: 10 }, { value: 1 }),
+          makeForm('radioButton', { x: 46, y: 2, width: 14, height: 10 }, { value: 1 }),
+          makeForm('comboBox', { x: 2, y: 18, width: 30, height: 12 }),
+          makeForm('edit', { x: 38, y: 18, width: 24, height: 12 }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!formObjectParityProbe.error, formObjectParityProbe.error || 'form object parity probe available');
+  const formObjectCanvas2dInkPixels = countPixels(
+    formObjectParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 240 || pixel.green < 240 || pixel.blue < 240),
+  );
+  const formObjectCanvaskitInkPixels = countPixels(
+    formObjectParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 240 || pixel.green < 240 || pixel.blue < 240),
+  );
+  assert(
+    formObjectCanvas2dInkPixels > 200 && formObjectCanvaskitInkPixels > 200,
+    `form object replay draws geometry canvas2d=${formObjectCanvas2dInkPixels}, canvaskit=${formObjectCanvaskitInkPixels}`,
+  );
+  const formObjectDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(formObjectParityProbe.canvas2d),
+    pngBufferFromDataUrl(formObjectParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-form-object-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    formObjectDiff.passed,
+    `form object parity exact=${formObjectDiff.exactDiffPixels}, tolerant=${formObjectDiff.rawTolerantDiffPixels}, ink=${formObjectDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {
