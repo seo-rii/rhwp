@@ -2296,13 +2296,6 @@ export class CanvasKitLayerRenderer {
         if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
           return false;
         }
-        if (
-          this.renderMode === 'compat'
-          && op.type === 'pageBackground'
-          && op.image
-        ) {
-          return true;
-        }
         if (op.type === 'image') {
           return this.shouldOverlayImage(op);
         }
@@ -2355,16 +2348,6 @@ export class CanvasKitLayerRenderer {
       const selectedTextVariants = this.selectLayerTextVariantSets(ops);
       for (const op of ops) {
         if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
-          continue;
-        }
-        if (
-          this.renderMode === 'compat'
-          && op.type === 'pageBackground'
-          && op.image
-        ) {
-          this.withCurrentOverlayClip(ctx, 0, () => {
-            this.renderPageBackgroundImageOverlay(ctx, op);
-          }, op.bbox);
           continue;
         }
         if (op.type === 'image' && this.shouldOverlayImage(op)) {

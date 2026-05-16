@@ -1068,6 +1068,74 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       }
     }
 
+    let pageBackgroundImageNativeProbe = null;
+    if (
+      typeof renderer.renderPageBackground === 'function'
+      && typeof renderer.renderPageBackgroundImageOverlay === 'function'
+    ) {
+      const sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = 4;
+      sourceCanvas.height = 4;
+      const sourceCtx = sourceCanvas.getContext('2d');
+      sourceCtx.fillStyle = '#4488ff';
+      sourceCtx.fillRect(0, 0, 4, 4);
+      const pageBackgroundBase64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 32;
+      probeCanvas.height = 32;
+      const probeTree = {
+        pageWidth: 32,
+        pageHeight: 32,
+        profile: 'screen',
+        root: {
+          kind: 'leaf',
+          bounds: { x: 0, y: 0, width: 32, height: 32 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 32, height: 32 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+            image: {
+              fillMode: 'fitToSize',
+              base64: pageBackgroundBase64,
+            },
+          }],
+        },
+        resources: {
+          tableId: 903,
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+        },
+      };
+      let nativePageBackgroundCalls = 0;
+      let overlayPageBackgroundImageCalls = 0;
+      const originalRenderPageBackground = renderer.renderPageBackground;
+      const originalRenderPageBackgroundImageOverlay = renderer.renderPageBackgroundImageOverlay;
+      renderer.renderPageBackground = function renderPageBackgroundProbe(...args) {
+        nativePageBackgroundCalls += 1;
+        return originalRenderPageBackground.apply(this, args);
+      };
+      renderer.renderPageBackgroundImageOverlay = function renderPageBackgroundImageOverlayProbe(...args) {
+        overlayPageBackgroundImageCalls += 1;
+        return originalRenderPageBackgroundImageOverlay.apply(this, args);
+      };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        pageBackgroundImageNativeProbe = {
+          nativePageBackgroundCalls,
+          overlayPageBackgroundImageCalls,
+        };
+      } finally {
+        renderer.renderPageBackground = originalRenderPageBackground;
+        renderer.renderPageBackgroundImageOverlay = originalRenderPageBackgroundImageOverlay;
+      }
+    }
+
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
       hasLayerTreeValueWithProfileApi: typeof wasmDoc?.getPageLayerTreeValueWithProfile === 'function',
@@ -1292,6 +1360,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       equationSvgNativeProbe,
       textBlobNativeProbe,
       textProjectionNativeProbe,
+      pageBackgroundImageNativeProbe,
       footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
         type: 'footnoteMarker',
         text: '1)',
@@ -1329,6 +1398,14 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(
     nativeRouting.textProjectionNativeProbe?.overlayTextRunCalls === 0,
     `vertical/invalid TextRun overlay calls=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.pageBackgroundImageNativeProbe?.nativePageBackgroundCalls === 1,
+    `page background image native calls=${JSON.stringify(nativeRouting.pageBackgroundImageNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.pageBackgroundImageNativeProbe?.overlayPageBackgroundImageCalls === 0,
+    `page background image overlay calls=${JSON.stringify(nativeRouting.pageBackgroundImageNativeProbe)}`,
   );
   assert(nativeRouting.simpleLineUsesOverlay === false, `simple line overlay=${nativeRouting.simpleLineUsesOverlay}`);
   assert(nativeRouting.simpleRectangleUsesOverlay === false, `simple rectangle overlay=${nativeRouting.simpleRectangleUsesOverlay}`);
