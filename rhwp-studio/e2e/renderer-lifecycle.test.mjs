@@ -4186,6 +4186,131 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `vector paint parity exact=${vectorPaintDiff.exactDiffPixels}, tolerant=${vectorPaintDiff.rawTolerantDiffPixels}, ink=${vectorPaintDiff.rawInkMaskDiffPixels}, max_channel_delta=${vectorPaintDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-visual-line-parity');
+  const textVisualLineParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const decoration = (kind, y, overrides = {}) => ({
+      type: 'textDecoration',
+      bbox: { x: 8, y, width: 56, height: 12 },
+      decoration: {
+        kind,
+        baseline: 8,
+        rotation: 0,
+        fontSize: 10,
+        ratio: 1,
+        color: '#1f1f1f',
+        shape: 0,
+        underline: kind === 'underline' ? 'bottom' : 'none',
+        emphasisDot: 0,
+        positions: [0, 14, 28, 42, 56],
+        ...overrides,
+      },
+    });
+    const tree = {
+      pageWidth: 80,
+      pageHeight: 48,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1905,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1905,
+        bounds: { x: 0, y: 0, width: 80, height: 48 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 80, height: 48 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'tabLeader',
+            bbox: { x: 8, y: 4, width: 56, height: 8 },
+            leader: { startX: 0, endX: 56, fillType: 0 },
+            color: '#111111',
+            fontSize: 10,
+            baseline: 4,
+          },
+          {
+            type: 'tabLeader',
+            bbox: { x: 8, y: 13, width: 56, height: 8 },
+            leader: { startX: 0, endX: 56, fillType: 2 },
+            color: '#222222',
+            fontSize: 10,
+            baseline: 4,
+          },
+          decoration('underline', 22),
+          decoration('strikethrough', 34),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !textVisualLineParityProbe.error,
+    textVisualLineParityProbe.error || 'text visual line parity probe available',
+  );
+  const textVisualLineCanvas2dInkPixels = countPixels(
+    textVisualLineParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 252 || pixel.green < 252 || pixel.blue < 252),
+  );
+  const textVisualLineCanvaskitInkPixels = countPixels(
+    textVisualLineParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 252 || pixel.green < 252 || pixel.blue < 252),
+  );
+  assert(
+    textVisualLineCanvas2dInkPixels > 150 && textVisualLineCanvaskitInkPixels > 150,
+    `text visual line replay draws geometry canvas2d=${textVisualLineCanvas2dInkPixels}, canvaskit=${textVisualLineCanvaskitInkPixels}`,
+  );
+  const textVisualLineDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textVisualLineParityProbe.canvas2d),
+    pngBufferFromDataUrl(textVisualLineParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-visual-line-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.04,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textVisualLineDiff.passed,
+    `text visual line parity exact=${textVisualLineDiff.exactDiffPixels}, tolerant=${textVisualLineDiff.rawTolerantDiffPixels}, ink=${textVisualLineDiff.rawInkMaskDiffPixels}, max_channel_delta=${textVisualLineDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {
