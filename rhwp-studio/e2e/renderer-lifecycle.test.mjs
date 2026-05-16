@@ -4758,6 +4758,156 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `image placement parity exact=${imagePlacementDiff.exactDiffPixels}, tolerant=${imagePlacementDiff.rawTolerantDiffPixels}, ink=${imagePlacementDiff.rawInkMaskDiffPixels}, max_channel_delta=${imagePlacementDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-transformed-image-parity');
+  const transformedImageParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 10;
+    sourceCanvas.height = 8;
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) {
+      return { error: 'source canvas unavailable' };
+    }
+    sourceCtx.fillStyle = '#f04b2f';
+    sourceCtx.fillRect(0, 0, 5, 8);
+    sourceCtx.fillStyle = '#1c9e46';
+    sourceCtx.fillRect(5, 0, 5, 4);
+    sourceCtx.fillStyle = '#2557d9';
+    sourceCtx.fillRect(5, 4, 5, 4);
+    sourceCtx.fillStyle = '#101010';
+    sourceCtx.fillRect(1, 1, 8, 1);
+    sourceCtx.fillRect(8, 1, 1, 6);
+    sourceCtx.fillStyle = '#ffffff';
+    sourceCtx.fillRect(3, 3, 2, 2);
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const tree = {
+      pageWidth: 82,
+      pageHeight: 54,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1910,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1910,
+        bounds: { x: 0, y: 0, width: 82, height: 54 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 82, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'image',
+            bbox: { x: 9, y: 7, width: 20, height: 16 },
+            base64,
+            fillMode: 'fitToSize',
+            effect: 'realPic',
+            originalSize: { width: 10, height: 8 },
+            transform: { rotation: 25, horzFlip: false, vertFlip: false },
+          },
+          {
+            type: 'image',
+            bbox: { x: 46, y: 7, width: 20, height: 16 },
+            base64,
+            fillMode: 'fitToSize',
+            effect: 'realPic',
+            originalSize: { width: 10, height: 8 },
+            transform: { rotation: -18, horzFlip: true, vertFlip: false },
+          },
+          {
+            type: 'image',
+            bbox: { x: 28, y: 30, width: 22, height: 18 },
+            base64,
+            fillMode: 'fitToSize',
+            effect: 'realPic',
+            originalSize: { width: 10, height: 8 },
+            transform: { rotation: 12, horzFlip: false, vertFlip: true },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        renderer.renderPage(tree, canvas, 1);
+        await nextFrame();
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let inkPixels = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          if (pixels[index + 3] > 32 && (pixels[index] < 245 || pixels[index + 1] < 245 || pixels[index + 2] < 245)) {
+            inkPixels += 1;
+          }
+        }
+        if (inkPixels > 850) {
+          break;
+        }
+      }
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!transformedImageParityProbe.error, transformedImageParityProbe.error || 'transformed image parity probe available');
+  const transformedImageCanvas2dInkPixels = countPixels(
+    transformedImageParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const transformedImageCanvaskitInkPixels = countPixels(
+    transformedImageParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    transformedImageCanvas2dInkPixels > 850 && transformedImageCanvaskitInkPixels > 850,
+    `transformed image replay draws direct images canvas2d=${transformedImageCanvas2dInkPixels}, canvaskit=${transformedImageCanvaskitInkPixels}`,
+  );
+  const transformedImageDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(transformedImageParityProbe.canvas2d),
+    pngBufferFromDataUrl(transformedImageParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-transformed-image-parity',
+      ignoreChannelDelta: 18,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.04,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    transformedImageDiff.passed,
+    `transformed image parity exact=${transformedImageDiff.exactDiffPixels}, tolerant=${transformedImageDiff.rawTolerantDiffPixels}, ink=${transformedImageDiff.rawInkMaskDiffPixels}, max_channel_delta=${transformedImageDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-visual-line-parity');
   const textVisualLineParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
