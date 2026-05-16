@@ -273,9 +273,9 @@ from Canvas2D because it is closer to native Skia semantics, the fixture must
 label that as a Skia strict replay improvement rather than a Canvas2D
 compatibility match.
 The current browser matrix includes direct Canvas2D-vs-CanvasKit parity probes
-for clip scopes, core vector paint ops, form-object geometry, crop-aware image
-effects, tab leader and decoration line visual ops, and the strict GlyphOutline
-COLRv1-stage-1/BitmapGlyph payloads.
+for clip scopes, core vector paint ops, form-object geometry, image placement
+and tile fill modes, crop-aware image effects, tab leader and decoration line
+visual ops, and the strict GlyphOutline COLRv1-stage-1/BitmapGlyph payloads.
 
 This policy keeps Canvas2D as the compatibility reference while preventing new
 CanvasKit work from adding browser-canvas dependencies that would block a
