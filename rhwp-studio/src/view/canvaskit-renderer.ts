@@ -1486,7 +1486,7 @@ export class CanvasKitLayerRenderer {
   private renderRectangle(canvas: ReturnType<Surface['getCanvas']>, op: LayerRectangleOp): void {
     this.withTransform(canvas, op.bbox, op.transform, () => {
       const fill = this.makeShapeFillPaint(op.bbox, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
-      const strokePaint = op.style.strokeColor ? this.makeLinePaint(op.style.strokeColor, op.style.strokeWidth, op.style.strokeDash, op.style.opacity) : null;
+      const strokePaint = op.style.strokeColor ? this.makeLinePaint(op.style.strokeColor, op.style.strokeWidth, op.style.strokeDash) : null;
       const rect = this.toRect(op.bbox);
       const drawRect = (paint: Paint) => {
         if (op.cornerRadius > 0) {
@@ -1522,7 +1522,7 @@ export class CanvasKitLayerRenderer {
   private renderEllipse(canvas: ReturnType<Surface['getCanvas']>, op: LayerEllipseOp): void {
     this.withTransform(canvas, op.bbox, op.transform, () => {
       const fill = this.makeShapeFillPaint(op.bbox, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
-      const strokePaint = op.style.strokeColor ? this.makeLinePaint(op.style.strokeColor, op.style.strokeWidth, op.style.strokeDash, op.style.opacity) : null;
+      const strokePaint = op.style.strokeColor ? this.makeLinePaint(op.style.strokeColor, op.style.strokeWidth, op.style.strokeDash) : null;
       const oval = this.toRect(op.bbox);
       const drawOval = (paint: Paint) => canvas.drawOval(oval, paint);
 
@@ -1554,7 +1554,7 @@ export class CanvasKitLayerRenderer {
       const path = this.makePath(op.commands);
       const pathBounds = computePathPaintBounds(op.commands, op.bbox);
       const fill = this.makeShapeFillPaint(pathBounds, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
-      const strokePaint = op.style.strokeColor ? this.makeLinePaint(op.style.strokeColor, op.style.strokeWidth, op.style.strokeDash, op.style.opacity) : null;
+      const strokePaint = op.style.strokeColor ? this.makeLinePaint(op.style.strokeColor, op.style.strokeWidth, op.style.strokeDash) : null;
       const drawPath = (paint: Paint) => canvas.drawPath(path, paint);
 
       if (op.style.shadow) {

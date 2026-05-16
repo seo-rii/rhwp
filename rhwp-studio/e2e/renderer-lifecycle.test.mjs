@@ -4420,7 +4420,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       return { error: 'renderers unavailable' };
     }
     const transform = { rotation: 0, horzFlip: false, vertFlip: false };
-    const style = (fillColor) => ({
+    const fillStyle = (fillColor) => ({
       fillColor,
       strokeColor: null,
       strokeWidth: 0,
@@ -4428,8 +4428,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
       opacity: 0.5,
       shadow: null,
     });
+    const strokeStyle = {
+      fillColor: null,
+      strokeColor: '#ff0000',
+      strokeWidth: 4,
+      strokeDash: 'solid',
+      opacity: 0.5,
+      shadow: null,
+    };
     const tree = {
-      pageWidth: 64,
+      pageWidth: 96,
       pageHeight: 28,
       profile: 'screen',
       outputOptions: {
@@ -4455,15 +4463,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1912,
-        bounds: { x: 0, y: 0, width: 64, height: 28 },
+        bounds: { x: 0, y: 0, width: 96, height: 28 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 64, height: 28 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 96, height: 28 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'rectangle',
             bbox: { x: 4, y: 4, width: 24, height: 16 },
             cornerRadius: 0,
-            style: style('#0000ff'),
+            style: fillStyle('#0000ff'),
             gradient: null,
             transform,
           },
@@ -4471,7 +4479,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
             type: 'rectangle',
             bbox: { x: 36, y: 4, width: 24, height: 16 },
             cornerRadius: 0,
-            style: style(null),
+            style: fillStyle(null),
             gradient: {
               gradientType: 0,
               angle: 0,
@@ -4480,6 +4488,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
               colors: ['#000000', '#000000'],
               positions: [0, 1],
             },
+            transform,
+          },
+          {
+            type: 'rectangle',
+            bbox: { x: 70, y: 6, width: 18, height: 12 },
+            cornerRadius: 0,
+            style: strokeStyle,
+            gradient: null,
             transform,
           },
         ],
@@ -4512,6 +4528,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const solidOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 12, 12);
   const shaderOpacityCanvas2d = pixelAt(shapeOpacityParityProbe.canvas2d, 44, 12);
   const shaderOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 44, 12);
+  const strokeOpacityCanvas2d = pixelAt(shapeOpacityParityProbe.canvas2d, 80, 6);
+  const strokeOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 80, 6);
   assert(
     channelDelta(solidOpacityCanvas2d, solidOpacityCanvaskit) <= 4,
     `solid shape opacity parity canvas2d=${JSON.stringify(solidOpacityCanvas2d)}, canvaskit=${JSON.stringify(solidOpacityCanvaskit)}`,
@@ -4519,6 +4537,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     channelDelta(shaderOpacityCanvas2d, shaderOpacityCanvaskit) <= 4,
     `shader shape opacity parity canvas2d=${JSON.stringify(shaderOpacityCanvas2d)}, canvaskit=${JSON.stringify(shaderOpacityCanvaskit)}`,
+  );
+  assert(
+    channelDelta(strokeOpacityCanvas2d, strokeOpacityCanvaskit) <= 4,
+    `stroke shape opacity parity canvas2d=${JSON.stringify(strokeOpacityCanvas2d)}, canvaskit=${JSON.stringify(strokeOpacityCanvaskit)}`,
   );
 
   setTestCase('canvas-layer-svg-arc-path-parity');
