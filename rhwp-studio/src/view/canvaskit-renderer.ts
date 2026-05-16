@@ -2595,13 +2595,8 @@ export class CanvasKitLayerRenderer {
     const strokeWidth = Math.max(width, 0.5);
     paint.setStrokeWidth(strokeWidth);
 
-    if (dash !== 'solid') {
-      const stroke = Math.max(width, 0.5);
-      const intervals =
-        dash === 'dash' ? [stroke * 4, stroke * 2]
-          : dash === 'dot' ? [stroke * 1.5, stroke * 2.5]
-            : dash === 'dashDot' ? [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2]
-              : [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2, stroke * 1.5, stroke * 2];
+    const intervals = this.strokeDashPattern(dash, strokeWidth);
+    if (intervals.length > 0) {
       const effect = this.canvasKit.PathEffect.MakeDash(intervals, 0);
       paint.setPathEffect(effect);
       effect.delete();

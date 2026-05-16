@@ -5281,6 +5281,130 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `line shadow dash parity exact=${lineShadowDashDiff.exactDiffPixels}, tolerant=${lineShadowDashDiff.rawTolerantDiffPixels}, ink=${lineShadowDashDiff.rawInkMaskDiffPixels}, max_channel_delta=${lineShadowDashDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-unknown-dash-solid-fallback-parity');
+  const unknownDashFallbackProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 84,
+      pageHeight: 40,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 19102,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 19102,
+        bounds: { x: 0, y: 0, width: 84, height: 40 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 84, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'line',
+            bbox: { x: 4, y: 5, width: 76, height: 10 },
+            x1: 8,
+            y1: 10,
+            x2: 76,
+            y2: 10,
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+            style: {
+              color: '#202020',
+              width: 4,
+              dash: 'legacyUnknown',
+              lineType: 'single',
+              startArrow: 'none',
+              endArrow: 'none',
+              startArrowSize: 1,
+              endArrowSize: 1,
+            },
+          },
+          {
+            type: 'rectangle',
+            bbox: { x: 10, y: 20, width: 64, height: 12 },
+            cornerRadius: 0,
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+            style: {
+              fillColor: null,
+              strokeColor: '#202020',
+              strokeWidth: 3,
+              strokeDash: 'legacyUnknown',
+              opacity: 1,
+            },
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !unknownDashFallbackProbe.error,
+    unknownDashFallbackProbe.error || 'unknown dash solid fallback parity probe available',
+  );
+  const unknownDashCanvas2dDarkPixels = countPixels(
+    unknownDashFallbackProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.red < 100 && pixel.green < 100 && pixel.blue < 100,
+  );
+  const unknownDashCanvaskitDarkPixels = countPixels(
+    unknownDashFallbackProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.red < 100 && pixel.green < 100 && pixel.blue < 100,
+  );
+  assert(
+    unknownDashCanvas2dDarkPixels > 300
+      && unknownDashCanvaskitDarkPixels > 300
+      && Math.abs(unknownDashCanvas2dDarkPixels - unknownDashCanvaskitDarkPixels) < 90,
+    `unknown dash falls back to solid canvas2d=${unknownDashCanvas2dDarkPixels}, canvaskit=${unknownDashCanvaskitDarkPixels}`,
+  );
+  const unknownDashFallbackDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(unknownDashFallbackProbe.canvas2d),
+    pngBufferFromDataUrl(unknownDashFallbackProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-unknown-dash-solid-fallback-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.05,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    unknownDashFallbackDiff.passed,
+    `unknown dash solid fallback parity exact=${unknownDashFallbackDiff.exactDiffPixels}, tolerant=${unknownDashFallbackDiff.rawTolerantDiffPixels}, ink=${unknownDashFallbackDiff.rawInkMaskDiffPixels}, max_channel_delta=${unknownDashFallbackDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-compound-line-thin-stroke-parity');
   const compoundLineThinStrokeProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
