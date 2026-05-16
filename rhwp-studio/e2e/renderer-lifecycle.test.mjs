@@ -4908,6 +4908,171 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `transformed image parity exact=${transformedImageDiff.exactDiffPixels}, tolerant=${transformedImageDiff.rawTolerantDiffPixels}, ink=${transformedImageDiff.rawInkMaskDiffPixels}, max_channel_delta=${transformedImageDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-equation-geometry-parity');
+  const equationGeometryParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const emptyBox = (x, y, width, height, baseline = 0) => ({
+      x,
+      y,
+      width,
+      height,
+      baseline,
+      kind: { type: 'empty' },
+    });
+    const tree = {
+      pageWidth: 116,
+      pageHeight: 46,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1911,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1911,
+        bounds: { x: 0, y: 0, width: 116, height: 46 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 116, height: 46 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'equation',
+            bbox: { x: 4, y: 5, width: 108, height: 36 },
+            color: '#111111',
+            fontSize: 18,
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 108,
+              height: 36,
+              baseline: 18,
+              kind: {
+                type: 'row',
+                children: [
+                  {
+                    x: 2,
+                    y: 8,
+                    width: 24,
+                    height: 18,
+                    baseline: 9,
+                    kind: {
+                      type: 'fraction',
+                      numer: emptyBox(4, 0, 16, 6, 4),
+                      denom: emptyBox(4, 12, 16, 6, 4),
+                    },
+                  },
+                  {
+                    x: 32,
+                    y: 7,
+                    width: 26,
+                    height: 22,
+                    baseline: 14,
+                    kind: {
+                      type: 'sqrt',
+                      body: emptyBox(12, 5, 12, 10, 8),
+                    },
+                  },
+                  {
+                    x: 66,
+                    y: 8,
+                    width: 22,
+                    height: 14,
+                    baseline: 10,
+                    kind: {
+                      type: 'decoration',
+                      decoration: 'vec',
+                      body: emptyBox(1, 8, 20, 4, 0),
+                    },
+                  },
+                  {
+                    x: 92,
+                    y: 6,
+                    width: 14,
+                    height: 24,
+                    baseline: 14,
+                    kind: {
+                      type: 'matrix',
+                      style: 'vert',
+                      cells: [[emptyBox(5, 8, 4, 4, 0)]],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!equationGeometryParityProbe.error, equationGeometryParityProbe.error || 'equation geometry parity probe available');
+  const equationGeometryCanvas2dInkPixels = countPixels(
+    equationGeometryParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const equationGeometryCanvaskitInkPixels = countPixels(
+    equationGeometryParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    equationGeometryCanvas2dInkPixels > 100 && equationGeometryCanvaskitInkPixels > 100,
+    `equation geometry replay draws direct lines canvas2d=${equationGeometryCanvas2dInkPixels}, canvaskit=${equationGeometryCanvaskitInkPixels}`,
+  );
+  const equationGeometryDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(equationGeometryParityProbe.canvas2d),
+    pngBufferFromDataUrl(equationGeometryParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-equation-geometry-parity',
+      ignoreChannelDelta: 18,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.04,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    equationGeometryDiff.passed,
+    `equation geometry parity exact=${equationGeometryDiff.exactDiffPixels}, tolerant=${equationGeometryDiff.rawTolerantDiffPixels}, ink=${equationGeometryDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationGeometryDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-visual-line-parity');
   const textVisualLineParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
