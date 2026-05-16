@@ -2695,6 +2695,37 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const cyclicReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      cyclicReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph = {
+          rootNodeId: 0,
+          nodes: [
+            {
+              nodeId: 0,
+              kind: 'transform',
+              transform: {
+                childNodeId: 1,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+              },
+            },
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 0,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+              },
+            },
+          ],
+        };
+      const cyclicReservedV2ColorPayloadColrV1 = render(
+        cyclicReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -2773,6 +2804,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         reservedV2ColorPayload,
         reservedV2ColorPayloadColrV1,
         invalidReservedV2ColorPayloadColrV1,
+        cyclicReservedV2ColorPayloadColrV1,
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
         reservedV2SvgPayload,
@@ -2948,6 +2980,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const cyclicReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .cyclicReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
       && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
@@ -2968,6 +3004,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       v2ColrV1Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayloadColrV1?.textV2Validation,
       invalidV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+    })}`,
+  );
+  assert(
+    cyclicReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
+    `Canvas2D strict profile rejects cyclic COLRv1 color graph payload=${JSON.stringify({
+      cyclicV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .cyclicReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );

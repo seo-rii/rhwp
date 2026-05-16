@@ -613,8 +613,10 @@ The reserved families are intentionally separate payload families:
   palette layer stack. COLRv1 uses a separate normalized paint graph envelope:
   the stage-1 skeleton admits solid path nodes and transform nodes with source
   range, glyph range, and source-font provenance, while gradients, blending,
-  clips, and reusable graph nodes stay behind later feature additions. The
-  feature vocabulary is split as
+  clips, and reusable graph nodes stay behind later feature additions. Stage-1
+  graph validation is tree-only: the root must reach every node, cycles are
+  rejected, and shared child subgraphs remain reserved for the later reusable
+  graph stage. The feature vocabulary is split as
   `text.glyphOutline.colorLayers`, `text.glyphOutline.colorLayers.colrV0`, and
   `text.glyphOutline.colorLayers.colrV1` so the solid-layer subset can stabilize
   before the full paint graph is writer-enabled.

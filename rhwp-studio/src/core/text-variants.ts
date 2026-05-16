@@ -822,6 +822,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
   }
 
   const nodeIds = new Set<number>();
+  const childRefCounts = new Map<number, number>();
   for (const node of graph.nodes) {
     if (nodeIds.has(node.nodeId)) {
       return false;
@@ -832,9 +833,11 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     return false;
   }
 
-  return graph.nodes.every((node) => {
+  for (const node of graph.nodes) {
     if (node.kind === 'solidPath') {
-      return node.solidPath !== undefined
+      if (
+        !(
+          node.solidPath !== undefined
         && node.transform === undefined
         && Array.isArray(node.solidPath.commands)
         && node.solidPath.commands.length > 0
@@ -842,16 +845,63 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.solidPath.fillRule !== undefined
         && node.sourceRangeUtf8 !== undefined
         && node.glyphRange !== undefined
-        && node.sourceFontRef !== undefined;
+          && node.sourceFontRef !== undefined
+        )
+      ) {
+        return false;
+      }
+      continue;
     }
     if (node.kind === 'transform') {
-      return node.solidPath === undefined
+      if (
+        !(
+          node.solidPath === undefined
         && node.transform !== undefined
         && nodeIds.has(node.transform.childNodeId)
-        && node.transform.childNodeId !== node.nodeId;
+          && node.transform.childNodeId !== node.nodeId
+        )
+      ) {
+        return false;
+      }
+      childRefCounts.set(
+        node.transform.childNodeId,
+        (childRefCounts.get(node.transform.childNodeId) ?? 0) + 1,
+      );
+      continue;
     }
     return false;
-  });
+  }
+
+  if ([...childRefCounts.values()].some((count) => count > 1)) {
+    return false;
+  }
+
+  const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
+  const visited = new Set<number>();
+  const visiting = new Set<number>();
+  const visit = (nodeId: number): boolean => {
+    if (visiting.has(nodeId)) {
+      return false;
+    }
+    if (visited.has(nodeId)) {
+      return true;
+    }
+    const node = nodesById.get(nodeId);
+    if (!node) {
+      return false;
+    }
+    visiting.add(nodeId);
+    if (node.kind === 'transform') {
+      if (!node.transform || !visit(node.transform.childNodeId)) {
+        return false;
+      }
+    }
+    visiting.delete(nodeId);
+    visited.add(nodeId);
+    return true;
+  };
+
+  return visit(graph.rootNodeId) && visited.size === graph.nodes.length;
 }
 
 export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): boolean {
