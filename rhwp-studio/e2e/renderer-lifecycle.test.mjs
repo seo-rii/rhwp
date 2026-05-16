@@ -5716,6 +5716,161 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text marker parity exact=${textMarkerDiff.exactDiffPixels}, tolerant=${textMarkerDiff.rawTolerantDiffPixels}, ink=${textMarkerDiff.rawInkMaskDiffPixels}, max_channel_delta=${textMarkerDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-inline-control-mark-parity');
+  const inlineControlMarkParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const style = {
+      fontFamily: 'Noto Sans KR',
+      fontSize: 16,
+      color: '#111111',
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      shadeColor: '#ffffff',
+    };
+    const tree = (showParagraphMarks, showControlCodes) => ({
+      pageWidth: 94,
+      pageHeight: 34,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks,
+        showControlCodes,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: showParagraphMarks || showControlCodes ? 1913 : 1914,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: showParagraphMarks || showControlCodes ? 1913 : 1914,
+        bounds: { x: 0, y: 0, width: 94, height: 34 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 94, height: 34 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'textRun',
+            bbox: { x: 8, y: 6, width: 80, height: 22 },
+            text: 'A',
+            baseline: 17,
+            rotation: 0,
+            isVertical: false,
+            orientation: 'horizontal',
+            isParaEnd: false,
+            isLineBreakEnd: false,
+            style,
+            positions: [0, 12],
+            controlMarks: [
+              { kind: 'paragraphEnd', text: '¶', x: 18, y: 17, fontSize: 16 },
+              { kind: 'lineBreakEnd', text: '↵', x: 38, y: 17, fontSize: 16 },
+              { kind: 'space', text: '·', x: 58, y: 17, fontSize: 16 },
+            ],
+            tabLeaders: [],
+          },
+        ],
+      },
+    });
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer, inputTree) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = inputTree.pageWidth;
+      canvas.height = inputTree.pageHeight;
+      document.body.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      renderer.renderPage(inputTree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    const visible = tree(true, true);
+    const hidden = tree(false, false);
+    return {
+      visibleCanvas2d: await render(canvas2dRenderer, visible),
+      visibleCanvaskit: await render(canvaskitRenderer, visible),
+      hiddenCanvas2d: await render(canvas2dRenderer, hidden),
+      hiddenCanvaskit: await render(canvaskitRenderer, hidden),
+    };
+  });
+  assert(
+    !inlineControlMarkParityProbe.error,
+    inlineControlMarkParityProbe.error || 'inline control mark parity probe available',
+  );
+  const isControlMarkBlue = (pixel) => pixel.alpha > 32 && pixel.blue > 120 && pixel.red < 120 && pixel.green > 80;
+  const visibleCanvas2dControlPixels = countPixels(inlineControlMarkParityProbe.visibleCanvas2d, isControlMarkBlue);
+  const visibleCanvaskitControlPixels = countPixels(inlineControlMarkParityProbe.visibleCanvaskit, isControlMarkBlue);
+  const hiddenCanvas2dControlPixels = countPixels(inlineControlMarkParityProbe.hiddenCanvas2d, isControlMarkBlue);
+  const hiddenCanvaskitControlPixels = countPixels(inlineControlMarkParityProbe.hiddenCanvaskit, isControlMarkBlue);
+  assert(
+    visibleCanvas2dControlPixels > 20 && visibleCanvaskitControlPixels > 20,
+    `inline control marks draw when enabled canvas2d=${visibleCanvas2dControlPixels}, canvaskit=${visibleCanvaskitControlPixels}`,
+  );
+  assert(
+    hiddenCanvas2dControlPixels === 0 && hiddenCanvaskitControlPixels === 0,
+    `inline control marks hide when disabled canvas2d=${hiddenCanvas2dControlPixels}, canvaskit=${hiddenCanvaskitControlPixels}`,
+  );
+  const inlineControlVisibleDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(inlineControlMarkParityProbe.visibleCanvas2d),
+    pngBufferFromDataUrl(inlineControlMarkParityProbe.visibleCanvaskit),
+    {
+      diffName: 'canvas-layer-inline-control-mark-visible-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    inlineControlVisibleDiff.passed,
+    `inline control mark visible parity exact=${inlineControlVisibleDiff.exactDiffPixels}, tolerant=${inlineControlVisibleDiff.rawTolerantDiffPixels}, ink=${inlineControlVisibleDiff.rawInkMaskDiffPixels}, max_channel_delta=${inlineControlVisibleDiff.maxChannelDelta}`,
+  );
+  const inlineControlHiddenDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(inlineControlMarkParityProbe.hiddenCanvas2d),
+    pngBufferFromDataUrl(inlineControlMarkParityProbe.hiddenCanvaskit),
+    {
+      diffName: 'canvas-layer-inline-control-mark-hidden-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.04,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    inlineControlHiddenDiff.passed,
+    `inline control mark hidden parity exact=${inlineControlHiddenDiff.exactDiffPixels}, tolerant=${inlineControlHiddenDiff.rawTolerantDiffPixels}, ink=${inlineControlHiddenDiff.rawInkMaskDiffPixels}, max_channel_delta=${inlineControlHiddenDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-char-overlap-parity');
   const charOverlapParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
