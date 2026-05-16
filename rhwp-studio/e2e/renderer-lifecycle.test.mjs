@@ -5579,7 +5579,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       charOverlap: { borderType, innerCharSize },
     });
     const tree = {
-      pageWidth: 112,
+      pageWidth: 160,
       pageHeight: 40,
       profile: 'screen',
       outputOptions: {
@@ -5605,13 +5605,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1913,
-        bounds: { x: 0, y: 0, width: 112, height: 40 },
+        bounds: { x: 0, y: 0, width: 160, height: 40 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 112, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 160, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
           overlap(8, '8', 1, 85),
           overlap(36, '4', 4, 90),
           overlap(64, '12', 3, 70, 32),
+          overlap(102, String.fromCodePoint(0xf0292), 0, 90),
+          overlap(130, '7', 2, 85),
         ],
       },
     };
