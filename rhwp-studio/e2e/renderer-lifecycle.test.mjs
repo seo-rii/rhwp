@@ -5073,6 +5073,133 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation geometry parity exact=${equationGeometryDiff.exactDiffPixels}, tolerant=${equationGeometryDiff.rawTolerantDiffPixels}, ink=${equationGeometryDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationGeometryDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-marker-parity');
+  const textMarkerParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 84,
+      pageHeight: 36,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: true,
+        showControlCodes: true,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1912,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1912,
+        bounds: { x: 0, y: 0, width: 84, height: 36 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 84, height: 36 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'textControlMark',
+            bbox: { x: 8, y: 5, width: 18, height: 20 },
+            mark: { kind: 'paragraphEnd', text: '¶', x: 1, y: 15, fontSize: 16 },
+          },
+          {
+            type: 'textControlMark',
+            bbox: { x: 28, y: 5, width: 18, height: 20 },
+            mark: { kind: 'lineBreakEnd', text: '↵', x: 1, y: 15, fontSize: 16 },
+          },
+          {
+            type: 'textControlMark',
+            bbox: { x: 48, y: 5, width: 12, height: 20 },
+            mark: { kind: 'space', text: '·', x: 1, y: 15, fontSize: 16 },
+          },
+          {
+            type: 'footnoteMarker',
+            bbox: { x: 64, y: 5, width: 18, height: 20 },
+            text: '12',
+            fontFamily: 'Noto Sans KR',
+            fontSize: 14,
+            color: '#111111',
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        renderer.renderPage(tree, canvas, 1);
+        await nextFrame();
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let inkPixels = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          if (pixels[index + 3] > 32 && (pixels[index] < 245 || pixels[index + 1] < 245 || pixels[index + 2] < 245)) {
+            inkPixels += 1;
+          }
+        }
+        if (inkPixels > 80) {
+          break;
+        }
+      }
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!textMarkerParityProbe.error, textMarkerParityProbe.error || 'text marker parity probe available');
+  const textMarkerCanvas2dInkPixels = countPixels(
+    textMarkerParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const textMarkerCanvaskitInkPixels = countPixels(
+    textMarkerParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    textMarkerCanvas2dInkPixels > 80 && textMarkerCanvaskitInkPixels > 80,
+    `text marker replay draws direct markers canvas2d=${textMarkerCanvas2dInkPixels}, canvaskit=${textMarkerCanvaskitInkPixels}`,
+  );
+  const textMarkerDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textMarkerParityProbe.canvas2d),
+    pngBufferFromDataUrl(textMarkerParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-marker-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textMarkerDiff.passed,
+    `text marker parity exact=${textMarkerDiff.exactDiffPixels}, tolerant=${textMarkerDiff.rawTolerantDiffPixels}, ink=${textMarkerDiff.rawInkMaskDiffPixels}, max_channel_delta=${textMarkerDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-visual-line-parity');
   const textVisualLineParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
