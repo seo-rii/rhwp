@@ -1017,9 +1017,9 @@ export interface LayerGlyphOutlineOp {
   payloadKind?: LayerGlyphOutlinePayloadKind;
   stroke?: LayerGlyphOutlineStrokeStyle;
   /**
-   * Richer payload envelopes. BitmapGlyph is feature-gated for SVG/Canvas2D
-   * strict replay; other families document schema v2 payload shape until their
-   * writer gates land.
+   * Richer payload envelopes. BitmapGlyph is feature-gated for strict replay
+   * in CanvasKit and SVG/Canvas2D; other families document schema v2 payload
+   * shape until their writer gates land.
    */
   colorLayers?: LayerGlyphOutlineColorLayersPayload;
   bitmapGlyph?: LayerGlyphOutlineBitmapGlyphPayload;

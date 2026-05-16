@@ -4,6 +4,7 @@ import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import {
   hasColrv0ColorLayersContract,
+  hasStrictBitmapGlyphContract,
   isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
   selectLayerTextVariantSets,
@@ -38,6 +39,7 @@ import type {
   LayerPatternFill,
   LayerRectangleOp,
   LayerRenderProfile,
+  LayerResources,
   LayerShapeShadow,
   LayerTabLeader,
   LayerTabLeaderOp,
@@ -428,7 +430,7 @@ export class CanvasKitLayerRenderer {
   }
 
   private glyphOutlineVariantReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
-    const payloadStatus = glyphOutlinePayloadStatus(op);
+    const payloadStatus = glyphOutlinePayloadStatus(op, this.lastRenderedTree?.resources);
     const payloadSupported = op.diagnostics.strictVisualEligible && payloadStatus.supported;
     const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
     const replayable = payloadSupported && paintStyleSupported;
@@ -996,6 +998,11 @@ export class CanvasKitLayerRenderer {
     if (!this.glyphOutlineVariantReplayStatus(op).replayable) {
       return;
     }
+    const payloadKind = op.payloadKind ?? 'monochromeFill';
+    if (payloadKind === 'bitmapGlyph') {
+      this.renderBitmapGlyphOutline(canvas, op);
+      return;
+    }
     const transform = op.placement.runToPage;
     canvas.save();
     canvas.concat([
@@ -1010,7 +1017,6 @@ export class CanvasKitLayerRenderer {
       1,
     ]);
     try {
-      const payloadKind = op.payloadKind ?? 'monochromeFill';
       if (payloadKind === 'colorLayers') {
         for (const layer of op.colorLayers?.layers ?? []) {
           if (!layer.commands || !layer.fill) {
@@ -1069,6 +1075,47 @@ export class CanvasKitLayerRenderer {
     } finally {
       canvas.restore();
     }
+  }
+
+  private renderBitmapGlyphOutline(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerGlyphOutlineOp,
+  ): void {
+    const payload = op.bitmapGlyph;
+    if (!payload || !hasStrictBitmapGlyphContract(op) || typeof payload.imageResourceId !== 'number') {
+      return;
+    }
+    const image = this.resourceCache.image(payload.imageResourceId);
+    if (!image) {
+      return;
+    }
+    const imageWidth = image.width();
+    const imageHeight = image.height();
+    const { x, y, width, height } = op.bbox;
+    if (
+      !Number.isFinite(imageWidth)
+      || !Number.isFinite(imageHeight)
+      || imageWidth <= 0
+      || imageHeight <= 0
+      || !Number.isFinite(x)
+      || !Number.isFinite(y)
+      || !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width <= 0
+      || height <= 0
+    ) {
+      return;
+    }
+    const paint = new this.canvasKit.Paint();
+    canvas.drawImageRectOptions(
+      image,
+      this.canvasKit.XYWHRect(0, 0, imageWidth, imageHeight),
+      this.toRect(op.bbox),
+      payload.filtering === 'nearest' ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
+      this.canvasKit.MipmapMode.None,
+      paint,
+    );
+    paint.delete();
   }
 
   private renderTextControlMark(
@@ -2526,6 +2573,7 @@ export class CanvasKitLayerRenderer {
 
 function glyphOutlinePayloadStatus(
   op: LayerGlyphOutlineOp,
+  resources?: LayerResources | null,
 ): { supported: boolean; reason?: LayerTextVariantReplayStatus['reason'] } {
   const payloadKind = op.payloadKind ?? 'monochromeFill';
   if (payloadKind === 'colorLayers') {
@@ -2552,7 +2600,14 @@ function glyphOutlinePayloadStatus(
     };
   }
   if (payloadKind === 'bitmapGlyph') {
-    return { supported: false, reason: 'unsupportedBitmapGlyph' };
+    const resourceId = op.bitmapGlyph?.imageResourceId;
+    return {
+      supported: hasStrictBitmapGlyphContract(op)
+        && op.variant.requires?.includes('text.glyphOutline.bitmapGlyph') === true
+        && typeof resourceId === 'number'
+        && resources?.images?.[resourceId] !== undefined,
+      reason: 'unsupportedBitmapGlyph',
+    };
   }
   if (payloadKind === 'svgGlyph') {
     return { supported: false, reason: 'unsupportedSvgGlyph' };

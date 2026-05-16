@@ -929,7 +929,7 @@ that every reserved writer is enabled:
 | backend `VariantSelectionReport` selected/rejected vocabulary | Required before v2 closeout |
 | `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
 | `GlyphOutline` `colorLayers.colrV0` | V2 feature addition; strict export supports resolved-layer payloads, and native producer-side COLR/CPAL decoding can generate the resolved layers |
-| `GlyphOutline` `bitmapGlyph` | V2 feature addition; SVG/Canvas2D strict replay supports one producer-selected image strike |
+| `GlyphOutline` `bitmapGlyph` | V2 feature addition; CanvasKit and SVG/Canvas2D strict replay support one producer-selected image strike |
 | `GlyphOutline` `colorLayers.colrV1` | Vocabulary reserved; writer emission blocked |
 | `GlyphOutline` `svgGlyph` | V2 feature addition; SVG strict replay supports sanitized static vector resources |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
