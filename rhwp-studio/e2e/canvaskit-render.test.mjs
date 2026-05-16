@@ -957,9 +957,8 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       renderer.hasFallbackOverlayNode = originalHasFallbackOverlayNode;
     }
     const equationSvgNativeProbe = {
-      cachedDomSvgImages: renderer.equationSvgDomImageCache?.size ?? 0,
-      cachedCanvasKitSvgImages: renderer.equationSvgImageCache?.size ?? 0,
-      canvasKitCacheKeys: Array.from(renderer.equationSvgImageCache?.keys?.() ?? []),
+      hasEquationSvgDomImageCache: Object.prototype.hasOwnProperty.call(renderer, 'equationSvgDomImageCache'),
+      hasEquationSvgImageCache: Object.prototype.hasOwnProperty.call(renderer, 'equationSvgImageCache'),
       layoutDirectCalls,
       fallbackOverlayScanCalls,
     };
@@ -1462,20 +1461,12 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.formUsesOverlay === false, `form overlay=${nativeRouting.formUsesOverlay}`);
   assert(nativeRouting.equationUsesOverlay === false, `equation overlay=${nativeRouting.equationUsesOverlay}`);
   assert(
-    nativeRouting.equationSvgNativeProbe?.cachedDomSvgImages === 0,
-    `equation svg DOM cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    nativeRouting.equationSvgNativeProbe?.hasEquationSvgDomImageCache === false,
+    `equation svg DOM cache removed=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
   );
   assert(
-    nativeRouting.equationSvgNativeProbe?.cachedCanvasKitSvgImages === 0,
-    `equation svg CanvasKit cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-  );
-  assert(
-    nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.length === 0,
-    `equation svg CanvasKit cache unused=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-  );
-  assert(
-    nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.some((key) => key.includes('<text')) === false,
-    `equation svg CanvasKit cache avoids raw svg keys=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    nativeRouting.equationSvgNativeProbe?.hasEquationSvgImageCache === false,
+    `equation svg CanvasKit cache removed=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
   );
   assert(
     nativeRouting.equationSvgNativeProbe?.layoutDirectCalls > 0,

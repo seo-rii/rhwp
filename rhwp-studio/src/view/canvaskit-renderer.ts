@@ -99,8 +99,6 @@ export class CanvasKitLayerRenderer {
   private readonly imageCache: Map<string, Image>;
   private readonly mipmappedImageCache: Map<string, Image>;
   private readonly domImageCache: Map<string, HTMLImageElement>;
-  private readonly equationSvgDomImageCache: Map<string, HTMLImageElement>;
-  private readonly equationSvgImageCache: Map<string, Image>;
   private readonly patternImageCache: Map<string, Image | null>;
   private readonly overlayImageEffectCache: LayerImageEffectCache = new WeakMap();
   private readonly overlayImageEffectDiagnostics: LayerImageEffectDiagnostics = {
@@ -152,8 +150,6 @@ export class CanvasKitLayerRenderer {
     this.imageCache = this.resourceCache.imageCache;
     this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
     this.domImageCache = this.resourceCache.domImageCache;
-    this.equationSvgDomImageCache = this.resourceCache.equationSvgDomImageCache;
-    this.equationSvgImageCache = this.resourceCache.equationSvgImageCache;
     this.patternImageCache = this.resourceCache.patternImageCache;
     this.fontAliases = this.fontRegistry.aliases;
   }
@@ -3416,23 +3412,6 @@ export class CanvasKitLayerRenderer {
     }
     draw();
     canvas.restore();
-  }
-
-  private drawCanvasKitImage(
-    canvas: ReturnType<Surface['getCanvas']>,
-    image: Image,
-    bbox: LayerBounds,
-  ): void {
-    const paint = new this.canvasKit.Paint();
-    canvas.drawImageRectOptions(
-      image,
-      this.canvasKit.XYWHRect(0, 0, image.width(), image.height()),
-      this.toRect(bbox),
-      this.canvasKit.FilterMode.Linear,
-      this.canvasKit.MipmapMode.None,
-      paint,
-    );
-    paint.delete();
   }
 
   private clearStaticPictureCache(): void {

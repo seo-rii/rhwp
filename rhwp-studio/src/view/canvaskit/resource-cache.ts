@@ -16,8 +16,6 @@ export class CanvasKitResourceCache {
   readonly mipmappedImageCache = new Map<string, CanvasKitImage>();
   readonly imageEffectCache = new Map<string, CanvasKitImage>();
   readonly domImageCache = new Map<string, HTMLImageElement>();
-  readonly equationSvgDomImageCache = new Map<string, HTMLImageElement>();
-  readonly equationSvgImageCache = new Map<string, CanvasKitImage>();
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
   private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
     cacheHits: 0,
@@ -51,26 +49,8 @@ export class CanvasKitResourceCache {
       return;
     }
     this.clearResourceImageCaches();
-    this.clearResourceSvgCaches();
     this.resources = nextResources;
     this.resourceTableId = nextTableId;
-  }
-
-  svgFragment(resourceId?: number, fallback?: string): string {
-    return (
-      typeof resourceId === 'number'
-        ? this.resources?.svgFragments?.[resourceId] ?? fallback ?? ''
-        : fallback ?? ''
-    ).trim();
-  }
-
-  svgResourceCacheKey(resourceId?: number, fallback?: string): string | null {
-    if (typeof resourceId === 'number' && this.resources?.svgFragments?.[resourceId] !== undefined) {
-      const resourceKey = this.resources.svgKeys?.[resourceId] ?? this.resources.svgHashes?.[resourceId] ?? 'unknown';
-      return `res-svg:${this.resources.tableId}:${resourceId}:${resourceKey}`;
-    }
-    const svgContent = fallback?.trim();
-    return svgContent ? `inline-svg:${svgContent.length}:${this.hashString(svgContent)}` : null;
   }
 
   image(resourceId?: number, base64?: string, withMipmaps = false): CanvasKitImage | null {
@@ -249,26 +229,6 @@ export class CanvasKitResourceCache {
     return image.complete && image.naturalWidth > 0 ? image : null;
   }
 
-  equationSvgImage(cacheKey: string): CanvasKitImage | null {
-    return this.equationSvgImageCache.get(cacheKey) ?? null;
-  }
-
-  setEquationSvgImage(cacheKey: string, image: CanvasKitImage): void {
-    this.equationSvgImageCache.set(cacheKey, image);
-  }
-
-  equationSvgDomImage(cacheKey: string): HTMLImageElement | null {
-    return this.equationSvgDomImageCache.get(cacheKey) ?? null;
-  }
-
-  setEquationSvgDomImage(cacheKey: string, image: HTMLImageElement): void {
-    this.equationSvgDomImageCache.set(cacheKey, image);
-  }
-
-  deleteEquationSvgDomImage(cacheKey: string): void {
-    this.equationSvgDomImageCache.delete(cacheKey);
-  }
-
   patternImage(pattern: LayerPatternFill): CanvasKitImage | null {
     const cacheKey = `${pattern.patternType}:${pattern.patternColor}:${pattern.backgroundColor}`;
     if (this.patternImageCache.has(cacheKey)) {
@@ -304,24 +264,12 @@ export class CanvasKitResourceCache {
     }
     this.imageCache.clear();
 
-    for (const image of this.equationSvgImageCache.values()) {
-      image.delete();
-    }
-    this.equationSvgImageCache.clear();
-
     for (const image of this.domImageCache.values()) {
       image.onload = null;
       image.onerror = null;
       image.src = '';
     }
     this.domImageCache.clear();
-
-    for (const image of this.equationSvgDomImageCache.values()) {
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-    }
-    this.equationSvgDomImageCache.clear();
   }
 
   private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
@@ -389,15 +337,6 @@ export class CanvasKitResourceCache {
     return image;
   }
 
-  private hashString(value: string): string {
-    let hash = 0x811c9dc5;
-    for (let index = 0; index < value.length; index += 1) {
-      hash ^= value.charCodeAt(index);
-      hash = Math.imul(hash, 0x01000193);
-    }
-    return (hash >>> 0).toString(16);
-  }
-
   private clearResourceImageCaches(): void {
     for (const [key, image] of this.mipmappedImageCache) {
       if (!key.startsWith('res:')) {
@@ -428,25 +367,6 @@ export class CanvasKitResourceCache {
       image.onerror = null;
       image.src = '';
       this.domImageCache.delete(key);
-    }
-  }
-
-  private clearResourceSvgCaches(): void {
-    for (const [key, image] of this.equationSvgImageCache) {
-      if (!key.includes(':res-svg:')) {
-        continue;
-      }
-      image.delete();
-      this.equationSvgImageCache.delete(key);
-    }
-    for (const [key, image] of this.equationSvgDomImageCache) {
-      if (!key.includes(':res-svg:')) {
-        continue;
-      }
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
-      this.equationSvgDomImageCache.delete(key);
     }
   }
 }
