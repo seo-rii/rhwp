@@ -546,7 +546,7 @@ export class CanvasKitLayerRenderer {
 
     if (op.borderColor && op.borderWidth > 0) {
       const paint = this.makePaint(op.borderColor, 'stroke');
-      paint.setStrokeWidth(op.borderWidth);
+      paint.setStrokeWidth(Math.max(op.borderWidth, 0.5));
       canvas.drawRect(this.toRect(op.bbox), paint);
       paint.delete();
     }

@@ -5074,6 +5074,106 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `page background parity exact=${pageBackgroundDiff.exactDiffPixels}, tolerant=${pageBackgroundDiff.rawTolerantDiffPixels}, ink=${pageBackgroundDiff.rawInkMaskDiffPixels}, max_channel_delta=${pageBackgroundDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-page-background-thin-border-parity');
+  const pageBackgroundThinBorderProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 48,
+      pageHeight: 32,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1910,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1910,
+        bounds: { x: 0, y: 0, width: 48, height: 32 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'pageBackground',
+          bbox: { x: 4, y: 4, width: 40, height: 24 },
+          backgroundColor: '#ffffff',
+          borderColor: '#000000',
+          borderWidth: 0.1,
+        }],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !pageBackgroundThinBorderProbe.error,
+    pageBackgroundThinBorderProbe.error || 'page background thin border parity probe available',
+  );
+  const measureThinBorderDarkness = (dataUrl) => {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    let totalDarkness = 0;
+    let samples = 0;
+    const addSample = (x, y) => {
+      const offset = (y * png.width + x) * 4;
+      const alpha = png.data[offset + 3] / 255;
+      const luma = (png.data[offset] + png.data[offset + 1] + png.data[offset + 2]) / 3;
+      totalDarkness += (255 - luma) * alpha;
+      samples += 1;
+    };
+    for (let x = 4; x <= 44; x += 1) {
+      addSample(x, 4);
+      addSample(x, 28);
+    }
+    for (let y = 5; y < 28; y += 1) {
+      addSample(4, y);
+      addSample(44, y);
+    }
+    return totalDarkness / samples;
+  };
+  const pageBackgroundThinBorderCanvas2dDarkness = measureThinBorderDarkness(
+    pageBackgroundThinBorderProbe.canvas2d,
+  );
+  const pageBackgroundThinBorderCanvaskitDarkness = measureThinBorderDarkness(
+    pageBackgroundThinBorderProbe.canvaskit,
+  );
+  assert(
+    pageBackgroundThinBorderCanvas2dDarkness > 8
+      && pageBackgroundThinBorderCanvaskitDarkness >= pageBackgroundThinBorderCanvas2dDarkness * 0.6,
+    `page background thin border parity canvas2d=${pageBackgroundThinBorderCanvas2dDarkness.toFixed(2)}, canvaskit=${pageBackgroundThinBorderCanvaskitDarkness.toFixed(2)}`,
+  );
+
   setTestCase('canvas-layer-image-placement-parity');
   const imagePlacementParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
