@@ -633,7 +633,7 @@ export class CanvasKitLayerRenderer {
   }
 
   private shouldOverlayFormObject(_op: LayerFormObjectOp): boolean {
-    return this.renderMode === 'compat';
+    return false;
   }
 
   private formPalette(op: LayerFormObjectOp): {
@@ -678,7 +678,7 @@ export class CanvasKitLayerRenderer {
       fill.paint.delete();
     }
 
-    if (op.image && this.renderMode !== 'compat') {
+    if (op.image) {
       this.drawEncodedImage(canvas, op.image.resourceId, op.image.base64, op.bbox, op.image.fillMode);
     }
 
@@ -1603,9 +1603,6 @@ export class CanvasKitLayerRenderer {
   }
 
   private renderImage(canvas: ReturnType<Surface['getCanvas']>, op: LayerImageOp): void {
-    if (this.renderMode === 'compat') {
-      return;
-    }
     this.withTransform(canvas, op.bbox, op.transform, () => {
       this.drawEncodedImage(canvas, op.resourceId, op.base64, op.bbox, op.fillMode, op.originalSize, op.crop, op.effect);
     });

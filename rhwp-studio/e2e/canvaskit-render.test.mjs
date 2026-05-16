@@ -1265,10 +1265,10 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.vectorHintTableCellFillUsesOverlay === false, `vector-hint table-cell fill overlay=${nativeRouting.vectorHintTableCellFillUsesOverlay}`);
   assert(nativeRouting.tableCellBoldTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `table-cell bold text overlay=${nativeRouting.tableCellBoldTextUsesOverlay}`);
   assert(nativeRouting.preferRasterImageUsesOverlay === false, `prefer-raster image overlay=${nativeRouting.preferRasterImageUsesOverlay}`);
-  assert(nativeRouting.imageUsesOverlay === (CANVASKIT_MODE === 'compat'), `image overlay=${nativeRouting.imageUsesOverlay}`);
-  assert(nativeRouting.resourceImageUsesOverlay === (CANVASKIT_MODE === 'compat'), `resource image overlay=${nativeRouting.resourceImageUsesOverlay}`);
-  assert(nativeRouting.formUsesOverlay === (CANVASKIT_MODE === 'compat'), `form overlay=${nativeRouting.formUsesOverlay}`);
-  assert(nativeRouting.equationUsesOverlay === (CANVASKIT_MODE === 'compat'), `equation overlay=${nativeRouting.equationUsesOverlay}`);
+  assert(nativeRouting.imageUsesOverlay === false, `image overlay=${nativeRouting.imageUsesOverlay}`);
+  assert(nativeRouting.resourceImageUsesOverlay === false, `resource image overlay=${nativeRouting.resourceImageUsesOverlay}`);
+  assert(nativeRouting.formUsesOverlay === false, `form overlay=${nativeRouting.formUsesOverlay}`);
+  assert(nativeRouting.equationUsesOverlay === false, `equation overlay=${nativeRouting.equationUsesOverlay}`);
   if (CANVASKIT_MODE === 'default') {
     assert(
       nativeRouting.equationSvgNativeProbe?.cachedDomSvgImages === 0,

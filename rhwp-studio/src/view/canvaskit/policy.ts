@@ -114,16 +114,10 @@ export function shouldOverlayRectangle(
     );
 }
 
-export function shouldOverlayRasterImage(context: CanvasKitOverlayPolicyContext): boolean {
-  if (context.hasCacheHint('preferRaster')) {
-    return false;
-  }
-  return context.renderMode === 'compat';
+export function shouldOverlayRasterImage(_context: CanvasKitOverlayPolicyContext): boolean {
+  return false;
 }
 
-export function shouldOverlayVectorEquation(context: CanvasKitOverlayPolicyContext): boolean {
-  if (context.hasCacheHint('preferVectorRecording')) {
-    return false;
-  }
-  return context.renderMode === 'compat';
+export function shouldOverlayVectorEquation(_context: CanvasKitOverlayPolicyContext): boolean {
+  return false;
 }
