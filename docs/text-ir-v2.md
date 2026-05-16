@@ -240,57 +240,41 @@ instantiation for the exported face:
   advances. RSXform/TextBlob paths are future optimizations for repeated static
   text or public `MixedPerGlyph` transforms.
 
-## CanvasKit Direct Replay and Overlay Policy
+## CanvasKit Direct Replay Policy
 
-CanvasKit is being promoted from a Canvas2D-assisted preview path into an
-independent Skia replay backend. The long-term target is that CanvasKit and
-native Skia consume the same `PageLayerTree` semantics without relying on a
-browser Canvas2D overlay to hide unsupported paint operations.
+CanvasKit is now treated as an independent Skia replay backend rather than a
+Canvas2D-assisted preview path. CanvasKit and future native Skia should consume
+the same `PageLayerTree` semantics, so the renderer must not use hidden browser
+Canvas2D overlays to hide unsupported paint operations.
 
-CanvasKit therefore has two operational modes:
+CanvasKit still has two operational modes, but both are direct-replay modes:
 
-- `compat`: user-visible stability mode. Existing Canvas2D overlays may remain
-  as transition fallbacks for text runs, raster images, equations, and form
-  controls while direct replay coverage is expanded. New work should still add
-  or improve the direct CanvasKit path first, then keep the overlay only when it
-  is needed to avoid visible regressions.
-- `default`: native-preparation mode. The renderer should prefer direct
-  CanvasKit replay and should not silently fall back to a Canvas2D overlay when
-  direct replay is unsupported. Unsupported operations must remain visible in
-  render diagnostics or select an explicit IR fallback such as `TextRun`;
-  hidden overlay fallback is reserved for documented transition cases only.
+- `compat`: user-visible stability mode. It may keep conservative CanvasKit
+  slop such as body-text clip padding, but it must not route paint operations
+  through a browser Canvas2D overlay. Unsupported operations should use explicit
+  IR fallback variants, deterministic diagnostics, or direct CanvasKit replay.
+- `default`: native-preparation mode. It uses the same direct replay policy and
+  should fail closed or report unsupported capability gaps instead of silently
+  approximating them.
 
-Overlay removal should be staged from low-risk paint operations toward text and
-variant-sensitive operations:
+The direct replay surface currently covers root `TextRun`, page backgrounds,
+raster images, equations, form controls, vector shapes, text decorations,
+control marks, tab leaders, and supported `GlyphRun`/`GlyphOutline` variants.
+All CanvasKit resource paths should use CanvasKit image/font/vector primitives
+directly; DOM image caches and Canvas2D fallback passes are not part of the
+CanvasKit backend contract.
 
-1. Raster image replay: crop, tile, image-effect preprocessing, filtering, and
-   resource-cache behavior should match Canvas2D through direct CanvasKit image
-   replay first. `compat` may keep an overlay until the direct path has a parity
-   fixture; `default` should use the direct path.
-2. Equation and form-object replay: CanvasKit already has direct drawing paths.
-   Parity fixtures should decide whether the vector/layout-box path or an image
-   fallback is the canonical replay for each operation before the overlay is
-   removed.
-3. TextRun effects: vertical text, rotation, synthetic style, ratio scaling,
-   shade, outline, shadow, decorations, emphasis dots, tab leaders, and control
-   markers should be promoted effect-by-effect. Unsupported text effects must
-   not trigger approximate `GlyphRun` replay.
-4. GlyphOutline payloads: CanvasKit should continue to choose `TextRun` or
-   strict-eligible `GlyphRun` until an outline payload has its own CanvasKit
-   replay fixture, bbox policy, and selected/rejected diagnostics. Opening
-   `GlyphOutline` replay in CanvasKit is a backend parity milestone, not a
-   schema change.
-
-Every overlay removal requires a Canvas2D-vs-CanvasKit fixture. Rasterizer
-output can use fuzzy PNG comparison, but semantic decisions must be exact:
-selected variant id, fallback reason, resource resolution, effect preprocessing
-diagnostics, and cache behavior should be asserted without tolerance. When a
-direct CanvasKit path intentionally differs from Canvas2D because it is closer
-to native Skia semantics, the fixture must label that as a Skia strict replay
-improvement rather than a Canvas2D compatibility match.
+Every CanvasKit feature expansion still requires a Canvas2D-vs-CanvasKit or
+native-vs-CanvasKit fixture. Rasterizer output can use fuzzy PNG comparison, but
+semantic decisions must be exact: selected variant id, fallback reason, resource
+resolution, effect preprocessing diagnostics, and cache behavior should be
+asserted without tolerance. When a direct CanvasKit path intentionally differs
+from Canvas2D because it is closer to native Skia semantics, the fixture must
+label that as a Skia strict replay improvement rather than a Canvas2D
+compatibility match.
 
 This policy keeps Canvas2D as the compatibility reference while preventing new
-CanvasKit work from adding hidden browser-canvas dependencies that would block a
+CanvasKit work from adding browser-canvas dependencies that would block a
 future native Skia renderer. Native Skia parity should therefore be considered
 when choosing the canonical CanvasKit direct path, even if the first fixture is
 browser-only.
@@ -528,9 +512,8 @@ resolved-layer contract when `text.glyphOutline.colorLayers` and
   renderer has verified the exact font blob/external font, can instantiate the
   requested face, and the run passes the fill/shadow/outline eligibility matrix
   above. Otherwise it replays the `TextRun` fallback. CanvasKit `default` mode
-  is the native-preparation path and should add direct replay coverage rather
-  than hiding gaps with Canvas2D overlays; `compat` mode may retain overlays as
-  documented transition fallbacks while parity fixtures are built.
+  is the native-preparation path and `compat` mode uses the same direct-replay
+  backend with conservative CanvasKit policy knobs, not Canvas2D overlays.
 - Canvas2D: replay `TextRun` by default. It never selects `GlyphRun` in schema
   v1. An explicit strict outline profile may select `glyphOutline` variants and
   replay their run-local paths through Canvas 2D path fill; otherwise

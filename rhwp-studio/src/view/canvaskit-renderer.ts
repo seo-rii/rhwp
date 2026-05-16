@@ -71,7 +71,7 @@ const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
 const MAX_TEXT_BLOB_CACHE_ENTRIES = 4096;
 
-type OverlayClip = {
+type CanvasKitClipState = {
   bounds: LayerBounds;
   kind: LayerClipNode['clipKind'];
   rightOverflowSlop: number;
@@ -90,7 +90,7 @@ export class CanvasKitLayerRenderer {
   private readonly textBlobCache = new Map<string, TextBlob>();
   private textBlobCacheHits = 0;
   private textBlobCacheMisses = 0;
-  private readonly currentClipStack: OverlayClip[] = [];
+  private readonly currentClipStack: CanvasKitClipState[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private currentClipEnabled = true;
   private currentShowParagraphMarks = false;
@@ -331,7 +331,7 @@ export class CanvasKitLayerRenderer {
       this.renderNode(canvas, node.child);
       return;
     }
-    const clip = this.overlayClipForNode(node);
+    const clip = this.clipStateForNode(node);
     this.currentClipStack.push(clip);
     canvas.save();
     canvas.clipRect(
@@ -349,7 +349,7 @@ export class CanvasKitLayerRenderer {
     this.currentClipStack.pop();
   }
 
-  private overlayClipForNode(node: LayerClipNode): OverlayClip {
+  private clipStateForNode(node: LayerClipNode): CanvasKitClipState {
     return {
       bounds: node.clip,
       kind: node.clipKind,
