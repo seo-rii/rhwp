@@ -915,57 +915,54 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       },
     };
 
-    let equationSvgNativeProbe = null;
-    if (window.__canvaskitRenderMode === 'default') {
-      const probeCanvas = document.createElement('canvas');
-      probeCanvas.width = 96;
-      probeCanvas.height = 48;
-      const probeTree = {
-        pageWidth: 96,
-        pageHeight: 48,
-        profile: 'screen',
-        root: {
-          kind: 'leaf',
-          bounds: { x: 0, y: 0, width: 96, height: 48 },
-          cacheHint: 'none',
-          ops: [equationOp],
-        },
-        resources: {
-          tableId: 900,
-          images: [],
-          imageHashes: [],
-          imageKeys: [],
-          svgFragments: ['<text x="0" y="12">x</text>'],
-          svgHashes: ['probe-hash'],
-          svgKeys: ['probe-key'],
-        },
-      };
-      let layoutDirectCalls = 0;
-      let fallbackOverlayScanCalls = 0;
-      const originalRenderEquationBox = renderer.renderEquationBox;
-      const originalHasFallbackOverlayNode = renderer.hasFallbackOverlayNode;
-      renderer.renderEquationBox = function renderEquationBoxProbe(...args) {
-        layoutDirectCalls += 1;
-        return originalRenderEquationBox.apply(this, args);
-      };
-      renderer.hasFallbackOverlayNode = function hasFallbackOverlayNodeProbe(...args) {
-        fallbackOverlayScanCalls += 1;
-        return originalHasFallbackOverlayNode.apply(this, args);
-      };
-      try {
-        renderer.renderPage(probeTree, probeCanvas, 1);
-        equationSvgNativeProbe = {
-          cachedDomSvgImages: renderer.equationSvgDomImageCache?.size ?? 0,
-          cachedCanvasKitSvgImages: renderer.equationSvgImageCache?.size ?? 0,
-          canvasKitCacheKeys: Array.from(renderer.equationSvgImageCache?.keys?.() ?? []),
-          layoutDirectCalls,
-          fallbackOverlayScanCalls,
-        };
-      } finally {
-        renderer.renderEquationBox = originalRenderEquationBox;
-        renderer.hasFallbackOverlayNode = originalHasFallbackOverlayNode;
-      }
+    const probeCanvas = document.createElement('canvas');
+    probeCanvas.width = 96;
+    probeCanvas.height = 48;
+    const probeTree = {
+      pageWidth: 96,
+      pageHeight: 48,
+      profile: 'screen',
+      root: {
+        kind: 'leaf',
+        bounds: { x: 0, y: 0, width: 96, height: 48 },
+        cacheHint: 'none',
+        ops: [equationOp],
+      },
+      resources: {
+        tableId: 900,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: ['<text x="0" y="12">x</text>'],
+        svgHashes: ['probe-hash'],
+        svgKeys: ['probe-key'],
+      },
+    };
+    let layoutDirectCalls = 0;
+    let fallbackOverlayScanCalls = 0;
+    const originalRenderEquationBox = renderer.renderEquationBox;
+    const originalHasFallbackOverlayNode = renderer.hasFallbackOverlayNode;
+    renderer.renderEquationBox = function renderEquationBoxProbe(...args) {
+      layoutDirectCalls += 1;
+      return originalRenderEquationBox.apply(this, args);
+    };
+    renderer.hasFallbackOverlayNode = function hasFallbackOverlayNodeProbe(...args) {
+      fallbackOverlayScanCalls += 1;
+      return originalHasFallbackOverlayNode.apply(this, args);
+    };
+    try {
+      renderer.renderPage(probeTree, probeCanvas, 1);
+    } finally {
+      renderer.renderEquationBox = originalRenderEquationBox;
+      renderer.hasFallbackOverlayNode = originalHasFallbackOverlayNode;
     }
+    const equationSvgNativeProbe = {
+      cachedDomSvgImages: renderer.equationSvgDomImageCache?.size ?? 0,
+      cachedCanvasKitSvgImages: renderer.equationSvgImageCache?.size ?? 0,
+      canvasKitCacheKeys: Array.from(renderer.equationSvgImageCache?.keys?.() ?? []),
+      layoutDirectCalls,
+      fallbackOverlayScanCalls,
+    };
 
     let textBlobNativeProbe = null;
     if (window.__canvaskitRenderMode === 'default') {
@@ -1464,31 +1461,31 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.resourceImageUsesOverlay === false, `resource image overlay=${nativeRouting.resourceImageUsesOverlay}`);
   assert(nativeRouting.formUsesOverlay === false, `form overlay=${nativeRouting.formUsesOverlay}`);
   assert(nativeRouting.equationUsesOverlay === false, `equation overlay=${nativeRouting.equationUsesOverlay}`);
+  assert(
+    nativeRouting.equationSvgNativeProbe?.cachedDomSvgImages === 0,
+    `equation svg DOM cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.equationSvgNativeProbe?.cachedCanvasKitSvgImages === 0,
+    `equation svg CanvasKit cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.length === 0,
+    `equation svg CanvasKit cache unused=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.some((key) => key.includes('<text')) === false,
+    `equation svg CanvasKit cache avoids raw svg keys=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.equationSvgNativeProbe?.layoutDirectCalls > 0,
+    `equation layout direct calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.equationSvgNativeProbe?.fallbackOverlayScanCalls === 0,
+    `equation fallback overlay scan calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
   if (CANVASKIT_MODE === 'default') {
-    assert(
-      nativeRouting.equationSvgNativeProbe?.cachedDomSvgImages === 0,
-      `equation svg DOM cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-    );
-    assert(
-      nativeRouting.equationSvgNativeProbe?.cachedCanvasKitSvgImages === 0,
-      `equation svg CanvasKit cache=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-    );
-    assert(
-      nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.length === 0,
-      `equation svg CanvasKit cache unused=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-    );
-    assert(
-      nativeRouting.equationSvgNativeProbe?.canvasKitCacheKeys?.some((key) => key.includes('<text')) === false,
-      `equation svg CanvasKit cache avoids raw svg keys=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-    );
-    assert(
-      nativeRouting.equationSvgNativeProbe?.layoutDirectCalls > 0,
-      `equation layout direct calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-    );
-    assert(
-      nativeRouting.equationSvgNativeProbe?.fallbackOverlayScanCalls === 0,
-      `default fallback overlay scan calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-    );
     assert(
       nativeRouting.textBlobNativeProbe?.cacheSizeAfterSecond > 0,
       `text blob cache populated=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,

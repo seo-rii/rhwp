@@ -1776,44 +1776,6 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
   ): void {
-    const svgContent = this.renderMode === 'compat'
-      ? this.resourceCache.svgFragment(op.svgResourceId, op.svgContent)
-      : null;
-    if (svgContent && op.bbox.width > 0 && op.bbox.height > 0) {
-      const svgWidth = Math.max(op.bbox.width, 1);
-      const svgHeight = Math.max(op.bbox.height, 1);
-      const svgCacheKey = this.resourceCache.svgResourceCacheKey(op.svgResourceId, op.svgContent);
-      const cacheKey = `${svgWidth.toFixed(3)}x${svgHeight.toFixed(3)}:${svgCacheKey ?? 'inline-svg:missing'}`;
-      const cachedImage = this.resourceCache.equationSvgImage(cacheKey);
-      if (cachedImage) {
-        this.drawCanvasKitImage(canvas, cachedImage, op.bbox);
-        return;
-      }
-
-      let domImage = this.resourceCache.equationSvgDomImage(cacheKey);
-      if (domImage?.complete && domImage.naturalWidth > 0 && domImage.naturalHeight > 0) {
-        try {
-          const image = this.canvasKit.MakeImageFromCanvasImageSource(domImage);
-          this.resourceCache.setEquationSvgImage(cacheKey, image);
-          this.drawCanvasKitImage(canvas, image, op.bbox);
-          return;
-        } catch {
-          // Fall through to the layout-box renderer if the browser cannot decode the SVG image.
-        }
-      } else if (!domImage) {
-        domImage = new Image();
-        domImage.decoding = 'sync';
-        domImage.onload = () => this.scheduleRerender();
-        domImage.onerror = () => {
-          this.resourceCache.deleteEquationSvgDomImage(cacheKey);
-        };
-        const svgDocument =
-          `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth.toFixed(2)}" height="${svgHeight.toFixed(2)}" viewBox="0 0 ${svgWidth.toFixed(2)} ${svgHeight.toFixed(2)}">${svgContent}</svg>`;
-        domImage.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgDocument)}`;
-        this.resourceCache.setEquationSvgDomImage(cacheKey, domImage);
-      }
-    }
-
     this.renderEquationBox(
       canvas,
       op.layoutBox,
