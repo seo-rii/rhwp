@@ -297,10 +297,10 @@ async function renderScenario(page, backend, caseInfo) {
               }
               if (op.image.base64) embeddedBase64PayloadCount += 1;
             }
-            if (op.type === 'textRun' && !renderer.shouldOverlayTextRun(op)) {
+            if (op.type === 'textRun') {
               nativeTextRunCount += 1;
             }
-            if (op.type === 'image' && !renderer.shouldOverlayImage(op)) {
+            if (op.type === 'image') {
               nativeImageCount += 1;
             }
             if (op.type === 'image') {
@@ -310,7 +310,7 @@ async function renderScenario(page, backend, caseInfo) {
               }
               if (op.base64) embeddedBase64PayloadCount += 1;
             }
-            if (op.type === 'equation' && !renderer.shouldOverlayEquation(op)) {
+            if (op.type === 'equation') {
               nativeEquationCount += 1;
             }
             if (op.type === 'equation') {
@@ -320,7 +320,7 @@ async function renderScenario(page, backend, caseInfo) {
               }
               if (op.svgContent) embeddedSvgPayloadCount += 1;
             }
-            if (op.type === 'formObject' && !renderer.shouldOverlayFormObject(op)) {
+            if (op.type === 'formObject') {
               nativeFormObjectCount += 1;
             }
           }
@@ -752,109 +752,6 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     `canvaskit currency fallback font preload=${JSON.stringify(preloadedFonts.currencyFonts)}`,
   );
 
-  setTestCase('canvaskit-overlay-effect-fallback');
-  await loadApp(page, `?renderer=canvaskit&canvaskitMode=${CANVASKIT_MODE}&canvaskitSurface=${CANVASKIT_SURFACE}`);
-  const overlayTrace = await page.evaluate(() => {
-    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
-    if (!renderer || typeof renderer.renderTextRunOverlay !== 'function') {
-      return { error: 'canvaskit renderer access failed' };
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 160;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return { error: '2d context unavailable' };
-    }
-
-    const calls = [];
-    const originalFillText = ctx.fillText.bind(ctx);
-    const originalStrokeText = ctx.strokeText.bind(ctx);
-    let scenario = 'shadow';
-
-    ctx.fillText = function fillText(text, x, y, maxWidth) {
-      calls.push({ scenario, kind: 'fill', text: String(text), font: this.font });
-      if (maxWidth === undefined) {
-        return originalFillText(text, x, y);
-      }
-      return originalFillText(text, x, y, maxWidth);
-    };
-
-    ctx.strokeText = function strokeText(text, x, y, maxWidth) {
-      calls.push({ scenario, kind: 'stroke', text: String(text), font: this.font });
-      if (maxWidth === undefined) {
-        return originalStrokeText(text, x, y);
-      }
-      return originalStrokeText(text, x, y, maxWidth);
-    };
-
-    const baseStyle = {
-      fontFamily: '함초롬돋움',
-      fontSize: 24,
-      bold: false,
-      italic: false,
-      color: '#111111',
-      ratio: 1,
-      underline: 'none',
-      strikethrough: false,
-      shadowColor: '#666666',
-      shadowOffsetX: 1,
-      shadowOffsetY: 1,
-    };
-
-    renderer.renderTextRunOverlay(ctx, {
-      type: 'textRun',
-      text: '□₩',
-      positions: [0, 24, 48],
-      bbox: { x: 8, y: 8, width: 64, height: 32 },
-      baseline: 24,
-      rotation: 0,
-      style: { ...baseStyle, shadowType: 1, outlineType: 0 },
-    });
-
-    scenario = 'outline';
-    renderer.renderTextRunOverlay(ctx, {
-      type: 'textRun',
-      text: '□₩',
-      positions: [0, 24, 48],
-      bbox: { x: 8, y: 56, width: 64, height: 32 },
-      baseline: 24,
-      rotation: 0,
-      style: { ...baseStyle, shadowType: 0, outlineType: 1 },
-    });
-
-    return { calls };
-  });
-
-  assert(!overlayTrace.error, overlayTrace.error || 'canvaskit overlay trace captured');
-
-  const shadowSymbolCalls = overlayTrace.calls.filter((call) => call.scenario === 'shadow' && call.text === '□');
-  const shadowCurrencyCalls = overlayTrace.calls.filter((call) => call.scenario === 'shadow' && call.text === '₩');
-  const outlineSymbolCalls = overlayTrace.calls.filter((call) => call.scenario === 'outline' && call.text === '□');
-  const outlineCurrencyCalls = overlayTrace.calls.filter((call) => call.scenario === 'outline' && call.text === '₩');
-
-  assert(shadowSymbolCalls.length >= 2, `shadow symbol calls=${shadowSymbolCalls.length}`);
-  assert(shadowCurrencyCalls.length >= 2, `shadow currency calls=${shadowCurrencyCalls.length}`);
-  assert(outlineSymbolCalls.some((call) => call.kind === 'stroke'), 'outline symbol stroke recorded');
-  assert(outlineCurrencyCalls.some((call) => call.kind === 'stroke'), 'outline currency stroke recorded');
-  assert(
-    shadowSymbolCalls.every((call) => /굴림체|GulimChe|D2Coding/.test(call.font)),
-    `shadow symbol fonts=${shadowSymbolCalls.map((call) => call.font).join(' | ')}`,
-  );
-  assert(
-    shadowCurrencyCalls.every((call) => /Malgun Gothic|맑은 고딕/.test(call.font)),
-    `shadow currency fonts=${shadowCurrencyCalls.map((call) => call.font).join(' | ')}`,
-  );
-  assert(
-    outlineSymbolCalls.every((call) => /굴림체|GulimChe|D2Coding/.test(call.font)),
-    `outline symbol fonts=${outlineSymbolCalls.map((call) => call.font).join(' | ')}`,
-  );
-  assert(
-    outlineCurrencyCalls.every((call) => /Malgun Gothic|맑은 고딕/.test(call.font)),
-    `outline currency fonts=${outlineCurrencyCalls.map((call) => call.font).join(' | ')}`,
-  );
-
   setTestCase('canvaskit-layer-tree-value-and-footnote-routing');
   await loadApp(page, `?renderer=canvaskit&canvaskitMode=${CANVASKIT_MODE}&canvaskitSurface=${CANVASKIT_SURFACE}&renderProfile=${encodeURIComponent(RENDER_PROFILE)}`);
   await createNewDocument(page);
@@ -993,8 +890,75 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       };
     }
 
+    let textEffectNativeProbe = null;
+    if (typeof renderer.makePaint === 'function') {
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 180;
+      probeCanvas.height = 96;
+      const effectBaseStyle = {
+        ...simpleTextRun.style,
+        fontSize: 24,
+        color: '#111111',
+        shadowColor: '#666666',
+        shadowOffsetX: 1,
+        shadowOffsetY: 1,
+      };
+      const probeTree = {
+        pageWidth: 180,
+        pageHeight: 96,
+        profile: 'screen',
+        root: {
+          kind: 'leaf',
+          bounds: { x: 0, y: 0, width: 180, height: 96 },
+          cacheHint: 'none',
+          ops: [
+            {
+              ...simpleTextRun,
+              text: '□₩',
+              positions: [0, 24, 48],
+              bbox: { x: 8, y: 8, width: 72, height: 32 },
+              baseline: 24,
+              style: { ...effectBaseStyle, shadowType: 1, outlineType: 0 },
+            },
+            {
+              ...simpleTextRun,
+              text: '□₩',
+              positions: [0, 24, 48],
+              bbox: { x: 8, y: 48, width: 72, height: 32 },
+              baseline: 24,
+              style: { ...effectBaseStyle, shadowType: 0, outlineType: 1 },
+            },
+          ],
+        },
+        resources: {
+          tableId: 906,
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+        },
+      };
+      const makePaintCalls = [];
+      const originalMakePaint = renderer.makePaint;
+      renderer.makePaint = function makePaintProbe(color, style, opacity) {
+        makePaintCalls.push({ color, style, opacity });
+        return originalMakePaint.apply(this, arguments);
+      };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        textEffectNativeProbe = {
+          makePaintCalls,
+          hasRenderTextRunOverlay: typeof renderer.renderTextRunOverlay === 'function',
+        };
+      } finally {
+        renderer.makePaint = originalMakePaint;
+      }
+    }
+
     let textProjectionNativeProbe = null;
-    if (typeof renderer.renderTextRun === 'function' && typeof renderer.renderTextRunOverlay === 'function') {
+    if (typeof renderer.renderTextRun === 'function') {
       const probeCanvas = document.createElement('canvas');
       probeCanvas.width = 160;
       probeCanvas.height = 72;
@@ -1033,33 +997,25 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         },
       };
       let nativeTextRunCalls = 0;
-      let overlayTextRunCalls = 0;
       const originalRenderTextRun = renderer.renderTextRun;
-      const originalRenderTextRunOverlay = renderer.renderTextRunOverlay;
       renderer.renderTextRun = function renderTextRunProbe(...args) {
         nativeTextRunCalls += 1;
         return originalRenderTextRun.apply(this, args);
-      };
-      renderer.renderTextRunOverlay = function renderTextRunOverlayProbe(...args) {
-        overlayTextRunCalls += 1;
-        return originalRenderTextRunOverlay.apply(this, args);
       };
       try {
         renderer.renderPage(probeTree, probeCanvas, 1);
         textProjectionNativeProbe = {
           nativeTextRunCalls,
-          overlayTextRunCalls,
+          hasRenderTextRunOverlay: typeof renderer.renderTextRunOverlay === 'function',
         };
       } finally {
         renderer.renderTextRun = originalRenderTextRun;
-        renderer.renderTextRunOverlay = originalRenderTextRunOverlay;
       }
     }
 
     let pageBackgroundImageNativeProbe = null;
     if (
       typeof renderer.renderPageBackground === 'function'
-      && typeof renderer.renderPageBackgroundImageOverlay === 'function'
     ) {
       const sourceCanvas = document.createElement('canvas');
       sourceCanvas.width = 4;
@@ -1101,26 +1057,19 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
         },
       };
       let nativePageBackgroundCalls = 0;
-      let overlayPageBackgroundImageCalls = 0;
       const originalRenderPageBackground = renderer.renderPageBackground;
-      const originalRenderPageBackgroundImageOverlay = renderer.renderPageBackgroundImageOverlay;
       renderer.renderPageBackground = function renderPageBackgroundProbe(...args) {
         nativePageBackgroundCalls += 1;
         return originalRenderPageBackground.apply(this, args);
-      };
-      renderer.renderPageBackgroundImageOverlay = function renderPageBackgroundImageOverlayProbe(...args) {
-        overlayPageBackgroundImageCalls += 1;
-        return originalRenderPageBackgroundImageOverlay.apply(this, args);
       };
       try {
         renderer.renderPage(probeTree, probeCanvas, 1);
         pageBackgroundImageNativeProbe = {
           nativePageBackgroundCalls,
-          overlayPageBackgroundImageCalls,
+          hasRenderPageBackgroundImageOverlay: typeof renderer.renderPageBackgroundImageOverlay === 'function',
         };
       } finally {
         renderer.renderPageBackground = originalRenderPageBackground;
-        renderer.renderPageBackgroundImageOverlay = originalRenderPageBackgroundImageOverlay;
       }
     }
 
@@ -1129,6 +1078,149 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       hasRenderFallbackOverlays: typeof renderer.renderFallbackOverlays === 'function',
       hasRenderFallbackOverlayNode: typeof renderer.renderFallbackOverlayNode === 'function',
     };
+
+    const nativeDispatchProbe = (() => {
+      const onePixelPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7s8AAAAASUVORK5CYII=';
+      const dispatchOps = [
+        simpleTextRun,
+        {
+          type: 'line',
+          bbox: { x: 0, y: 24, width: 64, height: 1 },
+          x1: 0,
+          y1: 24,
+          x2: 64,
+          y2: 24,
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          style: {
+            color: '#111111',
+            width: 1,
+            dash: 'solid',
+            lineType: 'single',
+            startArrow: 'none',
+            endArrow: 'none',
+            startArrowSize: 0,
+            endArrowSize: 0,
+          },
+        },
+        {
+          type: 'rectangle',
+          bbox: { x: 0, y: 32, width: 48, height: 24 },
+          cornerRadius: 0,
+          gradient: null,
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          style: {
+            fillColor: '#ccffcc',
+            strokeColor: '#111111',
+            strokeWidth: 1,
+            strokeDash: 'solid',
+            opacity: 1,
+            pattern: null,
+            shadow: null,
+          },
+        },
+        {
+          type: 'image',
+          bbox: { x: 64, y: 32, width: 24, height: 24 },
+          base64: onePixelPng,
+          fillMode: 'fitToSize',
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+        },
+        {
+          type: 'formObject',
+          bbox: { x: 0, y: 64, width: 48, height: 16 },
+          formType: 'checkBox',
+          caption: '동의',
+          text: '',
+          foreColor: '#111111',
+          backColor: '#ffffff',
+          value: 1,
+          enabled: true,
+        },
+        {
+          ...equationOp,
+          bbox: { x: 56, y: 60, width: 48, height: 24 },
+        },
+        {
+          type: 'footnoteMarker',
+          text: '1)',
+          fontFamily: '함초롬돋움',
+          fontSize: 10,
+          color: '#111111',
+          bbox: { x: 112, y: 64, width: 16, height: 16 },
+        },
+      ];
+      const methodNames = [
+        'renderTextRun',
+        'renderLine',
+        'renderRectangle',
+        'renderImage',
+        'renderFormObject',
+        'renderEquation',
+        'renderFootnoteMarker',
+      ];
+      const calls = Object.fromEntries(methodNames.map((name) => [name, 0]));
+      const originals = new Map();
+      for (const name of methodNames) {
+        if (typeof renderer[name] !== 'function') {
+          continue;
+        }
+        const original = renderer[name];
+        originals.set(name, original);
+        renderer[name] = function nativeDispatchMethodProbe(...args) {
+          calls[name] += 1;
+          return original.apply(this, args);
+        };
+      }
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 160;
+      probeCanvas.height = 96;
+      const probeTree = {
+        pageWidth: 160,
+        pageHeight: 96,
+        profile: 'screen',
+        root: {
+          kind: 'leaf',
+          bounds: { x: 0, y: 0, width: 160, height: 96 },
+          cacheHint: 'none',
+          ops: dispatchOps,
+        },
+        resources: {
+          tableId: 905,
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+        },
+      };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+      } finally {
+        for (const [name, original] of originals) {
+          renderer[name] = original;
+        }
+      }
+      return {
+        calls,
+        overlayMethods: {
+          shouldOverlayTextRun: typeof renderer.shouldOverlayTextRun === 'function',
+          shouldOverlayLine: typeof renderer.shouldOverlayLine === 'function',
+          shouldOverlayRectangle: typeof renderer.shouldOverlayRectangle === 'function',
+          shouldOverlayImage: typeof renderer.shouldOverlayImage === 'function',
+          shouldOverlayFormObject: typeof renderer.shouldOverlayFormObject === 'function',
+          shouldOverlayEquation: typeof renderer.shouldOverlayEquation === 'function',
+          shouldOverlayFootnoteMarker: typeof renderer.shouldOverlayFootnoteMarker === 'function',
+          renderPageBackgroundImageOverlay: typeof renderer.renderPageBackgroundImageOverlay === 'function',
+          renderImageOverlay: typeof renderer.renderImageOverlay === 'function',
+          renderLineOverlay: typeof renderer.renderLineOverlay === 'function',
+          renderRectangleOverlay: typeof renderer.renderRectangleOverlay === 'function',
+          renderFormObjectOverlay: typeof renderer.renderFormObjectOverlay === 'function',
+          renderTextRunOverlay: typeof renderer.renderTextRunOverlay === 'function',
+          renderFootnoteMarkerOverlay: typeof renderer.renderFootnoteMarkerOverlay === 'function',
+        },
+      };
+    })();
 
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
@@ -1157,213 +1249,13 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       highQualityProfileOnTree: window.__wasm?.getPageLayerTree?.(0, 'high-quality')?.profile,
       fastPreviewHasPreferRasterHint: JSON.stringify(window.__wasm?.getPageLayerTree?.(0, 'fast-preview') ?? {}).includes('"cacheHint":"preferRaster"'),
       batangcheFamily: renderer.resolveCanvasKitFontFamily?.('바탕체'),
-      simpleTextUsesOverlay: renderer.shouldOverlayTextRun(simpleTextRun),
-      nonDefaultSimpleTextUsesOverlay: renderer.shouldOverlayTextRun({
-        ...simpleTextRun,
-        style: {
-          ...simpleTextRun.style,
-          fontFamily: '함초롬돋움',
-          fontSize: 18,
-        },
-      }),
-      shadowTextUsesOverlay: renderer.shouldOverlayTextRun({
-        ...simpleTextRun,
-        style: {
-          ...simpleTextRun.style,
-          shadowType: 1,
-          shadowColor: '#333333',
-          shadowOffsetX: 1,
-          shadowOffsetY: 1,
-        },
-      }),
-      ratioTextUsesOverlay: renderer.shouldOverlayTextRun({
-        ...simpleTextRun,
-        style: {
-          ...simpleTextRun.style,
-          ratio: 0.9,
-        },
-      }),
-      rotatedTextUsesOverlay: renderer.shouldOverlayTextRun({
-        ...simpleTextRun,
-        rotation: 15,
-      }),
-      verticalTextUsesOverlay: renderer.shouldOverlayTextRun({
-        ...simpleTextRun,
-        isVertical: true,
-      }),
-      invalidControlTextUsesOverlay: renderer.shouldOverlayTextRun({
-        ...simpleTextRun,
-        text: '\u0001',
-        positions: [0, 8],
-      }),
-      simpleLineUsesOverlay: renderer.shouldOverlayLine({
-        type: 'line',
-        bbox: { x: 0, y: 0, width: 64, height: 1 },
-        x1: 0,
-        y1: 0,
-        x2: 64,
-        y2: 0,
-        transform: { rotation: 0, horzFlip: false, vertFlip: false },
-        style: {
-          color: '#111111',
-          width: 1,
-          dash: 'solid',
-          lineType: 'single',
-          startArrow: 'none',
-          endArrow: 'none',
-          startArrowSize: 0,
-          endArrowSize: 0,
-        },
-      }),
-      simpleRectangleUsesOverlay: renderer.shouldOverlayRectangle({
-        type: 'rectangle',
-        bbox: { x: 0, y: 0, width: 64, height: 32 },
-        cornerRadius: 0,
-        gradient: null,
-        transform: { rotation: 0, horzFlip: false, vertFlip: false },
-        style: {
-          fillColor: null,
-          strokeColor: '#111111',
-          strokeWidth: 1,
-          strokeDash: 'solid',
-          opacity: 1,
-          pattern: null,
-          shadow: null,
-        },
-      }),
-      underlinedTextUsesOverlay: renderer.shouldOverlayTextRun({
-        ...simpleTextRun,
-        style: {
-          ...simpleTextRun.style,
-          underline: 'bottom',
-        },
-      }),
-      tableCellFillUsesOverlay: (() => {
-        renderer.currentClipStack.push({
-          bounds: { x: 0, y: 0, width: 64, height: 32 },
-          kind: 'tableCell',
-        });
-        try {
-          return renderer.shouldOverlayRectangle({
-            type: 'rectangle',
-            bbox: { x: 0, y: 0, width: 64, height: 32 },
-            cornerRadius: 0,
-            gradient: null,
-            transform: { rotation: 0, horzFlip: false, vertFlip: false },
-            style: {
-              fillColor: '#ccffcc',
-              strokeColor: null,
-              strokeWidth: 0,
-              strokeDash: 'solid',
-              opacity: 1,
-              pattern: null,
-              shadow: null,
-            },
-          });
-        } finally {
-          renderer.currentClipStack.pop();
-        }
-      })(),
-      vectorHintTableCellFillUsesOverlay: (() => {
-        renderer.currentClipStack.push({
-          bounds: { x: 0, y: 0, width: 64, height: 32 },
-          kind: 'tableCell',
-        });
-        renderer.currentCacheHintStack.push('preferVectorRecording');
-        try {
-          return renderer.shouldOverlayRectangle({
-            type: 'rectangle',
-            bbox: { x: 0, y: 0, width: 64, height: 32 },
-            cornerRadius: 0,
-            gradient: null,
-            transform: { rotation: 0, horzFlip: false, vertFlip: false },
-            style: {
-              fillColor: '#ccffcc',
-              strokeColor: null,
-              strokeWidth: 0,
-              strokeDash: 'solid',
-              opacity: 1,
-              pattern: null,
-              shadow: null,
-            },
-          });
-        } finally {
-          renderer.currentCacheHintStack.pop();
-          renderer.currentClipStack.pop();
-        }
-      })(),
-      tableCellBoldTextUsesOverlay: (() => {
-        renderer.currentClipStack.push({
-          bounds: { x: 0, y: 0, width: 64, height: 32 },
-          kind: 'tableCell',
-        });
-        try {
-          return renderer.shouldOverlayTextRun({
-            ...simpleTextRun,
-            style: {
-              ...simpleTextRun.style,
-              bold: true,
-            },
-          });
-        } finally {
-          renderer.currentClipStack.pop();
-        }
-      })(),
-      preferRasterImageUsesOverlay: (() => {
-        renderer.currentCacheHintStack.push('preferRaster');
-        try {
-          return renderer.shouldOverlayImage({
-            type: 'image',
-            bbox: { x: 0, y: 0, width: 32, height: 32 },
-            base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7s8AAAAASUVORK5CYII=',
-            fillMode: 'fitToSize',
-            transform: { rotation: 0, horzFlip: false, vertFlip: false },
-          });
-        } finally {
-          renderer.currentCacheHintStack.pop();
-        }
-      })(),
-      imageUsesOverlay: renderer.shouldOverlayImage({
-        type: 'image',
-        bbox: { x: 0, y: 0, width: 32, height: 32 },
-        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7s8AAAAASUVORK5CYII=',
-        fillMode: 'fitToSize',
-        transform: { rotation: 0, horzFlip: false, vertFlip: false },
-      }),
-      resourceImageUsesOverlay: renderer.shouldOverlayImage({
-        type: 'image',
-        bbox: { x: 0, y: 0, width: 32, height: 32 },
-        resourceId: 0,
-        fillMode: 'fitToSize',
-        transform: { rotation: 0, horzFlip: false, vertFlip: false },
-      }),
-      formUsesOverlay: renderer.shouldOverlayFormObject({
-        type: 'formObject',
-        bbox: { x: 0, y: 0, width: 48, height: 16 },
-        formType: 'checkBox',
-        caption: '동의',
-        text: '',
-        foreColor: '#111111',
-        backColor: '#ffffff',
-        value: 1,
-        enabled: true,
-      }),
-      equationUsesOverlay: renderer.shouldOverlayEquation({
-        ...equationOp,
-      }),
       equationSvgNativeProbe,
       textBlobNativeProbe,
+      textEffectNativeProbe,
       textProjectionNativeProbe,
       pageBackgroundImageNativeProbe,
       fallbackOverlayPassProbe,
-      footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
-        type: 'footnoteMarker',
-        text: '1)',
-        fontFamily: '함초롬돋움',
-        fontSize: 10,
-        color: '#111111',
-        bbox: { x: 4, y: 4, width: 12, height: 12 },
-      }),
+      nativeDispatchProbe,
     };
   });
 
@@ -1379,28 +1271,33 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     nativeRouting.batangcheFamily === '바탕체' || nativeRouting.batangcheFamily === 'Noto Serif KR',
     `바탕체 family=${nativeRouting.batangcheFamily}`,
   );
-  assert(nativeRouting.simpleTextUsesOverlay === false, `simple text overlay=${nativeRouting.simpleTextUsesOverlay}`);
-  assert(nativeRouting.nonDefaultSimpleTextUsesOverlay === false, `non-default simple text overlay=${nativeRouting.nonDefaultSimpleTextUsesOverlay}`);
-  assert(nativeRouting.shadowTextUsesOverlay === false, `shadow text overlay=${nativeRouting.shadowTextUsesOverlay}`);
-  assert(nativeRouting.ratioTextUsesOverlay === false, `ratio text overlay=${nativeRouting.ratioTextUsesOverlay}`);
-  assert(nativeRouting.rotatedTextUsesOverlay === false, `rotated text overlay=${nativeRouting.rotatedTextUsesOverlay}`);
-  assert(nativeRouting.verticalTextUsesOverlay === false, `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
-  assert(nativeRouting.invalidControlTextUsesOverlay === false, `invalid control text overlay=${nativeRouting.invalidControlTextUsesOverlay}`);
   assert(
     nativeRouting.textProjectionNativeProbe?.nativeTextRunCalls === 2,
     `vertical/invalid TextRun native calls=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
   );
   assert(
-    nativeRouting.textProjectionNativeProbe?.overlayTextRunCalls === 0,
-    `vertical/invalid TextRun overlay calls=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
+    nativeRouting.textProjectionNativeProbe?.hasRenderTextRunOverlay === false,
+    `TextRun overlay method removed=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.textEffectNativeProbe?.hasRenderTextRunOverlay === false,
+    `text effect overlay method removed=${JSON.stringify(nativeRouting.textEffectNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.textEffectNativeProbe?.makePaintCalls?.some((call) => call.color === '#666666' && call.style === 'fill'),
+    `native text shadow paint=${JSON.stringify(nativeRouting.textEffectNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.textEffectNativeProbe?.makePaintCalls?.some((call) => call.color === '#111111' && call.style === 'stroke'),
+    `native text outline stroke=${JSON.stringify(nativeRouting.textEffectNativeProbe)}`,
   );
   assert(
     nativeRouting.pageBackgroundImageNativeProbe?.nativePageBackgroundCalls === 1,
     `page background image native calls=${JSON.stringify(nativeRouting.pageBackgroundImageNativeProbe)}`,
   );
   assert(
-    nativeRouting.pageBackgroundImageNativeProbe?.overlayPageBackgroundImageCalls === 0,
-    `page background image overlay calls=${JSON.stringify(nativeRouting.pageBackgroundImageNativeProbe)}`,
+    nativeRouting.pageBackgroundImageNativeProbe?.hasRenderPageBackgroundImageOverlay === false,
+    `page background image overlay method removed=${JSON.stringify(nativeRouting.pageBackgroundImageNativeProbe)}`,
   );
   assert(
     nativeRouting.fallbackOverlayPassProbe?.hasFallbackOverlayNode === false
@@ -1408,17 +1305,13 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       && nativeRouting.fallbackOverlayPassProbe?.hasRenderFallbackOverlayNode === false,
     `fallback overlay pass methods removed=${JSON.stringify(nativeRouting.fallbackOverlayPassProbe)}`,
   );
-  assert(nativeRouting.simpleLineUsesOverlay === false, `simple line overlay=${nativeRouting.simpleLineUsesOverlay}`);
-  assert(nativeRouting.simpleRectangleUsesOverlay === false, `simple rectangle overlay=${nativeRouting.simpleRectangleUsesOverlay}`);
-  assert(nativeRouting.underlinedTextUsesOverlay === false, `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
-  assert(nativeRouting.tableCellFillUsesOverlay === false, `table-cell fill overlay=${nativeRouting.tableCellFillUsesOverlay}`);
-  assert(nativeRouting.vectorHintTableCellFillUsesOverlay === false, `vector-hint table-cell fill overlay=${nativeRouting.vectorHintTableCellFillUsesOverlay}`);
-  assert(nativeRouting.tableCellBoldTextUsesOverlay === false, `table-cell bold text overlay=${nativeRouting.tableCellBoldTextUsesOverlay}`);
-  assert(nativeRouting.preferRasterImageUsesOverlay === false, `prefer-raster image overlay=${nativeRouting.preferRasterImageUsesOverlay}`);
-  assert(nativeRouting.imageUsesOverlay === false, `image overlay=${nativeRouting.imageUsesOverlay}`);
-  assert(nativeRouting.resourceImageUsesOverlay === false, `resource image overlay=${nativeRouting.resourceImageUsesOverlay}`);
-  assert(nativeRouting.formUsesOverlay === false, `form overlay=${nativeRouting.formUsesOverlay}`);
-  assert(nativeRouting.equationUsesOverlay === false, `equation overlay=${nativeRouting.equationUsesOverlay}`);
+  for (const [method, calls] of Object.entries(nativeRouting.nativeDispatchProbe?.calls ?? {})) {
+    assert(calls > 0, `${method} native dispatch calls=${JSON.stringify(nativeRouting.nativeDispatchProbe)}`);
+  }
+  assert(
+    Object.values(nativeRouting.nativeDispatchProbe?.overlayMethods ?? {}).every((exists) => exists === false),
+    `CanvasKit overlay helper methods removed=${JSON.stringify(nativeRouting.nativeDispatchProbe?.overlayMethods)}`,
+  );
   assert(
     nativeRouting.equationSvgNativeProbe?.hasEquationSvgDomImageCache === false,
     `equation svg DOM cache removed=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
@@ -1445,5 +1338,4 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       `text blob cache hits recorded=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
     );
   }
-  assert(nativeRouting.footnoteUsesOverlay === false, `footnote overlay=${nativeRouting.footnoteUsesOverlay}`);
 }, { skipLoadApp: true });

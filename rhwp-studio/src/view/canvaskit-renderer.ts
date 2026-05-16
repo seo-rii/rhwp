@@ -23,7 +23,6 @@ import type {
   LayerEllipseOp,
   LayerEquationLayoutBox,
   LayerEquationOp,
-  LayerFootnoteMarkerOp,
   LayerFormObjectOp,
   LayerGlyphOutlineOp,
   LayerGlyphRunOp,
@@ -50,32 +49,20 @@ import type {
 import {
   allowsTextControlMark,
   angleToCanvasCoords,
-  applyLayerImageEffect,
   buildCanvasTextFont,
   calculateArrowDimensions,
   canPreprocessCroppedLayerImageEffect,
   computePathPaintBounds,
   decodePuaOverlapNumber,
-  drawCanvas2DCharOverlap,
   isHalfwidthScaledCluster,
-  layerCanvasImageSourceSize,
-  resetLayerImageEffectDiagnostics,
   resolveLayerImageCropSource,
-  type LayerCanvasImageSource,
   type LayerImageEffectDiagnostics,
-  type LayerImageEffectCache,
   puaToDisplayText,
   splitIntoClusters,
   startsWithInvalidControl,
 } from './layer-canvas-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
-import {
-  canvaskitClipRightPad,
-  shouldOverlayRasterImage,
-  shouldOverlayRectangle as shouldOverlayRectanglePolicy,
-  shouldOverlayTextRun as shouldOverlayTextRunPolicy,
-  shouldOverlayVectorEquation,
-} from './canvaskit/policy';
+import { canvaskitClipRightPad } from './canvaskit/policy';
 import { CanvasKitResourceCache } from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
 import { CanvasKitSurfaceCache, type CanvasKitSurfaceDiagnostics } from './canvaskit/surface-cache';
@@ -99,22 +86,6 @@ export class CanvasKitLayerRenderer {
   private readonly mipmappedImageCache: Map<string, Image>;
   private readonly domImageCache: Map<string, HTMLImageElement>;
   private readonly patternImageCache: Map<string, Image | null>;
-  private readonly overlayImageEffectCache: LayerImageEffectCache = new WeakMap();
-  private readonly overlayImageEffectDiagnostics: LayerImageEffectDiagnostics = {
-    cacheHits: 0,
-    cacheMisses: 0,
-    preprocessFailures: 0,
-    fallbackToOriginal: 0,
-    preprocessedPixels: 0,
-    preprocessedBytes: 0,
-    maxPreprocessedBytes: 0,
-    preprocessTimeMs: 0,
-    maxPreprocessTimeMs: 0,
-    heapDeltaBytes: 0,
-    maxHeapDeltaBytes: 0,
-    offscreenCanvasPreprocesses: 0,
-    htmlCanvasPreprocesses: 0,
-  };
   private readonly fontAliases: Set<string>;
   private readonly staticPictureCache = new CanvasKitStaticPictureCache();
   private readonly textBlobCache = new Map<string, TextBlob>();
@@ -232,39 +203,7 @@ export class CanvasKitLayerRenderer {
   }
 
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
-    const resourceDiagnostics = this.resourceCache.getImageEffectDiagnostics();
-    return {
-      cacheHits: resourceDiagnostics.cacheHits + this.overlayImageEffectDiagnostics.cacheHits,
-      cacheMisses: resourceDiagnostics.cacheMisses + this.overlayImageEffectDiagnostics.cacheMisses,
-      preprocessFailures: resourceDiagnostics.preprocessFailures
-        + this.overlayImageEffectDiagnostics.preprocessFailures,
-      fallbackToOriginal: resourceDiagnostics.fallbackToOriginal
-        + this.overlayImageEffectDiagnostics.fallbackToOriginal,
-      preprocessedPixels: resourceDiagnostics.preprocessedPixels
-        + this.overlayImageEffectDiagnostics.preprocessedPixels,
-      preprocessedBytes: resourceDiagnostics.preprocessedBytes
-        + this.overlayImageEffectDiagnostics.preprocessedBytes,
-      maxPreprocessedBytes: Math.max(
-        resourceDiagnostics.maxPreprocessedBytes,
-        this.overlayImageEffectDiagnostics.maxPreprocessedBytes,
-      ),
-      preprocessTimeMs: resourceDiagnostics.preprocessTimeMs
-        + this.overlayImageEffectDiagnostics.preprocessTimeMs,
-      maxPreprocessTimeMs: Math.max(
-        resourceDiagnostics.maxPreprocessTimeMs,
-        this.overlayImageEffectDiagnostics.maxPreprocessTimeMs,
-      ),
-      heapDeltaBytes: resourceDiagnostics.heapDeltaBytes
-        + this.overlayImageEffectDiagnostics.heapDeltaBytes,
-      maxHeapDeltaBytes: Math.max(
-        resourceDiagnostics.maxHeapDeltaBytes,
-        this.overlayImageEffectDiagnostics.maxHeapDeltaBytes,
-      ),
-      offscreenCanvasPreprocesses: resourceDiagnostics.offscreenCanvasPreprocesses
-        + this.overlayImageEffectDiagnostics.offscreenCanvasPreprocesses,
-      htmlCanvasPreprocesses: resourceDiagnostics.htmlCanvasPreprocesses
-        + this.overlayImageEffectDiagnostics.htmlCanvasPreprocesses,
-    };
+    return this.resourceCache.getImageEffectDiagnostics();
   }
 
   getSurfaceDiagnostics(): Readonly<CanvasKitSurfaceDiagnostics> {
@@ -273,7 +212,6 @@ export class CanvasKitLayerRenderer {
 
   resetImageEffectDiagnostics(): void {
     this.resourceCache.resetImageEffectDiagnostics();
-    resetLayerImageEffectDiagnostics(this.overlayImageEffectDiagnostics);
   }
 
   getTextVariantSelectionDiagnostics(): readonly LayerTextVariantGroupReport[] {
@@ -530,9 +468,6 @@ export class CanvasKitLayerRenderer {
         // CanvasKit replay. A raw container is metadata only here.
         return;
       case 'textRun':
-        if (this.shouldOverlayTextRun(op)) {
-          return;
-        }
         this.renderTextRun(canvas, op);
         return;
       case 'glyphRun':
@@ -554,21 +489,12 @@ export class CanvasKitLayerRenderer {
         this.renderTextDecoration(canvas, op);
         return;
       case 'footnoteMarker':
-        if (this.shouldOverlayFootnoteMarker(op)) {
-          return;
-        }
         this.renderFootnoteMarker(canvas, op);
         return;
       case 'line':
-        if (this.shouldOverlayLine(op)) {
-          return;
-        }
         this.renderLine(canvas, op);
         return;
       case 'rectangle':
-        if (this.shouldOverlayRectangle(op)) {
-          return;
-        }
         this.renderRectangle(canvas, op);
         return;
       case 'ellipse':
@@ -578,55 +504,15 @@ export class CanvasKitLayerRenderer {
         this.renderPath(canvas, op);
         return;
       case 'image':
-        if (this.shouldOverlayImage(op)) {
-          return;
-        }
         this.renderImage(canvas, op);
         return;
       case 'equation':
-        if (this.shouldOverlayEquation(op)) {
-          return;
-        }
         this.renderEquation(canvas, op);
         return;
       case 'formObject':
-        if (this.shouldOverlayFormObject(op)) {
-          return;
-        }
         this.renderFormObject(canvas, op);
         return;
     }
-  }
-
-  private shouldOverlayTextRun(op: LayerTextRunOp): boolean {
-    const insideTableCell = this.currentClipStack.some((clip) => clip.kind === 'tableCell');
-    return shouldOverlayTextRunPolicy(op, {
-      renderMode: this.renderMode,
-      profile: this.currentProfile,
-      insideTableCell,
-      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
-    });
-  }
-
-  private shouldOverlayFootnoteMarker(_op: LayerFootnoteMarkerOp): boolean {
-    return false;
-  }
-
-  private shouldOverlayLine(_op: LayerLineOp): boolean {
-    return false;
-  }
-
-  private shouldOverlayRectangle(op: LayerRectangleOp): boolean {
-    return shouldOverlayRectanglePolicy(op, {
-      renderMode: this.renderMode,
-      profile: this.currentProfile,
-      insideTableCell: this.currentClipStack.some((clip) => clip.kind === 'tableCell'),
-      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
-    });
-  }
-
-  private shouldOverlayFormObject(_op: LayerFormObjectOp): boolean {
-    return false;
   }
 
   private formPalette(op: LayerFormObjectOp): {
@@ -643,24 +529,6 @@ export class CanvasKitLayerRenderer {
       buttonBackColor: op.backColor || (op.enabled ? '#d0d0d0' : '#e0e0e0'),
       buttonFaceColor: op.enabled ? '#c0c0c0' : '#e0e0e0',
     };
-  }
-
-  private shouldOverlayImage(_op: LayerImageOp): boolean {
-    return shouldOverlayRasterImage({
-      renderMode: this.renderMode,
-      profile: this.currentProfile,
-      insideTableCell: this.currentClipStack.some((clip) => clip.kind === 'tableCell'),
-      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
-    });
-  }
-
-  private shouldOverlayEquation(_op: LayerEquationOp): boolean {
-    return shouldOverlayVectorEquation({
-      renderMode: this.renderMode,
-      profile: this.currentProfile,
-      insideTableCell: this.currentClipStack.some((clip) => clip.kind === 'tableCell'),
-      hasCacheHint: (cacheHint) => this.hasActiveCacheHint(cacheHint),
-    });
   }
 
   private renderPageBackground(canvas: ReturnType<Surface['getCanvas']>, op: LayerPageBackgroundOp): void {
@@ -2204,382 +2072,6 @@ export class CanvasKitLayerRenderer {
     return layout.height > 0 ? layout.height : baseFontSize;
   }
 
-  private renderPageBackgroundImageOverlay(ctx: CanvasRenderingContext2D, op: LayerPageBackgroundOp): void {
-    if (!op.image) {
-      return;
-    }
-    const image = this.resourceCache.domImage(op.image.resourceId, op.image.base64);
-    if (!image) {
-      return;
-    }
-    this.drawDomImage(ctx, image, op.bbox, op.image.fillMode);
-  }
-
-  private renderImageOverlay(ctx: CanvasRenderingContext2D, op: LayerImageOp): void {
-    const image = this.resourceCache.domImage(op.resourceId, op.base64);
-    if (!image) {
-      return;
-    }
-
-    this.withCanvasOverlayTransform(ctx, op.bbox, op.transform, () => {
-      const { width: imageWidth, height: imageHeight } = layerCanvasImageSourceSize(image);
-      const effectCropSource = canPreprocessCroppedLayerImageEffect(op.fillMode)
-        ? resolveLayerImageCropSource(imageWidth, imageHeight, op.crop)
-        : null;
-      const source = applyLayerImageEffect(
-        image,
-        op.effect,
-        this.overlayImageEffectCache,
-        this.overlayImageEffectDiagnostics,
-        effectCropSource,
-      );
-      this.drawDomImage(
-        ctx,
-        source,
-        op.bbox,
-        op.fillMode,
-        op.originalSize,
-        source !== image && effectCropSource ? undefined : op.crop,
-      );
-    });
-  }
-
-  private renderLineOverlay(ctx: CanvasRenderingContext2D, op: LayerLineOp): void {
-    this.withCanvasOverlayTransform(ctx, op.bbox, op.transform, () => {
-      ctx.save();
-      const strokeWidth = Math.max(op.style.width, 0.5);
-      ctx.beginPath();
-      ctx.moveTo(op.x1, op.y1);
-      ctx.lineTo(op.x2, op.y2);
-      ctx.strokeStyle = op.style.color;
-      ctx.lineWidth = strokeWidth;
-      ctx.setLineDash(this.strokeDashPattern(op.style.dash, strokeWidth));
-      ctx.stroke();
-      ctx.restore();
-    });
-  }
-
-  private renderRectangleOverlay(ctx: CanvasRenderingContext2D, op: LayerRectangleOp): void {
-    this.withCanvasOverlayTransform(ctx, op.bbox, op.transform, () => {
-      ctx.save();
-      if (op.style.opacity < 1) {
-        ctx.globalAlpha = op.style.opacity;
-      }
-      if (op.style.fillColor) {
-        ctx.fillStyle = op.style.fillColor;
-        ctx.fillRect(op.bbox.x, op.bbox.y, op.bbox.width, op.bbox.height);
-      }
-      if (op.style.strokeColor) {
-        ctx.strokeStyle = op.style.strokeColor;
-        ctx.lineWidth = Math.max(op.style.strokeWidth, 0.5);
-        ctx.setLineDash(this.strokeDashPattern(op.style.strokeDash, op.style.strokeWidth));
-        ctx.strokeRect(op.bbox.x, op.bbox.y, op.bbox.width, op.bbox.height);
-      }
-      ctx.restore();
-    });
-  }
-
-  private renderFormObjectOverlay(ctx: CanvasRenderingContext2D, op: LayerFormObjectOp): void {
-    const { x, y, width: w, height: h } = op.bbox;
-    const palette = this.formPalette(op);
-    ctx.save();
-
-    switch (op.formType) {
-      case 'pushButton': {
-        ctx.fillStyle = palette.buttonBackColor;
-        ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = palette.borderColor;
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(x, y, w, h);
-        if (op.caption) {
-          const fontSize = Math.min(Math.max(h * 0.5, 8), 12);
-          ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = palette.foreColor;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(op.caption, x + w / 2, y + h / 2);
-        }
-        break;
-      }
-      case 'checkBox': {
-        const boxSize = Math.min(h, 14);
-        const boxY = y + (h - boxSize) / 2;
-        ctx.fillStyle = palette.backColor;
-        ctx.fillRect(x, boxY, boxSize, boxSize);
-        ctx.strokeStyle = palette.borderColor;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, boxY, boxSize, boxSize);
-        if (op.value !== 0) {
-          ctx.strokeStyle = palette.foreColor;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(x + 2, boxY + boxSize / 2);
-          ctx.lineTo(x + boxSize / 3, boxY + boxSize - 3);
-          ctx.lineTo(x + boxSize - 2, boxY + 2);
-          ctx.stroke();
-        }
-        if (op.caption) {
-          const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
-          ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = palette.foreColor;
-          ctx.textBaseline = 'middle';
-          ctx.fillText(op.caption, x + boxSize + 4, y + h / 2);
-        }
-        break;
-      }
-      case 'radioButton': {
-        const r = Math.min(h, 14) / 2;
-        const cx = x + r;
-        const cy = y + h / 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fillStyle = palette.backColor;
-        ctx.fill();
-        ctx.strokeStyle = palette.borderColor;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        if (op.value !== 0) {
-          ctx.beginPath();
-          ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
-          ctx.fillStyle = palette.foreColor;
-          ctx.fill();
-        }
-        if (op.caption) {
-          const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
-          ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = palette.foreColor;
-          ctx.textBaseline = 'middle';
-          ctx.fillText(op.caption, x + r * 2 + 4, y + h / 2);
-        }
-        break;
-      }
-      case 'comboBox': {
-        const btnW = Math.min(h, 20);
-        ctx.fillStyle = palette.backColor;
-        ctx.fillRect(x, y, w - btnW, h);
-        ctx.strokeStyle = palette.borderColor;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, w - btnW, h);
-        if (op.text) {
-          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
-          ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = palette.foreColor;
-          ctx.textBaseline = 'middle';
-          ctx.fillText(op.text, x + 2, y + h / 2);
-        }
-        const buttonX = x + w - btnW;
-        ctx.fillStyle = palette.buttonFaceColor;
-        ctx.fillRect(buttonX, y, btnW, h);
-        ctx.strokeStyle = palette.borderColor;
-        ctx.strokeRect(buttonX, y, btnW, h);
-        ctx.beginPath();
-        const triCx = buttonX + btnW / 2;
-        const triCy = y + h / 2;
-        const triSize = btnW * 0.3;
-        ctx.moveTo(triCx - triSize, triCy - triSize / 2);
-        ctx.lineTo(triCx + triSize, triCy - triSize / 2);
-        ctx.lineTo(triCx, triCy + triSize / 2);
-        ctx.closePath();
-        ctx.fillStyle = palette.foreColor;
-        ctx.fill();
-        break;
-      }
-      case 'edit': {
-        ctx.fillStyle = palette.backColor;
-        ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = palette.borderColor;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, w, h);
-        if (op.text) {
-          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
-          ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = palette.foreColor;
-          ctx.textBaseline = 'middle';
-          ctx.fillText(op.text, x + 2, y + h / 2);
-        }
-        break;
-      }
-    }
-
-    ctx.restore();
-  }
-
-  private withCanvasOverlayTransform(
-    ctx: CanvasRenderingContext2D,
-    bbox: LayerBounds,
-    transform: { rotation: number; horzFlip: boolean; vertFlip: boolean },
-    draw: () => void,
-  ): void {
-    ctx.save();
-    const { rotation, horzFlip, vertFlip } = transform;
-    if (rotation || horzFlip || vertFlip) {
-      const cx = bbox.x + bbox.width / 2;
-      const cy = bbox.y + bbox.height / 2;
-      if (horzFlip) {
-        ctx.translate(cx * 2, 0);
-        ctx.scale(-1, 1);
-      }
-      if (vertFlip) {
-        ctx.translate(0, cy * 2);
-        ctx.scale(1, -1);
-      }
-      if (rotation) {
-        ctx.translate(cx, cy);
-        ctx.rotate((rotation * Math.PI) / 180);
-        ctx.translate(-cx, -cy);
-      }
-    }
-    draw();
-    ctx.restore();
-  }
-
-  private withCurrentOverlayClip(
-    ctx: CanvasRenderingContext2D,
-    padding: number,
-    draw: () => void,
-    bounds?: LayerBounds,
-  ): void {
-    if (this.currentClipStack.length === 0) {
-      draw();
-      return;
-    }
-    ctx.save();
-    for (const clip of this.currentClipStack) {
-      const clipBounds = clip.bounds;
-      let leftPad = padding;
-      let topPad = padding;
-      let rightPad = padding;
-      let bottomPad = padding;
-
-      rightPad = Math.max(rightPad, clip.rightOverflowSlop);
-
-      if (bounds) {
-        if (bounds.x < clipBounds.x) {
-          leftPad = Math.max(leftPad, 1);
-        }
-        if (bounds.y < clipBounds.y) {
-          topPad = Math.max(topPad, 1);
-        }
-        if (bounds.x + bounds.width > clipBounds.x + clipBounds.width + rightPad) {
-          rightPad = Math.max(
-            rightPad,
-            Math.ceil(bounds.x + bounds.width - (clipBounds.x + clipBounds.width)) + 1,
-          );
-        }
-        if (bounds.y + bounds.height > clipBounds.y + clipBounds.height) {
-          bottomPad = Math.max(bottomPad, 1);
-        }
-      }
-
-      ctx.beginPath();
-      ctx.rect(
-        clipBounds.x - leftPad,
-        clipBounds.y - topPad,
-        clipBounds.width + leftPad + rightPad,
-        clipBounds.height + topPad + bottomPad,
-      );
-      ctx.clip();
-    }
-    draw();
-    ctx.restore();
-  }
-
-  private drawDomImage(
-    ctx: CanvasRenderingContext2D,
-    image: LayerCanvasImageSource,
-    bbox: LayerBounds,
-    fillMode = 'fitToSize',
-    originalSize?: { width: number; height: number },
-    crop?: { left: number; top: number; right: number; bottom: number },
-  ): void {
-    const { width: imageWidth, height: imageHeight } = layerCanvasImageSourceSize(image);
-    if (!imageWidth || !imageHeight) {
-      return;
-    }
-    if (
-      !Number.isFinite(bbox.x)
-      || !Number.isFinite(bbox.y)
-      || !Number.isFinite(bbox.width)
-      || !Number.isFinite(bbox.height)
-      || bbox.width <= 0
-      || bbox.height <= 0
-    ) {
-      return;
-    }
-    const cropSource = resolveLayerImageCropSource(imageWidth, imageHeight, crop);
-    const drawImage = (x: number, y: number, width: number, height: number) => {
-      if (
-        !Number.isFinite(x)
-        || !Number.isFinite(y)
-        || !Number.isFinite(width)
-        || !Number.isFinite(height)
-        || width <= 0
-        || height <= 0
-      ) {
-        return;
-      }
-      if (cropSource) {
-        ctx.drawImage(image, cropSource.x, cropSource.y, cropSource.width, cropSource.height, x, y, width, height);
-        return;
-      }
-      ctx.drawImage(image, x, y, width, height);
-    };
-
-    if (fillMode === 'fitToSize' || fillMode === 'none') {
-      drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
-      return;
-    }
-
-    let placedWidth = originalSize?.width ?? imageWidth;
-    let placedHeight = originalSize?.height ?? imageHeight;
-    if (
-      !Number.isFinite(placedWidth)
-      || !Number.isFinite(placedHeight)
-      || placedWidth <= 0
-      || placedHeight <= 0
-    ) {
-      placedWidth = imageWidth;
-      placedHeight = imageHeight;
-    }
-    const { x, y } = this.resolveImagePlacement(fillMode, bbox, placedWidth, placedHeight);
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(bbox.x, bbox.y, bbox.width, bbox.height);
-    ctx.clip();
-
-    if (fillMode === 'tileAll') {
-      const maxTileDraws = 4096;
-      let tileDraws = 0;
-      for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += placedHeight) {
-        for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += placedWidth) {
-          drawImage(tx, ty, placedWidth, placedHeight);
-          tileDraws += 1;
-        }
-      }
-    } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
-      const maxTileDraws = 4096;
-      let tileDraws = 0;
-      const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - placedHeight;
-      for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += placedWidth) {
-        drawImage(tx, ty, placedWidth, placedHeight);
-        tileDraws += 1;
-      }
-    } else if (fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
-      const maxTileDraws = 4096;
-      let tileDraws = 0;
-      const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - placedWidth;
-      for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += placedHeight) {
-        drawImage(tx, ty, placedWidth, placedHeight);
-        tileDraws += 1;
-      }
-    } else {
-      drawImage(x, y, placedWidth, placedHeight);
-    }
-
-    ctx.restore();
-  }
-
   private scheduleRerender(): void {
     if (this.asyncResourceReadyCallback && this.lastTargetCanvas?.parentElement) {
       this.asyncResourceReadyCallback();
@@ -2598,241 +2090,6 @@ export class CanvasKitLayerRenderer {
     });
   }
 
-  private renderTextRunOverlay(ctx: CanvasRenderingContext2D, op: LayerTextRunOp): void {
-    const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
-    const hasRatio = Math.abs(ratio - 1) > 0.01;
-    const outlineType = op.style.outlineType ?? 0;
-    const shadowType = op.style.shadowType ?? 0;
-    const shadowColor = typeof op.style.shadowColor === 'string' ? op.style.shadowColor : op.style.color;
-    const shadowOffsetX = typeof op.style.shadowOffsetX === 'number' ? op.style.shadowOffsetX : 0;
-    const shadowOffsetY = typeof op.style.shadowOffsetY === 'number' ? op.style.shadowOffsetY : 0;
-    const emboss = !!op.style.emboss;
-    const engrave = !!op.style.engrave;
-    const decorationsAreMirrors = op.legacyVisuals?.decorations === 'mirror';
-    const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
-    const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
-    const fontSize = op.style.fontSize || 12;
-    const clusters = splitIntoClusters(op.text);
-    const baseFont = buildCanvasTextFont(op.style.fontFamily, fontSize, op.style.bold, op.style.italic);
-    const currencyFallbackFont =
-      `${op.style.italic ? 'italic ' : ''}${op.style.bold ? 'bold ' : ''}${fontSize.toFixed(3)}px 'Malgun Gothic','맑은 고딕',sans-serif`;
-    const symbolFallbackFont =
-      `${op.style.italic ? 'italic ' : ''}${op.style.bold ? 'bold ' : ''}${fontSize.toFixed(3)}px 'GulimChe','굴림체','D2Coding','NanumGothicCoding','나눔고딕코딩','Noto Sans Mono',monospace`;
-    const clusterFonts = clusters.map((cluster) => {
-      const ch = cluster.text.codePointAt(0) ?? 0;
-      const needsCurrencyFallback =
-        ch === 0x20A9 || ch === 0x20AC || ch === 0x00A3 || ch === 0x00A5;
-      if (needsCurrencyFallback) {
-        return currencyFallbackFont;
-      }
-      const needsSymbolFallback =
-        (ch >= 0x2460 && ch <= 0x24FF)
-        || (ch >= 0x25A0 && ch <= 0x25FF)
-        || (ch >= 0x2600 && ch <= 0x27BF);
-      return needsSymbolFallback ? symbolFallbackFont : baseFont;
-    });
-    const drawClusters = (originX: number, originY: number) => {
-      const textWidth = op.positions.at(-1) ?? 0;
-      const drawControlMarks = () => {
-        if (op.legacyVisuals?.controlMarks === 'mirror') {
-          return;
-        }
-        if (!op.controlMarks?.length) {
-          return;
-        }
-        ctx.save();
-        ctx.fillStyle = '#4A90D9';
-        for (const mark of op.controlMarks) {
-          if (!allowsTextControlMark(
-            this.currentShowParagraphMarks,
-            this.currentShowControlCodes,
-            mark.kind,
-          )) {
-            continue;
-          }
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', mark.fontSize, false, false);
-          ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
-        }
-        ctx.restore();
-      };
-
-      if (op.charOverlap && op.legacyVisuals?.charOverlap !== 'mirror') {
-        drawCanvas2DCharOverlap(ctx, op, originX, originY);
-        drawControlMarks();
-        return;
-      }
-
-      if (textWidth > 0 && shadeColor !== '#ffffff') {
-        ctx.save();
-        ctx.fillStyle = shadeColor;
-        ctx.fillRect(originX, originY - fontSize, textWidth, fontSize * 1.2);
-        ctx.restore();
-      }
-
-      const drawPass = (dx: number, dy: number, fillColor: string, strokeColor?: string, lineWidth = 0) => {
-        ctx.save();
-        ctx.fillStyle = fillColor;
-        if (strokeColor) {
-          ctx.strokeStyle = strokeColor;
-          ctx.lineWidth = lineWidth;
-          ctx.lineJoin = 'round';
-        }
-        for (const [index, cluster] of clusters.entries()) {
-          if (cluster.text === ' ' || cluster.text === '\t' || cluster.text === '\u2007') {
-            continue;
-          }
-          if (startsWithInvalidControl(cluster.text)) {
-            continue;
-          }
-          const clusterFont = clusterFonts[index];
-          if (ctx.font !== clusterFont) {
-            ctx.font = clusterFont;
-          }
-          const x = originX + op.positions[cluster.start] + dx;
-          const y = originY + dy;
-          if (isHalfwidthScaledCluster(cluster.text) && !hasRatio) {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.scale(0.5, 1);
-            ctx.fillText(cluster.text, 0, 0);
-            if (strokeColor) {
-              ctx.strokeText(cluster.text, 0, 0);
-            }
-            ctx.restore();
-            continue;
-          }
-          if (hasRatio) {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.scale(ratio, 1);
-            ctx.fillText(cluster.text, 0, 0);
-            if (strokeColor) {
-              ctx.strokeText(cluster.text, 0, 0);
-            }
-            ctx.restore();
-            continue;
-          }
-          ctx.fillText(cluster.text, x, y);
-          if (strokeColor) {
-            ctx.strokeText(cluster.text, x, y);
-          }
-        }
-        ctx.restore();
-      };
-
-      if (emboss || engrave) {
-        const offset = Math.max(fontSize / 20, 1);
-        drawPass(-offset, -offset, emboss ? '#ffffff' : '#808080');
-        drawPass(offset, offset, emboss ? '#808080' : '#ffffff');
-        drawPass(0, 0, op.style.color);
-      } else {
-        if (shadowType > 0) {
-          drawPass(shadowOffsetX, shadowOffsetY, shadowColor);
-        }
-        if (outlineType > 0) {
-          drawPass(0, 0, '#ffffff', op.style.color, Math.max(fontSize / 25, 0.5));
-        } else {
-          drawPass(0, 0, op.style.color);
-        }
-      }
-
-      if (emphasisDot > 0) {
-        const dotChar =
-          emphasisDot === 1 ? '●'
-            : emphasisDot === 2 ? '○'
-              : emphasisDot === 3 ? 'ˇ'
-                : emphasisDot === 4 ? '˜'
-                  : emphasisDot === 5 ? '･'
-                    : emphasisDot === 6 ? '˸'
-                      : '';
-        if (dotChar) {
-          ctx.save();
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', fontSize * 0.3, false, false);
-          ctx.fillStyle = op.style.color;
-          const dotY = originY - fontSize * 1.05;
-          for (const position of op.positions.slice(0, -1)) {
-            const dotX = originX + position + (fontSize * ratio * 0.5);
-            ctx.fillText(dotChar, dotX, dotY);
-          }
-          ctx.restore();
-        }
-      }
-
-      if (op.legacyVisuals?.tabLeaders !== 'mirror' && op.tabLeaders?.length) {
-        this.drawTabLeadersOverlay(ctx, op.tabLeaders, originX, originY, op.style.color);
-      }
-
-      if (!decorationsAreMirrors && op.style.underline !== 'none') {
-        ctx.save();
-        ctx.strokeStyle = op.style.underlineColor || op.style.color;
-        ctx.lineWidth = 1;
-        const y = op.style.underline === 'top' ? originY - fontSize + 1 : originY + 2;
-        ctx.beginPath();
-        ctx.moveTo(originX, y);
-        ctx.lineTo(originX + textWidth, y);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      if (!decorationsAreMirrors && op.style.strikethrough) {
-        ctx.save();
-        ctx.strokeStyle = op.style.strikeColor || op.style.color;
-        ctx.lineWidth = 1;
-        const y = originY - fontSize * 0.3;
-        ctx.beginPath();
-        ctx.moveTo(originX, y);
-        ctx.lineTo(originX + textWidth, y);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      drawControlMarks();
-    };
-
-    ctx.save();
-    ctx.font = baseFont;
-    ctx.textBaseline = 'alphabetic';
-    const textRotation = op.rotation;
-    if (textRotation !== 0) {
-      const cx = op.bbox.x + op.bbox.width / 2;
-      const cy = op.bbox.y + op.bbox.height / 2;
-      ctx.translate(cx, cy);
-      ctx.rotate((textRotation * Math.PI) / 180);
-      drawClusters(-op.bbox.width / 2, -op.bbox.height / 2 + op.baseline);
-    } else {
-      drawClusters(op.bbox.x, op.bbox.y + op.baseline);
-    }
-    ctx.restore();
-  }
-
-  private renderFootnoteMarkerOverlay(ctx: CanvasRenderingContext2D, op: LayerFootnoteMarkerOp): void {
-    ctx.save();
-    this.setCanvasTextFont(ctx, op.fontFamily, op.fontSize, false, false);
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = op.color;
-    ctx.fillText(op.text, op.bbox.x, op.bbox.y + op.bbox.height * 0.4);
-    ctx.restore();
-  }
-
-  private drawTabLeadersOverlay(ctx: CanvasRenderingContext2D, leaders: LayerTabLeader[], originX: number, baselineY: number, color: string): void {
-    for (const leader of leaders) {
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.setLineDash(
-        leader.fillType === 2 ? [4, 2]
-          : leader.fillType === 3 ? [1.5, 2.5]
-            : [],
-      );
-      const y = baselineY + 1;
-      ctx.beginPath();
-      ctx.moveTo(originX + leader.startX, y);
-      ctx.lineTo(originX + leader.endX, y);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
   private strokeDashPattern(dash: string, width: number): number[] {
     const stroke = Math.max(width, 0.5);
     switch (dash) {
@@ -2847,16 +2104,6 @@ export class CanvasKitLayerRenderer {
       default:
         return [];
     }
-  }
-
-  private setCanvasTextFont(
-    ctx: CanvasRenderingContext2D,
-    fontFamily: string,
-    fontSize: number,
-    bold: boolean,
-    italic: boolean,
-  ): void {
-    ctx.font = buildCanvasTextFont(fontFamily, fontSize, bold, italic);
   }
 
   private drawEncodedImage(
