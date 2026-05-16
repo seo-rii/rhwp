@@ -4266,6 +4266,120 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `form object text parity exact=${formObjectTextDiff.exactDiffPixels}, tolerant=${formObjectTextDiff.rawTolerantDiffPixels}, ink=${formObjectTextDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectTextDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-combo-box-overflow-text-parity');
+  const comboBoxOverflowTextProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 86,
+      pageHeight: 30,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 19131,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 19131,
+        bounds: { x: 0, y: 0, width: 86, height: 30 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 86, height: 30 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'formObject',
+            bbox: { x: 4, y: 6, width: 72, height: 18 },
+            formType: 'comboBox',
+            caption: '',
+            text: 'VeryLongComboValue',
+            foreColor: '#0040cc',
+            backColor: '#f7f7f7',
+            value: 0,
+            enabled: true,
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !comboBoxOverflowTextProbe.error,
+    comboBoxOverflowTextProbe.error || 'combo box overflow text parity probe available',
+  );
+  const countBluePixelsInRect = (dataUrl, rect) => {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    let count = 0;
+    for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+      for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        if (
+          png.data[offset + 3] > 32
+          && png.data[offset + 2] > 120
+          && png.data[offset] < 120
+          && png.data[offset + 1] < 150
+        ) {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  };
+  const comboButtonRect = { x: 58, y: 6, width: 18, height: 18 };
+  const comboBoxCanvas2dButtonBluePixels = countBluePixelsInRect(comboBoxOverflowTextProbe.canvas2d, comboButtonRect);
+  const comboBoxCanvaskitButtonBluePixels = countBluePixelsInRect(comboBoxOverflowTextProbe.canvaskit, comboButtonRect);
+  assert(
+    comboBoxCanvaskitButtonBluePixels <= comboBoxCanvas2dButtonBluePixels + 2,
+    `combo box button covers overflow text canvas2d=${comboBoxCanvas2dButtonBluePixels}, canvaskit=${comboBoxCanvaskitButtonBluePixels}`,
+  );
+  const comboBoxOverflowTextDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(comboBoxOverflowTextProbe.canvas2d),
+    pngBufferFromDataUrl(comboBoxOverflowTextProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-combo-box-overflow-text-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    comboBoxOverflowTextDiff.passed,
+    `combo box overflow text parity exact=${comboBoxOverflowTextDiff.exactDiffPixels}, tolerant=${comboBoxOverflowTextDiff.rawTolerantDiffPixels}, ink=${comboBoxOverflowTextDiff.rawInkMaskDiffPixels}, max_channel_delta=${comboBoxOverflowTextDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-vector-paint-parity');
   const vectorPaintParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

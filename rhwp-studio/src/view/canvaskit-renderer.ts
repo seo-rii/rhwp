@@ -1816,6 +1816,18 @@ export class CanvasKitLayerRenderer {
         fillPaint.delete();
         strokePaint.delete();
 
+        if (op.text) {
+          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
+          const family = this.fontRegistry.resolveFamily('sans-serif');
+          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
+          const metrics = font.getMetrics();
+          const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
+          canvas.drawText(op.text, x + 2, baselineY, paint, font);
+          paint.delete();
+          font.delete();
+          typeface.delete();
+        }
+
         const buttonRect = this.canvasKit.XYWHRect(x + w - btnW, y, btnW, h);
         const buttonFill = this.makePaint(palette.buttonFaceColor, 'fill');
         const buttonStroke = this.makeLinePaint(palette.borderColor, 1, 'solid');
@@ -1838,18 +1850,6 @@ export class CanvasKitLayerRenderer {
         arrowPaint.delete();
         arrowShape.delete();
         arrowPath.delete();
-
-        if (op.text) {
-          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
-          const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
-          const metrics = font.getMetrics();
-          const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
-          canvas.drawText(op.text, x + 2, baselineY, paint, font);
-          paint.delete();
-          font.delete();
-          typeface.delete();
-        }
         return;
       }
       case 'edit': {
