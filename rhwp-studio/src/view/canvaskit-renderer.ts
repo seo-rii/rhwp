@@ -594,9 +594,22 @@ export class CanvasKitLayerRenderer {
     for (const cluster of clusters) {
       let selectedFont = primaryObjects.font;
       let selectedFontFamily = op.style.fontFamily;
+      const codePoint = cluster.text.codePointAt(0) ?? 0;
+      const needsCurrencyFallback =
+        codePoint === 0x20A9 || codePoint === 0x20AC || codePoint === 0x00A3 || codePoint === 0x00A5;
+      const needsSymbolFallback =
+        (codePoint >= 0x2460 && codePoint <= 0x24FF)
+        || (codePoint >= 0x25A0 && codePoint <= 0x25FF)
+        || (codePoint >= 0x2600 && codePoint <= 0x27BF);
+      const preferredFallbackFamilies = needsCurrencyFallback
+        ? ['Malgun Gothic', '맑은 고딕', 'Noto Sans KR']
+        : needsSymbolFallback
+          ? ['GulimChe', '굴림체', 'D2Coding', 'NanumGothicCoding', 'Noto Sans Mono']
+          : [];
       const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
-      if (primaryGlyphs?.some((glyphId) => glyphId === 0)) {
-        for (const family of fallbackFamilies) {
+      if (preferredFallbackFamilies.length > 0 || primaryGlyphs?.some((glyphId) => glyphId === 0)) {
+        const candidateFamilies = preferredFallbackFamilies.length > 0 ? preferredFallbackFamilies : fallbackFamilies;
+        for (const family of candidateFamilies) {
           let candidate = textObjectsByFamily.get(family);
           if (!candidate) {
             candidate = this.makeTextObjects(

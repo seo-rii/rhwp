@@ -7224,6 +7224,150 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text style parity exact=${textStyleDiff.exactDiffPixels}, tolerant=${textStyleDiff.rawTolerantDiffPixels}, ink=${textStyleDiff.rawInkMaskDiffPixels}, max_channel_delta=${textStyleDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-fallback-font-parity');
+  const textFallbackFontProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const text = 'A₩①◆☀€';
+    const tree = {
+      pageWidth: 128,
+      pageHeight: 40,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1936,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1936,
+        bounds: { x: 0, y: 0, width: 128, height: 40 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 128, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'textRun',
+            bbox: { x: 8, y: 6, width: 112, height: 26 },
+            text,
+            baseline: 22,
+            rotation: 0,
+            isVertical: false,
+            orientation: 'horizontal',
+            isParaEnd: false,
+            isLineBreakEnd: false,
+            style: {
+              fontFamily: 'Noto Serif KR',
+              fontSize: 18,
+              color: '#111111',
+              bold: false,
+              italic: false,
+              ratio: 1,
+              underline: 'none',
+              underlineShape: 0,
+              strikethrough: false,
+              strikeShape: 0,
+              outlineType: 0,
+              shadowType: 0,
+              shadowColor: '#000000',
+              shadowOffsetX: 0,
+              shadowOffsetY: 0,
+              emboss: false,
+              engrave: false,
+              emphasisDot: 0,
+              shadeColor: '#ffffff',
+            },
+            positions: Array.from({ length: text.length + 1 }, (_, index) => index * 17),
+            controlMarks: [],
+            tabLeaders: [],
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    const canvas2d = await render(canvas2dRenderer);
+    const makeTextFamilies = [];
+    const originalMakeTextObjects = canvaskitRenderer.makeTextObjects;
+    canvaskitRenderer.makeTextObjects = function makeTextObjectsProbe(fontFamily) {
+      makeTextFamilies.push(fontFamily);
+      return originalMakeTextObjects.apply(this, arguments);
+    };
+    try {
+      return {
+        canvas2d,
+        canvaskit: await render(canvaskitRenderer),
+        makeTextFamilies,
+      };
+    } finally {
+      canvaskitRenderer.makeTextObjects = originalMakeTextObjects;
+    }
+  });
+  assert(
+    !textFallbackFontProbe.error,
+    textFallbackFontProbe.error || 'text fallback font parity probe available',
+  );
+  assert(
+    textFallbackFontProbe.makeTextFamilies.includes('Malgun Gothic')
+      && textFallbackFontProbe.makeTextFamilies.includes('GulimChe'),
+    `CanvasKit text fallback routes currency and symbol clusters=${JSON.stringify(textFallbackFontProbe.makeTextFamilies)}`,
+  );
+  const textFallbackCanvas2dInkPixels = countPixels(
+    textFallbackFontProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.red < 245 && pixel.green < 245 && pixel.blue < 245,
+  );
+  const textFallbackCanvaskitInkPixels = countPixels(
+    textFallbackFontProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.red < 245 && pixel.green < 245 && pixel.blue < 245,
+  );
+  assert(
+    textFallbackCanvas2dInkPixels > 160 && textFallbackCanvaskitInkPixels > 160,
+    `text fallback font replay draws glyphs canvas2d=${textFallbackCanvas2dInkPixels}, canvaskit=${textFallbackCanvaskitInkPixels}`,
+  );
+  const textFallbackFontDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textFallbackFontProbe.canvas2d),
+    pngBufferFromDataUrl(textFallbackFontProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-fallback-font-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.22,
+      inkMaskMaxDiffRatio: 0.14,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textFallbackFontDiff.passed,
+    `text fallback font parity exact=${textFallbackFontDiff.exactDiffPixels}, tolerant=${textFallbackFontDiff.rawTolerantDiffPixels}, ink=${textFallbackFontDiff.rawInkMaskDiffPixels}, max_channel_delta=${textFallbackFontDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-shade-emboss-engrave-parity');
   const textEffectParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
