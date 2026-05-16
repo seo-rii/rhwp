@@ -1437,9 +1437,6 @@ export class CanvasKitLayerRenderer {
 
       const drawSegment = (strokeWidth: number, offsetRatio: number) => {
         const paint = this.makeLinePaint(op.style.color, strokeWidth, op.style.dash);
-        if (strokeWidth < 0.5) {
-          paint.setStrokeWidth(strokeWidth);
-        }
         let offsetX = 0;
         let offsetY = 0;
         if (lineLength > 0 && offsetRatio !== 0) {

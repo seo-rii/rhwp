@@ -4784,6 +4784,110 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `line arrow variant parity exact=${lineArrowDiff.exactDiffPixels}, tolerant=${lineArrowDiff.rawTolerantDiffPixels}, ink=${lineArrowDiff.rawInkMaskDiffPixels}, max_channel_delta=${lineArrowDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-compound-line-thin-stroke-parity');
+  const compoundLineThinStrokeProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 64,
+      pageHeight: 32,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1911,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1911,
+        bounds: { x: 0, y: 0, width: 64, height: 32 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 64, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'line',
+            bbox: { x: 4, y: 10, width: 56, height: 12 },
+            x1: 8,
+            y1: 16,
+            x2: 56,
+            y2: 16,
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+            style: {
+              color: '#000000',
+              width: 0.6,
+              dash: 'solid',
+              lineType: 'thinThickThinTriple',
+              startArrow: 'none',
+              endArrow: 'none',
+              startArrowSize: 1,
+              endArrowSize: 1,
+              shadow: null,
+            },
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !compoundLineThinStrokeProbe.error,
+    compoundLineThinStrokeProbe.error || 'compound line thin stroke parity probe available',
+  );
+  const measureCompoundLineDarkness = (dataUrl) => {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    let totalDarkness = 0;
+    let samples = 0;
+    for (let y = 14; y <= 18; y += 1) {
+      for (let x = 8; x <= 56; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        const alpha = png.data[offset + 3] / 255;
+        const luma = (png.data[offset] + png.data[offset + 1] + png.data[offset + 2]) / 3;
+        totalDarkness += (255 - luma) * alpha;
+        samples += 1;
+      }
+    }
+    return totalDarkness / samples;
+  };
+  const compoundLineCanvas2dDarkness = measureCompoundLineDarkness(compoundLineThinStrokeProbe.canvas2d);
+  const compoundLineCanvaskitDarkness = measureCompoundLineDarkness(compoundLineThinStrokeProbe.canvaskit);
+  assert(
+    compoundLineCanvas2dDarkness > 8 && compoundLineCanvaskitDarkness >= compoundLineCanvas2dDarkness * 0.6,
+    `compound line thin stroke parity canvas2d=${compoundLineCanvas2dDarkness.toFixed(2)}, canvaskit=${compoundLineCanvaskitDarkness.toFixed(2)}`,
+  );
+
   setTestCase('canvas-layer-gradient-pattern-parity');
   const gradientPatternParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
