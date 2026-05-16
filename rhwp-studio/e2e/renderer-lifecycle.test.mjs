@@ -5163,6 +5163,124 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `line arrow variant parity exact=${lineArrowDiff.exactDiffPixels}, tolerant=${lineArrowDiff.rawTolerantDiffPixels}, ink=${lineArrowDiff.rawInkMaskDiffPixels}, max_channel_delta=${lineArrowDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-line-shadow-dash-parity');
+  const lineShadowDashProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const line = (y, dash, lineType = 'single') => ({
+      type: 'line',
+      bbox: { x: 4, y: y - 4, width: 78, height: 10 },
+      x1: 7,
+      y1: y,
+      x2: 78,
+      y2: y,
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+      style: {
+        color: '#222222',
+        width: 3,
+        dash,
+        lineType,
+        startArrow: 'none',
+        endArrow: 'none',
+        startArrowSize: 1,
+        endArrowSize: 1,
+        shadow: {
+          color: '#008800',
+          alpha: 0,
+          offsetX: 3,
+          offsetY: 3,
+        },
+      },
+    });
+    const tree = {
+      pageWidth: 88,
+      pageHeight: 44,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 19101,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 19101,
+        bounds: { x: 0, y: 0, width: 88, height: 44 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 88, height: 44 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          line(10, 'dash'),
+          line(22, 'dot'),
+          line(34, 'dashDot', 'double'),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !lineShadowDashProbe.error,
+    lineShadowDashProbe.error || 'line shadow dash parity probe available',
+  );
+  const lineShadowCanvas2dGreenPixels = countPixels(
+    lineShadowDashProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.green > 70 && pixel.red < 120 && pixel.blue < 120,
+  );
+  const lineShadowCanvaskitGreenPixels = countPixels(
+    lineShadowDashProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.green > 70 && pixel.red < 120 && pixel.blue < 120,
+  );
+  assert(
+    lineShadowCanvas2dGreenPixels > 80 && lineShadowCanvaskitGreenPixels > 80,
+    `line shadow dash replay draws shadows canvas2d=${lineShadowCanvas2dGreenPixels}, canvaskit=${lineShadowCanvaskitGreenPixels}`,
+  );
+  const lineShadowDashDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(lineShadowDashProbe.canvas2d),
+    pngBufferFromDataUrl(lineShadowDashProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-line-shadow-dash-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    lineShadowDashDiff.passed,
+    `line shadow dash parity exact=${lineShadowDashDiff.exactDiffPixels}, tolerant=${lineShadowDashDiff.rawTolerantDiffPixels}, ink=${lineShadowDashDiff.rawInkMaskDiffPixels}, max_channel_delta=${lineShadowDashDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-compound-line-thin-stroke-parity');
   const compoundLineThinStrokeProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
