@@ -4330,6 +4330,161 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `transformed vector parity exact=${transformedVectorDiff.exactDiffPixels}, tolerant=${transformedVectorDiff.rawTolerantDiffPixels}, ink=${transformedVectorDiff.rawInkMaskDiffPixels}, max_channel_delta=${transformedVectorDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-gradient-pattern-parity');
+  const gradientPatternParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const transform = { rotation: 0, horzFlip: false, vertFlip: false };
+    const style = (fillColor, strokeColor, pattern = null) => ({
+      fillColor,
+      strokeColor,
+      strokeWidth: 1,
+      strokeDash: 'solid',
+      opacity: 1,
+      pattern,
+      shadow: null,
+    });
+    const tree = {
+      pageWidth: 104,
+      pageHeight: 54,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1908,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1908,
+        bounds: { x: 0, y: 0, width: 104, height: 54 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 104, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'rectangle',
+            bbox: { x: 5, y: 6, width: 28, height: 18 },
+            cornerRadius: 0,
+            style: style(null, '#49235c'),
+            gradient: {
+              gradientType: 0,
+              angle: 20,
+              centerX: 50,
+              centerY: 50,
+              colors: ['#f04b4b', '#ffe56a', '#4878ff'],
+              positions: [0, 0.55, 1],
+            },
+            transform,
+          },
+          {
+            type: 'ellipse',
+            bbox: { x: 40, y: 6, width: 28, height: 18 },
+            style: style(null, '#245714'),
+            gradient: {
+              gradientType: 2,
+              angle: 0,
+              centerX: 45,
+              centerY: 45,
+              colors: ['#ffffff', '#65cf70', '#175d20'],
+              positions: [0, 0.45, 1],
+            },
+            transform,
+          },
+          {
+            type: 'path',
+            bbox: { x: 74, y: 5, width: 24, height: 20 },
+            commands: [
+              { type: 'moveTo', x: 75, y: 23 },
+              { type: 'lineTo', x: 84, y: 6 },
+              { type: 'lineTo', x: 97, y: 22 },
+              { type: 'closePath' },
+            ],
+            style: style('#f8f0d8', '#6b3d00', {
+              patternType: 4,
+              patternColor: '#1d4f8f',
+              backgroundColor: '#f8f0d8',
+            }),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'rectangle',
+            bbox: { x: 18, y: 33, width: 68, height: 12 },
+            cornerRadius: 0,
+            style: style('#f6f6f6', '#333333', {
+              patternType: 5,
+              patternColor: '#222222',
+              backgroundColor: '#f6f6f6',
+            }),
+            gradient: null,
+            transform,
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!gradientPatternParityProbe.error, gradientPatternParityProbe.error || 'gradient/pattern parity probe available');
+  const gradientPatternCanvas2dInkPixels = countPixels(
+    gradientPatternParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const gradientPatternCanvaskitInkPixels = countPixels(
+    gradientPatternParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    gradientPatternCanvas2dInkPixels > 1000 && gradientPatternCanvaskitInkPixels > 1000,
+    `gradient/pattern replay draws geometry canvas2d=${gradientPatternCanvas2dInkPixels}, canvaskit=${gradientPatternCanvaskitInkPixels}`,
+  );
+  const gradientPatternDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(gradientPatternParityProbe.canvas2d),
+    pngBufferFromDataUrl(gradientPatternParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-gradient-pattern-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    gradientPatternDiff.passed,
+    `gradient/pattern parity exact=${gradientPatternDiff.exactDiffPixels}, tolerant=${gradientPatternDiff.rawTolerantDiffPixels}, ink=${gradientPatternDiff.rawInkMaskDiffPixels}, max_channel_delta=${gradientPatternDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-image-placement-parity');
   const imagePlacementParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
