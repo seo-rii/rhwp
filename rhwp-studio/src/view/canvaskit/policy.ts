@@ -6,10 +6,6 @@ import type {
   LayerRenderProfile,
   LayerTextRunOp,
 } from '@/core/types';
-import {
-  splitIntoClusters,
-  startsWithInvalidControl,
-} from '../layer-canvas-utils';
 
 const CLIP_RASTER_EDGE_PAD_PX = 4;
 
@@ -37,18 +33,13 @@ export function canvaskitClipRightPad(
 }
 
 export function shouldOverlayTextRun(
-  op: LayerTextRunOp,
+  _op: LayerTextRunOp,
   context: CanvasKitOverlayPolicyContext,
 ): boolean {
   if (context.renderMode !== 'compat') {
     return false;
   }
-  if (op.isVertical) {
-    return true;
-  }
-  return splitIntoClusters(op.text).some((cluster) =>
-    startsWithInvalidControl(cluster.text),
-  );
+  return false;
 }
 
 export function shouldOverlayRectangle(

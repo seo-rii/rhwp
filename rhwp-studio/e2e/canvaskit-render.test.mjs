@@ -1005,6 +1005,69 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       };
     }
 
+    let textProjectionNativeProbe = null;
+    if (typeof renderer.renderTextRun === 'function' && typeof renderer.renderTextRunOverlay === 'function') {
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 160;
+      probeCanvas.height = 72;
+      const verticalTextRun = {
+        ...simpleTextRun,
+        text: '세로',
+        positions: [0, 20, 40],
+        bbox: { x: 8, y: 8, width: 64, height: 24 },
+        isVertical: true,
+        orientation: 'vertical-upright',
+      };
+      const invalidControlTextRun = {
+        ...simpleTextRun,
+        text: '\u0001',
+        positions: [0, 8],
+        bbox: { x: 8, y: 40, width: 32, height: 24 },
+      };
+      const probeTree = {
+        pageWidth: 160,
+        pageHeight: 72,
+        profile: 'screen',
+        root: {
+          kind: 'leaf',
+          bounds: { x: 0, y: 0, width: 160, height: 72 },
+          cacheHint: 'none',
+          ops: [verticalTextRun, invalidControlTextRun],
+        },
+        resources: {
+          tableId: 902,
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+        },
+      };
+      let nativeTextRunCalls = 0;
+      let overlayTextRunCalls = 0;
+      const originalRenderTextRun = renderer.renderTextRun;
+      const originalRenderTextRunOverlay = renderer.renderTextRunOverlay;
+      renderer.renderTextRun = function renderTextRunProbe(...args) {
+        nativeTextRunCalls += 1;
+        return originalRenderTextRun.apply(this, args);
+      };
+      renderer.renderTextRunOverlay = function renderTextRunOverlayProbe(...args) {
+        overlayTextRunCalls += 1;
+        return originalRenderTextRunOverlay.apply(this, args);
+      };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        textProjectionNativeProbe = {
+          nativeTextRunCalls,
+          overlayTextRunCalls,
+        };
+      } finally {
+        renderer.renderTextRun = originalRenderTextRun;
+        renderer.renderTextRunOverlay = originalRenderTextRunOverlay;
+      }
+    }
+
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
       hasLayerTreeValueWithProfileApi: typeof wasmDoc?.getPageLayerTreeValueWithProfile === 'function',
@@ -1228,6 +1291,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       }),
       equationSvgNativeProbe,
       textBlobNativeProbe,
+      textProjectionNativeProbe,
       footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
         type: 'footnoteMarker',
         text: '1)',
@@ -1256,8 +1320,16 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(nativeRouting.shadowTextUsesOverlay === false, `shadow text overlay=${nativeRouting.shadowTextUsesOverlay}`);
   assert(nativeRouting.ratioTextUsesOverlay === false, `ratio text overlay=${nativeRouting.ratioTextUsesOverlay}`);
   assert(nativeRouting.rotatedTextUsesOverlay === false, `rotated text overlay=${nativeRouting.rotatedTextUsesOverlay}`);
-  assert(nativeRouting.verticalTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
-  assert(nativeRouting.invalidControlTextUsesOverlay === (CANVASKIT_MODE === 'compat'), `invalid control text overlay=${nativeRouting.invalidControlTextUsesOverlay}`);
+  assert(nativeRouting.verticalTextUsesOverlay === false, `vertical text overlay=${nativeRouting.verticalTextUsesOverlay}`);
+  assert(nativeRouting.invalidControlTextUsesOverlay === false, `invalid control text overlay=${nativeRouting.invalidControlTextUsesOverlay}`);
+  assert(
+    nativeRouting.textProjectionNativeProbe?.nativeTextRunCalls === 2,
+    `vertical/invalid TextRun native calls=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.textProjectionNativeProbe?.overlayTextRunCalls === 0,
+    `vertical/invalid TextRun overlay calls=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
+  );
   assert(nativeRouting.simpleLineUsesOverlay === false, `simple line overlay=${nativeRouting.simpleLineUsesOverlay}`);
   assert(nativeRouting.simpleRectangleUsesOverlay === false, `simple rectangle overlay=${nativeRouting.simpleRectangleUsesOverlay}`);
   assert(nativeRouting.underlinedTextUsesOverlay === false, `underlined text overlay=${nativeRouting.underlinedTextUsesOverlay}`);
