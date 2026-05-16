@@ -5408,6 +5408,187 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation geometry parity exact=${equationGeometryDiff.exactDiffPixels}, tolerant=${equationGeometryDiff.rawTolerantDiffPixels}, ink=${equationGeometryDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationGeometryDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-equation-advanced-layout-parity');
+  const equationAdvancedLayoutParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const box = (x, y, width, height, baseline, kind) => ({
+      x,
+      y,
+      width,
+      height,
+      baseline,
+      kind,
+    });
+    const textBox = (x, y, text) => box(x, y, Math.max(8, text.length * 7), 12, 9, { type: 'text', text });
+    const numberBox = (x, y, text) => box(x, y, Math.max(7, text.length * 6), 10, 7, { type: 'number', text });
+    const mathBox = (x, y, text) => box(x, y, 12, 12, 9, { type: 'mathSymbol', text });
+    const tree = {
+      pageWidth: 176,
+      pageHeight: 86,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1912,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1912,
+        bounds: { x: 0, y: 0, width: 176, height: 86 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 176, height: 86 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'equation',
+            bbox: { x: 4, y: 4, width: 168, height: 76 },
+            color: '#111111',
+            fontSize: 16,
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 168,
+              height: 76,
+              baseline: 18,
+              kind: {
+                type: 'row',
+                children: [
+                  box(2, 6, 26, 24, 15, {
+                    type: 'subSup',
+                    base: textBox(0, 7, 'x'),
+                    sub: numberBox(13, 16, '1'),
+                    sup: numberBox(13, 0, '2'),
+                  }),
+                  box(32, 1, 28, 32, 19, {
+                    type: 'bigOp',
+                    symbol: '∑',
+                    sub: numberBox(10, 23, 'i'),
+                    sup: numberBox(10, 0, 'n'),
+                  }),
+                  box(66, 8, 28, 24, 15, {
+                    type: 'limit',
+                    isUpper: false,
+                    sub: textBox(12, 15, 't'),
+                  }),
+                  box(100, 3, 30, 32, 18, {
+                    type: 'paren',
+                    left: '[',
+                    right: ']',
+                    body: textBox(9, 10, 'y'),
+                  }),
+                  box(136, 7, 26, 24, 15, {
+                    type: 'superscript',
+                    base: textBox(0, 8, 'a'),
+                    sup: numberBox(13, 0, '3'),
+                  }),
+                  box(4, 42, 40, 28, 16, {
+                    type: 'rel',
+                    over: textBox(12, 0, 'A'),
+                    arrow: mathBox(13, 9, '→'),
+                    under: textBox(12, 19, 'B'),
+                  }),
+                  box(52, 42, 48, 28, 14, {
+                    type: 'eqAlign',
+                    rows: [
+                      {
+                        left: textBox(0, 0, 'a'),
+                        right: numberBox(24, 0, '1'),
+                      },
+                      {
+                        left: textBox(0, 15, 'b'),
+                        right: numberBox(24, 15, '2'),
+                      },
+                    ],
+                  }),
+                  box(108, 42, 30, 22, 14, {
+                    type: 'fontStyle',
+                    fontStyle: 'bold',
+                    body: textBox(2, 5, 'B'),
+                  }),
+                  box(144, 42, 20, 22, 14, {
+                    type: 'subscript',
+                    base: textBox(0, 5, 'c'),
+                    sub: numberBox(12, 13, '4'),
+                  }),
+                ],
+              },
+            },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !equationAdvancedLayoutParityProbe.error,
+    equationAdvancedLayoutParityProbe.error || 'equation advanced layout parity probe available',
+  );
+  const equationAdvancedCanvas2dInkPixels = countPixels(
+    equationAdvancedLayoutParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const equationAdvancedCanvaskitInkPixels = countPixels(
+    equationAdvancedLayoutParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    equationAdvancedCanvas2dInkPixels > 250 && equationAdvancedCanvaskitInkPixels > 250,
+    `equation advanced layout replay draws glyphs/geometry canvas2d=${equationAdvancedCanvas2dInkPixels}, canvaskit=${equationAdvancedCanvaskitInkPixels}`,
+  );
+  const equationAdvancedDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(equationAdvancedLayoutParityProbe.canvas2d),
+    pngBufferFromDataUrl(equationAdvancedLayoutParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-equation-advanced-layout-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.1,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    equationAdvancedDiff.passed,
+    `equation advanced layout parity exact=${equationAdvancedDiff.exactDiffPixels}, tolerant=${equationAdvancedDiff.rawTolerantDiffPixels}, ink=${equationAdvancedDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationAdvancedDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-marker-parity');
   const textMarkerParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
