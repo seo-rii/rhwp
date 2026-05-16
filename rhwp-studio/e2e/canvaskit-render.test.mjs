@@ -939,28 +939,20 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       },
     };
     let layoutDirectCalls = 0;
-    let fallbackOverlayScanCalls = 0;
     const originalRenderEquationBox = renderer.renderEquationBox;
-    const originalHasFallbackOverlayNode = renderer.hasFallbackOverlayNode;
     renderer.renderEquationBox = function renderEquationBoxProbe(...args) {
       layoutDirectCalls += 1;
       return originalRenderEquationBox.apply(this, args);
-    };
-    renderer.hasFallbackOverlayNode = function hasFallbackOverlayNodeProbe(...args) {
-      fallbackOverlayScanCalls += 1;
-      return originalHasFallbackOverlayNode.apply(this, args);
     };
     try {
       renderer.renderPage(probeTree, probeCanvas, 1);
     } finally {
       renderer.renderEquationBox = originalRenderEquationBox;
-      renderer.hasFallbackOverlayNode = originalHasFallbackOverlayNode;
     }
     const equationSvgNativeProbe = {
       hasEquationSvgDomImageCache: Object.prototype.hasOwnProperty.call(renderer, 'equationSvgDomImageCache'),
       hasEquationSvgImageCache: Object.prototype.hasOwnProperty.call(renderer, 'equationSvgImageCache'),
       layoutDirectCalls,
-      fallbackOverlayScanCalls,
     };
 
     let textBlobNativeProbe = null;
@@ -1132,46 +1124,11 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       }
     }
 
-    let fallbackOverlayPassProbe = null;
-    if (typeof renderer.hasFallbackOverlayNode === 'function') {
-      const probeCanvas = document.createElement('canvas');
-      probeCanvas.width = 80;
-      probeCanvas.height = 48;
-      const probeTree = {
-        pageWidth: 80,
-        pageHeight: 48,
-        profile: 'screen',
-        root: {
-          kind: 'leaf',
-          bounds: { x: 0, y: 0, width: 80, height: 48 },
-          cacheHint: 'none',
-          ops: [simpleTextRun],
-        },
-        resources: {
-          tableId: 904,
-          images: [],
-          imageHashes: [],
-          imageKeys: [],
-          svgFragments: [],
-          svgHashes: [],
-          svgKeys: [],
-        },
-      };
-      let fallbackOverlayScanCalls = 0;
-      const originalHasFallbackOverlayNode = renderer.hasFallbackOverlayNode;
-      renderer.hasFallbackOverlayNode = function hasFallbackOverlayNodeDisabledPassProbe(...args) {
-        fallbackOverlayScanCalls += 1;
-        return originalHasFallbackOverlayNode.apply(this, args);
-      };
-      try {
-        renderer.renderPage(probeTree, probeCanvas, 1);
-        fallbackOverlayPassProbe = {
-          fallbackOverlayScanCalls,
-        };
-      } finally {
-        renderer.hasFallbackOverlayNode = originalHasFallbackOverlayNode;
-      }
-    }
+    const fallbackOverlayPassProbe = {
+      hasFallbackOverlayNode: typeof renderer.hasFallbackOverlayNode === 'function',
+      hasRenderFallbackOverlays: typeof renderer.renderFallbackOverlays === 'function',
+      hasRenderFallbackOverlayNode: typeof renderer.renderFallbackOverlayNode === 'function',
+    };
 
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
@@ -1446,8 +1403,10 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     `page background image overlay calls=${JSON.stringify(nativeRouting.pageBackgroundImageNativeProbe)}`,
   );
   assert(
-    nativeRouting.fallbackOverlayPassProbe?.fallbackOverlayScanCalls === 0,
-    `fallback overlay pass scan calls=${JSON.stringify(nativeRouting.fallbackOverlayPassProbe)}`,
+    nativeRouting.fallbackOverlayPassProbe?.hasFallbackOverlayNode === false
+      && nativeRouting.fallbackOverlayPassProbe?.hasRenderFallbackOverlays === false
+      && nativeRouting.fallbackOverlayPassProbe?.hasRenderFallbackOverlayNode === false,
+    `fallback overlay pass methods removed=${JSON.stringify(nativeRouting.fallbackOverlayPassProbe)}`,
   );
   assert(nativeRouting.simpleLineUsesOverlay === false, `simple line overlay=${nativeRouting.simpleLineUsesOverlay}`);
   assert(nativeRouting.simpleRectangleUsesOverlay === false, `simple rectangle overlay=${nativeRouting.simpleRectangleUsesOverlay}`);
@@ -1471,10 +1430,6 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(
     nativeRouting.equationSvgNativeProbe?.layoutDirectCalls > 0,
     `equation layout direct calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
-  );
-  assert(
-    nativeRouting.equationSvgNativeProbe?.fallbackOverlayScanCalls === 0,
-    `equation fallback overlay scan calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
   );
   if (CANVASKIT_MODE === 'default') {
     assert(
