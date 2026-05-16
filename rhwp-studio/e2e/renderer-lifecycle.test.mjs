@@ -3784,7 +3784,36 @@ runTest('Renderer lifecycle', async ({ page }) => {
       },
       ...overrides,
     });
-    const colorV1Outline = outlineBase('outline-parity-colrv1', 12, {
+    const colorV0Outline = outlineBase('outline-parity-colrv0', 8, {
+      bbox: { x: 8, y: 8, width: 24, height: 22 },
+      payloadKind: 'colorLayers',
+      variant: variantFor('outline-parity-colrv0', [
+        'text.outlineGlyph',
+        'text.glyphOutline.colorLayers',
+        'text.glyphOutline.colorLayers.colrV0',
+      ]),
+      paths: [],
+      colorLayers: {
+        colorFormat: 'colrV0',
+        sourceFontRef: { faceKey: 'fixture-face', glyphId: 41, colorFormat: 'colrV0' },
+        paletteRef: { index: 0, cpalDigest: 'fixture-cpal-digest' },
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        layers: [{
+          layerIndex: 0,
+          glyphId: 79,
+          glyphRange: { start: 0, end: 1 },
+          sourceRangeUtf8: { start: 0, end: 1 },
+          sourceFontRef: { faceKey: 'fixture-face', glyphId: 79, paletteIndex: 2, colorFormat: 'colrV0' },
+          commands: squarePath.commands,
+          fill: { rgba: [0, 0, 0.9, 1] },
+          fillRule: 'nonzero',
+          paletteIndex: 2,
+          transformToRun: { a: 1, b: 0, c: 0, d: 1, e: 5, f: 3 },
+        }],
+      },
+    });
+    const colorV1Outline = outlineBase('outline-parity-colrv1', 36, {
       payloadKind: 'colorLayers',
       variant: variantFor('outline-parity-colrv1', [
         'text.outlineGlyph',
@@ -3830,7 +3859,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     });
-    const bitmapOutline = outlineBase('outline-parity-bitmap', 44, {
+    const bitmapOutline = outlineBase('outline-parity-bitmap', 62, {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('outline-parity-bitmap', ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph']),
       paths: [],
@@ -3839,7 +3868,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         sourceRangeUtf8: { start: 0, end: 1 },
         glyphRange: { start: 0, end: 1 },
         placement: {
-          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 44, f: 8 },
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 62, f: 8 },
           baselineY: 0,
         },
         strikeSelection: 'producerResolved',
@@ -3848,9 +3877,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         filtering: 'nearest',
       },
     });
-    const outlines = [colorV1Outline, bitmapOutline];
+    const outlines = [colorV0Outline, colorV1Outline, bitmapOutline];
     const tree = {
-      pageWidth: 72,
+      pageWidth: 90,
       pageHeight: 32,
       profile: 'screen',
       outputOptions: {

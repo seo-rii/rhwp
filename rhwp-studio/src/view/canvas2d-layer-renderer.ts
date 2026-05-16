@@ -402,10 +402,25 @@ export class Canvas2DLayerRenderer {
               if (!layer.commands || !layer.fill) {
                 continue;
               }
+              const layerTransform = layer.transformToRun;
+              if (layerTransform) {
+                ctx.save();
+                ctx.transform(
+                  layerTransform.a,
+                  layerTransform.b,
+                  layerTransform.c,
+                  layerTransform.d,
+                  layerTransform.e,
+                  layerTransform.f,
+                );
+              }
               ctx.beginPath();
               appendPathCommands(ctx, layer.commands);
               ctx.fillStyle = resolvedColorToCss(layer.fill);
               ctx.fill(layer.fillRule ?? 'nonzero');
+              if (layerTransform) {
+                ctx.restore();
+              }
             }
             ctx.restore();
             return;
