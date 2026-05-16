@@ -7224,6 +7224,160 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text style parity exact=${textStyleDiff.exactDiffPixels}, tolerant=${textStyleDiff.rawTolerantDiffPixels}, ink=${textStyleDiff.rawInkMaskDiffPixels}, max_channel_delta=${textStyleDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-shade-emboss-engrave-parity');
+  const textEffectParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const style = (overrides = {}) => ({
+      fontFamily: 'Noto Sans KR',
+      fontSize: 17,
+      color: '#111111',
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: '#111111',
+      strikeColor: '#111111',
+      shadeColor: '#ffffff',
+      ...overrides,
+    });
+    const textRun = ({ text, x, y, width, styleOverrides }) => ({
+      type: 'textRun',
+      bbox: { x, y, width, height: 30 },
+      text,
+      baseline: 23,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      style: style(styleOverrides),
+      positions: Array.from({ length: text.length + 1 }, (_, index) => index * 13),
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const tree = {
+      pageWidth: 150,
+      pageHeight: 62,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1920,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1920,
+        bounds: { x: 0, y: 0, width: 150, height: 62 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 150, height: 62 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          textRun({
+            text: 'SHADE',
+            x: 8,
+            y: 6,
+            width: 70,
+            styleOverrides: { shadeColor: '#ffee66' },
+          }),
+          textRun({
+            text: 'EMB',
+            x: 84,
+            y: 6,
+            width: 44,
+            styleOverrides: { emboss: true, color: '#444444' },
+          }),
+          textRun({
+            text: 'ENG',
+            x: 8,
+            y: 34,
+            width: 44,
+            styleOverrides: { engrave: true, color: '#444444' },
+          }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !textEffectParityProbe.error,
+    textEffectParityProbe.error || 'text shade/emboss/engrave parity probe available',
+  );
+  const shadePixelPredicate = (pixel) => (
+    pixel.alpha > 32 && pixel.red > 220 && pixel.green > 190 && pixel.blue < 140
+  );
+  const effectInkPixelPredicate = (pixel) => (
+    pixel.alpha > 32 && (pixel.red < 235 || pixel.green < 235 || pixel.blue < 235)
+  );
+  const textEffectCanvas2dShadePixels = countPixels(textEffectParityProbe.canvas2d, shadePixelPredicate);
+  const textEffectCanvaskitShadePixels = countPixels(textEffectParityProbe.canvaskit, shadePixelPredicate);
+  const textEffectCanvas2dInkPixels = countPixels(textEffectParityProbe.canvas2d, effectInkPixelPredicate);
+  const textEffectCanvaskitInkPixels = countPixels(textEffectParityProbe.canvaskit, effectInkPixelPredicate);
+  assert(
+    textEffectCanvas2dShadePixels > 700 && textEffectCanvaskitShadePixels > 700,
+    `text shade replay draws background canvas2d=${textEffectCanvas2dShadePixels}, canvaskit=${textEffectCanvaskitShadePixels}`,
+  );
+  assert(
+    textEffectCanvas2dInkPixels > 1100 && textEffectCanvaskitInkPixels > 1100,
+    `text emboss/engrave replay draws effect ink canvas2d=${textEffectCanvas2dInkPixels}, canvaskit=${textEffectCanvaskitInkPixels}`,
+  );
+  const textEffectDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textEffectParityProbe.canvas2d),
+    pngBufferFromDataUrl(textEffectParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-shade-emboss-engrave-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.22,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textEffectDiff.passed,
+    `text shade/emboss/engrave parity exact=${textEffectDiff.exactDiffPixels}, tolerant=${textEffectDiff.rawTolerantDiffPixels}, ink=${textEffectDiff.rawInkMaskDiffPixels}, max_channel_delta=${textEffectDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-projection-parity');
   const textProjectionParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
