@@ -1761,13 +1761,26 @@ function appendPathCommands(
   ctx: CanvasRenderingContext2D,
   commands: LayerPathCommand[],
 ): void {
+  let currentX = 0;
+  let currentY = 0;
+  let subpathStartX = 0;
+  let subpathStartY = 0;
+  let hasCurrentPoint = false;
   for (const command of commands) {
     switch (command.type) {
       case 'moveTo':
         ctx.moveTo(command.x, command.y);
+        currentX = command.x;
+        currentY = command.y;
+        subpathStartX = command.x;
+        subpathStartY = command.y;
+        hasCurrentPoint = true;
         break;
       case 'lineTo':
         ctx.lineTo(command.x, command.y);
+        currentX = command.x;
+        currentY = command.y;
+        hasCurrentPoint = true;
         break;
       case 'curveTo':
         ctx.bezierCurveTo(
@@ -1778,21 +1791,106 @@ function appendPathCommands(
           command.x3,
           command.y3,
         );
+        currentX = command.x3;
+        currentY = command.y3;
+        hasCurrentPoint = true;
         break;
-      case 'arcTo':
-        ctx.ellipse(
-          command.x,
-          command.y,
-          Math.max(command.rx, 0.01),
-          Math.max(command.ry, 0.01),
-          (command.rotation * Math.PI) / 180,
-          0,
-          Math.PI * 2,
-          !command.sweep,
-        );
+      case 'arcTo': {
+        if (!hasCurrentPoint) {
+          ctx.moveTo(command.x, command.y);
+          currentX = command.x;
+          currentY = command.y;
+          subpathStartX = command.x;
+          subpathStartY = command.y;
+          hasCurrentPoint = true;
+          break;
+        }
+        const x1 = currentX;
+        const y1 = currentY;
+        const x2 = command.x;
+        const y2 = command.y;
+        if (Math.abs(x1 - x2) < 1e-6 && Math.abs(y1 - y2) < 1e-6) {
+          currentX = x2;
+          currentY = y2;
+          break;
+        }
+        let rx = Math.abs(command.rx);
+        let ry = Math.abs(command.ry);
+        if (rx < 1e-6 || ry < 1e-6) {
+          ctx.lineTo(x2, y2);
+          currentX = x2;
+          currentY = y2;
+          break;
+        }
+
+        const phi = (command.rotation * Math.PI) / 180;
+        const cosPhi = Math.cos(phi);
+        const sinPhi = Math.sin(phi);
+        const dx = (x1 - x2) / 2;
+        const dy = (y1 - y2) / 2;
+        const x1p = cosPhi * dx + sinPhi * dy;
+        const y1p = -sinPhi * dx + cosPhi * dy;
+        const x1p2 = x1p * x1p;
+        const y1p2 = y1p * y1p;
+        const lambda = x1p2 / (rx * rx) + y1p2 / (ry * ry);
+        if (lambda > 1) {
+          const scale = Math.sqrt(lambda);
+          rx *= scale;
+          ry *= scale;
+        }
+        const rx2 = rx * rx;
+        const ry2 = ry * ry;
+        const num = Math.max(0, rx2 * ry2 - rx2 * y1p2 - ry2 * x1p2);
+        const den = rx2 * y1p2 + ry2 * x1p2;
+        const sq = den > 1e-10 ? Math.sqrt(num / den) : 0;
+        const sign = command.largeArc === command.sweep ? -1 : 1;
+        const cxp = sign * sq * rx * y1p / ry;
+        const cyp = sign * sq * (-ry * x1p) / rx;
+        const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+        const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+        const theta1 = Math.atan2((y1p - cyp) / ry, (x1p - cxp) / rx);
+        const theta2 = Math.atan2((-y1p - cyp) / ry, (-x1p - cxp) / rx);
+        let dtheta = theta2 - theta1;
+        if (!command.sweep && dtheta > 0) {
+          dtheta -= Math.PI * 2;
+        }
+        if (command.sweep && dtheta < 0) {
+          dtheta += Math.PI * 2;
+        }
+        const segmentCount = Math.max(1, Math.ceil(Math.abs(dtheta) / (Math.PI / 2 + 0.001)));
+        const segmentAngle = dtheta / segmentCount;
+        for (let index = 0; index < segmentCount; index += 1) {
+          const t1 = theta1 + segmentAngle * index;
+          const t2 = theta1 + segmentAngle * (index + 1);
+          const alpha = (4 / 3) * Math.tan(segmentAngle / 4);
+          const cosT1 = Math.cos(t1);
+          const sinT1 = Math.sin(t1);
+          const cosT2 = Math.cos(t2);
+          const sinT2 = Math.sin(t2);
+          const cp1x = rx * (cosT1 - alpha * sinT1);
+          const cp1y = ry * (sinT1 + alpha * cosT1);
+          const cp2x = rx * (cosT2 + alpha * sinT2);
+          const cp2y = ry * (sinT2 - alpha * cosT2);
+          const endX = rx * cosT2;
+          const endY = ry * sinT2;
+          ctx.bezierCurveTo(
+            cosPhi * cp1x - sinPhi * cp1y + cx,
+            sinPhi * cp1x + cosPhi * cp1y + cy,
+            cosPhi * cp2x - sinPhi * cp2y + cx,
+            sinPhi * cp2x + cosPhi * cp2y + cy,
+            cosPhi * endX - sinPhi * endY + cx,
+            sinPhi * endX + cosPhi * endY + cy,
+          );
+        }
+        currentX = x2;
+        currentY = y2;
         break;
+      }
       case 'closePath':
         ctx.closePath();
+        currentX = subpathStartX;
+        currentY = subpathStartY;
+        hasCurrentPoint = true;
         break;
     }
   }

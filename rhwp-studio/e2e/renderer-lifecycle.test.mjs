@@ -4186,6 +4186,116 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `vector paint parity exact=${vectorPaintDiff.exactDiffPixels}, tolerant=${vectorPaintDiff.rawTolerantDiffPixels}, ink=${vectorPaintDiff.rawInkMaskDiffPixels}, max_channel_delta=${vectorPaintDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-svg-arc-path-parity');
+  const svgArcPathParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const transform = { rotation: 0, horzFlip: false, vertFlip: false };
+    const tree = {
+      pageWidth: 76,
+      pageHeight: 42,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1916,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1916,
+        bounds: { x: 0, y: 0, width: 76, height: 42 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 76, height: 42 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'path',
+            bbox: { x: 6, y: 4, width: 64, height: 32 },
+            commands: [
+              { type: 'moveTo', x: 10, y: 28 },
+              { type: 'arcTo', rx: 22, ry: 12, rotation: 18, largeArc: false, sweep: true, x: 54, y: 22 },
+              { type: 'lineTo', x: 58, y: 34 },
+              { type: 'lineTo', x: 10, y: 34 },
+              { type: 'closePath' },
+            ],
+            style: {
+              fillColor: '#d4efff',
+              strokeColor: '#003366',
+              strokeWidth: 1.2,
+              strokeDash: 'solid',
+              opacity: 1,
+              pattern: null,
+              shadow: null,
+            },
+            gradient: null,
+            transform,
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!svgArcPathParityProbe.error, svgArcPathParityProbe.error || 'SVG arc path parity probe available');
+  const svgArcPathCanvas2dInkPixels = countPixels(
+    svgArcPathParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const svgArcPathCanvaskitInkPixels = countPixels(
+    svgArcPathParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    svgArcPathCanvas2dInkPixels > 350 && svgArcPathCanvaskitInkPixels > 350,
+    `SVG arc path replay draws geometry canvas2d=${svgArcPathCanvas2dInkPixels}, canvaskit=${svgArcPathCanvaskitInkPixels}`,
+  );
+  const svgArcPathDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(svgArcPathParityProbe.canvas2d),
+    pngBufferFromDataUrl(svgArcPathParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-svg-arc-path-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.05,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    svgArcPathDiff.passed,
+    `SVG arc path parity exact=${svgArcPathDiff.exactDiffPixels}, tolerant=${svgArcPathDiff.rawTolerantDiffPixels}, ink=${svgArcPathDiff.rawInkMaskDiffPixels}, max_channel_delta=${svgArcPathDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-transformed-vector-parity');
   const transformedVectorParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
