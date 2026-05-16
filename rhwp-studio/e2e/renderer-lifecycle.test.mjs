@@ -3662,6 +3662,281 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `CanvasKit strict outline paints BitmapGlyph image black=${canvaskitBitmapBlackPixels}`,
   );
 
+  setTestCase('canvas-layer-glyph-outline-payload-parity');
+  const glyphOutlinePayloadParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+
+    const style = (color) => ({
+      fontFamily: 'Noto Sans KR',
+      fontSize: 20,
+      color,
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: color,
+      strikeColor: color,
+      shadeColor: '#ffffff',
+    });
+    const source = { id: 1902, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } };
+    const squarePath = {
+      glyphId: 42,
+      sourceRangeUtf8: { start: 0, end: 1 },
+      glyphRange: { start: 0, end: 1 },
+      fillRule: 'nonzero',
+      commands: [
+        { type: 'moveTo', x: 0, y: 0 },
+        { type: 'lineTo', x: 14, y: 0 },
+        { type: 'lineTo', x: 14, y: 14 },
+        { type: 'lineTo', x: 0, y: 14 },
+        { type: 'closePath' },
+      ],
+    };
+    const pixelCanvas = document.createElement('canvas');
+    pixelCanvas.width = 1;
+    pixelCanvas.height = 1;
+    const pixelContext = pixelCanvas.getContext('2d');
+    if (!pixelContext) {
+      return { error: 'bitmap fixture canvas unavailable' };
+    }
+    pixelContext.fillStyle = '#000000';
+    pixelContext.fillRect(0, 0, 1, 1);
+    const pixelBytes = Uint8Array.from(
+      atob(pixelCanvas.toDataURL('image/png').split(',')[1]),
+      (ch) => ch.charCodeAt(0),
+    );
+    const variantFor = (group, requires) => ({
+      equivalenceGroup: group,
+      variantId: 'glyphOutline',
+      variantKind: 'glyphOutline',
+      partIndex: 0,
+      partCount: 1,
+      isDefaultFallback: false,
+      quality: 'exact',
+      requires,
+      anchorOpId: `op-text-${group}`,
+      localPaintOrder: 0,
+    });
+    const textRunFor = (group, x) => ({
+      id: `op-text-${group}`,
+      type: 'textRun',
+      bbox: { x, y: 6, width: 24, height: 24 },
+      source,
+      variant: {
+        equivalenceGroup: group,
+        variantId: 'textRun',
+        variantKind: 'textRun',
+        partIndex: 0,
+        partCount: 1,
+        isDefaultFallback: true,
+        quality: 'exact',
+      },
+      text: 'A',
+      baseline: 28,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      projectionKind: 'verbatim',
+      clusterBasis: 'legacyPosition',
+      style: style('#dd0000'),
+      paintStyle: style('#dd0000'),
+      positions: [0, 14],
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const outlineBase = (group, x, overrides) => ({
+      id: `op-outline-${group}`,
+      type: 'glyphOutline',
+      bbox: { x, y: 8, width: 16, height: 16 },
+      source,
+      paintStyle: style('#000000'),
+      placement: {
+        runToPage: { a: 1, b: 0, c: 0, d: 1, e: x, f: 8 },
+        baselineY: 0,
+      },
+      paths: [squarePath],
+      diagnostics: {
+        quality: 'exact',
+        replayEligibility: 'portable',
+        strictVisualEligible: true,
+        maxOriginDeltaPx: 0,
+        maxAdvanceDeltaPx: 0,
+        maxResidualAfterAdjustmentPx: 0,
+        clusterMismatchCount: 0,
+        missingGlyphCount: 0,
+        usedFallbackFontCount: 0,
+      },
+      ...overrides,
+    });
+    const colorV1Outline = outlineBase('outline-parity-colrv1', 12, {
+      payloadKind: 'colorLayers',
+      variant: variantFor('outline-parity-colrv1', [
+        'text.outlineGlyph',
+        'text.glyphOutline.colorLayers',
+        'text.glyphOutline.colorLayers.colrV1',
+      ]),
+      paths: [],
+      colorLayers: {
+        colorFormat: 'colrV1',
+        sourceFontRef: { faceKey: 'fixture-face', glyphId: 42, colorFormat: 'colrV1' },
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        layers: [],
+        paintGraph: {
+          rootNodeId: 1,
+          nodes: [
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 2,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 42, colorFormat: 'colrV1' },
+            },
+            {
+              nodeId: 2,
+              kind: 'solidPath',
+              solidPath: {
+                commands: squarePath.commands,
+                fill: { rgba: [0, 0.75, 0, 1] },
+                fillRule: 'nonzero',
+                sourceGlyphId: 77,
+                paletteIndex: 5,
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 77, paletteIndex: 5, colorFormat: 'colrV1' },
+            },
+          ],
+        },
+      },
+    });
+    const bitmapOutline = outlineBase('outline-parity-bitmap', 44, {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('outline-parity-bitmap', ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph']),
+      paths: [],
+      bitmapGlyph: {
+        imageResourceId: 0,
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 44, f: 8 },
+          baselineY: 0,
+        },
+        strikeSelection: 'producerResolved',
+        alphaMode: 'premultiplied',
+        scalingPolicy: 'scaleToEm',
+        filtering: 'nearest',
+      },
+    });
+    const outlines = [colorV1Outline, bitmapOutline];
+    const tree = {
+      pageWidth: 72,
+      pageHeight: 32,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1902,
+        images: [pixelBytes],
+        imageHashes: ['glyph-outline-parity-pixel'],
+        imageKeys: ['glyph-outline-parity-pixel'],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [{
+        id: 1902,
+        text: 'A',
+        utf8Range: { start: 0, end: 1 },
+        utf16Range: { start: 0, end: 1 },
+        annotations: [],
+      }],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1902,
+        bounds: { x: 0, y: 0, width: 72, height: 32 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 72, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          ...outlines.flatMap((outline) => [
+            textRunFor(outline.variant.equivalenceGroup, outline.bbox.x),
+            outline,
+          ]),
+        ],
+      },
+    };
+    const render = async (renderer, strictGlyphOutlineReplay = false) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      if (strictGlyphOutlineReplay) {
+        renderer.setStrictGlyphOutlineReplay(true);
+      }
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      const diagnostics = renderer.getTextVariantSelectionDiagnostics();
+      if (strictGlyphOutlineReplay) {
+        renderer.setStrictGlyphOutlineReplay(false);
+      }
+      canvas.remove();
+      return { png, diagnostics };
+    };
+
+    return {
+      canvas2d: await render(canvas2dRenderer, true),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !glyphOutlinePayloadParityProbe.error,
+    glyphOutlinePayloadParityProbe.error || 'glyph outline payload parity probe available',
+  );
+  const glyphOutlinePayloadDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(glyphOutlinePayloadParityProbe.canvas2d.png),
+    pngBufferFromDataUrl(glyphOutlinePayloadParityProbe.canvaskit.png),
+    {
+      diffName: 'canvas-layer-glyph-outline-payload-parity',
+      ignoreChannelDelta: 16,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.03,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    glyphOutlinePayloadDiff.passed,
+    `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {
