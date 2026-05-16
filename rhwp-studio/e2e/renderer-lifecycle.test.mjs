@@ -4286,7 +4286,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const transform = { rotation: 0, horzFlip: false, vertFlip: false };
     const tree = {
       pageWidth: 96,
-      pageHeight: 48,
+      pageHeight: 58,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: false,
@@ -6026,10 +6026,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1905,
-        bounds: { x: 0, y: 0, width: 80, height: 48 },
+        bounds: { x: 0, y: 0, width: 80, height: 58 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 80, height: 48 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 80, height: 58 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'tabLeader',
             bbox: { x: 8, y: 4, width: 56, height: 8 },
@@ -6046,8 +6046,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
             fontSize: 10,
             baseline: 4,
           },
-          decoration('underline', 22),
-          decoration('strikethrough', 34),
+          {
+            type: 'tabLeader',
+            bbox: { x: 8, y: 22, width: 56, height: 8 },
+            leader: { startX: 0, endX: 56, fillType: 3 },
+            color: '#333333',
+            fontSize: 10,
+            baseline: 4,
+          },
+          decoration('underline', 31),
+          decoration('strikethrough', 44),
         ],
       },
     };
