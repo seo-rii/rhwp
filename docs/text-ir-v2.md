@@ -280,7 +280,7 @@ crop-aware image effects, equation layout geometry, char overlap, text
 control/footnote markers, TextRun inline style effects and projection
 transforms, SVG-style arc paths, tab leader and decoration line visual ops, and
 the strict GlyphOutline COLRv0 transformed-layer, COLRv1-stage-1, and
-BitmapGlyph payloads.
+BitmapGlyph and static-sanitized SvgGlyph payloads.
 
 This policy keeps Canvas2D as the compatibility reference while preventing new
 CanvasKit work from adding browser-canvas dependencies that would block a
@@ -638,7 +638,10 @@ The reserved families are intentionally separate payload families:
   `explicitTransform`; `backendDefault` is only suitable for compatibility or
   diagnostic profiles because it delegates strict replay semantics to the
   renderer.
-- `SvgGlyph` should reference a sanitized static vector subresource. Strict
+- `SvgGlyph` should reference a sanitized static vector subresource. The first
+  browser strict replay subset is path-only: sanitized `<path d="...">`
+  fragments with fill, fill opacity, and fill rule are replayed as native
+  Canvas2D/CanvasKit paths instead of as overlay images. Strict
   visual replay must keep external resources, script, animation, links, and
   interactivity disabled; raw SVG-in-font replay is not the strictVisual
   contract. The payload should record `viewBox` and optional `intrinsicSize`
@@ -667,13 +670,13 @@ implicitly change schema authority:
   `filtering`, and no backend strike reselection. Missing color space defaults
   to sRGB only when diagnostics or replay metadata record that default. Native
   and CanvasKit bitmap replay remain follow-up backend gates.
-- `SvgGlyph` writer emission starts with SVG strict replay of a sanitized
-  static vector resource. The producer is responsible for sanitizing to
+- `SvgGlyph` writer emission starts with browser Canvas2D/CanvasKit strict
+  replay of a sanitized static path-resource subset. The producer is responsible for sanitizing to
   `securityMode: staticSanitized`; strict validators require
   `scriptAllowed=false`, `animationAllowed=false`,
   `externalResourcesAllowed=false`, and `interactivityAllowed=false`, and the
-  SVG exporter must resolve the referenced vector resource before selecting the
-  variant. Canvas2D/native lowering is a separate implementation step.
+  renderer must resolve and parse the referenced vector path resource before selecting the
+  variant. Native lowering is a separate implementation step.
 - CanvasKit variation, TTC, and OTC strict replay are backend capability
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the
@@ -706,8 +709,8 @@ The current validator keeps this conservative:
   resource;
 - `payloadKind: "svgGlyph"` is accepted only behind
   `text.glyphOutline.svgGlyph` when it carries the static sanitized vector
-  contract and the target SVG exporter can resolve the referenced vector
-  resource;
+  contract and the target backend can resolve and parse the referenced vector
+  path resource;
 - each outline path carries `glyphId`, `glyphRange`, and a UTF-8 source range
   so SVG/Canvas2D strict replay can keep path-level provenance for debugging,
   search sidecars, and accessibility sidecars;
@@ -716,10 +719,11 @@ The current validator keeps this conservative:
   `monochromeFill` profile, the initial `monochromeFillStroke` stroke subset,
   the gated resolved `ColorLayers.ColrV0` layer subset, the gated
   `ColorLayers.ColrV1` stage-1 graph subset for CanvasKit/Canvas2D, and the gated
-  BitmapGlyph image-strike subset for CanvasKit and SVG/Canvas2D.
+  BitmapGlyph image-strike subset plus static-sanitized SvgGlyph vector path
+  subset for CanvasKit and SVG/Canvas2D.
   Shadow, emboss/engrave, underline/strike/emphasis, tab leaders, ratio/shade
-  adjustments, color glyphs, bitmap glyphs, and SVG-in-font glyphs are not
-  outline-eligible in the first profiles;
+  adjustments, unsupported color glyph graphs, unresolved bitmap glyphs, and raw
+  SVG-in-font glyphs are not outline-eligible in the first profiles;
 - `glyphOutline` must never be exported as an already-known generic `Path`
   while a `TextRun` fallback exists.
 
@@ -1106,8 +1110,8 @@ producer-resolved strike fields, deterministic strict visual
 `alphaMode`/`scalingPolicy`/`filtering`, required placement, and source/glyph
 ranges are complete. For `svgGlyph`, it accepts
 `text.glyphOutline.svgGlyph` only when the static sanitized vector contract,
-viewBox, placement, and source/glyph ranges are complete. For malformed bitmap
-or SVG glyph payloads, the validator reports
+viewBox, placement, source/glyph ranges, and parseable path subset are complete.
+For malformed bitmap or SVG glyph payloads, the validator reports
 `glyphOutlinePayloadContractInvalid` when the
 payload lacks the producer-resolved bitmap strike fields, deterministic strict
 visual scaling/filtering, required placement and ranges, or static-sanitized

@@ -16,6 +16,12 @@ export type LayerCanvasImageEffectSource = HTMLCanvasElement | OffscreenCanvas;
 export type LayerCanvasImageSource = HTMLImageElement | LayerCanvasImageEffectSource;
 export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, LayerCanvasImageEffectSource>>;
 export type LayerImageEffectSourceRect = { x: number; y: number; width: number; height: number };
+export type StaticSvgPathLayer = {
+  pathData: string;
+  fill: string;
+  fillRule?: CanvasFillRule;
+  opacity: number;
+};
 export type LayerImageEffectDiagnostics = {
   cacheHits: number;
   cacheMisses: number;
@@ -32,6 +38,38 @@ export type LayerImageEffectDiagnostics = {
   htmlCanvasPreprocesses: number;
 };
 
+export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[] {
+  if (typeof DOMParser === 'undefined') {
+    return [];
+  }
+  const parser = new DOMParser();
+  const document = parser.parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${fragment}</svg>`, 'image/svg+xml');
+  if (document.querySelector('parsererror')) {
+    return [];
+  }
+
+  const layers: StaticSvgPathLayer[] = [];
+  for (const element of document.querySelectorAll('path')) {
+    const pathData = element.getAttribute('d')?.trim();
+    if (!pathData) {
+      continue;
+    }
+    const fill = svgPresentationAttribute(element, 'fill') ?? '#000000';
+    if (fill.trim().toLowerCase() === 'none') {
+      continue;
+    }
+    const opacity = svgOpacity(svgPresentationAttribute(element, 'opacity'))
+      * svgOpacity(svgPresentationAttribute(element, 'fill-opacity'));
+    layers.push({
+      pathData,
+      fill,
+      fillRule: svgFillRule(svgPresentationAttribute(element, 'fill-rule')),
+      opacity,
+    });
+  }
+  return layers;
+}
+
 export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDiagnostics): void {
   diagnostics.cacheHits = 0;
   diagnostics.cacheMisses = 0;
@@ -46,6 +84,45 @@ export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDi
   diagnostics.maxHeapDeltaBytes = 0;
   diagnostics.offscreenCanvasPreprocesses = 0;
   diagnostics.htmlCanvasPreprocesses = 0;
+}
+
+function svgPresentationAttribute(element: Element, name: string): string | null {
+  const direct = element.getAttribute(name);
+  if (direct !== null) {
+    return direct.trim();
+  }
+  const style = element.getAttribute('style');
+  if (!style) {
+    return null;
+  }
+  for (const declaration of style.split(';')) {
+    const separator = declaration.indexOf(':');
+    if (separator < 0) {
+      continue;
+    }
+    const property = declaration.slice(0, separator).trim().toLowerCase();
+    if (property === name.toLowerCase()) {
+      return declaration.slice(separator + 1).trim();
+    }
+  }
+  return null;
+}
+
+function svgOpacity(value: string | null): number {
+  if (!value) {
+    return 1;
+  }
+  const trimmed = value.trim();
+  const parsed = Number.parseFloat(trimmed);
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+  const unitValue = trimmed.endsWith('%') ? parsed / 100 : parsed;
+  return Math.max(0, Math.min(1, unitValue));
+}
+
+function svgFillRule(value: string | null): CanvasFillRule | undefined {
+  return value?.trim().toLowerCase() === 'evenodd' ? 'evenodd' : undefined;
 }
 
 const ORDERED_DITHER_8X8 = [

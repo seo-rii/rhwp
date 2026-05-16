@@ -3393,9 +3393,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         images: [pixelBytes],
         imageHashes: ['bitmap-glyph-pixel'],
         imageKeys: ['bitmap-glyph-pixel'],
-        svgFragments: [],
-        svgHashes: [],
-        svgKeys: [],
+        svgFragments: ['<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>'],
+        svgHashes: ['svg-glyph-magenta-square'],
+        svgKeys: ['svg-glyph-magenta-square'],
         fontBlobs: [],
         fontBlobHashes: [],
         fontBlobKeys: [],
@@ -3425,11 +3425,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       canvas.height = tree.pageHeight;
       document.body.appendChild(canvas);
       renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await new Promise((resolve) => setTimeout(resolve, 50));
       await new Promise((resolve) => requestAnimationFrame(resolve));
       const imageData = canvas.getContext('2d')?.getImageData(0, 0, tree.pageWidth, tree.pageHeight).data;
       let blackPixels = 0;
       let bluePixels = 0;
       let redPixels = 0;
+      let magentaPixels = 0;
       if (imageData) {
         for (let offset = 0; offset < imageData.length; offset += 4) {
           const red = imageData[offset];
@@ -3445,12 +3448,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
           if (alpha > 32 && red > 150 && green < 80 && blue < 80) {
             redPixels += 1;
           }
+          if (alpha > 32 && red > 150 && green < 80 && blue > 120) {
+            magentaPixels += 1;
+          }
         }
       }
       const png = canvas.toDataURL('image/png');
       const diagnostics = renderer.getTextVariantSelectionDiagnostics();
       canvas.remove();
-      return { png, diagnostics, blackPixels, bluePixels, redPixels };
+      return { png, diagnostics, blackPixels, bluePixels, redPixels, magentaPixels };
     };
 
     const strokeOutline = outlineFor('canvaskit-outline-stroke', {
@@ -3570,6 +3576,31 @@ runTest('Renderer lifecycle', async ({ page }) => {
         filtering: 'nearest',
       },
     });
+    const svgOutline = outlineFor('canvaskit-outline-svg', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        vectorResourceId: 0,
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+          baselineY: 0,
+        },
+        viewBox: { x: 0, y: 0, width: 18, height: 18 },
+        securityMode: 'staticSanitized',
+        scriptAllowed: false,
+        animationAllowed: false,
+        externalResourcesAllowed: false,
+        interactivityAllowed: false,
+      },
+    });
 
     return {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
@@ -3577,6 +3608,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       colorLayers: await render(treeFor(colorOutline)),
       colorLayersColrV1: await render(treeFor(colorV1Outline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
+      svgGlyph: await render(treeFor(svgOutline)),
     };
   });
   assert(!canvaskitGlyphOutlineProbe.error, canvaskitGlyphOutlineProbe.error || 'CanvasKit glyph outline probe available');
@@ -3620,6 +3652,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitBitmapReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects BitmapGlyph GlyphOutline=${JSON.stringify(canvaskitBitmapReport)}`,
   );
+  const canvaskitSvgReport = canvaskitGlyphOutlineProbe.svgGlyph?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'canvaskit-outline-svg',
+  );
+  assert(
+    canvaskitSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects SvgGlyph GlyphOutline=${JSON.stringify(canvaskitSvgReport)}`,
+  );
   const canvaskitMonochromeBlackPixels = countPixels(
     canvaskitGlyphOutlineProbe.monochrome.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
@@ -3641,6 +3681,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     (pixel) => pixel.alpha > 32 && pixel.green > 120 && pixel.red < 100 && pixel.blue < 100,
   );
   const canvaskitBitmapBlackPixels = canvaskitGlyphOutlineProbe.bitmapGlyph.blackPixels;
+  const canvaskitSvgMagentaPixels = canvaskitGlyphOutlineProbe.svgGlyph.magentaPixels;
   assert(
     canvaskitMonochromeBlackPixels > 100 && canvaskitMonochromeRedPixels < 5,
     `CanvasKit strict outline paints monochrome path and suppresses fallback black=${canvaskitMonochromeBlackPixels}, red=${canvaskitMonochromeRedPixels}`,
@@ -3660,6 +3701,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitBitmapBlackPixels > 100,
     `CanvasKit strict outline paints BitmapGlyph image black=${canvaskitBitmapBlackPixels}`,
+  );
+  assert(
+    canvaskitSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints SvgGlyph vector resource magenta=${canvaskitSvgMagentaPixels}`,
   );
 
   setTestCase('canvas-layer-glyph-outline-payload-parity');
@@ -3877,9 +3922,29 @@ runTest('Renderer lifecycle', async ({ page }) => {
         filtering: 'nearest',
       },
     });
-    const outlines = [colorV0Outline, colorV1Outline, bitmapOutline];
+    const svgOutline = outlineBase('outline-parity-svg', 88, {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('outline-parity-svg', ['text.outlineGlyph', 'text.glyphOutline.svgGlyph']),
+      paths: [],
+      svgGlyph: {
+        vectorResourceId: 0,
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 88, f: 8 },
+          baselineY: 0,
+        },
+        viewBox: { x: 0, y: 0, width: 14, height: 14 },
+        securityMode: 'staticSanitized',
+        scriptAllowed: false,
+        animationAllowed: false,
+        externalResourcesAllowed: false,
+        interactivityAllowed: false,
+      },
+    });
+    const outlines = [colorV0Outline, colorV1Outline, bitmapOutline, svgOutline];
     const tree = {
-      pageWidth: 90,
+      pageWidth: 116,
       pageHeight: 32,
       profile: 'screen',
       outputOptions: {
@@ -3894,9 +3959,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         images: [pixelBytes],
         imageHashes: ['glyph-outline-parity-pixel'],
         imageKeys: ['glyph-outline-parity-pixel'],
-        svgFragments: [],
-        svgHashes: [],
-        svgKeys: [],
+        svgFragments: ['<path d="M0 0 L14 0 L14 14 L0 14 Z" fill="#ff00cc"/>'],
+        svgHashes: ['glyph-outline-parity-svg-magenta'],
+        svgKeys: ['glyph-outline-parity-svg-magenta'],
         fontBlobs: [],
         fontBlobHashes: [],
         fontBlobKeys: [],
@@ -3911,10 +3976,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1902,
-        bounds: { x: 0, y: 0, width: 72, height: 32 },
+        bounds: { x: 0, y: 0, width: 116, height: 32 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 72, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 116, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
           ...outlines.flatMap((outline) => [
             textRunFor(outline.variant.equivalenceGroup, outline.bbox.x),
             outline,
@@ -3930,7 +3995,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
       if (strictGlyphOutlineReplay) {
         renderer.setStrictGlyphOutlineReplay(true);
       }
+      let asyncResourceReady = false;
+      const asyncResourceReadyPromise = new Promise((resolve) => {
+        renderer.setAsyncResourceReadyCallback?.(() => {
+          asyncResourceReady = true;
+          resolve();
+        });
+      });
       renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await Promise.race([
+        asyncResourceReadyPromise,
+        new Promise((resolve) => setTimeout(resolve, 250)),
+      ]);
+      renderer.setAsyncResourceReadyCallback?.(null);
+      if (asyncResourceReady) {
+        renderer.renderPage(tree, canvas, 1);
+      }
       await new Promise((resolve) => requestAnimationFrame(resolve));
       const png = canvas.toDataURL('image/png');
       const diagnostics = renderer.getTextVariantSelectionDiagnostics();
@@ -3961,9 +4042,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nonInkMaxDiffRatio: 0,
     },
   );
+  const glyphOutlinePayloadCanvas2dMagentaPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvas2d.png,
+    (pixel) => pixel.alpha > 32 && pixel.red > 200 && pixel.blue > 180 && pixel.green < 80,
+  );
+  const glyphOutlinePayloadCanvasKitMagentaPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvaskit.png,
+    (pixel) => pixel.alpha > 32 && pixel.red > 200 && pixel.blue > 180 && pixel.green < 80,
+  );
   assert(
     glyphOutlinePayloadDiff.passed,
-    `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}`,
+    `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}, canvas2dMagenta=${glyphOutlinePayloadCanvas2dMagentaPixels}, canvaskitMagenta=${glyphOutlinePayloadCanvasKitMagentaPixels}`,
   );
 
   setTestCase('canvas-layer-form-object-parity');

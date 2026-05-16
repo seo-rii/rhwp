@@ -5,6 +5,7 @@ import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 import {
   hasColrv0ColorLayersContract,
   hasColrv1Stage1ColorGraphContract,
+  hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
   isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
@@ -58,6 +59,7 @@ import {
   computePathPaintBounds,
   decodePuaOverlapNumber,
   isHalfwidthScaledCluster,
+  parseStaticSvgPathLayers,
   resolveLayerImageCropSource,
   type LayerImageEffectDiagnostics,
   puaToDisplayText,
@@ -1004,6 +1006,10 @@ export class CanvasKitLayerRenderer {
       this.renderBitmapGlyphOutline(canvas, op);
       return;
     }
+    if (payloadKind === 'svgGlyph') {
+      this.renderSvgGlyphOutline(canvas, op);
+      return;
+    }
     const transform = op.placement.runToPage;
     canvas.save();
     canvas.concat([
@@ -1171,6 +1177,62 @@ export class CanvasKitLayerRenderer {
       paint,
     );
     paint.delete();
+  }
+
+  private renderSvgGlyphOutline(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerGlyphOutlineOp,
+  ): void {
+    const payload = op.svgGlyph;
+    if (!payload || !hasStaticSanitizedSvgGlyphContract(op) || typeof payload.vectorResourceId !== 'number') {
+      return;
+    }
+    const viewBox = payload.viewBox;
+    const { x, y, width, height } = op.bbox;
+    if (
+      !viewBox
+      || !Number.isFinite(viewBox.x)
+      || !Number.isFinite(viewBox.y)
+      || !Number.isFinite(viewBox.width)
+      || !Number.isFinite(viewBox.height)
+      || viewBox.width <= 0
+      || viewBox.height <= 0
+      || !Number.isFinite(x)
+      || !Number.isFinite(y)
+      || !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width <= 0
+      || height <= 0
+    ) {
+      return;
+    }
+    const fragment = this.lastRenderedTree?.resources?.svgFragments?.[payload.vectorResourceId];
+    if (typeof fragment !== 'string') {
+      return;
+    }
+    const pathLayers = parseStaticSvgPathLayers(fragment);
+    if (pathLayers.length === 0) {
+      return;
+    }
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.scale(width / viewBox.width, height / viewBox.height);
+    canvas.translate(-viewBox.x, -viewBox.y);
+    try {
+      for (const layer of pathLayers) {
+        const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+        if (!path) {
+          continue;
+        }
+        this.applyPathFillRule(path, layer.fillRule);
+        const paint = this.makePaint(layer.fill, 'fill', layer.opacity);
+        canvas.drawPath(path, paint);
+        paint.delete();
+        path.delete();
+      }
+    } finally {
+      canvas.restore();
+    }
   }
 
   private renderTextControlMark(
@@ -2643,19 +2705,20 @@ function glyphOutlinePayloadStatus(
       reason: 'unsupportedColorGlyph',
     };
   }
-  if (op.paths.length === 0) {
-    return { supported: false, reason: 'unsupportedOutlinePayload' };
-  }
   if (payloadKind === 'monochromeFill') {
     return {
-      supported: !op.stroke,
-      reason: op.stroke ? 'glyphOutlineStrokeStyleUnsupported' : undefined,
+      supported: op.paths.length > 0 && !op.stroke,
+      reason: op.paths.length === 0
+        ? 'unsupportedOutlinePayload'
+        : op.stroke
+          ? 'glyphOutlineStrokeStyleUnsupported'
+          : undefined,
     };
   }
   if (payloadKind === 'monochromeFillStroke') {
     return {
-      supported: isSupportedGlyphOutlineStrokeStyle(op.stroke),
-      reason: 'glyphOutlineStrokeStyleUnsupported',
+      supported: op.paths.length > 0 && isSupportedGlyphOutlineStrokeStyle(op.stroke),
+      reason: op.paths.length === 0 ? 'unsupportedOutlinePayload' : 'glyphOutlineStrokeStyleUnsupported',
     };
   }
   if (payloadKind === 'bitmapGlyph') {
@@ -2669,7 +2732,16 @@ function glyphOutlinePayloadStatus(
     };
   }
   if (payloadKind === 'svgGlyph') {
-    return { supported: false, reason: 'unsupportedSvgGlyph' };
+    const resourceId = op.svgGlyph?.vectorResourceId;
+    const fragment = typeof resourceId === 'number' ? resources?.svgFragments?.[resourceId] : undefined;
+    return {
+      supported: hasStaticSanitizedSvgGlyphContract(op)
+        && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
+        && typeof resourceId === 'number'
+        && typeof fragment === 'string'
+        && parseStaticSvgPathLayers(fragment).length > 0,
+      reason: 'unsupportedSvgGlyph',
+    };
   }
   return { supported: false, reason: 'unsupportedOutlinePayload' };
 }

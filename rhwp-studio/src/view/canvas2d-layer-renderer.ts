@@ -1,6 +1,7 @@
 import {
   hasColrv0ColorLayersContract,
   hasColrv1Stage1ColorGraphContract,
+  hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
   isSupportedGlyphOutlineStrokeStyle,
   layerTextVariantOpsForLeaf,
@@ -55,6 +56,7 @@ import {
   inferImageMime,
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
+  parseStaticSvgPathLayers,
   resetLayerImageEffectDiagnostics,
   resolveLayerImageCropSource,
   type LayerCanvasImageSource,
@@ -190,7 +192,9 @@ export class Canvas2DLayerRenderer {
       ? payloadStatus.supported
       : (op.payloadKind ?? 'monochromeFill') === 'bitmapGlyph'
         ? payloadStatus.supported
-        : op.paths.length > 0;
+        : (op.payloadKind ?? 'monochromeFill') === 'svgGlyph'
+          ? payloadStatus.supported
+          : op.paths.length > 0;
     const payloadSupported = op.diagnostics.strictVisualEligible
       && payloadStatus.supported
       && hasReplayPayload;
@@ -330,9 +334,59 @@ export class Canvas2DLayerRenderer {
             const previousImageSmoothingEnabled = ctx.imageSmoothingEnabled;
             try {
               ctx.imageSmoothingEnabled = payload.filtering !== 'nearest';
-              this.drawDomImage(ctx, image, op.bbox, 'stretch');
+              this.drawDomImage(ctx, image, op.bbox);
             } finally {
               ctx.imageSmoothingEnabled = previousImageSmoothingEnabled;
+            }
+            return;
+          }
+          if (payloadKind === 'svgGlyph') {
+            const payload = op.svgGlyph;
+            if (!payload || !hasStaticSanitizedSvgGlyphContract(op) || typeof payload.vectorResourceId !== 'number') {
+              return;
+            }
+            const viewBox = payload.viewBox;
+            const { x, y, width, height } = op.bbox;
+            if (
+              !viewBox
+              || !Number.isFinite(viewBox.x)
+              || !Number.isFinite(viewBox.y)
+              || !Number.isFinite(viewBox.width)
+              || !Number.isFinite(viewBox.height)
+              || viewBox.width <= 0
+              || viewBox.height <= 0
+              || !Number.isFinite(x)
+              || !Number.isFinite(y)
+              || !Number.isFinite(width)
+              || !Number.isFinite(height)
+              || width <= 0
+              || height <= 0
+            ) {
+              return;
+            }
+            const fragment = this.currentResources?.svgFragments?.[payload.vectorResourceId];
+            if (typeof fragment !== 'string') {
+              return;
+            }
+            const pathLayers = parseStaticSvgPathLayers(fragment);
+            if (pathLayers.length === 0) {
+              return;
+            }
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(width / viewBox.width, height / viewBox.height);
+            ctx.translate(-viewBox.x, -viewBox.y);
+            try {
+              for (const layer of pathLayers) {
+                const path = new Path2D(layer.pathData);
+                const previousAlpha = ctx.globalAlpha;
+                ctx.fillStyle = layer.fill;
+                ctx.globalAlpha = previousAlpha * layer.opacity;
+                ctx.fill(path, layer.fillRule ?? 'nonzero');
+                ctx.globalAlpha = previousAlpha;
+              }
+            } finally {
+              ctx.restore();
             }
             return;
           }
@@ -1928,19 +1982,20 @@ function glyphOutlinePayloadStatus(
       reason: 'unsupportedColorGlyph',
     };
   }
-  if (op.paths.length === 0) {
-    return { supported: false, reason: 'unsupportedOutlinePayload' };
-  }
   if (payloadKind === 'monochromeFill') {
     return {
-      supported: !op.stroke,
-      reason: op.stroke ? 'glyphOutlineStrokeStyleUnsupported' : undefined,
+      supported: op.paths.length > 0 && !op.stroke,
+      reason: op.paths.length === 0
+        ? 'unsupportedOutlinePayload'
+        : op.stroke
+          ? 'glyphOutlineStrokeStyleUnsupported'
+          : undefined,
     };
   }
   if (payloadKind === 'monochromeFillStroke') {
     return {
-      supported: isSupportedGlyphOutlineStrokeStyle(op.stroke),
-      reason: 'glyphOutlineStrokeStyleUnsupported',
+      supported: op.paths.length > 0 && isSupportedGlyphOutlineStrokeStyle(op.stroke),
+      reason: op.paths.length === 0 ? 'unsupportedOutlinePayload' : 'glyphOutlineStrokeStyleUnsupported',
     };
   }
   if (payloadKind === 'bitmapGlyph') {
@@ -1954,7 +2009,16 @@ function glyphOutlinePayloadStatus(
     };
   }
   if (payloadKind === 'svgGlyph') {
-    return { supported: false, reason: 'unsupportedSvgGlyph' };
+    const resourceId = op.svgGlyph?.vectorResourceId;
+    const fragment = typeof resourceId === 'number' ? resources?.svgFragments?.[resourceId] : undefined;
+    return {
+      supported: hasStaticSanitizedSvgGlyphContract(op)
+        && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
+        && typeof resourceId === 'number'
+        && typeof fragment === 'string'
+        && parseStaticSvgPathLayers(fragment).length > 0,
+      reason: 'unsupportedSvgGlyph',
+    };
   }
   return { supported: false, reason: 'unsupportedOutlinePayload' };
 }
