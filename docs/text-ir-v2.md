@@ -277,8 +277,9 @@ for clip scopes, core vector paint ops, transformed vector geometry and line
 styles, gradient and pattern shape fills, page-background gradients/images,
 form-object geometry, image placement and tile fill modes, transformed images,
 crop-aware image effects, equation layout geometry, char overlap, text
-control/footnote markers, tab leader and decoration line visual ops, and the
-strict GlyphOutline COLRv1-stage-1/BitmapGlyph payloads.
+control/footnote markers, TextRun inline style effects, tab leader and
+decoration line visual ops, and the strict GlyphOutline
+COLRv1-stage-1/BitmapGlyph payloads.
 
 This policy keeps Canvas2D as the compatibility reference while preventing new
 CanvasKit work from adding browser-canvas dependencies that would block a
