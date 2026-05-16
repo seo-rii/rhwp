@@ -4665,6 +4665,125 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `transformed vector parity exact=${transformedVectorDiff.exactDiffPixels}, tolerant=${transformedVectorDiff.rawTolerantDiffPixels}, ink=${transformedVectorDiff.rawInkMaskDiffPixels}, max_channel_delta=${transformedVectorDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-line-arrow-variant-parity');
+  const lineArrowVariantParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const line = (x1, y1, x2, y2, startArrow, endArrow, dash = 'solid', lineType = 'single') => ({
+      type: 'line',
+      bbox: {
+        x: Math.min(x1, x2) - 8,
+        y: Math.min(y1, y2) - 8,
+        width: Math.abs(x2 - x1) + 16,
+        height: Math.abs(y2 - y1) + 16,
+      },
+      x1,
+      y1,
+      x2,
+      y2,
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+      style: {
+        color: '#202020',
+        width: 3,
+        dash,
+        lineType,
+        startArrow,
+        endArrow,
+        startArrowSize: 2,
+        endArrowSize: 2,
+        shadow: null,
+      },
+    });
+    const tree = {
+      pageWidth: 160,
+      pageHeight: 72,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1908,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1908,
+        bounds: { x: 0, y: 0, width: 160, height: 72 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 160, height: 72 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          line(16, 14, 68, 14, 'arrow', 'concaveArrow'),
+          line(94, 14, 144, 14, 'openDiamond', 'circle', 'dash'),
+          line(16, 38, 68, 56, 'square', 'openSquare', 'dot'),
+          line(94, 56, 144, 38, 'arrow', 'openDiamond', 'dashDot', 'thinThickThinTriple'),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !lineArrowVariantParityProbe.error,
+    lineArrowVariantParityProbe.error || 'line arrow variant parity probe available',
+  );
+  const lineArrowCanvas2dInkPixels = countPixels(
+    lineArrowVariantParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const lineArrowCanvaskitInkPixels = countPixels(
+    lineArrowVariantParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    lineArrowCanvas2dInkPixels > 450 && lineArrowCanvaskitInkPixels > 450,
+    `line arrow variants replay geometry canvas2d=${lineArrowCanvas2dInkPixels}, canvaskit=${lineArrowCanvaskitInkPixels}`,
+  );
+  const lineArrowDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(lineArrowVariantParityProbe.canvas2d),
+    pngBufferFromDataUrl(lineArrowVariantParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-line-arrow-variant-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    lineArrowDiff.passed,
+    `line arrow variant parity exact=${lineArrowDiff.exactDiffPixels}, tolerant=${lineArrowDiff.rawTolerantDiffPixels}, ink=${lineArrowDiff.rawInkMaskDiffPixels}, max_channel_delta=${lineArrowDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-gradient-pattern-parity');
   const gradientPatternParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
