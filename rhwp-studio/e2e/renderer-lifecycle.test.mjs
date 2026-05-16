@@ -4041,6 +4041,151 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `form object parity exact=${formObjectDiff.exactDiffPixels}, tolerant=${formObjectDiff.rawTolerantDiffPixels}, ink=${formObjectDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-vector-paint-parity');
+  const vectorPaintParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const shapeStyle = (fillColor, strokeColor, strokeWidth = 1) => ({
+      fillColor,
+      strokeColor,
+      strokeWidth,
+      strokeDash: 'solid',
+      opacity: 1,
+      pattern: null,
+      shadow: null,
+    });
+    const transform = { rotation: 0, horzFlip: false, vertFlip: false };
+    const tree = {
+      pageWidth: 96,
+      pageHeight: 48,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1904,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1904,
+        bounds: { x: 0, y: 0, width: 96, height: 48 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 96, height: 48 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'rectangle',
+            bbox: { x: 4, y: 4, width: 24, height: 16 },
+            cornerRadius: 0,
+            style: shapeStyle('#b9e8ff', '#14455f', 1),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'ellipse',
+            bbox: { x: 36, y: 4, width: 22, height: 16 },
+            style: shapeStyle('#d2f5bd', '#245714', 1),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'path',
+            bbox: { x: 66, y: 4, width: 24, height: 18 },
+            commands: [
+              { type: 'moveTo', x: 68, y: 20 },
+              { type: 'lineTo', x: 78, y: 4 },
+              { type: 'curveTo', x1: 84, y1: 5, x2: 88, y2: 12, x3: 90, y3: 20 },
+              { type: 'closePath' },
+            ],
+            style: shapeStyle('#ffd9a8', '#6a3400', 1),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'line',
+            bbox: { x: 5, y: 30, width: 84, height: 10 },
+            x1: 6,
+            y1: 38,
+            x2: 88,
+            y2: 30,
+            transform,
+            style: {
+              color: '#202020',
+              width: 2,
+              dash: 'solid',
+              lineType: 'single',
+              startArrow: 'none',
+              endArrow: 'none',
+              startArrowSize: 0,
+              endArrowSize: 0,
+              shadow: null,
+            },
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(!vectorPaintParityProbe.error, vectorPaintParityProbe.error || 'vector paint parity probe available');
+  const vectorCanvas2dInkPixels = countPixels(
+    vectorPaintParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const vectorCanvaskitInkPixels = countPixels(
+    vectorPaintParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    vectorCanvas2dInkPixels > 700 && vectorCanvaskitInkPixels > 700,
+    `vector paint replay draws geometry canvas2d=${vectorCanvas2dInkPixels}, canvaskit=${vectorCanvaskitInkPixels}`,
+  );
+  const vectorPaintDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(vectorPaintParityProbe.canvas2d),
+    pngBufferFromDataUrl(vectorPaintParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-vector-paint-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.04,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    vectorPaintDiff.passed,
+    `vector paint parity exact=${vectorPaintDiff.exactDiffPixels}, tolerant=${vectorPaintDiff.rawTolerantDiffPixels}, ink=${vectorPaintDiff.rawInkMaskDiffPixels}, max_channel_delta=${vectorPaintDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {
