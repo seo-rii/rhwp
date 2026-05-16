@@ -206,7 +206,6 @@ export class CanvasKitLayerRenderer {
       } finally {
         this.collectTextVariantSelectionDiagnostics = false;
       }
-      this.renderFallbackOverlays(tree.root, targetCanvas, scale);
     } catch (error) {
       this.collectTextVariantSelectionDiagnostics = false;
       renderError = error;
@@ -231,7 +230,6 @@ export class CanvasKitLayerRenderer {
     } finally {
       this.collectTextVariantSelectionDiagnostics = false;
     }
-    this.renderFallbackOverlays(tree.root, targetCanvas, scale);
   }
 
   setAsyncResourceReadyCallback(callback: (() => void) | null): void {

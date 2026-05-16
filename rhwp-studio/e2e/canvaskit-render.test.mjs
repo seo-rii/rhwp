@@ -1136,6 +1136,47 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       }
     }
 
+    let fallbackOverlayPassProbe = null;
+    if (typeof renderer.hasFallbackOverlayNode === 'function') {
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 80;
+      probeCanvas.height = 48;
+      const probeTree = {
+        pageWidth: 80,
+        pageHeight: 48,
+        profile: 'screen',
+        root: {
+          kind: 'leaf',
+          bounds: { x: 0, y: 0, width: 80, height: 48 },
+          cacheHint: 'none',
+          ops: [simpleTextRun],
+        },
+        resources: {
+          tableId: 904,
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+        },
+      };
+      let fallbackOverlayScanCalls = 0;
+      const originalHasFallbackOverlayNode = renderer.hasFallbackOverlayNode;
+      renderer.hasFallbackOverlayNode = function hasFallbackOverlayNodeDisabledPassProbe(...args) {
+        fallbackOverlayScanCalls += 1;
+        return originalHasFallbackOverlayNode.apply(this, args);
+      };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        fallbackOverlayPassProbe = {
+          fallbackOverlayScanCalls,
+        };
+      } finally {
+        renderer.hasFallbackOverlayNode = originalHasFallbackOverlayNode;
+      }
+    }
+
     return {
       hasLayerTreeValueApi: typeof wasmDoc?.getPageLayerTreeValue === 'function',
       hasLayerTreeValueWithProfileApi: typeof wasmDoc?.getPageLayerTreeValueWithProfile === 'function',
@@ -1361,6 +1402,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       textBlobNativeProbe,
       textProjectionNativeProbe,
       pageBackgroundImageNativeProbe,
+      fallbackOverlayPassProbe,
       footnoteUsesOverlay: renderer.shouldOverlayFootnoteMarker({
         type: 'footnoteMarker',
         text: '1)',
@@ -1406,6 +1448,10 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
   assert(
     nativeRouting.pageBackgroundImageNativeProbe?.overlayPageBackgroundImageCalls === 0,
     `page background image overlay calls=${JSON.stringify(nativeRouting.pageBackgroundImageNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.fallbackOverlayPassProbe?.fallbackOverlayScanCalls === 0,
+    `fallback overlay pass scan calls=${JSON.stringify(nativeRouting.fallbackOverlayPassProbe)}`,
   );
   assert(nativeRouting.simpleLineUsesOverlay === false, `simple line overlay=${nativeRouting.simpleLineUsesOverlay}`);
   assert(nativeRouting.simpleRectangleUsesOverlay === false, `simple rectangle overlay=${nativeRouting.simpleRectangleUsesOverlay}`);
