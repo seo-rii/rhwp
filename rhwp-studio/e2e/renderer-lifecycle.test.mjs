@@ -5200,6 +5200,134 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text marker parity exact=${textMarkerDiff.exactDiffPixels}, tolerant=${textMarkerDiff.rawTolerantDiffPixels}, ink=${textMarkerDiff.rawInkMaskDiffPixels}, max_channel_delta=${textMarkerDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-char-overlap-parity');
+  const charOverlapParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const style = {
+      fontFamily: 'Noto Sans KR',
+      fontSize: 16,
+      color: '#101010',
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: '#101010',
+      strikeColor: '#101010',
+      shadeColor: '#ffffff',
+    };
+    const overlap = (x, text, borderType, innerCharSize, width = 20) => ({
+      type: 'charOverlap',
+      bbox: { x, y: 7, width, height: 24 },
+      text,
+      baseline: 18,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      style,
+      positions: [0, width],
+      charOverlap: { borderType, innerCharSize },
+    });
+    const tree = {
+      pageWidth: 112,
+      pageHeight: 40,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1913,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1913,
+        bounds: { x: 0, y: 0, width: 112, height: 40 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 112, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          overlap(8, '8', 1, 85),
+          overlap(36, '4', 4, 90),
+          overlap(64, '12', 3, 70, 32),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !charOverlapParityProbe.error,
+    charOverlapParityProbe.error || 'char overlap parity probe available',
+  );
+  const charOverlapCanvas2dInkPixels = countPixels(
+    charOverlapParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const charOverlapCanvaskitInkPixels = countPixels(
+    charOverlapParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    charOverlapCanvas2dInkPixels > 180 && charOverlapCanvaskitInkPixels > 180,
+    `char overlap replay draws direct ops canvas2d=${charOverlapCanvas2dInkPixels}, canvaskit=${charOverlapCanvaskitInkPixels}`,
+  );
+  const charOverlapDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(charOverlapParityProbe.canvas2d),
+    pngBufferFromDataUrl(charOverlapParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-char-overlap-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.22,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    charOverlapDiff.passed,
+    `char overlap parity exact=${charOverlapDiff.exactDiffPixels}, tolerant=${charOverlapDiff.rawTolerantDiffPixels}, ink=${charOverlapDiff.rawInkMaskDiffPixels}, max_channel_delta=${charOverlapDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-visual-line-parity');
   const textVisualLineParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
