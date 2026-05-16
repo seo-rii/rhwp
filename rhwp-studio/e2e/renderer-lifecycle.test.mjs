@@ -5492,6 +5492,151 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text style parity exact=${textStyleDiff.exactDiffPixels}, tolerant=${textStyleDiff.rawTolerantDiffPixels}, ink=${textStyleDiff.rawInkMaskDiffPixels}, max_channel_delta=${textStyleDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-projection-parity');
+  const textProjectionParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const style = (overrides = {}) => ({
+      fontFamily: 'Noto Sans KR',
+      fontSize: 17,
+      color: '#111111',
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: '#111111',
+      strikeColor: '#111111',
+      shadeColor: '#ffffff',
+      ...overrides,
+    });
+    const textRun = ({ text, x, y, width, rotation = 0, styleOverrides }) => ({
+      type: 'textRun',
+      bbox: { x, y, width, height: 28 },
+      text,
+      baseline: 21,
+      rotation,
+      isVertical: false,
+      orientation: 'horizontal',
+      style: style(styleOverrides),
+      positions: Array.from({ length: text.length + 1 }, (_, index) => index * 12),
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const tree = {
+      pageWidth: 158,
+      pageHeight: 58,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1915,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1915,
+        bounds: { x: 0, y: 0, width: 158, height: 58 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 158, height: 58 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          textRun({
+            text: 'ROT',
+            x: 12,
+            y: 10,
+            width: 50,
+            rotation: -14,
+            styleOverrides: { color: '#222222' },
+          }),
+          textRun({
+            text: 'RATIO',
+            x: 78,
+            y: 10,
+            width: 66,
+            styleOverrides: {
+              color: '#0044aa',
+              ratio: 0.62,
+            },
+          }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !textProjectionParityProbe.error,
+    textProjectionParityProbe.error || 'text projection parity probe available',
+  );
+  const textProjectionCanvas2dInkPixels = countPixels(
+    textProjectionParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const textProjectionCanvaskitInkPixels = countPixels(
+    textProjectionParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    textProjectionCanvas2dInkPixels > 250 && textProjectionCanvaskitInkPixels > 250,
+    `text projection replay draws transformed runs canvas2d=${textProjectionCanvas2dInkPixels}, canvaskit=${textProjectionCanvaskitInkPixels}`,
+  );
+  const textProjectionDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textProjectionParityProbe.canvas2d),
+    pngBufferFromDataUrl(textProjectionParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-projection-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textProjectionDiff.passed,
+    `text projection parity exact=${textProjectionDiff.exactDiffPixels}, tolerant=${textProjectionDiff.rawTolerantDiffPixels}, ink=${textProjectionDiff.rawInkMaskDiffPixels}, max_channel_delta=${textProjectionDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-visual-line-parity');
   const textVisualLineParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
