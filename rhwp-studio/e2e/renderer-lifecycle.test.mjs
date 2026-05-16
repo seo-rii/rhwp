@@ -4266,6 +4266,121 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `form object text parity exact=${formObjectTextDiff.exactDiffPixels}, tolerant=${formObjectTextDiff.rawTolerantDiffPixels}, ink=${formObjectTextDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectTextDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-form-object-disabled-parity');
+  const formObjectDisabledParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const makeForm = (formType, bbox, overrides = {}) => ({
+      type: 'formObject',
+      bbox,
+      formType,
+      caption: '',
+      text: '',
+      foreColor: '#0040cc',
+      backColor: '#f7f7f7',
+      value: 0,
+      enabled: false,
+      ...overrides,
+    });
+    const tree = {
+      pageWidth: 156,
+      pageHeight: 54,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1919,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1919,
+        bounds: { x: 0, y: 0, width: 156, height: 54 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 156, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          makeForm('pushButton', { x: 2, y: 4, width: 36, height: 16 }, { caption: 'OK', backColor: null }),
+          makeForm('checkBox', { x: 44, y: 4, width: 46, height: 16 }, { caption: 'Chk', value: 1 }),
+          makeForm('radioButton', { x: 96, y: 4, width: 48, height: 16 }, { caption: 'Rad', value: 1 }),
+          makeForm('comboBox', { x: 2, y: 28, width: 68, height: 16 }, { text: 'One' }),
+          makeForm('edit', { x: 80, y: 28, width: 58, height: 16 }, { text: 'Edit' }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !formObjectDisabledParityProbe.error,
+    formObjectDisabledParityProbe.error || 'disabled form object parity probe available',
+  );
+  const disabledBluePixelPredicate = (pixel) => (
+    pixel.alpha > 32 && pixel.blue > 140 && pixel.red < 120 && pixel.green < 150
+  );
+  const disabledGrayPixelPredicate = (pixel) => {
+    const maxChannel = Math.max(pixel.red, pixel.green, pixel.blue);
+    const minChannel = Math.min(pixel.red, pixel.green, pixel.blue);
+    return pixel.alpha > 32 && maxChannel < 230 && minChannel > 80 && maxChannel - minChannel <= 10;
+  };
+  const disabledFormCanvas2dBluePixels = countPixels(formObjectDisabledParityProbe.canvas2d, disabledBluePixelPredicate);
+  const disabledFormCanvaskitBluePixels = countPixels(formObjectDisabledParityProbe.canvaskit, disabledBluePixelPredicate);
+  const disabledFormCanvas2dGrayPixels = countPixels(formObjectDisabledParityProbe.canvas2d, disabledGrayPixelPredicate);
+  const disabledFormCanvaskitGrayPixels = countPixels(formObjectDisabledParityProbe.canvaskit, disabledGrayPixelPredicate);
+  assert(
+    disabledFormCanvas2dBluePixels < 5 && disabledFormCanvaskitBluePixels < 5,
+    `disabled form object ignores requested foreColor canvas2d=${disabledFormCanvas2dBluePixels}, canvaskit=${disabledFormCanvaskitBluePixels}`,
+  );
+  assert(
+    disabledFormCanvas2dGrayPixels > 120 && disabledFormCanvaskitGrayPixels > 120,
+    `disabled form object draws disabled gray palette canvas2d=${disabledFormCanvas2dGrayPixels}, canvaskit=${disabledFormCanvaskitGrayPixels}`,
+  );
+  const formObjectDisabledDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(formObjectDisabledParityProbe.canvas2d),
+    pngBufferFromDataUrl(formObjectDisabledParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-form-object-disabled-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    formObjectDisabledDiff.passed,
+    `disabled form object parity exact=${formObjectDisabledDiff.exactDiffPixels}, tolerant=${formObjectDisabledDiff.rawTolerantDiffPixels}, ink=${formObjectDisabledDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectDisabledDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-combo-box-overflow-text-parity');
   const comboBoxOverflowTextProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
