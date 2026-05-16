@@ -4411,6 +4411,139 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `vector paint parity exact=${vectorPaintDiff.exactDiffPixels}, tolerant=${vectorPaintDiff.rawTolerantDiffPixels}, ink=${vectorPaintDiff.rawInkMaskDiffPixels}, max_channel_delta=${vectorPaintDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-shape-shadow-fill-stroke-parity');
+  const shapeShadowFillStrokeProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const transform = { rotation: 0, horzFlip: false, vertFlip: false };
+    const style = (fillColor, strokeColor, strokeDash = 'solid') => ({
+      fillColor,
+      strokeColor,
+      strokeWidth: 4,
+      strokeDash,
+      opacity: 1,
+      pattern: null,
+      shadow: {
+        color: '#009900',
+        alpha: 0,
+        offsetX: 8,
+        offsetY: 2,
+      },
+    });
+    const tree = {
+      pageWidth: 104,
+      pageHeight: 44,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 19041,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 19041,
+        bounds: { x: 0, y: 0, width: 104, height: 44 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 104, height: 44 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'rectangle',
+            bbox: { x: 6, y: 8, width: 26, height: 16 },
+            cornerRadius: 0,
+            style: style('#fdfdfd', '#003300', 'dash'),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'ellipse',
+            bbox: { x: 42, y: 8, width: 24, height: 16 },
+            style: style('#fdfdfd', '#003300', 'dot'),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'path',
+            bbox: { x: 76, y: 7, width: 22, height: 20 },
+            commands: [
+              { type: 'moveTo', x: 78, y: 25 },
+              { type: 'lineTo', x: 87, y: 8 },
+              { type: 'lineTo', x: 97, y: 25 },
+              { type: 'closePath' },
+            ],
+            style: style('#fdfdfd', '#003300', 'dashDot'),
+            gradient: null,
+            transform,
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !shapeShadowFillStrokeProbe.error,
+    shapeShadowFillStrokeProbe.error || 'shape shadow fill/stroke parity probe available',
+  );
+  const shapeShadowCanvas2dGreenPixels = countPixels(
+    shapeShadowFillStrokeProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.green > 80 && pixel.red < 120 && pixel.blue < 120,
+  );
+  const shapeShadowCanvaskitGreenPixels = countPixels(
+    shapeShadowFillStrokeProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.green > 80 && pixel.red < 120 && pixel.blue < 120,
+  );
+  assert(
+    shapeShadowCanvas2dGreenPixels > 200 && shapeShadowCanvaskitGreenPixels > 200,
+    `shape shadow replay draws fill/stroke shadow canvas2d=${shapeShadowCanvas2dGreenPixels}, canvaskit=${shapeShadowCanvaskitGreenPixels}`,
+  );
+  const shapeShadowFillStrokeDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(shapeShadowFillStrokeProbe.canvas2d),
+    pngBufferFromDataUrl(shapeShadowFillStrokeProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-shape-shadow-fill-stroke-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    shapeShadowFillStrokeDiff.passed,
+    `shape shadow fill/stroke parity exact=${shapeShadowFillStrokeDiff.exactDiffPixels}, tolerant=${shapeShadowFillStrokeDiff.rawTolerantDiffPixels}, ink=${shapeShadowFillStrokeDiff.rawInkMaskDiffPixels}, max_channel_delta=${shapeShadowFillStrokeDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-shape-opacity-parity');
   const shapeOpacityParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

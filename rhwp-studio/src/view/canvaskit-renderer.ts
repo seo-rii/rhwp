@@ -1453,6 +1453,7 @@ export class CanvasKitLayerRenderer {
             op.style.shadow.color,
             strokeWidth,
             (shadowPaint) => canvas.drawLine(lineX1 + offsetX, lineY1 + offsetY, lineX2 + offsetX, lineY2 + offsetY, shadowPaint),
+            op.style.dash,
           );
         }
         canvas.drawLine(lineX1 + offsetX, lineY1 + offsetY, lineX2 + offsetX, lineY2 + offsetY, paint);
@@ -1497,14 +1498,27 @@ export class CanvasKitLayerRenderer {
       };
 
       if (op.style.shadow) {
-        this.drawShadow(
-          canvas,
-          op.style.shadow,
-          fill ? 'fill' : 'stroke',
-          op.style.shadow.color,
-          op.style.strokeWidth,
-          drawRect,
-        );
+        if (fill) {
+          this.drawShadow(
+            canvas,
+            op.style.shadow,
+            'fill',
+            op.style.shadow.color,
+            op.style.strokeWidth,
+            drawRect,
+          );
+        }
+        if (strokePaint) {
+          this.drawShadow(
+            canvas,
+            op.style.shadow,
+            'stroke',
+            op.style.shadow.color,
+            op.style.strokeWidth,
+            drawRect,
+            op.style.strokeDash,
+          );
+        }
       }
 
       if (fill) {
@@ -1527,14 +1541,27 @@ export class CanvasKitLayerRenderer {
       const drawOval = (paint: Paint) => canvas.drawOval(oval, paint);
 
       if (op.style.shadow) {
-        this.drawShadow(
-          canvas,
-          op.style.shadow,
-          fill ? 'fill' : 'stroke',
-          op.style.shadow.color,
-          op.style.strokeWidth,
-          drawOval,
-        );
+        if (fill) {
+          this.drawShadow(
+            canvas,
+            op.style.shadow,
+            'fill',
+            op.style.shadow.color,
+            op.style.strokeWidth,
+            drawOval,
+          );
+        }
+        if (strokePaint) {
+          this.drawShadow(
+            canvas,
+            op.style.shadow,
+            'stroke',
+            op.style.shadow.color,
+            op.style.strokeWidth,
+            drawOval,
+            op.style.strokeDash,
+          );
+        }
       }
 
       if (fill) {
@@ -1558,14 +1585,27 @@ export class CanvasKitLayerRenderer {
       const drawPath = (paint: Paint) => canvas.drawPath(path, paint);
 
       if (op.style.shadow) {
-        this.drawShadow(
-          canvas,
-          op.style.shadow,
-          fill ? 'fill' : 'stroke',
-          op.style.shadow.color,
-          op.style.strokeWidth,
-          drawPath,
-        );
+        if (fill) {
+          this.drawShadow(
+            canvas,
+            op.style.shadow,
+            'fill',
+            op.style.shadow.color,
+            op.style.strokeWidth,
+            drawPath,
+          );
+        }
+        if (strokePaint) {
+          this.drawShadow(
+            canvas,
+            op.style.shadow,
+            'stroke',
+            op.style.shadow.color,
+            op.style.strokeWidth,
+            drawPath,
+            op.style.strokeDash,
+          );
+        }
       }
 
       if (fill) {
@@ -2639,16 +2679,16 @@ export class CanvasKitLayerRenderer {
     color: string,
     strokeWidth: number,
     draw: (paint: Paint) => void,
+    dash = 'solid',
   ): void {
     if (!shadow) {
       return;
     }
 
     const opacity = shadow.alpha > 0 ? 1 - (shadow.alpha / 255) : 1;
-    const paint = this.makePaint(color, style, opacity);
-    if (style === 'stroke') {
-      paint.setStrokeWidth(Math.max(strokeWidth, 0.5));
-    }
+    const paint = style === 'stroke'
+      ? this.makeLinePaint(color, strokeWidth, dash, opacity)
+      : this.makePaint(color, style, opacity);
     const blur = this.canvasKit.MaskFilter.MakeBlur(this.canvasKit.BlurStyle.Normal, 1, false);
     paint.setMaskFilter(blur);
     blur.delete();
