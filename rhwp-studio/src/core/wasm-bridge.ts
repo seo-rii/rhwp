@@ -1,6 +1,6 @@
 import init, { HwpDocument, version } from '@wasm/rhwp.js';
 import { isKnownLayerPaintOp } from './types';
-import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, BodyFootnoteMarkerHit, FootnoteAtCursorResult, DeleteFootnoteResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, CellPathEntry, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree, LayerNode, LayerPaintOp } from './types';
+import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, BodyFootnoteMarkerHit, FootnoteAtCursorResult, DeleteFootnoteResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree, LayerNode, LayerPaintOp } from './types';
 import { resolveFont, fontFamilyWithFallback } from './font-substitution';
 import { REGISTERED_FONTS } from './font-loader';
 import { LayerResourceStore } from './layer-resource-store';
@@ -569,6 +569,11 @@ export class WasmBridge {
     };
 
     walk(tree.root);
+    for (const op of tree.variantOps ?? []) {
+      if (isKnownLayerPaintOp(op)) {
+        rewriteOp(op);
+      }
+    }
     tree.resources = this.layerResourceStore.resources;
     return tree;
   }
