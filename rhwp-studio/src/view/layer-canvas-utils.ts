@@ -102,9 +102,9 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         const y = Number(attributes.get('y') ?? '0');
         const width = attributes.has('width') ? Number(attributes.get('width')) : null;
         const height = attributes.has('height') ? Number(attributes.get('height')) : null;
-        if (width !== null && height !== null && width > 0 && height > 0) {
-          pathData = `M${x} ${y}H${x + width}V${y + height}H${x}Z`;
-        }
+        const rx = attributes.has('rx') ? Number(attributes.get('rx')) : null;
+        const ry = attributes.has('ry') ? Number(attributes.get('ry')) : null;
+        pathData = staticSvgRectPathData(x, y, width, height, rx, ry);
       }
       if (!pathData) {
         continue;
@@ -217,12 +217,31 @@ function staticSvgElementPathData(element: Element): string | null {
   if (elementName !== 'rect') {
     return null;
   }
-  const x = svgNumericAttribute(element, 'x') ?? 0;
-  const y = svgNumericAttribute(element, 'y') ?? 0;
-  const width = svgNumericAttribute(element, 'width');
-  const height = svgNumericAttribute(element, 'height');
+  return staticSvgRectPathData(
+    svgNumericAttribute(element, 'x') ?? 0,
+    svgNumericAttribute(element, 'y') ?? 0,
+    svgNumericAttribute(element, 'width'),
+    svgNumericAttribute(element, 'height'),
+    svgNumericAttribute(element, 'rx'),
+    svgNumericAttribute(element, 'ry'),
+  );
+}
+
+function staticSvgRectPathData(
+  x: number,
+  y: number,
+  width: number | null,
+  height: number | null,
+  rxValue: number | null,
+  ryValue: number | null,
+): string | null {
   if (width === null || height === null || width <= 0 || height <= 0) {
     return null;
+  }
+  const rx = Math.min(Math.max(rxValue ?? ryValue ?? 0, 0), width / 2);
+  const ry = Math.min(Math.max(ryValue ?? rxValue ?? 0, 0), height / 2);
+  if (rx > 0 && ry > 0) {
+    return `M${x + rx} ${y}H${x + width - rx}A${rx} ${ry} 0 0 1 ${x + width} ${y + ry}V${y + height - ry}A${rx} ${ry} 0 0 1 ${x + width - rx} ${y + height}H${x + rx}A${rx} ${ry} 0 0 1 ${x} ${y + height - ry}V${y + ry}A${rx} ${ry} 0 0 1 ${x + rx} ${y}Z`;
   }
   return `M${x} ${y}H${x + width}V${y + height}H${x}Z`;
 }
@@ -285,7 +304,7 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
     return new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'rect') {
-    return new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['x', 'y', 'width', 'height', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'circle') {
     return new Set(['cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
@@ -341,6 +360,9 @@ function isStaticSvgAttributeSupported(
   if (name === 'x' || name === 'y' || name === 'width' || name === 'height') {
     return isStaticSvgNumericValueSupported(value);
   }
+  if (elementName === 'rect' && (name === 'rx' || name === 'ry')) {
+    return isStaticSvgNonNegativeNumericValueSupported(value);
+  }
   if (name === 'cx' || name === 'cy' || name === 'r' || name === 'rx' || name === 'ry') {
     return isStaticSvgNumericValueSupported(value);
   }
@@ -362,6 +384,11 @@ function svgNumericAttribute(element: Element, name: string): number | null {
 function isStaticSvgNumericValueSupported(value: string): boolean {
   const number = Number(value.trim());
   return Number.isFinite(number);
+}
+
+function isStaticSvgNonNegativeNumericValueSupported(value: string): boolean {
+  const number = Number(value.trim());
+  return Number.isFinite(number) && number >= 0;
 }
 
 function isStaticSvgViewBoxValueSupported(value: string): boolean {
