@@ -14,6 +14,9 @@ import type {
 } from './types';
 import { isKnownLayerPaintOp } from './types';
 
+const MAX_COLRV1_STAGE1_GRAPH_NODES = 64;
+const MAX_COLRV1_STAGE1_GRAPH_DEPTH = 64;
+
 export type LayerTextVariantSelection = ReadonlyMap<string, string>;
 
 export type LayerTextVariantBackendKind =
@@ -860,6 +863,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     || !isValidPayloadGraphNodeId(graph.rootNodeId)
     || !Array.isArray(graph.nodes)
     || graph.nodes.length === 0
+    || graph.nodes.length > MAX_COLRV1_STAGE1_GRAPH_NODES
   ) {
     return false;
   }
@@ -934,7 +938,10 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
   const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
   const visited = new Set<number>();
   const visiting = new Set<number>();
-  const visit = (nodeId: number): boolean => {
+  const visit = (nodeId: number, depth: number): boolean => {
+    if (depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH) {
+      return false;
+    }
     if (visiting.has(nodeId)) {
       return false;
     }
@@ -947,7 +954,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     }
     visiting.add(nodeId);
     if (node.kind === 'transform') {
-      if (!node.transform || !visit(node.transform.childNodeId)) {
+      if (!node.transform || !visit(node.transform.childNodeId, depth + 1)) {
         return false;
       }
     }
@@ -956,7 +963,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     return true;
   };
 
-  return visit(graph.rootNodeId) && visited.size === graph.nodes.length;
+  return visit(graph.rootNodeId, 1) && visited.size === graph.nodes.length;
 }
 
 export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): boolean {

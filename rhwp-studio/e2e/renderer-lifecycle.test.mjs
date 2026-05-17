@@ -3221,6 +3221,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
         cyclicReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const oversizedReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      const oversizedColrV1Graph = oversizedReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph;
+      const oversizedSolidNode = oversizedColrV1Graph.nodes.find((node) => node.kind === 'solidPath');
+      oversizedColrV1Graph.rootNodeId = 64;
+      oversizedColrV1Graph.nodes = [
+        oversizedSolidNode,
+        ...Array.from({ length: 64 }, (_, index) => ({
+          nodeId: index + 1,
+          kind: 'transform',
+          transform: {
+            childNodeId: index,
+            transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+          },
+        })),
+      ];
+      const oversizedReservedV2ColorPayloadColrV1 = render(
+        oversizedReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const invalidNodeIdReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
       invalidNodeIdReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
         .find((variant) => variant.variantId === 'glyphOutline')
@@ -3577,6 +3601,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidRangeReservedV2ColorPayloadColrV1,
         invalidReservedV2ColorPayloadColrV1,
         cyclicReservedV2ColorPayloadColrV1,
+        oversizedReservedV2ColorPayloadColrV1,
         invalidNodeIdReservedV2ColorPayloadColrV1,
         invalidTransformReservedV2ColorPayloadColrV1,
         invalidCommandReservedV2ColorPayloadColrV1,
@@ -3825,6 +3850,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .cyclicReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const oversizedReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .oversizedReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidNodeIdReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
     .invalidNodeIdReservedV2ColorPayloadColrV1
     ?.textV2Validation
@@ -3896,10 +3925,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     cyclicReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && oversizedReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && invalidNodeIdReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
     `Canvas2D strict profile rejects invalid COLRv1 color graph payload=${JSON.stringify({
       cyclicV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .cyclicReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      oversizedV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .oversizedReservedV2ColorPayloadColrV1
         ?.textV2Validation,
       invalidNodeIdV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidNodeIdReservedV2ColorPayloadColrV1
