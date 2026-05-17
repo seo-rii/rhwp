@@ -81,6 +81,7 @@ export class CanvasKitSurfaceCache {
       }
       if (!surface && !threw) {
         this.webglFailures += 1;
+        this.lastFailure = 'CanvasKit MakeWebGLCanvasSurface returned null';
       }
     }
 
@@ -102,6 +103,7 @@ export class CanvasKitSurfaceCache {
       }
       if (!surface && !threw) {
         this.softwareFailures += 1;
+        this.lastFailure = 'CanvasKit MakeSWCanvasSurface returned null';
       }
     }
 
@@ -135,6 +137,7 @@ export class CanvasKitSurfaceCache {
     if (!surface) {
       if (!threw) {
         this.softwareFailures += 1;
+        this.lastFailure = 'CanvasKit MakeSWCanvasSurface returned null';
       }
       return null;
     }
