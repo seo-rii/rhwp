@@ -2837,7 +2837,7 @@ export class CanvasKitLayerRenderer {
     this.textBlobCacheMisses = 0;
 
     this.clearStaticPictureCache();
-    this.surfaceCache.clear();
+    this.surfaceCache.dispose();
     this.resourceCache.dispose();
     this.fontRegistry.clear();
     this.fontProvider.delete();

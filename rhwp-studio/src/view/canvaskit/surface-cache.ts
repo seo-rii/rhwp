@@ -32,6 +32,7 @@ export type CanvasKitSurfaceDiagnostics = {
 export class CanvasKitSurfaceCache {
   private surface: Surface | null = null;
   private canvas: HTMLCanvasElement | null = null;
+  private webgpuDeviceContext: WebGPUDeviceContext | null;
   private webgpuCanvasContext: WebGPUCanvasContext | null = null;
   private width = 0;
   private height = 0;
@@ -51,9 +52,11 @@ export class CanvasKitSurfaceCache {
   constructor(
     private readonly canvasKit: CanvasKit,
     private readonly surfaceRequest: CanvasKitSurfaceRequest = DEFAULT_CANVASKIT_SURFACE_REQUEST,
-    private readonly webgpuDeviceContext: WebGPUDeviceContext | null = null,
+    webgpuDeviceContext: WebGPUDeviceContext | null = null,
     private readonly webgpuInitFailure: string | null = null,
-  ) {}
+  ) {
+    this.webgpuDeviceContext = webgpuDeviceContext;
+  }
 
   get(targetCanvas: HTMLCanvasElement): CachedCanvasKitSurface {
     if (
@@ -224,5 +227,11 @@ export class CanvasKitSurfaceCache {
     this.height = 0;
     this.usedGpuSurface = false;
     this.backend = 'none';
+  }
+
+  dispose(): void {
+    this.clear();
+    this.webgpuDeviceContext?.delete();
+    this.webgpuDeviceContext = null;
   }
 }
