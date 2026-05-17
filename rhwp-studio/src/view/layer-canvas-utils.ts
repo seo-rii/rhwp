@@ -301,25 +301,25 @@ function isStaticSvgPaintElementSupported(element: Element): boolean {
 
 function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
   if (elementName === 'path') {
-    return new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'd', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'rect') {
-    return new Set(['x', 'y', 'width', 'height', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'x', 'y', 'width', 'height', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'circle') {
-    return new Set(['cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'ellipse') {
-    return new Set(['cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'polygon' || elementName === 'polyline') {
-    return new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'svg') {
-    return new Set(['xmlns', 'xmlns:xlink', 'xml:space', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
+    return new Set(['id', 'class', 'xmlns', 'xmlns:xlink', 'xml:space', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
   }
   if (elementName === 'g') {
-    return new Set(['xml:space']);
+    return new Set(['id', 'class', 'xml:space']);
   }
   return null;
 }
@@ -342,6 +342,9 @@ function isStaticSvgAttributeSupported(
   if (name === 'xml:space') {
     const trimmedValue = value.trim();
     return trimmedValue === 'default' || trimmedValue === 'preserve';
+  }
+  if (name === 'id' || name === 'class') {
+    return !/[<>`]/.test(value);
   }
   if (name === 'viewbox') {
     return isStaticSvgViewBoxValueSupported(value);
