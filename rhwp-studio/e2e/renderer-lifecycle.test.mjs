@@ -449,6 +449,110 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `software surface cache reuses matching canvas=${JSON.stringify(softwareSurfaceProbe)}`,
   );
 
+  setTestCase('canvaskit-webgl-surface-fallback');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=webgl');
+  const webglSurfaceProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = (_pageIdx, profile = 'screen') => ({
+      pageWidth: 64,
+      pageHeight: 64,
+      profile,
+      resources: { tableId: 4, images: [], svgFragments: [] },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 4000,
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'rectangle',
+          bbox: { x: 12, y: 12, width: 28, height: 20 },
+          cornerRadius: 0,
+          gradient: null,
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          style: {
+            fillColor: '#0055cc',
+            strokeColor: null,
+            strokeWidth: 0,
+            strokeDash: 'solid',
+            opacity: 1,
+            pattern: null,
+            shadow: null,
+          },
+        }],
+      },
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const pageInfo = {
+      pageIndex: 0,
+      width: 64,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      const before = renderer.getSurfaceDiagnostics();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      const afterFirst = renderer.getSurfaceDiagnostics();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      const afterSecond = renderer.getSurfaceDiagnostics();
+      return {
+        preference: window.__canvaskitSurfacePreference,
+        before,
+        afterFirst,
+        afterSecond,
+        png: canvas.toDataURL('image/png'),
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+      canvas.remove();
+    }
+  });
+
+  assert(!webglSurfaceProbe.error, webglSurfaceProbe.error || 'canvaskit WebGL surface fallback probe available');
+  assert(webglSurfaceProbe.preference === 'webgl', `WebGL surface preference exposed=${JSON.stringify(webglSurfaceProbe)}`);
+  assert(
+    webglSurfaceProbe.afterFirst.webglAttempts >= 1,
+    `WebGL preference attempts WebGL surface first=${JSON.stringify(webglSurfaceProbe)}`,
+  );
+  assert(
+    webglSurfaceProbe.afterFirst.backend === 'webgl'
+      || (
+        webglSurfaceProbe.afterFirst.backend === 'software'
+        && webglSurfaceProbe.afterFirst.softwareFallbacks >= 1
+        && webglSurfaceProbe.afterFirst.webglFailures >= 1
+      ),
+    `WebGL preference uses WebGL or direct software surface fallback=${JSON.stringify(webglSurfaceProbe)}`,
+  );
+  assert(
+    webglSurfaceProbe.afterSecond.reusedSurfaces > webglSurfaceProbe.afterFirst.reusedSurfaces
+      && webglSurfaceProbe.afterSecond.createdSurfaces === webglSurfaceProbe.afterFirst.createdSurfaces,
+    `WebGL-preferred surface cache reuses selected backend=${JSON.stringify(webglSurfaceProbe)}`,
+  );
+  const webglSurfaceBluePixels = countPixels(webglSurfaceProbe.png, (pixel) => (
+    pixel.alpha > 200 && pixel.blue > 160 && pixel.red < 60 && pixel.green > 40 && pixel.green < 120
+  ));
+  assert(
+    webglSurfaceBluePixels > 200,
+    `WebGL-preferred surface path renders direct CanvasKit content bluePixels=${webglSurfaceBluePixels}`,
+  );
+
   setTestCase('layer-resource-cache-invalidation');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=auto');
   await loadHwpFile(page, '20250130-hongbo_saved.hwp');
