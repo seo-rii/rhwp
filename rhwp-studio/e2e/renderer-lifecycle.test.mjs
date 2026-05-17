@@ -4883,6 +4883,121 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `shape shadow fill/stroke parity exact=${shapeShadowFillStrokeDiff.exactDiffPixels}, tolerant=${shapeShadowFillStrokeDiff.rawTolerantDiffPixels}, ink=${shapeShadowFillStrokeDiff.rawInkMaskDiffPixels}, max_channel_delta=${shapeShadowFillStrokeDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-shape-stroke-dash-variant-parity');
+  const shapeStrokeDashVariantProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const transform = { rotation: 0, horzFlip: false, vertFlip: false };
+    const strokeStyle = (strokeDash) => ({
+      fillColor: null,
+      strokeColor: '#202020',
+      strokeWidth: 3,
+      strokeDash,
+      opacity: 1,
+      pattern: null,
+      shadow: null,
+    });
+    const dashedPath = (y, strokeDash) => ({
+      type: 'path',
+      bbox: { x: 8, y: y - 5, width: 132, height: 10 },
+      commands: [
+        { type: 'moveTo', x: 10, y },
+        { type: 'lineTo', x: 138, y },
+      ],
+      style: strokeStyle(strokeDash),
+      gradient: null,
+      transform,
+    });
+    const tree = {
+      pageWidth: 148,
+      pageHeight: 54,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 19042,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 19042,
+        bounds: { x: 0, y: 0, width: 148, height: 54 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 148, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          dashedPath(9, 'dash'),
+          dashedPath(20, 'dot'),
+          dashedPath(31, 'dashDot'),
+          dashedPath(42, 'dashDotDot'),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !shapeStrokeDashVariantProbe.error,
+    shapeStrokeDashVariantProbe.error || 'shape stroke dash variant parity probe available',
+  );
+  const shapeStrokeDashCanvas2dInkPixels = countPixels(
+    shapeStrokeDashVariantProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.red < 120 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const shapeStrokeDashCanvaskitInkPixels = countPixels(
+    shapeStrokeDashVariantProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.red < 120 && pixel.green < 120 && pixel.blue < 120,
+  );
+  assert(
+    shapeStrokeDashCanvas2dInkPixels > 500 && shapeStrokeDashCanvaskitInkPixels > 500,
+    `shape stroke dash variants replay canvas2d=${shapeStrokeDashCanvas2dInkPixels}, canvaskit=${shapeStrokeDashCanvaskitInkPixels}`,
+  );
+  const shapeStrokeDashVariantDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(shapeStrokeDashVariantProbe.canvas2d),
+    pngBufferFromDataUrl(shapeStrokeDashVariantProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-shape-stroke-dash-variant-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.06,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    shapeStrokeDashVariantDiff.passed,
+    `shape stroke dash variant parity exact=${shapeStrokeDashVariantDiff.exactDiffPixels}, tolerant=${shapeStrokeDashVariantDiff.rawTolerantDiffPixels}, ink=${shapeStrokeDashVariantDiff.rawInkMaskDiffPixels}, max_channel_delta=${shapeStrokeDashVariantDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-shape-opacity-parity');
   const shapeOpacityParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
