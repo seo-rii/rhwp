@@ -808,8 +808,8 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
       && layer.sourceFontRef !== undefined
       && Array.isArray(layer.commands)
       && layer.commands.length > 0
-      && layer.fill !== undefined
-      && layer.fillRule !== undefined
+      && isValidResolvedColor(layer.fill)
+      && isSupportedFillRule(layer.fillRule)
       && layer.paletteIndex !== undefined
       && (layer.transformToRun === undefined || isFiniteAffineTransform(layer.transformToRun)),
     );
@@ -852,8 +852,8 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.transform === undefined
         && Array.isArray(node.solidPath.commands)
         && node.solidPath.commands.length > 0
-        && node.solidPath.fill !== undefined
-        && node.solidPath.fillRule !== undefined
+        && isValidResolvedColor(node.solidPath.fill)
+        && isSupportedFillRule(node.solidPath.fillRule)
         && isValidPayloadRange(node.sourceRangeUtf8)
         && isValidPayloadRange(node.glyphRange)
           && node.sourceFontRef !== undefined
@@ -926,10 +926,12 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
   const bitmapGlyph = payload.bitmapGlyph;
   return payload.payloadKind === 'bitmapGlyph'
     && bitmapGlyph !== undefined
+    && isValidResourceId(bitmapGlyph.imageResourceId)
     && isValidPayloadRange(bitmapGlyph.sourceRangeUtf8)
     && isValidPayloadRange(bitmapGlyph.glyphRange)
-    && bitmapGlyph.placement !== undefined
+    && isValidTextRunPlacement(bitmapGlyph.placement)
     && (bitmapGlyph.transformToRun === undefined || isFiniteAffineTransform(bitmapGlyph.transformToRun))
+    && (bitmapGlyph.strikePpem === undefined || isValidBitmapStrikePpem(bitmapGlyph.strikePpem))
     && bitmapGlyph.strikeSelection === 'producerResolved'
     && bitmapGlyph.alphaMode !== undefined
     && bitmapGlyph.scalingPolicy !== undefined
@@ -943,9 +945,10 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
   const viewBox = svgGlyph?.viewBox;
   return payload.payloadKind === 'svgGlyph'
     && svgGlyph !== undefined
+    && isValidResourceId(svgGlyph.vectorResourceId)
     && isValidPayloadRange(svgGlyph.sourceRangeUtf8)
     && isValidPayloadRange(svgGlyph.glyphRange)
-    && svgGlyph.placement !== undefined
+    && isValidTextRunPlacement(svgGlyph.placement)
     && (svgGlyph.transformToRun === undefined || isFiniteAffineTransform(svgGlyph.transformToRun))
     && viewBox !== undefined
     && Number.isFinite(viewBox.x)
@@ -954,6 +957,11 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
     && Number.isFinite(viewBox.height)
     && viewBox.width > 0
     && viewBox.height > 0
+    && (svgGlyph.intrinsicSize === undefined
+      || (Number.isFinite(svgGlyph.intrinsicSize.width)
+        && Number.isFinite(svgGlyph.intrinsicSize.height)
+        && svgGlyph.intrinsicSize.width > 0
+        && svgGlyph.intrinsicSize.height > 0))
     && svgGlyph.securityMode === 'staticSanitized'
     && svgGlyph.scriptAllowed === false
     && svgGlyph.animationAllowed === false
@@ -967,6 +975,40 @@ function isValidPayloadRange(range: { start: number; end: number } | undefined):
     && Number.isInteger(range.end)
     && range.start >= 0
     && range.end >= range.start;
+}
+
+function isValidResourceId(resourceId: string | number | undefined): boolean {
+  return (typeof resourceId === 'string' && resourceId.length > 0)
+    || (typeof resourceId === 'number' && Number.isInteger(resourceId) && resourceId >= 0);
+}
+
+function isValidTextRunPlacement(
+  placement: { runToPage?: LayerAffineTransform; baselineY?: number } | undefined,
+): boolean {
+  return placement !== undefined
+    && placement.runToPage !== undefined
+    && isFiniteAffineTransform(placement.runToPage)
+    && (placement.baselineY === undefined || Number.isFinite(placement.baselineY));
+}
+
+function isValidBitmapStrikePpem(strikePpem: [number, number]): boolean {
+  return Number.isInteger(strikePpem[0])
+    && Number.isInteger(strikePpem[1])
+    && strikePpem[0] > 0
+    && strikePpem[1] > 0;
+}
+
+function isValidResolvedColor(
+  color: { colorSpace?: string; rgba: [number, number, number, number] } | undefined,
+): boolean {
+  return color !== undefined
+    && (color.colorSpace === undefined || color.colorSpace.length > 0)
+    && color.rgba.length === 4
+    && color.rgba.every((channel) => Number.isFinite(channel) && channel >= 0 && channel <= 1);
+}
+
+function isSupportedFillRule(fillRule: CanvasFillRule | undefined): boolean {
+  return fillRule === 'nonzero' || fillRule === 'evenodd';
 }
 
 function isFiniteAffineTransform(transform: LayerAffineTransform): boolean {
