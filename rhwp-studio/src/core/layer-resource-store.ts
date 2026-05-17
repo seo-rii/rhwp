@@ -1,5 +1,22 @@
 import type { LayerResources } from './types';
 
+export function resolveLayerResourceIndex(
+  resourceId: string | number | undefined,
+  resourceKeys: readonly string[] | undefined,
+  resourceCount: number,
+): number | undefined {
+  if (typeof resourceId === 'number') {
+    return Number.isInteger(resourceId) && resourceId >= 0 && resourceId < resourceCount
+      ? resourceId
+      : undefined;
+  }
+  if (typeof resourceId !== 'string' || resourceId.length === 0 || !resourceKeys) {
+    return undefined;
+  }
+  const index = resourceKeys.indexOf(resourceId);
+  return index >= 0 && index < resourceCount ? index : undefined;
+}
+
 export class LayerResourceStore {
   resources: LayerResources;
 

@@ -4182,7 +4182,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         localPaintOrder: 0,
       }),
       bitmapGlyph: {
-        imageResourceId: 0,
+        imageResourceId: 'bitmap-glyph-pixel',
         sourceRangeUtf8: { start: 0, end: 1 },
         glyphRange: { start: 0, end: 1 },
         placement: {
@@ -4206,7 +4206,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       }),
       paths: [],
       svgGlyph: {
-        vectorResourceId: 0,
+        vectorResourceId: 'svg-glyph-magenta-square',
         sourceRangeUtf8: { start: 0, end: 1 },
         glyphRange: { start: 0, end: 1 },
         placement: {
@@ -4529,7 +4529,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       variant: variantFor('outline-parity-bitmap', ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph']),
       paths: [],
       bitmapGlyph: {
-        imageResourceId: 0,
+        imageResourceId: 'bitmap-glyph-pixel',
         sourceRangeUtf8: { start: 0, end: 1 },
         glyphRange: { start: 0, end: 1 },
         placement: {
@@ -4547,7 +4547,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       variant: variantFor('outline-parity-svg', ['text.outlineGlyph', 'text.glyphOutline.svgGlyph']),
       paths: [],
       svgGlyph: {
-        vectorResourceId: 0,
+        vectorResourceId: 'svg-glyph-magenta-square',
         sourceRangeUtf8: { start: 0, end: 1 },
         glyphRange: { start: 0, end: 1 },
         placement: {

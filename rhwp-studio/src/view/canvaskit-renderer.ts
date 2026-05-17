@@ -18,6 +18,7 @@ import {
   type LayerTextVariantReplayStatus,
   type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
+import { resolveLayerResourceIndex } from '@/core/layer-resource-store';
 import { DEFAULT_CANVASKIT_SURFACE_REQUEST } from '@/view/render-backend';
 import type { CanvasKitRenderMode, CanvasKitSurfacePreference, CanvasKitSurfaceRequest } from '@/view/render-backend';
 import type {
@@ -1151,10 +1152,15 @@ export class CanvasKitLayerRenderer {
     op: LayerGlyphOutlineOp,
   ): void {
     const payload = op.bitmapGlyph;
-    if (!payload || !hasStrictBitmapGlyphContract(op) || typeof payload.imageResourceId !== 'number') {
+    const imageIndex = resolveLayerResourceIndex(
+      payload?.imageResourceId,
+      this.lastRenderedTree?.resources?.imageKeys,
+      this.lastRenderedTree?.resources?.images.length ?? 0,
+    );
+    if (!payload || !hasStrictBitmapGlyphContract(op) || imageIndex === undefined) {
       return;
     }
-    const image = this.resourceCache.image(payload.imageResourceId);
+    const image = this.resourceCache.image(imageIndex);
     if (!image) {
       return;
     }
@@ -1192,7 +1198,12 @@ export class CanvasKitLayerRenderer {
     op: LayerGlyphOutlineOp,
   ): void {
     const payload = op.svgGlyph;
-    if (!payload || !hasStaticSanitizedSvgGlyphContract(op) || typeof payload.vectorResourceId !== 'number') {
+    const vectorIndex = resolveLayerResourceIndex(
+      payload?.vectorResourceId,
+      this.lastRenderedTree?.resources?.svgKeys,
+      this.lastRenderedTree?.resources?.svgFragments.length ?? 0,
+    );
+    if (!payload || !hasStaticSanitizedSvgGlyphContract(op) || vectorIndex === undefined) {
       return;
     }
     const viewBox = payload.viewBox;
@@ -1214,7 +1225,7 @@ export class CanvasKitLayerRenderer {
     ) {
       return;
     }
-    const fragment = this.lastRenderedTree?.resources?.svgFragments?.[payload.vectorResourceId];
+    const fragment = this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex];
     if (typeof fragment !== 'string') {
       return;
     }
@@ -2820,21 +2831,30 @@ function glyphOutlinePayloadStatus(
   }
   if (payloadKind === 'bitmapGlyph') {
     const resourceId = op.bitmapGlyph?.imageResourceId;
+    const resourceIndex = resolveLayerResourceIndex(
+      resourceId,
+      resources?.imageKeys,
+      resources?.images.length ?? 0,
+    );
     return {
       supported: hasStrictBitmapGlyphContract(op)
         && op.variant.requires?.includes('text.glyphOutline.bitmapGlyph') === true
-        && typeof resourceId === 'number'
-        && resources?.images?.[resourceId] !== undefined,
+        && resourceIndex !== undefined
+        && resources?.images?.[resourceIndex] !== undefined,
       reason: 'unsupportedBitmapGlyph',
     };
   }
   if (payloadKind === 'svgGlyph') {
     const resourceId = op.svgGlyph?.vectorResourceId;
-    const fragment = typeof resourceId === 'number' ? resources?.svgFragments?.[resourceId] : undefined;
+    const resourceIndex = resolveLayerResourceIndex(
+      resourceId,
+      resources?.svgKeys,
+      resources?.svgFragments.length ?? 0,
+    );
+    const fragment = resourceIndex === undefined ? undefined : resources?.svgFragments?.[resourceIndex];
     return {
       supported: hasStaticSanitizedSvgGlyphContract(op)
         && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
-        && typeof resourceId === 'number'
         && typeof fragment === 'string'
         && parseStaticSvgPathLayers(fragment).length > 0,
       reason: 'unsupportedSvgGlyph',
