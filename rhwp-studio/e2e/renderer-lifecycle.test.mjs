@@ -5541,6 +5541,99 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `form object text parity exact=${formObjectTextDiff.exactDiffPixels}, tolerant=${formObjectTextDiff.rawTolerantDiffPixels}, ink=${formObjectTextDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectTextDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvaskit-form-caption-direct-measurement');
+  const formCaptionDirectMeasurementProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvaskitRenderer) {
+      return { error: 'CanvasKit renderer unavailable' };
+    }
+    const tree = {
+      pageWidth: 52,
+      pageHeight: 24,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1917,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1917,
+        bounds: { x: 0, y: 0, width: 52, height: 24 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 52, height: 24 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'formObject',
+            bbox: { x: 4, y: 4, width: 44, height: 16 },
+            formType: 'pushButton',
+            caption: 'OK',
+            text: '',
+            foreColor: '#0040cc',
+            backColor: '#d6d6d6',
+            value: 0,
+            enabled: true,
+          },
+        ],
+      },
+    };
+    const originalMeasureTextWidth = globalThis.measureTextWidth;
+    let measureCalls = 0;
+    globalThis.measureTextWidth = () => {
+      measureCalls += 1;
+      return 999;
+    };
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      canvaskitRenderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return { measureCalls, png };
+    } finally {
+      if (originalMeasureTextWidth) {
+        globalThis.measureTextWidth = originalMeasureTextWidth;
+      } else {
+        delete globalThis.measureTextWidth;
+      }
+    }
+  });
+  assert(
+    !formCaptionDirectMeasurementProbe.error,
+    formCaptionDirectMeasurementProbe.error || 'CanvasKit form caption direct measurement probe available',
+  );
+  const formCaptionBluePixels = countPixels(
+    formCaptionDirectMeasurementProbe.png,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 120 && pixel.red < 120 && pixel.green < 150,
+  );
+  assert(
+    formCaptionDirectMeasurementProbe.measureCalls === 0,
+    `CanvasKit form caption does not call browser measureTextWidth calls=${formCaptionDirectMeasurementProbe.measureCalls}`,
+  );
+  assert(
+    formCaptionBluePixels > 10,
+    `CanvasKit form caption still draws text without browser measurement pixels=${formCaptionBluePixels}`,
+  );
+
   setTestCase('canvas-layer-form-object-disabled-parity');
   const formObjectDisabledParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

@@ -70,7 +70,6 @@ import type {
 import {
   allowsTextControlMark,
   angleToCanvasCoords,
-  buildCanvasTextFont,
   calculateArrowDimensions,
   canPreprocessCroppedLayerImageEffect,
   computePathPaintBounds,
@@ -1942,8 +1941,11 @@ export class CanvasKitLayerRenderer {
           const family = this.fontRegistry.resolveFamily('sans-serif');
           const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
           const metrics = font.getMetrics();
-          const cssFont = buildCanvasTextFont(family, fontSize, false, false);
-          const textWidth = (globalThis as any).measureTextWidth?.(cssFont, op.caption) ?? op.caption.length * fontSize * 0.55;
+          const glyphIds = font.getGlyphIDs(op.caption);
+          const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
+          const textWidth = glyphWidths.length > 0
+            ? glyphWidths.reduce((sum, width) => sum + width, 0)
+            : op.caption.length * fontSize * 0.55;
           const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
           canvas.drawText(op.caption, x + w / 2 - textWidth / 2, baselineY, paint, font);
           paint.delete();
