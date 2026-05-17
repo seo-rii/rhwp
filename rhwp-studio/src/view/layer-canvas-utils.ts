@@ -460,23 +460,77 @@ const ORDERED_DITHER_8X8 = [
   42, 26, 38, 22, 41, 25, 37, 21,
 ] as const;
 
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
 export function decodeBase64(base64: string): Uint8Array {
-  const binary = window.atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let idx = 0; idx < binary.length; idx += 1) {
-    bytes[idx] = binary.charCodeAt(idx);
+  const runtimeAtob = globalThis.atob;
+  if (typeof runtimeAtob === 'function') {
+    const binary = runtimeAtob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let idx = 0; idx < binary.length; idx += 1) {
+      bytes[idx] = binary.charCodeAt(idx);
+    }
+    return bytes;
   }
-  return bytes;
+
+  const normalized = base64.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  if (normalized.length === 0) {
+    return new Uint8Array();
+  }
+  if (normalized.length % 4 === 1) {
+    throw new Error('Invalid base64 payload length');
+  }
+  const firstPadding = normalized.indexOf('=');
+  if (firstPadding >= 0 && !/^=+$/.test(normalized.slice(firstPadding))) {
+    throw new Error('Invalid base64 padding');
+  }
+  const bytes = new Uint8Array(Math.floor((normalized.length * 3) / 4));
+  let outputLength = 0;
+  let accumulator = 0;
+  let bits = 0;
+  for (const char of normalized) {
+    if (char === '=') {
+      break;
+    }
+    const value = BASE64_ALPHABET.indexOf(char);
+    if (value < 0) {
+      throw new Error('Invalid base64 character');
+    }
+    accumulator = (accumulator << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes[outputLength] = (accumulator >> bits) & 0xff;
+      outputLength += 1;
+    }
+  }
+  return bytes.subarray(0, outputLength);
 }
 
 export function encodeBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
+  const runtimeBtoa = globalThis.btoa;
+  if (typeof runtimeBtoa === 'function') {
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      const chunk = bytes.subarray(offset, offset + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return runtimeBtoa(binary);
   }
-  return window.btoa(binary);
+
+  let encoded = '';
+  for (let offset = 0; offset < bytes.length; offset += 3) {
+    const first = bytes[offset];
+    const second = offset + 1 < bytes.length ? bytes[offset + 1] : 0;
+    const third = offset + 2 < bytes.length ? bytes[offset + 2] : 0;
+    const triplet = (first << 16) | (second << 8) | third;
+    encoded += BASE64_ALPHABET[(triplet >> 18) & 0x3f];
+    encoded += BASE64_ALPHABET[(triplet >> 12) & 0x3f];
+    encoded += offset + 1 < bytes.length ? BASE64_ALPHABET[(triplet >> 6) & 0x3f] : '=';
+    encoded += offset + 2 < bytes.length ? BASE64_ALPHABET[triplet & 0x3f] : '=';
+  }
+  return encoded;
 }
 
 export function inferImageMime(bytes: Uint8Array): string {

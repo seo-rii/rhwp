@@ -961,6 +961,92 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(resourceReuseProbe.imageCacheSize === 1, `resource cache keeps one decoded image=${JSON.stringify(resourceReuseProbe)}`);
   assert(resourceReuseProbe.reusedImageObject, `resource cache reuses image across pages=${JSON.stringify(resourceReuseProbe)}`);
 
+  setTestCase('canvaskit-base64-image-without-atob');
+  const base64WithoutAtobProbe = await page.evaluate(() => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!renderer) {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 2;
+    sourceCanvas.height = 2;
+    const sourceContext = sourceCanvas.getContext('2d');
+    if (!sourceContext) {
+      return { error: 'source canvas unavailable' };
+    }
+    sourceContext.fillStyle = '#00aa44';
+    sourceContext.fillRect(0, 0, 2, 2);
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const tree = {
+      pageWidth: 32,
+      pageHeight: 32,
+      profile: 'screen',
+      resources: {
+        tableId: 78,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 4078,
+        bounds: { x: 0, y: 0, width: 32, height: 32 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'image',
+          bbox: { x: 4, y: 4, width: 24, height: 24 },
+          base64,
+          fillMode: 'fitToSize',
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+        }],
+      },
+    };
+    const canvas = document.createElement('canvas');
+    canvas.width = tree.pageWidth;
+    canvas.height = tree.pageHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return { error: 'target canvas unavailable' };
+    }
+    const atobDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'atob');
+    try {
+      Object.defineProperty(globalThis, 'atob', {
+        configurable: true,
+        writable: true,
+        value: undefined,
+      });
+      renderer.renderPage(tree, canvas, 1);
+    } finally {
+      if (atobDescriptor) {
+        Object.defineProperty(globalThis, 'atob', atobDescriptor);
+      } else {
+        delete globalThis.atob;
+      }
+    }
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let greenPixels = 0;
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      if (pixels[offset + 3] > 220 && pixels[offset] < 50 && pixels[offset + 1] > 120 && pixels[offset + 2] < 100) {
+        greenPixels += 1;
+      }
+    }
+    return {
+      greenPixels,
+      imageCacheSize: renderer.imageCache?.size ?? -1,
+    };
+  });
+  assert(
+    !base64WithoutAtobProbe.error,
+    base64WithoutAtobProbe.error || 'CanvasKit base64 image without atob probe available',
+  );
+  assert(
+    base64WithoutAtobProbe.greenPixels > 300,
+    `CanvasKit decodes base64 images without atob green=${JSON.stringify(base64WithoutAtobProbe)}`,
+  );
+
   setTestCase('field-marker-browser-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=compat');
   const fieldMarkerProbe = await page.evaluate(() => {

@@ -8,6 +8,7 @@ import type {
   LayerResources,
   LayerGlyphRunOp,
 } from '@/core/types';
+import { decodeBase64 } from '../layer-canvas-utils';
 
 const FONT_SANS_REGULAR_URL = new URL('../../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
 const FONT_SANS_BOLD_URL = new URL('../../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
@@ -477,13 +478,9 @@ export class CanvasKitFontRegistry {
       return null;
     }
     const base64 = payload.includes(',') ? payload.split(',').pop() ?? '' : payload;
-    const binary = globalThis.atob?.(base64);
-    if (!binary) {
+    const bytes = decodeBase64(base64);
+    if (bytes.length === 0) {
       return null;
-    }
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
     }
     return bytes;
   }
