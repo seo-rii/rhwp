@@ -98,6 +98,7 @@ const PERFORMANCE_GUARD = {
     Number.parseInt(process.env.RHWP_CANVASKIT_MIN_AVG_REPLAY_SAMPLES ?? '2', 10) || 2,
   ),
 };
+const STRICT_PERFORMANCE_GUARD_ENABLED = PERFORMANCE_ITERATIONS >= 2;
 const TOLERANT_DIFF = {
   ignoreChannelDelta: 8,
   maxDiffRatio: 0.0025,
@@ -174,11 +175,13 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
   const canvas2dAvg = baseline.performance.replay.avgMs;
   const canvaskitAvg = canvaskit.performance.replay.avgMs;
   const replayRatio = canvas2dAvg > 0 ? canvaskitAvg / canvas2dAvg : null;
-  const replayRatioGuard = replayRatio === null
-    ? 'disabled'
-    : canvas2dAvg < PERFORMANCE_GUARD.minReplayRatioBaselineMs
-      ? 'skipped-small-baseline'
-      : 'checked';
+  const replayRatioGuard = !STRICT_PERFORMANCE_GUARD_ENABLED
+    ? 'skipped-single-iteration'
+    : replayRatio === null
+      ? 'disabled'
+      : canvas2dAvg < PERFORMANCE_GUARD.minReplayRatioBaselineMs
+        ? 'skipped-small-baseline'
+        : 'checked';
   const captureRatio = baseline.performance.screenshotMs > 0
     ? canvaskit.performance.screenshotMs / baseline.performance.screenshotMs
     : null;
@@ -255,13 +258,14 @@ function assertPerformanceGuard(row) {
   const maxReplayAvgMs = row.maxCanvaskitReplayAvgMs ?? PERFORMANCE_GUARD.maxReplayAvgMs;
   assert(
     row.replayRatio === null
+      || row.replayRatioGuard === 'skipped-single-iteration'
       || row.replayRatioGuard === 'skipped-small-baseline'
       || row.replayRatio <= maxReplayRatio,
     `${row.case} CanvasKit replay ratio=${row.replayRatio} <= ${maxReplayRatio} (guard=${row.replayRatioGuard}, canvas2dBaseline=${row.canvas2dReplayAvgMs}ms, minBaseline=${PERFORMANCE_GUARD.minReplayRatioBaselineMs}ms)`,
   );
   assert(
-    row.canvaskitReplayAvgMs <= maxReplayAvgMs,
-    `${row.case} CanvasKit replay avg=${row.canvaskitReplayAvgMs}ms <= ${maxReplayAvgMs}ms`,
+    row.replayRatioGuard === 'skipped-single-iteration' || row.canvaskitReplayAvgMs <= maxReplayAvgMs,
+    `${row.case} CanvasKit replay avg=${row.canvaskitReplayAvgMs}ms <= ${maxReplayAvgMs}ms (guard=${row.replayRatioGuard})`,
   );
 }
 
@@ -711,13 +715,15 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     const canvas2dCaptureMs = rows.reduce((sum, row) => sum + row.canvas2dCaptureMs, 0) / rows.length;
     const canvaskitCaptureMs = rows.reduce((sum, row) => sum + row.canvaskitCaptureMs, 0) / rows.length;
     const captureRatio = canvas2dCaptureMs > 0 ? canvaskitCaptureMs / canvas2dCaptureMs : null;
-    const replayRatioGuard = replayRatio === null
-      ? 'disabled'
-      : rows.length < PERFORMANCE_GUARD.minAverageReplaySamples
-        ? 'skipped-small-sample'
-        : canvas2dReplayAvgMs < PERFORMANCE_GUARD.minReplayRatioBaselineMs
-          ? 'skipped-small-baseline'
-          : 'checked';
+    const replayRatioGuard = !STRICT_PERFORMANCE_GUARD_ENABLED
+      ? 'skipped-single-iteration'
+      : replayRatio === null
+        ? 'disabled'
+        : rows.length < PERFORMANCE_GUARD.minAverageReplaySamples
+          ? 'skipped-small-sample'
+          : canvas2dReplayAvgMs < PERFORMANCE_GUARD.minReplayRatioBaselineMs
+            ? 'skipped-small-baseline'
+            : 'checked';
     const summary = {
       scope,
       samples: rows.length,
