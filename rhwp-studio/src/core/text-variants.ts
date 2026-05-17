@@ -615,19 +615,26 @@ export function validateLayerTextV2Op(
                   partIndex,
                 });
               }
-            } else if (
-              options.allowColrv0ColorLayersPayloads !== true
-              || !colrv0Feature
-              || !hasColrv0ColorLayersContract(part.payload)
-            ) {
-              issues.push({
-                code: 'glyphOutlinePayloadKindFeatureMissing',
-                message: `Text variant '${variant.variantId}' uses colorLayers without the COLRv0 resolved-layer writer gate.`,
-                opId: op.id,
-                paintOrderSlotId: op.paintOrderSlotId,
-                variantId: variant.variantId,
-                partIndex,
-              });
+            } else {
+              if (options.allowColrv0ColorLayersPayloads !== true || !colrv0Feature) {
+                issues.push({
+                  code: 'glyphOutlinePayloadKindFeatureMissing',
+                  message: `Text variant '${variant.variantId}' uses colorLayers without the COLRv0 resolved-layer writer gate.`,
+                  opId: op.id,
+                  paintOrderSlotId: op.paintOrderSlotId,
+                  variantId: variant.variantId,
+                  partIndex,
+                });
+              } else if (!hasColrv0ColorLayersContract(part.payload)) {
+                issues.push({
+                  code: 'glyphOutlinePayloadContractInvalid',
+                  message: `Text variant '${variant.variantId}' carries a COLRv0 colorLayers payload without the resolved-layer contract.`,
+                  opId: op.id,
+                  paintOrderSlotId: op.paintOrderSlotId,
+                  variantId: variant.variantId,
+                  partIndex,
+                });
+              }
             }
             if (part.payload.stroke) {
               issues.push({
@@ -789,13 +796,15 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
   return payload.payloadKind === 'colorLayers'
     && !payload.stroke
     && colorLayers?.colorFormat === 'colrV0'
+    && isValidPayloadRange(colorLayers.sourceRangeUtf8)
+    && isValidPayloadRange(colorLayers.glyphRange)
     && Array.isArray(colorLayers.layers)
     && colorLayers.layers.length > 0
     && colorLayers.layers.every((layer) =>
       layer.layerIndex !== undefined
       && layer.glyphId !== undefined
-      && layer.glyphRange !== undefined
-      && layer.sourceRangeUtf8 !== undefined
+      && isValidPayloadRange(layer.glyphRange)
+      && isValidPayloadRange(layer.sourceRangeUtf8)
       && layer.sourceFontRef !== undefined
       && Array.isArray(layer.commands)
       && layer.commands.length > 0
@@ -814,8 +823,8 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     || payload.stroke
     || colorLayers?.colorFormat !== 'colrV1'
     || colorLayers.sourceFontRef === undefined
-    || colorLayers.sourceRangeUtf8 === undefined
-    || colorLayers.glyphRange === undefined
+    || !isValidPayloadRange(colorLayers.sourceRangeUtf8)
+    || !isValidPayloadRange(colorLayers.glyphRange)
     || graph === undefined
     || !Array.isArray(graph.nodes)
     || graph.nodes.length === 0
@@ -845,14 +854,20 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.solidPath.commands.length > 0
         && node.solidPath.fill !== undefined
         && node.solidPath.fillRule !== undefined
-        && node.sourceRangeUtf8 !== undefined
-        && node.glyphRange !== undefined
+        && isValidPayloadRange(node.sourceRangeUtf8)
+        && isValidPayloadRange(node.glyphRange)
           && node.sourceFontRef !== undefined
         )
       ) {
         return false;
       }
       continue;
+    }
+    if (
+      (node.sourceRangeUtf8 !== undefined && !isValidPayloadRange(node.sourceRangeUtf8))
+      || (node.glyphRange !== undefined && !isValidPayloadRange(node.glyphRange))
+    ) {
+      return false;
     }
     if (node.kind === 'transform') {
       if (
@@ -911,8 +926,8 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
   const bitmapGlyph = payload.bitmapGlyph;
   return payload.payloadKind === 'bitmapGlyph'
     && bitmapGlyph !== undefined
-    && bitmapGlyph.sourceRangeUtf8 !== undefined
-    && bitmapGlyph.glyphRange !== undefined
+    && isValidPayloadRange(bitmapGlyph.sourceRangeUtf8)
+    && isValidPayloadRange(bitmapGlyph.glyphRange)
     && bitmapGlyph.placement !== undefined
     && (bitmapGlyph.transformToRun === undefined || isFiniteAffineTransform(bitmapGlyph.transformToRun))
     && bitmapGlyph.strikeSelection === 'producerResolved'
@@ -928,8 +943,8 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
   const viewBox = svgGlyph?.viewBox;
   return payload.payloadKind === 'svgGlyph'
     && svgGlyph !== undefined
-    && svgGlyph.sourceRangeUtf8 !== undefined
-    && svgGlyph.glyphRange !== undefined
+    && isValidPayloadRange(svgGlyph.sourceRangeUtf8)
+    && isValidPayloadRange(svgGlyph.glyphRange)
     && svgGlyph.placement !== undefined
     && (svgGlyph.transformToRun === undefined || isFiniteAffineTransform(svgGlyph.transformToRun))
     && viewBox !== undefined
@@ -944,6 +959,14 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
     && svgGlyph.animationAllowed === false
     && svgGlyph.externalResourcesAllowed === false
     && svgGlyph.interactivityAllowed === false;
+}
+
+function isValidPayloadRange(range: { start: number; end: number } | undefined): boolean {
+  return range !== undefined
+    && Number.isInteger(range.start)
+    && Number.isInteger(range.end)
+    && range.start >= 0
+    && range.end >= range.start;
 }
 
 function isFiniteAffineTransform(transform: LayerAffineTransform): boolean {
