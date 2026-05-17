@@ -826,6 +826,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     || !isValidPayloadRange(colorLayers.sourceRangeUtf8)
     || !isValidPayloadRange(colorLayers.glyphRange)
     || graph === undefined
+    || !isValidPayloadGraphNodeId(graph.rootNodeId)
     || !Array.isArray(graph.nodes)
     || graph.nodes.length === 0
   ) {
@@ -835,6 +836,9 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
   const nodeIds = new Set<number>();
   const childRefCounts = new Map<number, number>();
   for (const node of graph.nodes) {
+    if (!isValidPayloadGraphNodeId(node.nodeId)) {
+      return false;
+    }
     if (nodeIds.has(node.nodeId)) {
       return false;
     }
@@ -874,6 +878,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         !(
           node.solidPath === undefined
         && node.transform !== undefined
+        && isValidPayloadGraphNodeId(node.transform.childNodeId)
         && nodeIds.has(node.transform.childNodeId)
           && node.transform.childNodeId !== node.nodeId
         && isFiniteAffineTransform(node.transform.transform)
@@ -975,6 +980,10 @@ function isValidPayloadRange(range: { start: number; end: number } | undefined):
     && Number.isInteger(range.end)
     && range.start >= 0
     && range.end >= range.start;
+}
+
+function isValidPayloadGraphNodeId(nodeId: number | undefined): boolean {
+  return typeof nodeId === 'number' && Number.isInteger(nodeId) && nodeId >= 0;
 }
 
 function isValidResourceId(resourceId: string | number | undefined): boolean {
