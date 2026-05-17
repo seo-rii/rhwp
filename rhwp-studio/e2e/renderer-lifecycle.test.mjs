@@ -10657,6 +10657,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && imageEffectCropProbe.tileCanvaskit.diagnostics.preprocessedPixels === 4096,
     `image effect tile+crop preprocessing pixels=${JSON.stringify(imageEffectCropProbe)}`,
   );
+  assert(
+    imageEffectCropProbe.tileCanvaskit.diagnostics.offscreenCanvasPreprocesses
+      + imageEffectCropProbe.tileCanvaskit.diagnostics.htmlCanvasPreprocesses === 0,
+    `image effect tile+crop CanvasKit preprocessing canvas diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
+  );
   const imageEffectTileCropDiff = await comparePngBuffers(
     pngBufferFromDataUrl(imageEffectCropProbe.tileCanvas2d.png),
     pngBufferFromDataUrl(imageEffectCropProbe.tileCanvaskit.png),
