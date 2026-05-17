@@ -601,12 +601,84 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
   setTestCase('canvaskit-webgpu-surface-param-contract');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=webgpu');
-  const webgpuSurfaceParamProbe = await page.evaluate(() => ({
-    preference: window.__canvaskitSurfacePreference,
-    request: window.__canvaskitSurfaceRequest,
-    backend: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.().backend ?? null,
-    diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
-  }));
+  const webgpuSurfaceParamProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = (_pageIdx, profile = 'screen') => ({
+      pageWidth: 64,
+      pageHeight: 64,
+      profile,
+      resources: { tableId: 5, images: [], svgFragments: [] },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 5000,
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'rectangle',
+          bbox: { x: 12, y: 12, width: 28, height: 20 },
+          cornerRadius: 0,
+          gradient: null,
+          transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          style: {
+            fillColor: '#0055cc',
+            strokeColor: null,
+            strokeWidth: 0,
+            strokeDash: 'solid',
+            opacity: 1,
+            pattern: null,
+            shadow: null,
+          },
+        }],
+      },
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const pageInfo = {
+      pageIndex: 0,
+      width: 64,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      const before = renderer.getSurfaceDiagnostics();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      const afterFirst = renderer.getSurfaceDiagnostics();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      const afterSecond = renderer.getSurfaceDiagnostics();
+      return {
+        preference: window.__canvaskitSurfacePreference,
+        request: window.__canvaskitSurfaceRequest,
+        before,
+        afterFirst,
+        afterSecond,
+        png: canvas.toDataURL('image/png'),
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+      canvas.remove();
+    }
+  });
+  assert(
+    !webgpuSurfaceParamProbe.error,
+    webgpuSurfaceParamProbe.error || 'canvaskit WebGPU surface fallback probe available',
+  );
   assert(
     webgpuSurfaceParamProbe.preference === 'webgpu',
     `WebGPU surface request resolves to explicit preference=${JSON.stringify(webgpuSurfaceParamProbe)}`,
@@ -614,21 +686,34 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     webgpuSurfaceParamProbe.request?.unsupportedValue === null
       && webgpuSurfaceParamProbe.request?.unsupportedReason === null
-      && webgpuSurfaceParamProbe.diagnostics?.unsupportedValue === null
-      && webgpuSurfaceParamProbe.diagnostics?.unsupportedReason === null,
+      && webgpuSurfaceParamProbe.afterFirst?.unsupportedValue === null
+      && webgpuSurfaceParamProbe.afterFirst?.unsupportedReason === null,
     `WebGPU surface request is a supported explicit preference=${JSON.stringify(webgpuSurfaceParamProbe)}`,
   );
   assert(
-    webgpuSurfaceParamProbe.diagnostics?.webgpuAttempts >= 1,
+    webgpuSurfaceParamProbe.afterFirst?.webgpuAttempts >= 1,
     `WebGPU surface path attempted=${JSON.stringify(webgpuSurfaceParamProbe)}`,
   );
   assert(
-    ['webgpu', 'webgl', 'software'].includes(webgpuSurfaceParamProbe.backend),
+    ['webgpu', 'webgl', 'software'].includes(webgpuSurfaceParamProbe.afterFirst?.backend),
     `WebGPU surface request selects WebGPU or falls back to direct CanvasKit surfaces=${JSON.stringify(webgpuSurfaceParamProbe)}`,
   );
   assert(
-    webgpuSurfaceParamProbe.backend === 'webgpu' || webgpuSurfaceParamProbe.diagnostics?.webgpuFailures >= 1,
+    webgpuSurfaceParamProbe.afterFirst?.backend === 'webgpu'
+      || webgpuSurfaceParamProbe.afterFirst?.webgpuFailures >= 1,
     `non-WebGPU fallback records WebGPU failure diagnostics=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+  );
+  assert(
+    webgpuSurfaceParamProbe.afterSecond.reusedSurfaces > webgpuSurfaceParamProbe.afterFirst.reusedSurfaces
+      && webgpuSurfaceParamProbe.afterSecond.createdSurfaces === webgpuSurfaceParamProbe.afterFirst.createdSurfaces,
+    `WebGPU-preferred fallback surface cache reuses selected backend=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+  );
+  const webgpuSurfaceBluePixels = countPixels(webgpuSurfaceParamProbe.png, (pixel) => (
+    pixel.alpha > 200 && pixel.blue > 160 && pixel.red < 60 && pixel.green > 40 && pixel.green < 120
+  ));
+  assert(
+    webgpuSurfaceBluePixels > 200,
+    `WebGPU-preferred surface path renders direct CanvasKit content bluePixels=${webgpuSurfaceBluePixels}`,
   );
 
   setTestCase('layer-resource-cache-invalidation');
