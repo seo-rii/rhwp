@@ -4225,6 +4225,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     duplicateBitmapResourceTree.resources.images.push(pixelBytes);
     duplicateBitmapResourceTree.resources.imageHashes.push('bitmap-glyph-pixel-duplicate');
     duplicateBitmapResourceTree.resources.imageKeys.push('bitmap-glyph-pixel');
+    const duplicateSvgResourceTree = treeFor(svgOutline);
+    duplicateSvgResourceTree.resources.svgFragments.push('<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#00ffff"/>');
+    duplicateSvgResourceTree.resources.svgHashes.push('svg-glyph-magenta-square-duplicate');
+    duplicateSvgResourceTree.resources.svgKeys.push('svg-glyph-magenta-square');
 
     return {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
@@ -4234,6 +4238,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       bitmapGlyph: await render(treeFor(bitmapOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
+      duplicateSvgGlyphKey: await render(duplicateSvgResourceTree),
     };
   });
   assert(!canvaskitGlyphOutlineProbe.error, canvaskitGlyphOutlineProbe.error || 'CanvasKit glyph outline probe available');
@@ -4296,6 +4301,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects SvgGlyph GlyphOutline=${JSON.stringify(canvaskitSvgReport)}`,
+  );
+  const canvaskitDuplicateSvgKeyReport = canvaskitGlyphOutlineProbe
+    .duplicateSvgGlyphKey
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitDuplicateSvgKeyReport?.selectedVariantId === 'textRun'
+      && canvaskitDuplicateSvgKeyReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects ambiguous SvgGlyph resource keys=${JSON.stringify(canvaskitDuplicateSvgKeyReport)}`,
   );
   const canvaskitMonochromeBlackPixels = countPixels(
     canvaskitGlyphOutlineProbe.monochrome.png,
