@@ -217,7 +217,7 @@ CanvasKit currently exposes two direct-replay modes.
 
 `rhwp-studio/src/view/render-backend.ts` resolves this from query parameters and local storage.
 The `canvaskitSurface` query parameter is a separate diagnostic axis: it chooses
-the CanvasKit surface helper (`auto`, `webgl`, or `software`) and is not the
+the CanvasKit surface helper (`auto`, `webgpu`, `webgl`, or `software`) and is not the
 same as render-mode fallback.
 
 `default` is the normal path for several reasons.

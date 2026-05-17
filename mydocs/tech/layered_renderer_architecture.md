@@ -245,16 +245,18 @@ CanvasKit surface backend는 render mode와 별도의 진단 축이다.
 | surface 값 | 의미 |
 |---|---|
 | `auto` | 기본. 명시적으로 `MakeWebGLCanvasSurface`를 먼저 시도하고 실패하면 `MakeSWCanvasSurface`로 fallback |
+| `webgpu` | 명시적으로 WebGPU device/context와 `MakeGPUCanvasSurface`를 먼저 시도. 실패하면 WebGL/software direct surface로 fallback |
 | `webgl` | WebGL surface 경로를 우선 검증. 실패하면 software fallback |
 | `software` | WebGL surface 생성을 생략하고 software surface만 사용 |
 
-renderer는 surface preference, 실제 선택된 surface helper, WebGL/software attempt/fallback 횟수를 diagnostics로 노출한다.
+renderer는 surface preference, 실제 선택된 surface helper, WebGPU/WebGL/software attempt/fallback 횟수를 diagnostics로 노출한다.
 이 값은 CanvasKit이 어떤 helper path로 surface를 만들었는지 검증하기 위한 것이며,
 future native parity 점검에서는 `software` 모드가 browser GPU 차이를 줄이는 기준점이 된다.
 
-CanvasKit package에는 WebGPU API/type surface가 존재하지만 rhwp는 아직 WebGPU를 적용하지 않는다.
-WebGPU는 async GPU device/context lifecycle과 CanvasKit 초기화 계약을 별도로 잡아야 하므로,
-현재 browser CanvasKit backend의 기본 목표는 WebGL/software surface에서 Canvas2D overlay 없이 `PageLayerTree`를 직접 replay하는 것이다.
+CanvasKit package의 WebGPU API/type surface는 명시적 `canvaskitSurface=webgpu`
+요청에서만 사용한다. 기본 `auto`는 기존 WebGL -> software 순서를 유지한다.
+WebGPU 초기화가 실패하거나 브라우저가 `navigator.gpu`를 제공하지 않으면
+diagnostics에 실패 사유를 남기고 WebGL/software direct surface로 내려간다.
 
 ## 8. Parity와 diff 전략
 

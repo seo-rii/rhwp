@@ -608,15 +608,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
     diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
   }));
   assert(
-    webgpuSurfaceParamProbe.preference === 'auto',
-    `unsupported WebGPU surface request resolves to auto=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+    webgpuSurfaceParamProbe.preference === 'webgpu',
+    `WebGPU surface request resolves to explicit preference=${JSON.stringify(webgpuSurfaceParamProbe)}`,
   );
   assert(
-    webgpuSurfaceParamProbe.request?.unsupportedValue === 'webgpu'
-      && webgpuSurfaceParamProbe.request?.unsupportedReason === 'unsupportedSurfaceBackend'
-      && webgpuSurfaceParamProbe.diagnostics?.unsupportedValue === 'webgpu'
-      && webgpuSurfaceParamProbe.diagnostics?.unsupportedReason === 'unsupportedSurfaceBackend',
-    `unsupported WebGPU surface request remains diagnosable=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+    webgpuSurfaceParamProbe.request?.unsupportedValue === null
+      && webgpuSurfaceParamProbe.request?.unsupportedReason === null
+      && webgpuSurfaceParamProbe.diagnostics?.unsupportedValue === null
+      && webgpuSurfaceParamProbe.diagnostics?.unsupportedReason === null,
+    `WebGPU surface request is a supported explicit preference=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+  );
+  assert(
+    webgpuSurfaceParamProbe.diagnostics?.webgpuAttempts >= 1,
+    `WebGPU surface path attempted=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+  );
+  assert(
+    ['webgpu', 'webgl', 'software'].includes(webgpuSurfaceParamProbe.backend),
+    `WebGPU surface request selects WebGPU or falls back to direct CanvasKit surfaces=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+  );
+  assert(
+    webgpuSurfaceParamProbe.backend === 'webgpu' || webgpuSurfaceParamProbe.diagnostics?.webgpuFailures >= 1,
+    `non-WebGPU fallback records WebGPU failure diagnostics=${JSON.stringify(webgpuSurfaceParamProbe)}`,
   );
 
   setTestCase('layer-resource-cache-invalidation');
