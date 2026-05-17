@@ -316,10 +316,10 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
     return new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'svg') {
-    return new Set(['xmlns', 'xmlns:xlink', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
+    return new Set(['xmlns', 'xmlns:xlink', 'xml:space', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
   }
   if (elementName === 'g') {
-    return new Set();
+    return new Set(['xml:space']);
   }
   return null;
 }
@@ -338,6 +338,10 @@ function isStaticSvgAttributeSupported(
   }
   if (name === 'xmlns:xlink') {
     return value.trim() === 'http://www.w3.org/1999/xlink';
+  }
+  if (name === 'xml:space') {
+    const trimmedValue = value.trim();
+    return trimmedValue === 'default' || trimmedValue === 'preserve';
   }
   if (name === 'viewbox') {
     return isStaticSvgViewBoxValueSupported(value);
