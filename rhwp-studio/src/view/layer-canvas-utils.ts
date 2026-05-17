@@ -40,7 +40,145 @@ export type LayerImageEffectDiagnostics = {
 
 export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[] {
   if (typeof DOMParser === 'undefined') {
-    return [];
+    const layers: StaticSvgPathLayer[] = [];
+    const tagPattern = /<\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
+    for (const match of fragment.matchAll(tagPattern)) {
+      const elementName = match[1].toLowerCase();
+      const rawAttributes = match[2] ?? '';
+      let supportedAttributes: Set<string> | null = null;
+      if (elementName === 'path') {
+        supportedAttributes = new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+      } else if (elementName === 'rect') {
+        supportedAttributes = new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+      } else if (elementName === 'circle') {
+        supportedAttributes = new Set(['cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+      } else if (elementName === 'ellipse') {
+        supportedAttributes = new Set(['cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+      } else if (elementName === 'polygon') {
+        supportedAttributes = new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+      }
+      if (!supportedAttributes) {
+        return [];
+      }
+
+      const attributes = new Map<string, string>();
+      const attributePattern = /([A-Za-z_][A-Za-z0-9:._-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+      let remainingAttributes = rawAttributes;
+      for (const attributeMatch of rawAttributes.matchAll(attributePattern)) {
+        const rawName = attributeMatch[1].trim().toLowerCase();
+        const value = attributeMatch[2] ?? attributeMatch[3] ?? attributeMatch[4] ?? '';
+        attributes.set(rawName, value.trim());
+        remainingAttributes = remainingAttributes.replace(attributeMatch[0], '');
+      }
+      if (remainingAttributes.replace(/\/\s*$/, '').trim().length > 0) {
+        return [];
+      }
+
+      for (const [name, value] of attributes) {
+        if (!supportedAttributes.has(name)) {
+          return [];
+        }
+        if (name === 'fill' && !isStaticSvgPaintValueSupported(value)) {
+          return [];
+        }
+        if ((name === 'opacity' || name === 'fill-opacity') && !isStaticSvgOpacityValueSupported(value)) {
+          return [];
+        }
+        if (name === 'fill-rule' && !isStaticSvgFillRuleValueSupported(value)) {
+          return [];
+        }
+        if (name === 'style' && !isStaticSvgStyleSupported(value)) {
+          return [];
+        }
+        if (
+          (name === 'x' || name === 'y' || name === 'width' || name === 'height')
+          && !isStaticSvgNumericValueSupported(value)
+        ) {
+          return [];
+        }
+        if ((name === 'cx' || name === 'cy' || name === 'r' || name === 'rx' || name === 'ry')
+          && !isStaticSvgNumericValueSupported(value)
+        ) {
+          return [];
+        }
+        if (name === 'points' && svgPointList(value).length < 3) {
+          return [];
+        }
+      }
+
+      let pathData: string | null = null;
+      if (elementName === 'path') {
+        pathData = attributes.get('d')?.trim() || null;
+      } else if (elementName === 'circle') {
+        const cx = Number(attributes.get('cx') ?? '0');
+        const cy = Number(attributes.get('cy') ?? '0');
+        const r = attributes.has('r') ? Number(attributes.get('r')) : null;
+        if (r !== null && r > 0) {
+          pathData = `M${cx - r} ${cy}A${r} ${r} 0 1 0 ${cx + r} ${cy}A${r} ${r} 0 1 0 ${cx - r} ${cy}Z`;
+        }
+      } else if (elementName === 'ellipse') {
+        const cx = Number(attributes.get('cx') ?? '0');
+        const cy = Number(attributes.get('cy') ?? '0');
+        const rx = attributes.has('rx') ? Number(attributes.get('rx')) : null;
+        const ry = attributes.has('ry') ? Number(attributes.get('ry')) : null;
+        if (rx !== null && ry !== null && rx > 0 && ry > 0) {
+          pathData = `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
+        }
+      } else if (elementName === 'polygon') {
+        const points = svgPointList(attributes.get('points') ?? '');
+        if (points.length >= 3) {
+          const [first, ...rest] = points;
+          pathData = `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}Z`;
+        }
+      } else if (elementName === 'rect') {
+        const x = Number(attributes.get('x') ?? '0');
+        const y = Number(attributes.get('y') ?? '0');
+        const width = attributes.has('width') ? Number(attributes.get('width')) : null;
+        const height = attributes.has('height') ? Number(attributes.get('height')) : null;
+        if (width !== null && height !== null && width > 0 && height > 0) {
+          pathData = `M${x} ${y}H${x + width}V${y + height}H${x}Z`;
+        }
+      }
+      if (!pathData) {
+        continue;
+      }
+
+      let fill = attributes.get('fill') ?? null;
+      let opacityValue = attributes.get('opacity') ?? null;
+      let fillOpacityValue = attributes.get('fill-opacity') ?? null;
+      let fillRuleValue = attributes.get('fill-rule') ?? null;
+      const style = attributes.get('style');
+      if (style) {
+        for (const declaration of style.split(';')) {
+          const separator = declaration.indexOf(':');
+          if (separator < 0) {
+            continue;
+          }
+          const property = declaration.slice(0, separator).trim().toLowerCase();
+          const value = declaration.slice(separator + 1).trim();
+          if (property === 'fill' && fill === null) {
+            fill = value;
+          } else if (property === 'opacity' && opacityValue === null) {
+            opacityValue = value;
+          } else if (property === 'fill-opacity' && fillOpacityValue === null) {
+            fillOpacityValue = value;
+          } else if (property === 'fill-rule' && fillRuleValue === null) {
+            fillRuleValue = value;
+          }
+        }
+      }
+      const resolvedFill = fill ?? '#000000';
+      if (resolvedFill.trim().toLowerCase() === 'none') {
+        continue;
+      }
+      layers.push({
+        pathData,
+        fill: resolvedFill,
+        fillRule: svgFillRule(fillRuleValue),
+        opacity: svgOpacity(opacityValue) * svgOpacity(fillOpacityValue),
+      });
+    }
+    return layers;
   }
   const parser = new DOMParser();
   const document = parser.parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${fragment}</svg>`, 'image/svg+xml');

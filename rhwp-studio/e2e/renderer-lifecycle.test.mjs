@@ -4690,6 +4690,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedSvgFillRuleTree = treeFor(svgOutline);
     unsupportedSvgFillRuleTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" fill-rule="inherit"/>';
     unsupportedSvgFillRuleTree.resources.svgHashes[0] = 'svg-glyph-unsupported-fill-rule';
+    const originalDOMParser = globalThis.DOMParser;
+    const hadDOMParser = 'DOMParser' in globalThis;
+    let noDomParserSvgGlyph;
+    try {
+      globalThis.DOMParser = undefined;
+      noDomParserSvgGlyph = await render(treeFor(svgOutline));
+    } finally {
+      if (hadDOMParser) {
+        globalThis.DOMParser = originalDOMParser;
+      } else {
+        delete globalThis.DOMParser;
+      }
+    }
 
     return {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
@@ -4699,6 +4712,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       bitmapGlyph: await render(treeFor(bitmapOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
+      noDomParserSvgGlyph,
       duplicateSvgGlyphKey: await render(duplicateSvgResourceTree),
       unsafeSvgGlyphResource: await render(unsafeSvgResourceTree),
       unsupportedSvgGlyphStrokeResource: await render(unsupportedSvgStrokeTree),
@@ -4766,6 +4780,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects SvgGlyph GlyphOutline=${JSON.stringify(canvaskitSvgReport)}`,
+  );
+  const canvaskitNoDomParserSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserSvgReport)}`,
   );
   const canvaskitDuplicateSvgKeyReport = canvaskitGlyphOutlineProbe
     .duplicateSvgGlyphKey
@@ -4845,6 +4868,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   const canvaskitBitmapBlackPixels = canvaskitGlyphOutlineProbe.bitmapGlyph.blackPixels;
   const canvaskitSvgMagentaPixels = canvaskitGlyphOutlineProbe.svgGlyph.magentaPixels;
+  const canvaskitNoDomParserSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserSvgGlyph.magentaPixels;
   assert(
     canvaskitMonochromeBlackPixels > 100 && canvaskitMonochromeRedPixels < 5,
     `CanvasKit strict outline paints monochrome path and suppresses fallback black=${canvaskitMonochromeBlackPixels}, red=${canvaskitMonochromeRedPixels}`,
@@ -4868,6 +4892,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitSvgMagentaPixels > 100,
     `CanvasKit strict outline paints SvgGlyph vector resource magenta=${canvaskitSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints SvgGlyph without DOMParser magenta=${canvaskitNoDomParserSvgMagentaPixels}`,
   );
 
   setTestCase('canvas-layer-glyph-outline-payload-parity');
