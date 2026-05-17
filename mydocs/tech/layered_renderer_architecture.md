@@ -249,7 +249,7 @@ CanvasKit surface backend는 render mode와 별도의 진단 축이다.
 | `webgl` | WebGL surface 경로를 우선 검증. 실패하면 software fallback |
 | `software` | WebGL surface 생성을 생략하고 software surface만 사용 |
 
-renderer는 surface preference, 실제 선택된 surface helper, WebGPU/WebGL/software attempt/fallback 횟수를 diagnostics로 노출한다.
+renderer는 surface preference, 실제 선택된 surface helper, WebGPU/WebGL/software attempt/fallback 횟수와 backend별 마지막 실패 사유를 diagnostics로 노출한다.
 이 값은 CanvasKit이 어떤 helper path로 surface를 만들었는지 검증하기 위한 것이며,
 future native parity 점검에서는 `software` 모드가 browser GPU 차이를 줄이는 기준점이 된다.
 

@@ -240,6 +240,9 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     canvaskitSurfaceSoftwareAttempts: canvaskit.layerSummary?.surfaceDiagnostics?.softwareAttempts ?? null,
     canvaskitSurfaceSoftwareFailures: canvaskit.layerSummary?.surfaceDiagnostics?.softwareFailures ?? null,
     canvaskitSurfaceSoftwareFallbacks: canvaskit.layerSummary?.surfaceDiagnostics?.softwareFallbacks ?? null,
+    canvaskitSurfaceWebgpuLastFailure: canvaskit.layerSummary?.surfaceDiagnostics?.webgpuLastFailure ?? null,
+    canvaskitSurfaceWebglLastFailure: canvaskit.layerSummary?.surfaceDiagnostics?.webglLastFailure ?? null,
+    canvaskitSurfaceSoftwareLastFailure: canvaskit.layerSummary?.surfaceDiagnostics?.softwareLastFailure ?? null,
     canvaskitSurfaceLastFailure: canvaskit.layerSummary?.surfaceDiagnostics?.lastFailure ?? null,
   };
 }

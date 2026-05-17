@@ -583,6 +583,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         webglSurfaceProbe.afterFirst.backend === 'software'
         && webglSurfaceProbe.afterFirst.softwareFallbacks >= 1
         && webglSurfaceProbe.afterFirst.webglFailures >= 1
+        && typeof webglSurfaceProbe.afterFirst.webglLastFailure === 'string'
       ),
     `WebGL preference uses WebGL or direct software surface fallback=${JSON.stringify(webglSurfaceProbe)}`,
   );
@@ -700,7 +701,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     webgpuSurfaceParamProbe.afterFirst?.backend === 'webgpu'
-      || webgpuSurfaceParamProbe.afterFirst?.webgpuFailures >= 1,
+      || (
+        webgpuSurfaceParamProbe.afterFirst?.webgpuFailures >= 1
+        && typeof webgpuSurfaceParamProbe.afterFirst?.webgpuLastFailure === 'string'
+      ),
     `non-WebGPU fallback records WebGPU failure diagnostics=${JSON.stringify(webgpuSurfaceParamProbe)}`,
   );
   assert(

@@ -26,6 +26,9 @@ export type CanvasKitSurfaceDiagnostics = {
   softwareAttempts: number;
   softwareFailures: number;
   softwareFallbacks: number;
+  webgpuLastFailure: string | null;
+  webglLastFailure: string | null;
+  softwareLastFailure: string | null;
   lastFailure: string | null;
 };
 
@@ -47,6 +50,9 @@ export class CanvasKitSurfaceCache {
   private softwareAttempts = 0;
   private softwareFailures = 0;
   private softwareFallbacks = 0;
+  private webgpuLastFailure: string | null = null;
+  private webglLastFailure: string | null = null;
+  private softwareLastFailure: string | null = null;
   private lastFailure: string | null = null;
 
   constructor(
@@ -80,7 +86,8 @@ export class CanvasKitSurfaceCache {
       this.webgpuAttempts += 1;
       if (!this.webgpuDeviceContext) {
         this.webgpuFailures += 1;
-        this.lastFailure = this.webgpuInitFailure ?? 'CanvasKit WebGPU device context unavailable';
+        this.webgpuLastFailure = this.webgpuInitFailure ?? 'CanvasKit WebGPU device context unavailable';
+        this.lastFailure = this.webgpuLastFailure;
       } else {
         let threw = false;
         try {
@@ -102,11 +109,13 @@ export class CanvasKitSurfaceCache {
         } catch (error) {
           threw = true;
           this.webgpuFailures += 1;
-          this.lastFailure = error instanceof Error ? error.message : String(error);
+          this.webgpuLastFailure = error instanceof Error ? error.message : String(error);
+          this.lastFailure = this.webgpuLastFailure;
         }
         if (!surface && !threw) {
           this.webgpuFailures += 1;
-          this.lastFailure = 'CanvasKit MakeGPUCanvasSurface returned null';
+          this.webgpuLastFailure = 'CanvasKit MakeGPUCanvasSurface returned null';
+          this.lastFailure = this.webgpuLastFailure;
         }
       }
     }
@@ -122,11 +131,13 @@ export class CanvasKitSurfaceCache {
       } catch (error) {
         threw = true;
         this.webglFailures += 1;
-        this.lastFailure = error instanceof Error ? error.message : String(error);
+        this.webglLastFailure = error instanceof Error ? error.message : String(error);
+        this.lastFailure = this.webglLastFailure;
       }
       if (!surface && !threw) {
         this.webglFailures += 1;
-        this.lastFailure = 'CanvasKit MakeWebGLCanvasSurface returned null';
+        this.webglLastFailure = 'CanvasKit MakeWebGLCanvasSurface returned null';
+        this.lastFailure = this.webglLastFailure;
       }
     }
 
@@ -144,11 +155,13 @@ export class CanvasKitSurfaceCache {
       } catch (error) {
         threw = true;
         this.softwareFailures += 1;
-        this.lastFailure = error instanceof Error ? error.message : String(error);
+        this.softwareLastFailure = error instanceof Error ? error.message : String(error);
+        this.lastFailure = this.softwareLastFailure;
       }
       if (!surface && !threw) {
         this.softwareFailures += 1;
-        this.lastFailure = 'CanvasKit MakeSWCanvasSurface returned null';
+        this.softwareLastFailure = 'CanvasKit MakeSWCanvasSurface returned null';
+        this.lastFailure = this.softwareLastFailure;
       }
     }
 
@@ -177,12 +190,14 @@ export class CanvasKitSurfaceCache {
     } catch (error) {
       threw = true;
       this.softwareFailures += 1;
-      this.lastFailure = error instanceof Error ? error.message : String(error);
+      this.softwareLastFailure = error instanceof Error ? error.message : String(error);
+      this.lastFailure = this.softwareLastFailure;
     }
     if (!surface) {
       if (!threw) {
         this.softwareFailures += 1;
-        this.lastFailure = 'CanvasKit MakeSWCanvasSurface returned null';
+        this.softwareLastFailure = 'CanvasKit MakeSWCanvasSurface returned null';
+        this.lastFailure = this.softwareLastFailure;
       }
       return null;
     }
@@ -214,6 +229,9 @@ export class CanvasKitSurfaceCache {
       softwareAttempts: this.softwareAttempts,
       softwareFailures: this.softwareFailures,
       softwareFallbacks: this.softwareFallbacks,
+      webgpuLastFailure: this.webgpuLastFailure,
+      webglLastFailure: this.webglLastFailure,
+      softwareLastFailure: this.softwareLastFailure,
       lastFailure: this.lastFailure,
     };
   }
