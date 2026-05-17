@@ -54,6 +54,7 @@ import type {
   LayerPathCommand,
   LayerPathOp,
   LayerPatternFill,
+  PageInfo,
   LayerRectangleOp,
   LayerRenderProfile,
   LayerResources,
@@ -261,6 +262,34 @@ export class CanvasKitLayerRenderer {
     }
   }
 
+  drawMarginGuides(pageInfo: PageInfo, targetCanvas: HTMLCanvasElement, scale: number): void {
+    if (this.disposed) {
+      throw new Error('CanvasKit renderer가 이미 dispose되었습니다');
+    }
+
+    const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
+    let renderError: unknown = null;
+    try {
+      this.drawMarginGuidesOnSurface(surface, pageInfo, scale);
+    } catch (error) {
+      renderError = error;
+    }
+
+    if (!renderError) {
+      return;
+    }
+
+    if (!usedGpuSurface) {
+      throw renderError;
+    }
+
+    const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas);
+    if (!fallbackSurface) {
+      throw renderError;
+    }
+    this.drawMarginGuidesOnSurface(fallbackSurface, pageInfo, scale);
+  }
+
   setAsyncResourceReadyCallback(_callback: (() => void) | null): void {
     void _callback;
   }
@@ -311,6 +340,38 @@ export class CanvasKitLayerRenderer {
     canvas.scale(scale, scale);
     this.renderNode(canvas, tree.root);
     canvas.restore();
+    surface.flush();
+  }
+
+  private drawMarginGuidesOnSurface(surface: Surface, pageInfo: PageInfo, scale: number): void {
+    const canvas = surface.getCanvas();
+    const { width, height, marginLeft, marginRight, marginTop, marginBottom, marginHeader, marginFooter } = pageInfo;
+    const left = marginLeft;
+    const top = marginHeader + marginTop;
+    const right = width - marginRight;
+    const bottom = height - marginFooter - marginBottom;
+    const markerLength = 15;
+    const paint = this.makePaint('#C0C0C0', 'stroke');
+    paint.setStrokeWidth(0.3);
+
+    canvas.save();
+    canvas.scale(scale, scale);
+    try {
+      canvas.drawLine(left, top - markerLength, left, top, paint);
+      canvas.drawLine(left, top, left - markerLength, top, paint);
+
+      canvas.drawLine(right + markerLength, top, right, top, paint);
+      canvas.drawLine(right, top, right, top - markerLength, paint);
+
+      canvas.drawLine(left - markerLength, bottom, left, bottom, paint);
+      canvas.drawLine(left, bottom, left, bottom + markerLength, paint);
+
+      canvas.drawLine(right, bottom + markerLength, right, bottom, paint);
+      canvas.drawLine(right, bottom, right + markerLength, bottom, paint);
+    } finally {
+      canvas.restore();
+      paint.delete();
+    }
     surface.flush();
   }
 

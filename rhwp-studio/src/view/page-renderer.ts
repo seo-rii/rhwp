@@ -141,6 +141,18 @@ export class PageRenderer {
 
   /** 편집 용지 여백 가이드라인을 캔버스에 그린다 (4모서리 L자 표시) */
   private drawMarginGuides(pageInfo: PageInfo, canvas: HTMLCanvasElement, scale: number): void {
+    if (this.backend === 'canvaskit') {
+      if (!this.canvaskitRenderer) {
+        throw new Error('CanvasKit renderer가 초기화되지 않았습니다');
+      }
+      this.canvaskitRenderer.drawMarginGuides(pageInfo, canvas, scale);
+      return;
+    }
+
+    this.drawCanvas2DMarginGuides(pageInfo, canvas, scale);
+  }
+
+  private drawCanvas2DMarginGuides(pageInfo: PageInfo, canvas: HTMLCanvasElement, scale: number): void {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 

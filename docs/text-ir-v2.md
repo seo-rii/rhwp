@@ -259,7 +259,8 @@ CanvasKit still has two operational modes, but both are direct-replay modes:
 
 The direct replay surface currently covers root `TextRun`, page backgrounds,
 raster images, equations, form controls, vector shapes, text decorations,
-control marks, tab leaders, and supported `GlyphRun`/`GlyphOutline` variants.
+control marks, tab leaders, editor margin guides, and supported
+`GlyphRun`/`GlyphOutline` variants.
 All CanvasKit resource paths should use CanvasKit image/font/vector primitives
 directly; DOM image caches and Canvas2D fallback passes are not part of the
 CanvasKit backend contract.
