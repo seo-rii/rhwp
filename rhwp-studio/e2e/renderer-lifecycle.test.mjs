@@ -4159,6 +4159,116 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `form object parity exact=${formObjectDiff.exactDiffPixels}, tolerant=${formObjectDiff.rawTolerantDiffPixels}, ink=${formObjectDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-form-object-unchecked-parity');
+  const formObjectUncheckedParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const form = (formType, bbox) => ({
+      type: 'formObject',
+      bbox,
+      formType,
+      caption: '',
+      text: '',
+      foreColor: '#e000e0',
+      backColor: '#f4f4f4',
+      value: 0,
+      enabled: true,
+    });
+    const tree = {
+      pageWidth: 60,
+      pageHeight: 28,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1938,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1938,
+        bounds: { x: 0, y: 0, width: 60, height: 28 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 60, height: 28 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          form('checkBox', { x: 8, y: 7, width: 14, height: 14 }),
+          form('radioButton', { x: 34, y: 7, width: 14, height: 14 }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !formObjectUncheckedParityProbe.error,
+    formObjectUncheckedParityProbe.error || 'unchecked form object parity probe available',
+  );
+  const uncheckedMagenta = (pixel) => pixel.alpha > 32 && pixel.red > 180 && pixel.blue > 180 && pixel.green < 80;
+  const uncheckedCanvas2dMagentaPixels = countPixels(formObjectUncheckedParityProbe.canvas2d, uncheckedMagenta);
+  const uncheckedCanvaskitMagentaPixels = countPixels(formObjectUncheckedParityProbe.canvaskit, uncheckedMagenta);
+  assert(
+    uncheckedCanvas2dMagentaPixels === 0 && uncheckedCanvaskitMagentaPixels === 0,
+    `unchecked check/radio do not draw selected marks canvas2d=${uncheckedCanvas2dMagentaPixels}, canvaskit=${uncheckedCanvaskitMagentaPixels}`,
+  );
+  const uncheckedCanvas2dInkPixels = countPixels(
+    formObjectUncheckedParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 240 || pixel.green < 240 || pixel.blue < 240),
+  );
+  const uncheckedCanvaskitInkPixels = countPixels(
+    formObjectUncheckedParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red < 240 || pixel.green < 240 || pixel.blue < 240),
+  );
+  assert(
+    uncheckedCanvas2dInkPixels > 90 && uncheckedCanvaskitInkPixels > 90,
+    `unchecked check/radio draw empty controls canvas2d=${uncheckedCanvas2dInkPixels}, canvaskit=${uncheckedCanvaskitInkPixels}`,
+  );
+  const formObjectUncheckedDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(formObjectUncheckedParityProbe.canvas2d),
+    pngBufferFromDataUrl(formObjectUncheckedParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-form-object-unchecked-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    formObjectUncheckedDiff.passed,
+    `unchecked form object parity exact=${formObjectUncheckedDiff.exactDiffPixels}, tolerant=${formObjectUncheckedDiff.rawTolerantDiffPixels}, ink=${formObjectUncheckedDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectUncheckedDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-form-object-text-parity');
   const formObjectTextParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
