@@ -24,19 +24,27 @@ const BACKENDS = [
   {
     key: 'canvaskit-compat',
     queryForProfile(profile) {
-      return `?renderer=canvaskit&canvaskitMode=compat&renderProfile=${encodeURIComponent(profile)}`;
+      const surfaceQuery = options.canvaskitSurface === 'auto'
+        ? ''
+        : `&canvaskitSurface=${encodeURIComponent(options.canvaskitSurface)}`;
+      return `?renderer=canvaskit&canvaskitMode=compat&renderProfile=${encodeURIComponent(profile)}${surfaceQuery}`;
     },
     filenameForProfile(profile) {
-      return `canvaskit-compat-${profile}.png`;
+      const surfaceSuffix = options.canvaskitSurface === 'auto' ? '' : `-${options.canvaskitSurface}`;
+      return `canvaskit-compat-${profile}${surfaceSuffix}.png`;
     },
   },
   {
     key: 'canvaskit-default',
     queryForProfile(profile) {
-      return `?renderer=canvaskit&canvaskitMode=default&renderProfile=${encodeURIComponent(profile)}`;
+      const surfaceQuery = options.canvaskitSurface === 'auto'
+        ? ''
+        : `&canvaskitSurface=${encodeURIComponent(options.canvaskitSurface)}`;
+      return `?renderer=canvaskit&canvaskitMode=default&renderProfile=${encodeURIComponent(profile)}${surfaceQuery}`;
     },
     filenameForProfile(profile) {
-      return `canvaskit-default-${profile}.png`;
+      const surfaceSuffix = options.canvaskitSurface === 'auto' ? '' : `-${options.canvaskitSurface}`;
+      return `canvaskit-default-${profile}${surfaceSuffix}.png`;
     },
   },
 ];
@@ -49,6 +57,7 @@ function parseArgs() {
     output: '',
     filter: '',
     profiles: 'screen,fast-preview',
+    canvaskitSurface: process.env.RHWP_CANVASKIT_SURFACE ?? 'auto',
   };
 
   for (const arg of args) {
@@ -66,6 +75,10 @@ function parseArgs() {
     }
     if (arg.startsWith('--profiles=')) {
       options.profiles = arg.slice('--profiles='.length);
+      continue;
+    }
+    if (arg.startsWith('--canvaskit-surface=')) {
+      options.canvaskitSurface = arg.slice('--canvaskit-surface='.length);
       continue;
     }
   }
@@ -131,16 +144,28 @@ async function readRendererDiagnostics(page) {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvas2d = pageRenderer?.canvas2dRenderer?.getImageEffectDiagnostics?.() ?? null;
     const canvaskit = pageRenderer?.canvaskitRenderer?.getImageEffectDiagnostics?.() ?? null;
+    const surfaceDiagnostics = pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null;
     return {
       imageEffects: {
         canvas2d,
         canvaskit,
       },
+      surfaceDiagnostics,
     };
   });
 }
 
 const options = parseArgs();
+const requestedCanvasKitSurface = options.canvaskitSurface.trim().toLowerCase();
+if (requestedCanvasKitSurface === 'sw' || requestedCanvasKitSurface === 'cpu') {
+  options.canvaskitSurface = 'software';
+} else if (requestedCanvasKitSurface === 'gpu') {
+  options.canvaskitSurface = 'webgpu';
+} else if (['auto', 'webgpu', 'webgl', 'software'].includes(requestedCanvasKitSurface)) {
+  options.canvaskitSurface = requestedCanvasKitSurface;
+} else {
+  options.canvaskitSurface = 'auto';
+}
 const manifest = JSON.parse(fs.readFileSync(options.manifest, 'utf8'));
 const samples = normalizeSamples(manifest, options.filter);
 const profiles = parseProfiles(options.profiles);
@@ -189,6 +214,7 @@ try {
           category: sample.category,
           backend: backend.key,
           profile,
+          canvaskitSurface: backend.key.startsWith('canvaskit') ? options.canvaskitSurface : null,
           path: outputPath,
           timings: {
             appLoadMs,
@@ -214,6 +240,7 @@ fs.writeFileSync(
       manifest: options.manifest,
       sampleCount: samples.length,
       profiles,
+      canvaskitSurface: options.canvaskitSurface,
       results,
     },
     null,
