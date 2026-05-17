@@ -625,7 +625,8 @@ The reserved families are intentionally separate payload families:
   range, glyph range, and source-font provenance, while gradients, blending,
   clips, and reusable graph nodes stay behind later feature additions. Stage-1
   graph validation is tree-only: the root must reach every node, cycles are
-  rejected, and shared child subgraphs remain reserved for the later reusable
+  rejected, the current Studio validator bounds the stage-1 graph to 64 nodes
+  and depth 64, and shared child subgraphs remain reserved for the later reusable
   graph stage. The feature vocabulary is split as
   `text.glyphOutline.colorLayers`, `text.glyphOutline.colorLayers.colrV0`, and
   `text.glyphOutline.colorLayers.colrV1` so the solid-layer subset can stabilize
@@ -662,8 +663,9 @@ implicitly change schema authority:
   subset has a native/internal deterministic reference fixture and browser
   Canvas2D/CanvasKit replay coverage. Stage 1 is tree-only: a transform chain
   resolves to one `solidPath` reference layer, rejects unreachable nodes/cycles,
-  and carries the composed run-local affine transform without changing paint
-  order or clip/effect/cache scope. The graph can then grow in stages:
+  rejects graphs over 64 nodes or depth 64, and carries the composed run-local
+  affine transform without changing paint order or clip/effect/cache scope. The
+  graph can then grow in stages:
   linear/radial gradients, sweep gradients, composite/blend, then clip or
   reusable graph nodes. Reusable graph/DAG behavior belongs to the later
   clip/reusable-graph stage, with cycle detection and node/depth limits.
