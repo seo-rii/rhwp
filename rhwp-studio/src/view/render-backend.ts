@@ -30,7 +30,8 @@ export function resolveRenderBackend(search: string): RenderBackend {
   if (requested === 'canvas' || requested === 'canvas2d') return 'canvas2d';
 
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === 'canvaskit' ? 'canvaskit' : 'canvas2d';
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return stored === 'canvaskit' || stored === 'skia' ? 'canvaskit' : 'canvas2d';
   } catch {
     return 'canvas2d';
   }

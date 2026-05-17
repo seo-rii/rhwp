@@ -220,6 +220,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `renderer=skia keeps CanvasKit surface options=${JSON.stringify(skiaAliasProbe)}`,
   );
 
+  setTestCase('skia-storage-alias');
+  await page.evaluate(() => window.localStorage.setItem('rhwp-render-backend', 'skia'));
+  await loadApp(page, '?canvaskitMode=default&canvaskitSurface=software');
+  const skiaStorageAliasProbe = await page.evaluate(() => ({
+    backend: window.__renderBackend,
+    storedBackend: window.localStorage.getItem('rhwp-render-backend'),
+    hasCanvasKitRenderer: !!window.__canvasView?.pageRenderer?.canvaskitRenderer,
+  }));
+  assert(
+    skiaStorageAliasProbe.backend === 'canvaskit'
+      && skiaStorageAliasProbe.storedBackend === 'canvaskit'
+      && skiaStorageAliasProbe.hasCanvasKitRenderer,
+    `stored skia alias resolves and normalizes to CanvasKit=${JSON.stringify(skiaStorageAliasProbe)}`,
+  );
+
   setTestCase('async-resource-rerender');
   await loadApp(page, '?renderer=canvas2d');
   const asyncRerenderProbe = await page.evaluate(async () => {
