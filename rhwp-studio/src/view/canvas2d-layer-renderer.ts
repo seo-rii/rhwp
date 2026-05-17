@@ -14,6 +14,7 @@ import {
   type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
 import { resolveLayerResourceIndex } from '@/core/layer-resource-store';
+import { assertNeverLayerPaintOp } from '@/core/types';
 import type { CanvasKitRenderMode } from './render-backend';
 import type {
   LayerBounds,
@@ -639,6 +640,8 @@ export class Canvas2DLayerRenderer {
           this.renderFormObject(ctx, op);
         }, op.bbox);
         return;
+      default:
+        assertNeverLayerPaintOp(op);
     }
   }
 

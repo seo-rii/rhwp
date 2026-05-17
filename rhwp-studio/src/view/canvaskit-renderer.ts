@@ -31,6 +31,7 @@ import {
   type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
 import { resolveLayerResourceIndex } from '@/core/layer-resource-store';
+import { assertNeverLayerPaintOp } from '@/core/types';
 import { DEFAULT_CANVASKIT_SURFACE_REQUEST } from '@/view/render-backend';
 import type { CanvasKitRenderMode, CanvasKitSurfacePreference, CanvasKitSurfaceRequest } from '@/view/render-backend';
 import type {
@@ -636,6 +637,8 @@ export class CanvasKitLayerRenderer {
       case 'formObject':
         this.renderFormObject(canvas, op);
         return;
+      default:
+        assertNeverLayerPaintOp(op);
     }
   }
 

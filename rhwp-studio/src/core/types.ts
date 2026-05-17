@@ -379,6 +379,11 @@ export function isKnownLayerPaintOp(op: LayerPaintOpLike): op is LayerKnownPaint
   return KNOWN_LAYER_PAINT_OP_TYPES.has(op.type);
 }
 
+export function assertNeverLayerPaintOp(op: never): never {
+  const type = (op as { type?: unknown }).type;
+  throw new Error(`Unhandled layer paint op type: ${String(type)}`);
+}
+
 export interface LayerTextStyle {
   fontFamily: string;
   fontSize: number;
