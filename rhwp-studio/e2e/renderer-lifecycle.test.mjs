@@ -5734,6 +5734,134 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `compound line thin stroke parity canvas2d=${compoundLineCanvas2dDarkness.toFixed(2)}, canvaskit=${compoundLineCanvaskitDarkness.toFixed(2)}`,
   );
 
+  setTestCase('canvas-layer-compound-line-variant-parity');
+  const compoundLineVariantProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const line = (y, lineType, color) => ({
+      type: 'line',
+      bbox: { x: 4, y: y - 8, width: 104, height: 16 },
+      x1: 10,
+      y1: y,
+      x2: 102,
+      y2: y,
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+      style: {
+        color,
+        width: 5,
+        dash: 'solid',
+        lineType,
+        startArrow: 'none',
+        endArrow: 'none',
+        startArrowSize: 1,
+        endArrowSize: 1,
+        shadow: null,
+      },
+    });
+    const tree = {
+      pageWidth: 112,
+      pageHeight: 76,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 19111,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 19111,
+        bounds: { x: 0, y: 0, width: 112, height: 76 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 112, height: 76 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          line(12, 'double', '#202020'),
+          line(28, 'thickThinDouble', '#0040cc'),
+          line(44, 'thinThickDouble', '#cc4400'),
+          line(60, 'thinThickThinTriple', '#008000'),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !compoundLineVariantProbe.error,
+    compoundLineVariantProbe.error || 'compound line variant parity probe available',
+  );
+  const measureCompoundVariantRows = (dataUrl) => {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    const rows = [12, 28, 44, 60];
+    return rows.map((centerY) => {
+      let darkPixels = 0;
+      for (let y = centerY - 5; y <= centerY + 5; y += 1) {
+        for (let x = 8; x <= 104; x += 1) {
+          const offset = (y * png.width + x) * 4;
+          if (
+            png.data[offset + 3] > 32
+            && (png.data[offset] < 230 || png.data[offset + 1] < 230 || png.data[offset + 2] < 230)
+          ) {
+            darkPixels += 1;
+          }
+        }
+      }
+      return darkPixels;
+    });
+  };
+  const compoundVariantCanvas2dRows = measureCompoundVariantRows(compoundLineVariantProbe.canvas2d);
+  const compoundVariantCanvaskitRows = measureCompoundVariantRows(compoundLineVariantProbe.canvaskit);
+  assert(
+    compoundVariantCanvas2dRows.every((pixels) => pixels > 180)
+      && compoundVariantCanvaskitRows.every((pixels) => pixels > 180),
+    `compound line variants draw every row canvas2d=${compoundVariantCanvas2dRows.join(',')}, canvaskit=${compoundVariantCanvaskitRows.join(',')}`,
+  );
+  const compoundLineVariantDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(compoundLineVariantProbe.canvas2d),
+    pngBufferFromDataUrl(compoundLineVariantProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-compound-line-variant-parity',
+      ignoreChannelDelta: 40,
+      maxDiffRatio: 0.14,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    compoundLineVariantDiff.passed,
+    `compound line variant parity exact=${compoundLineVariantDiff.exactDiffPixels}, tolerant=${compoundLineVariantDiff.rawTolerantDiffPixels}, ink=${compoundLineVariantDiff.rawInkMaskDiffPixels}, max_channel_delta=${compoundLineVariantDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-gradient-pattern-parity');
   const gradientPatternParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
