@@ -11,6 +11,16 @@ import type {
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
+const STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES = new Set([
+  'context-fill',
+  'context-stroke',
+  'currentcolor',
+  'inherit',
+  'initial',
+  'revert',
+  'revert-layer',
+  'unset',
+]);
 
 export type LayerCanvasImageEffectSource = HTMLCanvasElement | OffscreenCanvas;
 export type LayerCanvasImageSource = HTMLImageElement | LayerCanvasImageEffectSource;
@@ -467,8 +477,9 @@ function isStaticSvgStyleSupported(style: string): boolean {
 function isStaticSvgPaintValueSupported(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   return normalized.length > 0
-    && !normalized.includes('url(')
-    && !normalized.includes('var(');
+    && !STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES.has(normalized)
+    && !/\burl\s*\(/.test(normalized)
+    && !/\bvar\s*\(/.test(normalized);
 }
 
 function isStaticSvgOpacityValueSupported(value: string): boolean {
