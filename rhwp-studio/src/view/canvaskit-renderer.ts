@@ -1234,15 +1234,50 @@ export class CanvasKitLayerRenderer {
       return;
     }
     const paint = new this.canvasKit.Paint();
-    canvas.drawImageRectOptions(
-      image,
-      this.canvasKit.XYWHRect(0, 0, imageWidth, imageHeight),
-      this.toRect(op.bbox),
-      payload.filtering === 'nearest' ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
-      this.canvasKit.MipmapMode.None,
-      paint,
-    );
-    paint.delete();
+    const transform = payload.placement?.runToPage;
+    if (!transform) {
+      paint.delete();
+      return;
+    }
+    const payloadTransform = payload.transformToRun;
+    canvas.save();
+    try {
+      canvas.concat([
+        transform.a,
+        transform.c,
+        transform.e,
+        transform.b,
+        transform.d,
+        transform.f,
+        0,
+        0,
+        1,
+      ]);
+      if (payloadTransform) {
+        canvas.concat([
+          payloadTransform.a,
+          payloadTransform.c,
+          payloadTransform.e,
+          payloadTransform.b,
+          payloadTransform.d,
+          payloadTransform.f,
+          0,
+          0,
+          1,
+        ]);
+      }
+      canvas.drawImageRectOptions(
+        image,
+        this.canvasKit.XYWHRect(0, 0, imageWidth, imageHeight),
+        this.canvasKit.XYWHRect(0, 0, width, height),
+        payload.filtering === 'nearest' ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
+        this.canvasKit.MipmapMode.None,
+        paint,
+      );
+    } finally {
+      canvas.restore();
+      paint.delete();
+    }
   }
 
   private renderSvgGlyphOutline(
@@ -1285,11 +1320,39 @@ export class CanvasKitLayerRenderer {
     if (pathLayers.length === 0) {
       return;
     }
+    const transform = payload.placement?.runToPage;
+    if (!transform) {
+      return;
+    }
+    const payloadTransform = payload.transformToRun;
     canvas.save();
-    canvas.translate(x, y);
-    canvas.scale(width / viewBox.width, height / viewBox.height);
-    canvas.translate(-viewBox.x, -viewBox.y);
     try {
+      canvas.concat([
+        transform.a,
+        transform.c,
+        transform.e,
+        transform.b,
+        transform.d,
+        transform.f,
+        0,
+        0,
+        1,
+      ]);
+      if (payloadTransform) {
+        canvas.concat([
+          payloadTransform.a,
+          payloadTransform.c,
+          payloadTransform.e,
+          payloadTransform.b,
+          payloadTransform.d,
+          payloadTransform.f,
+          0,
+          0,
+          1,
+        ]);
+      }
+      canvas.scale(width / viewBox.width, height / viewBox.height);
+      canvas.translate(-viewBox.x, -viewBox.y);
       for (const layer of pathLayers) {
         const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
         if (!path) {

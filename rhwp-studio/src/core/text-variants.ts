@@ -967,7 +967,7 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
     && isValidPayloadRange(bitmapGlyph.sourceRangeUtf8)
     && isValidPayloadRange(bitmapGlyph.glyphRange)
     && isValidTextRunPlacement(bitmapGlyph.placement)
-    && (bitmapGlyph.transformToRun === undefined || isIdentityAffineTransform(bitmapGlyph.transformToRun))
+    && (bitmapGlyph.transformToRun === undefined || isFiniteAffineTransform(bitmapGlyph.transformToRun))
     && (bitmapGlyph.strikePpem === undefined || isValidBitmapStrikePpem(bitmapGlyph.strikePpem))
     && bitmapGlyph.strikeSelection === 'producerResolved'
     && isSupportedBitmapAlphaMode(bitmapGlyph.alphaMode)
@@ -984,7 +984,7 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
     && isValidPayloadRange(svgGlyph.sourceRangeUtf8)
     && isValidPayloadRange(svgGlyph.glyphRange)
     && isValidTextRunPlacement(svgGlyph.placement)
-    && (svgGlyph.transformToRun === undefined || isIdentityAffineTransform(svgGlyph.transformToRun))
+    && (svgGlyph.transformToRun === undefined || isFiniteAffineTransform(svgGlyph.transformToRun))
     && viewBox !== undefined
     && Number.isFinite(viewBox.x)
     && Number.isFinite(viewBox.y)
@@ -1115,16 +1115,6 @@ function isFiniteAffineTransform(transform: LayerAffineTransform): boolean {
     && Number.isFinite(transform.d)
     && Number.isFinite(transform.e)
     && Number.isFinite(transform.f);
-}
-
-function isIdentityAffineTransform(transform: LayerAffineTransform): boolean {
-  return isFiniteAffineTransform(transform)
-    && transform.a === 1
-    && transform.b === 0
-    && transform.c === 0
-    && transform.d === 1
-    && transform.e === 0
-    && transform.f === 0;
 }
 
 function isTextVariantPayload(payload: LayerTextVariantPayload): payload is LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp {

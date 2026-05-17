@@ -339,11 +339,45 @@ export class Canvas2DLayerRenderer {
               return;
             }
             const previousImageSmoothingEnabled = ctx.imageSmoothingEnabled;
+            const { width, height } = op.bbox;
+            if (
+              !Number.isFinite(width)
+              || !Number.isFinite(height)
+              || width <= 0
+              || height <= 0
+            ) {
+              return;
+            }
+            const transform = payload.placement?.runToPage;
+            if (!transform) {
+              return;
+            }
+            const payloadTransform = payload.transformToRun;
+            ctx.save();
             try {
+              ctx.transform(
+                transform.a,
+                transform.b,
+                transform.c,
+                transform.d,
+                transform.e,
+                transform.f,
+              );
+              if (payloadTransform) {
+                ctx.transform(
+                  payloadTransform.a,
+                  payloadTransform.b,
+                  payloadTransform.c,
+                  payloadTransform.d,
+                  payloadTransform.e,
+                  payloadTransform.f,
+                );
+              }
               ctx.imageSmoothingEnabled = payload.filtering !== 'nearest';
-              this.drawDomImage(ctx, image, op.bbox);
+              this.drawDomImage(ctx, image, { x: 0, y: 0, width, height });
             } finally {
               ctx.imageSmoothingEnabled = previousImageSmoothingEnabled;
+              ctx.restore();
             }
             return;
           }
@@ -384,11 +418,33 @@ export class Canvas2DLayerRenderer {
             if (pathLayers.length === 0) {
               return;
             }
+            const transform = payload.placement?.runToPage;
+            if (!transform) {
+              return;
+            }
+            const payloadTransform = payload.transformToRun;
             ctx.save();
-            ctx.translate(x, y);
-            ctx.scale(width / viewBox.width, height / viewBox.height);
-            ctx.translate(-viewBox.x, -viewBox.y);
             try {
+              ctx.transform(
+                transform.a,
+                transform.b,
+                transform.c,
+                transform.d,
+                transform.e,
+                transform.f,
+              );
+              if (payloadTransform) {
+                ctx.transform(
+                  payloadTransform.a,
+                  payloadTransform.b,
+                  payloadTransform.c,
+                  payloadTransform.d,
+                  payloadTransform.e,
+                  payloadTransform.f,
+                );
+              }
+              ctx.scale(width / viewBox.width, height / viewBox.height);
+              ctx.translate(-viewBox.x, -viewBox.y);
               for (const layer of pathLayers) {
                 const path = new Path2D(layer.pathData);
                 const previousAlpha = ctx.globalAlpha;
