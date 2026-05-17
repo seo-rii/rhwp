@@ -1,6 +1,7 @@
 import {
   hasColrv0ColorLayersContract,
   hasColrv1Stage1ColorGraphContract,
+  hasGlyphOutlinePathsContract,
   hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
   isSupportedGlyphOutlineStrokeStyle,
@@ -194,7 +195,7 @@ export class Canvas2DLayerRenderer {
         ? payloadStatus.supported
         : (op.payloadKind ?? 'monochromeFill') === 'svgGlyph'
           ? payloadStatus.supported
-          : op.paths.length > 0;
+          : hasGlyphOutlinePathsContract(op);
     const payloadSupported = op.diagnostics.strictVisualEligible
       && payloadStatus.supported
       && hasReplayPayload;
@@ -1984,8 +1985,8 @@ function glyphOutlinePayloadStatus(
   }
   if (payloadKind === 'monochromeFill') {
     return {
-      supported: op.paths.length > 0 && !op.stroke,
-      reason: op.paths.length === 0
+      supported: hasGlyphOutlinePathsContract(op) && !op.stroke,
+      reason: !hasGlyphOutlinePathsContract(op)
         ? 'unsupportedOutlinePayload'
         : op.stroke
           ? 'glyphOutlineStrokeStyleUnsupported'
@@ -1994,8 +1995,8 @@ function glyphOutlinePayloadStatus(
   }
   if (payloadKind === 'monochromeFillStroke') {
     return {
-      supported: op.paths.length > 0 && isSupportedGlyphOutlineStrokeStyle(op.stroke),
-      reason: op.paths.length === 0 ? 'unsupportedOutlinePayload' : 'glyphOutlineStrokeStyleUnsupported',
+      supported: hasGlyphOutlinePathsContract(op) && isSupportedGlyphOutlineStrokeStyle(op.stroke),
+      reason: !hasGlyphOutlinePathsContract(op) ? 'unsupportedOutlinePayload' : 'glyphOutlineStrokeStyleUnsupported',
     };
   }
   if (payloadKind === 'bitmapGlyph') {

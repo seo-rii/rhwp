@@ -2787,6 +2787,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
           variant: { ...outlineVariant, anchorOpId: 'missing-text-anchor' },
         }],
       ), true);
+      const invalidPathMetadataSidecar = render(
+        makeTree(style, [{ ...outlinePath, glyphRange: { start: 2, end: 1 } }], true),
+        true,
+      );
       const strokePayloadSidecar = render(makeTree(style, [outlinePath], true, strokePayload), true);
       const unsupportedStrokePayloadSidecar = render(
         makeTree(style, [outlinePath], true, unsupportedStrokePayload),
@@ -2835,6 +2839,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const v2Fallback = render(makeV2TextTree(), false);
       const v2Strict = render(makeV2TextTree(), true);
       const invalidV2MissingFallback = render(makeInvalidV2TextTree(), false);
+      const invalidV2PathMetadataTree = makeV2TextTree();
+      const invalidV2OutlinePayload = invalidV2PathMetadataTree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload;
+      invalidV2OutlinePayload.paths = invalidV2OutlinePayload.paths.map((path, index) => (
+        index === 0
+          ? { ...path, sourceRangeUtf8: { start: 2, end: 1 } }
+          : path
+      ));
+      const invalidV2PathMetadata = render(invalidV2PathMetadataTree, false);
       const invalidV2CrossScope = render(makeV2CrossScopeTree(), false);
       const allowedV2CrossScope = render(makeV2CrossScopeTree(true), false);
       const invalidV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(), false);
@@ -3124,6 +3139,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         strictSidecar,
         duplicateSidecar,
         invalidAnchorSidecar,
+        invalidPathMetadataSidecar,
         strokePayloadSidecar,
         unsupportedStrokePayloadSidecar,
         colorPayloadSidecar,
@@ -3134,6 +3150,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         v2Fallback,
         v2Strict,
         invalidV2MissingFallback,
+        invalidV2PathMetadata,
         invalidV2CrossScope,
         allowedV2CrossScope,
         invalidV2MixedPerGlyph,
@@ -3261,6 +3278,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
     invalidAnchorSidecarReport?.selectedVariantId === 'textRun'
       && !invalidAnchorSidecarReport?.parts?.some((part) => part.variantId === 'glyphOutline'),
     `Canvas2D strict profile ignores sidecar with missing anchor=${JSON.stringify(invalidAnchorSidecarReport)}`,
+  );
+  const invalidPathMetadataSidecarReport = canvas2dGlyphOutlineProbe.invalidPathMetadataSidecar?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    invalidPathMetadataSidecarReport?.selectedVariantId === 'textRun'
+      && invalidPathMetadataSidecarReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedOutlinePayload'),
+      )
+      && invalidPathMetadataSidecarReport?.outlineEligibility?.payloadSupported === false,
+    `Canvas2D strict profile rejects GlyphOutline path metadata contract=${JSON.stringify(
+      invalidPathMetadataSidecarReport,
+    )}`,
   );
   const strokePayloadSidecarReport = canvas2dGlyphOutlineProbe.strokePayloadSidecar?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',
@@ -3571,6 +3602,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && invalidV2IssueCodes.includes('fallbackRequiredTextRunMissing'),
     `Canvas2D reports invalid schema v2 Text fallback contract=${JSON.stringify(
       canvas2dGlyphOutlineProbe.invalidV2MissingFallback?.textV2Validation,
+    )}`,
+  );
+  const invalidV2PathMetadataIssueCodes = canvas2dGlyphOutlineProbe.invalidV2PathMetadata
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidV2PathMetadataIssueCodes.includes('glyphOutlinePayloadContractInvalid'),
+    `Canvas2D reports invalid schema v2 GlyphOutline path metadata=${JSON.stringify(
+      canvas2dGlyphOutlineProbe.invalidV2PathMetadata?.textV2Validation,
     )}`,
   );
   const invalidCrossScopeIssueCodes = canvas2dGlyphOutlineProbe.invalidV2CrossScope

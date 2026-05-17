@@ -545,6 +545,16 @@ export function validateLayerTextV2Op(
         const payloadKind = part.payload.payloadKind ?? 'monochromeFill';
         switch (payloadKind) {
           case 'monochromeFill':
+            if (!hasGlyphOutlinePathsContract(part.payload)) {
+              issues.push({
+                code: 'glyphOutlinePayloadContractInvalid',
+                message: `Text variant '${variant.variantId}' carries a monochromeFill payload without strict glyph path metadata.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
             if (part.payload.stroke) {
               issues.push({
                 code: 'glyphOutlineStrokeStyleUnsupported',
@@ -565,6 +575,16 @@ export function validateLayerTextV2Op(
               issues.push({
                 code: 'glyphOutlinePayloadKindFeatureMissing',
                 message: `Text variant '${variant.variantId}' uses ${payloadKind} without the matching required feature.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            }
+            if (!hasGlyphOutlinePathsContract(part.payload)) {
+              issues.push({
+                code: 'glyphOutlinePayloadContractInvalid',
+                message: `Text variant '${variant.variantId}' carries a monochromeFillStroke payload without strict glyph path metadata.`,
                 opId: op.id,
                 paintOrderSlotId: op.paintOrderSlotId,
                 variantId: variant.variantId,
@@ -791,6 +811,18 @@ export function isSupportedGlyphOutlineStrokeStyle(
     && (stroke.paintOrder ?? 'fillThenStroke') === 'fillThenStroke';
 }
 
+export function hasGlyphOutlinePathsContract(payload: LayerGlyphOutlineOp): boolean {
+  return payload.paths.length > 0
+    && payload.paths.every((path) =>
+      isValidPayloadGlyphId(path.glyphId)
+      && isValidPayloadRange(path.sourceRangeUtf8)
+      && isValidPayloadRange(path.glyphRange)
+      && Array.isArray(path.commands)
+      && path.commands.length > 0
+      && isSupportedFillRule(path.fillRule ?? 'nonzero'),
+    );
+}
+
 export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): boolean {
   const colorLayers = payload.colorLayers;
   return payload.payloadKind === 'colorLayers'
@@ -984,6 +1016,10 @@ function isValidPayloadRange(range: { start: number; end: number } | undefined):
 
 function isValidPayloadGraphNodeId(nodeId: number | undefined): boolean {
   return typeof nodeId === 'number' && Number.isInteger(nodeId) && nodeId >= 0;
+}
+
+function isValidPayloadGlyphId(glyphId: number | undefined): boolean {
+  return typeof glyphId === 'number' && Number.isInteger(glyphId) && glyphId >= 0;
 }
 
 function isValidResourceId(resourceId: string | number | undefined): boolean {
