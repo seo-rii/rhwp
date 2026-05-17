@@ -124,6 +124,12 @@ function isStaticSvgPathElementSupported(element: Element): boolean {
     if (name === 'fill' && !isStaticSvgPaintValueSupported(attribute.value)) {
       return false;
     }
+    if ((name === 'opacity' || name === 'fill-opacity') && !isStaticSvgOpacityValueSupported(attribute.value)) {
+      return false;
+    }
+    if (name === 'fill-rule' && !isStaticSvgFillRuleValueSupported(attribute.value)) {
+      return false;
+    }
     if (name === 'style' && !isStaticSvgStyleSupported(attribute.value)) {
       return false;
     }
@@ -149,6 +155,12 @@ function isStaticSvgStyleSupported(style: string): boolean {
     if (property === 'fill' && !isStaticSvgPaintValueSupported(value)) {
       return false;
     }
+    if ((property === 'opacity' || property === 'fill-opacity') && !isStaticSvgOpacityValueSupported(value)) {
+      return false;
+    }
+    if (property === 'fill-rule' && !isStaticSvgFillRuleValueSupported(value)) {
+      return false;
+    }
   }
   return true;
 }
@@ -158,6 +170,20 @@ function isStaticSvgPaintValueSupported(value: string): boolean {
   return normalized.length > 0
     && !normalized.includes('url(')
     && !normalized.includes('var(');
+}
+
+function isStaticSvgOpacityValueSupported(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  const numeric = trimmed.endsWith('%') ? trimmed.slice(0, -1).trim() : trimmed;
+  return numeric.length > 0 && Number.isFinite(Number(numeric));
+}
+
+function isStaticSvgFillRuleValueSupported(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === 'nonzero' || normalized === 'evenodd';
 }
 
 function svgOpacity(value: string | null): number {

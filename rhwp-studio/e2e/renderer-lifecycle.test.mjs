@@ -4377,6 +4377,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
     unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
+    const unsupportedSvgOpacityTree = treeFor(svgOutline);
+    unsupportedSvgOpacityTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" opacity="not-a-number"/>';
+    unsupportedSvgOpacityTree.resources.svgHashes[0] = 'svg-glyph-unsupported-opacity';
+    const unsupportedSvgFillRuleTree = treeFor(svgOutline);
+    unsupportedSvgFillRuleTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" fill-rule="inherit"/>';
+    unsupportedSvgFillRuleTree.resources.svgHashes[0] = 'svg-glyph-unsupported-fill-rule';
 
     return {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
@@ -4389,6 +4395,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       duplicateSvgGlyphKey: await render(duplicateSvgResourceTree),
       unsafeSvgGlyphResource: await render(unsafeSvgResourceTree),
       unsupportedSvgGlyphStrokeResource: await render(unsupportedSvgStrokeTree),
+      unsupportedSvgGlyphOpacityResource: await render(unsupportedSvgOpacityTree),
+      unsupportedSvgGlyphFillRuleResource: await render(unsupportedSvgFillRuleTree),
     };
   });
   assert(!canvaskitGlyphOutlineProbe.error, canvaskitGlyphOutlineProbe.error || 'CanvasKit glyph outline probe available');
@@ -4472,6 +4480,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsupportedSvgGlyphStrokeResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgOpacityResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphOpacityResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgFillRuleResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphFillRuleResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   assert(
     canvaskitUnsafeSvgResourceReport?.selectedVariantId === 'textRun'
       && canvaskitUnsafeSvgResourceReport?.rejectedVariants?.some(
@@ -4482,10 +4498,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitUnsupportedSvgStrokeResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitUnsupportedSvgOpacityResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgOpacityResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitUnsupportedSvgFillRuleResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgFillRuleResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
       ),
     `CanvasKit rejects non-path-only SvgGlyph resources=${JSON.stringify({
       unsafe: canvaskitUnsafeSvgResourceReport,
       unsupportedStroke: canvaskitUnsupportedSvgStrokeResourceReport,
+      unsupportedOpacity: canvaskitUnsupportedSvgOpacityResourceReport,
+      unsupportedFillRule: canvaskitUnsupportedSvgFillRuleResourceReport,
     })}`,
   );
   const canvaskitMonochromeBlackPixels = countPixels(
