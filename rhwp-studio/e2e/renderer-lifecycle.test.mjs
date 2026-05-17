@@ -2896,6 +2896,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
         cyclicReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const invalidTransformReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      invalidTransformReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph
+        .nodes
+        .find((node) => node.kind === 'transform')
+        .transform
+        .transform
+        .a = Number.POSITIVE_INFINITY;
+      const invalidTransformReservedV2ColorPayloadColrV1 = render(
+        invalidTransformReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -2914,6 +2930,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
             bitmapGlyph: {
               ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
               filtering: 'backendDefault',
+            },
+          },
+          true,
+        ),
+        true,
+      );
+      const invalidReservedV2BitmapTransformPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              transformToRun: { a: 1, b: 0, c: 0, d: Number.POSITIVE_INFINITY, e: 0, f: 0 },
             },
           },
           true,
@@ -2990,8 +3021,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         reservedV2ColorPayloadColrV1,
         invalidReservedV2ColorPayloadColrV1,
         cyclicReservedV2ColorPayloadColrV1,
+        invalidTransformReservedV2ColorPayloadColrV1,
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
+        invalidReservedV2BitmapTransformPayload,
         reservedV2SvgPayload,
         invalidReservedV2SvgPayload,
         invalidReservedV2SvgViewBoxPayload,
@@ -3170,6 +3203,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .cyclicReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidTransformReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .invalidTransformReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
       && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
@@ -3198,6 +3235,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `Canvas2D strict profile rejects cyclic COLRv1 color graph payload=${JSON.stringify({
       cyclicV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .cyclicReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+    })}`,
+  );
+  assert(
+    invalidTransformReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
+    `Canvas2D strict profile rejects non-finite COLRv1 transform payload=${JSON.stringify({
+      invalidTransformV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .invalidTransformReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );
@@ -3245,6 +3290,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       })}`,
     );
   }
+  const invalidReservedV2BitmapTransformIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapTransformPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidReservedV2BitmapTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+    `Canvas2D strict profile rejects non-finite BitmapGlyph transform contract=${JSON.stringify({
+      invalidV2BitmapTransformValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapTransformPayload
+        ?.textV2Validation,
+    })}`,
+  );
   const invalidReservedV2SvgViewBoxIssueCodes = canvas2dGlyphOutlineProbe
     .invalidReservedV2SvgViewBoxPayload
     ?.textV2Validation

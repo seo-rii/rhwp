@@ -1,4 +1,5 @@
 import type {
+  LayerAffineTransform,
   LayerGlyphOutlineOp,
   LayerGlyphRunOp,
   LayerNode,
@@ -800,7 +801,8 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
       && layer.commands.length > 0
       && layer.fill !== undefined
       && layer.fillRule !== undefined
-      && layer.paletteIndex !== undefined,
+      && layer.paletteIndex !== undefined
+      && (layer.transformToRun === undefined || isFiniteAffineTransform(layer.transformToRun)),
     );
 }
 
@@ -859,6 +861,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.transform !== undefined
         && nodeIds.has(node.transform.childNodeId)
           && node.transform.childNodeId !== node.nodeId
+        && isFiniteAffineTransform(node.transform.transform)
         )
       ) {
         return false;
@@ -911,6 +914,7 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
     && bitmapGlyph.sourceRangeUtf8 !== undefined
     && bitmapGlyph.glyphRange !== undefined
     && bitmapGlyph.placement !== undefined
+    && (bitmapGlyph.transformToRun === undefined || isFiniteAffineTransform(bitmapGlyph.transformToRun))
     && bitmapGlyph.strikeSelection === 'producerResolved'
     && bitmapGlyph.alphaMode !== undefined
     && bitmapGlyph.scalingPolicy !== undefined
@@ -927,6 +931,7 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
     && svgGlyph.sourceRangeUtf8 !== undefined
     && svgGlyph.glyphRange !== undefined
     && svgGlyph.placement !== undefined
+    && (svgGlyph.transformToRun === undefined || isFiniteAffineTransform(svgGlyph.transformToRun))
     && viewBox !== undefined
     && Number.isFinite(viewBox.x)
     && Number.isFinite(viewBox.y)
@@ -939,6 +944,15 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
     && svgGlyph.animationAllowed === false
     && svgGlyph.externalResourcesAllowed === false
     && svgGlyph.interactivityAllowed === false;
+}
+
+function isFiniteAffineTransform(transform: LayerAffineTransform): boolean {
+  return Number.isFinite(transform.a)
+    && Number.isFinite(transform.b)
+    && Number.isFinite(transform.c)
+    && Number.isFinite(transform.d)
+    && Number.isFinite(transform.e)
+    && Number.isFinite(transform.f);
 }
 
 function isTextVariantPayload(payload: LayerTextVariantPayload): payload is LayerTextRunOp | LayerGlyphRunOp | LayerGlyphOutlineOp {
