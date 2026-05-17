@@ -1558,7 +1558,7 @@ export class CanvasKitLayerRenderer {
     fallbackObjects?: { typeface: Typeface; font: Font; paint: Paint },
   ): void {
     if (emphasisDot === 1 || emphasisDot === 2) {
-      const radius = Math.max(size * 0.32, 1);
+      const radius = Math.max(size * 0.48, 1);
       const centerY = baselineY - size * 0.45;
       const paint = this.makePaint(color, emphasisDot === 1 ? 'fill' : 'stroke');
       if (emphasisDot === 2) {

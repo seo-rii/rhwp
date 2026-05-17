@@ -9807,6 +9807,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     textDecorationCanvas2dMagentaPixels > 8 && textDecorationCanvaskitMagentaPixels > 8,
     `text decoration emphasis dots draw magenta pixels canvas2d=${textDecorationCanvas2dMagentaPixels}, canvaskit=${textDecorationCanvaskitMagentaPixels}`,
   );
+  assert(
+    textDecorationCanvaskitMagentaPixels >= textDecorationCanvas2dMagentaPixels * 0.65,
+    `CanvasKit text decoration emphasis dot coverage stays close to Canvas2D canvas2d=${textDecorationCanvas2dMagentaPixels}, canvaskit=${textDecorationCanvaskitMagentaPixels}`,
+  );
   const textDecorationOptionsDiff = await comparePngBuffers(
     pngBufferFromDataUrl(textDecorationOptionsParityProbe.canvas2d),
     pngBufferFromDataUrl(textDecorationOptionsParityProbe.canvaskit),
