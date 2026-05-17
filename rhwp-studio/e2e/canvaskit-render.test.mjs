@@ -75,11 +75,14 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
 ]);
 const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'compat' ? 'compat' : 'default';
 const REQUESTED_CANVASKIT_SURFACE = (process.env.RHWP_CANVASKIT_SURFACE ?? '').trim().toLowerCase();
-const CANVASKIT_SURFACE = REQUESTED_CANVASKIT_SURFACE === 'sw' || REQUESTED_CANVASKIT_SURFACE === 'cpu'
-  ? 'software'
-  : ['auto', 'webgl', 'software'].includes(REQUESTED_CANVASKIT_SURFACE)
-    ? REQUESTED_CANVASKIT_SURFACE
-  : 'auto';
+let CANVASKIT_SURFACE = 'auto';
+if (REQUESTED_CANVASKIT_SURFACE === 'sw' || REQUESTED_CANVASKIT_SURFACE === 'cpu') {
+  CANVASKIT_SURFACE = 'software';
+} else if (REQUESTED_CANVASKIT_SURFACE === 'gpu') {
+  CANVASKIT_SURFACE = 'webgpu';
+} else if (['auto', 'webgpu', 'webgl', 'software'].includes(REQUESTED_CANVASKIT_SURFACE)) {
+  CANVASKIT_SURFACE = REQUESTED_CANVASKIT_SURFACE;
+}
 const RENDER_PROFILE = process.env.RHWP_RENDER_PROFILE?.trim() || 'screen';
 const PERFORMANCE_ITERATIONS = Math.max(
   1,
@@ -446,27 +449,44 @@ async function renderScenario(page, backend, caseInfo) {
     `${caseInfo.name} repeated layer export svg payload imports=${layerSummary?.secondTreeSvgPayloadsImported}, omitted=${layerSummary?.secondTreeSvgPayloadsOmitted}`,
   );
   if (backend === 'canvaskit') {
+    const surfaceDiagnostics = layerSummary?.surfaceDiagnostics;
+    const expectedSurfaceBackends = CANVASKIT_SURFACE === 'webgpu'
+      ? ['webgpu', 'webgl', 'software']
+      : ['webgl', 'software'];
     assert(layerSummary?.mode === CANVASKIT_MODE, `${caseInfo.name} canvaskitMode=${CANVASKIT_MODE}`);
     assert(
-      layerSummary?.surfaceDiagnostics?.preference === CANVASKIT_SURFACE,
-      `${caseInfo.name} CanvasKit surface preference=${JSON.stringify(layerSummary?.surfaceDiagnostics)}`,
+      surfaceDiagnostics?.preference === CANVASKIT_SURFACE,
+      `${caseInfo.name} CanvasKit surface preference=${JSON.stringify(surfaceDiagnostics)}`,
     );
     assert(
-      layerSummary?.surfaceDiagnostics?.backend === 'webgl'
-        || layerSummary?.surfaceDiagnostics?.backend === 'software',
-      `${caseInfo.name} CanvasKit surface backend=${JSON.stringify(layerSummary?.surfaceDiagnostics)}`,
+      expectedSurfaceBackends.includes(surfaceDiagnostics?.backend),
+      `${caseInfo.name} CanvasKit surface backend=${JSON.stringify(surfaceDiagnostics)}`,
     );
     if (CANVASKIT_SURFACE === 'software') {
       assert(
-        layerSummary?.surfaceDiagnostics?.backend === 'software'
-          && layerSummary?.surfaceDiagnostics?.webglAttempts === 0,
-        `${caseInfo.name} CanvasKit forced software surface=${JSON.stringify(layerSummary?.surfaceDiagnostics)}`,
+        surfaceDiagnostics?.backend === 'software'
+          && surfaceDiagnostics?.webglAttempts === 0,
+        `${caseInfo.name} CanvasKit forced software surface=${JSON.stringify(surfaceDiagnostics)}`,
+      );
+    }
+    if (CANVASKIT_SURFACE === 'webgpu') {
+      assert(
+        (surfaceDiagnostics?.webgpuAttempts ?? 0) >= 1,
+        `${caseInfo.name} CanvasKit WebGPU surface attempted=${JSON.stringify(surfaceDiagnostics)}`,
+      );
+      assert(
+        surfaceDiagnostics?.backend === 'webgpu'
+          || (
+            (surfaceDiagnostics?.webgpuFailures ?? 0) >= 1
+            && typeof surfaceDiagnostics?.webgpuLastFailure === 'string'
+          ),
+        `${caseInfo.name} CanvasKit WebGPU fallback records failure=${JSON.stringify(surfaceDiagnostics)}`,
       );
     }
   }
 
   const screenshotName = backend === 'canvaskit'
-    ? `${caseInfo.name}-${backend}-${CANVASKIT_MODE}`
+    ? `${caseInfo.name}-${backend}-${CANVASKIT_MODE}-${CANVASKIT_SURFACE}`
     : `${caseInfo.name}-${backend}`;
   const screenshotStart = performance.now();
   const shot = await screenshotCanvas(page, screenshotName);
