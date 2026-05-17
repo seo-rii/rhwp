@@ -656,12 +656,34 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Option<Image> {
 }
 
 pub fn rasterize_svg_fragment(svg_fragment: &str, width: f32, height: f32) -> Option<Image> {
-    if width <= 0.0 || height <= 0.0 {
+    rasterize_svg_fragment_with_view_box(svg_fragment, width, height, 0.0, 0.0, width, height)
+}
+
+pub fn rasterize_svg_fragment_with_view_box(
+    svg_fragment: &str,
+    width: f32,
+    height: f32,
+    view_box_x: f32,
+    view_box_y: f32,
+    view_box_width: f32,
+    view_box_height: f32,
+) -> Option<Image> {
+    if width <= 0.0
+        || height <= 0.0
+        || view_box_width <= 0.0
+        || view_box_height <= 0.0
+        || !width.is_finite()
+        || !height.is_finite()
+        || !view_box_x.is_finite()
+        || !view_box_y.is_finite()
+        || !view_box_width.is_finite()
+        || !view_box_height.is_finite()
+    {
         return None;
     }
 
     let svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.2}\" height=\"{height:.2}\" viewBox=\"0 0 {width:.2} {height:.2}\">{svg_fragment}</svg>"
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.2}\" height=\"{height:.2}\" viewBox=\"{view_box_x:.2} {view_box_y:.2} {view_box_width:.2} {view_box_height:.2}\" preserveAspectRatio=\"none\">{svg_fragment}</svg>"
     );
     let mut options = usvg::Options::default();
     let fontdb = options.fontdb_mut();

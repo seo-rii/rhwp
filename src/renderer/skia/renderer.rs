@@ -25,8 +25,8 @@ use super::cache_key::StaticSubtreeCacheKey;
 use super::equation_conv::render_equation;
 use super::form_replay;
 use super::image_conv::{
-    decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder, rasterize_svg_fragment,
-    ImageSampling,
+    decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder,
+    rasterize_svg_fragment_with_view_box, ImageSampling,
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
@@ -348,15 +348,27 @@ fn native_skia_glyph_outline_payload_status(
             let Some(bbox) = bbox else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
+            let Some(view_box) = payload.view_box else {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            };
             if payload.has_static_sanitized_contract()
                 && bbox.width.is_finite()
                 && bbox.height.is_finite()
-                && rasterize_svg_fragment(fragment, bbox.width as f32, bbox.height as f32).is_some()
             {
-                (true, None)
-            } else {
-                (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+                let image = rasterize_svg_fragment_with_view_box(
+                    fragment,
+                    bbox.width as f32,
+                    bbox.height as f32,
+                    view_box.x as f32,
+                    view_box.y as f32,
+                    view_box.width as f32,
+                    view_box.height as f32,
+                );
+                if image.is_some() {
+                    return (true, None);
+                }
             }
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
         }
     }
 }
@@ -1058,8 +1070,18 @@ impl SkiaLayerRenderer {
         let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
             return;
         };
-        let Some(image) = rasterize_svg_fragment(fragment, bbox.width as f32, bbox.height as f32)
-        else {
+        let Some(view_box) = payload.view_box else {
+            return;
+        };
+        let Some(image) = rasterize_svg_fragment_with_view_box(
+            fragment,
+            bbox.width as f32,
+            bbox.height as f32,
+            view_box.x as f32,
+            view_box.y as f32,
+            view_box.width as f32,
+            view_box.height as f32,
+        ) else {
             return;
         };
         draw_decoded_image(

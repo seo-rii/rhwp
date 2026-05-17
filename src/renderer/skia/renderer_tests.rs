@@ -3010,7 +3010,7 @@ fn native_skia_replays_static_svg_glyph_resource_variant() {
     let renderer = SkiaLayerRenderer::new();
     let mut resources = ResourceArena::default();
     let svg_resource_id = resources.intern_svg_fragment(
-        "<rect x=\"0\" y=\"0\" width=\"190\" height=\"82\" fill=\"#00ffff\"/>",
+        "<rect x=\"100\" y=\"50\" width=\"40\" height=\"30\" fill=\"#00ffff\"/>",
     );
     let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::SvgGlyph, None, None);
     outline.svg_glyph = Some(SvgGlyphPayload {
@@ -3020,10 +3020,10 @@ fn native_skia_replays_static_svg_glyph_resource_variant() {
         placement: Some(outline.placement),
         transform_to_run: None,
         view_box: Some(SvgGlyphViewBox {
-            x: 0.0,
-            y: 0.0,
-            width: 190.0,
-            height: 82.0,
+            x: 100.0,
+            y: 50.0,
+            width: 40.0,
+            height: 30.0,
         }),
         intrinsic_size: None,
         security_mode: SvgGlyphSecurityMode::StaticSanitized,
@@ -3048,7 +3048,7 @@ fn native_skia_replays_static_svg_glyph_resource_variant() {
         .expect("native Skia SvgGlyph outline selection report");
 
     assert!(
-        cyan_pixels > 1_000,
+        cyan_pixels > 10_000,
         "SvgGlyph should replay the sanitized vector resource, cyan={cyan_pixels}"
     );
     assert_eq!(report.selected_variant_id, "glyphOutline");
