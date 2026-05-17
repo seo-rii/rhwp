@@ -24,7 +24,10 @@ use super::cache::StaticPictureCache;
 use super::cache_key::StaticSubtreeCacheKey;
 use super::equation_conv::render_equation;
 use super::form_replay;
-use super::image_conv::{draw_decoded_image, draw_missing_image_placeholder, ImageSampling};
+use super::image_conv::{
+    decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder, rasterize_svg_fragment,
+    ImageSampling,
+};
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
     make_stroke_paint,
@@ -283,6 +286,8 @@ fn color_layers_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {
 
 fn native_skia_glyph_outline_payload_status(
     outline: &LayerGlyphOutlinePaint,
+    bbox: Option<BoundingBox>,
+    resources: &ResourceArena,
 ) -> (bool, Option<VariantRejectReason>) {
     if !affine_is_finite(&outline.placement.run_to_page)
         || !outline.placement.baseline_y.is_finite()
@@ -321,18 +326,48 @@ fn native_skia_glyph_outline_payload_status(
             }
         }
         GlyphOutlinePayloadKind::BitmapGlyph => {
-            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+            let Some(payload) = outline.bitmap_glyph.as_ref() else {
+                return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
+            };
+            let Some(bytes) = resources.image_bytes(payload.image_resource_id) else {
+                return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
+            };
+            if payload.has_strict_visual_contract() && decode_image_bytes(bytes).is_some() {
+                (true, None)
+            } else {
+                (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+            }
         }
         GlyphOutlinePayloadKind::SvgGlyph => {
-            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+            let Some(payload) = outline.svg_glyph.as_ref() else {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            };
+            let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            };
+            let Some(bbox) = bbox else {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            };
+            if payload.has_static_sanitized_contract()
+                && bbox.width.is_finite()
+                && bbox.height.is_finite()
+                && rasterize_svg_fragment(fragment, bbox.width as f32, bbox.height as f32).is_some()
+            {
+                (true, None)
+            } else {
+                (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+            }
         }
     }
 }
 
 fn native_skia_glyph_outline_replay_status(
     outline: &LayerGlyphOutlinePaint,
+    bbox: Option<BoundingBox>,
+    resources: &ResourceArena,
 ) -> VariantReplayStatus {
-    let (payload_supported, payload_reason) = native_skia_glyph_outline_payload_status(outline);
+    let (payload_supported, payload_reason) =
+        native_skia_glyph_outline_payload_status(outline, bbox, resources);
     let strict_visual_eligible = outline.diagnostics.strict_visual_eligible;
     let paint_style_supported = outline.paint_style.is_fill_only_glyph_replay();
     let replay_eligible = strict_visual_eligible && payload_supported && paint_style_supported;
@@ -360,8 +395,12 @@ fn native_skia_glyph_outline_replay_status(
     status
 }
 
-fn native_skia_can_replay_glyph_outline(outline: &LayerGlyphOutlinePaint) -> bool {
-    native_skia_glyph_outline_replay_status(outline).replayable
+fn native_skia_can_replay_glyph_outline(
+    outline: &LayerGlyphOutlinePaint,
+    bbox: BoundingBox,
+    resources: &ResourceArena,
+) -> bool {
+    native_skia_glyph_outline_replay_status(outline, Some(bbox), resources).replayable
 }
 
 fn calc_arrow_dims(stroke_width: f64, line_len: f64, arrow_size: u8) -> (f64, f64) {
@@ -763,8 +802,8 @@ impl SkiaLayerRenderer {
                         _ => VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported),
                     },
                     |op| match op {
-                        PaintOp::GlyphOutline { outline, .. } => {
-                            native_skia_glyph_outline_replay_status(outline)
+                        PaintOp::GlyphOutline { bbox, outline } => {
+                            native_skia_glyph_outline_replay_status(outline, Some(*bbox), resources)
                         }
                         _ => VariantReplayStatus::rejected(
                             VariantRejectReason::BackendDoesNotSupportVariant,
@@ -897,10 +936,20 @@ impl SkiaLayerRenderer {
     fn render_glyph_outline(
         &self,
         canvas: &Canvas,
+        bbox: BoundingBox,
         outline: &LayerGlyphOutlinePaint,
+        resources: &ResourceArena,
         replay: &SkiaReplayContext,
     ) {
-        if !native_skia_can_replay_glyph_outline(outline) {
+        if !native_skia_can_replay_glyph_outline(outline, bbox, resources) {
+            return;
+        }
+        if outline.payload_kind == GlyphOutlinePayloadKind::BitmapGlyph {
+            self.render_glyph_outline_bitmap(canvas, bbox, outline, resources, replay);
+            return;
+        }
+        if outline.payload_kind == GlyphOutlinePayloadKind::SvgGlyph {
+            self.render_glyph_outline_svg(canvas, bbox, outline, resources, replay);
             return;
         }
         let mut fill_paint = Paint::default();
@@ -950,6 +999,82 @@ impl SkiaLayerRenderer {
             GlyphOutlinePayloadKind::BitmapGlyph | GlyphOutlinePayloadKind::SvgGlyph => {}
         }
         canvas.restore();
+    }
+
+    fn glyph_outline_image_sampling(
+        filtering: Option<crate::paint::BitmapGlyphFiltering>,
+        fallback: ImageSampling,
+    ) -> ImageSampling {
+        match filtering {
+            Some(crate::paint::BitmapGlyphFiltering::Nearest) => ImageSampling::nearest(),
+            Some(crate::paint::BitmapGlyphFiltering::Linear) => ImageSampling::linear(),
+            _ => fallback,
+        }
+    }
+
+    fn render_glyph_outline_bitmap(
+        &self,
+        canvas: &Canvas,
+        bbox: BoundingBox,
+        outline: &LayerGlyphOutlinePaint,
+        resources: &ResourceArena,
+        replay: &SkiaReplayContext,
+    ) {
+        let Some(payload) = outline.bitmap_glyph.as_ref() else {
+            return;
+        };
+        let Some(bytes) = resources.image_bytes(payload.image_resource_id) else {
+            return;
+        };
+        let Some(image) = decode_image_bytes(bytes) else {
+            return;
+        };
+        draw_decoded_image(
+            canvas,
+            &image,
+            bbox.x as f32,
+            bbox.y as f32,
+            bbox.width as f32,
+            bbox.height as f32,
+            None,
+            None,
+            None,
+            ImageEffect::RealPic,
+            Self::glyph_outline_image_sampling(payload.filtering, replay.image_sampling()),
+        );
+    }
+
+    fn render_glyph_outline_svg(
+        &self,
+        canvas: &Canvas,
+        bbox: BoundingBox,
+        outline: &LayerGlyphOutlinePaint,
+        resources: &ResourceArena,
+        replay: &SkiaReplayContext,
+    ) {
+        let Some(payload) = outline.svg_glyph.as_ref() else {
+            return;
+        };
+        let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
+            return;
+        };
+        let Some(image) = rasterize_svg_fragment(fragment, bbox.width as f32, bbox.height as f32)
+        else {
+            return;
+        };
+        draw_decoded_image(
+            canvas,
+            &image,
+            bbox.x as f32,
+            bbox.y as f32,
+            bbox.width as f32,
+            bbox.height as f32,
+            None,
+            None,
+            None,
+            ImageEffect::RealPic,
+            replay.image_sampling(),
+        );
     }
 
     fn render_op(
@@ -1163,8 +1288,8 @@ impl SkiaLayerRenderer {
                 }
                 canvas.restore();
             }
-            PaintOp::GlyphOutline { outline, .. } => {
-                self.render_glyph_outline(canvas, outline, replay);
+            PaintOp::GlyphOutline { bbox, outline } => {
+                self.render_glyph_outline(canvas, *bbox, outline, resources, replay);
             }
             PaintOp::CharOverlap { bbox, overlap } => {
                 let mut run = crate::paint::LayerTextRunPaint {

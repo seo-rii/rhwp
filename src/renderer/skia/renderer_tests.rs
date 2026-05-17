@@ -5,20 +5,23 @@ use super::{
 use crate::model::image::ImageEffect;
 use crate::model::style::UnderlineType;
 use crate::paint::{
-    BinaryResourceKind, BinaryResourceRef, CacheHint, ClipKind, ColorGlyphFormat, ColorLayerNode,
-    ColorLayersPayload, ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
-    ColorPaintSolidPathNode, ColorPaintTransformNode, FontBlobKey, FontBlobResource,
-    FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId,
-    FontInstanceKey, FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
-    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    BinaryResourceKind, BinaryResourceRef, BitmapAlphaMode, BitmapGlyphFiltering,
+    BitmapGlyphPayload, BitmapGlyphScalingPolicy, BitmapStrikeSelection, CacheHint, ClipKind,
+    ColorGlyphFormat, ColorLayerNode, ColorLayersPayload, ColorPaintGraphNode,
+    ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintSolidPathNode,
+    ColorPaintTransformNode, FontBlobKey, FontBlobResource, FontColorGlyphRef, FontDigest,
+    FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey, FontPortability,
+    FontResourceSource, GlyphCluster, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
+    GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
     GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerBuilder,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
     LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
     LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
     PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena,
-    ShapeKey, ShapingEngineId, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId,
-    TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality, WritingMode,
+    ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
+    SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
+    TextVariantKind, TextVariantQuality, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -256,6 +259,18 @@ fn glyph_outline_variant_test_tree(
     outline: LayerGlyphOutlinePaint,
     fallback_visible: bool,
 ) -> PageLayerTree {
+    glyph_outline_variant_test_tree_with_resources(
+        outline,
+        fallback_visible,
+        ResourceArena::default(),
+    )
+}
+
+fn glyph_outline_variant_test_tree_with_resources(
+    outline: LayerGlyphOutlinePaint,
+    fallback_visible: bool,
+    resources: ResourceArena,
+) -> PageLayerTree {
     let source = outline.source.clone();
     let bbox = BoundingBox::new(0.0, 0.0, 190.0, 82.0);
     let fallback_style = TextStyle {
@@ -305,7 +320,7 @@ fn glyph_outline_variant_test_tree(
                 PaintOp::GlyphOutline { bbox, outline },
             ],
         ),
-        ResourceArena::default(),
+        resources,
     )
 }
 
@@ -2931,6 +2946,110 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
     assert!(
         blue_pixels > 250,
         "COLRv1 stage-1 GlyphOutline should paint the normalized solid graph, blue={blue_pixels}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+}
+
+#[test]
+fn native_skia_replays_bitmap_glyph_resource_variant() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("bitmap glyph pixmap");
+    for pixel in pixmap.pixels_mut() {
+        *pixel = tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 255, 255).unwrap();
+    }
+    let image_bytes = pixmap.encode_png().expect("bitmap glyph png");
+    let mut resources = ResourceArena::default();
+    let image_resource_id = resources.intern_image_bytes(&image_bytes);
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
+    outline.bitmap_glyph = Some(BitmapGlyphPayload {
+        image_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(outline.placement),
+        transform_to_run: None,
+        strike_ppem: Some((4, 4)),
+        strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+        pixel_format: Some("rgba8".to_string()),
+        color_space: None,
+        alpha_mode: Some(BitmapAlphaMode::Straight),
+        scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+        filtering: Some(BitmapGlyphFiltering::Nearest),
+    });
+    let tree = glyph_outline_variant_test_tree_with_resources(outline, true, resources);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("BitmapGlyph outline variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let magenta_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 180 && pixel.blue() > 180 && pixel.green() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia BitmapGlyph outline selection report");
+
+    assert!(
+        magenta_pixels > 1_000,
+        "BitmapGlyph should replay the referenced image resource, magenta={magenta_pixels}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+}
+
+#[test]
+fn native_skia_replays_static_svg_glyph_resource_variant() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut resources = ResourceArena::default();
+    let svg_resource_id = resources.intern_svg_fragment(
+        "<rect x=\"0\" y=\"0\" width=\"190\" height=\"82\" fill=\"#00ffff\"/>",
+    );
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::SvgGlyph, None, None);
+    outline.svg_glyph = Some(SvgGlyphPayload {
+        vector_resource_id: svg_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(outline.placement),
+        transform_to_run: None,
+        view_box: Some(SvgGlyphViewBox {
+            x: 0.0,
+            y: 0.0,
+            width: 190.0,
+            height: 82.0,
+        }),
+        intrinsic_size: None,
+        security_mode: SvgGlyphSecurityMode::StaticSanitized,
+        script_allowed: false,
+        animation_allowed: false,
+        external_resources_allowed: false,
+        interactivity_allowed: false,
+    });
+    let tree = glyph_outline_variant_test_tree_with_resources(outline, true, resources);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("SvgGlyph outline variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let cyan_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.green() > 180 && pixel.blue() > 180 && pixel.red() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia SvgGlyph outline selection report");
+
+    assert!(
+        cyan_pixels > 1_000,
+        "SvgGlyph should replay the sanitized vector resource, cyan={cyan_pixels}"
     );
     assert_eq!(report.selected_variant_id, "glyphOutline");
     assert_eq!(
