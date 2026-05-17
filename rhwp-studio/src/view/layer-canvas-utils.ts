@@ -90,11 +90,12 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         if (rx !== null && ry !== null && rx > 0 && ry > 0) {
           pathData = `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
         }
-      } else if (elementName === 'polygon') {
+      } else if (elementName === 'polygon' || elementName === 'polyline') {
         const points = svgPointList(attributes.get('points') ?? '');
         if (points.length >= 3) {
           const [first, ...rest] = points;
-          pathData = `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}Z`;
+          const closePath = elementName === 'polygon' ? 'Z' : '';
+          pathData = `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}${closePath}`;
         }
       } else if (elementName === 'rect') {
         const x = Number(attributes.get('x') ?? '0');
@@ -159,7 +160,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   }
 
   const layers: StaticSvgPathLayer[] = [];
-  for (const element of document.querySelectorAll('path, rect, circle, ellipse, polygon')) {
+  for (const element of document.querySelectorAll('path, rect, circle, ellipse, polygon, polyline')) {
     const pathData = staticSvgElementPathData(element);
     if (!pathData) {
       continue;
@@ -204,13 +205,14 @@ function staticSvgElementPathData(element: Element): string | null {
     }
     return `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
   }
-  if (elementName === 'polygon') {
+  if (elementName === 'polygon' || elementName === 'polyline') {
     const points = svgPointListAttribute(element, 'points');
     if (points.length < 3) {
       return null;
     }
     const [first, ...rest] = points;
-    return `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}Z`;
+    const closePath = elementName === 'polygon' ? 'Z' : '';
+    return `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}${closePath}`;
   }
   if (elementName !== 'rect') {
     return null;
@@ -291,7 +293,7 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
   if (elementName === 'ellipse') {
     return new Set(['cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
-  if (elementName === 'polygon') {
+  if (elementName === 'polygon' || elementName === 'polyline') {
     return new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
   }
   if (elementName === 'svg') {
