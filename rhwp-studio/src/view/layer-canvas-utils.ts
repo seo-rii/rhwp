@@ -49,14 +49,14 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   }
 
   for (const element of document.documentElement.querySelectorAll('*')) {
-    if (element.localName.toLowerCase() !== 'path' || !isStaticSvgPathElementSupported(element)) {
+    if (!isStaticSvgPaintElementSupported(element)) {
       return [];
     }
   }
 
   const layers: StaticSvgPathLayer[] = [];
-  for (const element of document.querySelectorAll('path')) {
-    const pathData = element.getAttribute('d')?.trim();
+  for (const element of document.querySelectorAll('path, rect')) {
+    const pathData = staticSvgElementPathData(element);
     if (!pathData) {
       continue;
     }
@@ -74,6 +74,23 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     });
   }
   return layers;
+}
+
+function staticSvgElementPathData(element: Element): string | null {
+  if (element.localName.toLowerCase() === 'path') {
+    return element.getAttribute('d')?.trim() || null;
+  }
+  if (element.localName.toLowerCase() !== 'rect') {
+    return null;
+  }
+  const x = svgNumericAttribute(element, 'x') ?? 0;
+  const y = svgNumericAttribute(element, 'y') ?? 0;
+  const width = svgNumericAttribute(element, 'width');
+  const height = svgNumericAttribute(element, 'height');
+  if (width === null || height === null || width <= 0 || height <= 0) {
+    return null;
+  }
+  return `M${x} ${y}H${x + width}V${y + height}H${x}Z`;
 }
 
 export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDiagnostics): void {
@@ -114,8 +131,16 @@ function svgPresentationAttribute(element: Element, name: string): string | null
   return null;
 }
 
-function isStaticSvgPathElementSupported(element: Element): boolean {
-  const supportedAttributes = new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+function isStaticSvgPaintElementSupported(element: Element): boolean {
+  const elementName = element.localName.toLowerCase();
+  const supportedAttributes = elementName === 'path'
+    ? new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style'])
+    : elementName === 'rect'
+      ? new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style'])
+      : null;
+  if (!supportedAttributes) {
+    return false;
+  }
   for (const attribute of Array.from(element.attributes)) {
     const name = attribute.name.trim().toLowerCase();
     if (!supportedAttributes.has(name)) {
@@ -133,8 +158,28 @@ function isStaticSvgPathElementSupported(element: Element): boolean {
     if (name === 'style' && !isStaticSvgStyleSupported(attribute.value)) {
       return false;
     }
+    if (
+      (name === 'x' || name === 'y' || name === 'width' || name === 'height')
+      && !isStaticSvgNumericValueSupported(attribute.value)
+    ) {
+      return false;
+    }
   }
   return true;
+}
+
+function svgNumericAttribute(element: Element, name: string): number | null {
+  const value = element.getAttribute(name);
+  if (value === null) {
+    return null;
+  }
+  const number = Number(value.trim());
+  return Number.isFinite(number) ? number : null;
+}
+
+function isStaticSvgNumericValueSupported(value: string): boolean {
+  const number = Number(value.trim());
+  return Number.isFinite(number);
 }
 
 function isStaticSvgStyleSupported(style: string): boolean {
