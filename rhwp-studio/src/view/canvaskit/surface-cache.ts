@@ -1,5 +1,6 @@
 import type { CanvasKit, Surface } from 'canvaskit-wasm';
-import type { CanvasKitSurfacePreference } from '@/view/render-backend';
+import { DEFAULT_CANVASKIT_SURFACE_REQUEST } from '@/view/render-backend';
+import type { CanvasKitSurfaceRequest } from '@/view/render-backend';
 
 export type CachedCanvasKitSurface = {
   surface: Surface;
@@ -10,7 +11,10 @@ export type CachedCanvasKitSurface = {
 export type CanvasKitSurfaceBackend = 'webgl' | 'software';
 
 export type CanvasKitSurfaceDiagnostics = {
-  preference: CanvasKitSurfacePreference;
+  preference: CanvasKitSurfaceRequest['preference'];
+  requested: string | null;
+  unsupportedValue: string | null;
+  unsupportedReason: CanvasKitSurfaceRequest['unsupportedReason'];
   backend: CanvasKitSurfaceBackend | 'none';
   usedGpuSurface: boolean;
   createdSurfaces: number;
@@ -41,7 +45,7 @@ export class CanvasKitSurfaceCache {
 
   constructor(
     private readonly canvasKit: CanvasKit,
-    private readonly preference: CanvasKitSurfacePreference = 'auto',
+    private readonly surfaceRequest: CanvasKitSurfaceRequest = DEFAULT_CANVASKIT_SURFACE_REQUEST,
   ) {}
 
   get(targetCanvas: HTMLCanvasElement): CachedCanvasKitSurface {
@@ -62,7 +66,7 @@ export class CanvasKitSurfaceCache {
     this.clear();
     let surface: Surface | null = null;
     let backend: CanvasKitSurfaceBackend | 'none' = 'none';
-    if (this.preference !== 'software') {
+    if (this.surfaceRequest.preference !== 'software') {
       this.webglAttempts += 1;
       let threw = false;
       try {
@@ -81,7 +85,7 @@ export class CanvasKitSurfaceCache {
     }
 
     if (!surface) {
-      if (this.preference !== 'software') {
+      if (this.surfaceRequest.preference !== 'software') {
         this.softwareFallbacks += 1;
       }
       this.softwareAttempts += 1;
@@ -147,7 +151,10 @@ export class CanvasKitSurfaceCache {
 
   getDiagnostics(): CanvasKitSurfaceDiagnostics {
     return {
-      preference: this.preference,
+      preference: this.surfaceRequest.preference,
+      requested: this.surfaceRequest.requested,
+      unsupportedValue: this.surfaceRequest.unsupportedValue,
+      unsupportedReason: this.surfaceRequest.unsupportedReason,
       backend: this.backend,
       usedGpuSurface: this.usedGpuSurface,
       createdSurfaces: this.createdSurfaces,

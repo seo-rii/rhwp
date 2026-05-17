@@ -557,11 +557,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=webgpu');
   const webgpuSurfaceParamProbe = await page.evaluate(() => ({
     preference: window.__canvaskitSurfacePreference,
+    request: window.__canvaskitSurfaceRequest,
     backend: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.().backend ?? null,
+    diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
   }));
   assert(
     webgpuSurfaceParamProbe.preference === 'auto',
     `unsupported WebGPU surface request resolves to auto=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+  );
+  assert(
+    webgpuSurfaceParamProbe.request?.unsupportedValue === 'webgpu'
+      && webgpuSurfaceParamProbe.request?.unsupportedReason === 'unsupportedSurfaceBackend'
+      && webgpuSurfaceParamProbe.diagnostics?.unsupportedValue === 'webgpu'
+      && webgpuSurfaceParamProbe.diagnostics?.unsupportedReason === 'unsupportedSurfaceBackend',
+    `unsupported WebGPU surface request remains diagnosable=${JSON.stringify(webgpuSurfaceParamProbe)}`,
   );
 
   setTestCase('layer-resource-cache-invalidation');

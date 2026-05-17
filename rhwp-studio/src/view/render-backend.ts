@@ -3,6 +3,20 @@ import type { LayerRenderProfile, PageInfo } from '@/core/types';
 export type RenderBackend = 'canvas2d' | 'canvaskit';
 export type CanvasKitRenderMode = 'default' | 'compat';
 export type CanvasKitSurfacePreference = 'auto' | 'webgl' | 'software';
+export type CanvasKitSurfaceUnsupportedReason = 'unsupportedSurfaceBackend';
+export type CanvasKitSurfaceRequest = {
+  preference: CanvasKitSurfacePreference;
+  requested: string | null;
+  unsupportedValue: string | null;
+  unsupportedReason: CanvasKitSurfaceUnsupportedReason | null;
+};
+
+export const DEFAULT_CANVASKIT_SURFACE_REQUEST: CanvasKitSurfaceRequest = {
+  preference: 'auto',
+  requested: null,
+  unsupportedValue: null,
+  unsupportedReason: null,
+};
 
 const STORAGE_KEY = 'rhwp-render-backend';
 const CANVASKIT_MODE_STORAGE_KEY = 'rhwp-canvaskit-render-mode';
@@ -55,14 +69,45 @@ export function persistCanvasKitRenderMode(mode: CanvasKitRenderMode): void {
 }
 
 export function resolveCanvasKitSurfacePreference(search: string): CanvasKitSurfacePreference {
-  const params = new URLSearchParams(search);
-  const requested = params.get('canvaskitSurface') ?? params.get('canvaskitSurfaceBackend');
+  return resolveCanvasKitSurfaceRequest(search).preference;
+}
 
-  if (requested === 'webgl') return 'webgl';
-  if (requested === 'software' || requested === 'sw') return 'software';
+export function resolveCanvasKitSurfaceRequest(search: string): CanvasKitSurfaceRequest {
+  const params = new URLSearchParams(search);
+  const requestedRaw = params.get('canvaskitSurface') ?? params.get('canvaskitSurfaceBackend');
+  const requested = requestedRaw?.trim().toLowerCase() ?? null;
+
+  if (!requested) {
+    return requestedRaw === null
+      ? DEFAULT_CANVASKIT_SURFACE_REQUEST
+      : { ...DEFAULT_CANVASKIT_SURFACE_REQUEST, requested: requestedRaw };
+  }
+
+  if (requested === 'webgl') {
+    return {
+      preference: 'webgl',
+      requested: requestedRaw,
+      unsupportedValue: null,
+      unsupportedReason: null,
+    };
+  }
+  if (requested === 'software' || requested === 'sw') {
+    return {
+      preference: 'software',
+      requested: requestedRaw,
+      unsupportedValue: null,
+      unsupportedReason: null,
+    };
+  }
+
   // CanvasKit in rhwp currently exposes WebGL and software surfaces only.
-  // Unsupported values such as "webgpu" intentionally fall back to auto.
-  return 'auto';
+  // Unsupported values such as "webgpu" intentionally fall back to auto but remain diagnosable.
+  return {
+    preference: 'auto',
+    requested: requestedRaw,
+    unsupportedValue: requestedRaw,
+    unsupportedReason: 'unsupportedSurfaceBackend',
+  };
 }
 
 export function resolveRenderProfile(search: string): LayerRenderProfile {

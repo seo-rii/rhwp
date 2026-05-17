@@ -31,7 +31,7 @@ import {
   persistRenderProfile,
   persistRenderBackend,
   resolveCanvasKitRenderMode,
-  resolveCanvasKitSurfacePreference,
+  resolveCanvasKitSurfaceRequest,
   resolveRenderProfile,
   resolveRenderBackend,
 } from '@/view/render-backend';
@@ -107,7 +107,8 @@ async function initialize(): Promise<void> {
     await wasm.initialize();
     const requestedBackend = resolveRenderBackend(window.location.search);
     const canvaskitMode = resolveCanvasKitRenderMode(window.location.search);
-    const canvaskitSurfacePreference = resolveCanvasKitSurfacePreference(window.location.search);
+    const canvaskitSurfaceRequest = resolveCanvasKitSurfaceRequest(window.location.search);
+    const canvaskitSurfacePreference = canvaskitSurfaceRequest.preference;
     const renderProfile = resolveRenderProfile(window.location.search);
     let renderBackend = requestedBackend;
     let canvaskitRenderer: CanvasKitLayerRenderer | null = null;
@@ -115,7 +116,7 @@ async function initialize(): Promise<void> {
     if (renderBackend === 'canvaskit') {
       msg.textContent = 'CanvasKit 로딩 중...';
       try {
-        canvaskitRenderer = await CanvasKitLayerRenderer.create(canvaskitMode, canvaskitSurfacePreference);
+        canvaskitRenderer = await CanvasKitLayerRenderer.create(canvaskitMode, canvaskitSurfaceRequest);
       } catch (error) {
         console.error('[main] CanvasKit 초기화 실패, Canvas2D로 폴백합니다:', error);
         renderBackend = 'canvas2d';
@@ -225,6 +226,7 @@ async function initialize(): Promise<void> {
       (window as any).__renderBackend = renderBackend;
       (window as any).__canvaskitRenderMode = canvaskitMode;
       (window as any).__canvaskitSurfacePreference = canvaskitSurfacePreference;
+      (window as any).__canvaskitSurfaceRequest = canvaskitSurfaceRequest;
       (window as any).__renderProfile = renderProfile;
     }
   } catch (error) {

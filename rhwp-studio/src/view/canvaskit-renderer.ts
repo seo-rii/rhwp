@@ -17,7 +17,8 @@ import {
   type LayerTextVariantReplayStatus,
   type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
-import type { CanvasKitRenderMode, CanvasKitSurfacePreference } from '@/view/render-backend';
+import { DEFAULT_CANVASKIT_SURFACE_REQUEST } from '@/view/render-backend';
+import type { CanvasKitRenderMode, CanvasKitSurfacePreference, CanvasKitSurfaceRequest } from '@/view/render-backend';
 import type {
   LayerBounds,
   LayerCharOverlapOp,
@@ -114,10 +115,10 @@ export class CanvasKitLayerRenderer {
     private readonly canvasKit: CanvasKit,
     private readonly fontProvider: TypefaceFontProvider,
     private readonly renderMode: CanvasKitRenderMode,
-    surfacePreference: CanvasKitSurfacePreference,
+    surfaceRequest: CanvasKitSurfaceRequest,
   ) {
     this.resourceCache = new CanvasKitResourceCache(canvasKit);
-    this.surfaceCache = new CanvasKitSurfaceCache(canvasKit, surfacePreference);
+    this.surfaceCache = new CanvasKitSurfaceCache(canvasKit, surfaceRequest);
     this.fontRegistry = new CanvasKitFontRegistry(canvasKit, fontProvider);
     this.imageCache = this.resourceCache.imageCache;
     this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
@@ -127,13 +128,20 @@ export class CanvasKitLayerRenderer {
 
   static async create(
     renderMode: CanvasKitRenderMode = 'default',
-    surfacePreference: CanvasKitSurfacePreference = 'auto',
+    surfaceRequest: CanvasKitSurfaceRequest | CanvasKitSurfacePreference = DEFAULT_CANVASKIT_SURFACE_REQUEST,
   ): Promise<CanvasKitLayerRenderer> {
     const canvasKit = await CanvasKitInit({
       locateFile: (file) => file === 'canvaskit.wasm' ? canvaskitWasmUrl : file,
     });
     const fontProvider = canvasKit.TypefaceFontProvider.Make();
-    const renderer = new CanvasKitLayerRenderer(canvasKit, fontProvider, renderMode, surfacePreference);
+    const resolvedSurfaceRequest = typeof surfaceRequest === 'string'
+      ? {
+          ...DEFAULT_CANVASKIT_SURFACE_REQUEST,
+          preference: surfaceRequest,
+          requested: surfaceRequest,
+        }
+      : surfaceRequest;
+    const renderer = new CanvasKitLayerRenderer(canvasKit, fontProvider, renderMode, resolvedSurfaceRequest);
     await renderer.fontRegistry.registerFonts();
     return renderer;
   }
