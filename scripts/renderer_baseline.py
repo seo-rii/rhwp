@@ -627,6 +627,7 @@ def write_reports(
                 "## Native Skia vs CanvasKit Fuzzy Parity",
                 "",
                 f"- mode: `{parity_data.get('mode', 'reportOnly')}`",
+                f"- CanvasKit surface: `{parity_data.get('canvaskitSurface') or effective_canvaskit_surface}`",
                 f"- compared: {summary.get('compared', 0)}",
                 f"- passed: {summary.get('passed', 0)}",
                 f"- failed: {summary.get('failed', 0)}",
@@ -639,6 +640,37 @@ def write_reports(
                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
+        surface_summary = parity_data.get("summaryByCanvasKitSurface") or []
+        if surface_summary:
+            lines.extend(
+                [
+                    "",
+                    "### CanvasKit Surface Summary",
+                    "",
+                    "| Surface | Total | Compared | Passed | Failed | Missing | Errors | Worst Diff Ratio | Worst Channel Delta |",
+                    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for item in surface_summary:
+                worst_ratio = item.get("worstSelectedDiffRatio")
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            item.get("canvaskitSurface") or "-",
+                            format_count(item.get("total")),
+                            format_count(item.get("compared")),
+                            format_count(item.get("passed")),
+                            format_count(item.get("failed")),
+                            format_count(item.get("missing")),
+                            format_count(item.get("errors")),
+                            f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
+                            format_count(item.get("worstMaxChannelDelta")),
+                        ]
+                    )
+                    + " |"
+                )
+
         for item in parity_data.get("summaryByProfile", []):
             worst_ratio = item.get("worstSelectedDiffRatio")
             lines.append(
@@ -664,8 +696,8 @@ def write_reports(
                 "",
                 "### Worst Comparisons",
                 "",
-                "| Sample | Profile | Passed | Diff Pixels | Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
-                "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+                "| Sample | Profile | Surface | Passed | Diff Pixels | Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
+                "| --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in parity_data.get("worstComparisons", []):
@@ -677,6 +709,7 @@ def write_reports(
                     [
                         item.get("sampleId", "-"),
                         item.get("profile", "-"),
+                        item.get("canvaskitSurface") or "-",
                         "yes" if item.get("passed") else "no",
                         format_count(item.get("selectedDiffPixels")),
                         f"{diff_ratio:.6f}" if isinstance(diff_ratio, (int, float)) else "-",
@@ -692,8 +725,8 @@ def write_reports(
                 "",
                 "### Comparisons",
                 "",
-                "| Sample | Profile | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
-                "| --- | --- | --- | --- | ---: | ---: | ---: |",
+                "| Sample | Profile | Surface | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
+                "| --- | --- | --- | --- | --- | ---: | ---: | ---: |",
             ]
         )
         for item in parity_data.get("comparisons", []):
@@ -710,6 +743,7 @@ def write_reports(
                     [
                         item.get("sampleId", "-"),
                         item.get("profile", "-"),
+                        item.get("canvaskitSurface") or "-",
                         item.get("status", "-"),
                         passed,
                         format_count(diff_pixels),
