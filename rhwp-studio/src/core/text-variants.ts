@@ -1087,9 +1087,7 @@ function isSupportedBitmapAlphaMode(value: string | undefined): boolean {
 function isSupportedBitmapScalingPolicy(value: string | undefined): boolean {
   return value === 'noScale'
     || value === 'scaleToEm'
-    || value === 'explicitTransform'
-    || value === 'nearest'
-    || value === 'linear';
+    || value === 'explicitTransform';
 }
 
 function isSupportedBitmapFiltering(value: string | undefined): boolean {

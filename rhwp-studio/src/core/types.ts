@@ -944,8 +944,6 @@ export type LayerBitmapGlyphScalingPolicy =
   | 'noScale'
   | 'scaleToEm'
   | 'explicitTransform'
-  | 'nearest'
-  | 'linear'
   | 'backendDefault';
 export type LayerBitmapGlyphFiltering =
   | 'nearest'
