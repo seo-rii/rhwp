@@ -6470,6 +6470,150 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `page background thin border parity canvas2d=${pageBackgroundThinBorderCanvas2dDarkness.toFixed(2)}, canvaskit=${pageBackgroundThinBorderCanvaskitDarkness.toFixed(2)}`,
   );
 
+  setTestCase('canvas-layer-page-background-image-fill-mode-variant-parity');
+  const pageBackgroundImageFillModeVariantProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 6;
+    sourceCanvas.height = 5;
+    const sourceCtx = sourceCanvas.getContext('2d');
+    if (!sourceCtx) {
+      return { error: 'source canvas unavailable' };
+    }
+    sourceCtx.fillStyle = '#d82020';
+    sourceCtx.fillRect(0, 0, 3, 5);
+    sourceCtx.fillStyle = '#1d9f3a';
+    sourceCtx.fillRect(3, 0, 3, 2);
+    sourceCtx.fillStyle = '#2454d8';
+    sourceCtx.fillRect(3, 2, 3, 3);
+    sourceCtx.fillStyle = '#111111';
+    sourceCtx.fillRect(1, 1, 4, 1);
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const modes = [
+      ['centerTop', 4, 4],
+      ['rightTop', 36, 4],
+      ['leftCenter', 68, 4],
+      ['rightCenter', 4, 24],
+      ['leftBottom', 36, 24],
+      ['centerBottom', 68, 24],
+      ['tileHorzBottom', 4, 44],
+      ['tileVertLeft', 36, 44],
+      ['tileVertRight', 68, 44],
+    ];
+    const tree = {
+      pageWidth: 100,
+      pageHeight: 64,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1911,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1911,
+        bounds: { x: 0, y: 0, width: 100, height: 64 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 100, height: 64 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          ...modes.map(([fillMode, x, y]) => ({
+            type: 'pageBackground',
+            bbox: { x, y, width: 24, height: 16 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+            image: {
+              fillMode,
+              base64,
+            },
+          })),
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return { error: 'target canvas unavailable' };
+      }
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        renderer.renderPage(tree, canvas, 1);
+        await nextFrame();
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let bluePixels = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          if (pixels[index + 3] > 32 && pixels[index] < 80 && pixels[index + 1] < 120 && pixels[index + 2] > 150) {
+            bluePixels += 1;
+          }
+        }
+        if (bluePixels > 120) {
+          break;
+        }
+      }
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !pageBackgroundImageFillModeVariantProbe.error,
+    pageBackgroundImageFillModeVariantProbe.error || 'page background image fill mode variant parity probe available',
+  );
+  const pageBackgroundFillModeCanvas2dBluePixels = countPixels(
+    pageBackgroundImageFillModeVariantProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 120 && pixel.blue > 150,
+  );
+  const pageBackgroundFillModeCanvaskitBluePixels = countPixels(
+    pageBackgroundImageFillModeVariantProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 120 && pixel.blue > 150,
+  );
+  assert(
+    pageBackgroundFillModeCanvas2dBluePixels > 120 && pageBackgroundFillModeCanvaskitBluePixels > 120,
+    `page background image fill mode variants replay canvas2d=${pageBackgroundFillModeCanvas2dBluePixels}, canvaskit=${pageBackgroundFillModeCanvaskitBluePixels}`,
+  );
+  const pageBackgroundImageFillModeVariantDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(pageBackgroundImageFillModeVariantProbe.canvas2d),
+    pngBufferFromDataUrl(pageBackgroundImageFillModeVariantProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-page-background-image-fill-mode-variant-parity',
+      ignoreChannelDelta: 4,
+      maxDiffRatio: 0.02,
+      inkMaskMaxDiffRatio: 0.01,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    pageBackgroundImageFillModeVariantDiff.passed,
+    `page background image fill mode variant parity exact=${pageBackgroundImageFillModeVariantDiff.exactDiffPixels}, tolerant=${pageBackgroundImageFillModeVariantDiff.rawTolerantDiffPixels}, ink=${pageBackgroundImageFillModeVariantDiff.rawInkMaskDiffPixels}, max_channel_delta=${pageBackgroundImageFillModeVariantDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-image-placement-parity');
   const imagePlacementParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
