@@ -45,18 +45,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     for (const match of fragment.matchAll(tagPattern)) {
       const elementName = match[1].toLowerCase();
       const rawAttributes = match[2] ?? '';
-      let supportedAttributes: Set<string> | null = null;
-      if (elementName === 'path') {
-        supportedAttributes = new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-      } else if (elementName === 'rect') {
-        supportedAttributes = new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-      } else if (elementName === 'circle') {
-        supportedAttributes = new Set(['cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-      } else if (elementName === 'ellipse') {
-        supportedAttributes = new Set(['cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-      } else if (elementName === 'polygon') {
-        supportedAttributes = new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-      }
+      const supportedAttributes = staticSvgSupportedAttributes(elementName);
       if (!supportedAttributes) {
         return [];
       }
@@ -75,35 +64,12 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       }
 
       for (const [name, value] of attributes) {
-        if (!supportedAttributes.has(name)) {
+        if (!isStaticSvgAttributeSupported(elementName, supportedAttributes, name, value)) {
           return [];
         }
-        if (name === 'fill' && !isStaticSvgPaintValueSupported(value)) {
-          return [];
-        }
-        if ((name === 'opacity' || name === 'fill-opacity') && !isStaticSvgOpacityValueSupported(value)) {
-          return [];
-        }
-        if (name === 'fill-rule' && !isStaticSvgFillRuleValueSupported(value)) {
-          return [];
-        }
-        if (name === 'style' && !isStaticSvgStyleSupported(value)) {
-          return [];
-        }
-        if (
-          (name === 'x' || name === 'y' || name === 'width' || name === 'height')
-          && !isStaticSvgNumericValueSupported(value)
-        ) {
-          return [];
-        }
-        if ((name === 'cx' || name === 'cy' || name === 'r' || name === 'rx' || name === 'ry')
-          && !isStaticSvgNumericValueSupported(value)
-        ) {
-          return [];
-        }
-        if (name === 'points' && svgPointList(value).length < 3) {
-          return [];
-        }
+      }
+      if (elementName === 'svg' || elementName === 'g') {
+        continue;
       }
 
       let pathData: string | null = null;
@@ -299,54 +265,87 @@ function svgPresentationAttribute(element: Element, name: string): string | null
 
 function isStaticSvgPaintElementSupported(element: Element): boolean {
   const elementName = element.localName.toLowerCase();
-  let supportedAttributes: Set<string> | null = null;
-  if (elementName === 'path') {
-    supportedAttributes = new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-  } else if (elementName === 'rect') {
-    supportedAttributes = new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-  } else if (elementName === 'circle') {
-    supportedAttributes = new Set(['cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-  } else if (elementName === 'ellipse') {
-    supportedAttributes = new Set(['cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-  } else if (elementName === 'polygon') {
-    supportedAttributes = new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
-  }
+  const supportedAttributes = staticSvgSupportedAttributes(elementName);
   if (!supportedAttributes) {
     return false;
   }
   for (const attribute of Array.from(element.attributes)) {
     const name = attribute.name.trim().toLowerCase();
-    if (!supportedAttributes.has(name)) {
-      return false;
-    }
-    if (name === 'fill' && !isStaticSvgPaintValueSupported(attribute.value)) {
-      return false;
-    }
-    if ((name === 'opacity' || name === 'fill-opacity') && !isStaticSvgOpacityValueSupported(attribute.value)) {
-      return false;
-    }
-    if (name === 'fill-rule' && !isStaticSvgFillRuleValueSupported(attribute.value)) {
-      return false;
-    }
-    if (name === 'style' && !isStaticSvgStyleSupported(attribute.value)) {
-      return false;
-    }
-    if (
-      (name === 'x' || name === 'y' || name === 'width' || name === 'height')
-      && !isStaticSvgNumericValueSupported(attribute.value)
-    ) {
-      return false;
-    }
-    if ((name === 'cx' || name === 'cy' || name === 'r' || name === 'rx' || name === 'ry')
-      && !isStaticSvgNumericValueSupported(attribute.value)
-    ) {
-      return false;
-    }
-    if (name === 'points' && svgPointList(attribute.value).length < 3) {
+    if (!isStaticSvgAttributeSupported(elementName, supportedAttributes, name, attribute.value)) {
       return false;
     }
   }
   return true;
+}
+
+function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
+  if (elementName === 'path') {
+    return new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  }
+  if (elementName === 'rect') {
+    return new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  }
+  if (elementName === 'circle') {
+    return new Set(['cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  }
+  if (elementName === 'ellipse') {
+    return new Set(['cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  }
+  if (elementName === 'polygon') {
+    return new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  }
+  if (elementName === 'svg') {
+    return new Set(['xmlns', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
+  }
+  if (elementName === 'g') {
+    return new Set();
+  }
+  return null;
+}
+
+function isStaticSvgAttributeSupported(
+  elementName: string,
+  supportedAttributes: Set<string>,
+  name: string,
+  value: string,
+): boolean {
+  if (!supportedAttributes.has(name)) {
+    return false;
+  }
+  if (name === 'xmlns') {
+    return value.trim() === 'http://www.w3.org/2000/svg';
+  }
+  if (name === 'viewbox') {
+    return isStaticSvgViewBoxValueSupported(value);
+  }
+  if (name === 'version') {
+    return isStaticSvgNumericValueSupported(value);
+  }
+  if (name === 'd') {
+    return value.trim().length > 0;
+  }
+  if (name === 'fill') {
+    return isStaticSvgPaintValueSupported(value);
+  }
+  if (name === 'opacity' || name === 'fill-opacity') {
+    return isStaticSvgOpacityValueSupported(value);
+  }
+  if (name === 'fill-rule') {
+    return isStaticSvgFillRuleValueSupported(value);
+  }
+  if (name === 'style') {
+    return isStaticSvgStyleSupported(value);
+  }
+  if (name === 'x' || name === 'y' || name === 'width' || name === 'height') {
+    return isStaticSvgNumericValueSupported(value);
+  }
+  if (name === 'cx' || name === 'cy' || name === 'r' || name === 'rx' || name === 'ry') {
+    return isStaticSvgNumericValueSupported(value);
+  }
+  if (name === 'points') {
+    return svgPointList(value).length >= 3;
+  }
+  return elementName === 'g';
 }
 
 function svgNumericAttribute(element: Element, name: string): number | null {
@@ -361,6 +360,18 @@ function svgNumericAttribute(element: Element, name: string): number | null {
 function isStaticSvgNumericValueSupported(value: string): boolean {
   const number = Number(value.trim());
   return Number.isFinite(number);
+}
+
+function isStaticSvgViewBoxValueSupported(value: string): boolean {
+  const numbers = value
+    .trim()
+    .split(/[\s,]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => Number(part));
+  return numbers.length === 4
+    && numbers.every((number) => Number.isFinite(number))
+    && numbers[2] > 0
+    && numbers[3] > 0;
 }
 
 function svgPointListAttribute(element: Element, name: string): Array<[number, number]> {
