@@ -233,6 +233,8 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     canvaskitSurfaceUnsupportedValue: canvaskit.layerSummary?.surfaceDiagnostics?.unsupportedValue ?? null,
     canvaskitSurfaceUnsupportedReason: canvaskit.layerSummary?.surfaceDiagnostics?.unsupportedReason ?? null,
     canvaskitSurfaceBackend: canvaskit.layerSummary?.surfaceDiagnostics?.backend ?? 'n/a',
+    canvaskitSurfaceWebgpuAttempts: canvaskit.layerSummary?.surfaceDiagnostics?.webgpuAttempts ?? null,
+    canvaskitSurfaceWebgpuFailures: canvaskit.layerSummary?.surfaceDiagnostics?.webgpuFailures ?? null,
     canvaskitSurfaceWebglAttempts: canvaskit.layerSummary?.surfaceDiagnostics?.webglAttempts ?? null,
     canvaskitSurfaceWebglFailures: canvaskit.layerSummary?.surfaceDiagnostics?.webglFailures ?? null,
     canvaskitSurfaceSoftwareAttempts: canvaskit.layerSummary?.surfaceDiagnostics?.softwareAttempts ?? null,
