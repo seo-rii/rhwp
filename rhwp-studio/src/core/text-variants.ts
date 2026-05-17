@@ -1101,6 +1101,7 @@ function isValidResolvedColor(
 ): boolean {
   return color !== undefined
     && (color.colorSpace === undefined || color.colorSpace.length > 0)
+    && Array.isArray(color.rgba)
     && color.rgba.length === 4
     && color.rgba.every((channel) => Number.isFinite(channel) && channel >= 0 && channel <= 1);
 }
