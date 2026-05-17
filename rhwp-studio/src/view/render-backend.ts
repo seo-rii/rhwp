@@ -2,7 +2,7 @@ import type { LayerRenderProfile, PageInfo } from '@/core/types';
 
 export type RenderBackend = 'canvas2d' | 'canvaskit';
 export type CanvasKitRenderMode = 'default' | 'compat';
-export type CanvasKitSurfacePreference = 'auto' | 'webgl' | 'software';
+export type CanvasKitSurfacePreference = 'auto' | 'webgpu' | 'webgl' | 'software';
 export type CanvasKitSurfaceUnsupportedReason = 'unsupportedSurfaceBackend';
 export type CanvasKitSurfaceRequest = {
   preference: CanvasKitSurfacePreference;
@@ -92,6 +92,14 @@ export function resolveCanvasKitSurfaceRequest(search: string): CanvasKitSurface
       unsupportedReason: null,
     };
   }
+  if (requested === 'webgpu' || requested === 'gpu') {
+    return {
+      preference: 'webgpu',
+      requested: requestedRaw,
+      unsupportedValue: null,
+      unsupportedReason: null,
+    };
+  }
   if (requested === 'software' || requested === 'sw' || requested === 'cpu') {
     return {
       preference: 'software',
@@ -101,8 +109,7 @@ export function resolveCanvasKitSurfaceRequest(search: string): CanvasKitSurface
     };
   }
 
-  // CanvasKit in rhwp currently exposes WebGL and software surfaces only.
-  // Unsupported values such as "webgpu" intentionally fall back to auto but remain diagnosable.
+  // Unsupported values intentionally fall back to auto but remain diagnosable.
   return {
     preference: 'auto',
     requested: requestedRaw,

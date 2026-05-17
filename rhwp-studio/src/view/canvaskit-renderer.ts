@@ -1,5 +1,17 @@
 import CanvasKitInit from 'canvaskit-wasm';
-import type { CanvasKit, Font, Image, Paint, Path, Shader, Surface, TextBlob, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
+import type {
+  CanvasKit,
+  Font,
+  Image,
+  Paint,
+  Path,
+  Shader,
+  Surface,
+  TextBlob,
+  Typeface,
+  TypefaceFontProvider,
+  WebGPUDeviceContext,
+} from 'canvaskit-wasm';
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import {
@@ -118,9 +130,16 @@ export class CanvasKitLayerRenderer {
     private readonly fontProvider: TypefaceFontProvider,
     private readonly renderMode: CanvasKitRenderMode,
     surfaceRequest: CanvasKitSurfaceRequest,
+    webgpuDeviceContext: WebGPUDeviceContext | null,
+    webgpuInitFailure: string | null,
   ) {
     this.resourceCache = new CanvasKitResourceCache(canvasKit);
-    this.surfaceCache = new CanvasKitSurfaceCache(canvasKit, surfaceRequest);
+    this.surfaceCache = new CanvasKitSurfaceCache(
+      canvasKit,
+      surfaceRequest,
+      webgpuDeviceContext,
+      webgpuInitFailure,
+    );
     this.fontRegistry = new CanvasKitFontRegistry(canvasKit, fontProvider);
     this.imageCache = this.resourceCache.imageCache;
     this.mipmappedImageCache = this.resourceCache.mipmappedImageCache;
@@ -143,7 +162,40 @@ export class CanvasKitLayerRenderer {
           requested: surfaceRequest,
         }
       : surfaceRequest;
-    const renderer = new CanvasKitLayerRenderer(canvasKit, fontProvider, renderMode, resolvedSurfaceRequest);
+    let webgpuDeviceContext: WebGPUDeviceContext | null = null;
+    let webgpuInitFailure: string | null = null;
+    if (resolvedSurfaceRequest.preference === 'webgpu') {
+      const canvasKitWebGpuFlag = (canvasKit as CanvasKit & { webgpu?: boolean }).webgpu;
+      const gpu = typeof navigator === 'undefined' ? undefined : navigator.gpu;
+      if (!canvasKitWebGpuFlag) {
+        webgpuInitFailure = 'CanvasKit WebGPU build support unavailable';
+      } else if (!gpu) {
+        webgpuInitFailure = 'navigator.gpu unavailable';
+      } else {
+        try {
+          const adapter = await gpu.requestAdapter();
+          if (!adapter) {
+            webgpuInitFailure = 'navigator.gpu.requestAdapter returned null';
+          } else {
+            const device = await adapter.requestDevice();
+            webgpuDeviceContext = canvasKit.MakeGPUDeviceContext(device);
+            if (!webgpuDeviceContext) {
+              webgpuInitFailure = 'CanvasKit MakeGPUDeviceContext returned null';
+            }
+          }
+        } catch (error) {
+          webgpuInitFailure = error instanceof Error ? error.message : String(error);
+        }
+      }
+    }
+    const renderer = new CanvasKitLayerRenderer(
+      canvasKit,
+      fontProvider,
+      renderMode,
+      resolvedSurfaceRequest,
+      webgpuDeviceContext,
+      webgpuInitFailure,
+    );
     await renderer.fontRegistry.registerFonts();
     return renderer;
   }
