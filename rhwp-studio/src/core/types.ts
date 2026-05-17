@@ -987,7 +987,7 @@ export interface LayerGlyphOutlineSvgGlyphPayload {
   glyphRange?: { start: number; end: number };
   placement?: LayerTextRunPlacement;
   transformToRun?: LayerAffineTransform;
-  viewBox?: LayerSvgGlyphViewBox;
+  viewBox: LayerSvgGlyphViewBox;
   intrinsicSize?: LayerSvgGlyphIntrinsicSize;
   securityMode: LayerSvgGlyphSecurityMode;
   scriptAllowed?: false;
@@ -1011,8 +1011,8 @@ export interface LayerGlyphOutlineOp {
   paintStyle: LayerTextStyle;
   /**
    * Schema v2 vocabulary reserves richer payload families, but current strict
-   * replay only accepts `monochromeFill` and the gated `monochromeFillStroke`
-   * subset.
+   * replay accepts the gated monotone, color layer, bitmap glyph, and static
+   * sanitized SVG glyph subsets.
    */
   payloadKind?: LayerGlyphOutlinePayloadKind;
   stroke?: LayerGlyphOutlineStrokeStyle;

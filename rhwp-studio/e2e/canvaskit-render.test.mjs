@@ -74,8 +74,11 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085 }],
 ]);
 const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'compat' ? 'compat' : 'default';
-const CANVASKIT_SURFACE = ['auto', 'webgl', 'software'].includes(process.env.RHWP_CANVASKIT_SURFACE ?? '')
-  ? process.env.RHWP_CANVASKIT_SURFACE
+const REQUESTED_CANVASKIT_SURFACE = (process.env.RHWP_CANVASKIT_SURFACE ?? '').trim().toLowerCase();
+const CANVASKIT_SURFACE = REQUESTED_CANVASKIT_SURFACE === 'sw' || REQUESTED_CANVASKIT_SURFACE === 'cpu'
+  ? 'software'
+  : ['auto', 'webgl', 'software'].includes(REQUESTED_CANVASKIT_SURFACE)
+    ? REQUESTED_CANVASKIT_SURFACE
   : 'auto';
 const RENDER_PROFILE = process.env.RHWP_RENDER_PROFILE?.trim() || 'screen';
 const PERFORMANCE_ITERATIONS = Math.max(
@@ -225,10 +228,17 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
     canvaskitNativeImages: canvaskit.layerSummary?.nativeImageCount ?? 0,
     canvaskitNativeEquations: canvaskit.layerSummary?.nativeEquationCount ?? 0,
     canvaskitNativeFormObjects: canvaskit.layerSummary?.nativeFormObjectCount ?? 0,
+    canvaskitSurfaceRequested: canvaskit.layerSummary?.surfaceDiagnostics?.requested ?? null,
     canvaskitSurfacePreference: canvaskit.layerSummary?.surfaceDiagnostics?.preference ?? 'n/a',
+    canvaskitSurfaceUnsupportedValue: canvaskit.layerSummary?.surfaceDiagnostics?.unsupportedValue ?? null,
+    canvaskitSurfaceUnsupportedReason: canvaskit.layerSummary?.surfaceDiagnostics?.unsupportedReason ?? null,
     canvaskitSurfaceBackend: canvaskit.layerSummary?.surfaceDiagnostics?.backend ?? 'n/a',
     canvaskitSurfaceWebglAttempts: canvaskit.layerSummary?.surfaceDiagnostics?.webglAttempts ?? null,
+    canvaskitSurfaceWebglFailures: canvaskit.layerSummary?.surfaceDiagnostics?.webglFailures ?? null,
+    canvaskitSurfaceSoftwareAttempts: canvaskit.layerSummary?.surfaceDiagnostics?.softwareAttempts ?? null,
+    canvaskitSurfaceSoftwareFailures: canvaskit.layerSummary?.surfaceDiagnostics?.softwareFailures ?? null,
     canvaskitSurfaceSoftwareFallbacks: canvaskit.layerSummary?.surfaceDiagnostics?.softwareFallbacks ?? null,
+    canvaskitSurfaceLastFailure: canvaskit.layerSummary?.surfaceDiagnostics?.lastFailure ?? null,
   };
 }
 
