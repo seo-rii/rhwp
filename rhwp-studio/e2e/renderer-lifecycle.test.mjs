@@ -235,6 +235,93 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `stored skia alias resolves and normalizes to CanvasKit=${JSON.stringify(skiaStorageAliasProbe)}`,
   );
 
+  setTestCase('canvaskit-renderer-does-not-use-canvas2d-overlay');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
+  const noCanvas2DOverlayProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    if (!pageRenderer?.canvas2dRenderer || !pageRenderer?.canvaskitRenderer) {
+      return { error: 'page renderer internals unavailable' };
+    }
+
+    const originalCanvas2DRenderPage = pageRenderer.canvas2dRenderer.renderPage.bind(
+      pageRenderer.canvas2dRenderer,
+    );
+    const originalCanvasKitRenderPage = pageRenderer.canvaskitRenderer.renderPage.bind(
+      pageRenderer.canvaskitRenderer,
+    );
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    let canvas2DCalls = 0;
+    let canvasKitCalls = 0;
+    pageRenderer.canvas2dRenderer.renderPage = () => {
+      canvas2DCalls += 1;
+      throw new Error('Canvas2D overlay renderPage should not be called for CanvasKit backend');
+    };
+    pageRenderer.canvaskitRenderer.renderPage = (layerTree, canvas, scale) => {
+      canvasKitCalls += 1;
+      originalCanvasKitRenderPage(layerTree, canvas, scale);
+    };
+    pageRenderer.wasm.getPageLayerTree = (pageIdx, profile = 'screen') => ({
+      pageWidth: 96,
+      pageHeight: 64,
+      profile,
+      resources: { tableId: 2, images: [], svgFragments: [] },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: pageIdx,
+        bounds: { x: 0, y: 0, width: 96, height: 64 },
+        cacheHint: 'none',
+        ops: [],
+      },
+    });
+
+    const canvas = document.createElement('canvas');
+    const pageInfo = {
+      pageIndex: 0,
+      width: 96,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 8,
+      marginRight: 8,
+      marginTop: 8,
+      marginBottom: 8,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      pageRenderer.clearLayerTreeCache?.();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      return {
+        backend: pageRenderer.getBackend?.(),
+        canvas2DCalls,
+        canvasKitCalls,
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        backend: pageRenderer.getBackend?.(),
+        canvas2DCalls,
+        canvasKitCalls,
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      pageRenderer.canvas2dRenderer.renderPage = originalCanvas2DRenderPage;
+      pageRenderer.canvaskitRenderer.renderPage = originalCanvasKitRenderPage;
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+    }
+  });
+  assert(
+    !noCanvas2DOverlayProbe.error,
+    noCanvas2DOverlayProbe.error || 'CanvasKit no Canvas2D overlay probe available',
+  );
+  assert(
+    noCanvas2DOverlayProbe.backend === 'canvaskit'
+      && noCanvas2DOverlayProbe.canvasKitCalls === 1
+      && noCanvas2DOverlayProbe.canvas2DCalls === 0,
+    `CanvasKit render dispatch avoids Canvas2D overlay=${JSON.stringify(noCanvas2DOverlayProbe)}`,
+  );
+
   setTestCase('async-resource-rerender');
   await loadApp(page, '?renderer=canvas2d');
   const asyncRerenderProbe = await page.evaluate(async () => {
