@@ -26,7 +26,7 @@ export function resolveRenderBackend(search: string): RenderBackend {
   const params = new URLSearchParams(search);
   const requested = params.get('renderer');
 
-  if (requested === 'canvaskit') return 'canvaskit';
+  if (requested === 'canvaskit' || requested === 'skia') return 'canvaskit';
   if (requested === 'canvas' || requested === 'canvas2d') return 'canvas2d';
 
   try {

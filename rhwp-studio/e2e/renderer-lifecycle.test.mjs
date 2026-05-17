@@ -204,6 +204,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `page layer cache load count=${layerCacheProbe.loads}`,
   );
 
+  setTestCase('skia-renderer-alias');
+  await loadApp(page, '?renderer=skia&canvaskitMode=default&canvaskitSurface=software');
+  const skiaAliasProbe = await page.evaluate(() => ({
+    backend: window.__renderBackend,
+    hasCanvasKitRenderer: !!window.__canvasView?.pageRenderer?.canvaskitRenderer,
+    surfacePreference: window.__canvaskitSurfacePreference,
+  }));
+  assert(
+    skiaAliasProbe.backend === 'canvaskit' && skiaAliasProbe.hasCanvasKitRenderer,
+    `renderer=skia resolves to CanvasKit backend=${JSON.stringify(skiaAliasProbe)}`,
+  );
+  assert(
+    skiaAliasProbe.surfacePreference === 'software',
+    `renderer=skia keeps CanvasKit surface options=${JSON.stringify(skiaAliasProbe)}`,
+  );
+
   setTestCase('async-resource-rerender');
   await loadApp(page, '?renderer=canvas2d');
   const asyncRerenderProbe = await page.evaluate(async () => {
