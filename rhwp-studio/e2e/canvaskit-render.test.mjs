@@ -253,6 +253,13 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
   };
 }
 
+function performanceGuardMessage(label, value, maxValue, guard, details) {
+  if (guard !== 'checked') {
+    return `${label} guard skipped (${guard}, value=${value}, budget=${maxValue}, ${details})`;
+  }
+  return `${label}=${value} <= ${maxValue} (${details})`;
+}
+
 function assertPerformanceGuard(row) {
   const maxReplayRatio = row.maxCanvaskitReplayRatio ?? PERFORMANCE_GUARD.maxReplayRatio;
   const maxReplayAvgMs = row.maxCanvaskitReplayAvgMs ?? PERFORMANCE_GUARD.maxReplayAvgMs;
@@ -261,11 +268,23 @@ function assertPerformanceGuard(row) {
       || row.replayRatioGuard === 'skipped-single-iteration'
       || row.replayRatioGuard === 'skipped-small-baseline'
       || row.replayRatio <= maxReplayRatio,
-    `${row.case} CanvasKit replay ratio=${row.replayRatio} <= ${maxReplayRatio} (guard=${row.replayRatioGuard}, canvas2dBaseline=${row.canvas2dReplayAvgMs}ms, minBaseline=${PERFORMANCE_GUARD.minReplayRatioBaselineMs}ms)`,
+    performanceGuardMessage(
+      `${row.case} CanvasKit replay ratio`,
+      row.replayRatio,
+      maxReplayRatio,
+      row.replayRatioGuard,
+      `canvas2dBaseline=${row.canvas2dReplayAvgMs}ms, minBaseline=${PERFORMANCE_GUARD.minReplayRatioBaselineMs}ms`,
+    ),
   );
   assert(
     row.replayRatioGuard === 'skipped-single-iteration' || row.canvaskitReplayAvgMs <= maxReplayAvgMs,
-    `${row.case} CanvasKit replay avg=${row.canvaskitReplayAvgMs}ms <= ${maxReplayAvgMs}ms (guard=${row.replayRatioGuard})`,
+    performanceGuardMessage(
+      `${row.case} CanvasKit replay avg`,
+      `${row.canvaskitReplayAvgMs}ms`,
+      `${maxReplayAvgMs}ms`,
+      row.replayRatioGuard,
+      'absolute replay guard',
+    ),
   );
 }
 
@@ -744,7 +763,13 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
       summary.replayRatio === null
         || summary.replayRatioGuard !== 'checked'
         || summary.replayRatio <= PERFORMANCE_GUARD.maxAverageReplayRatio,
-      `${scope} average CanvasKit replay ratio=${summary.replayRatio} <= ${PERFORMANCE_GUARD.maxAverageReplayRatio} (guard=${summary.replayRatioGuard}, samples=${summary.samples}, minSamples=${PERFORMANCE_GUARD.minAverageReplaySamples})`,
+      performanceGuardMessage(
+        `${scope} average CanvasKit replay ratio`,
+        summary.replayRatio,
+        PERFORMANCE_GUARD.maxAverageReplayRatio,
+        summary.replayRatioGuard,
+        `samples=${summary.samples}, minSamples=${PERFORMANCE_GUARD.minAverageReplaySamples}`,
+      ),
     );
   }
 
