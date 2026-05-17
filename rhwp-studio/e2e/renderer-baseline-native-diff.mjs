@@ -53,13 +53,16 @@ function firstNativeSkiaPng(nativeResults, sampleId, profile, rootDir) {
   return resolveRepoPath(pngPath, rootDir);
 }
 
-function canvaskitDefaultPng(browserResults, sampleId, profile, rootDir) {
+function canvaskitDefaultResult(browserResults, sampleId, profile, rootDir) {
   const item = browserResults.find((entry) => (
     entry.sampleId === sampleId
       && entry.backend === 'canvaskit-default'
       && entry.profile === profile
   ));
-  return resolveRepoPath(item?.path, rootDir);
+  return {
+    entry: item,
+    path: resolveRepoPath(item?.path, rootDir),
+  };
 }
 
 async function comparePair(nativePath, canvaskitPath) {
@@ -155,6 +158,7 @@ function worstComparisons(comparisons, limit = 10) {
     .map((item) => ({
       sampleId: item.sampleId,
       profile: item.profile,
+      canvaskitSurface: item.canvaskitSurface ?? null,
       passed: !!item.diff?.passed,
       selectedDiffPixels: item.diff?.selectedDiffPixels ?? 0,
       selectedDiffRatio: item.diff?.selectedDiffRatio ?? 0,
@@ -188,11 +192,14 @@ const comparisons = [];
 for (const sampleId of sampleIds) {
   for (const profile of profiles) {
     const nativePath = firstNativeSkiaPng(nativeResults, sampleId, profile, rootDir);
-    const canvaskitPath = canvaskitDefaultPng(browserResults, sampleId, profile, rootDir);
+    const canvaskit = canvaskitDefaultResult(browserResults, sampleId, profile, rootDir);
+    const canvaskitPath = canvaskit.path;
+    const canvaskitSurface = canvaskit.entry?.canvaskitSurface ?? browserReport.canvaskitSurface ?? null;
     if (!nativePath || !canvaskitPath) {
       comparisons.push({
         sampleId,
         profile,
+        canvaskitSurface,
         status: 'missing',
         nativePath: nativePath || null,
         canvaskitPath: canvaskitPath || null,
@@ -204,6 +211,7 @@ for (const sampleId of sampleIds) {
       comparisons.push({
         sampleId,
         profile,
+        canvaskitSurface,
         status: 'compared',
         nativePath,
         canvaskitPath,
@@ -213,6 +221,7 @@ for (const sampleId of sampleIds) {
       comparisons.push({
         sampleId,
         profile,
+        canvaskitSurface,
         status: 'error',
         nativePath,
         canvaskitPath,
@@ -229,6 +238,7 @@ const missing = comparisons.filter((item) => item.status === 'missing').length;
 const errors = comparisons.filter((item) => item.status === 'error').length;
 const summaryByProfile = summarizeBy(comparisons, 'profile');
 const summaryBySample = summarizeBy(comparisons, 'sampleId');
+const summaryByCanvasKitSurface = summarizeBy(comparisons, 'canvaskitSurface');
 const worst = worstComparisons(comparisons);
 
 fs.mkdirSync(path.dirname(options.output), { recursive: true });
@@ -238,6 +248,7 @@ fs.writeFileSync(
     {
       mode: 'reportOnly',
       backendPair: ['native-skia', 'canvaskit-default'],
+      canvaskitSurface: browserReport.canvaskitSurface ?? null,
       thresholds: {
         ignoreChannelDelta: DEFAULT_IGNORE_CHANNEL_DELTA,
         maxDiffRatio: DEFAULT_MAX_DIFF_RATIO,
@@ -252,6 +263,7 @@ fs.writeFileSync(
       },
       summaryByProfile,
       summaryBySample,
+      summaryByCanvasKitSurface,
       worstComparisons: worst,
       comparisons,
     },
