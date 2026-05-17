@@ -4778,7 +4778,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     unsupportedSvgFillRuleTree.resources.svgHashes[0] = 'svg-glyph-unsupported-fill-rule';
     const wrappedSvgResourceTree = treeFor(svgOutline);
     wrappedSvgResourceTree.resources.svgFragments[0] = [
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 18 18">',
       '<g>',
       '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>',
       '</g>',
