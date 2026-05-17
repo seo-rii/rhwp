@@ -92,7 +92,7 @@ export function resolveCanvasKitSurfaceRequest(search: string): CanvasKitSurface
       unsupportedReason: null,
     };
   }
-  if (requested === 'software' || requested === 'sw') {
+  if (requested === 'software' || requested === 'sw' || requested === 'cpu') {
     return {
       preference: 'software',
       requested: requestedRaw,

@@ -480,6 +480,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `software surface cache reuses matching canvas=${JSON.stringify(softwareSurfaceProbe)}`,
   );
 
+  setTestCase('canvaskit-cpu-surface-alias');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=cpu');
+  const cpuSurfaceAliasProbe = await page.evaluate(() => ({
+    preference: window.__canvaskitSurfacePreference,
+    request: window.__canvaskitSurfaceRequest,
+    diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
+  }));
+  assert(
+    cpuSurfaceAliasProbe.preference === 'software'
+      && cpuSurfaceAliasProbe.request?.requested === 'cpu'
+      && cpuSurfaceAliasProbe.request?.unsupportedReason === null
+      && cpuSurfaceAliasProbe.diagnostics?.preference === 'software',
+    `canvaskitSurface=cpu aliases to software=${JSON.stringify(cpuSurfaceAliasProbe)}`,
+  );
+
   setTestCase('canvaskit-webgl-surface-fallback');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=webgl');
   const webglSurfaceProbe = await page.evaluate(() => {
