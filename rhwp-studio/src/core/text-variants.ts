@@ -921,12 +921,19 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
 
 export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp): boolean {
   const svgGlyph = payload.svgGlyph;
+  const viewBox = svgGlyph?.viewBox;
   return payload.payloadKind === 'svgGlyph'
     && svgGlyph !== undefined
     && svgGlyph.sourceRangeUtf8 !== undefined
     && svgGlyph.glyphRange !== undefined
     && svgGlyph.placement !== undefined
-    && svgGlyph.viewBox !== undefined
+    && viewBox !== undefined
+    && Number.isFinite(viewBox.x)
+    && Number.isFinite(viewBox.y)
+    && Number.isFinite(viewBox.width)
+    && Number.isFinite(viewBox.height)
+    && viewBox.width > 0
+    && viewBox.height > 0
     && svgGlyph.securityMode === 'staticSanitized'
     && svgGlyph.scriptAllowed === false
     && svgGlyph.animationAllowed === false

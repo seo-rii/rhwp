@@ -2944,6 +2944,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2SvgViewBoxPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              viewBox: { x: 0, y: 0, width: 0, height: 10 },
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
       const unsupportedPayload = render(makeTree(style, []), true);
       return {
@@ -2979,6 +2994,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2BitmapPayload,
         reservedV2SvgPayload,
         invalidReservedV2SvgPayload,
+        invalidReservedV2SvgViewBoxPayload,
         unsupported,
         unsupportedPayload,
       };
@@ -3229,6 +3245,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       })}`,
     );
   }
+  const invalidReservedV2SvgViewBoxIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgViewBoxPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidReservedV2SvgViewBoxIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgViewBoxIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+    `Canvas2D strict profile rejects invalid SvgGlyph viewBox contract=${JSON.stringify({
+      invalidV2SvgViewBoxValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgViewBoxPayload
+        ?.textV2Validation,
+    })}`,
+  );
   const v2FallbackReport = canvas2dGlyphOutlineProbe.v2Fallback?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'op-text-v2-outline',
   );

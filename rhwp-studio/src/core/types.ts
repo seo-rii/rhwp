@@ -990,10 +990,10 @@ export interface LayerGlyphOutlineSvgGlyphPayload {
   viewBox: LayerSvgGlyphViewBox;
   intrinsicSize?: LayerSvgGlyphIntrinsicSize;
   securityMode: LayerSvgGlyphSecurityMode;
-  scriptAllowed?: false;
-  animationAllowed?: false;
-  externalResourcesAllowed?: false;
-  interactivityAllowed?: false;
+  scriptAllowed: false;
+  animationAllowed: false;
+  externalResourcesAllowed: false;
+  interactivityAllowed: false;
 }
 
 export interface LayerGlyphOutlineOp {
