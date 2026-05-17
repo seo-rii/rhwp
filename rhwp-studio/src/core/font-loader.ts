@@ -129,11 +129,11 @@ export const REGISTERED_FONTS = new Set(FONT_LIST.map(f => f.name));
 
 /** 초기 렌더링에 필수인 폰트 (대부분의 HWP 문서 기본 서체) */
 const CRITICAL_FONTS = new Set(['함초롬바탕', '함초롬돋움']);
-/** CanvasKit overlay가 심볼/통화 기호 렌더링에 즉시 사용하는 폰트 */
-const OVERLAY_FALLBACK_FONTS = new Set(['Malgun Gothic', '맑은 고딕', '굴림체', 'GulimChe', 'D2Coding']);
+/** CanvasKit/Skia 직접 렌더러가 심볼/통화 기호 렌더링에 즉시 사용하는 폰트 */
+const DIRECT_RENDERER_FALLBACK_FONTS = new Set(['Malgun Gothic', '맑은 고딕', '굴림체', 'GulimChe', 'D2Coding']);
 
 interface LoadWebFontsOptions {
-  includeOverlayFallbacks?: boolean;
+  includeDirectRendererFallbacks?: boolean;
 }
 
 /** CSS @font-face 등록 여부 (중복 등록 방지) */
@@ -185,7 +185,7 @@ export function getDetectedOSFonts(): ReadonlySet<string> {
  *
  * @param docFonts 문서에서 사용하는 폰트 이름 목록 (해당 폰트 + CRITICAL만 로드, 생략 시 CRITICAL만)
  * @param onProgress 폰트 로드 진행률 콜백 (loaded, total)
- * @param options overlay fallback preload 여부
+ * @param options direct renderer fallback preload 여부
  */
 export async function loadWebFonts(
   docFonts?: string[],
@@ -208,17 +208,17 @@ export async function loadWebFonts(
     fontFaceRegistered = true;
   }
 
-  // 2) 로드 대상 결정: docFonts + 초기 필수 폰트 + 옵션 기반 overlay 폴백
+  // 2) 로드 대상 결정: docFonts + 초기 필수 폰트 + 옵션 기반 직접 렌더러 폴백
   //    OS에 설치된 폰트는 웹폰트 로딩 건너뜀
   const targetSet = new Set([
     ...(docFonts ?? []),
     ...CRITICAL_FONTS,
-    ...(options?.includeOverlayFallbacks ? OVERLAY_FALLBACK_FONTS : []),
+    ...(options?.includeDirectRendererFallbacks ? DIRECT_RENDERER_FALLBACK_FONTS : []),
   ]);
   const toLoad = FONT_LIST.filter(f => {
     if (!targetSet.has(f.name)) return false;
     // OS에 동일 이름 폰트가 있으면 웹폰트 로딩 불필요
-    if (!OVERLAY_FALLBACK_FONTS.has(f.name) && detectedOSFonts.has(f.name)) return false;
+    if (!DIRECT_RENDERER_FALLBACK_FONTS.has(f.name) && detectedOSFonts.has(f.name)) return false;
     return true;
   });
 

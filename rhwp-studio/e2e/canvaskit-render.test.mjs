@@ -714,7 +714,7 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     await loadWebFonts(
       ['한컴 윤고딕 230', '함초롬돋움', '함초롬바탕'],
       undefined,
-      { includeOverlayFallbacks: true },
+      { includeDirectRendererFallbacks: true },
     );
     const loadedFamilies = Array.from(document.fonts)
       .filter((face) => face.status === 'loaded')

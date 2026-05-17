@@ -447,11 +447,11 @@ async function initializeDocument(docInfo: DocumentInfo, displayName: string): P
   const msg = sbMessage();
   try {
     console.log('[initDoc] 1. 폰트 로딩 시작');
-    const includeOverlayFallbacks = true;
-    if (docInfo.fontsUsed?.length || includeOverlayFallbacks) {
+    const includeDirectRendererFallbacks = true;
+    if (docInfo.fontsUsed?.length || includeDirectRendererFallbacks) {
       await loadWebFonts(docInfo.fontsUsed ?? [], (loaded, total) => {
         msg.textContent = `폰트 로딩 중... (${loaded}/${total})`;
-      }, { includeOverlayFallbacks });
+      }, { includeDirectRendererFallbacks });
     }
     console.log('[initDoc] 2. 폰트 로딩 완료');
     msg.textContent = displayName;

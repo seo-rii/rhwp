@@ -193,8 +193,8 @@ export async function loadHwpFile(page, filename) {
       const docInfo = window.__wasm?.loadDocument(new Uint8Array(sampleBytes), fname);
       if (!docInfo) return { error: 'loadDocument returned null' };
       const { loadWebFonts } = await import('/src/core/font-loader.ts');
-      const includeOverlayFallbacks = true;
-      await loadWebFonts(docInfo.fontsUsed ?? [], undefined, { includeOverlayFallbacks });
+      const includeDirectRendererFallbacks = true;
+      await loadWebFonts(docInfo.fontsUsed ?? [], undefined, { includeDirectRendererFallbacks });
       window.__canvasView?.loadDocument?.();
       return { pageCount: docInfo.pageCount };
     } catch (e) {
