@@ -5,22 +5,26 @@ use super::{
 use crate::model::image::ImageEffect;
 use crate::model::style::UnderlineType;
 use crate::paint::{
-    BinaryResourceKind, BinaryResourceRef, CacheHint, ClipKind, FontBlobKey, FontBlobResource,
-    FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey,
-    FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
+    BinaryResourceKind, BinaryResourceRef, CacheHint, ClipKind, ColorGlyphFormat, ColorLayerNode,
+    ColorLayersPayload, ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
+    ColorPaintSolidPathNode, ColorPaintTransformNode, FontBlobKey, FontBlobResource,
+    FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId,
+    FontInstanceKey, FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
     GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
     GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerBuilder,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
     LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
     LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
-    PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResourceArena, ShapeKey,
-    ShapingEngineId, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
-    TextSourceSpan, TextVariantKind, TextVariantQuality, WritingMode,
+    PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena,
+    ShapeKey, ShapingEngineId, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId,
+    TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
-    RasterRenderOptions, VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
+    select_text_variant_sets_with_report, should_render_selected_text_variant, RasterRenderOptions,
+    VariantRejectReason, VariantReplayStatus, VariantSelectedReason, VariantSelectionBackend,
+    VariantSelectionContext,
 };
 use crate::renderer::render_tree::{
     BoundingBox, EllipseNode, LineNode, PageNode, PathNode, RectangleNode, RenderNode,
@@ -246,6 +250,162 @@ fn glyph_variant_test_tree(
     }
 
     PageLayerTree::with_resources(190.0, 82.0, LayerNode::leaf(bbox, None, ops), resources)
+}
+
+fn glyph_outline_variant_test_tree(
+    outline: LayerGlyphOutlinePaint,
+    fallback_visible: bool,
+) -> PageLayerTree {
+    let source = outline.source.clone();
+    let bbox = BoundingBox::new(0.0, 0.0, 190.0, 82.0);
+    let fallback_style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        color: 0x000000,
+        ..Default::default()
+    };
+    PageLayerTree::with_resources(
+        190.0,
+        82.0,
+        LayerNode::leaf(
+            bbox,
+            None,
+            vec![
+                PaintOp::TextRun {
+                    bbox,
+                    run: LayerTextRunPaint {
+                        source: Some(source),
+                        variant: Some(PaintVariantMeta {
+                            equivalence_group: "text-0".to_string(),
+                            variant_id: "textRun".to_string(),
+                            variant_kind: TextVariantKind::TextRun,
+                            part_index: 0,
+                            part_count: 1,
+                            is_default_fallback: true,
+                            requires: Vec::new(),
+                            quality: None,
+                            anchor_op_id: None,
+                            local_paint_order: None,
+                        }),
+                        text: if fallback_visible {
+                            "A".to_string()
+                        } else {
+                            String::new()
+                        },
+                        style: fallback_style,
+                        positions: if fallback_visible {
+                            vec![118.0, 150.0]
+                        } else {
+                            Vec::new()
+                        },
+                        baseline: 54.0,
+                        ..Default::default()
+                    },
+                },
+                PaintOp::GlyphOutline { bbox, outline },
+            ],
+        ),
+        ResourceArena::default(),
+    )
+}
+
+fn glyph_outline_test_paint(
+    payload_kind: GlyphOutlinePayloadKind,
+    stroke: Option<GlyphOutlineStrokeStyle>,
+    color_layers: Option<ColorLayersPayload>,
+) -> LayerGlyphOutlinePaint {
+    let source = TextSourceSpan {
+        id: TextSourceId(0),
+        utf8_range: TextSourceRange::new(0, 1),
+        utf16_range: TextSourceRange::new(0, 1),
+        stable_source_key: None,
+    };
+    let color_layers_format = color_layers.as_ref().map(|payload| payload.color_format);
+    let requires = match payload_kind {
+        GlyphOutlinePayloadKind::MonochromeFill => {
+            vec!["text.glyphOutline.monochromeFill".to_string()]
+        }
+        GlyphOutlinePayloadKind::MonochromeFillStroke => {
+            vec!["text.glyphOutline.monochromeFillStroke".to_string()]
+        }
+        GlyphOutlinePayloadKind::ColorLayers => {
+            let mut requires = vec!["text.glyphOutline.colorLayers".to_string()];
+            requires.push(
+                match color_layers_format {
+                    Some(ColorGlyphFormat::ColrV1) => "text.glyphOutline.colorLayers.colrV1",
+                    _ => "text.glyphOutline.colorLayers.colrV0",
+                }
+                .to_string(),
+            );
+            requires
+        }
+        GlyphOutlinePayloadKind::BitmapGlyph => vec!["text.glyphOutline.bitmapGlyph".to_string()],
+        GlyphOutlinePayloadKind::SvgGlyph => vec!["text.glyphOutline.svgGlyph".to_string()],
+    };
+    LayerGlyphOutlinePaint {
+        source: source.clone(),
+        variant: PaintVariantMeta {
+            equivalence_group: "text-0".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires,
+            quality: Some(TextVariantQuality::Exact),
+            anchor_op_id: Some("op-text-0".to_string()),
+            local_paint_order: Some(0),
+        },
+        payload_kind,
+        stroke,
+        color_layers,
+        bitmap_glyph: None,
+        svg_glyph: None,
+        paint_style: PaintTextStyle::from(&TextStyle {
+            color: 0x0000ff,
+            ..Default::default()
+        }),
+        placement: TextRunPlacement {
+            run_to_page: LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 24.0,
+                f: 20.0,
+            },
+            baseline_y: 0.0,
+        },
+        paths: if payload_kind == GlyphOutlinePayloadKind::ColorLayers {
+            Vec::new()
+        } else {
+            vec![LayerGlyphOutlinePath {
+                glyph_id: 1,
+                source_range_utf8: TextSourceRange::new(0, 1),
+                glyph_range: GlyphRange::new(0, 1),
+                commands: vec![
+                    PathCommand::MoveTo(0.0, 0.0),
+                    PathCommand::LineTo(30.0, 0.0),
+                    PathCommand::LineTo(30.0, 28.0),
+                    PathCommand::LineTo(0.0, 28.0),
+                    PathCommand::ClosePath,
+                ],
+                fill_rule: GlyphOutlineFillRule::NonZero,
+            }]
+        },
+        diagnostics: GlyphRunDiagnostics {
+            quality: TextVariantQuality::Exact,
+            replay_eligibility: GlyphRunReplayEligibility::Portable,
+            strict_visual_eligible: true,
+            max_origin_delta_px: 0.0,
+            max_advance_delta_px: 0.0,
+            max_residual_after_adjustment_px: 0.0,
+            cluster_mismatch_count: 0,
+            missing_glyph_count: 0,
+            used_fallback_font_count: 0,
+            reason: None,
+        },
+    }
 }
 
 #[test]
@@ -2505,6 +2665,319 @@ fn native_skia_replays_portable_glyph_run_variant() {
     );
     assert_eq!(report.parts_expected, 1);
     assert_eq!(report.parts_replayed, 1);
+}
+
+#[test]
+fn native_skia_replays_monochrome_glyph_outline_variant() {
+    let renderer = SkiaLayerRenderer::new();
+    let outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::MonochromeFill, None, None);
+    let tree = glyph_outline_variant_test_tree(outline, true);
+    if let LayerNodeKind::Leaf { ops, .. } = &tree.root.kind {
+        assert!(matches!(
+            &ops[0],
+            PaintOp::TextRun { run, .. }
+                if run
+                    .variant
+                    .as_ref()
+                    .is_some_and(|variant| variant.equivalence_group == "text-0")
+        ));
+        let selection = select_text_variant_sets_with_report(
+            ops,
+            |_| VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported),
+            |_| VariantReplayStatus::replayable(),
+            VariantSelectionContext {
+                backend: VariantSelectionBackend::NativeSkia,
+                render_profile: "screen".to_string(),
+            },
+        );
+        assert!(
+            !should_render_selected_text_variant(&ops[0], &selection.selected),
+            "selected GlyphOutline should suppress the TextRun fallback"
+        );
+    }
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("monochrome glyph outline variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("glyph outline ink");
+    let red_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 180 && pixel.green() < 80 && pixel.blue() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia glyph outline selection report");
+
+    assert!(
+        bounds.max_x < 70,
+        "native Skia should replay the left-side GlyphOutline variant, got {bounds:?}"
+    );
+    assert!(
+        red_pixels > 300,
+        "monochrome GlyphOutline should paint the resolved red path, red={red_pixels}"
+    );
+    assert_eq!(report.backend, VariantSelectionBackend::NativeSkia);
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+    assert_eq!(output.diagnostics.paint_ops_replayed, 1);
+    assert_eq!(report.parts_expected, 1);
+    assert_eq!(report.parts_replayed, 1);
+}
+
+#[test]
+fn native_skia_replays_monochrome_glyph_outline_stroke_subset() {
+    let renderer = SkiaLayerRenderer::new();
+    let outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::MonochromeFillStroke,
+        Some(GlyphOutlineStrokeStyle {
+            color: 0xff0000,
+            width_px: 4.0,
+            join: GlyphOutlineStrokeJoin::Miter,
+            cap: GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+        }),
+        None,
+    );
+    let tree = glyph_outline_variant_test_tree(outline, true);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("stroked glyph outline variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let red_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 180 && pixel.green() < 80 && pixel.blue() < 80
+    });
+    let blue_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.blue() > 180 && pixel.red() < 80 && pixel.green() < 80
+    });
+
+    assert!(
+        red_pixels > 200 && blue_pixels > 100,
+        "stroked GlyphOutline should paint both fill and stroke, red={red_pixels}, blue={blue_pixels}"
+    );
+}
+
+#[test]
+fn native_skia_replays_colrv0_color_layers_variant() {
+    let renderer = SkiaLayerRenderer::new();
+    let color_layers = ColorLayersPayload {
+        color_format: ColorGlyphFormat::ColrV0,
+        source_font_ref: Some(FontColorGlyphRef {
+            face_key: Some("test-face".to_string()),
+            glyph_id: Some(1),
+            palette_index: Some(2),
+            color_format: Some(ColorGlyphFormat::ColrV0),
+        }),
+        palette_ref: None,
+        layers: vec![ColorLayerNode {
+            layer_index: Some(0),
+            glyph_id: Some(1),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            source_font_ref: Some(FontColorGlyphRef {
+                face_key: Some("test-face".to_string()),
+                glyph_id: Some(1),
+                palette_index: Some(2),
+                color_format: Some(ColorGlyphFormat::ColrV0),
+            }),
+            path_index: Some(0),
+            commands: Some(vec![
+                PathCommand::MoveTo(0.0, 0.0),
+                PathCommand::LineTo(30.0, 0.0),
+                PathCommand::LineTo(30.0, 28.0),
+                PathCommand::LineTo(0.0, 28.0),
+                PathCommand::ClosePath,
+            ]),
+            fill: Some(ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba: [0.0, 1.0, 0.0, 1.0],
+            }),
+            fill_rule: Some(GlyphOutlineFillRule::NonZero),
+            palette_index: Some(2),
+            color: None,
+            opacity: Some(1.0),
+            transform_to_run: None,
+        }],
+        paint_graph: None,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+    };
+    let outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Some(color_layers),
+    );
+    let tree = glyph_outline_variant_test_tree(outline, true);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("COLRv0 glyph outline variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let green_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.green() > 180 && pixel.red() < 80 && pixel.blue() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia COLRv0 glyph outline selection report");
+
+    assert!(
+        green_pixels > 300,
+        "COLRv0 GlyphOutline should paint resolved color layers, green={green_pixels}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+}
+
+#[test]
+fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
+    let renderer = SkiaLayerRenderer::new();
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("test-face".to_string()),
+        glyph_id: Some(1),
+        palette_index: Some(3),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let color_layers = ColorLayersPayload {
+        color_format: ColorGlyphFormat::ColrV1,
+        source_font_ref: Some(source_font_ref.clone()),
+        palette_ref: None,
+        layers: Vec::new(),
+        paint_graph: Some(ColorPaintGraphPayload {
+            root_node_id: 10,
+            nodes: vec![
+                ColorPaintGraphNode {
+                    node_id: 10,
+                    kind: ColorPaintGraphNodeKind::Transform,
+                    solid_path: None,
+                    transform: Some(ColorPaintTransformNode {
+                        child_node_id: 20,
+                        transform: LayerAffineTransform {
+                            a: 1.0,
+                            b: 0.0,
+                            c: 0.0,
+                            d: 1.0,
+                            e: 8.0,
+                            f: 0.0,
+                        },
+                    }),
+                    source_range_utf8: None,
+                    glyph_range: None,
+                    source_font_ref: None,
+                },
+                ColorPaintGraphNode {
+                    node_id: 20,
+                    kind: ColorPaintGraphNodeKind::SolidPath,
+                    solid_path: Some(ColorPaintSolidPathNode {
+                        commands: vec![
+                            PathCommand::MoveTo(0.0, 0.0),
+                            PathCommand::LineTo(22.0, 0.0),
+                            PathCommand::LineTo(22.0, 28.0),
+                            PathCommand::LineTo(0.0, 28.0),
+                            PathCommand::ClosePath,
+                        ],
+                        fill: ResolvedColor {
+                            color_space: Some("srgb".to_string()),
+                            rgba: [0.0, 0.0, 1.0, 1.0],
+                        },
+                        fill_rule: GlyphOutlineFillRule::NonZero,
+                        source_glyph_id: Some(1),
+                        palette_index: Some(3),
+                    }),
+                    source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                    glyph_range: Some(GlyphRange::new(0, 1)),
+                    source_font_ref: Some(source_font_ref),
+                    transform: None,
+                },
+            ],
+        }),
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+    };
+    let outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Some(color_layers),
+    );
+    let tree = glyph_outline_variant_test_tree(outline, true);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("COLRv1 stage-1 glyph outline variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("COLRv1 stage-1 glyph outline ink");
+    let blue_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.blue() > 180 && pixel.red() < 80 && pixel.green() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia COLRv1 stage-1 glyph outline selection report");
+
+    assert!(
+        bounds.min_x >= 30,
+        "COLRv1 transform node should shift the solid path in run-local space, got {bounds:?}"
+    );
+    assert!(
+        blue_pixels > 250,
+        "COLRv1 stage-1 GlyphOutline should paint the normalized solid graph, blue={blue_pixels}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_unsupported_glyph_outline_stroke() {
+    let renderer = SkiaLayerRenderer::new();
+    let outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::MonochromeFillStroke,
+        Some(GlyphOutlineStrokeStyle {
+            color: 0xff0000,
+            width_px: 4.0,
+            join: GlyphOutlineStrokeJoin::Round,
+            cap: GlyphOutlineStrokeCap::Butt,
+            miter_limit: Some(4.0),
+            paint_order: GlyphOutlinePaintOrder::FillThenStroke,
+        }),
+        None,
+    );
+    let tree = glyph_outline_variant_test_tree(outline, true);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("unsupported glyph outline stroke fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia glyph outline fallback selection report");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when GlyphOutline stroke style is unsupported, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::GlyphOutlineStrokeStyleUnsupported)
+    }));
 }
 
 #[test]

@@ -7,14 +7,15 @@ use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
 use crate::paint::{
-    CacheHint, GlyphRunOrientation, GlyphRunReplayEligibility, LayerGlyphRunPaint, LayerNode,
-    LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextVariantQuality,
+    CacheHint, GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRunOrientation,
+    GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphRunPaint,
+    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant, LayerRasterRenderer,
     LayerRenderError, LayerRenderResult, RasterOutputFormat, RasterRenderOptions,
-    RasterRenderOutput, VariantRejectReason, VariantReplayStatus, VariantSelectionBackend,
-    VariantSelectionContext,
+    RasterRenderOutput, VariantOutlineEligibilityReport, VariantRejectReason, VariantReplayStatus,
+    VariantSelectionBackend, VariantSelectionContext,
 };
 use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::{ArrowStyle, LineRenderType};
@@ -194,6 +195,173 @@ fn native_skia_glyph_run_replay_status(
 
 fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &ResourceArena) -> bool {
     native_skia_glyph_run_replay_status(run, resources).replayable
+}
+
+fn affine_is_finite(transform: &LayerAffineTransform) -> bool {
+    [
+        transform.a,
+        transform.b,
+        transform.c,
+        transform.d,
+        transform.e,
+        transform.f,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+}
+
+fn path_commands_are_finite(commands: &[crate::renderer::PathCommand]) -> bool {
+    !commands.is_empty()
+        && commands.iter().all(|command| match *command {
+            crate::renderer::PathCommand::MoveTo(x, y)
+            | crate::renderer::PathCommand::LineTo(x, y) => x.is_finite() && y.is_finite(),
+            crate::renderer::PathCommand::CurveTo(x1, y1, x2, y2, x, y) => {
+                [x1, y1, x2, y2, x, y].into_iter().all(f64::is_finite)
+            }
+            crate::renderer::PathCommand::ArcTo(rx, ry, rotation, _, _, x, y) => {
+                [rx, ry, rotation, x, y].into_iter().all(f64::is_finite)
+            }
+            crate::renderer::PathCommand::ClosePath => true,
+        })
+}
+
+fn glyph_outline_paths_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {
+    !outline.paths.is_empty()
+        && outline
+            .paths
+            .iter()
+            .all(|path| path_commands_are_finite(&path.commands))
+}
+
+fn color_layers_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {
+    let Some(payload) = outline.color_layers.as_ref() else {
+        return false;
+    };
+    if payload.has_colrv0_resolved_layer_contract() {
+        return payload.layers.iter().all(|layer| {
+            layer
+                .commands
+                .as_ref()
+                .is_some_and(|commands| path_commands_are_finite(commands))
+                && layer.fill.as_ref().is_some_and(|fill| {
+                    fill.rgba
+                        .iter()
+                        .all(|component| component.is_finite() && (0.0..=1.0).contains(component))
+                })
+                && layer
+                    .transform_to_run
+                    .as_ref()
+                    .map(affine_is_finite)
+                    .unwrap_or(true)
+        });
+    }
+    if payload.has_colrv1_stage1_graph_contract() {
+        return payload
+            .colrv1_stage1_reference_layers()
+            .as_ref()
+            .is_some_and(|layers| {
+                layers.iter().all(|layer| {
+                    layer
+                        .commands
+                        .as_ref()
+                        .is_some_and(|commands| path_commands_are_finite(commands))
+                        && layer.fill.as_ref().is_some_and(|fill| {
+                            fill.rgba.iter().all(|component| {
+                                component.is_finite() && (0.0..=1.0).contains(component)
+                            })
+                        })
+                        && layer
+                            .transform_to_run
+                            .as_ref()
+                            .map(affine_is_finite)
+                            .unwrap_or(true)
+                })
+            });
+    }
+    false
+}
+
+fn native_skia_glyph_outline_payload_status(
+    outline: &LayerGlyphOutlinePaint,
+) -> (bool, Option<VariantRejectReason>) {
+    if !affine_is_finite(&outline.placement.run_to_page)
+        || !outline.placement.baseline_y.is_finite()
+    {
+        return (false, Some(VariantRejectReason::VariantUnsupported));
+    }
+    match outline.payload_kind {
+        GlyphOutlinePayloadKind::MonochromeFill => {
+            if glyph_outline_paths_are_replayable(outline) {
+                (true, None)
+            } else {
+                (false, Some(VariantRejectReason::UnsupportedOutlinePayload))
+            }
+        }
+        GlyphOutlinePayloadKind::MonochromeFillStroke => {
+            let Some(stroke) = outline.stroke.as_ref() else {
+                return (false, Some(VariantRejectReason::UnsupportedOutlinePayload));
+            };
+            if !stroke.is_supported_monochrome_subset() {
+                return (
+                    false,
+                    Some(VariantRejectReason::GlyphOutlineStrokeStyleUnsupported),
+                );
+            }
+            if glyph_outline_paths_are_replayable(outline) {
+                (true, None)
+            } else {
+                (false, Some(VariantRejectReason::UnsupportedOutlinePayload))
+            }
+        }
+        GlyphOutlinePayloadKind::ColorLayers => {
+            if color_layers_are_replayable(outline) {
+                (true, None)
+            } else {
+                (false, Some(VariantRejectReason::UnsupportedColorGlyph))
+            }
+        }
+        GlyphOutlinePayloadKind::BitmapGlyph => {
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        }
+        GlyphOutlinePayloadKind::SvgGlyph => {
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        }
+    }
+}
+
+fn native_skia_glyph_outline_replay_status(
+    outline: &LayerGlyphOutlinePaint,
+) -> VariantReplayStatus {
+    let (payload_supported, payload_reason) = native_skia_glyph_outline_payload_status(outline);
+    let strict_visual_eligible = outline.diagnostics.strict_visual_eligible;
+    let paint_style_supported = outline.paint_style.is_fill_only_glyph_replay();
+    let replay_eligible = strict_visual_eligible && payload_supported && paint_style_supported;
+    let reason = if !strict_visual_eligible {
+        Some(VariantRejectReason::VariantUnsupported)
+    } else if !payload_supported {
+        payload_reason
+    } else if !paint_style_supported {
+        Some(VariantRejectReason::UnsupportedPaintEffect)
+    } else {
+        None
+    };
+    let mut status = if replay_eligible {
+        VariantReplayStatus::replayable()
+    } else {
+        VariantReplayStatus::rejected(reason.unwrap_or(VariantRejectReason::VariantUnsupported))
+    };
+    status.outline_eligibility = Some(VariantOutlineEligibilityReport {
+        strict_visual_eligible,
+        payload_supported,
+        paint_style_supported,
+        replay_eligible,
+        reason: status.reason,
+    });
+    status
+}
+
+fn native_skia_can_replay_glyph_outline(outline: &LayerGlyphOutlinePaint) -> bool {
+    native_skia_glyph_outline_replay_status(outline).replayable
 }
 
 fn calc_arrow_dims(stroke_width: f64, line_len: f64, arrow_size: u8) -> (f64, f64) {
@@ -594,10 +762,13 @@ impl SkiaLayerRenderer {
                         }
                         _ => VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported),
                     },
-                    |_| {
-                        VariantReplayStatus::rejected(
+                    |op| match op {
+                        PaintOp::GlyphOutline { outline, .. } => {
+                            native_skia_glyph_outline_replay_status(outline)
+                        }
+                        _ => VariantReplayStatus::rejected(
                             VariantRejectReason::BackendDoesNotSupportVariant,
-                        )
+                        ),
                     },
                     VariantSelectionContext {
                         backend: VariantSelectionBackend::NativeSkia,
@@ -617,6 +788,168 @@ impl SkiaLayerRenderer {
                 replay.pop_cache_hint();
             }
         }
+    }
+
+    fn glyph_outline_matrix(transform: LayerAffineTransform) -> Matrix {
+        Matrix::from_affine(&[
+            transform.a as f32,
+            transform.b as f32,
+            transform.c as f32,
+            transform.d as f32,
+            transform.e as f32,
+            transform.f as f32,
+        ])
+    }
+
+    fn glyph_outline_fill_type(fill_rule: GlyphOutlineFillRule) -> skia_safe::PathFillType {
+        match fill_rule {
+            GlyphOutlineFillRule::NonZero => skia_safe::PathFillType::Winding,
+            GlyphOutlineFillRule::EvenOdd => skia_safe::PathFillType::EvenOdd,
+        }
+    }
+
+    fn glyph_outline_path(
+        commands: &[crate::renderer::PathCommand],
+        fill_rule: GlyphOutlineFillRule,
+    ) -> skia_safe::Path {
+        let mut path = to_skia_path(commands);
+        path.set_fill_type(Self::glyph_outline_fill_type(fill_rule));
+        path
+    }
+
+    fn glyph_outline_resolved_color(
+        color: &crate::paint::ResolvedColor,
+        opacity: Option<f64>,
+    ) -> Color {
+        let channel = |component: f32| -> u8 { (component.clamp(0.0, 1.0) * 255.0).round() as u8 };
+        let alpha = (color.rgba[3] * opacity.unwrap_or(1.0) as f32).clamp(0.0, 1.0);
+        Color::from_argb(
+            channel(alpha),
+            channel(color.rgba[0]),
+            channel(color.rgba[1]),
+            channel(color.rgba[2]),
+        )
+    }
+
+    fn render_glyph_outline_path(
+        canvas: &Canvas,
+        commands: &[crate::renderer::PathCommand],
+        fill_rule: GlyphOutlineFillRule,
+        fill_paint: &Paint,
+        stroke_paint: Option<&Paint>,
+    ) {
+        let path = Self::glyph_outline_path(commands, fill_rule);
+        canvas.draw_path(&path, fill_paint);
+        if let Some(stroke_paint) = stroke_paint {
+            canvas.draw_path(&path, stroke_paint);
+        }
+    }
+
+    fn render_glyph_outline_color_layers(
+        &self,
+        canvas: &Canvas,
+        outline: &LayerGlyphOutlinePaint,
+        replay: &SkiaReplayContext,
+    ) {
+        let Some(payload) = outline.color_layers.as_ref() else {
+            return;
+        };
+        let reference_layers;
+        let layers = if payload.has_colrv0_resolved_layer_contract() {
+            &payload.layers
+        } else {
+            reference_layers = payload.colrv1_stage1_reference_layers().unwrap_or_default();
+            &reference_layers
+        };
+        for layer in layers {
+            let (Some(commands), Some(fill)) = (layer.commands.as_ref(), layer.fill.as_ref())
+            else {
+                continue;
+            };
+            let mut fill_paint = Paint::default();
+            fill_paint.set_anti_alias(replay.vector_antialias());
+            fill_paint.set_style(skia_safe::paint::Style::Fill);
+            fill_paint.set_color(Self::glyph_outline_resolved_color(fill, layer.opacity));
+
+            if let Some(transform) = layer.transform_to_run {
+                canvas.save();
+                canvas.concat(&Self::glyph_outline_matrix(transform));
+                Self::render_glyph_outline_path(
+                    canvas,
+                    commands,
+                    layer.fill_rule.unwrap_or(GlyphOutlineFillRule::NonZero),
+                    &fill_paint,
+                    None,
+                );
+                canvas.restore();
+            } else {
+                Self::render_glyph_outline_path(
+                    canvas,
+                    commands,
+                    layer.fill_rule.unwrap_or(GlyphOutlineFillRule::NonZero),
+                    &fill_paint,
+                    None,
+                );
+            }
+        }
+    }
+
+    fn render_glyph_outline(
+        &self,
+        canvas: &Canvas,
+        outline: &LayerGlyphOutlinePaint,
+        replay: &SkiaReplayContext,
+    ) {
+        if !native_skia_can_replay_glyph_outline(outline) {
+            return;
+        }
+        let mut fill_paint = Paint::default();
+        fill_paint.set_anti_alias(replay.vector_antialias());
+        fill_paint.set_style(skia_safe::paint::Style::Fill);
+        fill_paint.set_color(colorref_to_skia(outline.paint_style.color, 1.0));
+
+        let mut stroke_paint = Paint::default();
+        let stroke_paint = if outline.payload_kind == GlyphOutlinePayloadKind::MonochromeFillStroke
+        {
+            if let Some(stroke) = outline.stroke.as_ref() {
+                stroke_paint.set_anti_alias(replay.vector_antialias());
+                stroke_paint.set_style(skia_safe::paint::Style::Stroke);
+                stroke_paint.set_color(colorref_to_skia(stroke.color, 1.0));
+                stroke_paint.set_stroke_width(stroke.width_px as f32);
+                stroke_paint.set_stroke_join(skia_safe::paint::Join::Miter);
+                stroke_paint.set_stroke_cap(skia_safe::paint::Cap::Butt);
+                if let Some(miter_limit) = stroke.miter_limit {
+                    stroke_paint.set_stroke_miter(miter_limit as f32);
+                }
+                Some(&stroke_paint)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        canvas.save();
+        canvas.concat(&Self::glyph_outline_matrix(outline.placement.run_to_page));
+        match outline.payload_kind {
+            GlyphOutlinePayloadKind::MonochromeFill
+            | GlyphOutlinePayloadKind::MonochromeFillStroke => {
+                for path in &outline.paths {
+                    Self::render_glyph_outline_path(
+                        canvas,
+                        &path.commands,
+                        path.fill_rule,
+                        &fill_paint,
+                        stroke_paint,
+                    );
+                }
+            }
+            GlyphOutlinePayloadKind::ColorLayers => {
+                self.render_glyph_outline_color_layers(canvas, outline, replay);
+            }
+            GlyphOutlinePayloadKind::BitmapGlyph | GlyphOutlinePayloadKind::SvgGlyph => {}
+        }
+        canvas.restore();
     }
 
     fn render_op(
@@ -830,10 +1163,8 @@ impl SkiaLayerRenderer {
                 }
                 canvas.restore();
             }
-            PaintOp::GlyphOutline { .. } => {
-                // GlyphOutline is a strict-visual variant contract, not a
-                // generic Path fallback. Native Skia currently selects
-                // GlyphRun or TextRun variants only.
+            PaintOp::GlyphOutline { outline, .. } => {
+                self.render_glyph_outline(canvas, outline, replay);
             }
             PaintOp::CharOverlap { bbox, overlap } => {
                 let mut run = crate::paint::LayerTextRunPaint {
