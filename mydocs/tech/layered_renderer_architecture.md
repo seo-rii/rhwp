@@ -241,6 +241,9 @@ Rust core의 layout 자체를 바꾸는 것은 아니다.
 CanvasKit surface backend는 render mode와 별도의 진단 축이다.
 `canvaskitMode`는 query param과 localStorage로 유지되지만,
 `canvaskitSurface`는 테스트/진단용 query-only override로 유지한다.
+browser baseline sweep에서는 같은 축을 `RHWP_CANVASKIT_SURFACE` 또는
+`renderer-baseline.mjs --canvaskit-surface=...`로 지정할 수 있으며,
+native-vs-CanvasKit diff report는 해당 surface 값을 비교 결과에 보존한다.
 
 | surface 값 | 의미 |
 |---|---|

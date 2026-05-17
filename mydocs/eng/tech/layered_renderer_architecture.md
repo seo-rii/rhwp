@@ -219,6 +219,9 @@ CanvasKit currently exposes two direct-replay modes.
 The `canvaskitSurface` query parameter is a separate diagnostic axis: it chooses
 the CanvasKit surface helper (`auto`, `webgpu`, `webgl`, or `software`) and is not the
 same as render-mode fallback.
+Browser baseline sweeps expose the same axis through `RHWP_CANVASKIT_SURFACE`
+or `renderer-baseline.mjs --canvaskit-surface=...`, and native-vs-CanvasKit diff
+reports preserve the selected surface value for each comparison.
 CanvasKit exposes the resolved preference, selected surface helper, per-backend
 WebGPU/WebGL/software attempt and fallback counters, and per-backend last
 failure reasons so tests can distinguish an explicit WebGPU failure from a
