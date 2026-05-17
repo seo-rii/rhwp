@@ -3230,6 +3230,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2BitmapOffsetTransformPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              transformToRun: { a: 1, b: 0, c: 0, d: 1, e: 3, f: 0 },
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const invalidReservedV2BitmapRangePayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -3407,6 +3422,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2SvgTransformPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              transformToRun: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 3 },
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const unsupported = render(makeTree({ ...style, underline: 'bottom' }), true);
       const unsupportedPayload = render(makeTree(style, []), true);
       return {
@@ -3455,6 +3485,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
         invalidReservedV2BitmapTransformPayload,
+        invalidReservedV2BitmapOffsetTransformPayload,
         invalidReservedV2BitmapRangePayload,
         invalidReservedV2BitmapResourcePayload,
         invalidReservedV2BitmapPlacementPayload,
@@ -3467,6 +3498,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2SvgViewBoxPayload,
         invalidReservedV2SvgRangePayload,
         invalidReservedV2SvgResourcePayload,
+        invalidReservedV2SvgTransformPayload,
         unsupported,
         unsupportedPayload,
       };
@@ -3835,6 +3867,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2BitmapTransformPayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapOffsetTransformIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapOffsetTransformPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidReservedV2BitmapRangeIssueCodes = canvas2dGlyphOutlineProbe
     .invalidReservedV2BitmapRangePayload
     ?.textV2Validation
@@ -3866,6 +3902,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     invalidReservedV2BitmapTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapOffsetTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapOffsetTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapRangeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapResourceIssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -3880,8 +3918,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidReservedV2BitmapScalingFilterValueIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapFilteringIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapFilteringIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
-    `Canvas2D strict profile rejects non-finite BitmapGlyph transform contract=${JSON.stringify({
+    `Canvas2D strict profile rejects unsupported BitmapGlyph transform contract=${JSON.stringify({
       invalidV2BitmapTransformValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapTransformPayload
+        ?.textV2Validation,
+      invalidV2BitmapOffsetTransformValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2BitmapOffsetTransformPayload
         ?.textV2Validation,
       invalidV2BitmapRangeValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapRangePayload
         ?.textV2Validation,
@@ -3913,19 +3954,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2SvgResourcePayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2SvgTransformIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgTransformPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     invalidReservedV2SvgViewBoxIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgViewBoxIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgRangeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadContractInvalid')
-      && !invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+      && !invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
     `Canvas2D strict profile rejects invalid SvgGlyph viewBox contract=${JSON.stringify({
       invalidV2SvgViewBoxValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgViewBoxPayload
         ?.textV2Validation,
       invalidV2SvgRangeValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgRangePayload
         ?.textV2Validation,
       invalidV2SvgResourceValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgResourcePayload
+        ?.textV2Validation,
+      invalidV2SvgTransformValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgTransformPayload
         ?.textV2Validation,
     })}`,
   );

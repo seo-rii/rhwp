@@ -637,7 +637,10 @@ The reserved families are intentionally separate payload families:
   deterministic scaling policies such as `noScale`, `scaleToEm`, or
   `explicitTransform`; `backendDefault` is only suitable for compatibility or
   diagnostic profiles because it delegates strict replay semantics to the
-  renderer.
+  renderer. The current strict replay gate accepts an absent or identity
+  `transformToRun`; non-identity bitmap glyph transforms stay rejected until the
+  direct Canvas2D/CanvasKit/native replay path applies that transform
+  deterministically.
 - `SvgGlyph` should reference a sanitized static vector subresource. The first
   browser strict replay subset is path-only: sanitized `<path d="...">`
   fragments with fill, fill opacity, and fill rule are replayed as native
@@ -646,7 +649,10 @@ The reserved families are intentionally separate payload families:
   interactivity disabled; raw SVG-in-font replay is not the strictVisual
   contract. The payload should record `viewBox` and optional `intrinsicSize`
   because mapping the vector resource into run-local glyph coordinates is part
-  of strict visual replay, not a backend-local guess.
+  of strict visual replay, not a backend-local guess. As with BitmapGlyph, the
+  current strict replay gate only accepts absent or identity `transformToRun`;
+  non-identity vector glyph transforms remain reserved until direct replay
+  coverage lands.
 
 The later writer gates are intentionally ordered so a feature addition does not
 implicitly change schema authority:
