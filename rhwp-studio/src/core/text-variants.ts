@@ -968,11 +968,9 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
     && (bitmapGlyph.transformToRun === undefined || isFiniteAffineTransform(bitmapGlyph.transformToRun))
     && (bitmapGlyph.strikePpem === undefined || isValidBitmapStrikePpem(bitmapGlyph.strikePpem))
     && bitmapGlyph.strikeSelection === 'producerResolved'
-    && bitmapGlyph.alphaMode !== undefined
-    && bitmapGlyph.scalingPolicy !== undefined
-    && bitmapGlyph.scalingPolicy !== 'backendDefault'
-    && bitmapGlyph.filtering !== undefined
-    && bitmapGlyph.filtering !== 'backendDefault';
+    && isSupportedBitmapAlphaMode(bitmapGlyph.alphaMode)
+    && isSupportedBitmapScalingPolicy(bitmapGlyph.scalingPolicy)
+    && isSupportedBitmapFiltering(bitmapGlyph.filtering);
 }
 
 export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp): boolean {
@@ -1074,6 +1072,22 @@ function isValidBitmapStrikePpem(strikePpem: [number, number]): boolean {
     && Number.isInteger(strikePpem[1])
     && strikePpem[0] > 0
     && strikePpem[1] > 0;
+}
+
+function isSupportedBitmapAlphaMode(value: string | undefined): boolean {
+  return value === 'premultiplied' || value === 'straight';
+}
+
+function isSupportedBitmapScalingPolicy(value: string | undefined): boolean {
+  return value === 'noScale'
+    || value === 'scaleToEm'
+    || value === 'explicitTransform'
+    || value === 'nearest'
+    || value === 'linear';
+}
+
+function isSupportedBitmapFiltering(value: string | undefined): boolean {
+  return value === 'nearest' || value === 'linear';
 }
 
 function isValidResolvedColor(

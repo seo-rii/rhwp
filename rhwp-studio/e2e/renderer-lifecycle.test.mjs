@@ -3135,6 +3135,51 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2BitmapAlphaPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              alphaMode: 'unknown',
+            },
+          },
+          true,
+        ),
+        true,
+      );
+      const invalidReservedV2BitmapScalingPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              scalingPolicy: 'unknown',
+            },
+          },
+          true,
+        ),
+        true,
+      );
+      const invalidReservedV2BitmapFilteringPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              filtering: 'unknown',
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const reservedV2SvgPayload = render(
         makeReservedV2OutlinePayloadTree(
           'svgGlyph',
@@ -3252,6 +3297,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2BitmapRangePayload,
         invalidReservedV2BitmapResourcePayload,
         invalidReservedV2BitmapPlacementPayload,
+        invalidReservedV2BitmapAlphaPayload,
+        invalidReservedV2BitmapScalingPayload,
+        invalidReservedV2BitmapFilteringPayload,
         reservedV2SvgPayload,
         invalidReservedV2SvgPayload,
         invalidReservedV2SvgViewBoxPayload,
@@ -3612,6 +3660,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2BitmapPlacementPayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapAlphaIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapAlphaPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapScalingIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapScalingPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapFilteringIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapFilteringPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     invalidReservedV2BitmapTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
@@ -3620,7 +3680,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && invalidReservedV2BitmapResourceIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapResourceIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapPlacementIssueCodes.includes('glyphOutlinePayloadContractInvalid')
-      && !invalidReservedV2BitmapPlacementIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+      && !invalidReservedV2BitmapPlacementIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapAlphaIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapAlphaIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapScalingIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapScalingIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapFilteringIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapFilteringIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
     `Canvas2D strict profile rejects non-finite BitmapGlyph transform contract=${JSON.stringify({
       invalidV2BitmapTransformValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapTransformPayload
         ?.textV2Validation,
@@ -3630,6 +3696,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ?.textV2Validation,
       invalidV2BitmapPlacementValidation: canvas2dGlyphOutlineProbe
         .invalidReservedV2BitmapPlacementPayload
+        ?.textV2Validation,
+      invalidV2BitmapAlphaValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapAlphaPayload
+        ?.textV2Validation,
+      invalidV2BitmapScalingValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapScalingPayload
+        ?.textV2Validation,
+      invalidV2BitmapFilteringValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapFilteringPayload
         ?.textV2Validation,
     })}`,
   );
