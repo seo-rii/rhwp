@@ -4779,6 +4779,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedSvgIndirectPaintTree = treeFor(svgOutline);
     unsupportedSvgIndirectPaintTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="url (#glyph-paint)"/>';
     unsupportedSvgIndirectPaintTree.resources.svgHashes[0] = 'svg-glyph-unsupported-indirect-paint';
+    const unsupportedSvgDoctypeTree = treeFor(svgOutline);
+    unsupportedSvgDoctypeTree.resources.svgFragments[0] = '<!DOCTYPE svg><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
+    unsupportedSvgDoctypeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-doctype';
     const wrappedSvgResourceTree = treeFor(svgOutline);
     wrappedSvgResourceTree.resources.svgFragments[0] = [
       '<svg id="glyph-root" class="glyph-shell" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" viewBox="0 0 18 18">',
@@ -4810,12 +4813,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserWrappedSvgGlyph;
     let noDomParserPolylineSvgGlyph;
     let noDomParserRoundedRectSvgGlyph;
+    let noDomParserUnsupportedSvgDoctypeResource;
     try {
       globalThis.DOMParser = undefined;
       noDomParserSvgGlyph = await render(treeFor(svgOutline));
       noDomParserWrappedSvgGlyph = await render(wrappedSvgResourceTree);
       noDomParserPolylineSvgGlyph = await render(polylineSvgResourceTree);
       noDomParserRoundedRectSvgGlyph = await render(roundedRectSvgResourceTree);
+      noDomParserUnsupportedSvgDoctypeResource = await render(unsupportedSvgDoctypeTree);
     } finally {
       if (hadDOMParser) {
         globalThis.DOMParser = originalDOMParser;
@@ -4845,6 +4850,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedSvgGlyphOpacityResource: await render(unsupportedSvgOpacityTree),
       unsupportedSvgGlyphFillRuleResource: await render(unsupportedSvgFillRuleTree),
       unsupportedSvgGlyphIndirectPaintResource: await render(unsupportedSvgIndirectPaintTree),
+      noDomParserUnsupportedSvgDoctypeResource,
     };
   });
   assert(!canvaskitGlyphOutlineProbe.error, canvaskitGlyphOutlineProbe.error || 'CanvasKit glyph outline probe available');
@@ -5003,6 +5009,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsupportedSvgGlyphIndirectPaintResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitNoDomParserUnsupportedSvgDoctypeResourceReport = canvaskitGlyphOutlineProbe
+    .noDomParserUnsupportedSvgDoctypeResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   assert(
     canvaskitUnsafeSvgResourceReport?.selectedVariantId === 'textRun'
       && canvaskitUnsafeSvgResourceReport?.rejectedVariants?.some(
@@ -5028,6 +5038,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitUnsupportedSvgIndirectPaintResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitNoDomParserUnsupportedSvgDoctypeResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitNoDomParserUnsupportedSvgDoctypeResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
       ),
     `CanvasKit rejects non-path-only SvgGlyph resources=${JSON.stringify({
       unsafe: canvaskitUnsafeSvgResourceReport,
@@ -5035,6 +5050,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedOpacity: canvaskitUnsupportedSvgOpacityResourceReport,
       unsupportedFillRule: canvaskitUnsupportedSvgFillRuleResourceReport,
       unsupportedIndirectPaint: canvaskitUnsupportedSvgIndirectPaintResourceReport,
+      noDomParserUnsupportedDoctype: canvaskitNoDomParserUnsupportedSvgDoctypeResourceReport,
     })}`,
   );
   const canvaskitMonochromeBlackPixels = countPixels(

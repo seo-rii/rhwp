@@ -50,6 +50,9 @@ export type LayerImageEffectDiagnostics = {
 
 export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[] {
   if (typeof DOMParser === 'undefined') {
+    if (/<\s*\?/.test(fragment) || /<\s*!(?!\s*--)/.test(fragment)) {
+      return [];
+    }
     const layers: StaticSvgPathLayer[] = [];
     const tagPattern = /<\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
     for (const match of fragment.matchAll(tagPattern)) {
