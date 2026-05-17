@@ -22,6 +22,7 @@ DEFAULT_MANIFEST = ROOT / "scripts" / "renderer_baseline_manifest.json"
 DEFAULT_OUTPUT = ROOT / "output" / "renderer-baseline" / "latest"
 NPM_CMD = "npm.cmd" if sys.platform == "win32" else "npm"
 ALLOWED_PROFILES = ("screen", "print", "high-quality", "fast-preview")
+ALLOWED_CANVASKIT_SURFACES = ("auto", "webgpu", "webgl", "software")
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +55,12 @@ def parse_args() -> argparse.Namespace:
         default="screen,fast-preview",
         help="comma-separated layered render profiles to capture "
         f"({', '.join(ALLOWED_PROFILES)})",
+    )
+    parser.add_argument(
+        "--canvaskit-surface",
+        default=os.environ.get("RHWP_CANVASKIT_SURFACE", "auto"),
+        help="CanvasKit surface preference for browser captures "
+        f"({', '.join(ALLOWED_CANVASKIT_SURFACES)}; aliases: gpu=webgpu, sw/cpu=software)",
     )
     parser.add_argument(
         "--skip-native",
@@ -295,6 +302,7 @@ def capture_browser_baseline(
     browser_mode: str,
     filter_pattern: str,
     profiles: list[str],
+    canvaskit_surface: str,
 ) -> Path:
     port = find_available_port()
     vite_url = f"http://127.0.0.1:{port}"
@@ -322,10 +330,18 @@ def capture_browser_baseline(
             f"--manifest={manifest_path}",
             f"--output={output_root}",
             f"--profiles={','.join(profiles)}",
+            f"--canvaskit-surface={canvaskit_surface}",
         ]
         if filter_pattern:
             cmd.append(f"--filter={filter_pattern}")
-        run_command(cmd, STUDIO_ROOT, {"VITE_URL": vite_url})
+        run_command(
+            cmd,
+            STUDIO_ROOT,
+            {
+                "VITE_URL": vite_url,
+                "RHWP_CANVASKIT_SURFACE": canvaskit_surface,
+            },
+        )
     finally:
         stop_process(dev_server)
     return output_root / "browser-baseline-report.json"
@@ -389,6 +405,7 @@ def write_reports(
     browser_report: Path | None,
     profiles: list[str],
     parity_report: Path | None,
+    canvaskit_surface: str,
 ) -> None:
     browser_data = None
     if browser_report and browser_report.exists():
@@ -470,7 +487,14 @@ def write_reports(
             key=lambda item: (item["profile"], item["backend"])
         )
 
-    performance_summary = {"browser": browser_performance_summary}
+    effective_canvaskit_surface = canvaskit_surface
+    if browser_data and isinstance(browser_data.get("canvaskitSurface"), str):
+        effective_canvaskit_surface = browser_data["canvaskitSurface"]
+
+    performance_summary = {
+        "browser": browser_performance_summary,
+        "canvaskitSurface": effective_canvaskit_surface,
+    }
     (output_root / "performance-summary.json").write_text(
         json.dumps(performance_summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -478,6 +502,7 @@ def write_reports(
 
     report_json = {
         "manifest": manifest,
+        "canvaskitSurface": effective_canvaskit_surface,
         "native": native_results,
         "browser": browser_data,
         "performance": performance_summary,
@@ -496,6 +521,7 @@ def write_reports(
         f"- manifest: `{Path(manifest.get('_path', '')).relative_to(ROOT) if manifest.get('_path') else 'n/a'}`",
         f"- samples: {len(manifest['samples'])}",
         f"- layered profiles: {', '.join(profiles)}",
+        f"- CanvasKit surface: `{effective_canvaskit_surface}`",
         "",
         "## Sample Matrix",
         "",
@@ -702,6 +728,17 @@ def main() -> None:
     manifest_path = Path(args.manifest).resolve()
     output_root = Path(args.output).resolve()
     profiles = parse_profiles(args.profiles)
+    canvaskit_surface = str(args.canvaskit_surface).strip().lower()
+    if canvaskit_surface in ("sw", "cpu"):
+        canvaskit_surface = "software"
+    elif canvaskit_surface == "gpu":
+        canvaskit_surface = "webgpu"
+    if canvaskit_surface not in ALLOWED_CANVASKIT_SURFACES:
+        raise SystemExit(
+            "unsupported CanvasKit surface: "
+            + canvaskit_surface
+            + f" (allowed: {', '.join(ALLOWED_CANVASKIT_SURFACES)}; aliases: gpu, sw, cpu)"
+        )
     ensure_dir(output_root)
 
     manifest = load_manifest(manifest_path, args.filter)
@@ -743,12 +780,21 @@ def main() -> None:
             args.browser_mode,
             args.filter,
             profiles,
+            canvaskit_surface,
         )
 
     parity_report = run_native_canvaskit_parity_report(
         native_results, browser_report, output_root, profiles
     )
-    write_reports(manifest, output_root, native_results, browser_report, profiles, parity_report)
+    write_reports(
+        manifest,
+        output_root,
+        native_results,
+        browser_report,
+        profiles,
+        parity_report,
+        canvaskit_surface,
+    )
     print(f"\n[baseline] complete: {output_root}", flush=True)
 
 
