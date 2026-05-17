@@ -833,15 +833,15 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
     && Array.isArray(colorLayers.layers)
     && colorLayers.layers.length > 0
     && colorLayers.layers.every((layer) =>
-      layer.layerIndex !== undefined
-      && layer.glyphId !== undefined
+      isValidPayloadIndex(layer.layerIndex)
+      && isValidPayloadGlyphId(layer.glyphId)
       && isValidPayloadRange(layer.glyphRange)
       && isValidPayloadRange(layer.sourceRangeUtf8)
       && layer.sourceFontRef !== undefined
       && isValidPathCommands(layer.commands)
       && isValidResolvedColor(layer.fill)
       && isSupportedFillRule(layer.fillRule)
-      && layer.paletteIndex !== undefined
+      && isValidPayloadIndex(layer.paletteIndex)
       && (layer.transformToRun === undefined || isFiniteAffineTransform(layer.transformToRun)),
     );
 }
@@ -888,6 +888,8 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && isValidPathCommands(node.solidPath.commands)
         && isValidResolvedColor(node.solidPath.fill)
         && isSupportedFillRule(node.solidPath.fillRule)
+        && (node.solidPath.sourceGlyphId === undefined || isValidPayloadGlyphId(node.solidPath.sourceGlyphId))
+        && (node.solidPath.paletteIndex === undefined || isValidPayloadIndex(node.solidPath.paletteIndex))
         && isValidPayloadRange(node.sourceRangeUtf8)
         && isValidPayloadRange(node.glyphRange)
           && node.sourceFontRef !== undefined
@@ -1016,6 +1018,10 @@ function isValidPayloadGraphNodeId(nodeId: number | undefined): boolean {
 
 function isValidPayloadGlyphId(glyphId: number | undefined): boolean {
   return typeof glyphId === 'number' && Number.isInteger(glyphId) && glyphId >= 0;
+}
+
+function isValidPayloadIndex(index: number | undefined): boolean {
+  return typeof index === 'number' && Number.isInteger(index) && index >= 0;
 }
 
 function isValidPathCommands(commands: LayerPathCommand[] | undefined): boolean {

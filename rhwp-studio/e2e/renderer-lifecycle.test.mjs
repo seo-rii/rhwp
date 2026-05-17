@@ -2941,6 +2941,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidCommandReservedV2ColorPayloadTree,
         true,
       );
+      const invalidProvenanceReservedV2ColorPayloadTree = makeReservedV2ColorPayloadTree();
+      invalidProvenanceReservedV2ColorPayloadTree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .layers[0]
+        .paletteIndex = -1;
+      const invalidProvenanceReservedV2ColorPayload = render(
+        invalidProvenanceReservedV2ColorPayloadTree,
+        true,
+      );
       const reservedV2ColorPayloadColrV1 = render(makeReservedV2ColorPayloadColrV1Tree(), true);
       const invalidRangeReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
       invalidRangeReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
@@ -3046,6 +3058,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ));
       const invalidCommandReservedV2ColorPayloadColrV1 = render(
         invalidCommandReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
+      const invalidProvenanceReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      invalidProvenanceReservedV2ColorPayloadColrV1Tree
+        .root
+        .ops[0]
+        .variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph
+        .nodes
+        .find((node) => node.kind === 'solidPath')
+        .solidPath
+        .sourceGlyphId = -1;
+      const invalidProvenanceReservedV2ColorPayloadColrV1 = render(
+        invalidProvenanceReservedV2ColorPayloadColrV1Tree,
         true,
       );
       const reservedV2BitmapPayload = render(
@@ -3284,6 +3314,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidRangeReservedV2ColorPayload,
         invalidColorReservedV2ColorPayload,
         invalidCommandReservedV2ColorPayload,
+        invalidProvenanceReservedV2ColorPayload,
         reservedV2ColorPayloadColrV1,
         invalidRangeReservedV2ColorPayloadColrV1,
         invalidReservedV2ColorPayloadColrV1,
@@ -3291,6 +3322,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidNodeIdReservedV2ColorPayloadColrV1,
         invalidTransformReservedV2ColorPayloadColrV1,
         invalidCommandReservedV2ColorPayloadColrV1,
+        invalidProvenanceReservedV2ColorPayloadColrV1,
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
         invalidReservedV2BitmapTransformPayload,
@@ -3508,6 +3540,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidCommandReservedV2ColorPayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidProvenanceReservedV2ColorPayloadIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidProvenanceReservedV2ColorPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const reservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
     .reservedV2ColorPayloadColrV1
     ?.textV2Validation
@@ -3536,6 +3572,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidCommandReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .invalidProvenanceReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
       && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
@@ -3553,10 +3593,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidColorReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidCommandReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidCommandReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidProvenanceReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidProvenanceReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidRangeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidRangeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && !invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
-      && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
+      && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
     `Canvas2D strict profile rejects reserved color outline payload=${JSON.stringify({
       report: reservedColorPayloadSidecarReport,
       sidecarValidation: canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.textV2Validation,
@@ -3567,12 +3611,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ?.textV2Validation,
       invalidCommandV2Validation: canvas2dGlyphOutlineProbe.invalidCommandReservedV2ColorPayload
         ?.textV2Validation,
+      invalidProvenanceV2Validation: canvas2dGlyphOutlineProbe.invalidProvenanceReservedV2ColorPayload
+        ?.textV2Validation,
       v2ColrV1Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayloadColrV1?.textV2Validation,
       invalidRangeV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidRangeReservedV2ColorPayloadColrV1
         ?.textV2Validation,
       invalidV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      invalidProvenanceV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .invalidProvenanceReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );
