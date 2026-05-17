@@ -60,6 +60,8 @@ export function resolveCanvasKitSurfacePreference(search: string): CanvasKitSurf
 
   if (requested === 'webgl') return 'webgl';
   if (requested === 'software' || requested === 'sw') return 'software';
+  // CanvasKit in rhwp currently exposes WebGL and software surfaces only.
+  // Unsupported values such as "webgpu" intentionally fall back to auto.
   return 'auto';
 }
 

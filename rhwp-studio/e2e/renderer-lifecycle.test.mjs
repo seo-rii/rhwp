@@ -553,6 +553,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `WebGL-preferred surface path renders direct CanvasKit content bluePixels=${webglSurfaceBluePixels}`,
   );
 
+  setTestCase('canvaskit-webgpu-surface-param-contract');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=webgpu');
+  const webgpuSurfaceParamProbe = await page.evaluate(() => ({
+    preference: window.__canvaskitSurfacePreference,
+    backend: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.().backend ?? null,
+  }));
+  assert(
+    webgpuSurfaceParamProbe.preference === 'auto',
+    `unsupported WebGPU surface request resolves to auto=${JSON.stringify(webgpuSurfaceParamProbe)}`,
+  );
+
   setTestCase('layer-resource-cache-invalidation');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=auto');
   await loadHwpFile(page, '20250130-hongbo_saved.hwp');
