@@ -68,7 +68,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           return [];
         }
       }
-      if (elementName === 'svg' || elementName === 'g') {
+      if (elementName === 'svg' || elementName === 'g' || elementName === 'title' || elementName === 'desc') {
         continue;
       }
 
@@ -319,6 +319,9 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
     return new Set(['id', 'class', 'xmlns', 'xmlns:xlink', 'xml:space', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
   }
   if (elementName === 'g') {
+    return new Set(['id', 'class', 'xml:space']);
+  }
+  if (elementName === 'title' || elementName === 'desc') {
     return new Set(['id', 'class', 'xml:space']);
   }
   return null;

@@ -4779,6 +4779,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const wrappedSvgResourceTree = treeFor(svgOutline);
     wrappedSvgResourceTree.resources.svgFragments[0] = [
       '<svg id="glyph-root" class="glyph-shell" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" viewBox="0 0 18 18">',
+      '<title id="glyph-title">Fixture glyph</title>',
+      '<desc id="glyph-desc">Static sanitized vector resource</desc>',
       '<g id="glyph-group" class="glyph-layer" xml:space="default">',
       '<path id="glyph-path" class="glyph-shape" d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>',
       '</g>',
