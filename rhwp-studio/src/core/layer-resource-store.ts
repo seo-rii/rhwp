@@ -14,7 +14,10 @@ export function resolveLayerResourceIndex(
     return undefined;
   }
   const index = resourceKeys.indexOf(resourceId);
-  return index >= 0 && index < resourceCount ? index : undefined;
+  if (index < 0 || index >= resourceCount) {
+    return undefined;
+  }
+  return resourceKeys.indexOf(resourceId, index + 1) < 0 ? index : undefined;
 }
 
 export class LayerResourceStore {

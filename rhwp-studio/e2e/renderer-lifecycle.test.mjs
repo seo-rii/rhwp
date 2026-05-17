@@ -4221,6 +4221,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         interactivityAllowed: false,
       },
     });
+    const duplicateBitmapResourceTree = treeFor(bitmapOutline);
+    duplicateBitmapResourceTree.resources.images.push(pixelBytes);
+    duplicateBitmapResourceTree.resources.imageHashes.push('bitmap-glyph-pixel-duplicate');
+    duplicateBitmapResourceTree.resources.imageKeys.push('bitmap-glyph-pixel');
 
     return {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
@@ -4228,6 +4232,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       colorLayers: await render(treeFor(colorOutline)),
       colorLayersColrV1: await render(treeFor(colorV1Outline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
+      duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
     };
   });
@@ -4271,6 +4276,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitBitmapReport?.selectedVariantId === 'glyphOutline'
       && canvaskitBitmapReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects BitmapGlyph GlyphOutline=${JSON.stringify(canvaskitBitmapReport)}`,
+  );
+  const canvaskitDuplicateBitmapKeyReport = canvaskitGlyphOutlineProbe
+    .duplicateBitmapGlyphKey
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap');
+  assert(
+    canvaskitDuplicateBitmapKeyReport?.selectedVariantId === 'textRun'
+      && canvaskitDuplicateBitmapKeyReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects ambiguous BitmapGlyph resource keys=${JSON.stringify(canvaskitDuplicateBitmapKeyReport)}`,
   );
   const canvaskitSvgReport = canvaskitGlyphOutlineProbe.svgGlyph?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'canvaskit-outline-svg',
