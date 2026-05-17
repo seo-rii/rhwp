@@ -652,31 +652,33 @@ The later writer gates are intentionally ordered so a feature addition does not
 implicitly change schema authority:
 
 - `ColorLayers.ColrV1` remains a v2 feature addition, not a v3 trigger, as long
-  as it fits the existing payload-kind and feature-gate model. It should start
-  with a native/internal deterministic reference fixture before SVG or Canvas2D
-  exporters are enabled. Stage 1 is tree-only: a transform chain resolves to one
-  `solidPath` reference layer, rejects unreachable nodes/cycles, and carries the
-  composed run-local affine transform without changing paint order or
-  clip/effect/cache scope. The graph can then grow in stages: solid
-  color+transform, linear/radial gradients, sweep gradients, composite/blend,
-  then clip or reusable graph nodes. Reusable graph/DAG behavior belongs to the
-  later clip/reusable-graph stage, with cycle detection and node/depth limits.
+  as it fits the existing payload-kind and feature-gate model. The stage-1
+  subset has a native/internal deterministic reference fixture and browser
+  Canvas2D/CanvasKit replay coverage. Stage 1 is tree-only: a transform chain
+  resolves to one `solidPath` reference layer, rejects unreachable nodes/cycles,
+  and carries the composed run-local affine transform without changing paint
+  order or clip/effect/cache scope. The graph can then grow in stages:
+  linear/radial gradients, sweep gradients, composite/blend, then clip or
+  reusable graph nodes. Reusable graph/DAG behavior belongs to the later
+  clip/reusable-graph stage, with cycle detection and node/depth limits.
   It becomes a v3 concern only if it forces a new text variant selection model,
   paint-order/compositing semantics, or source/cluster identity model.
-- `BitmapGlyph` writer emission starts with Canvas2D/SVG strict replay of a
-  single producer-selected image strike. Available strikes and missing ideal
-  strikes are diagnostics/provenance only. Strict visual replay requires
-  explicit `alphaMode`, deterministic `scalingPolicy`, deterministic
-  `filtering`, and no backend strike reselection. Missing color space defaults
-  to sRGB only when diagnostics or replay metadata record that default. Native
-  and CanvasKit bitmap replay remain follow-up backend gates.
+- `BitmapGlyph` writer emission starts with one producer-selected image strike.
+  Available strikes and missing ideal strikes are diagnostics/provenance only.
+  Strict visual replay requires explicit `alphaMode`, deterministic
+  `scalingPolicy`, deterministic `filtering`, and no backend strike
+  reselection. Missing color space defaults to sRGB only when diagnostics or
+  replay metadata record that default. The current gated replay subset is
+  covered by SVG, Canvas2D, CanvasKit, and native Skia fixtures.
 - `SvgGlyph` writer emission starts with browser Canvas2D/CanvasKit strict
-  replay of a sanitized static path-resource subset. The producer is responsible for sanitizing to
-  `securityMode: staticSanitized`; strict validators require
+  replay of a sanitized static path-resource subset. The producer is
+  responsible for sanitizing to `securityMode: staticSanitized`; strict
+  validators require
   `scriptAllowed=false`, `animationAllowed=false`,
   `externalResourcesAllowed=false`, and `interactivityAllowed=false`, and the
-  renderer must resolve and parse the referenced vector path resource before selecting the
-  variant. Native lowering is a separate implementation step.
+  renderer must resolve and parse the referenced vector path resource before
+  selecting the variant. The same path-only subset is now covered by SVG,
+  Canvas2D, CanvasKit, and native Skia fixtures.
 - CanvasKit variation, TTC, and OTC strict replay are backend capability
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the
@@ -946,9 +948,9 @@ that every reserved writer is enabled:
 | backend `VariantSelectionReport` selected/rejected vocabulary | Required before v2 closeout |
 | `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
 | `GlyphOutline` `colorLayers.colrV0` | V2 feature addition; strict export supports resolved-layer payloads, and native producer-side COLR/CPAL decoding can generate the resolved layers |
-| `GlyphOutline` `bitmapGlyph` | V2 feature addition; CanvasKit and SVG/Canvas2D strict replay support one producer-selected image strike |
-| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; CanvasKit/Canvas2D strict replay supports the stage-1 solid-path + transform graph subset |
-| `GlyphOutline` `svgGlyph` | V2 feature addition; SVG strict replay supports sanitized static vector resources |
+| `GlyphOutline` `bitmapGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support one producer-selected image strike |
+| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset |
+| `GlyphOutline` `svgGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support sanitized static path-vector resources |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
 | CanvasKit variation and TTC/OTC strict replay | Blocked until exact construction fixtures pass |
 | shaped measurement and `lineBreakRisk` telemetry | Report-only artifact outside replay schema |
@@ -1002,10 +1004,10 @@ at a time. The preferred order is:
 - richer `GlyphOutline` payload design, starting with the already gated stroke
   subset and COLRv0 `ColorLayers` resolved-layer writer/replay coverage once
   capability gates are fixed;
-- `BitmapGlyph` SVG/Canvas2D strict replay for one producer-selected image
-  strike, while native and CanvasKit bitmap replay remain backend follow-ups;
-- `SvgGlyph` SVG strict replay for sanitized static vector resources, while
-  Canvas2D/native lowering remain follow-up backend gates;
+- `BitmapGlyph` strict replay for one producer-selected image strike across
+  SVG, Canvas2D, CanvasKit, and native Skia;
+- `SvgGlyph` strict replay for sanitized static path-vector resources across
+  SVG, Canvas2D, CanvasKit, and native Skia;
 - small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
 - CanvasKit variation/TTC support remains fallback-only until exact
   construction proof fixtures pass;
