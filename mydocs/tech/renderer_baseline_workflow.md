@@ -55,6 +55,19 @@ python3 scripts/renderer_baseline.py --filter table --skip-browser
 python3 scripts/renderer_baseline.py --browser-mode headless
 ```
 
+CanvasKit surface 축은 기본적으로 `auto`다. WebGPU, WebGL, software surface를
+명시적으로 검증하려면 아래처럼 지정한다.
+
+```bash
+python3 scripts/renderer_baseline.py --canvaskit-surface webgpu --filter equation --skip-native
+RHWP_CANVASKIT_SURFACE=software python3 scripts/renderer_baseline.py --skip-native
+```
+
+허용 값은 `auto`, `webgpu`, `webgl`, `software`이며 `gpu`는 `webgpu`,
+`sw`/`cpu`는 `software` alias로 처리한다. 생성되는 browser baseline,
+native-vs-CanvasKit parity JSON, aggregate Markdown report는 surface 요청값과
+CanvasKit surface fallback diagnostics를 보존한다.
+
 ## 출력 구조
 
 기본 출력 위치는 `output/renderer-baseline/latest/`이다.
@@ -75,6 +88,7 @@ output/renderer-baseline/latest/
       canvas2d.png
       canvaskit-compat.png
       canvaskit-default.png
+      canvaskit-default-screen-webgpu.png
 ```
 
 ## 사용 원칙
