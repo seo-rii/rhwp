@@ -55,7 +55,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   }
 
   const layers: StaticSvgPathLayer[] = [];
-  for (const element of document.querySelectorAll('path, rect')) {
+  for (const element of document.querySelectorAll('path, rect, circle, ellipse, polygon')) {
     const pathData = staticSvgElementPathData(element);
     if (!pathData) {
       continue;
@@ -77,10 +77,38 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
 }
 
 function staticSvgElementPathData(element: Element): string | null {
-  if (element.localName.toLowerCase() === 'path') {
+  const elementName = element.localName.toLowerCase();
+  if (elementName === 'path') {
     return element.getAttribute('d')?.trim() || null;
   }
-  if (element.localName.toLowerCase() !== 'rect') {
+  if (elementName === 'circle') {
+    const cx = svgNumericAttribute(element, 'cx') ?? 0;
+    const cy = svgNumericAttribute(element, 'cy') ?? 0;
+    const r = svgNumericAttribute(element, 'r');
+    if (r === null || r <= 0) {
+      return null;
+    }
+    return `M${cx - r} ${cy}A${r} ${r} 0 1 0 ${cx + r} ${cy}A${r} ${r} 0 1 0 ${cx - r} ${cy}Z`;
+  }
+  if (elementName === 'ellipse') {
+    const cx = svgNumericAttribute(element, 'cx') ?? 0;
+    const cy = svgNumericAttribute(element, 'cy') ?? 0;
+    const rx = svgNumericAttribute(element, 'rx');
+    const ry = svgNumericAttribute(element, 'ry');
+    if (rx === null || ry === null || rx <= 0 || ry <= 0) {
+      return null;
+    }
+    return `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
+  }
+  if (elementName === 'polygon') {
+    const points = svgPointListAttribute(element, 'points');
+    if (points.length < 3) {
+      return null;
+    }
+    const [first, ...rest] = points;
+    return `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}Z`;
+  }
+  if (elementName !== 'rect') {
     return null;
   }
   const x = svgNumericAttribute(element, 'x') ?? 0;
@@ -133,11 +161,18 @@ function svgPresentationAttribute(element: Element, name: string): string | null
 
 function isStaticSvgPaintElementSupported(element: Element): boolean {
   const elementName = element.localName.toLowerCase();
-  const supportedAttributes = elementName === 'path'
-    ? new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style'])
-    : elementName === 'rect'
-      ? new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style'])
-      : null;
+  let supportedAttributes: Set<string> | null = null;
+  if (elementName === 'path') {
+    supportedAttributes = new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  } else if (elementName === 'rect') {
+    supportedAttributes = new Set(['x', 'y', 'width', 'height', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  } else if (elementName === 'circle') {
+    supportedAttributes = new Set(['cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  } else if (elementName === 'ellipse') {
+    supportedAttributes = new Set(['cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  } else if (elementName === 'polygon') {
+    supportedAttributes = new Set(['points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  }
   if (!supportedAttributes) {
     return false;
   }
@@ -164,6 +199,14 @@ function isStaticSvgPaintElementSupported(element: Element): boolean {
     ) {
       return false;
     }
+    if ((name === 'cx' || name === 'cy' || name === 'r' || name === 'rx' || name === 'ry')
+      && !isStaticSvgNumericValueSupported(attribute.value)
+    ) {
+      return false;
+    }
+    if (name === 'points' && svgPointList(attribute.value).length < 3) {
+      return false;
+    }
   }
   return true;
 }
@@ -180,6 +223,26 @@ function svgNumericAttribute(element: Element, name: string): number | null {
 function isStaticSvgNumericValueSupported(value: string): boolean {
   const number = Number(value.trim());
   return Number.isFinite(number);
+}
+
+function svgPointListAttribute(element: Element, name: string): Array<[number, number]> {
+  return svgPointList(element.getAttribute(name) ?? '');
+}
+
+function svgPointList(value: string): Array<[number, number]> {
+  const numbers = value
+    .trim()
+    .split(/[\s,]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => Number(part));
+  if (numbers.length < 6 || numbers.length % 2 !== 0 || numbers.some((number) => !Number.isFinite(number))) {
+    return [];
+  }
+  const points: Array<[number, number]> = [];
+  for (let index = 0; index < numbers.length; index += 2) {
+    points.push([numbers[index], numbers[index + 1]]);
+  }
+  return points;
 }
 
 function isStaticSvgStyleSupported(style: string): boolean {
