@@ -48,6 +48,12 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     return [];
   }
 
+  for (const element of document.documentElement.querySelectorAll('*')) {
+    if (element.localName.toLowerCase() !== 'path' || !isStaticSvgPathElementSupported(element)) {
+      return [];
+    }
+  }
+
   const layers: StaticSvgPathLayer[] = [];
   for (const element of document.querySelectorAll('path')) {
     const pathData = element.getAttribute('d')?.trim();
@@ -106,6 +112,52 @@ function svgPresentationAttribute(element: Element, name: string): string | null
     }
   }
   return null;
+}
+
+function isStaticSvgPathElementSupported(element: Element): boolean {
+  const supportedAttributes = new Set(['d', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+  for (const attribute of Array.from(element.attributes)) {
+    const name = attribute.name.trim().toLowerCase();
+    if (!supportedAttributes.has(name)) {
+      return false;
+    }
+    if (name === 'fill' && !isStaticSvgPaintValueSupported(attribute.value)) {
+      return false;
+    }
+    if (name === 'style' && !isStaticSvgStyleSupported(attribute.value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isStaticSvgStyleSupported(style: string): boolean {
+  const supportedProperties = new Set(['fill', 'fill-rule', 'opacity', 'fill-opacity']);
+  for (const declaration of style.split(';')) {
+    const separator = declaration.indexOf(':');
+    if (separator < 0) {
+      if (declaration.trim().length > 0) {
+        return false;
+      }
+      continue;
+    }
+    const property = declaration.slice(0, separator).trim().toLowerCase();
+    const value = declaration.slice(separator + 1).trim();
+    if (!supportedProperties.has(property)) {
+      return false;
+    }
+    if (property === 'fill' && !isStaticSvgPaintValueSupported(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isStaticSvgPaintValueSupported(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0
+    && !normalized.includes('url(')
+    && !normalized.includes('var(');
 }
 
 function svgOpacity(value: string | null): number {
