@@ -5914,6 +5914,109 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `page background parity exact=${pageBackgroundDiff.exactDiffPixels}, tolerant=${pageBackgroundDiff.rawTolerantDiffPixels}, ink=${pageBackgroundDiff.rawInkMaskDiffPixels}, max_channel_delta=${pageBackgroundDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-page-background-gradient-parity');
+  const pageBackgroundGradientProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 72,
+      pageHeight: 48,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1937,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1937,
+        bounds: { x: 0, y: 0, width: 72, height: 48 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'pageBackground',
+          bbox: { x: 0, y: 0, width: 72, height: 48 },
+          backgroundColor: '#fff9d8',
+          borderColor: '#222222',
+          borderWidth: 1,
+          gradient: {
+            gradientType: 0,
+            angle: 35,
+            centerX: 50,
+            centerY: 50,
+            colors: ['#f84444', '#ffe35a', '#3d8bff'],
+            positions: [0, 0.55, 1],
+          },
+        }],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !pageBackgroundGradientProbe.error,
+    pageBackgroundGradientProbe.error || 'page background gradient parity probe available',
+  );
+  const pageBackgroundGradientCanvas2dColorPixels = countPixels(
+    pageBackgroundGradientProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && (pixel.red > 120 || pixel.blue > 120) && pixel.green < 245,
+  );
+  const pageBackgroundGradientCanvaskitColorPixels = countPixels(
+    pageBackgroundGradientProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && (pixel.red > 120 || pixel.blue > 120) && pixel.green < 245,
+  );
+  assert(
+    pageBackgroundGradientCanvas2dColorPixels > 1800 && pageBackgroundGradientCanvaskitColorPixels > 1800,
+    `page background gradient fills page canvas2d=${pageBackgroundGradientCanvas2dColorPixels}, canvaskit=${pageBackgroundGradientCanvaskitColorPixels}`,
+  );
+  const pageBackgroundGradientDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(pageBackgroundGradientProbe.canvas2d),
+    pngBufferFromDataUrl(pageBackgroundGradientProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-page-background-gradient-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.04,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    pageBackgroundGradientDiff.passed,
+    `page background gradient parity exact=${pageBackgroundGradientDiff.exactDiffPixels}, tolerant=${pageBackgroundGradientDiff.rawTolerantDiffPixels}, ink=${pageBackgroundGradientDiff.rawInkMaskDiffPixels}, max_channel_delta=${pageBackgroundGradientDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-page-background-thin-border-parity');
   const pageBackgroundThinBorderProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
