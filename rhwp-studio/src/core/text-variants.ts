@@ -3,6 +3,7 @@ import type {
   LayerGlyphOutlineOp,
   LayerGlyphRunOp,
   LayerNode,
+  LayerPathCommand,
   LayerPaintOp,
   LayerPaintOpLike,
   LayerTextOp,
@@ -817,8 +818,7 @@ export function hasGlyphOutlinePathsContract(payload: LayerGlyphOutlineOp): bool
       isValidPayloadGlyphId(path.glyphId)
       && isValidPayloadRange(path.sourceRangeUtf8)
       && isValidPayloadRange(path.glyphRange)
-      && Array.isArray(path.commands)
-      && path.commands.length > 0
+      && isValidPathCommands(path.commands)
       && isSupportedFillRule(path.fillRule ?? 'nonzero'),
     );
 }
@@ -838,8 +838,7 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
       && isValidPayloadRange(layer.glyphRange)
       && isValidPayloadRange(layer.sourceRangeUtf8)
       && layer.sourceFontRef !== undefined
-      && Array.isArray(layer.commands)
-      && layer.commands.length > 0
+      && isValidPathCommands(layer.commands)
       && isValidResolvedColor(layer.fill)
       && isSupportedFillRule(layer.fillRule)
       && layer.paletteIndex !== undefined
@@ -886,8 +885,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         !(
           node.solidPath !== undefined
         && node.transform === undefined
-        && Array.isArray(node.solidPath.commands)
-        && node.solidPath.commands.length > 0
+        && isValidPathCommands(node.solidPath.commands)
         && isValidResolvedColor(node.solidPath.fill)
         && isSupportedFillRule(node.solidPath.fillRule)
         && isValidPayloadRange(node.sourceRangeUtf8)
@@ -1020,6 +1018,41 @@ function isValidPayloadGraphNodeId(nodeId: number | undefined): boolean {
 
 function isValidPayloadGlyphId(glyphId: number | undefined): boolean {
   return typeof glyphId === 'number' && Number.isInteger(glyphId) && glyphId >= 0;
+}
+
+function isValidPathCommands(commands: LayerPathCommand[] | undefined): boolean {
+  return Array.isArray(commands)
+    && commands.length > 0
+    && commands.every((command) => {
+      switch (command.type) {
+        case 'moveTo':
+        case 'lineTo':
+          return isFiniteNumber(command.x) && isFiniteNumber(command.y);
+        case 'curveTo':
+          return isFiniteNumber(command.x1)
+            && isFiniteNumber(command.y1)
+            && isFiniteNumber(command.x2)
+            && isFiniteNumber(command.y2)
+            && isFiniteNumber(command.x3)
+            && isFiniteNumber(command.y3);
+        case 'arcTo':
+          return isFiniteNumber(command.rx)
+            && isFiniteNumber(command.ry)
+            && isFiniteNumber(command.rotation)
+            && isFiniteNumber(command.x)
+            && isFiniteNumber(command.y)
+            && typeof command.largeArc === 'boolean'
+            && typeof command.sweep === 'boolean';
+        case 'closePath':
+          return true;
+        default:
+          return false;
+      }
+    });
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function isValidResourceId(resourceId: string | number | undefined): boolean {

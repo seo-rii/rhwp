@@ -2488,6 +2488,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       textOp.variants = textOp.variants.filter((variant) => variant.variantId !== 'textRun');
       return tree;
     };
+    const clonePayloadEnvelope = (envelope) => JSON.parse(JSON.stringify(envelope));
     const makeReservedV2ColorPayloadTree = () => {
       const tree = makeV2TextTree();
       tree.requiredFeatures = [
@@ -2504,7 +2505,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ];
       outlineVariant.parts[0].payload = {
         ...outlineVariant.parts[0].payload,
-        ...reservedPayloadEnvelopes.colorLayers,
+        ...clonePayloadEnvelope(reservedPayloadEnvelopes.colorLayers),
       };
       return tree;
     };
@@ -2524,7 +2525,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ];
       outlineVariant.parts[0].payload = {
         ...outlineVariant.parts[0].payload,
-        ...colrV1PayloadEnvelope,
+        ...clonePayloadEnvelope(colrV1PayloadEnvelope),
       };
       return tree;
     };
@@ -2539,7 +2540,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outlineVariant.requiredFeatures = ['text.outlineGlyph', feature];
       outlineVariant.parts[0].payload = {
         ...outlineVariant.parts[0].payload,
-        ...(envelope ?? { payloadKind }),
+        ...(envelope === undefined ? { payloadKind } : clonePayloadEnvelope(envelope)),
       };
       return tree;
     };
@@ -2791,6 +2792,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
         makeTree(style, [{ ...outlinePath, glyphRange: { start: 2, end: 1 } }], true),
         true,
       );
+      const invalidPathCommandSidecar = render(
+        makeTree(
+          style,
+          [{
+            ...outlinePath,
+            commands: outlinePath.commands.map((command, index) => (
+              index === 1 ? { ...command, x: Number.POSITIVE_INFINITY } : command
+            )),
+          }],
+          true,
+        ),
+        true,
+      );
       const strokePayloadSidecar = render(makeTree(style, [outlinePath], true, strokePayload), true);
       const unsupportedStrokePayloadSidecar = render(
         makeTree(style, [outlinePath], true, unsupportedStrokePayload),
@@ -2850,6 +2864,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
           : path
       ));
       const invalidV2PathMetadata = render(invalidV2PathMetadataTree, false);
+      const invalidV2PathCommandTree = makeV2TextTree();
+      const invalidV2PathCommandPayload = invalidV2PathCommandTree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload;
+      invalidV2PathCommandPayload.paths = invalidV2PathCommandPayload.paths.map((path, index) => (
+        index === 0
+          ? {
+              ...path,
+              commands: path.commands.map((command, commandIndex) => (
+                commandIndex === 1 ? { ...command, x: Number.POSITIVE_INFINITY } : command
+              )),
+            }
+          : path
+      ));
+      const invalidV2PathCommand = render(invalidV2PathCommandTree, false);
       const invalidV2CrossScope = render(makeV2CrossScopeTree(), false);
       const allowedV2CrossScope = render(makeV2CrossScopeTree(true), false);
       const invalidV2MixedPerGlyph = render(makeV2MixedPerGlyphTree(), false);
@@ -2888,6 +2918,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
         .fill = { colorSpace: 'srgb', rgba: [0, 0, 2, 1] };
       const invalidColorReservedV2ColorPayload = render(
         invalidColorReservedV2ColorPayloadTree,
+        true,
+      );
+      const invalidCommandReservedV2ColorPayloadTree = makeReservedV2ColorPayloadTree();
+      invalidCommandReservedV2ColorPayloadTree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .layers[0]
+        .commands = invalidCommandReservedV2ColorPayloadTree.root.ops[0].variants
+          .find((variant) => variant.variantId === 'glyphOutline')
+          .parts[0]
+          .payload
+          .colorLayers
+          .layers[0]
+          .commands
+          .map((command, commandIndex) => (
+            commandIndex === 1 ? { ...command, x: Number.POSITIVE_INFINITY } : command
+          ));
+      const invalidCommandReservedV2ColorPayload = render(
+        invalidCommandReservedV2ColorPayloadTree,
         true,
       );
       const reservedV2ColorPayloadColrV1 = render(makeReservedV2ColorPayloadColrV1Tree(), true);
@@ -2973,6 +3024,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
         .a = Number.POSITIVE_INFINITY;
       const invalidTransformReservedV2ColorPayloadColrV1 = render(
         invalidTransformReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
+      const invalidCommandReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      const invalidCommandV2ColorGraphSolidNode = invalidCommandReservedV2ColorPayloadColrV1Tree
+        .root
+        .ops[0]
+        .variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph
+        .nodes
+        .find((node) => node.kind === 'solidPath');
+      invalidCommandV2ColorGraphSolidNode.solidPath.commands = invalidCommandV2ColorGraphSolidNode
+        .solidPath
+        .commands
+        .map((command, commandIndex) => (
+          commandIndex === 1 ? { ...command, x: Number.POSITIVE_INFINITY } : command
+        ));
+      const invalidCommandReservedV2ColorPayloadColrV1 = render(
+        invalidCommandReservedV2ColorPayloadColrV1Tree,
         true,
       );
       const reservedV2BitmapPayload = render(
@@ -3140,6 +3213,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         duplicateSidecar,
         invalidAnchorSidecar,
         invalidPathMetadataSidecar,
+        invalidPathCommandSidecar,
         strokePayloadSidecar,
         unsupportedStrokePayloadSidecar,
         colorPayloadSidecar,
@@ -3151,6 +3225,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         v2Strict,
         invalidV2MissingFallback,
         invalidV2PathMetadata,
+        invalidV2PathCommand,
         invalidV2CrossScope,
         allowedV2CrossScope,
         invalidV2MixedPerGlyph,
@@ -3163,12 +3238,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
         reservedV2ColorPayload,
         invalidRangeReservedV2ColorPayload,
         invalidColorReservedV2ColorPayload,
+        invalidCommandReservedV2ColorPayload,
         reservedV2ColorPayloadColrV1,
         invalidRangeReservedV2ColorPayloadColrV1,
         invalidReservedV2ColorPayloadColrV1,
         cyclicReservedV2ColorPayloadColrV1,
         invalidNodeIdReservedV2ColorPayloadColrV1,
         invalidTransformReservedV2ColorPayloadColrV1,
+        invalidCommandReservedV2ColorPayloadColrV1,
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
         invalidReservedV2BitmapTransformPayload,
@@ -3293,6 +3370,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidPathMetadataSidecarReport,
     )}`,
   );
+  const invalidPathCommandSidecarReport = canvas2dGlyphOutlineProbe.invalidPathCommandSidecar?.diagnostics?.find(
+    (report) => report.equivalenceGroup === 'outline-fixture-0',
+  );
+  assert(
+    invalidPathCommandSidecarReport?.selectedVariantId === 'textRun'
+      && invalidPathCommandSidecarReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedOutlinePayload'),
+      )
+      && invalidPathCommandSidecarReport?.outlineEligibility?.payloadSupported === false,
+    `Canvas2D strict profile rejects non-finite GlyphOutline path commands=${JSON.stringify(
+      invalidPathCommandSidecarReport,
+    )}`,
+  );
   const strokePayloadSidecarReport = canvas2dGlyphOutlineProbe.strokePayloadSidecar?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',
   );
@@ -3365,6 +3456,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidColorReservedV2ColorPayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidCommandReservedV2ColorPayloadIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidCommandReservedV2ColorPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const reservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
     .reservedV2ColorPayloadColrV1
     ?.textV2Validation
@@ -3389,6 +3484,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidTransformReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidCommandReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .invalidCommandReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
       && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
@@ -3404,6 +3503,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidRangeReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidColorReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidColorReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidCommandReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidCommandReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidRangeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidRangeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && !invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
@@ -3415,6 +3516,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidRangeV2Validation: canvas2dGlyphOutlineProbe.invalidRangeReservedV2ColorPayload
         ?.textV2Validation,
       invalidColorV2Validation: canvas2dGlyphOutlineProbe.invalidColorReservedV2ColorPayload
+        ?.textV2Validation,
+      invalidCommandV2Validation: canvas2dGlyphOutlineProbe.invalidCommandReservedV2ColorPayload
         ?.textV2Validation,
       v2ColrV1Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayloadColrV1?.textV2Validation,
       invalidRangeV2ColrV1Validation: canvas2dGlyphOutlineProbe
@@ -3438,10 +3541,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     })}`,
   );
   assert(
-    invalidTransformReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
-    `Canvas2D strict profile rejects non-finite COLRv1 transform payload=${JSON.stringify({
+    invalidTransformReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && invalidCommandReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
+    `Canvas2D strict profile rejects non-finite COLRv1 graph payload=${JSON.stringify({
       invalidTransformV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidTransformReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      invalidCommandV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .invalidCommandReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );
@@ -3611,6 +3718,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     invalidV2PathMetadataIssueCodes.includes('glyphOutlinePayloadContractInvalid'),
     `Canvas2D reports invalid schema v2 GlyphOutline path metadata=${JSON.stringify(
       canvas2dGlyphOutlineProbe.invalidV2PathMetadata?.textV2Validation,
+    )}`,
+  );
+  const invalidV2PathCommandIssueCodes = canvas2dGlyphOutlineProbe.invalidV2PathCommand
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    invalidV2PathCommandIssueCodes.includes('glyphOutlinePayloadContractInvalid'),
+    `Canvas2D reports invalid schema v2 GlyphOutline path commands=${JSON.stringify(
+      canvas2dGlyphOutlineProbe.invalidV2PathCommand?.textV2Validation,
     )}`,
   );
   const invalidCrossScopeIssueCodes = canvas2dGlyphOutlineProbe.invalidV2CrossScope
