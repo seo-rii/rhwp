@@ -220,7 +220,7 @@ CanvasKit에는 현재 두 가지 모드가 있다.
 | 모드 | 의미 | 기본값 |
 |---|---|---|
 | `default` | direct CanvasKit/Skia replay 우선 | 기본 |
-| `compat` | Canvas2D와의 시각적 유사도 우선, 전환기 overlay fallback 허용 | 아님 |
+| `compat` | Canvas2D 기준에 가까운 보수적 CanvasKit direct replay policy | 아님 |
 
 `rhwp-studio/src/view/render-backend.ts`에서 query param과 localStorage를 통해 이 값을 결정한다.
 같은 파일에서 layered `renderProfile`도 함께 관리한다.
@@ -232,8 +232,11 @@ CanvasKit에는 현재 두 가지 모드가 있다.
 - direct replay가 기존 Canvas2D와 의도적으로 다르면 fixture와 diagnostics에서 `Skia strict replay improvement`로 구분한다.
 
 `compat` mode는 사용자가 명시적으로 선택한 안정성 모드다.
-특히 텍스트 계열에서 Canvas2D overlay/fallback을 사용해 CanvasKit의 순수 raster 차이를 흡수할 수 있다.
-이 로직은 browser-specific transition layer이며, Rust core의 layout 자체를 바꾸는 것은 아니다.
+이 모드도 Canvas2D overlay를 사용하지 않는다. 대신 CanvasKit 내부에서 더 보수적인
+variant selection, image sampling, cache policy 같은 직접 replay 정책을 선택한다.
+지원하지 않는 선택지는 Canvas2D paint를 덧씌우는 대신 TextRun fallback이나
+deterministic reject diagnostics로 처리한다. 이 로직은 browser-specific policy layer이며,
+Rust core의 layout 자체를 바꾸는 것은 아니다.
 
 CanvasKit surface backend는 render mode와 별도의 진단 축이다.
 `canvaskitMode`는 query param과 localStorage로 유지되지만,

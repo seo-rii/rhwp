@@ -208,24 +208,35 @@ CanvasKit does not heavily consume them yet, but the information is no longer dr
 
 ## 7. CanvasKit render modes
 
-CanvasKit currently exposes two modes.
+CanvasKit currently exposes two direct-replay modes.
 
 | Mode | Meaning | Default |
 |---|---|---|
-| `default` | Prefer native CanvasKit behavior | No |
-| `compat` | Prefer visual similarity to Canvas2D | Yes |
+| `default` | Prefer direct CanvasKit/Skia replay | Yes |
+| `compat` | Use conservative CanvasKit direct-replay policy closer to the Canvas2D baseline | No |
 
 `rhwp-studio/src/view/render-backend.ts` resolves this from query parameters and local storage.
+The `canvaskitSurface` query parameter is a separate diagnostic axis: it chooses
+the CanvasKit surface helper (`auto`, `webgl`, or `software`) and is not the
+same as render-mode fallback.
 
-`compat` is the default for several reasons.
+`default` is the normal path for several reasons.
 
-- The current browser baseline is layered Canvas2D.
-- Text rasterization, font fallback, and glyph positioning can differ significantly between CanvasKit and Canvas2D.
-- Switching the renderer should not immediately make the document look obviously different to end users.
+- CanvasKit is being developed as an independent replay backend that can lead to
+  native Skia, not as a Canvas2D-assisted preview.
+- Raster images, equations, form objects, text effects, and strict text variants
+  that CanvasKit can support should replay through CanvasKit primitives.
+- Intentional CanvasKit-vs-Canvas2D visual differences should be fixed by
+  fixtures, diagnostics, or explicit variant fallback rather than by a browser
+  overlay.
 
-At the moment, compat mode especially uses Canvas2D-based overlay or fallback behavior for text-like operations to absorb pure CanvasKit raster differences.
-This logic is a browser-side compatibility layer.
-It is not intended to rewrite the Rust layout core itself.
+`compat` remains available for user-visible stability and may choose more
+conservative CanvasKit policies such as variant selection, image sampling, or
+caching choices. It still consumes the same `PageLayerTree` directly and does
+not paint a Canvas2D overlay. Unsupported strict variants should fall back via
+the IR variant system or produce deterministic diagnostics. This logic is a
+browser-side policy layer; it is not intended to rewrite the Rust layout core
+itself.
 
 ## 8. Parity and diff strategy
 
