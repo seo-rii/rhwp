@@ -594,6 +594,36 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `canvaskitSurface=cpu aliases to software=${JSON.stringify(cpuSurfaceAliasProbe)}`,
   );
 
+  setTestCase('canvaskit-surface-backend-aliases');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurfaceBackend=sw');
+  const swSurfaceBackendAliasProbe = await page.evaluate(() => ({
+    preference: window.__canvaskitSurfacePreference,
+    request: window.__canvaskitSurfaceRequest,
+    diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
+  }));
+  assert(
+    swSurfaceBackendAliasProbe.preference === 'software'
+      && swSurfaceBackendAliasProbe.request?.requested === 'sw'
+      && swSurfaceBackendAliasProbe.request?.unsupportedValue === null
+      && swSurfaceBackendAliasProbe.request?.unsupportedReason === null
+      && swSurfaceBackendAliasProbe.diagnostics?.preference === 'software',
+    `canvaskitSurfaceBackend=sw aliases to software=${JSON.stringify(swSurfaceBackendAliasProbe)}`,
+  );
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurfaceBackend=gpu');
+  const gpuSurfaceBackendAliasProbe = await page.evaluate(() => ({
+    preference: window.__canvaskitSurfacePreference,
+    request: window.__canvaskitSurfaceRequest,
+    diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
+  }));
+  assert(
+    gpuSurfaceBackendAliasProbe.preference === 'webgpu'
+      && gpuSurfaceBackendAliasProbe.request?.requested === 'gpu'
+      && gpuSurfaceBackendAliasProbe.request?.unsupportedValue === null
+      && gpuSurfaceBackendAliasProbe.request?.unsupportedReason === null
+      && gpuSurfaceBackendAliasProbe.diagnostics?.preference === 'webgpu',
+    `canvaskitSurfaceBackend=gpu aliases to WebGPU=${JSON.stringify(gpuSurfaceBackendAliasProbe)}`,
+  );
+
   setTestCase('canvaskit-webgl-surface-fallback');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=webgl');
   const webglSurfaceProbe = await page.evaluate(() => {
