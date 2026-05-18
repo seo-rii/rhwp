@@ -222,7 +222,10 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
   if (colorMatch) {
     const [colorBody, slashAlpha] = colorMatch[1].split('/').map((part) => part.trim());
     const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
-    if (parts.length !== 4 || !['srgb', 'srgb-linear', 'display-p3'].includes(parts[0])) {
+    if (
+      parts.length !== 4
+      || !['srgb', 'srgb-linear', 'display-p3', 'xyz', 'xyz-d50', 'xyz-d65'].includes(parts[0])
+    ) {
       return null;
     }
     const channels = parts.slice(1).map((part) => {
@@ -250,18 +253,19 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
         alpha,
       ];
     }
+    if (parts[0] === 'xyz-d50') {
+      return [...xyzD65ToEncodedSrgb(...d50ToD65Xyz(red, green, blue)), alpha];
+    }
+    if (parts[0] === 'xyz' || parts[0] === 'xyz-d65') {
+      return [...xyzD65ToEncodedSrgb(red, green, blue), alpha];
+    }
     const linearP3Red = red <= 0.04045 ? red / 12.92 : ((red + 0.055) / 1.055) ** 2.4;
     const linearP3Green = green <= 0.04045 ? green / 12.92 : ((green + 0.055) / 1.055) ** 2.4;
     const linearP3Blue = blue <= 0.04045 ? blue / 12.92 : ((blue + 0.055) / 1.055) ** 2.4;
     const xD65 = (0.4865709486 * linearP3Red) + (0.2656676932 * linearP3Green) + (0.1982172852 * linearP3Blue);
     const yD65 = (0.2289745641 * linearP3Red) + (0.6917385218 * linearP3Green) + (0.0792869141 * linearP3Blue);
     const zD65 = (0.0451133819 * linearP3Green) + (1.0439443689 * linearP3Blue);
-    return [
-      linearSrgbToEncodedUnit((3.2404542 * xD65) - (1.5371385 * yD65) - (0.4985314 * zD65)),
-      linearSrgbToEncodedUnit((-0.969266 * xD65) + (1.8760108 * yD65) + (0.041556 * zD65)),
-      linearSrgbToEncodedUnit((0.0556434 * xD65) - (0.2040259 * yD65) + (1.0572252 * zD65)),
-      alpha,
-    ];
+    return [...xyzD65ToEncodedSrgb(xD65, yD65, zD65), alpha];
   }
   const labMatch = normalized.match(/^lab\((.*)\)$/);
   if (labMatch) {
@@ -526,9 +530,19 @@ function labToRgb(lightness: number, axisA: number, axisB: number): [number, num
       ? normalizedZ ** 3
       : ((116 * normalizedZ) - 16) / kappa
   );
-  const xD65 = (0.9555766 * xD50) - (0.0230393 * yD50) + (0.0631636 * zD50);
-  const yD65 = (-0.0282895 * xD50) + (1.0099416 * yD50) + (0.0210077 * zD50);
-  const zD65 = (0.0122982 * xD50) - (0.020483 * yD50) + (1.3299098 * zD50);
+  const [xD65, yD65, zD65] = d50ToD65Xyz(xD50, yD50, zD50);
+  return xyzD65ToEncodedSrgb(xD65, yD65, zD65);
+}
+
+function d50ToD65Xyz(xD50: number, yD50: number, zD50: number): [number, number, number] {
+  return [
+    (0.9555766 * xD50) - (0.0230393 * yD50) + (0.0631636 * zD50),
+    (-0.0282895 * xD50) + (1.0099416 * yD50) + (0.0210077 * zD50),
+    (0.0122982 * xD50) - (0.020483 * yD50) + (1.3299098 * zD50),
+  ];
+}
+
+function xyzD65ToEncodedSrgb(xD65: number, yD65: number, zD65: number): [number, number, number] {
   const linearRed = (3.2404542 * xD65) - (1.5371385 * yD65) - (0.4985314 * zD65);
   const linearGreen = (-0.969266 * xD65) + (1.8760108 * yD65) + (0.041556 * zD65);
   const linearBlue = (0.0556434 * xD65) - (0.2040259 * yD65) + (1.0572252 * zD65);
