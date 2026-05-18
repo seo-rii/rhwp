@@ -444,12 +444,27 @@ export class Canvas2DLayerRenderer {
               ctx.scale(width / viewBox.width, height / viewBox.height);
               ctx.translate(-viewBox.x, -viewBox.y);
               for (const layer of pathLayers) {
-                const path = new Path2D(layer.pathData);
-                const previousAlpha = ctx.globalAlpha;
-                ctx.fillStyle = layer.fill;
-                ctx.globalAlpha = previousAlpha * layer.opacity;
-                ctx.fill(path, layer.fillRule ?? 'nonzero');
-                ctx.globalAlpha = previousAlpha;
+                ctx.save();
+                try {
+                  if (layer.transform) {
+                    ctx.transform(
+                      layer.transform.a,
+                      layer.transform.b,
+                      layer.transform.c,
+                      layer.transform.d,
+                      layer.transform.e,
+                      layer.transform.f,
+                    );
+                  }
+                  const path = new Path2D(layer.pathData);
+                  const previousAlpha = ctx.globalAlpha;
+                  ctx.fillStyle = layer.fill;
+                  ctx.globalAlpha = previousAlpha * layer.opacity;
+                  ctx.fill(path, layer.fillRule ?? 'nonzero');
+                  ctx.globalAlpha = previousAlpha;
+                } finally {
+                  ctx.restore();
+                }
               }
             } finally {
               ctx.restore();

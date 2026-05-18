@@ -1414,15 +1414,33 @@ export class CanvasKitLayerRenderer {
       canvas.scale(width / viewBox.width, height / viewBox.height);
       canvas.translate(-viewBox.x, -viewBox.y);
       for (const layer of pathLayers) {
-        const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
-        if (!path) {
-          continue;
+        canvas.save();
+        try {
+          if (layer.transform) {
+            canvas.concat([
+              layer.transform.a,
+              layer.transform.c,
+              layer.transform.e,
+              layer.transform.b,
+              layer.transform.d,
+              layer.transform.f,
+              0,
+              0,
+              1,
+            ]);
+          }
+          const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+          if (!path) {
+            continue;
+          }
+          this.applyPathFillRule(path, layer.fillRule);
+          const paint = this.makePaint(layer.fill, 'fill', layer.opacity);
+          canvas.drawPath(path, paint);
+          paint.delete();
+          path.delete();
+        } finally {
+          canvas.restore();
         }
-        this.applyPathFillRule(path, layer.fillRule);
-        const paint = this.makePaint(layer.fill, 'fill', layer.opacity);
-        canvas.drawPath(path, paint);
-        paint.delete();
-        path.delete();
       }
     } finally {
       canvas.restore();

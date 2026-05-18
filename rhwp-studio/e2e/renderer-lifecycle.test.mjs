@@ -4958,6 +4958,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     roundedRectSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-rounded-rect-resource';
+    const transformedSvgResourceTree = treeFor(svgOutline);
+    transformedSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<rect x="0" y="0" width="9" height="18" transform="translate(9 0)" fill="#ff00cc"/>',
+      '</svg>',
+    ].join('');
+    transformedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-transformed-resource';
     const originalDOMParser = globalThis.DOMParser;
     const hadDOMParser = 'DOMParser' in globalThis;
     let noDomParserSvgGlyph;
@@ -4969,6 +4976,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserStyleCascadeSvgGlyph;
     let noDomParserPolylineSvgGlyph;
     let noDomParserRoundedRectSvgGlyph;
+    let noDomParserTransformedSvgGlyph;
     let noDomParserUnsupportedSvgDoctypeResource;
     let noDomParserUnsupportedSvgClosingTagResource;
     let noDomParserUnsupportedSvgDanglingShapeClosingTagResource;
@@ -4984,6 +4992,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserStyleCascadeSvgGlyph = await render(styleCascadeSvgResourceTree);
       noDomParserPolylineSvgGlyph = await render(polylineSvgResourceTree);
       noDomParserRoundedRectSvgGlyph = await render(roundedRectSvgResourceTree);
+      noDomParserTransformedSvgGlyph = await render(transformedSvgResourceTree);
       noDomParserUnsupportedSvgDoctypeResource = await render(unsupportedSvgDoctypeTree);
       noDomParserUnsupportedSvgClosingTagResource = await render(unsupportedSvgClosingTagTree);
       noDomParserUnsupportedSvgDanglingShapeClosingTagResource = await render(unsupportedSvgDanglingShapeClosingTagTree);
@@ -5021,6 +5030,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserPolylineSvgGlyph,
       roundedRectSvgGlyph: await render(roundedRectSvgResourceTree),
       noDomParserRoundedRectSvgGlyph,
+      transformedSvgGlyph: await render(transformedSvgResourceTree),
+      noDomParserTransformedSvgGlyph,
       duplicateSvgGlyphKey: await render(duplicateSvgResourceTree),
       unsafeSvgGlyphResource: await render(unsafeSvgResourceTree),
       unsupportedSvgGlyphStrokeResource: await render(unsupportedSvgStrokeTree),
@@ -5249,6 +5260,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitNoDomParserRoundedRectSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects rounded rect SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserRoundedRectSvgReport)}`,
   );
+  const canvaskitTransformedSvgReport = canvaskitGlyphOutlineProbe
+    .transformedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitTransformedSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitTransformedSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects transformed SvgGlyph resource=${JSON.stringify(canvaskitTransformedSvgReport)}`,
+  );
+  const canvaskitNoDomParserTransformedSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserTransformedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserTransformedSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserTransformedSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects transformed SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserTransformedSvgReport)}`,
+  );
   const canvaskitDuplicateSvgKeyReport = canvaskitGlyphOutlineProbe
     .duplicateSvgGlyphKey
     ?.diagnostics
@@ -5439,6 +5468,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserRoundedRectSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserRoundedRectSvgGlyph
     .magentaPixels;
+  const canvaskitTransformedSvgMagentaPixels = canvaskitGlyphOutlineProbe.transformedSvgGlyph.magentaPixels;
+  const canvaskitNoDomParserTransformedSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserTransformedSvgGlyph
+    .magentaPixels;
   assert(
     canvaskitMonochromeBlackPixels > 100 && canvaskitMonochromeRedPixels < 5,
     `CanvasKit strict outline paints monochrome path and suppresses fallback black=${canvaskitMonochromeBlackPixels}, red=${canvaskitMonochromeRedPixels}`,
@@ -5532,6 +5565,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserRoundedRectSvgMagentaPixels > 100,
     `CanvasKit strict outline paints rounded rect SvgGlyph without DOMParser magenta=${canvaskitNoDomParserRoundedRectSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitTransformedSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints transformed SvgGlyph resource magenta=${canvaskitTransformedSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserTransformedSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints transformed SvgGlyph without DOMParser magenta=${canvaskitNoDomParserTransformedSvgMagentaPixels}`,
   );
 
   setTestCase('canvas-layer-glyph-outline-payload-parity');

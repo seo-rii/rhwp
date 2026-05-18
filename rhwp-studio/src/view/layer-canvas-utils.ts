@@ -1,4 +1,5 @@
 import type {
+  LayerAffineTransform,
   LayerBounds,
   LayerCharOverlapOp,
   LayerEquationLayoutBox,
@@ -31,6 +32,7 @@ export type StaticSvgPathLayer = {
   fill: string;
   fillRule?: CanvasFillRule;
   opacity: number;
+  transform?: LayerAffineTransform;
 };
 export type LayerImageEffectDiagnostics = {
   cacheHits: number;
@@ -156,6 +158,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         fill: resolvedFill,
         fillRule: svgFillRule(fillRuleValue),
         opacity: svgOpacity(opacityValue) * svgOpacity(fillOpacityValue),
+        transform: parseStaticSvgTransform(attributes.get('transform')),
       });
     }
     return layers;
@@ -189,6 +192,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       fill,
       fillRule: svgFillRule(svgPresentationAttribute(element, 'fill-rule')),
       opacity,
+      transform: parseStaticSvgTransform(element.getAttribute('transform')),
     });
   }
   return layers;
@@ -343,19 +347,19 @@ function isStaticSvgPaintElementSupported(element: Element): boolean {
 
 function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
   if (elementName === 'path') {
-    return new Set(['id', 'class', 'd', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'd', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'rect') {
-    return new Set(['id', 'class', 'x', 'y', 'width', 'height', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'x', 'y', 'width', 'height', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'circle') {
-    return new Set(['id', 'class', 'cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'cx', 'cy', 'r', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'ellipse') {
-    return new Set(['id', 'class', 'cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'cx', 'cy', 'rx', 'ry', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'polygon' || elementName === 'polyline') {
-    return new Set(['id', 'class', 'points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style']);
+    return new Set(['id', 'class', 'points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'svg') {
     return new Set(['id', 'class', 'xmlns', 'xmlns:xlink', 'xml:space', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
@@ -411,6 +415,9 @@ function isStaticSvgAttributeSupported(
   }
   if (name === 'style') {
     return isStaticSvgStyleSupported(value);
+  }
+  if (name === 'transform') {
+    return parseStaticSvgTransform(value) !== undefined;
   }
   if (name === 'x' || name === 'y' || name === 'width' || name === 'height') {
     return isStaticSvgNumericValueSupported(value);
@@ -476,6 +483,87 @@ function svgPointList(value: string): Array<[number, number]> {
     points.push([numbers[index], numbers[index + 1]]);
   }
   return points;
+}
+
+function parseStaticSvgTransform(value: string | null | undefined): LayerAffineTransform | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  const source = value.trim();
+  if (source.length === 0) {
+    return undefined;
+  }
+
+  let transform: LayerAffineTransform = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  let cursor = 0;
+  const transformPattern = /([A-Za-z][A-Za-z0-9]*)\s*\(([^)]*)\)/g;
+  for (const match of source.matchAll(transformPattern)) {
+    const prefix = source.slice(cursor, match.index);
+    if (!/^[\s,]*$/.test(prefix)) {
+      return undefined;
+    }
+    cursor = (match.index ?? 0) + match[0].length;
+
+    const rawArguments = match[2].trim();
+    const numbers = rawArguments.length === 0
+      ? []
+      : rawArguments
+        .split(/[\s,]+/)
+        .filter((part) => part.length > 0)
+        .map((part) => Number(part));
+    if (numbers.some((number) => !Number.isFinite(number))) {
+      return undefined;
+    }
+
+    const operation = match[1].toLowerCase();
+    let next: LayerAffineTransform | undefined;
+    if (operation === 'matrix' && numbers.length === 6) {
+      next = { a: numbers[0], b: numbers[1], c: numbers[2], d: numbers[3], e: numbers[4], f: numbers[5] };
+    } else if (operation === 'translate' && (numbers.length === 1 || numbers.length === 2)) {
+      next = { a: 1, b: 0, c: 0, d: 1, e: numbers[0], f: numbers[1] ?? 0 };
+    } else if (operation === 'scale' && (numbers.length === 1 || numbers.length === 2)) {
+      next = { a: numbers[0], b: 0, c: 0, d: numbers[1] ?? numbers[0], e: 0, f: 0 };
+    } else if (operation === 'rotate' && (numbers.length === 1 || numbers.length === 3)) {
+      const radians = numbers[0] * Math.PI / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      if (numbers.length === 3) {
+        const cx = numbers[1];
+        const cy = numbers[2];
+        next = {
+          a: cos,
+          b: sin,
+          c: -sin,
+          d: cos,
+          e: cx - cos * cx + sin * cy,
+          f: cy - sin * cx - cos * cy,
+        };
+      } else {
+        next = { a: cos, b: sin, c: -sin, d: cos, e: 0, f: 0 };
+      }
+    } else if (operation === 'skewx' && numbers.length === 1) {
+      next = { a: 1, b: 0, c: Math.tan(numbers[0] * Math.PI / 180), d: 1, e: 0, f: 0 };
+    } else if (operation === 'skewy' && numbers.length === 1) {
+      next = { a: 1, b: Math.tan(numbers[0] * Math.PI / 180), c: 0, d: 1, e: 0, f: 0 };
+    } else {
+      return undefined;
+    }
+    if (!Object.values(next).every((number) => Number.isFinite(number))) {
+      return undefined;
+    }
+    transform = {
+      a: transform.a * next.a + transform.c * next.b,
+      b: transform.b * next.a + transform.d * next.b,
+      c: transform.a * next.c + transform.c * next.d,
+      d: transform.b * next.c + transform.d * next.d,
+      e: transform.a * next.e + transform.c * next.f + transform.e,
+      f: transform.b * next.e + transform.d * next.f + transform.f,
+    };
+  }
+  if (!/^[\s,]*$/.test(source.slice(cursor)) || cursor === 0) {
+    return undefined;
+  }
+  return transform;
 }
 
 function isStaticSvgStyleSupported(style: string): boolean {
