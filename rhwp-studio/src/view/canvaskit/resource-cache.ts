@@ -8,6 +8,7 @@ import {
   type LayerImageEffectDiagnostics,
   type LayerImageEffectSourceRect,
 } from '../layer-canvas-utils';
+import { parseCanvasKitCssColor } from './css-color';
 
 export class CanvasKitResourceCache {
   readonly imageCache = new Map<string, CanvasKitImage>();
@@ -260,14 +261,14 @@ export class CanvasKitResourceCache {
     const canvas = surface.getCanvas();
     const fillPaint = new this.canvasKit.Paint();
     fillPaint.setStyle(this.canvasKit.PaintStyle.Fill);
-    fillPaint.setColor(this.canvasKit.parseColorString(pattern.backgroundColor));
+    fillPaint.setColor(parseCanvasKitCssColor(this.canvasKit, pattern.backgroundColor));
     canvas.drawRect(this.canvasKit.XYWHRect(0, 0, 6, 6), fillPaint);
     fillPaint.delete();
 
     const strokePaint = new this.canvasKit.Paint();
     strokePaint.setStyle(this.canvasKit.PaintStyle.Stroke);
     strokePaint.setStrokeWidth(1);
-    strokePaint.setColor(this.canvasKit.parseColorString(pattern.patternColor));
+    strokePaint.setColor(parseCanvasKitCssColor(this.canvasKit, pattern.patternColor));
 
     switch (pattern.patternType) {
       case 0:

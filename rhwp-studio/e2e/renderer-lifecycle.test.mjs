@@ -7958,7 +7958,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               angle: 20,
               centerX: 50,
               centerY: 50,
-              colors: ['#f04b4b', '#ffe56a', '#4878ff'],
+              colors: ['red', 'hsl(52, 100%, 71%)', '#4878ff'],
               positions: [0, 0.55, 1],
             },
             transform,
@@ -7972,7 +7972,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               angle: 0,
               centerX: 45,
               centerY: 45,
-              colors: ['#ffffff', '#65cf70', '#175d20'],
+              colors: ['white', 'hsl(125, 55%, 60%)', 'green'],
               positions: [0, 0.45, 1],
             },
             transform,
@@ -7988,8 +7988,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
             ],
             style: style('#f8f0d8', '#6b3d00', {
               patternType: 4,
-              patternColor: '#1d4f8f',
-              backgroundColor: '#f8f0d8',
+              patternColor: 'magenta',
+              backgroundColor: 'hsl(43, 75%, 91%)',
             }),
             gradient: null,
             transform,
@@ -8000,8 +8000,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
             cornerRadius: 0,
             style: style('#f6f6f6', '#333333', {
               patternType: 5,
-              patternColor: '#222222',
-              backgroundColor: '#f6f6f6',
+              patternColor: 'rgb(34 34 34)',
+              backgroundColor: 'hsl(0, 0%, 96%)',
             }),
             gradient: null,
             transform,
@@ -8034,9 +8034,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     gradientPatternParityProbe.canvaskit,
     (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
   );
+  const gradientPatternCanvas2dMagentaPixels = countPixels(
+    gradientPatternParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.red > 200 && pixel.green < 80 && pixel.blue > 200,
+  );
+  const gradientPatternCanvaskitMagentaPixels = countPixels(
+    gradientPatternParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.red > 200 && pixel.green < 80 && pixel.blue > 200,
+  );
   assert(
     gradientPatternCanvas2dInkPixels > 1000 && gradientPatternCanvaskitInkPixels > 1000,
     `gradient/pattern replay draws geometry canvas2d=${gradientPatternCanvas2dInkPixels}, canvaskit=${gradientPatternCanvaskitInkPixels}`,
+  );
+  assert(
+    gradientPatternCanvas2dMagentaPixels > 10 && gradientPatternCanvaskitMagentaPixels > 10,
+    `gradient/pattern replay honors named CSS pattern color canvas2d=${gradientPatternCanvas2dMagentaPixels}, canvaskit=${gradientPatternCanvaskitMagentaPixels}`,
   );
   const gradientPatternDiff = await comparePngBuffers(
     pngBufferFromDataUrl(gradientPatternParityProbe.canvas2d),
