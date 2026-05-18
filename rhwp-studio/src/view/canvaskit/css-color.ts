@@ -222,7 +222,7 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
   if (colorMatch) {
     const [colorBody, slashAlpha] = colorMatch[1].split('/').map((part) => part.trim());
     const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
-    if (parts.length !== 4 || parts[0] !== 'srgb') {
+    if (parts.length !== 4 || !['srgb', 'srgb-linear', 'display-p3'].includes(parts[0])) {
       return null;
     }
     const channels = parts.slice(1).map((part) => {
@@ -236,7 +236,32 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
     if (channels.some((channel) => channel === null) || alpha === null) {
       return null;
     }
-    return [channels[0] ?? 0, channels[1] ?? 0, channels[2] ?? 0, alpha];
+    const red = channels[0] ?? 0;
+    const green = channels[1] ?? 0;
+    const blue = channels[2] ?? 0;
+    if (parts[0] === 'srgb') {
+      return [red, green, blue, alpha];
+    }
+    if (parts[0] === 'srgb-linear') {
+      return [
+        linearSrgbToEncodedUnit(red),
+        linearSrgbToEncodedUnit(green),
+        linearSrgbToEncodedUnit(blue),
+        alpha,
+      ];
+    }
+    const linearP3Red = red <= 0.04045 ? red / 12.92 : ((red + 0.055) / 1.055) ** 2.4;
+    const linearP3Green = green <= 0.04045 ? green / 12.92 : ((green + 0.055) / 1.055) ** 2.4;
+    const linearP3Blue = blue <= 0.04045 ? blue / 12.92 : ((blue + 0.055) / 1.055) ** 2.4;
+    const xD65 = (0.4865709486 * linearP3Red) + (0.2656676932 * linearP3Green) + (0.1982172852 * linearP3Blue);
+    const yD65 = (0.2289745641 * linearP3Red) + (0.6917385218 * linearP3Green) + (0.0792869141 * linearP3Blue);
+    const zD65 = (0.0451133819 * linearP3Green) + (1.0439443689 * linearP3Blue);
+    return [
+      linearSrgbToEncodedUnit((3.2404542 * xD65) - (1.5371385 * yD65) - (0.4985314 * zD65)),
+      linearSrgbToEncodedUnit((-0.969266 * xD65) + (1.8760108 * yD65) + (0.041556 * zD65)),
+      linearSrgbToEncodedUnit((0.0556434 * xD65) - (0.2040259 * yD65) + (1.0572252 * zD65)),
+      alpha,
+    ];
   }
   const labMatch = normalized.match(/^lab\((.*)\)$/);
   if (labMatch) {

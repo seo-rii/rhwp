@@ -4926,7 +4926,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const functionalCssColorSvgResourceTree = treeFor(svgOutline);
     functionalCssColorSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
-      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: hwb(300deg 0% 0% / 100%)"/>',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: color(display-p3 1 0 1)"/>',
       '</svg>',
     ].join('');
     functionalCssColorSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-functional-css-color-resource';
@@ -4940,7 +4940,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const styleCascadeSvgResourceTree = treeFor(svgOutline);
     styleCascadeSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
-      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: #ff0000; fill: #ff00cc"/>',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: #ff0000; fill: color(srgb-linear 1 0 0.604)"/>',
       '</svg>',
     ].join('');
     styleCascadeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-style-cascade-resource';
