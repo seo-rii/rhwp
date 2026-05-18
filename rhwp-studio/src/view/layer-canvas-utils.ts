@@ -493,11 +493,37 @@ function isStaticSvgStyleSupported(style: string): boolean {
 }
 
 function isStaticSvgPaintValueSupported(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized.length > 0
-    && !STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES.has(normalized)
-    && !/\burl\s*\(/.test(normalized)
-    && !/\bvar\s*\(/.test(normalized);
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase();
+  if (
+    normalized.length === 0
+    || STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES.has(normalized)
+    || /\burl\s*\(/.test(normalized)
+    || /\bvar\s*\(/.test(normalized)
+  ) {
+    return false;
+  }
+  if (normalized === 'none') {
+    return true;
+  }
+  if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function') {
+    return CSS.supports('color', trimmed);
+  }
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(trimmed)
+    || /^(?:rgb|rgba|hsl|hsla)\(\s*[-+0-9.%\s,/]+\)$/i.test(trimmed)
+    || [
+      'black',
+      'blue',
+      'cyan',
+      'gray',
+      'green',
+      'grey',
+      'magenta',
+      'red',
+      'transparent',
+      'white',
+      'yellow',
+    ].includes(normalized);
 }
 
 function isStaticSvgOpacityValueSupported(value: string): boolean {
