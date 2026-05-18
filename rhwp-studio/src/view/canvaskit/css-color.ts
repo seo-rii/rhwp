@@ -224,7 +224,17 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
     const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
     if (
       parts.length !== 4
-      || !['srgb', 'srgb-linear', 'display-p3', 'xyz', 'xyz-d50', 'xyz-d65'].includes(parts[0])
+      || ![
+        'srgb',
+        'srgb-linear',
+        'display-p3',
+        'a98-rgb',
+        'prophoto-rgb',
+        'rec2020',
+        'xyz',
+        'xyz-d50',
+        'xyz-d65',
+      ].includes(parts[0])
     ) {
       return null;
     }
@@ -258,6 +268,56 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
     }
     if (parts[0] === 'xyz' || parts[0] === 'xyz-d65') {
       return [...xyzD65ToEncodedSrgb(red, green, blue), alpha];
+    }
+    if (parts[0] === 'a98-rgb') {
+      const linearA98Red = red ** (563 / 256);
+      const linearA98Green = green ** (563 / 256);
+      const linearA98Blue = blue ** (563 / 256);
+      const xD65 = (0.5766690429 * linearA98Red)
+        + (0.1855582379 * linearA98Green)
+        + (0.1882286462 * linearA98Blue);
+      const yD65 = (0.2973449753 * linearA98Red)
+        + (0.6273635663 * linearA98Green)
+        + (0.0752914585 * linearA98Blue);
+      const zD65 = (0.0270313614 * linearA98Red)
+        + (0.0706888525 * linearA98Green)
+        + (0.9913375368 * linearA98Blue);
+      return [...xyzD65ToEncodedSrgb(xD65, yD65, zD65), alpha];
+    }
+    if (parts[0] === 'prophoto-rgb') {
+      const linearProPhotoRed = red <= 0.03125 ? red / 16 : red ** 1.8;
+      const linearProPhotoGreen = green <= 0.03125 ? green / 16 : green ** 1.8;
+      const linearProPhotoBlue = blue <= 0.03125 ? blue / 16 : blue ** 1.8;
+      const xD50 = (0.7977666449 * linearProPhotoRed)
+        + (0.1351812974 * linearProPhotoGreen)
+        + (0.0313477341 * linearProPhotoBlue);
+      const yD50 = (0.2880748288 * linearProPhotoRed)
+        + (0.7118352342 * linearProPhotoGreen)
+        + (0.0000899369 * linearProPhotoBlue);
+      const zD50 = 0.8251046025 * linearProPhotoBlue;
+      return [...xyzD65ToEncodedSrgb(...d50ToD65Xyz(xD50, yD50, zD50)), alpha];
+    }
+    if (parts[0] === 'rec2020') {
+      const alphaRec2020 = 1.0992968268;
+      const betaRec2020 = 0.0180539685;
+      const linearRec2020Red = red < betaRec2020 * 4.5
+        ? red / 4.5
+        : ((red + alphaRec2020 - 1) / alphaRec2020) ** (1 / 0.45);
+      const linearRec2020Green = green < betaRec2020 * 4.5
+        ? green / 4.5
+        : ((green + alphaRec2020 - 1) / alphaRec2020) ** (1 / 0.45);
+      const linearRec2020Blue = blue < betaRec2020 * 4.5
+        ? blue / 4.5
+        : ((blue + alphaRec2020 - 1) / alphaRec2020) ** (1 / 0.45);
+      const xD65 = (0.6369580483 * linearRec2020Red)
+        + (0.1446169036 * linearRec2020Green)
+        + (0.1688809752 * linearRec2020Blue);
+      const yD65 = (0.262700212 * linearRec2020Red)
+        + (0.6779980715 * linearRec2020Green)
+        + (0.0593017165 * linearRec2020Blue);
+      const zD65 = (0.028072693 * linearRec2020Green)
+        + (1.0609850577 * linearRec2020Blue);
+      return [...xyzD65ToEncodedSrgb(xD65, yD65, zD65), alpha];
     }
     const linearP3Red = red <= 0.04045 ? red / 12.92 : ((red + 0.055) / 1.055) ** 2.4;
     const linearP3Green = green <= 0.04045 ? green / 12.92 : ((green + 0.055) / 1.055) ** 2.4;
