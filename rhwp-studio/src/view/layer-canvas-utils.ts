@@ -34,6 +34,12 @@ export type StaticSvgPathLayer = {
   opacity: number;
   transform?: LayerAffineTransform;
 };
+type StaticSvgPaintState = {
+  fill: string | null;
+  fillRuleValue: string | null;
+  fillOpacity: number;
+  transform?: LayerAffineTransform;
+};
 export type LayerImageEffectDiagnostics = {
   cacheHits: number;
   cacheMisses: number;
@@ -56,14 +62,27 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   }
   if (typeof DOMParser === 'undefined') {
     const layers: StaticSvgPathLayer[] = [];
-    const tagPattern = /<\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
+    const paintStateStack: StaticSvgPaintState[] = [{
+      fill: null,
+      fillRuleValue: null,
+      fillOpacity: 1,
+    }];
+    const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
     for (const match of fragment.matchAll(tagPattern)) {
-      const elementName = match[1].toLowerCase();
-      const rawAttributes = match[2] ?? '';
+      const isClosingTag = match[1] === '/';
+      const elementName = match[2].toLowerCase();
+      const rawAttributes = match[3] ?? '';
+      if (isClosingTag) {
+        if ((elementName === 'svg' || elementName === 'g') && paintStateStack.length > 1) {
+          paintStateStack.pop();
+        }
+        continue;
+      }
       const supportedAttributes = staticSvgSupportedAttributes(elementName);
       if (!supportedAttributes) {
         return [];
       }
+      const isSelfClosing = /\/\s*$/.test(rawAttributes);
 
       const attributes = new Map<string, string>();
       const attributePattern = /([A-Za-z_][A-Za-z0-9:._-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
@@ -84,6 +103,13 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         }
       }
       if (elementName === 'svg' || elementName === 'g' || elementName === 'title' || elementName === 'desc') {
+        if ((elementName === 'svg' || elementName === 'g') && !isSelfClosing) {
+          paintStateStack.push(staticSvgPaintStateFromMap(
+            paintStateStack[paintStateStack.length - 1],
+            attributes,
+            elementName === 'g',
+          ));
+        }
         continue;
       }
 
@@ -125,40 +151,26 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         continue;
       }
 
-      let fill = attributes.get('fill') ?? null;
-      let opacityValue = attributes.get('opacity') ?? null;
-      let fillOpacityValue = attributes.get('fill-opacity') ?? null;
-      let fillRuleValue = attributes.get('fill-rule') ?? null;
-      const style = attributes.get('style');
-      if (style) {
-        for (const declaration of style.split(';')) {
-          const separator = declaration.indexOf(':');
-          if (separator < 0) {
-            continue;
-          }
-          const property = declaration.slice(0, separator).trim().toLowerCase();
-          const value = declaration.slice(separator + 1).trim();
-          if (property === 'fill') {
-            fill = value;
-          } else if (property === 'opacity') {
-            opacityValue = value;
-          } else if (property === 'fill-opacity') {
-            fillOpacityValue = value;
-          } else if (property === 'fill-rule') {
-            fillRuleValue = value;
-          }
-        }
-      }
-      const resolvedFill = fill ?? '#000000';
+      const currentState = paintStateStack[paintStateStack.length - 1];
+      const fill = staticSvgMapPresentationAttribute(attributes, 'fill');
+      const opacityValue = staticSvgMapPresentationAttribute(attributes, 'opacity');
+      const fillOpacityValue = staticSvgMapPresentationAttribute(attributes, 'fill-opacity');
+      const fillRuleValue = staticSvgMapPresentationAttribute(attributes, 'fill-rule') ?? currentState.fillRuleValue;
+      const resolvedFill = fill ?? currentState.fill ?? '#000000';
       if (resolvedFill.trim().toLowerCase() === 'none') {
         continue;
       }
+      const transform = staticSvgComposeTransforms(
+        currentState.transform,
+        parseStaticSvgTransform(attributes.get('transform')),
+      );
       layers.push({
         pathData,
         fill: resolvedFill,
         fillRule: svgFillRule(fillRuleValue),
-        opacity: svgOpacity(opacityValue) * svgOpacity(fillOpacityValue),
-        transform: parseStaticSvgTransform(attributes.get('transform')),
+        opacity: svgOpacity(opacityValue)
+          * (fillOpacityValue === null ? currentState.fillOpacity : svgOpacity(fillOpacityValue)),
+        transform,
       });
     }
     return layers;
@@ -176,25 +188,50 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   }
 
   const layers: StaticSvgPathLayer[] = [];
-  for (const element of document.querySelectorAll('path, rect, circle, ellipse, polygon, polyline')) {
-    const pathData = staticSvgElementPathData(element);
-    if (!pathData) {
-      continue;
+  const appendStaticSvgLayers = (element: Element, state: StaticSvgPaintState): void => {
+    const elementName = element.localName.toLowerCase();
+    const currentState = elementName === 'svg' || elementName === 'g'
+      ? staticSvgPaintStateFromElement(state, element, elementName === 'g')
+      : state;
+    if (elementName === 'path'
+      || elementName === 'rect'
+      || elementName === 'circle'
+      || elementName === 'ellipse'
+      || elementName === 'polygon'
+      || elementName === 'polyline') {
+      const pathData = staticSvgElementPathData(element);
+      if (!pathData) {
+        return;
+      }
+      const fill = svgPresentationAttribute(element, 'fill') ?? currentState.fill ?? '#000000';
+      if (fill.trim().toLowerCase() === 'none') {
+        return;
+      }
+      const fillOpacityValue = svgPresentationAttribute(element, 'fill-opacity');
+      const opacity = svgOpacity(svgPresentationAttribute(element, 'opacity'))
+        * (fillOpacityValue === null ? currentState.fillOpacity : svgOpacity(fillOpacityValue));
+      const transform = staticSvgComposeTransforms(
+        currentState.transform,
+        parseStaticSvgTransform(element.getAttribute('transform')),
+      );
+      layers.push({
+        pathData,
+        fill,
+        fillRule: svgFillRule(svgPresentationAttribute(element, 'fill-rule') ?? currentState.fillRuleValue),
+        opacity,
+        transform,
+      });
+      return;
     }
-    const fill = svgPresentationAttribute(element, 'fill') ?? '#000000';
-    if (fill.trim().toLowerCase() === 'none') {
-      continue;
+    for (const child of Array.from(element.children)) {
+      appendStaticSvgLayers(child, currentState);
     }
-    const opacity = svgOpacity(svgPresentationAttribute(element, 'opacity'))
-      * svgOpacity(svgPresentationAttribute(element, 'fill-opacity'));
-    layers.push({
-      pathData,
-      fill,
-      fillRule: svgFillRule(svgPresentationAttribute(element, 'fill-rule')),
-      opacity,
-      transform: parseStaticSvgTransform(element.getAttribute('transform')),
-    });
-  }
+  };
+  appendStaticSvgLayers(document.documentElement, {
+    fill: null,
+    fillRuleValue: null,
+    fillOpacity: 1,
+  });
   return layers;
 }
 
@@ -222,6 +259,78 @@ function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
     }
   }
   return openElementStack.length > 0;
+}
+
+function staticSvgMapPresentationAttribute(attributes: Map<string, string>, name: string): string | null {
+  const style = attributes.get('style');
+  if (style) {
+    let styleValue: string | null = null;
+    for (const declaration of style.split(';')) {
+      const separator = declaration.indexOf(':');
+      if (separator < 0) {
+        continue;
+      }
+      if (declaration.slice(0, separator).trim().toLowerCase() === name.toLowerCase()) {
+        styleValue = declaration.slice(separator + 1).trim();
+      }
+    }
+    if (styleValue !== null) {
+      return styleValue;
+    }
+  }
+  return attributes.get(name) ?? null;
+}
+
+function staticSvgPaintStateFromMap(
+  parent: StaticSvgPaintState,
+  attributes: Map<string, string>,
+  allowTransform: boolean,
+): StaticSvgPaintState {
+  const fillOpacityValue = staticSvgMapPresentationAttribute(attributes, 'fill-opacity');
+  return {
+    fill: staticSvgMapPresentationAttribute(attributes, 'fill') ?? parent.fill,
+    fillRuleValue: staticSvgMapPresentationAttribute(attributes, 'fill-rule') ?? parent.fillRuleValue,
+    fillOpacity: fillOpacityValue === null ? parent.fillOpacity : svgOpacity(fillOpacityValue),
+    transform: allowTransform
+      ? staticSvgComposeTransforms(parent.transform, parseStaticSvgTransform(attributes.get('transform')))
+      : parent.transform,
+  };
+}
+
+function staticSvgPaintStateFromElement(
+  parent: StaticSvgPaintState,
+  element: Element,
+  allowTransform: boolean,
+): StaticSvgPaintState {
+  const fillOpacityValue = svgPresentationAttribute(element, 'fill-opacity');
+  return {
+    fill: svgPresentationAttribute(element, 'fill') ?? parent.fill,
+    fillRuleValue: svgPresentationAttribute(element, 'fill-rule') ?? parent.fillRuleValue,
+    fillOpacity: fillOpacityValue === null ? parent.fillOpacity : svgOpacity(fillOpacityValue),
+    transform: allowTransform
+      ? staticSvgComposeTransforms(parent.transform, parseStaticSvgTransform(element.getAttribute('transform')))
+      : parent.transform,
+  };
+}
+
+function staticSvgComposeTransforms(
+  parent: LayerAffineTransform | undefined,
+  child: LayerAffineTransform | undefined,
+): LayerAffineTransform | undefined {
+  if (!parent) {
+    return child;
+  }
+  if (!child) {
+    return parent;
+  }
+  return {
+    a: parent.a * child.a + parent.c * child.b,
+    b: parent.b * child.a + parent.d * child.b,
+    c: parent.a * child.c + parent.c * child.d,
+    d: parent.b * child.c + parent.d * child.d,
+    e: parent.a * child.e + parent.c * child.f + parent.e,
+    f: parent.b * child.e + parent.d * child.f + parent.f,
+  };
 }
 
 function staticSvgElementPathData(element: Element): string | null {
@@ -362,10 +471,26 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
     return new Set(['id', 'class', 'points', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'svg') {
-    return new Set(['id', 'class', 'xmlns', 'xmlns:xlink', 'xml:space', 'viewbox', 'width', 'height', 'x', 'y', 'version']);
+    return new Set([
+      'id',
+      'class',
+      'xmlns',
+      'xmlns:xlink',
+      'xml:space',
+      'viewbox',
+      'width',
+      'height',
+      'x',
+      'y',
+      'version',
+      'fill',
+      'fill-rule',
+      'fill-opacity',
+      'style',
+    ]);
   }
   if (elementName === 'g') {
-    return new Set(['id', 'class', 'xml:space']);
+    return new Set(['id', 'class', 'xml:space', 'fill', 'fill-rule', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'title' || elementName === 'desc') {
     return new Set(['id', 'class', 'xml:space']);
@@ -414,7 +539,7 @@ function isStaticSvgAttributeSupported(
     return isStaticSvgFillRuleValueSupported(value);
   }
   if (name === 'style') {
-    return isStaticSvgStyleSupported(value);
+    return isStaticSvgStyleSupported(value, elementName !== 'svg' && elementName !== 'g');
   }
   if (name === 'transform') {
     return parseStaticSvgTransform(value) !== undefined;
@@ -551,14 +676,7 @@ function parseStaticSvgTransform(value: string | null | undefined): LayerAffineT
     if (!Object.values(next).every((number) => Number.isFinite(number))) {
       return undefined;
     }
-    transform = {
-      a: transform.a * next.a + transform.c * next.b,
-      b: transform.b * next.a + transform.d * next.b,
-      c: transform.a * next.c + transform.c * next.d,
-      d: transform.b * next.c + transform.d * next.d,
-      e: transform.a * next.e + transform.c * next.f + transform.e,
-      f: transform.b * next.e + transform.d * next.f + transform.f,
-    };
+    transform = staticSvgComposeTransforms(transform, next) ?? transform;
   }
   if (!/^[\s,]*$/.test(source.slice(cursor)) || cursor === 0) {
     return undefined;
@@ -566,8 +684,11 @@ function parseStaticSvgTransform(value: string | null | undefined): LayerAffineT
   return transform;
 }
 
-function isStaticSvgStyleSupported(style: string): boolean {
-  const supportedProperties = new Set(['fill', 'fill-rule', 'opacity', 'fill-opacity']);
+function isStaticSvgStyleSupported(style: string, allowOpacity: boolean): boolean {
+  const supportedProperties = new Set(['fill', 'fill-rule', 'fill-opacity']);
+  if (allowOpacity) {
+    supportedProperties.add('opacity');
+  }
   for (const declaration of style.split(';')) {
     const separator = declaration.indexOf(':');
     if (separator < 0) {
