@@ -481,6 +481,14 @@ async function renderScenario(page, backend, caseInfo) {
       surfaceDiagnostics?.preference === CANVASKIT_SURFACE,
       `${caseInfo.name} CanvasKit surface preference=${JSON.stringify(surfaceDiagnostics)}`,
     );
+    if (CANVASKIT_SURFACE === 'auto') {
+      assert(
+        surfaceDiagnostics?.requested === 'auto'
+          && surfaceDiagnostics?.unsupportedValue === null
+          && surfaceDiagnostics?.unsupportedReason === null,
+        `${caseInfo.name} CanvasKit auto surface diagnostics=${JSON.stringify(surfaceDiagnostics)}`,
+      );
+    }
     assert(
       expectedSurfaceBackends.includes(surfaceDiagnostics?.backend),
       `${caseInfo.name} CanvasKit surface backend=${JSON.stringify(surfaceDiagnostics)}`,

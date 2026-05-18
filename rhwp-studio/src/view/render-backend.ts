@@ -84,6 +84,14 @@ export function resolveCanvasKitSurfaceRequest(search: string): CanvasKitSurface
       : { ...DEFAULT_CANVASKIT_SURFACE_REQUEST, requested: requestedRaw };
   }
 
+  if (requested === 'auto') {
+    return {
+      preference: 'auto',
+      requested: requestedRaw,
+      unsupportedValue: null,
+      unsupportedReason: null,
+    };
+  }
   if (requested === 'webgl') {
     return {
       preference: 'webgl',

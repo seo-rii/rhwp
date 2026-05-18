@@ -589,9 +589,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     cpuSurfaceAliasProbe.preference === 'software'
       && cpuSurfaceAliasProbe.request?.requested === 'cpu'
+      && cpuSurfaceAliasProbe.request?.unsupportedValue === null
       && cpuSurfaceAliasProbe.request?.unsupportedReason === null
       && cpuSurfaceAliasProbe.diagnostics?.preference === 'software',
     `canvaskitSurface=cpu aliases to software=${JSON.stringify(cpuSurfaceAliasProbe)}`,
+  );
+
+  setTestCase('canvaskit-explicit-auto-surface-diagnostics');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=auto');
+  const autoSurfaceProbe = await page.evaluate(() => ({
+    preference: window.__canvaskitSurfacePreference,
+    request: window.__canvaskitSurfaceRequest,
+    diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
+  }));
+  assert(
+    autoSurfaceProbe.preference === 'auto'
+      && autoSurfaceProbe.request?.requested === 'auto'
+      && autoSurfaceProbe.request?.unsupportedValue === null
+      && autoSurfaceProbe.request?.unsupportedReason === null
+      && autoSurfaceProbe.diagnostics?.preference === 'auto'
+      && autoSurfaceProbe.diagnostics?.unsupportedValue === null
+      && autoSurfaceProbe.diagnostics?.unsupportedReason === null,
+    `canvaskitSurface=auto is a supported auto preference=${JSON.stringify(autoSurfaceProbe)}`,
   );
 
   setTestCase('canvaskit-surface-backend-aliases');
