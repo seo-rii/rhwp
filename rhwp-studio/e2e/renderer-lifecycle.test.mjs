@@ -819,6 +819,46 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `WebGPU-preferred surface path renders direct CanvasKit content bluePixels=${webgpuSurfaceBluePixels}`,
   );
 
+  setTestCase('canvaskit-invalid-surface-request-diagnostics');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=definitely-not-a-surface');
+  await loadHwpFile(page, 'lseg-01-basic.hwp');
+  const invalidSurfaceParamProbe = await page.evaluate(() => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    const canvas = document.querySelector('#scroll-container canvas');
+    if (!renderer) {
+      return { error: 'CanvasKit renderer unavailable' };
+    }
+    return {
+      preference: window.__canvaskitSurfacePreference,
+      request: window.__canvaskitSurfaceRequest,
+      diagnostics: renderer.getSurfaceDiagnostics(),
+      canvasWidth: canvas?.width ?? 0,
+      canvasHeight: canvas?.height ?? 0,
+    };
+  });
+  assert(
+    !invalidSurfaceParamProbe.error,
+    invalidSurfaceParamProbe.error || 'invalid CanvasKit surface request probe available',
+  );
+  assert(
+    invalidSurfaceParamProbe.preference === 'auto'
+      && invalidSurfaceParamProbe.request?.requested === 'definitely-not-a-surface'
+      && invalidSurfaceParamProbe.request?.unsupportedValue === 'definitely-not-a-surface'
+      && invalidSurfaceParamProbe.request?.unsupportedReason === 'unsupportedSurfaceBackend',
+    `invalid CanvasKit surface request resolves to auto with diagnostics=${JSON.stringify(invalidSurfaceParamProbe)}`,
+  );
+  assert(
+    invalidSurfaceParamProbe.diagnostics?.unsupportedValue === 'definitely-not-a-surface'
+      && invalidSurfaceParamProbe.diagnostics?.unsupportedReason === 'unsupportedSurfaceBackend'
+      && invalidSurfaceParamProbe.diagnostics?.webgpuAttempts === 0
+      && ['webgl', 'software'].includes(invalidSurfaceParamProbe.diagnostics?.backend),
+    `invalid CanvasKit surface request renders through auto fallback without WebGPU attempt=${JSON.stringify(invalidSurfaceParamProbe)}`,
+  );
+  assert(
+    invalidSurfaceParamProbe.canvasWidth > 0 && invalidSurfaceParamProbe.canvasHeight > 0,
+    `invalid CanvasKit surface request still renders canvas=${JSON.stringify(invalidSurfaceParamProbe)}`,
+  );
+
   setTestCase('layer-resource-cache-invalidation');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=auto');
   await loadHwpFile(page, '20250130-hongbo_saved.hwp');
