@@ -7988,7 +7988,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
             ],
             style: style('#f8f0d8', '#6b3d00', {
               patternType: 4,
-              patternColor: 'magenta',
+              patternColor: 'rebeccapurple',
               backgroundColor: 'hsl(43, 75%, 91%)',
             }),
             gradient: null,
@@ -8034,21 +8034,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     gradientPatternParityProbe.canvaskit,
     (pixel) => pixel.alpha > 32 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
   );
-  const gradientPatternCanvas2dMagentaPixels = countPixels(
+  const gradientPatternCanvas2dPurplePixels = countPixels(
     gradientPatternParityProbe.canvas2d,
-    (pixel) => pixel.alpha > 32 && pixel.red > 200 && pixel.green < 80 && pixel.blue > 200,
+    (pixel) => pixel.alpha > 32 && pixel.red > 70 && pixel.red < 140 && pixel.green < 80 && pixel.blue > 110 && pixel.blue < 190,
   );
-  const gradientPatternCanvaskitMagentaPixels = countPixels(
+  const gradientPatternCanvaskitPurplePixels = countPixels(
     gradientPatternParityProbe.canvaskit,
-    (pixel) => pixel.alpha > 32 && pixel.red > 200 && pixel.green < 80 && pixel.blue > 200,
+    (pixel) => pixel.alpha > 32 && pixel.red > 70 && pixel.red < 140 && pixel.green < 80 && pixel.blue > 110 && pixel.blue < 190,
   );
   assert(
     gradientPatternCanvas2dInkPixels > 1000 && gradientPatternCanvaskitInkPixels > 1000,
     `gradient/pattern replay draws geometry canvas2d=${gradientPatternCanvas2dInkPixels}, canvaskit=${gradientPatternCanvaskitInkPixels}`,
   );
   assert(
-    gradientPatternCanvas2dMagentaPixels > 10 && gradientPatternCanvaskitMagentaPixels > 10,
-    `gradient/pattern replay honors named CSS pattern color canvas2d=${gradientPatternCanvas2dMagentaPixels}, canvaskit=${gradientPatternCanvaskitMagentaPixels}`,
+    gradientPatternCanvas2dPurplePixels > 10 && gradientPatternCanvaskitPurplePixels > 10,
+    `gradient/pattern replay honors full CSS named pattern color canvas2d=${gradientPatternCanvas2dPurplePixels}, canvaskit=${gradientPatternCanvaskitPurplePixels}`,
   );
   const gradientPatternDiff = await comparePngBuffers(
     pngBufferFromDataUrl(gradientPatternParityProbe.canvas2d),
