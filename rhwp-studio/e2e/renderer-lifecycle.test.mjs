@@ -4918,6 +4918,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     wrappedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-wrapped-resource';
+    const nonVisualAttributesSvgResourceTree = treeFor(svgOutline);
+    nonVisualAttributesSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" role="img" aria-label="Fixture glyph" data-source="fixture" focusable="false">',
+      '<title aria-hidden="true" data-title="fixture">Fixture glyph</title>',
+      '<desc data-purpose="strict-replay">Static sanitized vector resource</desc>',
+      '<g role="presentation" aria-hidden="true" data-layer="fill" focusable="false">',
+      '<path data-shape="square" aria-label="magenta square" d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>',
+      '</g>',
+      '</svg>',
+    ].join('');
+    nonVisualAttributesSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-nonvisual-attributes-resource';
     const balancedShapeSvgResourceTree = treeFor(svgOutline);
     balancedShapeSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -5045,6 +5056,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const hadDOMParser = 'DOMParser' in globalThis;
     let noDomParserSvgGlyph;
     let noDomParserWrappedSvgGlyph;
+    let noDomParserNonVisualAttributesSvgGlyph;
     let noDomParserBalancedShapeSvgGlyph;
     let noDomParserDefsSvgGlyph;
     let noDomParserNamedCssColorSvgGlyph;
@@ -5070,6 +5082,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       globalThis.DOMParser = undefined;
       noDomParserSvgGlyph = await render(treeFor(svgOutline));
       noDomParserWrappedSvgGlyph = await render(wrappedSvgResourceTree);
+      noDomParserNonVisualAttributesSvgGlyph = await render(nonVisualAttributesSvgResourceTree);
       noDomParserBalancedShapeSvgGlyph = await render(balancedShapeSvgResourceTree);
       noDomParserDefsSvgGlyph = await render(defsSvgResourceTree);
       noDomParserNamedCssColorSvgGlyph = await render(namedCssColorSvgResourceTree);
@@ -5110,6 +5123,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserSvgGlyph,
       wrappedSvgGlyph: await render(wrappedSvgResourceTree),
       noDomParserWrappedSvgGlyph,
+      nonVisualAttributesSvgGlyph: await render(nonVisualAttributesSvgResourceTree),
+      noDomParserNonVisualAttributesSvgGlyph,
       balancedShapeSvgGlyph: await render(balancedShapeSvgResourceTree),
       noDomParserBalancedShapeSvgGlyph,
       defsSvgGlyph: await render(defsSvgResourceTree),
@@ -5245,6 +5260,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserWrappedSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserWrappedSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects wrapped SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserWrappedSvgReport)}`,
+  );
+  const canvaskitNonVisualAttributesSvgReport = canvaskitGlyphOutlineProbe
+    .nonVisualAttributesSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNonVisualAttributesSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNonVisualAttributesSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects nonvisual-attribute SvgGlyph resource=${JSON.stringify(canvaskitNonVisualAttributesSvgReport)}`,
+  );
+  const canvaskitNoDomParserNonVisualAttributesSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserNonVisualAttributesSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserNonVisualAttributesSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserNonVisualAttributesSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects nonvisual-attribute SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserNonVisualAttributesSvgReport)}`,
   );
   const canvaskitBalancedShapeSvgReport = canvaskitGlyphOutlineProbe
     .balancedShapeSvgGlyph
@@ -5706,6 +5739,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserSvgGlyph.magentaPixels;
   const canvaskitWrappedSvgMagentaPixels = canvaskitGlyphOutlineProbe.wrappedSvgGlyph.magentaPixels;
   const canvaskitNoDomParserWrappedSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserWrappedSvgGlyph.magentaPixels;
+  const canvaskitNonVisualAttributesSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .nonVisualAttributesSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserNonVisualAttributesSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserNonVisualAttributesSvgGlyph
+    .magentaPixels;
   const canvaskitBalancedShapeSvgMagentaPixels = canvaskitGlyphOutlineProbe.balancedShapeSvgGlyph.magentaPixels;
   const canvaskitNoDomParserBalancedShapeSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserBalancedShapeSvgGlyph
@@ -5829,6 +5868,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserWrappedSvgMagentaPixels > 100,
     `CanvasKit strict outline paints wrapped SvgGlyph without DOMParser magenta=${canvaskitNoDomParserWrappedSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNonVisualAttributesSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints nonvisual-attribute SvgGlyph resource magenta=${canvaskitNonVisualAttributesSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserNonVisualAttributesSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints nonvisual-attribute SvgGlyph without DOMParser magenta=${canvaskitNoDomParserNonVisualAttributesSvgMagentaPixels}`,
   );
   assert(
     canvaskitBalancedShapeSvgMagentaPixels > 100,

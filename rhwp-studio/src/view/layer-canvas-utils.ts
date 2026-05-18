@@ -524,7 +524,7 @@ function isStaticSvgAttributeSupported(
   value: string,
 ): boolean {
   if (!supportedAttributes.has(name)) {
-    return false;
+    return isStaticSvgNonVisualAttributeSupported(name, value);
   }
   if (name === 'xmlns') {
     return value.trim() === 'http://www.w3.org/2000/svg';
@@ -585,6 +585,27 @@ function isStaticSvgAttributeSupported(
     return svgPointList(value).length >= 3;
   }
   return elementName === 'g';
+}
+
+function isStaticSvgNonVisualAttributeSupported(name: string, value: string): boolean {
+  const normalizedName = name.trim().toLowerCase();
+  if (/[<>`]/.test(value)) {
+    return false;
+  }
+  if (/^aria-[a-z0-9_-]+$/.test(normalizedName)) {
+    return true;
+  }
+  if (/^data-[a-z0-9_.:-]+$/.test(normalizedName)) {
+    return true;
+  }
+  if (normalizedName === 'role') {
+    const trimmedValue = value.trim();
+    return /^[a-z][a-z0-9_-]*(?:\s+[a-z][a-z0-9_-]*)*$/i.test(trimmedValue);
+  }
+  if (normalizedName === 'focusable') {
+    return ['true', 'false', 'auto'].includes(value.trim().toLowerCase());
+  }
+  return false;
 }
 
 function svgNumericAttribute(element: Element, name: string): number | null {
