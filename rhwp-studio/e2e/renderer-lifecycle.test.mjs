@@ -613,6 +613,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `canvaskitSurface=auto is a supported auto preference=${JSON.stringify(autoSurfaceProbe)}`,
   );
 
+  setTestCase('canvaskit-explicit-auto-surface-backend-diagnostics');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurfaceBackend=auto');
+  const autoSurfaceBackendProbe = await page.evaluate(() => ({
+    preference: window.__canvaskitSurfacePreference,
+    request: window.__canvaskitSurfaceRequest,
+    diagnostics: window.__canvasView?.pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null,
+  }));
+  assert(
+    autoSurfaceBackendProbe.preference === 'auto'
+      && autoSurfaceBackendProbe.request?.requested === 'auto'
+      && autoSurfaceBackendProbe.request?.unsupportedValue === null
+      && autoSurfaceBackendProbe.request?.unsupportedReason === null
+      && autoSurfaceBackendProbe.diagnostics?.preference === 'auto'
+      && autoSurfaceBackendProbe.diagnostics?.unsupportedValue === null
+      && autoSurfaceBackendProbe.diagnostics?.unsupportedReason === null,
+    `canvaskitSurfaceBackend=auto is a supported auto preference=${JSON.stringify(autoSurfaceBackendProbe)}`,
+  );
+
   setTestCase('canvaskit-surface-backend-aliases');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurfaceBackend=sw');
   const swSurfaceBackendAliasProbe = await page.evaluate(() => ({
