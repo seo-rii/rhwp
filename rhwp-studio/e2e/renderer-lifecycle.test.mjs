@@ -4909,6 +4909,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     wrappedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-wrapped-resource';
+    const balancedShapeSvgResourceTree = treeFor(svgOutline);
+    balancedShapeSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"></path>',
+      '</svg>',
+    ].join('');
+    balancedShapeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-balanced-shape-resource';
     const stylePrecedenceSvgResourceTree = treeFor(svgOutline);
     stylePrecedenceSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -4941,6 +4948,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const hadDOMParser = 'DOMParser' in globalThis;
     let noDomParserSvgGlyph;
     let noDomParserWrappedSvgGlyph;
+    let noDomParserBalancedShapeSvgGlyph;
     let noDomParserStylePrecedenceSvgGlyph;
     let noDomParserStyleCascadeSvgGlyph;
     let noDomParserPolylineSvgGlyph;
@@ -4953,6 +4961,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       globalThis.DOMParser = undefined;
       noDomParserSvgGlyph = await render(treeFor(svgOutline));
       noDomParserWrappedSvgGlyph = await render(wrappedSvgResourceTree);
+      noDomParserBalancedShapeSvgGlyph = await render(balancedShapeSvgResourceTree);
       noDomParserStylePrecedenceSvgGlyph = await render(stylePrecedenceSvgResourceTree);
       noDomParserStyleCascadeSvgGlyph = await render(styleCascadeSvgResourceTree);
       noDomParserPolylineSvgGlyph = await render(polylineSvgResourceTree);
@@ -4980,6 +4989,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserSvgGlyph,
       wrappedSvgGlyph: await render(wrappedSvgResourceTree),
       noDomParserWrappedSvgGlyph,
+      balancedShapeSvgGlyph: await render(balancedShapeSvgResourceTree),
+      noDomParserBalancedShapeSvgGlyph,
       stylePrecedenceSvgGlyph: await render(stylePrecedenceSvgResourceTree),
       noDomParserStylePrecedenceSvgGlyph,
       styleCascadeSvgGlyph: await render(styleCascadeSvgResourceTree),
@@ -5089,6 +5100,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserWrappedSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserWrappedSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects wrapped SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserWrappedSvgReport)}`,
+  );
+  const canvaskitBalancedShapeSvgReport = canvaskitGlyphOutlineProbe
+    .balancedShapeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitBalancedShapeSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitBalancedShapeSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects balanced shape SvgGlyph resource=${JSON.stringify(canvaskitBalancedShapeSvgReport)}`,
+  );
+  const canvaskitNoDomParserBalancedShapeSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserBalancedShapeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserBalancedShapeSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserBalancedShapeSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects balanced shape SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserBalancedShapeSvgReport)}`,
   );
   const canvaskitStylePrecedenceSvgReport = canvaskitGlyphOutlineProbe
     .stylePrecedenceSvgGlyph
@@ -5314,6 +5343,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserSvgGlyph.magentaPixels;
   const canvaskitWrappedSvgMagentaPixels = canvaskitGlyphOutlineProbe.wrappedSvgGlyph.magentaPixels;
   const canvaskitNoDomParserWrappedSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserWrappedSvgGlyph.magentaPixels;
+  const canvaskitBalancedShapeSvgMagentaPixels = canvaskitGlyphOutlineProbe.balancedShapeSvgGlyph.magentaPixels;
+  const canvaskitNoDomParserBalancedShapeSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserBalancedShapeSvgGlyph
+    .magentaPixels;
   const canvaskitStylePrecedenceSvgMagentaPixels = canvaskitGlyphOutlineProbe.stylePrecedenceSvgGlyph.magentaPixels;
   const canvaskitStylePrecedenceSvgRedPixels = canvaskitGlyphOutlineProbe.stylePrecedenceSvgGlyph.redPixels;
   const canvaskitNoDomParserStylePrecedenceSvgMagentaPixels = canvaskitGlyphOutlineProbe
@@ -5373,6 +5406,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserWrappedSvgMagentaPixels > 100,
     `CanvasKit strict outline paints wrapped SvgGlyph without DOMParser magenta=${canvaskitNoDomParserWrappedSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitBalancedShapeSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints balanced shape SvgGlyph resource magenta=${canvaskitBalancedShapeSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserBalancedShapeSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints balanced shape SvgGlyph without DOMParser magenta=${canvaskitNoDomParserBalancedShapeSvgMagentaPixels}`,
   );
   assert(
     canvaskitStylePrecedenceSvgMagentaPixels > 100 && canvaskitStylePrecedenceSvgRedPixels < 5,
