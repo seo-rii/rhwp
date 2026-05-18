@@ -4965,6 +4965,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     transformedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-transformed-resource';
+    const matrixTransformSvgResourceTree = treeFor(svgOutline);
+    matrixTransformSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<rect x="0" y="0" width="9" height="18" transform="matrix(1 0 0 1 9 0)" fill="#ff00cc"/>',
+      '</svg>',
+    ].join('');
+    matrixTransformSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-matrix-transform-resource';
+    const transformListSvgResourceTree = treeFor(svgOutline);
+    transformListSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<rect x="0" y="0" width="18" height="18" transform="translate(9 0) scale(0.5 1)" fill="#ff00cc"/>',
+      '</svg>',
+    ].join('');
+    transformListSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-transform-list-resource';
     const groupTransformSvgResourceTree = treeFor(svgOutline);
     groupTransformSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -4995,6 +5009,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserPolylineSvgGlyph;
     let noDomParserRoundedRectSvgGlyph;
     let noDomParserTransformedSvgGlyph;
+    let noDomParserMatrixTransformSvgGlyph;
+    let noDomParserTransformListSvgGlyph;
     let noDomParserGroupTransformSvgGlyph;
     let noDomParserInheritedPaintSvgGlyph;
     let noDomParserUnsupportedSvgDoctypeResource;
@@ -5013,6 +5029,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserPolylineSvgGlyph = await render(polylineSvgResourceTree);
       noDomParserRoundedRectSvgGlyph = await render(roundedRectSvgResourceTree);
       noDomParserTransformedSvgGlyph = await render(transformedSvgResourceTree);
+      noDomParserMatrixTransformSvgGlyph = await render(matrixTransformSvgResourceTree);
+      noDomParserTransformListSvgGlyph = await render(transformListSvgResourceTree);
       noDomParserGroupTransformSvgGlyph = await render(groupTransformSvgResourceTree);
       noDomParserInheritedPaintSvgGlyph = await render(inheritedPaintSvgResourceTree);
       noDomParserUnsupportedSvgDoctypeResource = await render(unsupportedSvgDoctypeTree);
@@ -5054,6 +5072,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserRoundedRectSvgGlyph,
       transformedSvgGlyph: await render(transformedSvgResourceTree),
       noDomParserTransformedSvgGlyph,
+      matrixTransformSvgGlyph: await render(matrixTransformSvgResourceTree),
+      noDomParserMatrixTransformSvgGlyph,
+      transformListSvgGlyph: await render(transformListSvgResourceTree),
+      noDomParserTransformListSvgGlyph,
       groupTransformSvgGlyph: await render(groupTransformSvgResourceTree),
       noDomParserGroupTransformSvgGlyph,
       inheritedPaintSvgGlyph: await render(inheritedPaintSvgResourceTree),
@@ -5304,6 +5326,42 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitNoDomParserTransformedSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects transformed SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserTransformedSvgReport)}`,
   );
+  const canvaskitMatrixTransformSvgReport = canvaskitGlyphOutlineProbe
+    .matrixTransformSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitMatrixTransformSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitMatrixTransformSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects matrix-transform SvgGlyph resource=${JSON.stringify(canvaskitMatrixTransformSvgReport)}`,
+  );
+  const canvaskitNoDomParserMatrixTransformSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserMatrixTransformSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserMatrixTransformSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserMatrixTransformSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects matrix-transform SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserMatrixTransformSvgReport)}`,
+  );
+  const canvaskitTransformListSvgReport = canvaskitGlyphOutlineProbe
+    .transformListSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitTransformListSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitTransformListSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects transform-list SvgGlyph resource=${JSON.stringify(canvaskitTransformListSvgReport)}`,
+  );
+  const canvaskitNoDomParserTransformListSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserTransformListSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserTransformListSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserTransformListSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects transform-list SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserTransformListSvgReport)}`,
+  );
   const canvaskitGroupTransformSvgReport = canvaskitGlyphOutlineProbe
     .groupTransformSvgGlyph
     ?.diagnostics
@@ -5534,6 +5592,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserTransformedSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserTransformedSvgGlyph
     .magentaPixels;
+  const canvaskitMatrixTransformSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .matrixTransformSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserMatrixTransformSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserMatrixTransformSvgGlyph
+    .magentaPixels;
+  const canvaskitTransformListSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .transformListSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserTransformListSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserTransformListSvgGlyph
+    .magentaPixels;
   const canvaskitGroupTransformSvgMagentaPixels = canvaskitGlyphOutlineProbe.groupTransformSvgGlyph.magentaPixels;
   const canvaskitNoDomParserGroupTransformSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserGroupTransformSvgGlyph
@@ -5643,6 +5713,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserTransformedSvgMagentaPixels > 100,
     `CanvasKit strict outline paints transformed SvgGlyph without DOMParser magenta=${canvaskitNoDomParserTransformedSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitMatrixTransformSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints matrix-transform SvgGlyph resource magenta=${canvaskitMatrixTransformSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserMatrixTransformSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints matrix-transform SvgGlyph without DOMParser magenta=${canvaskitNoDomParserMatrixTransformSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitTransformListSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints transform-list SvgGlyph resource magenta=${canvaskitTransformListSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserTransformListSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints transform-list SvgGlyph without DOMParser magenta=${canvaskitNoDomParserTransformListSvgMagentaPixels}`,
   );
   assert(
     canvaskitGroupTransformSvgMagentaPixels > 100,
