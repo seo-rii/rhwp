@@ -238,6 +238,57 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
     }
     return [channels[0] ?? 0, channels[1] ?? 0, channels[2] ?? 0, alpha];
   }
+  const oklabMatch = normalized.match(/^oklab\((.*)\)$/);
+  if (oklabMatch) {
+    const [colorBody, slashAlpha] = oklabMatch[1].split('/').map((part) => part.trim());
+    const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
+    if (parts.length !== 3) {
+      return null;
+    }
+    const lightness = parts[0].endsWith('%') ? parseCssPercent(parts[0]) : Number(parts[0]);
+    const axisA = Number(parts[1]);
+    const axisB = Number(parts[2]);
+    const alpha = parseCssAlpha(slashAlpha ?? '1');
+    if (
+      lightness === null
+      || !Number.isFinite(lightness)
+      || !Number.isFinite(axisA)
+      || !Number.isFinite(axisB)
+      || alpha === null
+    ) {
+      return null;
+    }
+    const [red, green, blue] = oklabToRgb(lightness, axisA, axisB);
+    return [red, green, blue, alpha];
+  }
+  const oklchMatch = normalized.match(/^oklch\((.*)\)$/);
+  if (oklchMatch) {
+    const [colorBody, slashAlpha] = oklchMatch[1].split('/').map((part) => part.trim());
+    const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
+    if (parts.length !== 3) {
+      return null;
+    }
+    const lightness = parts[0].endsWith('%') ? parseCssPercent(parts[0]) : Number(parts[0]);
+    const chroma = Number(parts[1]);
+    const hue = parseCssHue(parts[2]);
+    const alpha = parseCssAlpha(slashAlpha ?? '1');
+    if (
+      lightness === null
+      || !Number.isFinite(lightness)
+      || !Number.isFinite(chroma)
+      || hue === null
+      || alpha === null
+    ) {
+      return null;
+    }
+    const hueRadians = hue * (Math.PI / 180);
+    const [red, green, blue] = oklabToRgb(
+      lightness,
+      chroma * Math.cos(hueRadians),
+      chroma * Math.sin(hueRadians),
+    );
+    return [red, green, blue, alpha];
+  }
   return null;
 }
 
@@ -378,6 +429,24 @@ function hslToRgb(hueDegrees: number, saturation: number, lightness: number): [n
     blue = second;
   }
   return [red + match, green + match, blue + match];
+}
+
+function oklabToRgb(lightness: number, axisA: number, axisB: number): [number, number, number] {
+  const long = lightness + (0.3963377774 * axisA) + (0.2158037573 * axisB);
+  const medium = lightness - (0.1055613458 * axisA) - (0.0638541728 * axisB);
+  const short = lightness - (0.0894841775 * axisA) - (1.291485548 * axisB);
+  const longCubed = long * long * long;
+  const mediumCubed = medium * medium * medium;
+  const shortCubed = short * short * short;
+  const linearRed = (4.0767416621 * longCubed) - (3.3077115913 * mediumCubed) + (0.2309699292 * shortCubed);
+  const linearGreen = (-1.2684380046 * longCubed) + (2.6097574011 * mediumCubed) - (0.3413193965 * shortCubed);
+  const linearBlue = (-0.0041960863 * longCubed) - (0.7034186147 * mediumCubed) + (1.707614701 * shortCubed);
+  return [linearRed, linearGreen, linearBlue].map((channel) => {
+    const encoded = channel <= 0.0031308
+      ? 12.92 * channel
+      : (1.055 * (channel ** (1 / 2.4))) - 0.055;
+    return clampCanvasKitUnit(encoded);
+  }) as [number, number, number];
 }
 
 export function clampCanvasKitUnit(value: number): number {
