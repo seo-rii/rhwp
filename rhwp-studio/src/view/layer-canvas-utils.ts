@@ -107,7 +107,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           paintStateStack.push(staticSvgPaintStateFromMap(
             paintStateStack[paintStateStack.length - 1],
             attributes,
-            elementName === 'g',
+            elementName === 'svg' || elementName === 'g',
           ));
         }
         continue;
@@ -191,7 +191,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   const appendStaticSvgLayers = (element: Element, state: StaticSvgPaintState): void => {
     const elementName = element.localName.toLowerCase();
     const currentState = elementName === 'svg' || elementName === 'g'
-      ? staticSvgPaintStateFromElement(state, element, elementName === 'g')
+      ? staticSvgPaintStateFromElement(state, element, elementName === 'svg' || elementName === 'g')
       : state;
     if (elementName === 'path'
       || elementName === 'rect'
@@ -487,6 +487,7 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
       'fill-rule',
       'fill-opacity',
       'style',
+      'transform',
     ]);
   }
   if (elementName === 'g') {
