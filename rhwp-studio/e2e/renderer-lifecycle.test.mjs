@@ -4946,6 +4946,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     defsSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-defs-resource';
+    const nonRenderingMetadataSvgResourceTree = treeFor(svgOutline);
+    nonRenderingMetadataSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<metadata id="glyph-metadata"><path d="M9 0 L18 0 L18 18 L9 18 Z" fill="#0000ff"/></metadata>',
+      '<title><path d="M9 0 L18 0 L18 18 L9 18 Z" fill="#0000ff"/></title>',
+      '<desc><path d="M9 0 L18 0 L18 18 L9 18 Z" fill="#0000ff"/></desc>',
+      '<rect x="0" y="0" width="9" height="18" fill="#ff00cc"/>',
+      '</svg>',
+    ].join('');
+    nonRenderingMetadataSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-nonrendering-metadata-resource';
     const namedCssColorSvgResourceTree = treeFor(svgOutline);
     namedCssColorSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -5059,6 +5069,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserNonVisualAttributesSvgGlyph;
     let noDomParserBalancedShapeSvgGlyph;
     let noDomParserDefsSvgGlyph;
+    let noDomParserNonRenderingMetadataSvgGlyph;
     let noDomParserNamedCssColorSvgGlyph;
     let noDomParserFunctionalCssColorSvgGlyph;
     let noDomParserWideGamutCssColorSvgGlyph;
@@ -5085,6 +5096,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserNonVisualAttributesSvgGlyph = await render(nonVisualAttributesSvgResourceTree);
       noDomParserBalancedShapeSvgGlyph = await render(balancedShapeSvgResourceTree);
       noDomParserDefsSvgGlyph = await render(defsSvgResourceTree);
+      noDomParserNonRenderingMetadataSvgGlyph = await render(nonRenderingMetadataSvgResourceTree);
       noDomParserNamedCssColorSvgGlyph = await render(namedCssColorSvgResourceTree);
       noDomParserFunctionalCssColorSvgGlyph = await render(functionalCssColorSvgResourceTree);
       noDomParserWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
@@ -5129,6 +5141,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserBalancedShapeSvgGlyph,
       defsSvgGlyph: await render(defsSvgResourceTree),
       noDomParserDefsSvgGlyph,
+      nonRenderingMetadataSvgGlyph: await render(nonRenderingMetadataSvgResourceTree),
+      noDomParserNonRenderingMetadataSvgGlyph,
       namedCssColorSvgGlyph: await render(namedCssColorSvgResourceTree),
       noDomParserNamedCssColorSvgGlyph,
       functionalCssColorSvgGlyph: await render(functionalCssColorSvgResourceTree),
@@ -5314,6 +5328,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserDefsSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserDefsSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects defs SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserDefsSvgReport)}`,
+  );
+  const canvaskitNonRenderingMetadataSvgReport = canvaskitGlyphOutlineProbe
+    .nonRenderingMetadataSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNonRenderingMetadataSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNonRenderingMetadataSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects non-rendering metadata SvgGlyph resource=${JSON.stringify(canvaskitNonRenderingMetadataSvgReport)}`,
+  );
+  const canvaskitNoDomParserNonRenderingMetadataSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserNonRenderingMetadataSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserNonRenderingMetadataSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserNonRenderingMetadataSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects non-rendering metadata SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserNonRenderingMetadataSvgReport)}`,
   );
   const canvaskitNamedCssColorSvgReport = canvaskitGlyphOutlineProbe
     .namedCssColorSvgGlyph
@@ -5757,6 +5789,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserDefsSvgBluePixels = canvaskitGlyphOutlineProbe
     .noDomParserDefsSvgGlyph
     .bluePixels;
+  const canvaskitNonRenderingMetadataSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .nonRenderingMetadataSvgGlyph
+    .magentaPixels;
+  const canvaskitNonRenderingMetadataSvgBluePixels = canvaskitGlyphOutlineProbe
+    .nonRenderingMetadataSvgGlyph
+    .bluePixels;
+  const canvaskitNoDomParserNonRenderingMetadataSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserNonRenderingMetadataSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserNonRenderingMetadataSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserNonRenderingMetadataSvgGlyph
+    .bluePixels;
   const canvaskitNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe.namedCssColorSvgGlyph.magentaPixels;
   const canvaskitNoDomParserNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserNamedCssColorSvgGlyph
@@ -5892,6 +5936,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserDefsSvgMagentaPixels > 50 && canvaskitNoDomParserDefsSvgBluePixels < 5,
     `CanvasKit strict outline skips non-rendering defs content without DOMParser magenta=${canvaskitNoDomParserDefsSvgMagentaPixels}, blue=${canvaskitNoDomParserDefsSvgBluePixels}`,
+  );
+  assert(
+    canvaskitNonRenderingMetadataSvgMagentaPixels > 50 && canvaskitNonRenderingMetadataSvgBluePixels < 5,
+    `CanvasKit strict outline skips non-rendering metadata/title/desc content magenta=${canvaskitNonRenderingMetadataSvgMagentaPixels}, blue=${canvaskitNonRenderingMetadataSvgBluePixels}`,
+  );
+  assert(
+    canvaskitNoDomParserNonRenderingMetadataSvgMagentaPixels > 50
+      && canvaskitNoDomParserNonRenderingMetadataSvgBluePixels < 5,
+    `CanvasKit strict outline skips non-rendering metadata/title/desc content without DOMParser magenta=${canvaskitNoDomParserNonRenderingMetadataSvgMagentaPixels}, blue=${canvaskitNoDomParserNonRenderingMetadataSvgBluePixels}`,
   );
   assert(
     canvaskitNamedCssColorSvgMagentaPixels > 100,

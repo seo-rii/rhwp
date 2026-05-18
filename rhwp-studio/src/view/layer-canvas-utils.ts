@@ -107,13 +107,19 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           return [];
         }
       }
-      if (ignoredElementDepth > 0 || elementName === 'defs') {
+      if (
+        ignoredElementDepth > 0
+        || elementName === 'defs'
+        || elementName === 'title'
+        || elementName === 'desc'
+        || elementName === 'metadata'
+      ) {
         if (!isSelfClosing) {
           ignoredElementDepth += 1;
         }
         continue;
       }
-      if (elementName === 'svg' || elementName === 'g' || elementName === 'title' || elementName === 'desc') {
+      if (elementName === 'svg' || elementName === 'g') {
         if ((elementName === 'svg' || elementName === 'g') && !isSelfClosing) {
           paintStateStack.push(staticSvgPaintStateFromMap(
             paintStateStack[paintStateStack.length - 1],
@@ -201,7 +207,12 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   const layers: StaticSvgPathLayer[] = [];
   const appendStaticSvgLayers = (element: Element, state: StaticSvgPaintState): void => {
     const elementName = element.localName.toLowerCase();
-    if (elementName === 'defs') {
+    if (
+      elementName === 'defs'
+      || elementName === 'title'
+      || elementName === 'desc'
+      || elementName === 'metadata'
+    ) {
       return;
     }
     const currentState = elementName === 'svg' || elementName === 'g'
@@ -508,7 +519,7 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
   if (elementName === 'g') {
     return new Set(['id', 'class', 'xml:space', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
-  if (elementName === 'title' || elementName === 'desc') {
+  if (elementName === 'title' || elementName === 'desc' || elementName === 'metadata') {
     return new Set(['id', 'class', 'xml:space']);
   }
   if (elementName === 'defs') {
