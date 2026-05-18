@@ -304,6 +304,7 @@ export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDi
 function svgPresentationAttribute(element: Element, name: string): string | null {
   const style = element.getAttribute('style');
   if (style) {
+    let styleValue: string | null = null;
     for (const declaration of style.split(';')) {
       const separator = declaration.indexOf(':');
       if (separator < 0) {
@@ -311,8 +312,11 @@ function svgPresentationAttribute(element: Element, name: string): string | null
       }
       const property = declaration.slice(0, separator).trim().toLowerCase();
       if (property === name.toLowerCase()) {
-        return declaration.slice(separator + 1).trim();
+        styleValue = declaration.slice(separator + 1).trim();
       }
+    }
+    if (styleValue !== null) {
+      return styleValue;
     }
   }
   const direct = element.getAttribute(name);
