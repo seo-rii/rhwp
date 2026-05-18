@@ -198,15 +198,26 @@ function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
   if (/<\s*\?/.test(fragment) || /<\s*!(?!\s*--)/.test(fragment)) {
     return true;
   }
-  const closingTagPattern = /<\s*\/\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
-  for (const match of fragment.matchAll(closingTagPattern)) {
-    const elementName = match[1].toLowerCase();
-    const trailingContent = match[2] ?? '';
-    if (!staticSvgSupportedAttributes(elementName) || trailingContent.trim().length > 0) {
+  const openElementStack: string[] = [];
+  const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
+  for (const match of fragment.matchAll(tagPattern)) {
+    const isClosingTag = match[1] === '/';
+    const elementName = match[2].toLowerCase();
+    const trailingContent = match[3] ?? '';
+    if (!staticSvgSupportedAttributes(elementName)) {
       return true;
     }
+    if (isClosingTag) {
+      if (trailingContent.trim().length > 0 || openElementStack.pop() !== elementName) {
+        return true;
+      }
+      continue;
+    }
+    if (!/\/\s*$/.test(trailingContent)) {
+      openElementStack.push(elementName);
+    }
   }
-  return false;
+  return openElementStack.length > 0;
 }
 
 function staticSvgElementPathData(element: Element): string | null {

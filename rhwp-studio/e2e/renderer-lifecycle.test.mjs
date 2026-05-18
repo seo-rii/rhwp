@@ -4895,6 +4895,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedSvgClosingTagTree = treeFor(svgOutline);
     unsupportedSvgClosingTagTree.resources.svgFragments[0] = '</script><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsupportedSvgClosingTagTree.resources.svgHashes[0] = 'svg-glyph-unsupported-closing-tag';
+    const unsupportedSvgDanglingShapeClosingTagTree = treeFor(svgOutline);
+    unsupportedSvgDanglingShapeClosingTagTree.resources.svgFragments[0] = '</path><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
+    unsupportedSvgDanglingShapeClosingTagTree.resources.svgHashes[0] = 'svg-glyph-unsupported-dangling-shape-closing-tag';
     const wrappedSvgResourceTree = treeFor(svgOutline);
     wrappedSvgResourceTree.resources.svgFragments[0] = [
       '<svg id="glyph-root" class="glyph-shell" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" viewBox="0 0 18 18">',
@@ -4936,6 +4939,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserRoundedRectSvgGlyph;
     let noDomParserUnsupportedSvgDoctypeResource;
     let noDomParserUnsupportedSvgClosingTagResource;
+    let noDomParserUnsupportedSvgDanglingShapeClosingTagResource;
     let noDomParserUnsupportedSvgInvalidColorResource;
     try {
       globalThis.DOMParser = undefined;
@@ -4946,6 +4950,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserRoundedRectSvgGlyph = await render(roundedRectSvgResourceTree);
       noDomParserUnsupportedSvgDoctypeResource = await render(unsupportedSvgDoctypeTree);
       noDomParserUnsupportedSvgClosingTagResource = await render(unsupportedSvgClosingTagTree);
+      noDomParserUnsupportedSvgDanglingShapeClosingTagResource = await render(unsupportedSvgDanglingShapeClosingTagTree);
       noDomParserUnsupportedSvgInvalidColorResource = await render(unsupportedSvgInvalidColorTree);
     } finally {
       if (hadDOMParser) {
@@ -4981,6 +4986,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedSvgGlyphInvalidColorResource: await render(unsupportedSvgInvalidColorTree),
       noDomParserUnsupportedSvgDoctypeResource,
       noDomParserUnsupportedSvgClosingTagResource,
+      unsupportedSvgGlyphDanglingShapeClosingTagResource: await render(unsupportedSvgDanglingShapeClosingTagTree),
+      noDomParserUnsupportedSvgDanglingShapeClosingTagResource,
       noDomParserUnsupportedSvgInvalidColorResource,
     };
   });
@@ -5170,6 +5177,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .noDomParserUnsupportedSvgClosingTagResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgDanglingShapeClosingTagResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphDanglingShapeClosingTagResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitNoDomParserUnsupportedSvgDanglingShapeClosingTagResourceReport = canvaskitGlyphOutlineProbe
+    .noDomParserUnsupportedSvgDanglingShapeClosingTagResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport = canvaskitGlyphOutlineProbe
     .noDomParserUnsupportedSvgInvalidColorResource
     ?.diagnostics
@@ -5215,6 +5230,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
+      && canvaskitUnsupportedSvgDanglingShapeClosingTagResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgDanglingShapeClosingTagResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitNoDomParserUnsupportedSvgDanglingShapeClosingTagResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitNoDomParserUnsupportedSvgDanglingShapeClosingTagResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
       && canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport?.selectedVariantId === 'textRun'
       && canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
@@ -5229,6 +5254,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedInvalidColor: canvaskitUnsupportedSvgInvalidColorResourceReport,
       noDomParserUnsupportedDoctype: canvaskitNoDomParserUnsupportedSvgDoctypeResourceReport,
       noDomParserUnsupportedClosingTag: canvaskitNoDomParserUnsupportedSvgClosingTagResourceReport,
+      unsupportedDanglingShapeClosingTag: canvaskitUnsupportedSvgDanglingShapeClosingTagResourceReport,
+      noDomParserUnsupportedDanglingShapeClosingTag:
+        canvaskitNoDomParserUnsupportedSvgDanglingShapeClosingTagResourceReport,
       noDomParserUnsupportedInvalidColor: canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport,
     })}`,
   );
