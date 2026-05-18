@@ -136,13 +136,13 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           }
           const property = declaration.slice(0, separator).trim().toLowerCase();
           const value = declaration.slice(separator + 1).trim();
-          if (property === 'fill' && fill === null) {
+          if (property === 'fill') {
             fill = value;
-          } else if (property === 'opacity' && opacityValue === null) {
+          } else if (property === 'opacity') {
             opacityValue = value;
-          } else if (property === 'fill-opacity' && fillOpacityValue === null) {
+          } else if (property === 'fill-opacity') {
             fillOpacityValue = value;
-          } else if (property === 'fill-rule' && fillRuleValue === null) {
+          } else if (property === 'fill-rule') {
             fillRuleValue = value;
           }
         }
@@ -291,23 +291,22 @@ export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDi
 }
 
 function svgPresentationAttribute(element: Element, name: string): string | null {
+  const style = element.getAttribute('style');
+  if (style) {
+    for (const declaration of style.split(';')) {
+      const separator = declaration.indexOf(':');
+      if (separator < 0) {
+        continue;
+      }
+      const property = declaration.slice(0, separator).trim().toLowerCase();
+      if (property === name.toLowerCase()) {
+        return declaration.slice(separator + 1).trim();
+      }
+    }
+  }
   const direct = element.getAttribute(name);
   if (direct !== null) {
     return direct.trim();
-  }
-  const style = element.getAttribute('style');
-  if (!style) {
-    return null;
-  }
-  for (const declaration of style.split(';')) {
-    const separator = declaration.indexOf(':');
-    if (separator < 0) {
-      continue;
-    }
-    const property = declaration.slice(0, separator).trim().toLowerCase();
-    if (property === name.toLowerCase()) {
-      return declaration.slice(separator + 1).trim();
-    }
   }
   return null;
 }

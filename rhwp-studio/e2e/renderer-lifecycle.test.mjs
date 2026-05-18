@@ -4906,6 +4906,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     wrappedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-wrapped-resource';
+    const stylePrecedenceSvgResourceTree = treeFor(svgOutline);
+    stylePrecedenceSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff0000" style="fill: #ff00cc; opacity: 1; fill-rule: nonzero"/>',
+      '</svg>',
+    ].join('');
+    stylePrecedenceSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-style-precedence-resource';
     const polylineSvgResourceTree = treeFor(svgOutline);
     polylineSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -4924,6 +4931,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const hadDOMParser = 'DOMParser' in globalThis;
     let noDomParserSvgGlyph;
     let noDomParserWrappedSvgGlyph;
+    let noDomParserStylePrecedenceSvgGlyph;
     let noDomParserPolylineSvgGlyph;
     let noDomParserRoundedRectSvgGlyph;
     let noDomParserUnsupportedSvgDoctypeResource;
@@ -4933,6 +4941,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       globalThis.DOMParser = undefined;
       noDomParserSvgGlyph = await render(treeFor(svgOutline));
       noDomParserWrappedSvgGlyph = await render(wrappedSvgResourceTree);
+      noDomParserStylePrecedenceSvgGlyph = await render(stylePrecedenceSvgResourceTree);
       noDomParserPolylineSvgGlyph = await render(polylineSvgResourceTree);
       noDomParserRoundedRectSvgGlyph = await render(roundedRectSvgResourceTree);
       noDomParserUnsupportedSvgDoctypeResource = await render(unsupportedSvgDoctypeTree);
@@ -4957,6 +4966,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserSvgGlyph,
       wrappedSvgGlyph: await render(wrappedSvgResourceTree),
       noDomParserWrappedSvgGlyph,
+      stylePrecedenceSvgGlyph: await render(stylePrecedenceSvgResourceTree),
+      noDomParserStylePrecedenceSvgGlyph,
       polylineSvgGlyph: await render(polylineSvgResourceTree),
       noDomParserPolylineSvgGlyph,
       roundedRectSvgGlyph: await render(roundedRectSvgResourceTree),
@@ -5060,6 +5071,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserWrappedSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserWrappedSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects wrapped SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserWrappedSvgReport)}`,
+  );
+  const canvaskitStylePrecedenceSvgReport = canvaskitGlyphOutlineProbe
+    .stylePrecedenceSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitStylePrecedenceSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitStylePrecedenceSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects style-precedence SvgGlyph resource=${JSON.stringify(canvaskitStylePrecedenceSvgReport)}`,
+  );
+  const canvaskitNoDomParserStylePrecedenceSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserStylePrecedenceSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserStylePrecedenceSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserStylePrecedenceSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects style-precedence SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStylePrecedenceSvgReport)}`,
   );
   const canvaskitPolylineSvgReport = canvaskitGlyphOutlineProbe
     .polylineSvgGlyph
@@ -5228,6 +5257,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserSvgGlyph.magentaPixels;
   const canvaskitWrappedSvgMagentaPixels = canvaskitGlyphOutlineProbe.wrappedSvgGlyph.magentaPixels;
   const canvaskitNoDomParserWrappedSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserWrappedSvgGlyph.magentaPixels;
+  const canvaskitStylePrecedenceSvgMagentaPixels = canvaskitGlyphOutlineProbe.stylePrecedenceSvgGlyph.magentaPixels;
+  const canvaskitStylePrecedenceSvgRedPixels = canvaskitGlyphOutlineProbe.stylePrecedenceSvgGlyph.redPixels;
+  const canvaskitNoDomParserStylePrecedenceSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStylePrecedenceSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserStylePrecedenceSvgRedPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStylePrecedenceSvgGlyph
+    .redPixels;
   const canvaskitPolylineSvgMagentaPixels = canvaskitGlyphOutlineProbe.polylineSvgGlyph.magentaPixels;
   const canvaskitNoDomParserPolylineSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserPolylineSvgGlyph
@@ -5271,6 +5308,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserWrappedSvgMagentaPixels > 100,
     `CanvasKit strict outline paints wrapped SvgGlyph without DOMParser magenta=${canvaskitNoDomParserWrappedSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitStylePrecedenceSvgMagentaPixels > 100 && canvaskitStylePrecedenceSvgRedPixels < 5,
+    `CanvasKit strict outline honors SvgGlyph style precedence magenta=${canvaskitStylePrecedenceSvgMagentaPixels}, red=${canvaskitStylePrecedenceSvgRedPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserStylePrecedenceSvgMagentaPixels > 100
+      && canvaskitNoDomParserStylePrecedenceSvgRedPixels < 5,
+    `CanvasKit strict outline honors SvgGlyph style precedence without DOMParser magenta=${canvaskitNoDomParserStylePrecedenceSvgMagentaPixels}, red=${canvaskitNoDomParserStylePrecedenceSvgRedPixels}`,
   );
   assert(
     canvaskitPolylineSvgMagentaPixels > 100,
