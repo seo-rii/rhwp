@@ -154,8 +154,14 @@ const CANVASKIT_CSS_NAMED_COLORS: Record<string, string> = {
 
 export function parseCanvasKitCssColor(canvasKit: CanvasKit, color: string, opacity = 1): Float32Array {
   const parsed = parseSupportedCssColor(color);
-  const fallback = canvasKit.parseColorString(color) as ArrayLike<number> | undefined;
-  const rgba = parsed ?? (fallback ? Array.from(fallback) : [0, 0, 0, 1]);
+  let rgba: ArrayLike<number> = parsed ?? [0, 0, 0, 1];
+  if (!parsed) {
+    try {
+      rgba = canvasKit.parseColorString(color) as ArrayLike<number> | undefined ?? rgba;
+    } catch {
+      rgba = [0, 0, 0, 1];
+    }
+  }
   return Float32Array.of(
     clampCanvasKitUnit(rgba[0] ?? 0),
     clampCanvasKitUnit(rgba[1] ?? 0),
