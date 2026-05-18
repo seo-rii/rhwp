@@ -188,6 +188,36 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
   if (hslMatch) {
     return parseHslColorFunction(hslMatch[1]);
   }
+  const hwbMatch = normalized.match(/^hwb\((.*)\)$/);
+  if (hwbMatch) {
+    const [colorBody, slashAlpha] = hwbMatch[1].split('/').map((part) => part.trim());
+    const parts = colorBody.includes(',')
+      ? colorBody.split(',').map((part) => part.trim()).filter((part) => part.length > 0)
+      : colorBody.split(/\s+/).filter((part) => part.length > 0);
+    if (parts.length < 3 || parts.length > 4) {
+      return null;
+    }
+    const hue = parseCssHue(parts[0]);
+    const whiteness = parseCssPercent(parts[1]);
+    const blackness = parseCssPercent(parts[2]);
+    const alpha = parseCssAlpha(slashAlpha ?? parts[3] ?? '1');
+    if (hue === null || whiteness === null || blackness === null || alpha === null) {
+      return null;
+    }
+    const sum = whiteness + blackness;
+    if (sum >= 1) {
+      const gray = whiteness / sum;
+      return [gray, gray, gray, alpha];
+    }
+    const [baseRed, baseGreen, baseBlue] = hslToRgb(hue, 1, 0.5);
+    const multiplier = 1 - whiteness - blackness;
+    return [
+      (baseRed * multiplier) + whiteness,
+      (baseGreen * multiplier) + whiteness,
+      (baseBlue * multiplier) + whiteness,
+      alpha,
+    ];
+  }
   return null;
 }
 

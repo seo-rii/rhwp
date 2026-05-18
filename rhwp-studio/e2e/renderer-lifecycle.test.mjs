@@ -4926,7 +4926,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const functionalCssColorSvgResourceTree = treeFor(svgOutline);
     functionalCssColorSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
-      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: hsl(300deg 100% 50%)"/>',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: hwb(300deg 0% 0% / 100%)"/>',
       '</svg>',
     ].join('');
     functionalCssColorSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-functional-css-color-resource';
@@ -7958,7 +7958,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               angle: 20,
               centerX: 50,
               centerY: 50,
-              colors: ['red', 'hsl(52deg, 100%, 71%)', '#4878ff'],
+              colors: ['red', 'hwb(52deg 42% 0%)', '#4878ff'],
               positions: [0, 0.55, 1],
             },
             transform,
