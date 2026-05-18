@@ -485,13 +485,14 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
       'version',
       'fill',
       'fill-rule',
+      'opacity',
       'fill-opacity',
       'style',
       'transform',
     ]);
   }
   if (elementName === 'g') {
-    return new Set(['id', 'class', 'xml:space', 'fill', 'fill-rule', 'fill-opacity', 'style', 'transform']);
+    return new Set(['id', 'class', 'xml:space', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'title' || elementName === 'desc') {
     return new Set(['id', 'class', 'xml:space']);
@@ -533,14 +534,23 @@ function isStaticSvgAttributeSupported(
   if (name === 'fill') {
     return isStaticSvgPaintValueSupported(value);
   }
-  if (name === 'opacity' || name === 'fill-opacity') {
+  if (name === 'opacity') {
+    return elementName === 'svg' || elementName === 'g'
+      ? isStaticSvgIdentityOpacityValueSupported(value)
+      : isStaticSvgOpacityValueSupported(value);
+  }
+  if (name === 'fill-opacity') {
     return isStaticSvgOpacityValueSupported(value);
   }
   if (name === 'fill-rule') {
     return isStaticSvgFillRuleValueSupported(value);
   }
   if (name === 'style') {
-    return isStaticSvgStyleSupported(value, elementName !== 'svg' && elementName !== 'g');
+    return isStaticSvgStyleSupported(
+      value,
+      elementName !== 'svg' && elementName !== 'g',
+      elementName === 'svg' || elementName === 'g',
+    );
   }
   if (name === 'transform') {
     return parseStaticSvgTransform(value) !== undefined;
@@ -685,9 +695,9 @@ function parseStaticSvgTransform(value: string | null | undefined): LayerAffineT
   return transform;
 }
 
-function isStaticSvgStyleSupported(style: string, allowOpacity: boolean): boolean {
+function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowIdentityOpacity = false): boolean {
   const supportedProperties = new Set(['fill', 'fill-rule', 'fill-opacity']);
-  if (allowOpacity) {
+  if (allowOpacity || allowIdentityOpacity) {
     supportedProperties.add('opacity');
   }
   for (const declaration of style.split(';')) {
@@ -705,6 +715,12 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean): boolea
     }
     if (property === 'fill' && !isStaticSvgPaintValueSupported(value)) {
       return false;
+    }
+    if (property === 'opacity' && allowIdentityOpacity && !allowOpacity) {
+      if (!isStaticSvgIdentityOpacityValueSupported(value)) {
+        return false;
+      }
+      continue;
     }
     if ((property === 'opacity' || property === 'fill-opacity') && !isStaticSvgOpacityValueSupported(value)) {
       return false;
@@ -757,6 +773,15 @@ function isStaticSvgOpacityValueSupported(value: string): boolean {
   }
   const numeric = trimmed.endsWith('%') ? trimmed.slice(0, -1).trim() : trimmed;
   return numeric.length > 0 && Number.isFinite(Number(numeric));
+}
+
+function isStaticSvgIdentityOpacityValueSupported(value: string): boolean {
+  const trimmed = value.trim();
+  if (!isStaticSvgOpacityValueSupported(trimmed)) {
+    return false;
+  }
+  const numeric = trimmed.endsWith('%') ? Number(trimmed.slice(0, -1).trim()) / 100 : Number(trimmed);
+  return numeric === 1;
 }
 
 function isStaticSvgFillRuleValueSupported(value: string): boolean {
