@@ -8000,7 +8000,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
             cornerRadius: 0,
             style: style('#f6f6f6', '#333333', {
               patternType: 5,
-              patternColor: 'rgb(34 34 34)',
+              patternColor: 'color(srgb 0.1333333333 0.1333333333 0.1333333333)',
               backgroundColor: 'hsl(0, 0%, 96%)',
             }),
             gradient: null,

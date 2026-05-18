@@ -218,6 +218,26 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
       alpha,
     ];
   }
+  const colorMatch = normalized.match(/^color\((.*)\)$/);
+  if (colorMatch) {
+    const [colorBody, slashAlpha] = colorMatch[1].split('/').map((part) => part.trim());
+    const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
+    if (parts.length !== 4 || parts[0] !== 'srgb') {
+      return null;
+    }
+    const channels = parts.slice(1).map((part) => {
+      if (part.endsWith('%')) {
+        return parseCssPercent(part);
+      }
+      const number = Number(part);
+      return Number.isFinite(number) ? clampCanvasKitUnit(number) : null;
+    });
+    const alpha = parseCssAlpha(slashAlpha ?? '1');
+    if (channels.some((channel) => channel === null) || alpha === null) {
+      return null;
+    }
+    return [channels[0] ?? 0, channels[1] ?? 0, channels[2] ?? 0, alpha];
+  }
   return null;
 }
 
