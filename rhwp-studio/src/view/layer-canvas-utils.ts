@@ -68,11 +68,16 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       fillOpacity: 1,
     }];
     const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
+    let ignoredElementDepth = 0;
     for (const match of fragment.matchAll(tagPattern)) {
       const isClosingTag = match[1] === '/';
       const elementName = match[2].toLowerCase();
       const rawAttributes = match[3] ?? '';
       if (isClosingTag) {
+        if (ignoredElementDepth > 0) {
+          ignoredElementDepth -= 1;
+          continue;
+        }
         if ((elementName === 'svg' || elementName === 'g') && paintStateStack.length > 1) {
           paintStateStack.pop();
         }
@@ -101,6 +106,12 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         if (!isStaticSvgAttributeSupported(elementName, supportedAttributes, name, value)) {
           return [];
         }
+      }
+      if (ignoredElementDepth > 0 || elementName === 'defs') {
+        if (!isSelfClosing) {
+          ignoredElementDepth += 1;
+        }
+        continue;
       }
       if (elementName === 'svg' || elementName === 'g' || elementName === 'title' || elementName === 'desc') {
         if ((elementName === 'svg' || elementName === 'g') && !isSelfClosing) {
@@ -190,6 +201,9 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   const layers: StaticSvgPathLayer[] = [];
   const appendStaticSvgLayers = (element: Element, state: StaticSvgPaintState): void => {
     const elementName = element.localName.toLowerCase();
+    if (elementName === 'defs') {
+      return;
+    }
     const currentState = elementName === 'svg' || elementName === 'g'
       ? staticSvgPaintStateFromElement(state, element, elementName === 'svg' || elementName === 'g')
       : state;
@@ -495,6 +509,9 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
     return new Set(['id', 'class', 'xml:space', 'fill', 'fill-rule', 'opacity', 'fill-opacity', 'style', 'transform']);
   }
   if (elementName === 'title' || elementName === 'desc') {
+    return new Set(['id', 'class', 'xml:space']);
+  }
+  if (elementName === 'defs') {
     return new Set(['id', 'class', 'xml:space']);
   }
   return null;
