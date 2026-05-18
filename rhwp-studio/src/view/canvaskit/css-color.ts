@@ -231,15 +231,40 @@ function parseHslColorFunction(body: string): [number, number, number, number] |
   if (parts.length < 3 || parts.length > 4) {
     return null;
   }
-  const hue = Number(parts[0]);
+  const hue = parseCssHue(parts[0]);
   const saturation = parseCssPercent(parts[1]);
   const lightness = parseCssPercent(parts[2]);
   const alpha = parseCssAlpha(slashAlpha ?? parts[3] ?? '1');
-  if (!Number.isFinite(hue) || saturation === null || lightness === null || alpha === null) {
+  if (hue === null || saturation === null || lightness === null || alpha === null) {
     return null;
   }
   const [red, green, blue] = hslToRgb(hue, saturation, lightness);
   return [red, green, blue, alpha];
+}
+
+function parseCssHue(value: string): number | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^([-+]?(?:\d+|\d*\.\d+))(deg|grad|rad|turn)?$/);
+  if (!match) {
+    return null;
+  }
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+  switch (match[2]) {
+    case undefined:
+    case 'deg':
+      return amount;
+    case 'grad':
+      return amount * 0.9;
+    case 'rad':
+      return amount * (180 / Math.PI);
+    case 'turn':
+      return amount * 360;
+    default:
+      return null;
+  }
 }
 
 function parseRgbChannel(value: string): number | null {

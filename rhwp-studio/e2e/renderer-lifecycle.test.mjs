@@ -4926,7 +4926,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const functionalCssColorSvgResourceTree = treeFor(svgOutline);
     functionalCssColorSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
-      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: hsl(300, 100%, 50%)"/>',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="fill: hsl(300deg 100% 50%)"/>',
       '</svg>',
     ].join('');
     functionalCssColorSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-functional-css-color-resource';
@@ -7958,7 +7958,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               angle: 20,
               centerX: 50,
               centerY: 50,
-              colors: ['red', 'hsl(52, 100%, 71%)', '#4878ff'],
+              colors: ['red', 'hsl(52deg, 100%, 71%)', '#4878ff'],
               positions: [0, 0.55, 1],
             },
             transform,
@@ -7972,7 +7972,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               angle: 0,
               centerX: 45,
               centerY: 45,
-              colors: ['white', 'hsl(125, 55%, 60%)', 'green'],
+              colors: ['white', 'hsl(0.347222turn 55% 60%)', 'green'],
               positions: [0, 0.45, 1],
             },
             transform,
@@ -7989,7 +7989,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
             style: style('#f8f0d8', '#6b3d00', {
               patternType: 4,
               patternColor: 'rebeccapurple',
-              backgroundColor: 'hsl(43, 75%, 91%)',
+              backgroundColor: 'hsl(43deg 75% 91%)',
             }),
             gradient: null,
             transform,
