@@ -7986,10 +7986,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
               { type: 'lineTo', x: 97, y: 22 },
               { type: 'closePath' },
             ],
-            style: style('#f8f0d8', '#6b3d00', {
+            style: style('lab(94% 0 14)', 'lch(35% 47 62deg)', {
               patternType: 4,
               patternColor: 'rebeccapurple',
-              backgroundColor: 'hsl(43deg 75% 91%)',
+              backgroundColor: 'lch(92% 20 87deg)',
             }),
             gradient: null,
             transform,

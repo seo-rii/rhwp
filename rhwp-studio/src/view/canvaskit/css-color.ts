@@ -238,6 +238,45 @@ function parseSupportedCssColor(color: string): [number, number, number, number]
     }
     return [channels[0] ?? 0, channels[1] ?? 0, channels[2] ?? 0, alpha];
   }
+  const labMatch = normalized.match(/^lab\((.*)\)$/);
+  if (labMatch) {
+    const [colorBody, slashAlpha] = labMatch[1].split('/').map((part) => part.trim());
+    const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
+    if (parts.length !== 3) {
+      return null;
+    }
+    const lightness = parseCssLabLightness(parts[0]);
+    const axisA = Number(parts[1]);
+    const axisB = Number(parts[2]);
+    const alpha = parseCssAlpha(slashAlpha ?? '1');
+    if (lightness === null || !Number.isFinite(axisA) || !Number.isFinite(axisB) || alpha === null) {
+      return null;
+    }
+    const [red, green, blue] = labToRgb(lightness, axisA, axisB);
+    return [red, green, blue, alpha];
+  }
+  const lchMatch = normalized.match(/^lch\((.*)\)$/);
+  if (lchMatch) {
+    const [colorBody, slashAlpha] = lchMatch[1].split('/').map((part) => part.trim());
+    const parts = colorBody.split(/\s+/).filter((part) => part.length > 0);
+    if (parts.length !== 3) {
+      return null;
+    }
+    const lightness = parseCssLabLightness(parts[0]);
+    const chroma = Number(parts[1]);
+    const hue = parseCssHue(parts[2]);
+    const alpha = parseCssAlpha(slashAlpha ?? '1');
+    if (lightness === null || !Number.isFinite(chroma) || hue === null || alpha === null) {
+      return null;
+    }
+    const hueRadians = hue * (Math.PI / 180);
+    const [red, green, blue] = labToRgb(
+      lightness,
+      chroma * Math.cos(hueRadians),
+      chroma * Math.sin(hueRadians),
+    );
+    return [red, green, blue, alpha];
+  }
   const oklabMatch = normalized.match(/^oklab\((.*)\)$/);
   if (oklabMatch) {
     const [colorBody, slashAlpha] = oklabMatch[1].split('/').map((part) => part.trim());
@@ -401,6 +440,16 @@ function parseCssPercent(value: string): number | null {
   return Number.isFinite(number) ? clampCanvasKitUnit(number / 100) : null;
 }
 
+function parseCssLabLightness(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.endsWith('%')) {
+    const percent = parseCssPercent(trimmed);
+    return percent === null ? null : percent * 100;
+  }
+  const number = Number(trimmed);
+  return Number.isFinite(number) ? number : null;
+}
+
 function hslToRgb(hueDegrees: number, saturation: number, lightness: number): [number, number, number] {
   const hue = ((hueDegrees % 360) + 360) % 360;
   const chroma = (1 - Math.abs((2 * lightness) - 1)) * saturation;
@@ -431,6 +480,36 @@ function hslToRgb(hueDegrees: number, saturation: number, lightness: number): [n
   return [red + match, green + match, blue + match];
 }
 
+function labToRgb(lightness: number, axisA: number, axisB: number): [number, number, number] {
+  const normalizedY = (lightness + 16) / 116;
+  const normalizedX = normalizedY + (axisA / 500);
+  const normalizedZ = normalizedY - (axisB / 200);
+  const epsilon = 216 / 24389;
+  const kappa = 24389 / 27;
+  const xD50 = 0.96422 * (
+    (normalizedX ** 3) > epsilon
+      ? normalizedX ** 3
+      : ((116 * normalizedX) - 16) / kappa
+  );
+  const yD50 = 1 * (
+    (normalizedY ** 3) > epsilon
+      ? normalizedY ** 3
+      : ((116 * normalizedY) - 16) / kappa
+  );
+  const zD50 = 0.82521 * (
+    (normalizedZ ** 3) > epsilon
+      ? normalizedZ ** 3
+      : ((116 * normalizedZ) - 16) / kappa
+  );
+  const xD65 = (0.9555766 * xD50) - (0.0230393 * yD50) + (0.0631636 * zD50);
+  const yD65 = (-0.0282895 * xD50) + (1.0099416 * yD50) + (0.0210077 * zD50);
+  const zD65 = (0.0122982 * xD50) - (0.020483 * yD50) + (1.3299098 * zD50);
+  const linearRed = (3.2404542 * xD65) - (1.5371385 * yD65) - (0.4985314 * zD65);
+  const linearGreen = (-0.969266 * xD65) + (1.8760108 * yD65) + (0.041556 * zD65);
+  const linearBlue = (0.0556434 * xD65) - (0.2040259 * yD65) + (1.0572252 * zD65);
+  return [linearRed, linearGreen, linearBlue].map(linearSrgbToEncodedUnit) as [number, number, number];
+}
+
 function oklabToRgb(lightness: number, axisA: number, axisB: number): [number, number, number] {
   const long = lightness + (0.3963377774 * axisA) + (0.2158037573 * axisB);
   const medium = lightness - (0.1055613458 * axisA) - (0.0638541728 * axisB);
@@ -441,12 +520,14 @@ function oklabToRgb(lightness: number, axisA: number, axisB: number): [number, n
   const linearRed = (4.0767416621 * longCubed) - (3.3077115913 * mediumCubed) + (0.2309699292 * shortCubed);
   const linearGreen = (-1.2684380046 * longCubed) + (2.6097574011 * mediumCubed) - (0.3413193965 * shortCubed);
   const linearBlue = (-0.0041960863 * longCubed) - (0.7034186147 * mediumCubed) + (1.707614701 * shortCubed);
-  return [linearRed, linearGreen, linearBlue].map((channel) => {
-    const encoded = channel <= 0.0031308
-      ? 12.92 * channel
-      : (1.055 * (channel ** (1 / 2.4))) - 0.055;
-    return clampCanvasKitUnit(encoded);
-  }) as [number, number, number];
+  return [linearRed, linearGreen, linearBlue].map(linearSrgbToEncodedUnit) as [number, number, number];
+}
+
+function linearSrgbToEncodedUnit(channel: number): number {
+  const encoded = channel <= 0.0031308
+    ? 12.92 * channel
+    : (1.055 * (channel ** (1 / 2.4))) - 0.055;
+  return clampCanvasKitUnit(encoded);
 }
 
 export function clampCanvasKitUnit(value: number): number {
