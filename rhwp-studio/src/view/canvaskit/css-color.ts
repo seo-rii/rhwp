@@ -1,6 +1,6 @@
 import type { CanvasKit } from 'canvaskit-wasm';
 
-const CANVASKIT_CSS_NAMED_COLORS: Record<string, string> = {
+export const CSS_NAMED_COLORS: Record<string, string> = {
   aliceblue: '#f0f8ff',
   antiquewhite: '#faebd7',
   aqua: '#00ffff',
@@ -172,7 +172,7 @@ export function parseCanvasKitCssColor(canvasKit: CanvasKit, color: string, opac
 
 function parseSupportedCssColor(color: string): [number, number, number, number] | null {
   const normalized = color.trim().toLowerCase();
-  const named = CANVASKIT_CSS_NAMED_COLORS[normalized];
+  const named = CSS_NAMED_COLORS[normalized];
   if (named) {
     return parseHexColor(named);
   }

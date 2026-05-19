@@ -9,6 +9,7 @@ import type {
   LayerTextControlMark,
   LayerTextRunOp,
 } from '@/core/types';
+import { CSS_NAMED_COLORS } from './canvaskit/css-color';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
@@ -1055,19 +1056,7 @@ function isStaticSvgPaintValueSupported(value: string): boolean {
   }
   return /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(trimmed)
     || /^(?:rgb|rgba|hsl|hsla)\(\s*[-+0-9.%\s,/]+\)$/i.test(trimmed)
-    || [
-      'black',
-      'blue',
-      'cyan',
-      'gray',
-      'green',
-      'grey',
-      'magenta',
-      'red',
-      'transparent',
-      'white',
-      'yellow',
-    ].includes(normalized);
+    || CSS_NAMED_COLORS[normalized] !== undefined;
 }
 
 function isStaticSvgColorValueSupported(value: string): boolean {
