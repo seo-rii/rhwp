@@ -3274,6 +3274,58 @@ fn native_skia_keeps_text_fallback_for_backend_default_bitmap_glyph() {
 }
 
 #[test]
+fn native_skia_keeps_text_fallback_for_nonpositive_bitmap_glyph_bbox() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("bitmap glyph pixmap");
+    for pixel in pixmap.pixels_mut() {
+        *pixel = tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 255, 255).unwrap();
+    }
+    let image_bytes = pixmap.encode_png().expect("bitmap glyph png");
+    let mut resources = ResourceArena::default();
+    let image_resource_id = resources.intern_image_bytes(&image_bytes);
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
+    outline.bitmap_glyph = Some(BitmapGlyphPayload {
+        image_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(outline.placement),
+        transform_to_run: None,
+        strike_ppem: Some((4, 4)),
+        strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+        pixel_format: Some("rgba8".to_string()),
+        color_space: None,
+        alpha_mode: Some(BitmapAlphaMode::Straight),
+        scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+        filtering: Some(BitmapGlyphFiltering::Nearest),
+    });
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        true,
+        resources,
+        BoundingBox::new(0.0, 0.0, 0.0, 82.0),
+        190.0,
+        82.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("nonpositive BitmapGlyph bbox fallback render");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia BitmapGlyph bbox fallback selection report");
+
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
+    }));
+}
+
+#[test]
 fn native_skia_keeps_text_fallback_for_unsafe_svg_glyph_contract() {
     let renderer = SkiaLayerRenderer::new();
     let mut resources = ResourceArena::default();
@@ -3317,6 +3369,60 @@ fn native_skia_keeps_text_fallback_for_unsafe_svg_glyph_contract() {
         bounds.min_x > 95,
         "native Skia must keep TextRun fallback when SvgGlyph violates the static sanitized contract, got {bounds:?}"
     );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedSvgGlyph)
+    }));
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_nonpositive_svg_glyph_bbox() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut resources = ResourceArena::default();
+    let svg_resource_id = resources.intern_svg_fragment(
+        "<rect x=\"100\" y=\"50\" width=\"40\" height=\"30\" fill=\"#00ffff\"/>",
+    );
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::SvgGlyph, None, None);
+    outline.svg_glyph = Some(SvgGlyphPayload {
+        vector_resource_id: svg_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(outline.placement),
+        transform_to_run: None,
+        view_box: Some(SvgGlyphViewBox {
+            x: 100.0,
+            y: 50.0,
+            width: 40.0,
+            height: 30.0,
+        }),
+        intrinsic_size: None,
+        security_mode: SvgGlyphSecurityMode::StaticSanitized,
+        script_allowed: false,
+        animation_allowed: false,
+        external_resources_allowed: false,
+        interactivity_allowed: false,
+    });
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        true,
+        resources,
+        BoundingBox::new(0.0, 0.0, 190.0, -1.0),
+        190.0,
+        82.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("nonpositive SvgGlyph bbox fallback render");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia SvgGlyph bbox fallback selection report");
+
     assert_eq!(report.selected_variant_id, "textRun");
     assert!(report.rejected_variants.iter().any(|variant| {
         variant.variant_id == "glyphOutline"

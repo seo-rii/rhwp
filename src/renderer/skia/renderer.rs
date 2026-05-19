@@ -330,6 +330,12 @@ fn native_skia_glyph_outline_payload_status(
             let Some(payload) = outline.bitmap_glyph.as_ref() else {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             };
+            let Some(bbox) = bbox else {
+                return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
+            };
+            if !glyph_payload_bbox_is_replayable(bbox) {
+                return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
+            }
             if !glyph_payload_placement_is_replayable(payload.placement, payload.transform_to_run) {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             }
@@ -355,13 +361,13 @@ fn native_skia_glyph_outline_payload_status(
             let Some(bbox) = bbox else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
+            if !glyph_payload_bbox_is_replayable(bbox) {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            }
             let Some(view_box) = payload.view_box else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
-            if payload.has_static_sanitized_contract()
-                && bbox.width.is_finite()
-                && bbox.height.is_finite()
-            {
+            if payload.has_static_sanitized_contract() {
                 let image = rasterize_svg_fragment_with_view_box(
                     fragment,
                     bbox.width as f32,
@@ -391,6 +397,15 @@ fn glyph_payload_placement_is_replayable(
                 .map(|transform| affine_is_finite(&transform))
                 .unwrap_or(true)
     })
+}
+
+fn glyph_payload_bbox_is_replayable(bbox: BoundingBox) -> bool {
+    bbox.x.is_finite()
+        && bbox.y.is_finite()
+        && bbox.width.is_finite()
+        && bbox.height.is_finite()
+        && bbox.width > 0.0
+        && bbox.height > 0.0
 }
 
 fn native_skia_glyph_outline_replay_status(
@@ -1052,6 +1067,9 @@ impl SkiaLayerRenderer {
         resources: &ResourceArena,
         replay: &SkiaReplayContext,
     ) {
+        if !glyph_payload_bbox_is_replayable(bbox) {
+            return;
+        }
         let Some(payload) = outline.bitmap_glyph.as_ref() else {
             return;
         };
@@ -1093,6 +1111,9 @@ impl SkiaLayerRenderer {
         resources: &ResourceArena,
         replay: &SkiaReplayContext,
     ) {
+        if !glyph_payload_bbox_is_replayable(bbox) {
+            return;
+        }
         let Some(payload) = outline.svg_glyph.as_ref() else {
             return;
         };
