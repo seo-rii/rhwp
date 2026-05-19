@@ -4954,6 +4954,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     styledTransparentStrokeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-styled-transparent-stroke-resource';
+    const invisibleStrokeOnlySvgResourceTree = treeFor(svgOutline);
+    invisibleStrokeOnlySvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<line x1="2" y1="9" x2="16" y2="9" fill="none" stroke="#0000ff" stroke-width="4" stroke-opacity="0"/>',
+      '</svg>',
+    ].join('');
+    invisibleStrokeOnlySvgResourceTree.resources.svgHashes[0] = 'svg-glyph-invisible-stroke-only-resource';
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
     unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dasharray="2 -1"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
@@ -5160,6 +5167,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserStyledZeroWidthStrokeSvgGlyph;
     let noDomParserTransparentStrokeSvgGlyph;
     let noDomParserStyledTransparentStrokeSvgGlyph;
+    let noDomParserInvisibleStrokeOnlySvgGlyph;
     let noDomParserNamedCssColorSvgGlyph;
     let noDomParserFunctionalCssColorSvgGlyph;
     let noDomParserWideGamutCssColorSvgGlyph;
@@ -5197,6 +5205,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserStyledZeroWidthStrokeSvgGlyph = await render(styledZeroWidthStrokeSvgResourceTree);
       noDomParserTransparentStrokeSvgGlyph = await render(transparentStrokeSvgResourceTree);
       noDomParserStyledTransparentStrokeSvgGlyph = await render(styledTransparentStrokeSvgResourceTree);
+      noDomParserInvisibleStrokeOnlySvgGlyph = await render(invisibleStrokeOnlySvgResourceTree);
       noDomParserNamedCssColorSvgGlyph = await render(namedCssColorSvgResourceTree);
       noDomParserFunctionalCssColorSvgGlyph = await render(functionalCssColorSvgResourceTree);
       noDomParserWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
@@ -5263,6 +5272,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserTransparentStrokeSvgGlyph,
       styledTransparentStrokeSvgGlyph: await render(styledTransparentStrokeSvgResourceTree),
       noDomParserStyledTransparentStrokeSvgGlyph,
+      invisibleStrokeOnlySvgGlyph: await render(invisibleStrokeOnlySvgResourceTree),
+      noDomParserInvisibleStrokeOnlySvgGlyph,
       namedCssColorSvgGlyph: await render(namedCssColorSvgResourceTree),
       noDomParserNamedCssColorSvgGlyph,
       functionalCssColorSvgGlyph: await render(functionalCssColorSvgResourceTree),
@@ -5646,6 +5657,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserStyledTransparentStrokeSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserStyledTransparentStrokeSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects styled transparent stroke SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStyledTransparentStrokeSvgReport)}`,
+  );
+  const canvaskitInvisibleStrokeOnlySvgReport = canvaskitGlyphOutlineProbe
+    .invisibleStrokeOnlySvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitInvisibleStrokeOnlySvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitInvisibleStrokeOnlySvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects invisible stroke-only SvgGlyph resource=${JSON.stringify(canvaskitInvisibleStrokeOnlySvgReport)}`,
+  );
+  const canvaskitNoDomParserInvisibleStrokeOnlySvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserInvisibleStrokeOnlySvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserInvisibleStrokeOnlySvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserInvisibleStrokeOnlySvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects invisible stroke-only SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserInvisibleStrokeOnlySvgReport)}`,
   );
   const canvaskitNamedCssColorSvgReport = canvaskitGlyphOutlineProbe
     .namedCssColorSvgGlyph
@@ -6197,6 +6226,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserStyledTransparentStrokeSvgBluePixels = canvaskitGlyphOutlineProbe
     .noDomParserStyledTransparentStrokeSvgGlyph
     .bluePixels;
+  const canvaskitInvisibleStrokeOnlySvgBluePixels = canvaskitGlyphOutlineProbe
+    .invisibleStrokeOnlySvgGlyph
+    .bluePixels;
+  const canvaskitInvisibleStrokeOnlySvgRedPixels = canvaskitGlyphOutlineProbe
+    .invisibleStrokeOnlySvgGlyph
+    .redPixels;
+  const canvaskitInvisibleStrokeOnlySvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .invisibleStrokeOnlySvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserInvisibleStrokeOnlySvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserInvisibleStrokeOnlySvgGlyph
+    .bluePixels;
+  const canvaskitNoDomParserInvisibleStrokeOnlySvgRedPixels = canvaskitGlyphOutlineProbe
+    .noDomParserInvisibleStrokeOnlySvgGlyph
+    .redPixels;
+  const canvaskitNoDomParserInvisibleStrokeOnlySvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserInvisibleStrokeOnlySvgGlyph
+    .magentaPixels;
   const canvaskitNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe.namedCssColorSvgGlyph.magentaPixels;
   const canvaskitNoDomParserNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserNamedCssColorSvgGlyph
@@ -6425,6 +6472,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserStyledTransparentStrokeSvgMagentaPixels > 100
       && canvaskitNoDomParserStyledTransparentStrokeSvgBluePixels < 5,
     `CanvasKit strict outline inherits transparent SvgGlyph stroke as no stroke without DOMParser magenta=${canvaskitNoDomParserStyledTransparentStrokeSvgMagentaPixels}, blue=${canvaskitNoDomParserStyledTransparentStrokeSvgBluePixels}`,
+  );
+  assert(
+    canvaskitInvisibleStrokeOnlySvgBluePixels < 5
+      && canvaskitInvisibleStrokeOnlySvgRedPixels < 5
+      && canvaskitInvisibleStrokeOnlySvgMagentaPixels < 5,
+    `CanvasKit strict outline keeps invisible stroke-only SvgGlyph replayable without fallback blue=${canvaskitInvisibleStrokeOnlySvgBluePixels}, red=${canvaskitInvisibleStrokeOnlySvgRedPixels}, magenta=${canvaskitInvisibleStrokeOnlySvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserInvisibleStrokeOnlySvgBluePixels < 5
+      && canvaskitNoDomParserInvisibleStrokeOnlySvgRedPixels < 5
+      && canvaskitNoDomParserInvisibleStrokeOnlySvgMagentaPixels < 5,
+    `CanvasKit strict outline keeps invisible stroke-only SvgGlyph replayable without fallback without DOMParser blue=${canvaskitNoDomParserInvisibleStrokeOnlySvgBluePixels}, red=${canvaskitNoDomParserInvisibleStrokeOnlySvgRedPixels}, magenta=${canvaskitNoDomParserInvisibleStrokeOnlySvgMagentaPixels}`,
   );
   assert(
     canvaskitNamedCssColorSvgMagentaPixels > 100,

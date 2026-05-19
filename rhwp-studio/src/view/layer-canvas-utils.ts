@@ -230,9 +230,6 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         shapeOpacity,
       );
       const shouldFill = elementName !== 'line' && resolvedFill.trim().toLowerCase() !== 'none';
-      if (!shouldFill && !stroke) {
-        continue;
-      }
       const transform = staticSvgComposeTransforms(
         currentState.transform,
         parseStaticSvgTransform(attributes.get('transform')),
@@ -299,9 +296,6 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         svgOpacity(svgPresentationAttribute(element, 'opacity')),
       );
       const shouldFill = elementName !== 'line' && fill.trim().toLowerCase() !== 'none';
-      if (!shouldFill && !stroke) {
-        return;
-      }
       const fillOpacityValue = svgPresentationAttribute(element, 'fill-opacity');
       const opacity = svgOpacity(svgPresentationAttribute(element, 'opacity'))
         * (fillOpacityValue === null ? currentState.fillOpacity : svgOpacity(fillOpacityValue));
