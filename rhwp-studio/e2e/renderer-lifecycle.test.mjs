@@ -4997,6 +4997,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     unsupportedSvgStrayLessThanTree.resources.svgFragments[0] =
       '<<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsupportedSvgStrayLessThanTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stray-less-than';
+    const unsupportedSvgCdataEndTree = treeFor(svgOutline);
+    unsupportedSvgCdataEndTree.resources.svgFragments[0] =
+      ']]><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
+    unsupportedSvgCdataEndTree.resources.svgHashes[0] = 'svg-glyph-unsupported-cdata-end';
     const unsupportedSvgDoctypeTree = treeFor(svgOutline);
     unsupportedSvgDoctypeTree.resources.svgFragments[0] = '<!DOCTYPE svg><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsupportedSvgDoctypeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-doctype';
@@ -5275,6 +5279,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserUnsupportedSvgUnknownEntityResource;
     let noDomParserUnsupportedSvgDuplicateAttributeResource;
     let noDomParserUnsupportedSvgStrayLessThanResource;
+    let noDomParserUnsupportedSvgCdataEndResource;
     let noDomParserUnsupportedSvgGroupOpacityResource;
     try {
       globalThis.DOMParser = undefined;
@@ -5337,6 +5342,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedSvgUnknownEntityResource = await render(unsupportedSvgUnknownEntityTree);
       noDomParserUnsupportedSvgDuplicateAttributeResource = await render(unsupportedSvgDuplicateAttributeTree);
       noDomParserUnsupportedSvgStrayLessThanResource = await render(unsupportedSvgStrayLessThanTree);
+      noDomParserUnsupportedSvgCdataEndResource = await render(unsupportedSvgCdataEndTree);
       noDomParserUnsupportedSvgGroupOpacityResource = await render(unsupportedSvgGroupOpacityTree);
     } finally {
       if (hadDOMParser) {
@@ -5451,6 +5457,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedSvgDuplicateAttributeResource,
       unsupportedSvgGlyphStrayLessThanResource: await render(unsupportedSvgStrayLessThanTree),
       noDomParserUnsupportedSvgStrayLessThanResource,
+      unsupportedSvgGlyphCdataEndResource: await render(unsupportedSvgCdataEndTree),
+      noDomParserUnsupportedSvgCdataEndResource,
       noDomParserUnsupportedSvgGroupOpacityResource,
     };
   });
@@ -6281,6 +6289,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .noDomParserUnsupportedSvgStrayLessThanResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgCdataEndResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphCdataEndResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitNoDomParserUnsupportedSvgCdataEndResourceReport = canvaskitGlyphOutlineProbe
+    .noDomParserUnsupportedSvgCdataEndResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport = canvaskitGlyphOutlineProbe
     .noDomParserUnsupportedSvgGroupOpacityResource
     ?.diagnostics
@@ -6396,6 +6412,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
+      && canvaskitUnsupportedSvgCdataEndResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgCdataEndResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitNoDomParserUnsupportedSvgCdataEndResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitNoDomParserUnsupportedSvgCdataEndResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
       && canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport?.selectedVariantId === 'textRun'
       && canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
@@ -6426,6 +6452,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedDuplicateAttribute: canvaskitNoDomParserUnsupportedSvgDuplicateAttributeResourceReport,
       unsupportedStrayLessThan: canvaskitUnsupportedSvgStrayLessThanResourceReport,
       noDomParserUnsupportedStrayLessThan: canvaskitNoDomParserUnsupportedSvgStrayLessThanResourceReport,
+      unsupportedCdataEnd: canvaskitUnsupportedSvgCdataEndResourceReport,
+      noDomParserUnsupportedCdataEnd: canvaskitNoDomParserUnsupportedSvgCdataEndResourceReport,
       noDomParserUnsupportedGroupOpacity: canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport,
     })}`,
   );

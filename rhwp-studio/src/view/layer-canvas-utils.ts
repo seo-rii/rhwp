@@ -447,7 +447,7 @@ function staticSvgStyleWithoutComments(style: string): string | null {
 }
 
 function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
-  if (/<\s*\?/.test(fragment) || /<\s*!(?!\s*--)/.test(fragment)) {
+  if (/<\s*\?/.test(fragment) || /<\s*!(?!\s*--)/.test(fragment) || fragment.includes(']]>')) {
     return true;
   }
   const openElementStack: string[] = [];
