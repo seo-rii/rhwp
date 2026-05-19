@@ -128,59 +128,8 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           return [];
         }
         const value = attributeMatch[2] ?? attributeMatch[3] ?? attributeMatch[4] ?? '';
-        let decodedValue = '';
-        let valueCursor = 0;
-        let isAttributeValueSupported = true;
-        while (valueCursor < value.length) {
-          const entityStart = value.indexOf('&', valueCursor);
-          if (entityStart < 0) {
-            decodedValue += value.slice(valueCursor);
-            break;
-          }
-          decodedValue += value.slice(valueCursor, entityStart);
-          const entityEnd = value.indexOf(';', entityStart + 1);
-          if (entityEnd < 0) {
-            isAttributeValueSupported = false;
-            break;
-          }
-          const entity = value.slice(entityStart + 1, entityEnd);
-          let decodedEntity: string | null = null;
-          if (entity === 'amp') {
-            decodedEntity = '&';
-          } else if (entity === 'lt') {
-            decodedEntity = '<';
-          } else if (entity === 'gt') {
-            decodedEntity = '>';
-          } else if (entity === 'quot') {
-            decodedEntity = '"';
-          } else if (entity === 'apos') {
-            decodedEntity = "'";
-          } else {
-            const decimalEntity = /^#([0-9]+)$/.exec(entity);
-            const hexEntity = /^#x([0-9a-fA-F]+)$/.exec(entity);
-            const codePoint = decimalEntity
-              ? Number(decimalEntity[1])
-              : hexEntity
-                ? Number.parseInt(hexEntity[1], 16)
-                : Number.NaN;
-            const isXmlCharacter = codePoint === 0x09
-              || codePoint === 0x0a
-              || codePoint === 0x0d
-              || (codePoint >= 0x20 && codePoint <= 0xd7ff)
-              || (codePoint >= 0xe000 && codePoint <= 0xfffd)
-              || (codePoint >= 0x10000 && codePoint <= 0x10ffff);
-            if (Number.isInteger(codePoint) && isXmlCharacter) {
-              decodedEntity = String.fromCodePoint(codePoint);
-            }
-          }
-          if (decodedEntity === null) {
-            isAttributeValueSupported = false;
-            break;
-          }
-          decodedValue += decodedEntity;
-          valueCursor = entityEnd + 1;
-        }
-        if (!isAttributeValueSupported) {
+        const decodedValue = decodeStaticSvgXmlEntities(value);
+        if (decodedValue === null) {
           return [];
         }
         attributes.set(rawName, decodedValue.trim());
@@ -446,6 +395,62 @@ function staticSvgStyleWithoutComments(style: string): string | null {
   return stripped;
 }
 
+function decodeStaticSvgXmlEntities(value: string): string | null {
+  let decodedValue = '';
+  let cursor = 0;
+  while (cursor < value.length) {
+    const entityStart = value.indexOf('&', cursor);
+    if (entityStart < 0) {
+      return decodedValue + value.slice(cursor);
+    }
+    decodedValue += value.slice(cursor, entityStart);
+    const entityEnd = value.indexOf(';', entityStart + 1);
+    if (entityEnd < 0) {
+      return null;
+    }
+    const entity = value.slice(entityStart + 1, entityEnd);
+    let decodedEntity: string | null = null;
+    if (entity === 'amp') {
+      decodedEntity = '&';
+    } else if (entity === 'lt') {
+      decodedEntity = '<';
+    } else if (entity === 'gt') {
+      decodedEntity = '>';
+    } else if (entity === 'quot') {
+      decodedEntity = '"';
+    } else if (entity === 'apos') {
+      decodedEntity = "'";
+    } else {
+      const decimalEntity = /^#([0-9]+)$/.exec(entity);
+      const hexEntity = /^#x([0-9a-fA-F]+)$/.exec(entity);
+      const codePoint = decimalEntity
+        ? Number(decimalEntity[1])
+        : hexEntity
+          ? Number.parseInt(hexEntity[1], 16)
+          : Number.NaN;
+      const isXmlCharacter = codePoint === 0x09
+        || codePoint === 0x0a
+        || codePoint === 0x0d
+        || (codePoint >= 0x20 && codePoint <= 0xd7ff)
+        || (codePoint >= 0xe000 && codePoint <= 0xfffd)
+        || (codePoint >= 0x10000 && codePoint <= 0x10ffff);
+      if (Number.isInteger(codePoint) && isXmlCharacter) {
+        decodedEntity = String.fromCodePoint(codePoint);
+      }
+    }
+    if (decodedEntity === null) {
+      return null;
+    }
+    decodedValue += decodedEntity;
+    cursor = entityEnd + 1;
+  }
+  return decodedValue;
+}
+
+function isStaticSvgTextContentSupported(text: string): boolean {
+  return !text.includes('<') && decodeStaticSvgXmlEntities(text) !== null;
+}
+
 function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
   if (/<\s*\?/.test(fragment) || /<\s*!(?!\s*--)/.test(fragment) || fragment.includes(']]>')) {
     return true;
@@ -454,7 +459,7 @@ function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
   const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
   let cursor = 0;
   for (const match of fragment.matchAll(tagPattern)) {
-    if (fragment.slice(cursor, match.index).includes('<')) {
+    if (!isStaticSvgTextContentSupported(fragment.slice(cursor, match.index))) {
       return true;
     }
     cursor = (match.index ?? 0) + match[0].length;
@@ -474,7 +479,7 @@ function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
       openElementStack.push(elementName);
     }
   }
-  return openElementStack.length > 0 || fragment.slice(cursor).includes('<');
+  return openElementStack.length > 0 || !isStaticSvgTextContentSupported(fragment.slice(cursor));
 }
 
 function staticSvgMapPresentationAttribute(attributes: Map<string, string>, name: string): string | null {
