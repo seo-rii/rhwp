@@ -13147,6 +13147,31 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const patternAfterOther = canvaskitRenderer.getPatternDiagnostics?.();
     canvaskitRenderer.resetPatternDiagnostics?.();
     const patternAfterReset = canvaskitRenderer.getPatternDiagnostics?.();
+    const failedPattern = {
+      patternType: 0,
+      patternColor: '#654321',
+      backgroundColor: '#fedcba',
+    };
+    const failedPatternCacheKey = `${failedPattern.patternType}:${failedPattern.patternColor}:${failedPattern.backgroundColor}`;
+    canvaskitRenderer.patternImageCache?.delete?.(failedPatternCacheKey);
+    canvaskitRenderer.resetPatternDiagnostics?.();
+    const originalMakeSurface = canvaskitRenderer.canvasKit?.MakeSurface;
+    let failedPatternFirstImage = null;
+    let failedPatternSecondImage = null;
+    let failedPatternAfterFirst = null;
+    let failedPatternAfterSecond = null;
+    if (originalMakeSurface) {
+      canvaskitRenderer.canvasKit.MakeSurface = () => null;
+      try {
+        failedPatternFirstImage = canvaskitRenderer.resourceCache?.patternImage?.(failedPattern);
+        failedPatternAfterFirst = canvaskitRenderer.getPatternDiagnostics?.();
+        failedPatternSecondImage = canvaskitRenderer.resourceCache?.patternImage?.(failedPattern);
+        failedPatternAfterSecond = canvaskitRenderer.getPatternDiagnostics?.();
+      } finally {
+        canvaskitRenderer.canvasKit.MakeSurface = originalMakeSurface;
+      }
+    }
+    canvaskitRenderer.resetPatternDiagnostics?.();
     const directPatternCacheReuse = {
       firstAvailable: !!patternFirstImage,
       secondAvailable: !!patternSecondImage,
@@ -13158,6 +13183,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       afterOther: patternAfterOther,
       afterReset: patternAfterReset,
       cacheSize: canvaskitRenderer.patternImageCache?.size ?? -1,
+      failure: {
+        firstAvailable: !!failedPatternFirstImage,
+        secondAvailable: !!failedPatternSecondImage,
+        afterFirst: failedPatternAfterFirst,
+        afterSecond: failedPatternAfterSecond,
+      },
     };
     canvas2dRenderer.resetImageEffectDiagnostics();
     canvaskitRenderer.resetImageEffectDiagnostics();
@@ -13409,6 +13440,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && imageEffectCropProbe.directPatternCacheReuse.afterReset.surfaceFailures === 0
       && imageEffectCropProbe.directPatternCacheReuse.afterReset.imagesCreated === 0,
     `CanvasKit pattern diagnostics reset=${JSON.stringify(imageEffectCropProbe.directPatternCacheReuse)}`,
+  );
+  assert(
+    !imageEffectCropProbe.directPatternCacheReuse.failure.firstAvailable
+      && !imageEffectCropProbe.directPatternCacheReuse.failure.secondAvailable
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterFirst.cacheHits === 0
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterFirst.cacheMisses === 1
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterFirst.surfaceCreations === 0
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterFirst.surfaceFailures === 1
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterFirst.imagesCreated === 0,
+    `CanvasKit pattern surface failure records first miss=${JSON.stringify(
+      imageEffectCropProbe.directPatternCacheReuse,
+    )}`,
+  );
+  assert(
+    imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.cacheHits === 1
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.cacheMisses === 1
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.surfaceCreations === 0
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.surfaceFailures === 1
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.imagesCreated === 0,
+    `CanvasKit pattern surface failure cache avoids repeated surface work=${JSON.stringify(
+      imageEffectCropProbe.directPatternCacheReuse,
+    )}`,
   );
 
   setTestCase('canvaskit-dispose');
