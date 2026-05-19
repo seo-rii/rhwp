@@ -328,7 +328,9 @@ diagnostics without running the full screenshot corpus.
 GitHub Actions는 목적별로 분리되어 있습니다.
 
 - `CI`: push / PR 기본 관문 (`Build & Test`, `All Features / Native Skia`, `Feature Matrix`, `Studio E2E`)
-- `Full Renderer Sweep`: 수동 실행 전용 시각 회귀 검증
+- `Full Renderer Sweep`: 수동 실행 전용 시각 회귀 검증. 기본
+  multi-profile baseline과 WebGPU-preferred CanvasKit baseline을 별도 artifact
+  경로로 캡처합니다.
 - `WASM Build`: 태그 릴리즈 또는 수동 실행 전용 WASM 산출물 검증
 
 ## CLI Usage

@@ -87,6 +87,9 @@ jobs:
       - name: Capture representative multi-profile baseline
         run: python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview --browser-mode headless --output output/renderer-baseline/workflow-dispatch
 
+      - name: Capture WebGPU-preferred CanvasKit baseline
+        run: python3 scripts/renderer_baseline.py --profiles screen --browser-mode headless --canvaskit-surface webgpu --skip-native --output output/renderer-baseline/workflow-dispatch-webgpu
+
       - name: Upload full renderer sweep artifacts
         if: always()
         uses: actions/upload-artifact@v7
