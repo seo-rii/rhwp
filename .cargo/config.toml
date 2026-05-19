@@ -8,3 +8,11 @@ test-skia-full-sweep = [
   "--ignored",
   "--nocapture",
 ]
+test-skia-renderer-smoke = [
+  "test",
+  "--features",
+  "native-skia",
+  "native_skia_",
+  "--",
+  "--nocapture",
+]

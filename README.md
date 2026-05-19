@@ -287,6 +287,7 @@ Open `http://localhost:7700` in your browser.
 npm --prefix rhwp-studio run e2e:ci        # Studio E2E (Canvas2D + CanvasKit)
 npm --prefix rhwp-studio run e2e:render:compat:headless
 npm --prefix rhwp-studio run e2e:render:webgpu:headless
+cargo test-skia-renderer-smoke             # Focused native Skia renderer smoke
 cargo test-skia-full-sweep                 # Native Skia full screenshot sweep
 RHWP_SKIA_LOG_PERF=1 cargo test --features native-skia test_skia_screenshot_matches_layer_svg_for_representative_sample_corpus -- --nocapture
 python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview
@@ -315,6 +316,10 @@ parity matrix in compatibility mode. `e2e:render:webgpu:headless` runs the same
 matrix with WebGPU-preferred CanvasKit surfaces, which records WebGPU/WebGL
 fallback diagnostics when the active CanvasKit build or browser cannot create a
 GPU surface.
+`cargo test-skia-renderer-smoke` runs the focused native Skia renderer tests for
+strict GlyphRun/GlyphOutline replay, COLRv0/COLRv1 stage-1 color layers,
+BitmapGlyph/SvgGlyph resources, strict transform handling, and fallback/reject
+diagnostics without running the full screenshot corpus.
 
 GitHub Actions는 목적별로 분리되어 있습니다.
 
