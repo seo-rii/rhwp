@@ -15,7 +15,6 @@ const EQUATION_BIG_OP_SCALE = 1.5;
 const STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES = new Set([
   'context-fill',
   'context-stroke',
-  'currentcolor',
   'inherit',
   'initial',
   'revert',
@@ -46,6 +45,7 @@ export type StaticSvgStrokeLayer = {
   dashOffset: number;
 };
 type StaticSvgPaintState = {
+  color: string;
   fill: string | null;
   fillRuleValue: string | null;
   fillOpacity: number;
@@ -82,6 +82,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
   if (typeof DOMParser === 'undefined') {
     const layers: StaticSvgPathLayer[] = [];
     const paintStateStack: StaticSvgPaintState[] = [{
+      color: '#000000',
       fill: null,
       fillRuleValue: null,
       fillOpacity: 1,
@@ -207,6 +208,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       const opacityValue = staticSvgMapPresentationAttribute(attributes, 'opacity');
       const fillOpacityValue = staticSvgMapPresentationAttribute(attributes, 'fill-opacity');
       const strokeOpacityValue = staticSvgMapPresentationAttribute(attributes, 'stroke-opacity');
+      const shapeColor = staticSvgMapPresentationAttribute(attributes, 'color') ?? currentState.color;
       const strokeWidthValue = staticSvgMapPresentationAttribute(attributes, 'stroke-width');
       const strokeLineJoinValue = staticSvgMapPresentationAttribute(attributes, 'stroke-linejoin');
       const strokeLineCapValue = staticSvgMapPresentationAttribute(attributes, 'stroke-linecap');
@@ -214,7 +216,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       const strokeDashArrayValue = staticSvgMapPresentationAttribute(attributes, 'stroke-dasharray');
       const strokeDashOffsetValue = staticSvgMapPresentationAttribute(attributes, 'stroke-dashoffset');
       const fillRuleValue = staticSvgMapPresentationAttribute(attributes, 'fill-rule') ?? currentState.fillRuleValue;
-      const resolvedFill = fill ?? currentState.fill ?? '#000000';
+      const resolvedFill = resolveStaticSvgPaintValue(fill ?? currentState.fill ?? '#000000', shapeColor);
       const resolvedStroke = strokeValue ?? currentState.stroke;
       const shapeOpacity = svgOpacity(opacityValue);
       const stroke = staticSvgStrokeLayer(
@@ -228,6 +230,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         strokeDashOffsetValue,
         currentState,
         shapeOpacity,
+        shapeColor,
       );
       const shouldFill = elementName !== 'line' && resolvedFill.trim().toLowerCase() !== 'none';
       const transform = staticSvgComposeTransforms(
@@ -282,7 +285,8 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       if (!pathData) {
         return;
       }
-      const fill = svgPresentationAttribute(element, 'fill') ?? currentState.fill ?? '#000000';
+      const shapeColor = svgPresentationAttribute(element, 'color') ?? currentState.color;
+      const fill = resolveStaticSvgPaintValue(svgPresentationAttribute(element, 'fill') ?? currentState.fill ?? '#000000', shapeColor);
       const stroke = staticSvgStrokeLayer(
         svgPresentationAttribute(element, 'stroke') ?? currentState.stroke,
         svgPresentationAttribute(element, 'stroke-width'),
@@ -294,6 +298,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         svgPresentationAttribute(element, 'stroke-dashoffset'),
         currentState,
         svgOpacity(svgPresentationAttribute(element, 'opacity')),
+        shapeColor,
       );
       const shouldFill = elementName !== 'line' && fill.trim().toLowerCase() !== 'none';
       const fillOpacityValue = svgPresentationAttribute(element, 'fill-opacity');
@@ -318,6 +323,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     }
   };
   appendStaticSvgLayers(document.documentElement, {
+    color: '#000000',
     fill: null,
     fillRuleValue: null,
     fillOpacity: 1,
@@ -388,6 +394,7 @@ function staticSvgPaintStateFromMap(
   const strokeDashArray = svgStrokeDashArray(staticSvgMapPresentationAttribute(attributes, 'stroke-dasharray'));
   const strokeDashOffset = svgStrokeDashOffset(staticSvgMapPresentationAttribute(attributes, 'stroke-dashoffset'));
   return {
+    color: staticSvgMapPresentationAttribute(attributes, 'color') ?? parent.color,
     fill: staticSvgMapPresentationAttribute(attributes, 'fill') ?? parent.fill,
     fillRuleValue: staticSvgMapPresentationAttribute(attributes, 'fill-rule') ?? parent.fillRuleValue,
     fillOpacity: fillOpacityValue === null ? parent.fillOpacity : svgOpacity(fillOpacityValue),
@@ -419,6 +426,7 @@ function staticSvgPaintStateFromElement(
   const strokeDashArray = svgStrokeDashArray(svgPresentationAttribute(element, 'stroke-dasharray'));
   const strokeDashOffset = svgStrokeDashOffset(svgPresentationAttribute(element, 'stroke-dashoffset'));
   return {
+    color: svgPresentationAttribute(element, 'color') ?? parent.color,
     fill: svgPresentationAttribute(element, 'fill') ?? parent.fill,
     fillRuleValue: svgPresentationAttribute(element, 'fill-rule') ?? parent.fillRuleValue,
     fillOpacity: fillOpacityValue === null ? parent.fillOpacity : svgOpacity(fillOpacityValue),
@@ -450,6 +458,7 @@ function staticSvgStrokeLayer(
   dashOffsetValue: string | null,
   currentState: StaticSvgPaintState,
   shapeOpacity: number,
+  currentColor: string,
 ): StaticSvgStrokeLayer | undefined {
   const stroke = strokeValue ?? currentState.stroke;
   if (!stroke || stroke.trim().toLowerCase() === 'none') {
@@ -466,7 +475,7 @@ function staticSvgStrokeLayer(
   const dashArray = svgStrokeDashArray(dashArrayValue);
   const dashOffset = svgStrokeDashOffset(dashOffsetValue);
   return {
-    color: stroke,
+    color: resolveStaticSvgPaintValue(stroke, currentColor),
     opacity,
     width,
     lineJoin: svgStrokeLineJoin(lineJoinValue) ?? currentState.strokeLineJoin,
@@ -630,6 +639,7 @@ function isStaticSvgPaintElementSupported(element: Element): boolean {
 function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
   const paintAttributes = [
     'fill',
+    'color',
     'fill-rule',
     'opacity',
     'fill-opacity',
@@ -727,6 +737,9 @@ function isStaticSvgAttributeSupported(
   }
   if (name === 'stroke') {
     return isStaticSvgPaintValueSupported(value);
+  }
+  if (name === 'color') {
+    return isStaticSvgColorValueSupported(value);
   }
   if (name === 'stroke-opacity') {
     return isStaticSvgOpacityValueSupported(value);
@@ -946,6 +959,7 @@ function parseStaticSvgTransform(value: string | null | undefined): LayerAffineT
 function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowIdentityOpacity = false): boolean {
   const supportedProperties = new Set([
     'fill',
+    'color',
     'fill-rule',
     'fill-opacity',
     'stroke',
@@ -977,6 +991,9 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowId
       return false;
     }
     if (property === 'stroke' && !isStaticSvgPaintValueSupported(value)) {
+      return false;
+    }
+    if (property === 'color' && !isStaticSvgColorValueSupported(value)) {
       return false;
     }
     if (property === 'opacity' && allowIdentityOpacity && !allowOpacity) {
@@ -1030,6 +1047,9 @@ function isStaticSvgPaintValueSupported(value: string): boolean {
   if (normalized === 'none') {
     return true;
   }
+  if (normalized === 'currentcolor') {
+    return true;
+  }
   if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function') {
     return CSS.supports('color', trimmed);
   }
@@ -1048,6 +1068,18 @@ function isStaticSvgPaintValueSupported(value: string): boolean {
       'white',
       'yellow',
     ].includes(normalized);
+}
+
+function isStaticSvgColorValueSupported(value: string): boolean {
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase();
+  return normalized !== 'none'
+    && normalized !== 'currentcolor'
+    && isStaticSvgPaintValueSupported(trimmed);
+}
+
+function resolveStaticSvgPaintValue(value: string, currentColor: string): string {
+  return value.trim().toLowerCase() === 'currentcolor' ? currentColor : value;
 }
 
 function isStaticSvgOpacityValueSupported(value: string): boolean {

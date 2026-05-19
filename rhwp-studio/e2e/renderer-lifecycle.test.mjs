@@ -5140,6 +5140,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     inheritedPaintSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-inherited-paint-resource';
+    const currentColorSvgResourceTree = treeFor(svgOutline);
+    currentColorSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" color="#ff00cc">',
+      '<g fill="currentColor">',
+      '<rect x="0" y="0" width="9" height="18"/>',
+      '</g>',
+      '<g style="color: #0000ff; stroke: currentColor; stroke-width: 2; fill: none">',
+      '<line x1="10" y1="9" x2="17" y2="9"/>',
+      '</g>',
+      '</svg>',
+    ].join('');
+    currentColorSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-current-color-resource';
     const identityOpacitySvgResourceTree = treeFor(svgOutline);
     identityOpacitySvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" style="fill: #ff00cc; opacity: 100%">',
@@ -5181,6 +5193,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserTransformListSvgGlyph;
     let noDomParserGroupTransformSvgGlyph;
     let noDomParserInheritedPaintSvgGlyph;
+    let noDomParserCurrentColorSvgGlyph;
     let noDomParserIdentityOpacitySvgGlyph;
     let noDomParserUnsupportedSvgDoctypeResource;
     let noDomParserUnsupportedSvgClosingTagResource;
@@ -5219,6 +5232,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserTransformListSvgGlyph = await render(transformListSvgResourceTree);
       noDomParserGroupTransformSvgGlyph = await render(groupTransformSvgResourceTree);
       noDomParserInheritedPaintSvgGlyph = await render(inheritedPaintSvgResourceTree);
+      noDomParserCurrentColorSvgGlyph = await render(currentColorSvgResourceTree);
       noDomParserIdentityOpacitySvgGlyph = await render(identityOpacitySvgResourceTree);
       noDomParserUnsupportedSvgDoctypeResource = await render(unsupportedSvgDoctypeTree);
       noDomParserUnsupportedSvgClosingTagResource = await render(unsupportedSvgClosingTagTree);
@@ -5300,6 +5314,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserGroupTransformSvgGlyph,
       inheritedPaintSvgGlyph: await render(inheritedPaintSvgResourceTree),
       noDomParserInheritedPaintSvgGlyph,
+      currentColorSvgGlyph: await render(currentColorSvgResourceTree),
+      noDomParserCurrentColorSvgGlyph,
       identityOpacitySvgGlyph: await render(identityOpacitySvgResourceTree),
       noDomParserIdentityOpacitySvgGlyph,
       duplicateSvgGlyphKey: await render(duplicateSvgResourceTree),
@@ -5910,6 +5926,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitNoDomParserInheritedPaintSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects inherited-paint SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserInheritedPaintSvgReport)}`,
   );
+  const canvaskitCurrentColorSvgReport = canvaskitGlyphOutlineProbe
+    .currentColorSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitCurrentColorSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitCurrentColorSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects currentColor SvgGlyph resource=${JSON.stringify(canvaskitCurrentColorSvgReport)}`,
+  );
+  const canvaskitNoDomParserCurrentColorSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserCurrentColorSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserCurrentColorSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserCurrentColorSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects currentColor SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserCurrentColorSvgReport)}`,
+  );
   const canvaskitIdentityOpacitySvgReport = canvaskitGlyphOutlineProbe
     .identityOpacitySvgGlyph
     ?.diagnostics
@@ -6314,6 +6348,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserInheritedPaintSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserInheritedPaintSvgGlyph
     .magentaPixels;
+  const canvaskitCurrentColorSvgMagentaPixels = canvaskitGlyphOutlineProbe.currentColorSvgGlyph.magentaPixels;
+  const canvaskitCurrentColorSvgBluePixels = canvaskitGlyphOutlineProbe.currentColorSvgGlyph.bluePixels;
+  const canvaskitNoDomParserCurrentColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserCurrentColorSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserCurrentColorSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserCurrentColorSvgGlyph
+    .bluePixels;
   const canvaskitIdentityOpacitySvgMagentaPixels = canvaskitGlyphOutlineProbe
     .identityOpacitySvgGlyph
     .magentaPixels;
@@ -6590,6 +6632,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserInheritedPaintSvgMagentaPixels > 100,
     `CanvasKit strict outline paints inherited-paint SvgGlyph without DOMParser magenta=${canvaskitNoDomParserInheritedPaintSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitCurrentColorSvgMagentaPixels > 100 && canvaskitCurrentColorSvgBluePixels > 10,
+    `CanvasKit strict outline resolves currentColor SvgGlyph resource magenta=${canvaskitCurrentColorSvgMagentaPixels}, blue=${canvaskitCurrentColorSvgBluePixels}`,
+  );
+  assert(
+    canvaskitNoDomParserCurrentColorSvgMagentaPixels > 100
+      && canvaskitNoDomParserCurrentColorSvgBluePixels > 10,
+    `CanvasKit strict outline resolves currentColor SvgGlyph without DOMParser magenta=${canvaskitNoDomParserCurrentColorSvgMagentaPixels}, blue=${canvaskitNoDomParserCurrentColorSvgBluePixels}`,
   );
   assert(
     canvaskitIdentityOpacitySvgMagentaPixels > 100,
