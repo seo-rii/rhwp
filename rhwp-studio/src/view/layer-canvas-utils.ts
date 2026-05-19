@@ -401,7 +401,7 @@ function staticSvgPaintStateFromMap(
     strokeOpacity: staticSvgMapPresentationAttribute(attributes, 'stroke-opacity') === null
       ? parent.strokeOpacity
       : svgOpacity(staticSvgMapPresentationAttribute(attributes, 'stroke-opacity')),
-    strokeWidth: svgPositiveNumber(staticSvgMapPresentationAttribute(attributes, 'stroke-width')) ?? parent.strokeWidth,
+    strokeWidth: svgNonNegativeNumber(staticSvgMapPresentationAttribute(attributes, 'stroke-width')) ?? parent.strokeWidth,
     strokeLineJoin: svgStrokeLineJoin(staticSvgMapPresentationAttribute(attributes, 'stroke-linejoin'))
       ?? parent.strokeLineJoin,
     strokeLineCap: svgStrokeLineCap(staticSvgMapPresentationAttribute(attributes, 'stroke-linecap'))
@@ -432,7 +432,7 @@ function staticSvgPaintStateFromElement(
     strokeOpacity: svgPresentationAttribute(element, 'stroke-opacity') === null
       ? parent.strokeOpacity
       : svgOpacity(svgPresentationAttribute(element, 'stroke-opacity')),
-    strokeWidth: svgPositiveNumber(svgPresentationAttribute(element, 'stroke-width')) ?? parent.strokeWidth,
+    strokeWidth: svgNonNegativeNumber(svgPresentationAttribute(element, 'stroke-width')) ?? parent.strokeWidth,
     strokeLineJoin: svgStrokeLineJoin(svgPresentationAttribute(element, 'stroke-linejoin')) ?? parent.strokeLineJoin,
     strokeLineCap: svgStrokeLineCap(svgPresentationAttribute(element, 'stroke-linecap')) ?? parent.strokeLineCap,
     strokeMiterLimit: svgPositiveNumber(svgPresentationAttribute(element, 'stroke-miterlimit'))
@@ -461,7 +461,7 @@ function staticSvgStrokeLayer(
   if (!stroke || stroke.trim().toLowerCase() === 'none') {
     return undefined;
   }
-  const width = svgPositiveNumber(widthValue) ?? currentState.strokeWidth;
+  const width = svgNonNegativeNumber(widthValue) ?? currentState.strokeWidth;
   if (!(width > 0)) {
     return undefined;
   }
@@ -733,7 +733,10 @@ function isStaticSvgAttributeSupported(
   if (name === 'stroke-opacity') {
     return isStaticSvgOpacityValueSupported(value);
   }
-  if (name === 'stroke-width' || name === 'stroke-miterlimit') {
+  if (name === 'stroke-width') {
+    return isStaticSvgNonNegativeNumericValueSupported(value);
+  }
+  if (name === 'stroke-miterlimit') {
     return isStaticSvgPositiveNumericValueSupported(value);
   }
   if (name === 'stroke-dasharray') {
@@ -990,8 +993,10 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowId
     ) {
       return false;
     }
-    if ((property === 'stroke-width' || property === 'stroke-miterlimit')
-      && !isStaticSvgPositiveNumericValueSupported(value)) {
+    if (property === 'stroke-width' && !isStaticSvgNonNegativeNumericValueSupported(value)) {
+      return false;
+    }
+    if (property === 'stroke-miterlimit' && !isStaticSvgPositiveNumericValueSupported(value)) {
       return false;
     }
     if (property === 'stroke-dasharray' && svgStrokeDashArray(value) === undefined) {
@@ -1103,6 +1108,14 @@ function svgPositiveNumber(value: string | null): number | null {
   }
   const number = svgNumber(value);
   return number !== null && number > 0 ? number : null;
+}
+
+function svgNonNegativeNumber(value: string | null): number | null {
+  if (value === null) {
+    return null;
+  }
+  const number = svgNumber(value);
+  return number !== null && number >= 0 ? number : null;
 }
 
 function svgStrokeLineJoin(value: string | null): CanvasLineJoin | null {
