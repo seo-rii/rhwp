@@ -4929,6 +4929,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     zeroWidthStrokeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-zero-width-stroke-resource';
+    const styledZeroWidthStrokeSvgResourceTree = treeFor(svgOutline);
+    styledZeroWidthStrokeSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<g style="stroke: #0000ff; stroke-width: 0">',
+      '<rect x="0" y="0" width="18" height="18" fill="#ff00cc"/>',
+      '</g>',
+      '</svg>',
+    ].join('');
+    styledZeroWidthStrokeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-styled-zero-width-stroke-resource';
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
     unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dasharray="2 -1"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
@@ -5132,6 +5141,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserStyledDashSvgGlyph;
     let noDomParserPxLengthSvgGlyph;
     let noDomParserZeroWidthStrokeSvgGlyph;
+    let noDomParserStyledZeroWidthStrokeSvgGlyph;
     let noDomParserNamedCssColorSvgGlyph;
     let noDomParserFunctionalCssColorSvgGlyph;
     let noDomParserWideGamutCssColorSvgGlyph;
@@ -5166,6 +5176,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserStyledDashSvgGlyph = await render(styledDashSvgResourceTree);
       noDomParserPxLengthSvgGlyph = await render(pxLengthSvgResourceTree);
       noDomParserZeroWidthStrokeSvgGlyph = await render(zeroWidthStrokeSvgResourceTree);
+      noDomParserStyledZeroWidthStrokeSvgGlyph = await render(styledZeroWidthStrokeSvgResourceTree);
       noDomParserNamedCssColorSvgGlyph = await render(namedCssColorSvgResourceTree);
       noDomParserFunctionalCssColorSvgGlyph = await render(functionalCssColorSvgResourceTree);
       noDomParserWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
@@ -5226,6 +5237,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserPxLengthSvgGlyph,
       zeroWidthStrokeSvgGlyph: await render(zeroWidthStrokeSvgResourceTree),
       noDomParserZeroWidthStrokeSvgGlyph,
+      styledZeroWidthStrokeSvgGlyph: await render(styledZeroWidthStrokeSvgResourceTree),
+      noDomParserStyledZeroWidthStrokeSvgGlyph,
       namedCssColorSvgGlyph: await render(namedCssColorSvgResourceTree),
       noDomParserNamedCssColorSvgGlyph,
       functionalCssColorSvgGlyph: await render(functionalCssColorSvgResourceTree),
@@ -5555,6 +5568,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserZeroWidthStrokeSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserZeroWidthStrokeSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects zero-width stroke SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserZeroWidthStrokeSvgReport)}`,
+  );
+  const canvaskitStyledZeroWidthStrokeSvgReport = canvaskitGlyphOutlineProbe
+    .styledZeroWidthStrokeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitStyledZeroWidthStrokeSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitStyledZeroWidthStrokeSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects styled zero-width stroke SvgGlyph resource=${JSON.stringify(canvaskitStyledZeroWidthStrokeSvgReport)}`,
+  );
+  const canvaskitNoDomParserStyledZeroWidthStrokeSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserStyledZeroWidthStrokeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserStyledZeroWidthStrokeSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserStyledZeroWidthStrokeSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects styled zero-width stroke SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStyledZeroWidthStrokeSvgReport)}`,
   );
   const canvaskitNamedCssColorSvgReport = canvaskitGlyphOutlineProbe
     .namedCssColorSvgGlyph
@@ -6070,6 +6101,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserZeroWidthStrokeSvgBluePixels = canvaskitGlyphOutlineProbe
     .noDomParserZeroWidthStrokeSvgGlyph
     .bluePixels;
+  const canvaskitStyledZeroWidthStrokeSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .styledZeroWidthStrokeSvgGlyph
+    .magentaPixels;
+  const canvaskitStyledZeroWidthStrokeSvgBluePixels = canvaskitGlyphOutlineProbe
+    .styledZeroWidthStrokeSvgGlyph
+    .bluePixels;
+  const canvaskitNoDomParserStyledZeroWidthStrokeSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStyledZeroWidthStrokeSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserStyledZeroWidthStrokeSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserStyledZeroWidthStrokeSvgGlyph
+    .bluePixels;
   const canvaskitNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe.namedCssColorSvgGlyph.magentaPixels;
   const canvaskitNoDomParserNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserNamedCssColorSvgGlyph
@@ -6271,6 +6314,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserZeroWidthStrokeSvgMagentaPixels > 100
       && canvaskitNoDomParserZeroWidthStrokeSvgBluePixels < 5,
     `CanvasKit strict outline treats zero-width SvgGlyph stroke as no stroke without DOMParser magenta=${canvaskitNoDomParserZeroWidthStrokeSvgMagentaPixels}, blue=${canvaskitNoDomParserZeroWidthStrokeSvgBluePixels}`,
+  );
+  assert(
+    canvaskitStyledZeroWidthStrokeSvgMagentaPixels > 100 && canvaskitStyledZeroWidthStrokeSvgBluePixels < 5,
+    `CanvasKit strict outline inherits zero-width SvgGlyph stroke as no stroke magenta=${canvaskitStyledZeroWidthStrokeSvgMagentaPixels}, blue=${canvaskitStyledZeroWidthStrokeSvgBluePixels}`,
+  );
+  assert(
+    canvaskitNoDomParserStyledZeroWidthStrokeSvgMagentaPixels > 100
+      && canvaskitNoDomParserStyledZeroWidthStrokeSvgBluePixels < 5,
+    `CanvasKit strict outline inherits zero-width SvgGlyph stroke as no stroke without DOMParser magenta=${canvaskitNoDomParserStyledZeroWidthStrokeSvgMagentaPixels}, blue=${canvaskitNoDomParserStyledZeroWidthStrokeSvgBluePixels}`,
   );
   assert(
     canvaskitNamedCssColorSvgMagentaPixels > 100,
