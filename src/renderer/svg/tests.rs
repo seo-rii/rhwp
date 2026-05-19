@@ -597,6 +597,60 @@ fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_rejects_invalid_path_payload() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+
+    let assert_rejected_path_payload = |paths: Vec<LayerGlyphOutlinePath>, label: &str| {
+        let tree = glyph_outline_fixture_tree(PaintTextStyle::from(&text_style), paths);
+        let mut renderer = SvgRenderer::new();
+        renderer.set_strict_glyph_outline_replay(true);
+        renderer.render_layer_tree(&tree);
+
+        let output = renderer.output();
+        assert!(output.contains(">A</text>"), "{label}");
+        assert!(
+            !output.contains("data-rhwp-variant-id=\"glyphOutline\""),
+            "{label}"
+        );
+        let report = renderer
+            .text_variant_selection_diagnostics()
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .unwrap_or_else(|| panic!("svg strict invalid path payload report: {label}"));
+        assert_eq!(report.selected_variant_id, "textRun", "{label}");
+        assert!(report.rejected_variants.iter().any(|variant| {
+            variant.variant_id == "glyphOutline"
+                && variant
+                    .reasons
+                    .contains(&VariantRejectReason::UnsupportedOutlinePayload)
+        }));
+        assert!(report
+            .outline_eligibility
+            .as_ref()
+            .is_some_and(|eligibility| {
+                !eligibility.payload_supported
+                    && !eligibility.replay_eligible
+                    && eligibility.reason == Some(VariantRejectReason::UnsupportedOutlinePayload)
+            }));
+    };
+
+    let mut reversed_source_range = glyph_outline_fixture_path();
+    reversed_source_range.source_range_utf8 = TextSourceRange::new(2, 1);
+    assert_rejected_path_payload(vec![reversed_source_range], "reversed source range");
+
+    let mut reversed_glyph_range = glyph_outline_fixture_path();
+    reversed_glyph_range.glyph_range = crate::paint::GlyphRange { start: 2, end: 1 };
+    assert_rejected_path_payload(vec![reversed_glyph_range], "reversed glyph range");
+
+    let mut non_finite_command = glyph_outline_fixture_path();
+    non_finite_command.commands[1] = PathCommand::LineTo(f64::INFINITY, 0.0);
+    assert_rejected_path_payload(vec![non_finite_command], "non-finite path command");
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_replays_colrv0_color_layers() {
     let text_style = TextStyle {
         font_size: 12.0,

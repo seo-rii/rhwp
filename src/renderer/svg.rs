@@ -264,7 +264,7 @@ impl SvgRenderer {
                                         .payload_kind
                                     {
                                         GlyphOutlinePayloadKind::MonochromeFill => {
-                                            if outline.paths.is_empty() {
+                                            if !glyph_outline_paths_are_replayable(outline) {
                                                 (
                                                     false,
                                                     Some(
@@ -281,7 +281,7 @@ impl SvgRenderer {
                                             }
                                         }
                                         GlyphOutlinePayloadKind::MonochromeFillStroke => {
-                                            if outline.paths.is_empty() {
+                                            if !glyph_outline_paths_are_replayable(outline) {
                                                 (
                                                     false,
                                                     Some(
@@ -3835,6 +3835,29 @@ fn glyph_payload_bbox_is_replayable(bbox: BoundingBox) -> bool {
         && bbox.height.is_finite()
         && bbox.width > 0.0
         && bbox.height > 0.0
+}
+
+fn glyph_outline_paths_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {
+    !outline.paths.is_empty()
+        && outline.paths.iter().all(|path| {
+            path.source_range_utf8.end >= path.source_range_utf8.start
+                && path.glyph_range.end >= path.glyph_range.start
+                && path_commands_are_finite(&path.commands)
+        })
+}
+
+fn path_commands_are_finite(commands: &[PathCommand]) -> bool {
+    !commands.is_empty()
+        && commands.iter().all(|command| match *command {
+            PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => x.is_finite() && y.is_finite(),
+            PathCommand::CurveTo(x1, y1, x2, y2, x, y) => {
+                [x1, y1, x2, y2, x, y].into_iter().all(f64::is_finite)
+            }
+            PathCommand::ArcTo(rx, ry, rotation, _, _, x, y) => {
+                [rx, ry, rotation, x, y].into_iter().all(f64::is_finite)
+            }
+            PathCommand::ClosePath => true,
+        })
 }
 
 fn svg_affine_matrix_transform(transform: LayerAffineTransform) -> String {
