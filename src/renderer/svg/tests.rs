@@ -1,15 +1,16 @@
 use super::*;
 use crate::paint::{
     BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
-    BitmapStrikeSelection, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload, FontColorGlyphRef,
-    GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap,
-    GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics,
-    GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
-    LayerOutputOptions, LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind,
-    LayerTextOrientation, PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor,
-    ResourceArena, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement,
-    TextSourceEntry, TextSourceId, TextSourceRange, TextSourceSpan, TextSourceTable,
-    TextVariantKind, TextVariantQuality,
+    BitmapStrikeSelection, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload,
+    ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintSolidPathNode,
+    ColorPaintTransformNode, FontColorGlyphRef, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
+    GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
+    LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
+    LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
+    PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor, ResourceArena, SvgGlyphPayload,
+    SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceEntry, TextSourceId,
+    TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
@@ -690,6 +691,107 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv0_color_layers() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("fixture-face".to_string()),
+        glyph_id: Some(42),
+        palette_index: Some(3),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let tree = glyph_outline_fixture_tree_with_color_layers(
+        PaintTextStyle::from(&text_style),
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: Some(PaletteRef {
+                id: Some("fixture-palette".to_string()),
+                index: Some(0),
+                cpal_digest: Some("blake3:fixture-cpal".to_string()),
+            }),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 1,
+                nodes: vec![
+                    ColorPaintGraphNode {
+                        node_id: 0,
+                        kind: ColorPaintGraphNodeKind::SolidPath,
+                        solid_path: Some(ColorPaintSolidPathNode {
+                            commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(8.0, 0.0),
+                                PathCommand::LineTo(8.0, 8.0),
+                                PathCommand::ClosePath,
+                            ],
+                            fill: ResolvedColor {
+                                color_space: Some("srgb".to_string()),
+                                rgba: [0.0, 1.0, 0.0, 1.0],
+                            },
+                            fill_rule: GlyphOutlineFillRule::NonZero,
+                            source_glyph_id: Some(42),
+                            palette_index: Some(3),
+                        }),
+                        transform: None,
+                        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                        glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+                        source_font_ref: Some(source_font_ref),
+                    },
+                    ColorPaintGraphNode {
+                        node_id: 1,
+                        kind: ColorPaintGraphNodeKind::Transform,
+                        solid_path: None,
+                        transform: Some(ColorPaintTransformNode {
+                            child_node_id: 0,
+                            transform: LayerAffineTransform {
+                                a: 1.0,
+                                b: 0.0,
+                                c: 0.0,
+                                d: 1.0,
+                                e: 5.0,
+                                f: 0.0,
+                            },
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                ],
+            }),
+        },
+    );
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(!output.contains(">A</text>"));
+    assert!(output.contains("<path d=\"M0 0 L8 0 L8 8 Z\""));
+    assert!(output.contains("fill=\"#00ff00\""));
+    assert!(output.contains("transform=\"matrix(1 0 0 1 5 0)\""));
+    assert!(output.contains("data-rhwp-color-format=\"colrV1\""));
+    assert!(output.contains("source-backed COLRv1 glyph color layer"));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict COLRv1 stage-1 color graph report");
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert!(report.rejected_variants.is_empty());
+    assert!(report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            eligibility.payload_supported
+                && eligibility.replay_eligible
+                && eligibility.reason.is_none()
+        }));
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_rejects_invalid_colrv0_color_layers() {
     let text_style = TextStyle {
         font_size: 12.0,
@@ -1225,6 +1327,7 @@ fn glyph_outline_fixture_tree_with_color_layers(
     outline_paint_style: PaintTextStyle,
     color_layers: ColorLayersPayload,
 ) -> PageLayerTree {
+    let color_format = color_layers.color_format;
     let mut tree = glyph_outline_fixture_tree_with_payload(
         outline_paint_style,
         GlyphOutlinePayloadKind::ColorLayers,
@@ -1235,6 +1338,17 @@ fn glyph_outline_fixture_tree_with_color_layers(
         let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
             panic!("expected glyph outline");
         };
+        outline.variant.requires.retain(|feature| {
+            feature != "text.glyphOutline.colorLayers.colrV0"
+                && feature != "text.glyphOutline.colorLayers.colrV1"
+        });
+        outline.variant.requires.push(
+            match color_format {
+                ColorGlyphFormat::ColrV1 => "text.glyphOutline.colorLayers.colrV1",
+                _ => "text.glyphOutline.colorLayers.colrV0",
+            }
+            .to_string(),
+        );
         outline.color_layers = Some(color_layers);
     }
     tree

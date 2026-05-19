@@ -319,6 +319,23 @@ impl SvgRenderer {
                                                 )
                                             {
                                                 (true, None)
+                                            } else if outline.variant.requires.iter().any(
+                                                |feature| {
+                                                    feature == "text.glyphOutline.colorLayers"
+                                                },
+                                            ) && outline.variant.requires.iter().any(
+                                                |feature| {
+                                                    feature
+                                                        == "text.glyphOutline.colorLayers.colrV1"
+                                                },
+                                            ) && outline
+                                                .color_layers
+                                                .as_ref()
+                                                .is_some_and(|payload| {
+                                                    payload.has_colrv1_stage1_graph_contract()
+                                                })
+                                            {
+                                                (true, None)
                                             } else {
                                                 (
                                                     false,
@@ -513,7 +530,15 @@ impl SvgRenderer {
                 };
                 if outline.payload_kind == GlyphOutlinePayloadKind::ColorLayers {
                     if let Some(color_layers) = outline.color_layers.as_ref() {
-                        for layer in &color_layers.layers {
+                        let layers = color_layers
+                            .colrv1_stage1_reference_layers()
+                            .unwrap_or_else(|| color_layers.layers.clone());
+                        let color_format_label = match color_layers.color_format.as_str() {
+                            "colrV0" => "COLRv0",
+                            "colrV1" => "COLRv1",
+                            _ => "color",
+                        };
+                        for layer in &layers {
                             let (Some(commands), Some(fill), Some(glyph_range), Some(source_range)) = (
                                 layer.commands.as_ref(),
                                 layer.fill.as_ref(),
@@ -553,8 +578,17 @@ impl SvgRenderer {
                                     )
                                 })
                                 .unwrap_or_default();
+                            let layer_transform_attr = layer
+                                .transform_to_run
+                                .map(|transform| {
+                                    format!(
+                                        " transform=\"{}\"",
+                                        svg_affine_matrix_transform(transform)
+                                    )
+                                })
+                                .unwrap_or_default();
                             self.output.push_str(&format!(
-                                "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\" data-rhwp-color-layer-index=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\"{}{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed COLRv0 glyph color layer</desc></path>\n",
+                                "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\"{} data-rhwp-color-format=\"{}\" data-rhwp-color-layer-index=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\"{}{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed {} glyph color layer</desc></path>\n",
                                 path_data(commands).trim(),
                                 fill_color,
                                 fill_opacity,
@@ -562,6 +596,8 @@ impl SvgRenderer {
                                     .fill_rule
                                     .unwrap_or(GlyphOutlineFillRule::NonZero)
                                     .as_str(),
+                                layer_transform_attr,
+                                color_layers.color_format.as_str(),
                                 layer.layer_index.unwrap_or(0),
                                 layer.glyph_id.unwrap_or(0),
                                 glyph_range.start,
@@ -573,6 +609,7 @@ impl SvgRenderer {
                                 source_face_attr,
                                 escape_xml(&outline.variant.equivalence_group),
                                 escape_xml(&outline.variant.variant_id),
+                                color_format_label,
                             ));
                         }
                     }
