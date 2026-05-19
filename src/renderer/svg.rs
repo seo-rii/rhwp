@@ -243,7 +243,7 @@ impl SvgRenderer {
                         )
                     },
                     |op| match op {
-                        PaintOp::GlyphOutline { outline, .. } => {
+                        PaintOp::GlyphOutline { bbox, outline } => {
                             let (replayable, reason, payload_supported, paint_style_supported) =
                                 if !strict_outline {
                                     (
@@ -334,6 +334,7 @@ impl SvgRenderer {
                                                     feature == "text.glyphOutline.bitmapGlyph"
                                                 });
                                             let supported = has_bitmap_feature
+                                                && glyph_payload_bbox_is_replayable(*bbox)
                                                 && outline.bitmap_glyph.as_ref().is_some_and(
                                                     |payload| {
                                                         payload.has_strict_visual_contract()
@@ -361,6 +362,7 @@ impl SvgRenderer {
                                                     feature == "text.glyphOutline.svgGlyph"
                                                 });
                                             let supported = has_svg_feature
+                                                && glyph_payload_bbox_is_replayable(*bbox)
                                                 && outline.svg_glyph.as_ref().is_some_and(
                                                     |payload| {
                                                         payload.has_static_sanitized_contract()
@@ -1889,6 +1891,9 @@ impl SvgRenderer {
         outline: &LayerGlyphOutlinePaint,
         resources: &ResourceArena,
     ) {
+        if !glyph_payload_bbox_is_replayable(bbox) {
+            return;
+        }
         let Some(payload) = outline.bitmap_glyph.as_ref() else {
             return;
         };
@@ -1969,6 +1974,9 @@ impl SvgRenderer {
         outline: &LayerGlyphOutlinePaint,
         resources: &ResourceArena,
     ) {
+        if !glyph_payload_bbox_is_replayable(bbox) {
+            return;
+        }
         let Some(payload) = outline.svg_glyph.as_ref() else {
             return;
         };
@@ -3818,6 +3826,15 @@ fn glyph_payload_svg_transform(
     transform_to_run
         .map(|transform| compose_layer_affine_transform(run_to_page, transform))
         .unwrap_or(run_to_page)
+}
+
+fn glyph_payload_bbox_is_replayable(bbox: BoundingBox) -> bool {
+    bbox.x.is_finite()
+        && bbox.y.is_finite()
+        && bbox.width.is_finite()
+        && bbox.height.is_finite()
+        && bbox.width > 0.0
+        && bbox.height > 0.0
 }
 
 fn svg_affine_matrix_transform(transform: LayerAffineTransform) -> String {

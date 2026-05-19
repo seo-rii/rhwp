@@ -762,6 +762,40 @@ fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_without_resource() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_nonpositive_bbox() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let mut tree =
+        glyph_outline_fixture_tree_with_bitmap_glyph(PaintTextStyle::from(&text_style), true);
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        let PaintOp::GlyphOutline { bbox, .. } = &mut ops[1] else {
+            panic!("expected glyph outline");
+        };
+        *bbox = BoundingBox::new(0.0, 0.0, 0.0, 20.0);
+    }
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(output.contains(">A</text>"));
+    assert!(!output.contains("source-backed bitmap glyph"));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict bitmap glyph nonpositive bbox report");
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
+    }));
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_replays_svg_glyph() {
     let text_style = TextStyle {
         font_size: 12.0,
@@ -794,6 +828,40 @@ fn test_layer_svg_strict_glyph_outline_replays_svg_glyph() {
                 && eligibility.replay_eligible
                 && eligibility.reason.is_none()
         }));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_rejects_svg_glyph_nonpositive_bbox() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let mut tree =
+        glyph_outline_fixture_tree_with_svg_glyph(PaintTextStyle::from(&text_style), true);
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        let PaintOp::GlyphOutline { bbox, .. } = &mut ops[1] else {
+            panic!("expected glyph outline");
+        };
+        *bbox = BoundingBox::new(0.0, 0.0, 20.0, 0.0);
+    }
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(output.contains(">A</text>"));
+    assert!(!output.contains("source-backed static sanitized SVG glyph"));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict svg glyph nonpositive bbox report");
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedSvgGlyph)
+    }));
 }
 
 #[test]
