@@ -473,7 +473,10 @@ impl BitmapGlyphScalingPolicy {
     }
 
     pub fn is_strict_deterministic(self) -> bool {
-        !matches!(self, Self::BackendDefault)
+        matches!(
+            self,
+            Self::NoScale | Self::ScaleToEm | Self::ExplicitTransform
+        )
     }
 }
 
@@ -1777,6 +1780,8 @@ mod tests {
         );
         assert!(BitmapGlyphScalingPolicy::ExplicitTransform.is_strict_deterministic());
         assert!(BitmapGlyphFiltering::Linear.is_strict_deterministic());
+        assert!(!BitmapGlyphScalingPolicy::Nearest.is_strict_deterministic());
+        assert!(!BitmapGlyphScalingPolicy::Linear.is_strict_deterministic());
         assert!(!BitmapGlyphScalingPolicy::BackendDefault.is_strict_deterministic());
         assert!(!BitmapGlyphFiltering::BackendDefault.is_strict_deterministic());
     }
