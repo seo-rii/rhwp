@@ -13083,6 +13083,47 @@ runTest('Renderer lifecycle', async ({ page }) => {
         htmlCanvasPreprocesses: invalidSourceAfter.htmlCanvasPreprocesses,
       },
     };
+    canvaskitRenderer.resetImageEffectDiagnostics();
+    const cacheSourceRect = { x: 11, y: 13, width: 8, height: 8 };
+    const cacheFirstImage = canvaskitRenderer.resourceCache?.imageWithEffect?.(
+      undefined,
+      base64,
+      'grayScale',
+      cacheSourceRect,
+    );
+    const cacheAfterFirst = canvaskitRenderer.getImageEffectDiagnostics();
+    const cacheSecondImage = canvaskitRenderer.resourceCache?.imageWithEffect?.(
+      undefined,
+      base64,
+      'grayScale',
+      cacheSourceRect,
+    );
+    const cacheAfterSecond = canvaskitRenderer.getImageEffectDiagnostics();
+    const directCacheReuse = {
+      firstAvailable: !!cacheFirstImage,
+      secondAvailable: !!cacheSecondImage,
+      sameImage: cacheFirstImage === cacheSecondImage,
+      afterFirst: {
+        cacheHits: cacheAfterFirst.cacheHits,
+        cacheMisses: cacheAfterFirst.cacheMisses,
+        preprocessFailures: cacheAfterFirst.preprocessFailures,
+        fallbackToOriginal: cacheAfterFirst.fallbackToOriginal,
+        preprocessedPixels: cacheAfterFirst.preprocessedPixels,
+        preprocessedBytes: cacheAfterFirst.preprocessedBytes,
+        offscreenCanvasPreprocesses: cacheAfterFirst.offscreenCanvasPreprocesses,
+        htmlCanvasPreprocesses: cacheAfterFirst.htmlCanvasPreprocesses,
+      },
+      afterSecond: {
+        cacheHits: cacheAfterSecond.cacheHits,
+        cacheMisses: cacheAfterSecond.cacheMisses,
+        preprocessFailures: cacheAfterSecond.preprocessFailures,
+        fallbackToOriginal: cacheAfterSecond.fallbackToOriginal,
+        preprocessedPixels: cacheAfterSecond.preprocessedPixels,
+        preprocessedBytes: cacheAfterSecond.preprocessedBytes,
+        offscreenCanvasPreprocesses: cacheAfterSecond.offscreenCanvasPreprocesses,
+        htmlCanvasPreprocesses: cacheAfterSecond.htmlCanvasPreprocesses,
+      },
+    };
     canvas2dRenderer.resetImageEffectDiagnostics();
     canvaskitRenderer.resetImageEffectDiagnostics();
     return {
@@ -13094,6 +13135,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noneCanvas2d,
       noneCanvaskit,
       invalidSourceFallback,
+      directCacheReuse,
       afterReset: {
         canvas2d: canvas2dRenderer.getImageEffectDiagnostics(),
         canvaskit: canvaskitRenderer.getImageEffectDiagnostics(),
@@ -13261,6 +13303,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
     imageEffectCropProbe.invalidSourceFallback.diagnostics.offscreenCanvasPreprocesses
       + imageEffectCropProbe.invalidSourceFallback.diagnostics.htmlCanvasPreprocesses === 0,
     `image effect invalid source rect avoids Canvas2D preprocessing=${JSON.stringify(imageEffectCropProbe.invalidSourceFallback)}`,
+  );
+  assert(
+    imageEffectCropProbe.directCacheReuse.firstAvailable
+      && imageEffectCropProbe.directCacheReuse.secondAvailable
+      && imageEffectCropProbe.directCacheReuse.sameImage,
+    `image effect cache reuses CanvasKit image=${JSON.stringify(imageEffectCropProbe.directCacheReuse)}`,
+  );
+  assert(
+    imageEffectCropProbe.directCacheReuse.afterFirst.cacheHits === 0
+      && imageEffectCropProbe.directCacheReuse.afterFirst.cacheMisses === 1
+      && imageEffectCropProbe.directCacheReuse.afterFirst.preprocessFailures === 0
+      && imageEffectCropProbe.directCacheReuse.afterFirst.fallbackToOriginal === 0
+      && imageEffectCropProbe.directCacheReuse.afterFirst.preprocessedPixels === 64
+      && imageEffectCropProbe.directCacheReuse.afterFirst.preprocessedBytes === 256,
+    `image effect cache first pass preprocesses once=${JSON.stringify(imageEffectCropProbe.directCacheReuse)}`,
+  );
+  assert(
+    imageEffectCropProbe.directCacheReuse.afterSecond.cacheHits === 1
+      && imageEffectCropProbe.directCacheReuse.afterSecond.cacheMisses === 1
+      && imageEffectCropProbe.directCacheReuse.afterSecond.preprocessFailures === 0
+      && imageEffectCropProbe.directCacheReuse.afterSecond.fallbackToOriginal === 0
+      && imageEffectCropProbe.directCacheReuse.afterSecond.preprocessedPixels === 64
+      && imageEffectCropProbe.directCacheReuse.afterSecond.preprocessedBytes === 256
+      && imageEffectCropProbe.directCacheReuse.afterSecond.offscreenCanvasPreprocesses
+        + imageEffectCropProbe.directCacheReuse.afterSecond.htmlCanvasPreprocesses === 0,
+    `image effect cache hit avoids extra preprocessing=${JSON.stringify(imageEffectCropProbe.directCacheReuse)}`,
   );
 
   setTestCase('canvaskit-dispose');
