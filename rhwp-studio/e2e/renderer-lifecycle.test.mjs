@@ -5002,6 +5002,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     unsupportedSvgMalformedCommentTree.resources.svgHashes[0] = 'svg-glyph-unsupported-malformed-comment';
+    const unsupportedSvgMalformedStyleCommentTree = treeFor(svgOutline);
+    unsupportedSvgMalformedStyleCommentTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" style="/* invalid comment fill: #ff00cc"/>',
+      '</svg>',
+    ].join('');
+    unsupportedSvgMalformedStyleCommentTree.resources.svgHashes[0] =
+      'svg-glyph-unsupported-malformed-style-comment';
     const wrappedSvgResourceTree = treeFor(svgOutline);
     wrappedSvgResourceTree.resources.svgFragments[0] = [
       '<svg id="glyph-root" class="glyph-shell" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" viewBox="0 0 18 18">',
@@ -5103,6 +5111,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     styleCascadeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-style-cascade-resource';
+    const styleCommentSvgResourceTree = treeFor(svgOutline);
+    styleCommentSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff0000" style="/* ignored: fill: #0000ff; */ fill: #ff00cc"/>',
+      '</svg>',
+    ].join('');
+    styleCommentSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-style-comment-resource';
     const polylineSvgResourceTree = treeFor(svgOutline);
     polylineSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -5212,6 +5227,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noCssWideGamutCssColorSvgGlyph;
     let noDomParserStylePrecedenceSvgGlyph;
     let noDomParserStyleCascadeSvgGlyph;
+    let noDomParserStyleCommentSvgGlyph;
     let noDomParserPolylineSvgGlyph;
     let noDomParserRoundedRectSvgGlyph;
     let noDomParserTransformedSvgGlyph;
@@ -5226,6 +5242,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserUnsupportedSvgClosingTagResource;
     let noDomParserUnsupportedSvgDanglingShapeClosingTagResource;
     let noDomParserUnsupportedSvgMalformedCommentResource;
+    let noDomParserUnsupportedSvgMalformedStyleCommentResource;
     let noDomParserUnsupportedSvgInvalidColorResource;
     let noDomParserUnsupportedSvgGroupOpacityResource;
     try {
@@ -5267,6 +5284,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
       noDomParserStylePrecedenceSvgGlyph = await render(stylePrecedenceSvgResourceTree);
       noDomParserStyleCascadeSvgGlyph = await render(styleCascadeSvgResourceTree);
+      noDomParserStyleCommentSvgGlyph = await render(styleCommentSvgResourceTree);
       noDomParserPolylineSvgGlyph = await render(polylineSvgResourceTree);
       noDomParserRoundedRectSvgGlyph = await render(roundedRectSvgResourceTree);
       noDomParserTransformedSvgGlyph = await render(transformedSvgResourceTree);
@@ -5281,6 +5299,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedSvgClosingTagResource = await render(unsupportedSvgClosingTagTree);
       noDomParserUnsupportedSvgDanglingShapeClosingTagResource = await render(unsupportedSvgDanglingShapeClosingTagTree);
       noDomParserUnsupportedSvgMalformedCommentResource = await render(unsupportedSvgMalformedCommentTree);
+      noDomParserUnsupportedSvgMalformedStyleCommentResource = await render(unsupportedSvgMalformedStyleCommentTree);
       noDomParserUnsupportedSvgInvalidColorResource = await render(unsupportedSvgInvalidColorTree);
       noDomParserUnsupportedSvgGroupOpacityResource = await render(unsupportedSvgGroupOpacityTree);
     } finally {
@@ -5347,6 +5366,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserStylePrecedenceSvgGlyph,
       styleCascadeSvgGlyph: await render(styleCascadeSvgResourceTree),
       noDomParserStyleCascadeSvgGlyph,
+      styleCommentSvgGlyph: await render(styleCommentSvgResourceTree),
+      noDomParserStyleCommentSvgGlyph,
       polylineSvgGlyph: await render(polylineSvgResourceTree),
       noDomParserPolylineSvgGlyph,
       roundedRectSvgGlyph: await render(roundedRectSvgResourceTree),
@@ -5381,6 +5402,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedSvgDanglingShapeClosingTagResource,
       unsupportedSvgGlyphMalformedCommentResource: await render(unsupportedSvgMalformedCommentTree),
       noDomParserUnsupportedSvgMalformedCommentResource,
+      unsupportedSvgGlyphMalformedStyleCommentResource: await render(unsupportedSvgMalformedStyleCommentTree),
+      noDomParserUnsupportedSvgMalformedStyleCommentResource,
       noDomParserUnsupportedSvgInvalidColorResource,
       noDomParserUnsupportedSvgGroupOpacityResource,
     };
@@ -5878,6 +5901,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitNoDomParserStyleCascadeSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects style-cascade SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStyleCascadeSvgReport)}`,
   );
+  const canvaskitStyleCommentSvgReport = canvaskitGlyphOutlineProbe
+    .styleCommentSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitStyleCommentSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitStyleCommentSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects style-comment SvgGlyph resource=${JSON.stringify(canvaskitStyleCommentSvgReport)}`,
+  );
+  const canvaskitNoDomParserStyleCommentSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserStyleCommentSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserStyleCommentSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserStyleCommentSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects style-comment SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStyleCommentSvgReport)}`,
+  );
   const canvaskitPolylineSvgReport = canvaskitGlyphOutlineProbe
     .polylineSvgGlyph
     ?.diagnostics
@@ -6122,6 +6163,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .noDomParserUnsupportedSvgMalformedCommentResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgMalformedStyleCommentResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphMalformedStyleCommentResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitNoDomParserUnsupportedSvgMalformedStyleCommentResourceReport = canvaskitGlyphOutlineProbe
+    .noDomParserUnsupportedSvgMalformedStyleCommentResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport = canvaskitGlyphOutlineProbe
     .noDomParserUnsupportedSvgInvalidColorResource
     ?.diagnostics
@@ -6196,6 +6245,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
+      && canvaskitUnsupportedSvgMalformedStyleCommentResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgMalformedStyleCommentResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitNoDomParserUnsupportedSvgMalformedStyleCommentResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitNoDomParserUnsupportedSvgMalformedStyleCommentResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
       && canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport?.selectedVariantId === 'textRun'
       && canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
@@ -6221,6 +6280,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         canvaskitNoDomParserUnsupportedSvgDanglingShapeClosingTagResourceReport,
       unsupportedMalformedComment: canvaskitUnsupportedSvgMalformedCommentResourceReport,
       noDomParserUnsupportedMalformedComment: canvaskitNoDomParserUnsupportedSvgMalformedCommentResourceReport,
+      unsupportedMalformedStyleComment: canvaskitUnsupportedSvgMalformedStyleCommentResourceReport,
+      noDomParserUnsupportedMalformedStyleComment:
+        canvaskitNoDomParserUnsupportedSvgMalformedStyleCommentResourceReport,
       noDomParserUnsupportedInvalidColor: canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport,
       noDomParserUnsupportedGroupOpacity: canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport,
     })}`,
@@ -6442,6 +6504,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .magentaPixels;
   const canvaskitNoDomParserStyleCascadeSvgRedPixels = canvaskitGlyphOutlineProbe
     .noDomParserStyleCascadeSvgGlyph
+    .redPixels;
+  const canvaskitStyleCommentSvgMagentaPixels = canvaskitGlyphOutlineProbe.styleCommentSvgGlyph.magentaPixels;
+  const canvaskitStyleCommentSvgBluePixels = canvaskitGlyphOutlineProbe.styleCommentSvgGlyph.bluePixels;
+  const canvaskitStyleCommentSvgRedPixels = canvaskitGlyphOutlineProbe.styleCommentSvgGlyph.redPixels;
+  const canvaskitNoDomParserStyleCommentSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStyleCommentSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserStyleCommentSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserStyleCommentSvgGlyph
+    .bluePixels;
+  const canvaskitNoDomParserStyleCommentSvgRedPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStyleCommentSvgGlyph
     .redPixels;
   const canvaskitPolylineSvgMagentaPixels = canvaskitGlyphOutlineProbe.polylineSvgGlyph.magentaPixels;
   const canvaskitNoDomParserPolylineSvgMagentaPixels = canvaskitGlyphOutlineProbe
@@ -6721,6 +6795,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserStyleCascadeSvgMagentaPixels > 100
       && canvaskitNoDomParserStyleCascadeSvgRedPixels < 5,
     `CanvasKit strict outline honors SvgGlyph style cascade without DOMParser magenta=${canvaskitNoDomParserStyleCascadeSvgMagentaPixels}, red=${canvaskitNoDomParserStyleCascadeSvgRedPixels}`,
+  );
+  assert(
+    canvaskitStyleCommentSvgMagentaPixels > 100
+      && canvaskitStyleCommentSvgBluePixels < 5
+      && canvaskitStyleCommentSvgRedPixels < 5,
+    `CanvasKit strict outline skips SvgGlyph style comments magenta=${canvaskitStyleCommentSvgMagentaPixels}, blue=${canvaskitStyleCommentSvgBluePixels}, red=${canvaskitStyleCommentSvgRedPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserStyleCommentSvgMagentaPixels > 100
+      && canvaskitNoDomParserStyleCommentSvgBluePixels < 5
+      && canvaskitNoDomParserStyleCommentSvgRedPixels < 5,
+    `CanvasKit strict outline skips SvgGlyph style comments without DOMParser magenta=${canvaskitNoDomParserStyleCommentSvgMagentaPixels}, blue=${canvaskitNoDomParserStyleCommentSvgBluePixels}, red=${canvaskitNoDomParserStyleCommentSvgRedPixels}`,
   );
   assert(
     canvaskitPolylineSvgMagentaPixels > 100,

@@ -366,6 +366,28 @@ function staticSvgMarkupWithoutComments(fragment: string): string | null {
   return stripped;
 }
 
+function staticSvgStyleWithoutComments(style: string): string | null {
+  let stripped = '';
+  let cursor = 0;
+  while (cursor < style.length) {
+    const commentStart = style.indexOf('/*', cursor);
+    const strayCommentEnd = style.indexOf('*/', cursor);
+    if (strayCommentEnd !== -1 && (commentStart === -1 || strayCommentEnd < commentStart)) {
+      return null;
+    }
+    if (commentStart === -1) {
+      return stripped + style.slice(cursor);
+    }
+    stripped += `${style.slice(cursor, commentStart)} `;
+    const commentEnd = style.indexOf('*/', commentStart + 2);
+    if (commentEnd === -1) {
+      return null;
+    }
+    cursor = commentEnd + 2;
+  }
+  return stripped;
+}
+
 function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
   if (/<\s*\?/.test(fragment) || /<\s*!(?!\s*--)/.test(fragment)) {
     return true;
@@ -395,8 +417,9 @@ function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
 function staticSvgMapPresentationAttribute(attributes: Map<string, string>, name: string): string | null {
   const style = attributes.get('style');
   if (style) {
+    const normalizedStyle = staticSvgStyleWithoutComments(style);
     let styleValue: string | null = null;
-    for (const declaration of style.split(';')) {
+    for (const declaration of (normalizedStyle ?? '').split(';')) {
       const separator = declaration.indexOf(':');
       if (separator < 0) {
         continue;
@@ -626,8 +649,9 @@ export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDi
 function svgPresentationAttribute(element: Element, name: string): string | null {
   const style = element.getAttribute('style');
   if (style) {
+    const normalizedStyle = staticSvgStyleWithoutComments(style);
     let styleValue: string | null = null;
-    for (const declaration of style.split(';')) {
+    for (const declaration of (normalizedStyle ?? '').split(';')) {
       const separator = declaration.indexOf(':');
       if (separator < 0) {
         continue;
@@ -984,6 +1008,10 @@ function parseStaticSvgTransform(value: string | null | undefined): LayerAffineT
 }
 
 function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowIdentityOpacity = false): boolean {
+  const normalizedStyle = staticSvgStyleWithoutComments(style);
+  if (normalizedStyle === null) {
+    return false;
+  }
   const supportedProperties = new Set([
     'fill',
     'color',
@@ -1001,7 +1029,7 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowId
   if (allowOpacity || allowIdentityOpacity) {
     supportedProperties.add('opacity');
   }
-  for (const declaration of style.split(';')) {
+  for (const declaration of normalizedStyle.split(';')) {
     const separator = declaration.indexOf(':');
     if (separator < 0) {
       if (declaration.trim().length > 0) {
