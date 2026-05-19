@@ -59,6 +59,7 @@ export function glyphOutlinePayloadStatus(
     return {
       supported: hasStrictBitmapGlyphContract(op)
         && op.variant.requires?.includes('text.glyphOutline.bitmapGlyph') === true
+        && hasReplayableGlyphPayloadBBox(op)
         && resourceIndex !== undefined
         && resources?.images?.[resourceIndex] !== undefined,
       reason: 'unsupportedBitmapGlyph',
@@ -75,10 +76,21 @@ export function glyphOutlinePayloadStatus(
     return {
       supported: hasStaticSanitizedSvgGlyphContract(op)
         && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
+        && hasReplayableGlyphPayloadBBox(op)
         && typeof fragment === 'string'
         && parseStaticSvgPathLayers(fragment).length > 0,
       reason: 'unsupportedSvgGlyph',
     };
   }
   return { supported: false, reason: 'unsupportedOutlinePayload' };
+}
+
+function hasReplayableGlyphPayloadBBox(op: LayerGlyphOutlineOp): boolean {
+  const bbox = op.bbox;
+  return Number.isFinite(bbox.x)
+    && Number.isFinite(bbox.y)
+    && Number.isFinite(bbox.width)
+    && Number.isFinite(bbox.height)
+    && bbox.width > 0
+    && bbox.height > 0;
 }

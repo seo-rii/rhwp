@@ -4838,6 +4838,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
         filtering: 'nearest',
       },
     });
+    const nonpositiveBitmapBBoxOutline = outlineFor('canvaskit-outline-bitmap-empty-bbox', {
+      payloadKind: 'bitmapGlyph',
+      bbox: { x: 8, y: 8, width: 0, height: 24 },
+      variant: variantFor('canvaskit-outline-bitmap-empty-bbox', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-empty-bbox',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+      },
+    });
     const svgOutline = outlineFor('canvaskit-outline-svg', {
       payloadKind: 'svgGlyph',
       variant: variantFor('canvaskit-outline-svg', 'glyphOutline', {
@@ -4861,6 +4874,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
         animationAllowed: false,
         externalResourcesAllowed: false,
         interactivityAllowed: false,
+      },
+    });
+    const nonpositiveSvgBBoxOutline = outlineFor('canvaskit-outline-svg-empty-bbox', {
+      payloadKind: 'svgGlyph',
+      bbox: { x: 8, y: 8, width: 24, height: 0 },
+      variant: variantFor('canvaskit-outline-svg-empty-bbox', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-empty-bbox',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
       },
     });
     const duplicateBitmapResourceTree = treeFor(bitmapOutline);
@@ -5368,8 +5395,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       colorLayers: await render(treeFor(colorOutline)),
       colorLayersColrV1: await render(treeFor(colorV1Outline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
+      nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
+      nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
       noDomParserSvgGlyph,
       wrappedSvgGlyph: await render(wrappedSvgResourceTree),
       noDomParserWrappedSvgGlyph,
@@ -5515,6 +5544,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitBitmapReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects BitmapGlyph GlyphOutline=${JSON.stringify(canvaskitBitmapReport)}`,
   );
+  const canvaskitNonpositiveBitmapBBoxReport = canvaskitGlyphOutlineProbe
+    .nonpositiveBitmapBBoxGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-empty-bbox');
+  assert(
+    canvaskitNonpositiveBitmapBBoxReport?.selectedVariantId === 'textRun'
+      && canvaskitNonpositiveBitmapBBoxReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects non-positive BitmapGlyph bbox before replay=${JSON.stringify(canvaskitNonpositiveBitmapBBoxReport)}`,
+  );
   const canvaskitDuplicateBitmapKeyReport = canvaskitGlyphOutlineProbe
     .duplicateBitmapGlyphKey
     ?.diagnostics
@@ -5534,6 +5575,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects SvgGlyph GlyphOutline=${JSON.stringify(canvaskitSvgReport)}`,
+  );
+  const canvaskitNonpositiveSvgBBoxReport = canvaskitGlyphOutlineProbe
+    .nonpositiveSvgBBoxGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-empty-bbox');
+  assert(
+    canvaskitNonpositiveSvgBBoxReport?.selectedVariantId === 'textRun'
+      && canvaskitNonpositiveSvgBBoxReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects non-positive SvgGlyph bbox before replay=${JSON.stringify(canvaskitNonpositiveSvgBBoxReport)}`,
   );
   const canvaskitNoDomParserSvgReport = canvaskitGlyphOutlineProbe
     .noDomParserSvgGlyph
