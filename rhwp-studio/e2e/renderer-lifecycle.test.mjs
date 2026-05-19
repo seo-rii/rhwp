@@ -13005,11 +13005,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
     const canvas2d = await renderWithDiagnostics(canvas2dRenderer);
     const canvaskit = await renderWithDiagnostics(canvaskitRenderer);
+    const directEffects = {};
+    for (const effect of ['grayScale', 'blackWhite']) {
+      const effectTree = {
+        ...tree,
+        resources: {
+          ...tree.resources,
+          tableId: effect === 'grayScale' ? 993 : 994,
+        },
+        root: {
+          ...tree.root,
+          ops: [{
+            ...tree.root.ops[0],
+            effect,
+          }],
+        },
+      };
+      directEffects[effect] = {
+        canvas2d: await renderWithDiagnostics(canvas2dRenderer, effectTree),
+        canvaskit: await renderWithDiagnostics(canvaskitRenderer, effectTree),
+      };
+    }
     const tileTree = {
       ...tree,
       resources: {
         ...tree.resources,
-        tableId: 992,
+        tableId: 995,
       },
       root: {
         ...tree.root,
@@ -13027,6 +13048,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     return {
       canvas2d,
       canvaskit,
+      directEffects,
       tileCanvas2d,
       tileCanvaskit,
       afterReset: {
@@ -13101,6 +13123,35 @@ runTest('Renderer lifecycle', async ({ page }) => {
     imageEffectCropDiff.passed,
     `image effect crop parity exact=${imageEffectCropDiff.exactDiffPixels}, tolerant=${imageEffectCropDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectCropDiff.maxChannelDelta}`,
   );
+  for (const effect of ['grayScale', 'blackWhite']) {
+    const effectProbe = imageEffectCropProbe.directEffects?.[effect];
+    assert(effectProbe, `image effect ${effect} direct probe available`);
+    assert(
+      effectProbe.canvas2d.diagnostics.preprocessedPixels === 64
+        && effectProbe.canvaskit.diagnostics.preprocessedPixels === 64
+        && effectProbe.canvas2d.diagnostics.preprocessFailures === 0
+        && effectProbe.canvaskit.diagnostics.preprocessFailures === 0,
+      `image effect ${effect} crop diagnostics=${JSON.stringify(effectProbe)}`,
+    );
+    assert(
+      effectProbe.canvaskit.diagnostics.offscreenCanvasPreprocesses
+        + effectProbe.canvaskit.diagnostics.htmlCanvasPreprocesses === 0,
+      `image effect ${effect} CanvasKit preprocessing canvas diagnostics=${JSON.stringify(effectProbe)}`,
+    );
+    const effectDiff = await comparePngBuffers(
+      pngBufferFromDataUrl(effectProbe.canvas2d.png),
+      pngBufferFromDataUrl(effectProbe.canvaskit.png),
+      {
+        diffName: `image-effect-${effect}-crop-parity`,
+        ignoreChannelDelta: 1,
+        maxDiffPixels: 0,
+      },
+    );
+    assert(
+      effectDiff.passed,
+      `image effect ${effect} parity exact=${effectDiff.exactDiffPixels}, tolerant=${effectDiff.rawTolerantDiffPixels}, max_channel_delta=${effectDiff.maxChannelDelta}`,
+    );
+  }
   assert(
     imageEffectCropProbe.tileCanvas2d.diagnostics.preprocessedPixels === 4096
       && imageEffectCropProbe.tileCanvaskit.diagnostics.preprocessedPixels === 4096,
