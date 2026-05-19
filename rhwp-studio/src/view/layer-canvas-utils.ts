@@ -452,7 +452,12 @@ function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
   }
   const openElementStack: string[] = [];
   const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
+  let cursor = 0;
   for (const match of fragment.matchAll(tagPattern)) {
+    if (fragment.slice(cursor, match.index).includes('<')) {
+      return true;
+    }
+    cursor = (match.index ?? 0) + match[0].length;
     const isClosingTag = match[1] === '/';
     const elementName = match[2].toLowerCase();
     const trailingContent = match[3] ?? '';
@@ -469,7 +474,7 @@ function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
       openElementStack.push(elementName);
     }
   }
-  return openElementStack.length > 0;
+  return openElementStack.length > 0 || fragment.slice(cursor).includes('<');
 }
 
 function staticSvgMapPresentationAttribute(attributes: Map<string, string>, name: string): string | null {
