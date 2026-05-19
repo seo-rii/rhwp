@@ -231,10 +231,11 @@ fn path_commands_are_finite(commands: &[crate::renderer::PathCommand]) -> bool {
 
 fn glyph_outline_paths_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {
     !outline.paths.is_empty()
-        && outline
-            .paths
-            .iter()
-            .all(|path| path_commands_are_finite(&path.commands))
+        && outline.paths.iter().all(|path| {
+            path.source_range_utf8.end >= path.source_range_utf8.start
+                && path.glyph_range.end >= path.glyph_range.start
+                && path_commands_are_finite(&path.commands)
+        })
 }
 
 fn color_layers_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {

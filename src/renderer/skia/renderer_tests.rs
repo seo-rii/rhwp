@@ -2795,6 +2795,52 @@ fn native_skia_replays_monochrome_glyph_outline_stroke_subset() {
 }
 
 #[test]
+fn native_skia_keeps_text_fallback_for_invalid_glyph_outline_path_payload() {
+    let assert_invalid_path_payload_rejected = |outline: LayerGlyphOutlinePaint, label: &str| {
+        let renderer = SkiaLayerRenderer::new();
+        let tree = glyph_outline_variant_test_tree(outline, true);
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .unwrap_or_else(|err| panic!("invalid path payload fallback render: {label}: {err}"));
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+        let report = output
+            .diagnostics
+            .variant_selections
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .unwrap_or_else(|| panic!("native Skia invalid path payload report: {label}"));
+
+        assert!(
+            bounds.min_x > 95,
+            "native Skia must keep TextRun fallback for invalid path payload {label}, got {bounds:?}"
+        );
+        assert_eq!(report.selected_variant_id, "textRun", "{label}");
+        assert!(report.rejected_variants.iter().any(|variant| {
+            variant.variant_id == "glyphOutline"
+                && variant
+                    .reasons
+                    .contains(&VariantRejectReason::UnsupportedOutlinePayload)
+        }));
+    };
+
+    let mut reversed_source_range =
+        glyph_outline_test_paint(GlyphOutlinePayloadKind::MonochromeFill, None, None);
+    reversed_source_range.paths[0].source_range_utf8 = TextSourceRange::new(2, 1);
+    assert_invalid_path_payload_rejected(reversed_source_range, "reversed source range");
+
+    let mut reversed_glyph_range =
+        glyph_outline_test_paint(GlyphOutlinePayloadKind::MonochromeFill, None, None);
+    reversed_glyph_range.paths[0].glyph_range = GlyphRange::new(2, 1);
+    assert_invalid_path_payload_rejected(reversed_glyph_range, "reversed glyph range");
+
+    let mut non_finite_command =
+        glyph_outline_test_paint(GlyphOutlinePayloadKind::MonochromeFill, None, None);
+    non_finite_command.paths[0].commands[1] = PathCommand::LineTo(f64::INFINITY, 0.0);
+    assert_invalid_path_payload_rejected(non_finite_command, "non-finite path command");
+}
+
+#[test]
 fn native_skia_replays_colrv0_color_layers_variant() {
     let renderer = SkiaLayerRenderer::new();
     let color_layers = ColorLayersPayload {
