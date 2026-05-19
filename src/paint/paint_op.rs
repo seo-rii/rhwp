@@ -283,6 +283,52 @@ pub struct ColorPaintGraphPayload {
     pub nodes: Vec<ColorPaintGraphNode>,
 }
 
+fn text_source_range_is_valid(range: TextSourceRange) -> bool {
+    range.end >= range.start
+}
+
+fn glyph_range_is_valid(range: GlyphRange) -> bool {
+    range.end >= range.start
+}
+
+fn affine_transform_is_finite(transform: LayerAffineTransform) -> bool {
+    [
+        transform.a,
+        transform.b,
+        transform.c,
+        transform.d,
+        transform.e,
+        transform.f,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+}
+
+fn path_commands_are_finite(commands: &[PathCommand]) -> bool {
+    !commands.is_empty()
+        && commands.iter().all(|command| match *command {
+            PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => x.is_finite() && y.is_finite(),
+            PathCommand::CurveTo(x1, y1, x2, y2, x, y) => {
+                [x1, y1, x2, y2, x, y].into_iter().all(f64::is_finite)
+            }
+            PathCommand::ArcTo(rx, ry, rotation, _, _, x, y) => {
+                [rx, ry, rotation, x, y].into_iter().all(f64::is_finite)
+            }
+            PathCommand::ClosePath => true,
+        })
+}
+
+fn resolved_color_is_valid(fill: &ResolvedColor) -> bool {
+    fill.color_space
+        .as_ref()
+        .map(|color_space| !color_space.is_empty())
+        .unwrap_or(true)
+        && fill
+            .rgba
+            .iter()
+            .all(|component| component.is_finite() && (0.0..=1.0).contains(component))
+}
+
 impl ColorPaintGraphPayload {
     pub fn has_colrv1_stage1_contract(&self) -> bool {
         self.colrv1_stage1_reference_layer().is_some()
@@ -312,11 +358,15 @@ impl ColorPaintGraphPayload {
                         return None;
                     }
                     let solid = node.solid_path.as_ref()?;
-                    if solid.commands.is_empty() {
+                    if !path_commands_are_finite(&solid.commands)
+                        || !resolved_color_is_valid(&solid.fill)
+                    {
                         return None;
                     }
-                    if node.source_range_utf8.is_none()
-                        || node.glyph_range.is_none()
+                    if !node
+                        .source_range_utf8
+                        .is_some_and(text_source_range_is_valid)
+                        || !node.glyph_range.is_some_and(glyph_range_is_valid)
                         || node.source_font_ref.is_none()
                     {
                         return None;
@@ -341,7 +391,19 @@ impl ColorPaintGraphPayload {
                     if node.solid_path.is_some() {
                         return None;
                     }
+                    if node
+                        .source_range_utf8
+                        .is_some_and(|range| !text_source_range_is_valid(range))
+                        || node
+                            .glyph_range
+                            .is_some_and(|range| !glyph_range_is_valid(range))
+                    {
+                        return None;
+                    }
                     let transform = node.transform.as_ref()?;
+                    if !affine_transform_is_finite(transform.transform) {
+                        return None;
+                    }
                     transform_to_run = Some(match transform_to_run {
                         Some(existing) => {
                             let next = transform.transform;
@@ -383,14 +445,20 @@ impl ColorLayersPayload {
                     && layer
                         .commands
                         .as_ref()
-                        .is_some_and(|commands| !commands.is_empty())
-                    && layer.fill.is_some()
+                        .is_some_and(|commands| path_commands_are_finite(commands))
+                    && layer.fill.as_ref().is_some_and(resolved_color_is_valid)
                     && layer.fill_rule.is_some()
                     && layer.glyph_id.is_some()
-                    && layer.glyph_range.is_some()
-                    && layer.source_range_utf8.is_some()
+                    && layer.glyph_range.is_some_and(glyph_range_is_valid)
+                    && layer
+                        .source_range_utf8
+                        .is_some_and(text_source_range_is_valid)
                     && layer.source_font_ref.is_some()
                     && layer.palette_index.is_some()
+                    && layer
+                        .transform_to_run
+                        .map(affine_transform_is_finite)
+                        .unwrap_or(true)
             })
     }
 
@@ -520,37 +588,15 @@ pub struct BitmapGlyphPayload {
 impl BitmapGlyphPayload {
     pub fn has_strict_visual_contract(&self) -> bool {
         self.source_range_utf8
-            .is_some_and(|range| range.end >= range.start)
-            && self
-                .glyph_range
-                .is_some_and(|range| range.end >= range.start)
+            .is_some_and(text_source_range_is_valid)
+            && self.glyph_range.is_some_and(glyph_range_is_valid)
             && self.placement.is_some_and(|placement| {
-                [
-                    placement.run_to_page.a,
-                    placement.run_to_page.b,
-                    placement.run_to_page.c,
-                    placement.run_to_page.d,
-                    placement.run_to_page.e,
-                    placement.run_to_page.f,
-                    placement.baseline_y,
-                ]
-                .into_iter()
-                .all(f64::is_finite)
+                affine_transform_is_finite(placement.run_to_page)
+                    && placement.baseline_y.is_finite()
             })
             && self
                 .transform_to_run
-                .map(|transform| {
-                    [
-                        transform.a,
-                        transform.b,
-                        transform.c,
-                        transform.d,
-                        transform.e,
-                        transform.f,
-                    ]
-                    .into_iter()
-                    .all(f64::is_finite)
-                })
+                .map(affine_transform_is_finite)
                 .unwrap_or(true)
             && self
                 .strike_ppem
@@ -613,37 +659,15 @@ pub struct SvgGlyphPayload {
 impl SvgGlyphPayload {
     pub fn has_static_sanitized_contract(&self) -> bool {
         self.source_range_utf8
-            .is_some_and(|range| range.end >= range.start)
-            && self
-                .glyph_range
-                .is_some_and(|range| range.end >= range.start)
+            .is_some_and(text_source_range_is_valid)
+            && self.glyph_range.is_some_and(glyph_range_is_valid)
             && self.placement.is_some_and(|placement| {
-                [
-                    placement.run_to_page.a,
-                    placement.run_to_page.b,
-                    placement.run_to_page.c,
-                    placement.run_to_page.d,
-                    placement.run_to_page.e,
-                    placement.run_to_page.f,
-                    placement.baseline_y,
-                ]
-                .into_iter()
-                .all(f64::is_finite)
+                affine_transform_is_finite(placement.run_to_page)
+                    && placement.baseline_y.is_finite()
             })
             && self
                 .transform_to_run
-                .map(|transform| {
-                    [
-                        transform.a,
-                        transform.b,
-                        transform.c,
-                        transform.d,
-                        transform.e,
-                        transform.f,
-                    ]
-                    .into_iter()
-                    .all(f64::is_finite)
-                })
+                .map(affine_transform_is_finite)
                 .unwrap_or(true)
             && self.view_box.is_some_and(|view_box| {
                 [view_box.x, view_box.y, view_box.width, view_box.height]
@@ -2055,9 +2079,57 @@ mod tests {
         incomplete_color_layers.layers[0].fill = None;
         assert!(!incomplete_color_layers.has_colrv0_resolved_layer_contract());
 
+        let mut invalid_color_layers_range = color_layers.clone();
+        invalid_color_layers_range.layers[0].source_range_utf8 =
+            Some(TextSourceRange { start: 4, end: 3 });
+        assert!(!invalid_color_layers_range.has_colrv0_resolved_layer_contract());
+
+        let mut invalid_color_layers_path = color_layers.clone();
+        invalid_color_layers_path.layers[0].commands =
+            Some(vec![PathCommand::MoveTo(f64::NAN, 0.0)]);
+        assert!(!invalid_color_layers_path.has_colrv0_resolved_layer_contract());
+
+        let mut invalid_color_layers_fill = color_layers.clone();
+        invalid_color_layers_fill.layers[0]
+            .fill
+            .as_mut()
+            .unwrap()
+            .rgba[0] = 2.0;
+        assert!(!invalid_color_layers_fill.has_colrv0_resolved_layer_contract());
+
+        let mut invalid_color_layers_transform = color_layers.clone();
+        invalid_color_layers_transform.layers[0].transform_to_run = Some(LayerAffineTransform {
+            e: f64::INFINITY,
+            ..identity
+        });
+        assert!(!invalid_color_layers_transform.has_colrv0_resolved_layer_contract());
+
         let mut incomplete_graph = color_layers_colrv1.clone();
         incomplete_graph.paint_graph.as_mut().unwrap().nodes[0].source_range_utf8 = None;
         assert!(!incomplete_graph.has_colrv1_stage1_graph_contract());
+
+        let mut invalid_graph_range = color_layers_colrv1.clone();
+        invalid_graph_range.paint_graph.as_mut().unwrap().nodes[0].glyph_range =
+            Some(GlyphRange { start: 5, end: 4 });
+        assert!(!invalid_graph_range.has_colrv1_stage1_graph_contract());
+
+        let mut invalid_graph_color = color_layers_colrv1.clone();
+        invalid_graph_color.paint_graph.as_mut().unwrap().nodes[0]
+            .solid_path
+            .as_mut()
+            .unwrap()
+            .fill
+            .rgba[3] = f32::NAN;
+        assert!(!invalid_graph_color.has_colrv1_stage1_graph_contract());
+
+        let mut invalid_graph_transform = color_layers_colrv1.clone();
+        invalid_graph_transform.paint_graph.as_mut().unwrap().nodes[1]
+            .transform
+            .as_mut()
+            .unwrap()
+            .transform
+            .a = f64::NAN;
+        assert!(!invalid_graph_transform.has_colrv1_stage1_graph_contract());
 
         let mut unreachable_graph = color_layers_colrv1.clone();
         unreachable_graph
