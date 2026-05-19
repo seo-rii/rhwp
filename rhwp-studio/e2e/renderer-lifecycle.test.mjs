@@ -4901,12 +4901,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const dashedSvgResourceTree = treeFor(svgOutline);
     dashedSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
-      '<path d="M2 4 H16 M2 9 H16 M2 14 H16" fill="none" stroke="#0000ff" stroke-width="2" stroke-linecap="butt" stroke-dasharray="2 2"/>',
+      '<path d="M2 4 H16 M2 9 H16 M2 14 H16" fill="none" stroke="#0000ff" stroke-width="2" stroke-linecap="butt" stroke-dasharray="2 2" stroke-dashoffset="1"/>',
       '</svg>',
     ].join('');
     dashedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-dashed-stroke-resource';
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
-    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dashoffset="1"/>';
+    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dasharray="2 -1"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
     const unsupportedSvgOpacityTree = treeFor(svgOutline);
     unsupportedSvgOpacityTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" opacity="not-a-number"/>';

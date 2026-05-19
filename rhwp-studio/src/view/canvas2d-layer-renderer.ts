@@ -470,6 +470,7 @@ export class Canvas2DLayerRenderer {
                     ctx.lineCap = layer.stroke.lineCap;
                     ctx.miterLimit = layer.stroke.miterLimit;
                     ctx.setLineDash(layer.stroke.dashArray ?? []);
+                    ctx.lineDashOffset = layer.stroke.dashOffset;
                     ctx.globalAlpha = previousAlpha * layer.stroke.opacity;
                     ctx.stroke(path);
                   }

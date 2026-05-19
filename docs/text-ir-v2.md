@@ -650,7 +650,7 @@ The reserved families are intentionally separate payload families:
   overlay images. The stroke subset is intentionally conservative:
   positive finite width, solid color, Canvas-compatible `miter`/`round`/`bevel`
   joins, `butt`/`round`/`square` caps, finite miter limit, optional numeric
-  dash arrays with zero dash offset, no gradients/patterns, and no group
+  dash arrays with numeric dash offsets, no gradients/patterns, and no group
   compositing.
   Strict visual replay must keep external resources, script, animation, links,
   and interactivity disabled; raw SVG-in-font replay is not the strictVisual
@@ -694,7 +694,8 @@ implicitly change schema authority:
   selecting the variant. The same subset now covers filled path geometry, safe
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
   stroke subset in Canvas2D and CanvasKit; unsupported stroke styles such
-  as non-zero dash offsets remain deterministic fallback cases.
+  as invalid dash arrays or non-numeric dash offsets remain deterministic
+  fallback cases.
 - CanvasKit variation, TTC, and OTC strict replay are backend capability
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the
