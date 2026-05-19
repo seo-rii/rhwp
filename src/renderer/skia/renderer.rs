@@ -9,7 +9,8 @@ use crate::model::image::ImageEffect;
 use crate::paint::{
     CacheHint, GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRunOrientation,
     GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphRunPaint,
-    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextVariantQuality,
+    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextRunPlacement,
+    TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant, LayerRasterRenderer,
@@ -329,6 +330,9 @@ fn native_skia_glyph_outline_payload_status(
             let Some(payload) = outline.bitmap_glyph.as_ref() else {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             };
+            if !glyph_payload_placement_is_replayable(payload.placement, payload.transform_to_run) {
+                return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
+            }
             let Some(bytes) = resources.image_bytes(payload.image_resource_id) else {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             };
@@ -342,6 +346,9 @@ fn native_skia_glyph_outline_payload_status(
             let Some(payload) = outline.svg_glyph.as_ref() else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
+            if !glyph_payload_placement_is_replayable(payload.placement, payload.transform_to_run) {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            }
             let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
@@ -371,6 +378,19 @@ fn native_skia_glyph_outline_payload_status(
             (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
         }
     }
+}
+
+fn glyph_payload_placement_is_replayable(
+    placement: Option<TextRunPlacement>,
+    transform_to_run: Option<LayerAffineTransform>,
+) -> bool {
+    placement.is_some_and(|placement| {
+        affine_is_finite(&placement.run_to_page)
+            && placement.baseline_y.is_finite()
+            && transform_to_run
+                .map(|transform| affine_is_finite(&transform))
+                .unwrap_or(true)
+    })
 }
 
 fn native_skia_glyph_outline_replay_status(
@@ -1041,11 +1061,19 @@ impl SkiaLayerRenderer {
         let Some(image) = decode_image_bytes(bytes) else {
             return;
         };
+        let Some(placement) = payload.placement else {
+            return;
+        };
+        canvas.save();
+        canvas.concat(&Self::glyph_outline_matrix(placement.run_to_page));
+        if let Some(transform) = payload.transform_to_run {
+            canvas.concat(&Self::glyph_outline_matrix(transform));
+        }
         draw_decoded_image(
             canvas,
             &image,
-            bbox.x as f32,
-            bbox.y as f32,
+            0.0,
+            0.0,
             bbox.width as f32,
             bbox.height as f32,
             None,
@@ -1054,6 +1082,7 @@ impl SkiaLayerRenderer {
             ImageEffect::RealPic,
             Self::glyph_outline_image_sampling(payload.filtering, replay.image_sampling()),
         );
+        canvas.restore();
     }
 
     fn render_glyph_outline_svg(
@@ -1084,11 +1113,19 @@ impl SkiaLayerRenderer {
         ) else {
             return;
         };
+        let Some(placement) = payload.placement else {
+            return;
+        };
+        canvas.save();
+        canvas.concat(&Self::glyph_outline_matrix(placement.run_to_page));
+        if let Some(transform) = payload.transform_to_run {
+            canvas.concat(&Self::glyph_outline_matrix(transform));
+        }
         draw_decoded_image(
             canvas,
             &image,
-            bbox.x as f32,
-            bbox.y as f32,
+            0.0,
+            0.0,
             bbox.width as f32,
             bbox.height as f32,
             None,
@@ -1097,6 +1134,7 @@ impl SkiaLayerRenderer {
             ImageEffect::RealPic,
             replay.image_sampling(),
         );
+        canvas.restore();
     }
 
     fn render_op(

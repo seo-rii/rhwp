@@ -271,8 +271,25 @@ fn glyph_outline_variant_test_tree_with_resources(
     fallback_visible: bool,
     resources: ResourceArena,
 ) -> PageLayerTree {
+    glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        fallback_visible,
+        resources,
+        BoundingBox::new(0.0, 0.0, 190.0, 82.0),
+        190.0,
+        82.0,
+    )
+}
+
+fn glyph_outline_variant_test_tree_with_bbox_and_resources(
+    outline: LayerGlyphOutlinePaint,
+    fallback_visible: bool,
+    resources: ResourceArena,
+    bbox: BoundingBox,
+    page_width: f64,
+    page_height: f64,
+) -> PageLayerTree {
     let source = outline.source.clone();
-    let bbox = BoundingBox::new(0.0, 0.0, 190.0, 82.0);
     let fallback_style = TextStyle {
         font_family: "sans-serif".to_string(),
         font_size: 32.0,
@@ -280,8 +297,8 @@ fn glyph_outline_variant_test_tree_with_resources(
         ..Default::default()
     };
     PageLayerTree::with_resources(
-        190.0,
-        82.0,
+        page_width,
+        page_height,
         LayerNode::leaf(
             bbox,
             None,
@@ -3056,6 +3073,153 @@ fn native_skia_replays_static_svg_glyph_resource_variant() {
         report.selected_reason,
         VariantSelectedReason::GlyphOutlineStrictProfile
     );
+}
+
+#[test]
+fn native_skia_applies_bitmap_glyph_payload_transform() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("bitmap glyph pixmap");
+    for pixel in pixmap.pixels_mut() {
+        *pixel = tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 255, 255).unwrap();
+    }
+    let image_bytes = pixmap.encode_png().expect("bitmap glyph png");
+    let mut resources = ResourceArena::default();
+    let image_resource_id = resources.intern_image_bytes(&image_bytes);
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
+    outline.bitmap_glyph = Some(BitmapGlyphPayload {
+        image_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(TextRunPlacement {
+            run_to_page: LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 30.0,
+                f: 12.0,
+            },
+            baseline_y: 0.0,
+        }),
+        transform_to_run: Some(LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 7.0,
+            f: 5.0,
+        }),
+        strike_ppem: Some((4, 4)),
+        strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+        pixel_format: Some("rgba8".to_string()),
+        color_space: None,
+        alpha_mode: Some(BitmapAlphaMode::Straight),
+        scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+        filtering: Some(BitmapGlyphFiltering::Nearest),
+    });
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        false,
+        resources,
+        BoundingBox::new(0.0, 0.0, 12.0, 8.0),
+        80.0,
+        48.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("BitmapGlyph transform variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("BitmapGlyph transformed ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia BitmapGlyph transform selection report");
+
+    assert!(
+        bounds.min_x >= 37 && bounds.min_y >= 17,
+        "BitmapGlyph payload transform should place ink in run/page space, got {bounds:?}"
+    );
+    assert!(
+        bounds.max_x <= 49 && bounds.max_y <= 25,
+        "BitmapGlyph payload transform should keep ink inside transformed bbox, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+}
+
+#[test]
+fn native_skia_applies_static_svg_glyph_payload_transform() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut resources = ResourceArena::default();
+    let svg_resource_id = resources
+        .intern_svg_fragment("<rect x=\"0\" y=\"0\" width=\"12\" height=\"8\" fill=\"#00ffff\"/>");
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::SvgGlyph, None, None);
+    outline.svg_glyph = Some(SvgGlyphPayload {
+        vector_resource_id: svg_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(TextRunPlacement {
+            run_to_page: LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 18.0,
+                f: 14.0,
+            },
+            baseline_y: 0.0,
+        }),
+        transform_to_run: Some(LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 9.0,
+            f: 6.0,
+        }),
+        view_box: Some(SvgGlyphViewBox {
+            x: 0.0,
+            y: 0.0,
+            width: 12.0,
+            height: 8.0,
+        }),
+        intrinsic_size: None,
+        security_mode: SvgGlyphSecurityMode::StaticSanitized,
+        script_allowed: false,
+        animation_allowed: false,
+        external_resources_allowed: false,
+        interactivity_allowed: false,
+    });
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        false,
+        resources,
+        BoundingBox::new(0.0, 0.0, 12.0, 8.0),
+        80.0,
+        48.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("SvgGlyph transform variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("SvgGlyph transformed ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia SvgGlyph transform selection report");
+
+    assert!(
+        bounds.min_x >= 27 && bounds.min_y >= 20,
+        "SvgGlyph payload transform should place ink in run/page space, got {bounds:?}"
+    );
+    assert!(
+        bounds.max_x <= 39 && bounds.max_y <= 28,
+        "SvgGlyph payload transform should keep ink inside transformed bbox, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
 }
 
 #[test]
