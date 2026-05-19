@@ -684,18 +684,20 @@ implicitly change schema authority:
   reselection. Missing color space defaults to sRGB only when diagnostics or
   replay metadata record that default. The current gated replay subset is
   covered by SVG, Canvas2D, CanvasKit, and native Skia fixtures.
-- `SvgGlyph` writer emission starts with browser Canvas2D/CanvasKit strict
-  replay of a sanitized static path-vector resource subset. The producer is
-  responsible for sanitizing to `securityMode: staticSanitized`; strict
-  validators require
+- `SvgGlyph` writer emission starts with the SVG exporter over a sanitized
+  static vector-resource subset. The producer is responsible for sanitizing to
+  `securityMode: staticSanitized`; strict validators require
   `scriptAllowed=false`, `animationAllowed=false`,
   `externalResourcesAllowed=false`, and `interactivityAllowed=false`, and the
-  renderer must resolve and parse the referenced vector path resource before
-  selecting the variant. The same subset now covers filled path geometry, safe
+  exporter must resolve and serialize the referenced vector resource before
+  selecting the variant. Browser Canvas2D, CanvasKit, and native Skia replay are
+  later lowering milestones because they must turn the sanitized vector resource
+  into backend-native path/scene commands without reintroducing raw SVG-in-font
+  replay. The existing renderer fixtures still cover the safe SVG path subset
+  used by Canvas2D and CanvasKit diagnostics: filled path geometry, safe
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
-  stroke subset in Canvas2D and CanvasKit; unsupported stroke styles such
-  as invalid dash arrays or non-numeric dash offsets remain deterministic
-  fallback cases.
+  stroke subset; unsupported stroke styles such as invalid dash arrays or
+  non-numeric dash offsets remain deterministic fallback cases.
 - CanvasKit variation, TTC, and OTC strict replay are backend capability
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the
