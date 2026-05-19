@@ -519,9 +519,43 @@ pub struct BitmapGlyphPayload {
 
 impl BitmapGlyphPayload {
     pub fn has_strict_visual_contract(&self) -> bool {
-        self.source_range_utf8.is_some()
-            && self.glyph_range.is_some()
-            && self.placement.is_some()
+        self.source_range_utf8
+            .is_some_and(|range| range.end >= range.start)
+            && self
+                .glyph_range
+                .is_some_and(|range| range.end >= range.start)
+            && self.placement.is_some_and(|placement| {
+                [
+                    placement.run_to_page.a,
+                    placement.run_to_page.b,
+                    placement.run_to_page.c,
+                    placement.run_to_page.d,
+                    placement.run_to_page.e,
+                    placement.run_to_page.f,
+                    placement.baseline_y,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+            })
+            && self
+                .transform_to_run
+                .map(|transform| {
+                    [
+                        transform.a,
+                        transform.b,
+                        transform.c,
+                        transform.d,
+                        transform.e,
+                        transform.f,
+                    ]
+                    .into_iter()
+                    .all(f64::is_finite)
+                })
+                .unwrap_or(true)
+            && self
+                .strike_ppem
+                .map(|(x, y)| x > 0 && y > 0)
+                .unwrap_or(true)
             && self.strike_selection == Some(BitmapStrikeSelection::ProducerResolved)
             && self.alpha_mode.is_some()
             && self
@@ -578,10 +612,54 @@ pub struct SvgGlyphPayload {
 
 impl SvgGlyphPayload {
     pub fn has_static_sanitized_contract(&self) -> bool {
-        self.source_range_utf8.is_some()
-            && self.glyph_range.is_some()
-            && self.placement.is_some()
-            && self.view_box.is_some()
+        self.source_range_utf8
+            .is_some_and(|range| range.end >= range.start)
+            && self
+                .glyph_range
+                .is_some_and(|range| range.end >= range.start)
+            && self.placement.is_some_and(|placement| {
+                [
+                    placement.run_to_page.a,
+                    placement.run_to_page.b,
+                    placement.run_to_page.c,
+                    placement.run_to_page.d,
+                    placement.run_to_page.e,
+                    placement.run_to_page.f,
+                    placement.baseline_y,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+            })
+            && self
+                .transform_to_run
+                .map(|transform| {
+                    [
+                        transform.a,
+                        transform.b,
+                        transform.c,
+                        transform.d,
+                        transform.e,
+                        transform.f,
+                    ]
+                    .into_iter()
+                    .all(f64::is_finite)
+                })
+                .unwrap_or(true)
+            && self.view_box.is_some_and(|view_box| {
+                [view_box.x, view_box.y, view_box.width, view_box.height]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && view_box.width > 0.0
+                    && view_box.height > 0.0
+            })
+            && self
+                .intrinsic_size
+                .map(|size| {
+                    [size.width, size.height].into_iter().all(f64::is_finite)
+                        && size.width > 0.0
+                        && size.height > 0.0
+                })
+                .unwrap_or(true)
             && self.security_mode == SvgGlyphSecurityMode::StaticSanitized
             && !self.script_allowed
             && !self.animation_allowed
@@ -2027,8 +2105,39 @@ mod tests {
         backend_default_bitmap.filtering = Some(BitmapGlyphFiltering::BackendDefault);
         assert!(!backend_default_bitmap.has_strict_visual_contract());
 
-        let mut unsafe_svg = svg_glyph;
+        let mut zero_strike_bitmap = bitmap_glyph.clone();
+        zero_strike_bitmap.strike_ppem = Some((0, 16));
+        assert!(!zero_strike_bitmap.has_strict_visual_contract());
+
+        let mut invalid_range_bitmap = bitmap_glyph.clone();
+        invalid_range_bitmap.source_range_utf8 = Some(TextSourceRange { start: 2, end: 1 });
+        assert!(!invalid_range_bitmap.has_strict_visual_contract());
+
+        let mut invalid_transform_bitmap = bitmap_glyph.clone();
+        invalid_transform_bitmap.transform_to_run = Some(LayerAffineTransform {
+            a: f64::NAN,
+            ..identity
+        });
+        assert!(!invalid_transform_bitmap.has_strict_visual_contract());
+
+        let mut unsafe_svg = svg_glyph.clone();
         unsafe_svg.animation_allowed = true;
         assert!(!unsafe_svg.has_static_sanitized_contract());
+
+        let mut invalid_view_box_svg = svg_glyph.clone();
+        invalid_view_box_svg.view_box = Some(SvgGlyphViewBox {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 10.0,
+        });
+        assert!(!invalid_view_box_svg.has_static_sanitized_contract());
+
+        let mut invalid_intrinsic_svg = svg_glyph.clone();
+        invalid_intrinsic_svg.intrinsic_size = Some(SvgGlyphIntrinsicSize {
+            width: 10.0,
+            height: f64::INFINITY,
+        });
+        assert!(!invalid_intrinsic_svg.has_static_sanitized_contract());
     }
 }
