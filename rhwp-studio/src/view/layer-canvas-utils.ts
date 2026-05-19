@@ -124,6 +124,9 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       let remainingAttributes = rawAttributes;
       for (const attributeMatch of rawAttributes.matchAll(attributePattern)) {
         const rawName = attributeMatch[1].trim().toLowerCase();
+        if (attributes.has(rawName)) {
+          return [];
+        }
         const value = attributeMatch[2] ?? attributeMatch[3] ?? attributeMatch[4] ?? '';
         let decodedValue = '';
         let valueCursor = 0;
