@@ -42,6 +42,7 @@ export type StaticSvgStrokeLayer = {
   lineJoin: CanvasLineJoin;
   lineCap: CanvasLineCap;
   miterLimit: number;
+  dashArray?: number[];
 };
 type StaticSvgPaintState = {
   fill: string | null;
@@ -53,6 +54,7 @@ type StaticSvgPaintState = {
   strokeLineJoin: CanvasLineJoin;
   strokeLineCap: CanvasLineCap;
   strokeMiterLimit: number;
+  strokeDashArray: number[] | null;
   transform?: LayerAffineTransform;
 };
 export type LayerImageEffectDiagnostics = {
@@ -87,6 +89,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       strokeLineJoin: 'miter',
       strokeLineCap: 'butt',
       strokeMiterLimit: 4,
+      strokeDashArray: null,
     }];
     const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
     let ignoredElementDepth = 0;
@@ -205,6 +208,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       const strokeLineJoinValue = staticSvgMapPresentationAttribute(attributes, 'stroke-linejoin');
       const strokeLineCapValue = staticSvgMapPresentationAttribute(attributes, 'stroke-linecap');
       const strokeMiterLimitValue = staticSvgMapPresentationAttribute(attributes, 'stroke-miterlimit');
+      const strokeDashArrayValue = staticSvgMapPresentationAttribute(attributes, 'stroke-dasharray');
       const fillRuleValue = staticSvgMapPresentationAttribute(attributes, 'fill-rule') ?? currentState.fillRuleValue;
       const resolvedFill = fill ?? currentState.fill ?? '#000000';
       const resolvedStroke = strokeValue ?? currentState.stroke;
@@ -216,6 +220,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         strokeLineJoinValue,
         strokeLineCapValue,
         strokeMiterLimitValue,
+        strokeDashArrayValue,
         currentState,
         shapeOpacity,
       );
@@ -283,6 +288,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         svgPresentationAttribute(element, 'stroke-linejoin'),
         svgPresentationAttribute(element, 'stroke-linecap'),
         svgPresentationAttribute(element, 'stroke-miterlimit'),
+        svgPresentationAttribute(element, 'stroke-dasharray'),
         currentState,
         svgOpacity(svgPresentationAttribute(element, 'opacity')),
       );
@@ -321,6 +327,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     strokeLineJoin: 'miter',
     strokeLineCap: 'butt',
     strokeMiterLimit: 4,
+    strokeDashArray: null,
   });
   return layers;
 }
@@ -377,6 +384,7 @@ function staticSvgPaintStateFromMap(
   allowTransform: boolean,
 ): StaticSvgPaintState {
   const fillOpacityValue = staticSvgMapPresentationAttribute(attributes, 'fill-opacity');
+  const strokeDashArray = svgStrokeDashArray(staticSvgMapPresentationAttribute(attributes, 'stroke-dasharray'));
   return {
     fill: staticSvgMapPresentationAttribute(attributes, 'fill') ?? parent.fill,
     fillRuleValue: staticSvgMapPresentationAttribute(attributes, 'fill-rule') ?? parent.fillRuleValue,
@@ -392,6 +400,7 @@ function staticSvgPaintStateFromMap(
       ?? parent.strokeLineCap,
     strokeMiterLimit: svgPositiveNumber(staticSvgMapPresentationAttribute(attributes, 'stroke-miterlimit'))
       ?? parent.strokeMiterLimit,
+    strokeDashArray: strokeDashArray === undefined ? parent.strokeDashArray : strokeDashArray,
     transform: allowTransform
       ? staticSvgComposeTransforms(parent.transform, parseStaticSvgTransform(attributes.get('transform')))
       : parent.transform,
@@ -404,6 +413,7 @@ function staticSvgPaintStateFromElement(
   allowTransform: boolean,
 ): StaticSvgPaintState {
   const fillOpacityValue = svgPresentationAttribute(element, 'fill-opacity');
+  const strokeDashArray = svgStrokeDashArray(svgPresentationAttribute(element, 'stroke-dasharray'));
   return {
     fill: svgPresentationAttribute(element, 'fill') ?? parent.fill,
     fillRuleValue: svgPresentationAttribute(element, 'fill-rule') ?? parent.fillRuleValue,
@@ -417,6 +427,7 @@ function staticSvgPaintStateFromElement(
     strokeLineCap: svgStrokeLineCap(svgPresentationAttribute(element, 'stroke-linecap')) ?? parent.strokeLineCap,
     strokeMiterLimit: svgPositiveNumber(svgPresentationAttribute(element, 'stroke-miterlimit'))
       ?? parent.strokeMiterLimit,
+    strokeDashArray: strokeDashArray === undefined ? parent.strokeDashArray : strokeDashArray,
     transform: allowTransform
       ? staticSvgComposeTransforms(parent.transform, parseStaticSvgTransform(element.getAttribute('transform')))
       : parent.transform,
@@ -430,6 +441,7 @@ function staticSvgStrokeLayer(
   lineJoinValue: string | null,
   lineCapValue: string | null,
   miterLimitValue: string | null,
+  dashArrayValue: string | null,
   currentState: StaticSvgPaintState,
   shapeOpacity: number,
 ): StaticSvgStrokeLayer | undefined {
@@ -441,6 +453,7 @@ function staticSvgStrokeLayer(
   if (!(width > 0)) {
     return undefined;
   }
+  const dashArray = svgStrokeDashArray(dashArrayValue);
   return {
     color: stroke,
     opacity: shapeOpacity * (opacityValue === null ? currentState.strokeOpacity : svgOpacity(opacityValue)),
@@ -448,6 +461,9 @@ function staticSvgStrokeLayer(
     lineJoin: svgStrokeLineJoin(lineJoinValue) ?? currentState.strokeLineJoin,
     lineCap: svgStrokeLineCap(lineCapValue) ?? currentState.strokeLineCap,
     miterLimit: svgPositiveNumber(miterLimitValue) ?? currentState.strokeMiterLimit,
+    dashArray: dashArray === undefined
+      ? currentState.strokeDashArray ?? undefined
+      : dashArray ?? undefined,
   };
 }
 
@@ -611,6 +627,7 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
     'stroke-linejoin',
     'stroke-linecap',
     'stroke-miterlimit',
+    'stroke-dasharray',
     'style',
     'transform',
   ];
@@ -702,6 +719,9 @@ function isStaticSvgAttributeSupported(
   }
   if (name === 'stroke-width' || name === 'stroke-miterlimit') {
     return isStaticSvgPositiveNumericValueSupported(value);
+  }
+  if (name === 'stroke-dasharray') {
+    return svgStrokeDashArray(value) !== undefined;
   }
   if (name === 'stroke-linejoin') {
     return svgStrokeLineJoin(value) !== null;
@@ -916,6 +936,7 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowId
     'stroke-linejoin',
     'stroke-linecap',
     'stroke-miterlimit',
+    'stroke-dasharray',
   ]);
   if (allowOpacity || allowIdentityOpacity) {
     supportedProperties.add('opacity');
@@ -953,6 +974,9 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowId
     }
     if ((property === 'stroke-width' || property === 'stroke-miterlimit')
       && !isStaticSvgPositiveNumericValueSupported(value)) {
+      return false;
+    }
+    if (property === 'stroke-dasharray' && svgStrokeDashArray(value) === undefined) {
       return false;
     }
     if (property === 'stroke-linejoin' && svgStrokeLineJoin(value) === null) {
@@ -1060,6 +1084,25 @@ function svgStrokeLineCap(value: string | null): CanvasLineCap | null {
     return normalized;
   }
   return null;
+}
+
+function svgStrokeDashArray(value: string | null): number[] | null | undefined {
+  if (value === null) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.toLowerCase() === 'none') {
+    return null;
+  }
+  const values = trimmed.split(/[\s,]+/).filter((part) => part.length > 0);
+  if (values.length === 0) {
+    return undefined;
+  }
+  const parsed = values.map((part) => Number(part));
+  if (parsed.some((part) => !Number.isFinite(part) || part < 0) || !parsed.some((part) => part > 0)) {
+    return undefined;
+  }
+  return parsed.length % 2 === 0 ? parsed : [...parsed, ...parsed];
 }
 
 function svgFillRule(value: string | null): CanvasFillRule | undefined {

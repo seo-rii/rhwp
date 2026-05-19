@@ -1447,6 +1447,11 @@ export class CanvasKitLayerRenderer {
             strokePaint.setStrokeJoin(this.canvasKitStrokeJoin(layer.stroke.lineJoin));
             strokePaint.setStrokeCap(this.canvasKitStrokeCap(layer.stroke.lineCap));
             strokePaint.setStrokeMiter(layer.stroke.miterLimit);
+            if (layer.stroke.dashArray) {
+              const effect = this.canvasKit.PathEffect.MakeDash(layer.stroke.dashArray, 0);
+              strokePaint.setPathEffect(effect);
+              effect.delete();
+            }
             canvas.drawPath(path, strokePaint);
             strokePaint.delete();
           }

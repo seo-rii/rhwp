@@ -647,10 +647,11 @@ The reserved families are intentionally separate payload families:
   geometry (`path`, `rect`, `circle`, `ellipse`, `polygon`, `polyline`, and `line`)
   with fill, fill opacity, fill rule, local transforms, and a narrow solid
   stroke subset are replayed as native Canvas2D/CanvasKit paths instead of as
-  overlay images. The solid stroke subset is intentionally conservative:
+  overlay images. The stroke subset is intentionally conservative:
   positive finite width, solid color, Canvas-compatible `miter`/`round`/`bevel`
-  joins, `butt`/`round`/`square` caps, finite miter limit, no dash, no
-  gradients/patterns, and no group compositing.
+  joins, `butt`/`round`/`square` caps, finite miter limit, optional numeric
+  dash arrays with zero dash offset, no gradients/patterns, and no group
+  compositing.
   Strict visual replay must keep external resources, script, animation, links,
   and interactivity disabled; raw SVG-in-font replay is not the strictVisual
   contract. The payload should record `viewBox` and optional `intrinsicSize`
@@ -692,8 +693,8 @@ implicitly change schema authority:
   renderer must resolve and parse the referenced vector path resource before
   selecting the variant. The same subset now covers filled path geometry, safe
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
-  solid stroke subset in Canvas2D and CanvasKit; unsupported stroke styles such
-  as dashed strokes remain deterministic fallback cases.
+  stroke subset in Canvas2D and CanvasKit; unsupported stroke styles such
+  as non-zero dash offsets remain deterministic fallback cases.
 - CanvasKit variation, TTC, and OTC strict replay are backend capability
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the

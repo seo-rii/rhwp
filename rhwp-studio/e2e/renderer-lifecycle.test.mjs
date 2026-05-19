@@ -4898,8 +4898,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     shapeStrokeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-shape-stroke-resource';
+    const dashedSvgResourceTree = treeFor(svgOutline);
+    dashedSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M2 4 H16 M2 9 H16 M2 14 H16" fill="none" stroke="#0000ff" stroke-width="2" stroke-linecap="butt" stroke-dasharray="2 2"/>',
+      '</svg>',
+    ].join('');
+    dashedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-dashed-stroke-resource';
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
-    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dasharray="2 2"/>';
+    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dashoffset="1"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
     const unsupportedSvgOpacityTree = treeFor(svgOutline);
     unsupportedSvgOpacityTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" opacity="not-a-number"/>';
@@ -5097,6 +5104,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserStrokedSvgGlyph;
     let noDomParserLineSvgGlyph;
     let noDomParserShapeStrokeSvgGlyph;
+    let noDomParserDashedSvgGlyph;
     let noDomParserNamedCssColorSvgGlyph;
     let noDomParserFunctionalCssColorSvgGlyph;
     let noDomParserWideGamutCssColorSvgGlyph;
@@ -5127,6 +5135,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserStrokedSvgGlyph = await render(strokedSvgResourceTree);
       noDomParserLineSvgGlyph = await render(lineSvgResourceTree);
       noDomParserShapeStrokeSvgGlyph = await render(shapeStrokeSvgResourceTree);
+      noDomParserDashedSvgGlyph = await render(dashedSvgResourceTree);
       noDomParserNamedCssColorSvgGlyph = await render(namedCssColorSvgResourceTree);
       noDomParserFunctionalCssColorSvgGlyph = await render(functionalCssColorSvgResourceTree);
       noDomParserWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
@@ -5179,6 +5188,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserLineSvgGlyph,
       shapeStrokeSvgGlyph: await render(shapeStrokeSvgResourceTree),
       noDomParserShapeStrokeSvgGlyph,
+      dashedSvgGlyph: await render(dashedSvgResourceTree),
+      noDomParserDashedSvgGlyph,
       namedCssColorSvgGlyph: await render(namedCssColorSvgResourceTree),
       noDomParserNamedCssColorSvgGlyph,
       functionalCssColorSvgGlyph: await render(functionalCssColorSvgResourceTree),
@@ -5436,6 +5447,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserShapeStrokeSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserShapeStrokeSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects stroked-shape SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserShapeStrokeSvgReport)}`,
+  );
+  const canvaskitDashedSvgReport = canvaskitGlyphOutlineProbe
+    .dashedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitDashedSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitDashedSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects dashed SvgGlyph resource=${JSON.stringify(canvaskitDashedSvgReport)}`,
+  );
+  const canvaskitNoDomParserDashedSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserDashedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserDashedSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserDashedSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects dashed SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserDashedSvgReport)}`,
   );
   const canvaskitNamedCssColorSvgReport = canvaskitGlyphOutlineProbe
     .namedCssColorSvgGlyph
@@ -5915,6 +5944,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserShapeStrokeSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserShapeStrokeSvgGlyph
     .magentaPixels;
+  const canvaskitDashedSvgBluePixels = canvaskitGlyphOutlineProbe.dashedSvgGlyph.bluePixels;
+  const canvaskitDashedSvgMagentaPixels = canvaskitGlyphOutlineProbe.dashedSvgGlyph.magentaPixels;
+  const canvaskitNoDomParserDashedSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserDashedSvgGlyph
+    .bluePixels;
+  const canvaskitNoDomParserDashedSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserDashedSvgGlyph
+    .magentaPixels;
   const canvaskitNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe.namedCssColorSvgGlyph.magentaPixels;
   const canvaskitNoDomParserNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserNamedCssColorSvgGlyph
@@ -6083,6 +6120,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserShapeStrokeSvgBluePixels > 80 && canvaskitNoDomParserShapeStrokeSvgMagentaPixels < 5,
     `CanvasKit strict outline paints stroked shape SvgGlyph without DOMParser blue=${canvaskitNoDomParserShapeStrokeSvgBluePixels}, magenta=${canvaskitNoDomParserShapeStrokeSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitDashedSvgBluePixels > 20 && canvaskitDashedSvgMagentaPixels < 5,
+    `CanvasKit strict outline paints dashed SvgGlyph stroke blue=${canvaskitDashedSvgBluePixels}, magenta=${canvaskitDashedSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserDashedSvgBluePixels > 20 && canvaskitNoDomParserDashedSvgMagentaPixels < 5,
+    `CanvasKit strict outline paints dashed SvgGlyph stroke without DOMParser blue=${canvaskitNoDomParserDashedSvgBluePixels}, magenta=${canvaskitNoDomParserDashedSvgMagentaPixels}`,
   );
   assert(
     canvaskitNamedCssColorSvgMagentaPixels > 100,

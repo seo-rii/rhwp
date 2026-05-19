@@ -469,6 +469,7 @@ export class Canvas2DLayerRenderer {
                     ctx.lineJoin = layer.stroke.lineJoin;
                     ctx.lineCap = layer.stroke.lineCap;
                     ctx.miterLimit = layer.stroke.miterLimit;
+                    ctx.setLineDash(layer.stroke.dashArray ?? []);
                     ctx.globalAlpha = previousAlpha * layer.stroke.opacity;
                     ctx.stroke(path);
                   }
