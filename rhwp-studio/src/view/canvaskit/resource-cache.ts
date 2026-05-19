@@ -10,6 +10,14 @@ import {
 } from '../layer-canvas-utils';
 import { parseCanvasKitCssColor } from './css-color';
 
+export type CanvasKitPatternDiagnostics = {
+  cacheHits: number;
+  cacheMisses: number;
+  surfaceCreations: number;
+  surfaceFailures: number;
+  imagesCreated: number;
+};
+
 export class CanvasKitResourceCache {
   readonly imageCache = new Map<string, CanvasKitImage>();
   readonly mipmappedImageCache = new Map<string, CanvasKitImage>();
@@ -29,6 +37,13 @@ export class CanvasKitResourceCache {
     maxHeapDeltaBytes: 0,
     offscreenCanvasPreprocesses: 0,
     htmlCanvasPreprocesses: 0,
+  };
+  private readonly patternDiagnostics: CanvasKitPatternDiagnostics = {
+    cacheHits: 0,
+    cacheMisses: 0,
+    surfaceCreations: 0,
+    surfaceFailures: 0,
+    imagesCreated: 0,
   };
 
   private resources: PageLayerTree['resources'] | null = null;
@@ -203,12 +218,26 @@ export class CanvasKitResourceCache {
   patternImage(pattern: LayerPatternFill): CanvasKitImage | null {
     const cacheKey = `${pattern.patternType}:${pattern.patternColor}:${pattern.backgroundColor}`;
     if (this.patternImageCache.has(cacheKey)) {
+      this.patternDiagnostics.cacheHits += 1;
       return this.patternImageCache.get(cacheKey) ?? null;
     }
 
+    this.patternDiagnostics.cacheMisses += 1;
     const image = this.makePatternImage(pattern);
     this.patternImageCache.set(cacheKey, image);
     return image;
+  }
+
+  getPatternDiagnostics(): Readonly<CanvasKitPatternDiagnostics> {
+    return { ...this.patternDiagnostics };
+  }
+
+  resetPatternDiagnostics(): void {
+    this.patternDiagnostics.cacheHits = 0;
+    this.patternDiagnostics.cacheMisses = 0;
+    this.patternDiagnostics.surfaceCreations = 0;
+    this.patternDiagnostics.surfaceFailures = 0;
+    this.patternDiagnostics.imagesCreated = 0;
   }
 
   dispose(): void {
@@ -255,8 +284,10 @@ export class CanvasKitResourceCache {
   private makePatternImage(pattern: LayerPatternFill): CanvasKitImage | null {
     const surface = this.canvasKit.MakeSurface(6, 6);
     if (!surface) {
+      this.patternDiagnostics.surfaceFailures += 1;
       return null;
     }
+    this.patternDiagnostics.surfaceCreations += 1;
 
     const canvas = surface.getCanvas();
     const fillPaint = new this.canvasKit.Paint();
@@ -299,6 +330,7 @@ export class CanvasKitResourceCache {
     surface.flush();
     const image = surface.makeImageSnapshot();
     surface.delete();
+    this.patternDiagnostics.imagesCreated += 1;
     return image;
   }
 

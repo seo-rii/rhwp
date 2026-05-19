@@ -83,7 +83,7 @@ import {
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
 import { clampCanvasKitUnit, parseCanvasKitCssColor } from './canvaskit/css-color';
-import { CanvasKitResourceCache } from './canvaskit/resource-cache';
+import { CanvasKitResourceCache, type CanvasKitPatternDiagnostics } from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
 import { CanvasKitSurfaceCache, type CanvasKitSurfaceDiagnostics } from './canvaskit/surface-cache';
 
@@ -297,12 +297,20 @@ export class CanvasKitLayerRenderer {
     return this.resourceCache.getImageEffectDiagnostics();
   }
 
+  getPatternDiagnostics(): Readonly<CanvasKitPatternDiagnostics> {
+    return this.resourceCache.getPatternDiagnostics();
+  }
+
   getSurfaceDiagnostics(): Readonly<CanvasKitSurfaceDiagnostics> {
     return this.surfaceCache.getDiagnostics();
   }
 
   resetImageEffectDiagnostics(): void {
     this.resourceCache.resetImageEffectDiagnostics();
+  }
+
+  resetPatternDiagnostics(): void {
+    this.resourceCache.resetPatternDiagnostics();
   }
 
   getTextVariantSelectionDiagnostics(): readonly LayerTextVariantGroupReport[] {
