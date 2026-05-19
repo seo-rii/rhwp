@@ -170,7 +170,7 @@ export function parseCanvasKitCssColor(canvasKit: CanvasKit, color: string, opac
   );
 }
 
-function parseSupportedCssColor(color: string): [number, number, number, number] | null {
+export function parseSupportedCssColor(color: string): [number, number, number, number] | null {
   const normalized = color.trim().toLowerCase();
   const named = CSS_NAMED_COLORS[normalized];
   if (named) {

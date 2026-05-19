@@ -5190,7 +5190,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserNamedCssColorSvgGlyph;
     let noCssNamedCssColorSvgGlyph;
     let noDomParserFunctionalCssColorSvgGlyph;
+    let noCssFunctionalCssColorSvgGlyph;
     let noDomParserWideGamutCssColorSvgGlyph;
+    let noCssWideGamutCssColorSvgGlyph;
     let noDomParserStylePrecedenceSvgGlyph;
     let noDomParserStyleCascadeSvgGlyph;
     let noDomParserPolylineSvgGlyph;
@@ -5233,6 +5235,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       try {
         globalThis.CSS = undefined;
         noCssNamedCssColorSvgGlyph = await render(noCssNamedCssColorSvgResourceTree);
+        noCssFunctionalCssColorSvgGlyph = await render(functionalCssColorSvgResourceTree);
+        noCssWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
       } finally {
         if (hadCSS) {
           globalThis.CSS = originalCSS;
@@ -5313,8 +5317,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noCssNamedCssColorSvgGlyph,
       functionalCssColorSvgGlyph: await render(functionalCssColorSvgResourceTree),
       noDomParserFunctionalCssColorSvgGlyph,
+      noCssFunctionalCssColorSvgGlyph,
       wideGamutCssColorSvgGlyph: await render(wideGamutCssColorSvgResourceTree),
       noDomParserWideGamutCssColorSvgGlyph,
+      noCssWideGamutCssColorSvgGlyph,
       stylePrecedenceSvgGlyph: await render(stylePrecedenceSvgResourceTree),
       noDomParserStylePrecedenceSvgGlyph,
       styleCascadeSvgGlyph: await render(styleCascadeSvgResourceTree),
@@ -5758,6 +5764,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitNoDomParserFunctionalCssColorSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects functional CSS color SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserFunctionalCssColorSvgReport)}`,
   );
+  const canvaskitNoCssFunctionalCssColorSvgReport = canvaskitGlyphOutlineProbe
+    .noCssFunctionalCssColorSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoCssFunctionalCssColorSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoCssFunctionalCssColorSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects functional CSS color SvgGlyph without DOMParser/CSS=${JSON.stringify(canvaskitNoCssFunctionalCssColorSvgReport)}`,
+  );
   const canvaskitWideGamutCssColorSvgReport = canvaskitGlyphOutlineProbe
     .wideGamutCssColorSvgGlyph
     ?.diagnostics
@@ -5775,6 +5790,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserWideGamutCssColorSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserWideGamutCssColorSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects wide-gamut CSS color SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserWideGamutCssColorSvgReport)}`,
+  );
+  const canvaskitNoCssWideGamutCssColorSvgReport = canvaskitGlyphOutlineProbe
+    .noCssWideGamutCssColorSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoCssWideGamutCssColorSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoCssWideGamutCssColorSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects wide-gamut CSS color SvgGlyph without DOMParser/CSS=${JSON.stringify(canvaskitNoCssWideGamutCssColorSvgReport)}`,
   );
   const canvaskitStylePrecedenceSvgReport = canvaskitGlyphOutlineProbe
     .stylePrecedenceSvgGlyph
@@ -6321,11 +6345,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserFunctionalCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserFunctionalCssColorSvgGlyph
     .magentaPixels;
+  const canvaskitNoCssFunctionalCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noCssFunctionalCssColorSvgGlyph
+    .magentaPixels;
   const canvaskitWideGamutCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .wideGamutCssColorSvgGlyph
     .magentaPixels;
   const canvaskitNoDomParserWideGamutCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserWideGamutCssColorSvgGlyph
+    .magentaPixels;
+  const canvaskitNoCssWideGamutCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noCssWideGamutCssColorSvgGlyph
     .magentaPixels;
   const canvaskitStylePrecedenceSvgMagentaPixels = canvaskitGlyphOutlineProbe.stylePrecedenceSvgGlyph.magentaPixels;
   const canvaskitStylePrecedenceSvgRedPixels = canvaskitGlyphOutlineProbe.stylePrecedenceSvgGlyph.redPixels;
@@ -6581,12 +6611,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `CanvasKit strict outline paints functional CSS color SvgGlyph without DOMParser magenta=${canvaskitNoDomParserFunctionalCssColorSvgMagentaPixels}`,
   );
   assert(
+    canvaskitNoCssFunctionalCssColorSvgMagentaPixels > 100,
+    `CanvasKit strict outline paints functional CSS color SvgGlyph without DOMParser/CSS magenta=${canvaskitNoCssFunctionalCssColorSvgMagentaPixels}`,
+  );
+  assert(
     canvaskitWideGamutCssColorSvgMagentaPixels > 500,
     `CanvasKit strict outline paints wide-gamut CSS color SvgGlyph resource magenta=${canvaskitWideGamutCssColorSvgMagentaPixels}`,
   );
   assert(
     canvaskitNoDomParserWideGamutCssColorSvgMagentaPixels > 500,
     `CanvasKit strict outline paints wide-gamut CSS color SvgGlyph without DOMParser magenta=${canvaskitNoDomParserWideGamutCssColorSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoCssWideGamutCssColorSvgMagentaPixels > 500,
+    `CanvasKit strict outline paints wide-gamut CSS color SvgGlyph without DOMParser/CSS magenta=${canvaskitNoCssWideGamutCssColorSvgMagentaPixels}`,
   );
   assert(
     canvaskitStylePrecedenceSvgMagentaPixels > 100 && canvaskitStylePrecedenceSvgRedPixels < 5,
