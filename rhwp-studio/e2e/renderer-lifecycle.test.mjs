@@ -4914,6 +4914,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     styledDashSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-styled-dashed-stroke-resource';
+    const pxLengthSvgResourceTree = treeFor(svgOutline);
+    pxLengthSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<line x1="2px" y1="4px" x2="16px" y2="4px" fill="none" stroke="#0000ff" stroke-width="2px" stroke-linecap="butt" stroke-dasharray="2px 2px" stroke-dashoffset="1px"/>',
+      '<rect x="2px" y="8px" width="14px" height="7px" fill="none" stroke="#0000ff" stroke-width="2px"/>',
+      '</svg>',
+    ].join('');
+    pxLengthSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-px-length-resource';
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
     unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dasharray="2 -1"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
@@ -5115,6 +5123,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserShapeStrokeSvgGlyph;
     let noDomParserDashedSvgGlyph;
     let noDomParserStyledDashSvgGlyph;
+    let noDomParserPxLengthSvgGlyph;
     let noDomParserNamedCssColorSvgGlyph;
     let noDomParserFunctionalCssColorSvgGlyph;
     let noDomParserWideGamutCssColorSvgGlyph;
@@ -5147,6 +5156,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserShapeStrokeSvgGlyph = await render(shapeStrokeSvgResourceTree);
       noDomParserDashedSvgGlyph = await render(dashedSvgResourceTree);
       noDomParserStyledDashSvgGlyph = await render(styledDashSvgResourceTree);
+      noDomParserPxLengthSvgGlyph = await render(pxLengthSvgResourceTree);
       noDomParserNamedCssColorSvgGlyph = await render(namedCssColorSvgResourceTree);
       noDomParserFunctionalCssColorSvgGlyph = await render(functionalCssColorSvgResourceTree);
       noDomParserWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
@@ -5203,6 +5213,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserDashedSvgGlyph,
       styledDashSvgGlyph: await render(styledDashSvgResourceTree),
       noDomParserStyledDashSvgGlyph,
+      pxLengthSvgGlyph: await render(pxLengthSvgResourceTree),
+      noDomParserPxLengthSvgGlyph,
       namedCssColorSvgGlyph: await render(namedCssColorSvgResourceTree),
       noDomParserNamedCssColorSvgGlyph,
       functionalCssColorSvgGlyph: await render(functionalCssColorSvgResourceTree),
@@ -5496,6 +5508,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserStyledDashSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserStyledDashSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects styled dashed SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStyledDashSvgReport)}`,
+  );
+  const canvaskitPxLengthSvgReport = canvaskitGlyphOutlineProbe
+    .pxLengthSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitPxLengthSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitPxLengthSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects px-length SvgGlyph resource=${JSON.stringify(canvaskitPxLengthSvgReport)}`,
+  );
+  const canvaskitNoDomParserPxLengthSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserPxLengthSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserPxLengthSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserPxLengthSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects px-length SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserPxLengthSvgReport)}`,
   );
   const canvaskitNamedCssColorSvgReport = canvaskitGlyphOutlineProbe
     .namedCssColorSvgGlyph
@@ -5991,6 +6021,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserStyledDashSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserStyledDashSvgGlyph
     .magentaPixels;
+  const canvaskitPxLengthSvgBluePixels = canvaskitGlyphOutlineProbe.pxLengthSvgGlyph.bluePixels;
+  const canvaskitPxLengthSvgMagentaPixels = canvaskitGlyphOutlineProbe.pxLengthSvgGlyph.magentaPixels;
+  const canvaskitNoDomParserPxLengthSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserPxLengthSvgGlyph
+    .bluePixels;
+  const canvaskitNoDomParserPxLengthSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserPxLengthSvgGlyph
+    .magentaPixels;
   const canvaskitNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe.namedCssColorSvgGlyph.magentaPixels;
   const canvaskitNoDomParserNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserNamedCssColorSvgGlyph
@@ -6175,6 +6213,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitNoDomParserStyledDashSvgBluePixels > 20 && canvaskitNoDomParserStyledDashSvgMagentaPixels < 5,
     `CanvasKit strict outline paints styled dashed SvgGlyph stroke without DOMParser blue=${canvaskitNoDomParserStyledDashSvgBluePixels}, magenta=${canvaskitNoDomParserStyledDashSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitPxLengthSvgBluePixels > 40 && canvaskitPxLengthSvgMagentaPixels < 5,
+    `CanvasKit strict outline paints px-length SvgGlyph stroke blue=${canvaskitPxLengthSvgBluePixels}, magenta=${canvaskitPxLengthSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserPxLengthSvgBluePixels > 40 && canvaskitNoDomParserPxLengthSvgMagentaPixels < 5,
+    `CanvasKit strict outline paints px-length SvgGlyph stroke without DOMParser blue=${canvaskitNoDomParserPxLengthSvgBluePixels}, magenta=${canvaskitNoDomParserPxLengthSvgMagentaPixels}`,
   );
   assert(
     canvaskitNamedCssColorSvgMagentaPixels > 100,

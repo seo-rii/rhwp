@@ -161,17 +161,17 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       if (elementName === 'path') {
         pathData = attributes.get('d')?.trim() || null;
       } else if (elementName === 'circle') {
-        const cx = Number(attributes.get('cx') ?? '0');
-        const cy = Number(attributes.get('cy') ?? '0');
-        const r = attributes.has('r') ? Number(attributes.get('r')) : null;
+        const cx = svgNumber(attributes.get('cx') ?? '0') ?? 0;
+        const cy = svgNumber(attributes.get('cy') ?? '0') ?? 0;
+        const r = attributes.has('r') ? svgNumber(attributes.get('r') ?? '') : null;
         if (r !== null && r > 0) {
           pathData = `M${cx - r} ${cy}A${r} ${r} 0 1 0 ${cx + r} ${cy}A${r} ${r} 0 1 0 ${cx - r} ${cy}Z`;
         }
       } else if (elementName === 'ellipse') {
-        const cx = Number(attributes.get('cx') ?? '0');
-        const cy = Number(attributes.get('cy') ?? '0');
-        const rx = attributes.has('rx') ? Number(attributes.get('rx')) : null;
-        const ry = attributes.has('ry') ? Number(attributes.get('ry')) : null;
+        const cx = svgNumber(attributes.get('cx') ?? '0') ?? 0;
+        const cy = svgNumber(attributes.get('cy') ?? '0') ?? 0;
+        const rx = attributes.has('rx') ? svgNumber(attributes.get('rx') ?? '') : null;
+        const ry = attributes.has('ry') ? svgNumber(attributes.get('ry') ?? '') : null;
         if (rx !== null && ry !== null && rx > 0 && ry > 0) {
           pathData = `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
         }
@@ -183,18 +183,18 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           pathData = `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}${closePath}`;
         }
       } else if (elementName === 'line') {
-        const x1 = Number(attributes.get('x1') ?? '0');
-        const y1 = Number(attributes.get('y1') ?? '0');
-        const x2 = Number(attributes.get('x2') ?? '0');
-        const y2 = Number(attributes.get('y2') ?? '0');
+        const x1 = svgNumber(attributes.get('x1') ?? '0') ?? 0;
+        const y1 = svgNumber(attributes.get('y1') ?? '0') ?? 0;
+        const x2 = svgNumber(attributes.get('x2') ?? '0') ?? 0;
+        const y2 = svgNumber(attributes.get('y2') ?? '0') ?? 0;
         pathData = `M${x1} ${y1}L${x2} ${y2}`;
       } else if (elementName === 'rect') {
-        const x = Number(attributes.get('x') ?? '0');
-        const y = Number(attributes.get('y') ?? '0');
-        const width = attributes.has('width') ? Number(attributes.get('width')) : null;
-        const height = attributes.has('height') ? Number(attributes.get('height')) : null;
-        const rx = attributes.has('rx') ? Number(attributes.get('rx')) : null;
-        const ry = attributes.has('ry') ? Number(attributes.get('ry')) : null;
+        const x = svgNumber(attributes.get('x') ?? '0') ?? 0;
+        const y = svgNumber(attributes.get('y') ?? '0') ?? 0;
+        const width = attributes.has('width') ? svgNumber(attributes.get('width') ?? '') : null;
+        const height = attributes.has('height') ? svgNumber(attributes.get('height') ?? '') : null;
+        const rx = attributes.has('rx') ? svgNumber(attributes.get('rx') ?? '') : null;
+        const ry = attributes.has('ry') ? svgNumber(attributes.get('ry') ?? '') : null;
         pathData = staticSvgRectPathData(x, y, width, height, rx, ry);
       }
       if (!pathData) {
@@ -718,7 +718,8 @@ function isStaticSvgAttributeSupported(
     return isStaticSvgViewBoxValueSupported(value);
   }
   if (name === 'version') {
-    return isStaticSvgNumericValueSupported(value);
+    const version = Number(value.trim());
+    return Number.isFinite(version);
   }
   if (name === 'd') {
     return value.trim().length > 0;
@@ -818,23 +819,21 @@ function svgNumericAttribute(element: Element, name: string): number | null {
   if (value === null) {
     return null;
   }
-  const number = Number(value.trim());
-  return Number.isFinite(number) ? number : null;
+  return svgNumber(value);
 }
 
 function isStaticSvgNumericValueSupported(value: string): boolean {
-  const number = Number(value.trim());
-  return Number.isFinite(number);
+  return svgNumber(value) !== null;
 }
 
 function isStaticSvgNonNegativeNumericValueSupported(value: string): boolean {
-  const number = Number(value.trim());
-  return Number.isFinite(number) && number >= 0;
+  const number = svgNumber(value);
+  return number !== null && number >= 0;
 }
 
 function isStaticSvgPositiveNumericValueSupported(value: string): boolean {
-  const number = Number(value.trim());
-  return Number.isFinite(number) && number > 0;
+  const number = svgNumber(value);
+  return number !== null && number > 0;
 }
 
 function isStaticSvgViewBoxValueSupported(value: string): boolean {
@@ -1084,12 +1083,26 @@ function svgOpacity(value: string | null): number {
   return Math.max(0, Math.min(1, unitValue));
 }
 
+function svgNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const normalized = trimmed.toLowerCase();
+  const numeric = normalized.endsWith('px') ? trimmed.slice(0, -2).trim() : trimmed;
+  if (numeric.length === 0) {
+    return null;
+  }
+  const number = Number(numeric);
+  return Number.isFinite(number) ? number : null;
+}
+
 function svgPositiveNumber(value: string | null): number | null {
   if (value === null) {
     return null;
   }
-  const number = Number(value.trim());
-  return Number.isFinite(number) && number > 0 ? number : null;
+  const number = svgNumber(value);
+  return number !== null && number > 0 ? number : null;
 }
 
 function svgStrokeLineJoin(value: string | null): CanvasLineJoin | null {
@@ -1120,23 +1133,19 @@ function svgStrokeDashArray(value: string | null): number[] | null | undefined {
   if (values.length === 0) {
     return undefined;
   }
-  const parsed = values.map((part) => Number(part));
-  if (parsed.some((part) => !Number.isFinite(part) || part < 0) || !parsed.some((part) => part > 0)) {
+  const parsed = values.map((part) => svgNumber(part));
+  if (parsed.some((part) => part === null || part < 0) || !parsed.some((part) => part !== null && part > 0)) {
     return undefined;
   }
-  return parsed.length % 2 === 0 ? parsed : [...parsed, ...parsed];
+  const dashValues = parsed as number[];
+  return dashValues.length % 2 === 0 ? dashValues : [...dashValues, ...dashValues];
 }
 
 function svgStrokeDashOffset(value: string | null): number | undefined {
   if (value === null) {
     return undefined;
   }
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return svgNumber(value) ?? undefined;
 }
 
 function svgFillRule(value: string | null): CanvasFillRule | undefined {
