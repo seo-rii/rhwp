@@ -4877,14 +4877,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const strokedSvgResourceTree = treeFor(svgOutline);
     strokedSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
-      '<path d="M3 3 L15 3 L15 15 L3 15 Z" fill="none" stroke="#0000ff" stroke-width="4" stroke-linejoin="miter" stroke-linecap="butt" stroke-miterlimit="4"/>',
+      '<path d="M3 3 L15 3 L15 15 L3 15 Z" fill="none" stroke="#0000ff" stroke-width="4" stroke-linejoin="round" stroke-linecap="square" stroke-miterlimit="4"/>',
       '</svg>',
     ].join('');
     strokedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-stroked-resource';
     const lineSvgResourceTree = treeFor(svgOutline);
     lineSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
-      '<line x1="3" y1="9" x2="15" y2="9" fill="#ff00cc" stroke="#0000ff" stroke-width="4" stroke-linejoin="miter" stroke-linecap="butt" stroke-miterlimit="4"/>',
+      '<line x1="3" y1="9" x2="15" y2="9" fill="#ff00cc" stroke="#0000ff" stroke-width="4" stroke-linejoin="miter" stroke-linecap="round" stroke-miterlimit="4"/>',
       '</svg>',
     ].join('');
     lineSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-line-resource';
@@ -4894,12 +4894,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '<rect x="1" y="1" width="5" height="5" fill="none" stroke="#0000ff" stroke-width="2" stroke-linejoin="miter" stroke-linecap="butt" stroke-miterlimit="4"/>',
       '<circle cx="13" cy="4" r="3" fill="none" stroke="#0000ff" stroke-width="2" stroke-linejoin="miter" stroke-linecap="butt" stroke-miterlimit="4"/>',
       '<ellipse cx="5" cy="14" rx="3" ry="2" fill="none" stroke="#0000ff" stroke-width="2" stroke-linejoin="miter" stroke-linecap="butt" stroke-miterlimit="4"/>',
-      '<polygon points="10,11 16,11 13,16" fill="none" stroke="#0000ff" stroke-width="2" stroke-linejoin="miter" stroke-linecap="butt" stroke-miterlimit="4"/>',
+      '<polygon points="10,11 16,11 13,16" fill="none" stroke="#0000ff" stroke-width="2" stroke-linejoin="bevel" stroke-linecap="square" stroke-miterlimit="4"/>',
       '</svg>',
     ].join('');
     shapeStrokeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-shape-stroke-resource';
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
-    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-linecap="round"/>';
+    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-dasharray="2 2"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
     const unsupportedSvgOpacityTree = treeFor(svgOutline);
     unsupportedSvgOpacityTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" opacity="not-a-number"/>';

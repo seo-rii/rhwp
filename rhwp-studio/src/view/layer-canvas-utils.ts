@@ -1048,12 +1048,18 @@ function svgPositiveNumber(value: string | null): number | null {
 
 function svgStrokeLineJoin(value: string | null): CanvasLineJoin | null {
   const normalized = value?.trim().toLowerCase();
-  return normalized === 'miter' ? 'miter' : null;
+  if (normalized === 'miter' || normalized === 'round' || normalized === 'bevel') {
+    return normalized;
+  }
+  return null;
 }
 
 function svgStrokeLineCap(value: string | null): CanvasLineCap | null {
   const normalized = value?.trim().toLowerCase();
-  return normalized === 'butt' ? 'butt' : null;
+  if (normalized === 'butt' || normalized === 'round' || normalized === 'square') {
+    return normalized;
+  }
+  return null;
 }
 
 function svgFillRule(value: string | null): CanvasFillRule | undefined {

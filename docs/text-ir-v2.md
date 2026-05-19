@@ -582,12 +582,12 @@ payload. `payloadKind: "monochromeFillStroke"` is schema vocabulary for the
 first richer outline payload: it must carry an explicit `stroke` object, and the
 v2 validator only accepts the initial supported subset behind the richer-outline
 feature gate. That subset is finite positive stroke width, solid stroke color,
-finite non-negative optional miter limit, `join: "miter"`, `cap: "butt"`, and
-`paintOrder: "fillThenStroke"`. SVG and Canvas2D strict replay accept this
-subset once `strictGlyphOutlineReplay` is enabled; unsupported stroke styles
-are rejected with `glyphOutlineStrokeStyleUnsupported`. Other backends may still
-reject the stroke payload until their own bbox, fixture, and fuzzy parity gates
-land.
+finite non-negative optional miter limit, Canvas-compatible
+`join: "miter" | "round" | "bevel"`, `cap: "butt" | "round" | "square"`, and
+`paintOrder: "fillThenStroke"`. Browser strict replay accepts this subset once
+`strictGlyphOutlineReplay` is enabled; unsupported stroke styles are rejected
+with `glyphOutlineStrokeStyleUnsupported`. Other backends may still reject the
+stroke payload until their own bbox, fixture, and fuzzy parity gates land.
 
 `payloadKind: "colorLayers"` is v2 vocabulary with a resolved COLRv0
 strict-export gate; `payloadKind: "bitmapGlyph"` is now a family-specific
@@ -648,8 +648,9 @@ The reserved families are intentionally separate payload families:
   with fill, fill opacity, fill rule, local transforms, and a narrow solid
   stroke subset are replayed as native Canvas2D/CanvasKit paths instead of as
   overlay images. The solid stroke subset is intentionally conservative:
-  positive finite width, solid color, `miter` joins, `butt` caps, finite
-  miter limit, no dash, no gradients/patterns, and no group compositing.
+  positive finite width, solid color, Canvas-compatible `miter`/`round`/`bevel`
+  joins, `butt`/`round`/`square` caps, finite miter limit, no dash, no
+  gradients/patterns, and no group compositing.
   Strict visual replay must keep external resources, script, animation, links,
   and interactivity disabled; raw SVG-in-font replay is not the strictVisual
   contract. The payload should record `viewBox` and optional `intrinsicSize`
@@ -692,7 +693,7 @@ implicitly change schema authority:
   selecting the variant. The same subset now covers filled path geometry, safe
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
   solid stroke subset in Canvas2D and CanvasKit; unsupported stroke styles such
-  as dashed strokes or non-butt caps remain deterministic fallback cases.
+  as dashed strokes remain deterministic fallback cases.
 - CanvasKit variation, TTC, and OTC strict replay are backend capability
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the

@@ -7,6 +7,8 @@ import type {
   Path,
   Shader,
   Surface,
+  StrokeCap,
+  StrokeJoin,
   TextBlob,
   Typeface,
   TypefaceFontProvider,
@@ -1237,8 +1239,8 @@ export class CanvasKitLayerRenderer {
       const strokePaint = stroke ? this.makePaint(stroke.color ?? op.paintStyle.color, 'stroke', stroke.opacity ?? 1) : null;
       if (strokePaint && stroke) {
         strokePaint.setStrokeWidth(stroke.widthPx);
-        strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Miter);
-        strokePaint.setStrokeCap(this.canvasKit.StrokeCap.Butt);
+        strokePaint.setStrokeJoin(this.canvasKitStrokeJoin(stroke.join));
+        strokePaint.setStrokeCap(this.canvasKitStrokeCap(stroke.cap));
         if (typeof stroke.miterLimit === 'number') {
           strokePaint.setStrokeMiter(stroke.miterLimit);
         }
@@ -1442,8 +1444,8 @@ export class CanvasKitLayerRenderer {
           if (layer.stroke) {
             const strokePaint = this.makePaint(layer.stroke.color, 'stroke', layer.stroke.opacity);
             strokePaint.setStrokeWidth(layer.stroke.width);
-            strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Miter);
-            strokePaint.setStrokeCap(this.canvasKit.StrokeCap.Butt);
+            strokePaint.setStrokeJoin(this.canvasKitStrokeJoin(layer.stroke.lineJoin));
+            strokePaint.setStrokeCap(this.canvasKitStrokeCap(layer.stroke.lineCap));
             strokePaint.setStrokeMiter(layer.stroke.miterLimit);
             canvas.drawPath(path, strokePaint);
             strokePaint.delete();
@@ -2812,6 +2814,30 @@ export class CanvasKitLayerRenderer {
     paint.setStyle(style === 'fill' ? this.canvasKit.PaintStyle.Fill : this.canvasKit.PaintStyle.Stroke);
     paint.setColor(parseCanvasKitCssColor(this.canvasKit, color, opacity));
     return paint;
+  }
+
+  private canvasKitStrokeJoin(join: CanvasLineJoin | undefined): StrokeJoin {
+    switch (join) {
+      case 'round':
+        return this.canvasKit.StrokeJoin.Round;
+      case 'bevel':
+        return this.canvasKit.StrokeJoin.Bevel;
+      case 'miter':
+      default:
+        return this.canvasKit.StrokeJoin.Miter;
+    }
+  }
+
+  private canvasKitStrokeCap(cap: CanvasLineCap | undefined): StrokeCap {
+    switch (cap) {
+      case 'round':
+        return this.canvasKit.StrokeCap.Round;
+      case 'square':
+        return this.canvasKit.StrokeCap.Square;
+      case 'butt':
+      default:
+        return this.canvasKit.StrokeCap.Butt;
+    }
   }
 
   private makeResolvedColorPaint(fill: { rgba: [number, number, number, number] }): Paint {
