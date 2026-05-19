@@ -285,6 +285,8 @@ Open `http://localhost:7700` in your browser.
 
 ```bash
 npm --prefix rhwp-studio run e2e:ci        # Studio E2E (Canvas2D + CanvasKit)
+npm --prefix rhwp-studio run e2e:render:compat:headless
+npm --prefix rhwp-studio run e2e:render:webgpu:headless
 cargo test-skia-full-sweep                 # Native Skia full screenshot sweep
 RHWP_SKIA_LOG_PERF=1 cargo test --features native-skia test_skia_screenshot_matches_layer_svg_for_representative_sample_corpus -- --nocapture
 python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview
@@ -308,6 +310,11 @@ Use `--canvaskit-surface auto|webgpu|webgl|software` or
 preserve the requested surface and backend fallback diagnostics so browser
 CanvasKit can be compared against native Skia without hiding WebGPU/WebGL
 fallbacks.
+`e2e:render:compat:headless` runs the representative Canvas2D-vs-CanvasKit
+parity matrix in compatibility mode. `e2e:render:webgpu:headless` runs the same
+matrix with WebGPU-preferred CanvasKit surfaces, which records WebGPU/WebGL
+fallback diagnostics when the active CanvasKit build or browser cannot create a
+GPU surface.
 
 GitHub Actions는 목적별로 분리되어 있습니다.
 
