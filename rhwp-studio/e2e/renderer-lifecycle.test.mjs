@@ -4874,8 +4874,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsafeSvgResourceTree = treeFor(svgOutline);
     unsafeSvgResourceTree.resources.svgFragments[0] = '<script>1</script><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsafeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-unsafe-script';
+    const strokedSvgResourceTree = treeFor(svgOutline);
+    strokedSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M3 3 L15 3 L15 15 L3 15 Z" fill="none" stroke="#0000ff" stroke-width="4" stroke-linejoin="miter" stroke-linecap="butt" stroke-miterlimit="4"/>',
+      '</svg>',
+    ].join('');
+    strokedSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-stroked-resource';
     const unsupportedSvgStrokeTree = treeFor(svgOutline);
-    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000"/>';
+    unsupportedSvgStrokeTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" stroke="#000000" stroke-linecap="round"/>';
     unsupportedSvgStrokeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-stroke';
     const unsupportedSvgOpacityTree = treeFor(svgOutline);
     unsupportedSvgOpacityTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc" opacity="not-a-number"/>';
@@ -5070,6 +5077,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserBalancedShapeSvgGlyph;
     let noDomParserDefsSvgGlyph;
     let noDomParserNonRenderingMetadataSvgGlyph;
+    let noDomParserStrokedSvgGlyph;
     let noDomParserNamedCssColorSvgGlyph;
     let noDomParserFunctionalCssColorSvgGlyph;
     let noDomParserWideGamutCssColorSvgGlyph;
@@ -5097,6 +5105,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserBalancedShapeSvgGlyph = await render(balancedShapeSvgResourceTree);
       noDomParserDefsSvgGlyph = await render(defsSvgResourceTree);
       noDomParserNonRenderingMetadataSvgGlyph = await render(nonRenderingMetadataSvgResourceTree);
+      noDomParserStrokedSvgGlyph = await render(strokedSvgResourceTree);
       noDomParserNamedCssColorSvgGlyph = await render(namedCssColorSvgResourceTree);
       noDomParserFunctionalCssColorSvgGlyph = await render(functionalCssColorSvgResourceTree);
       noDomParserWideGamutCssColorSvgGlyph = await render(wideGamutCssColorSvgResourceTree);
@@ -5143,6 +5152,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserDefsSvgGlyph,
       nonRenderingMetadataSvgGlyph: await render(nonRenderingMetadataSvgResourceTree),
       noDomParserNonRenderingMetadataSvgGlyph,
+      strokedSvgGlyph: await render(strokedSvgResourceTree),
+      noDomParserStrokedSvgGlyph,
       namedCssColorSvgGlyph: await render(namedCssColorSvgResourceTree),
       noDomParserNamedCssColorSvgGlyph,
       functionalCssColorSvgGlyph: await render(functionalCssColorSvgResourceTree),
@@ -5346,6 +5357,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserNonRenderingMetadataSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserNonRenderingMetadataSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects non-rendering metadata SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserNonRenderingMetadataSvgReport)}`,
+  );
+  const canvaskitStrokedSvgReport = canvaskitGlyphOutlineProbe
+    .strokedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitStrokedSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitStrokedSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects stroked SvgGlyph resource=${JSON.stringify(canvaskitStrokedSvgReport)}`,
+  );
+  const canvaskitNoDomParserStrokedSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserStrokedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserStrokedSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserStrokedSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects stroked SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStrokedSvgReport)}`,
   );
   const canvaskitNamedCssColorSvgReport = canvaskitGlyphOutlineProbe
     .namedCssColorSvgGlyph
@@ -5801,6 +5830,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserNonRenderingMetadataSvgBluePixels = canvaskitGlyphOutlineProbe
     .noDomParserNonRenderingMetadataSvgGlyph
     .bluePixels;
+  const canvaskitStrokedSvgBluePixels = canvaskitGlyphOutlineProbe.strokedSvgGlyph.bluePixels;
+  const canvaskitStrokedSvgMagentaPixels = canvaskitGlyphOutlineProbe.strokedSvgGlyph.magentaPixels;
+  const canvaskitNoDomParserStrokedSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserStrokedSvgGlyph
+    .bluePixels;
+  const canvaskitNoDomParserStrokedSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStrokedSvgGlyph
+    .magentaPixels;
   const canvaskitNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe.namedCssColorSvgGlyph.magentaPixels;
   const canvaskitNoDomParserNamedCssColorSvgMagentaPixels = canvaskitGlyphOutlineProbe
     .noDomParserNamedCssColorSvgGlyph
@@ -5945,6 +5982,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserNonRenderingMetadataSvgMagentaPixels > 50
       && canvaskitNoDomParserNonRenderingMetadataSvgBluePixels < 5,
     `CanvasKit strict outline skips non-rendering metadata/title/desc content without DOMParser magenta=${canvaskitNoDomParserNonRenderingMetadataSvgMagentaPixels}, blue=${canvaskitNoDomParserNonRenderingMetadataSvgBluePixels}`,
+  );
+  assert(
+    canvaskitStrokedSvgBluePixels > 80 && canvaskitStrokedSvgMagentaPixels < 5,
+    `CanvasKit strict outline paints static SvgGlyph solid stroke blue=${canvaskitStrokedSvgBluePixels}, magenta=${canvaskitStrokedSvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserStrokedSvgBluePixels > 80 && canvaskitNoDomParserStrokedSvgMagentaPixels < 5,
+    `CanvasKit strict outline paints static SvgGlyph solid stroke without DOMParser blue=${canvaskitNoDomParserStrokedSvgBluePixels}, magenta=${canvaskitNoDomParserStrokedSvgMagentaPixels}`,
   );
   assert(
     canvaskitNamedCssColorSvgMagentaPixels > 100,

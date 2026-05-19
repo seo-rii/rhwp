@@ -643,11 +643,15 @@ The reserved families are intentionally separate payload families:
   followed by optional `transformToRun`, then draws the producer-selected strike
   into the payload's local glyph box.
 - `SvgGlyph` should reference a sanitized static vector subresource. The first
-  browser strict replay subset is path-only: sanitized `<path d="...">`
-  fragments with fill, fill opacity, and fill rule are replayed as native
-  Canvas2D/CanvasKit paths instead of as overlay images. Strict
-  visual replay must keep external resources, script, animation, links, and
-  interactivity disabled; raw SVG-in-font replay is not the strictVisual
+  browser strict replay subset is path-vector based: sanitized path-like
+  geometry (`path`, `rect`, `circle`, `ellipse`, `polygon`, and `polyline`)
+  with fill, fill opacity, fill rule, local transforms, and a narrow solid
+  stroke subset are replayed as native Canvas2D/CanvasKit paths instead of as
+  overlay images. The solid stroke subset is intentionally conservative:
+  positive finite width, solid color, `miter` joins, `butt` caps, finite
+  miter limit, no dash, no gradients/patterns, and no group compositing.
+  Strict visual replay must keep external resources, script, animation, links,
+  and interactivity disabled; raw SVG-in-font replay is not the strictVisual
   contract. The payload should record `viewBox` and optional `intrinsicSize`
   because mapping the vector resource into run-local glyph coordinates is part
   of strict visual replay, not a backend-local guess. As with BitmapGlyph, the
@@ -679,14 +683,16 @@ implicitly change schema authority:
   replay metadata record that default. The current gated replay subset is
   covered by SVG, Canvas2D, CanvasKit, and native Skia fixtures.
 - `SvgGlyph` writer emission starts with browser Canvas2D/CanvasKit strict
-  replay of a sanitized static path-resource subset. The producer is
+  replay of a sanitized static path-vector resource subset. The producer is
   responsible for sanitizing to `securityMode: staticSanitized`; strict
   validators require
   `scriptAllowed=false`, `animationAllowed=false`,
   `externalResourcesAllowed=false`, and `interactivityAllowed=false`, and the
   renderer must resolve and parse the referenced vector path resource before
-  selecting the variant. The same path-only subset is now covered by SVG,
-  Canvas2D, CanvasKit, and native Skia fixtures.
+  selecting the variant. The same subset now covers filled path geometry, safe
+  nonvisual metadata, local transforms, CSS color parsing, and the conservative
+  solid stroke subset in Canvas2D and CanvasKit; unsupported stroke styles such
+  as dashed strokes or non-butt caps remain deterministic fallback cases.
 - CanvasKit variation, TTC, and OTC strict replay are backend capability
   additions. Until exact construction fixtures pass, CanvasKit must keep
   reporting `variationUnsupported` or `faceIndexUnsupported` and select the

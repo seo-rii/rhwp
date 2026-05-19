@@ -1434,9 +1434,20 @@ export class CanvasKitLayerRenderer {
             continue;
           }
           this.applyPathFillRule(path, layer.fillRule);
-          const paint = this.makePaint(layer.fill, 'fill', layer.opacity);
-          canvas.drawPath(path, paint);
-          paint.delete();
+          if (layer.fill !== null) {
+            const paint = this.makePaint(layer.fill, 'fill', layer.opacity);
+            canvas.drawPath(path, paint);
+            paint.delete();
+          }
+          if (layer.stroke) {
+            const strokePaint = this.makePaint(layer.stroke.color, 'stroke', layer.stroke.opacity);
+            strokePaint.setStrokeWidth(layer.stroke.width);
+            strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Miter);
+            strokePaint.setStrokeCap(this.canvasKit.StrokeCap.Butt);
+            strokePaint.setStrokeMiter(layer.stroke.miterLimit);
+            canvas.drawPath(path, strokePaint);
+            strokePaint.delete();
+          }
           path.delete();
         } finally {
           canvas.restore();

@@ -458,9 +458,20 @@ export class Canvas2DLayerRenderer {
                   }
                   const path = new Path2D(layer.pathData);
                   const previousAlpha = ctx.globalAlpha;
-                  ctx.fillStyle = layer.fill;
-                  ctx.globalAlpha = previousAlpha * layer.opacity;
-                  ctx.fill(path, layer.fillRule ?? 'nonzero');
+                  if (layer.fill !== null) {
+                    ctx.fillStyle = layer.fill;
+                    ctx.globalAlpha = previousAlpha * layer.opacity;
+                    ctx.fill(path, layer.fillRule ?? 'nonzero');
+                  }
+                  if (layer.stroke) {
+                    ctx.strokeStyle = layer.stroke.color;
+                    ctx.lineWidth = layer.stroke.width;
+                    ctx.lineJoin = layer.stroke.lineJoin;
+                    ctx.lineCap = layer.stroke.lineCap;
+                    ctx.miterLimit = layer.stroke.miterLimit;
+                    ctx.globalAlpha = previousAlpha * layer.stroke.opacity;
+                    ctx.stroke(path);
+                  }
                   ctx.globalAlpha = previousAlpha;
                 } finally {
                   ctx.restore();
