@@ -342,8 +342,28 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
 }
 
 function staticSvgMarkupWithoutComments(fragment: string): string | null {
-  const stripped = fragment.replace(/<!--[\s\S]*?-->/g, '');
-  return stripped.includes('<!--') || stripped.includes('-->') ? null : stripped;
+  let stripped = '';
+  let cursor = 0;
+  while (cursor < fragment.length) {
+    const commentStart = fragment.indexOf('<!--', cursor);
+    const strayCommentEnd = fragment.indexOf('-->', cursor);
+    if (strayCommentEnd !== -1 && (commentStart === -1 || strayCommentEnd < commentStart)) {
+      return null;
+    }
+    if (commentStart === -1) {
+      return stripped + fragment.slice(cursor);
+    }
+    stripped += fragment.slice(cursor, commentStart);
+    const commentEnd = fragment.indexOf('-->', commentStart + 4);
+    if (commentEnd === -1) {
+      return null;
+    }
+    if (fragment.slice(commentStart + 4, commentEnd).includes('--')) {
+      return null;
+    }
+    cursor = commentEnd + 3;
+  }
+  return stripped;
 }
 
 function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
