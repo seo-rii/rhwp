@@ -709,6 +709,7 @@ fn test_layer_svg_strict_glyph_outline_replays_bitmap_glyph() {
     let output = renderer.output();
     assert!(!output.contains(">A</text>"));
     assert!(output.contains("<image "));
+    assert!(output.contains("<g transform=\"matrix(1 0 0 1 3 4)\""));
     assert!(output.contains("href=\"data:image/png;base64,"));
     assert!(output.contains("image-rendering=\"pixelated\""));
     assert!(output.contains("data-rhwp-image-resource-id=\"0\""));
@@ -773,6 +774,7 @@ fn test_layer_svg_strict_glyph_outline_replays_svg_glyph() {
     let output = renderer.output();
     assert!(!output.contains(">A</text>"));
     assert!(output.contains("source-backed static sanitized SVG glyph"));
+    assert!(output.contains("<g transform=\"matrix(1 0 0 1 3 4)\""));
     assert!(output.contains("data-rhwp-vector-resource-id=\"0\""));
     assert!(output.contains("data-rhwp-security-mode=\"staticSanitized\""));
     assert!(output.contains("viewBox=\"0 0 10 10\""));
@@ -792,6 +794,70 @@ fn test_layer_svg_strict_glyph_outline_replays_svg_glyph() {
                 && eligibility.replay_eligible
                 && eligibility.reason.is_none()
         }));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_applies_bitmap_glyph_payload_transform() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let mut tree =
+        glyph_outline_fixture_tree_with_bitmap_glyph(PaintTextStyle::from(&text_style), true);
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
+            panic!("expected glyph outline");
+        };
+        outline.bitmap_glyph.as_mut().unwrap().transform_to_run = Some(LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 5.0,
+            f: 6.0,
+        });
+    }
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+
+    assert!(!output.contains(">A</text>"));
+    assert!(output.contains("<g transform=\"matrix(1 0 0 1 8 10)\""));
+    assert!(output.contains("<image x=\"0\" y=\"0\" width=\"20\" height=\"20\""));
+    assert!(output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_applies_svg_glyph_payload_transform() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let mut tree =
+        glyph_outline_fixture_tree_with_svg_glyph(PaintTextStyle::from(&text_style), true);
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
+            panic!("expected glyph outline");
+        };
+        outline.svg_glyph.as_mut().unwrap().transform_to_run = Some(LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 7.0,
+            f: 8.0,
+        });
+    }
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+
+    assert!(!output.contains(">A</text>"));
+    assert!(output.contains("<g transform=\"matrix(1 0 0 1 10 12)\""));
+    assert!(output.contains("<svg x=\"0\" y=\"0\" width=\"20\" height=\"20\""));
+    assert!(output.contains("source-backed static sanitized SVG glyph"));
 }
 
 #[test]

@@ -17,10 +17,10 @@ use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     BitmapGlyphFiltering, ClipKind, GlyphOutlineFillRule, GlyphOutlinePayloadKind,
-    LayerEquationPaint, LayerFormObjectPaint, LayerGlyphOutlinePaint, LayerImagePaint, LayerNode,
-    LayerNodeKind, LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole,
-    LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp,
-    ResourceArena, TextSourceEntry, TextSourceTable,
+    LayerAffineTransform, LayerEquationPaint, LayerFormObjectPaint, LayerGlyphOutlinePaint,
+    LayerImagePaint, LayerNode, LayerNodeKind, LayerPageBackgroundPaint, LayerSemantic,
+    LayerSemanticRole, LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint,
+    PageLayerTree, PaintOp, ResourceArena, TextSourceEntry, TextSourceTable,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant,
@@ -478,13 +478,8 @@ impl SvgRenderer {
                     _ => String::new(),
                 };
                 self.output.push_str(&format!(
-                    "<g transform=\"matrix({} {} {} {} {} {})\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\">",
-                    transform.a,
-                    transform.b,
-                    transform.c,
-                    transform.d,
-                    transform.e,
-                    transform.f,
+                    "<g transform=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\">",
+                    svg_affine_matrix_transform(transform),
                     escape_xml(&outline.variant.equivalence_group),
                     escape_xml(&outline.variant.variant_id),
                 ));
@@ -1915,6 +1910,11 @@ impl SvgRenderer {
             Some(BitmapGlyphFiltering::Nearest) => " image-rendering=\"pixelated\"",
             _ => "",
         };
+        let Some(placement) = payload.placement else {
+            return;
+        };
+        let transform =
+            glyph_payload_svg_transform(placement.run_to_page, payload.transform_to_run);
         let color_space_defaulted = payload.color_space.is_none();
         let color_space_attr = payload
             .color_space
@@ -1939,9 +1939,10 @@ impl SvgRenderer {
             .map(|filtering| format!(" data-rhwp-filtering=\"{}\"", filtering.as_str()))
             .unwrap_or_default();
         self.output.push_str(&format!(
-            "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"{} data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-image-resource-id=\"{}\" data-rhwp-color-space-defaulted=\"{}\"{}{}{}{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed bitmap glyph</desc></image>\n",
-            bbox.x,
-            bbox.y,
+            "<g transform=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><image x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"{} data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-image-resource-id=\"{}\" data-rhwp-color-space-defaulted=\"{}\"{}{}{}{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed bitmap glyph</desc></image></g>\n",
+            svg_affine_matrix_transform(transform),
+            escape_xml(&outline.variant.equivalence_group),
+            escape_xml(&outline.variant.variant_id),
             bbox.width,
             bbox.height,
             data_uri,
@@ -1984,11 +1985,17 @@ impl SvgRenderer {
         ) else {
             return;
         };
+        let Some(placement) = payload.placement else {
+            return;
+        };
+        let transform =
+            glyph_payload_svg_transform(placement.run_to_page, payload.transform_to_run);
 
         self.output.push_str(&format!(
-            "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\" overflow=\"visible\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-vector-resource-id=\"{}\" data-rhwp-security-mode=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed static sanitized SVG glyph</desc>",
-            bbox.x,
-            bbox.y,
+            "<g transform=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><svg x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\" overflow=\"visible\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-vector-resource-id=\"{}\" data-rhwp-security-mode=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed static sanitized SVG glyph</desc>",
+            svg_affine_matrix_transform(transform),
+            escape_xml(&outline.variant.equivalence_group),
+            escape_xml(&outline.variant.variant_id),
             bbox.width,
             bbox.height,
             view_box.x,
@@ -2006,7 +2013,7 @@ impl SvgRenderer {
             escape_xml(&outline.variant.variant_id),
         ));
         self.output.push_str(fragment);
-        self.output.push_str("</svg>\n");
+        self.output.push_str("</svg></g>\n");
     }
 
     fn render_layer_equation(
@@ -3788,6 +3795,36 @@ fn color_to_svg(color: u32) -> String {
     let g = (color >> 8) & 0xFF;
     let r = color & 0xFF;
     format!("#{:02x}{:02x}{:02x}", r, g, b)
+}
+
+fn compose_layer_affine_transform(
+    parent: LayerAffineTransform,
+    child: LayerAffineTransform,
+) -> LayerAffineTransform {
+    LayerAffineTransform {
+        a: parent.a * child.a + parent.c * child.b,
+        b: parent.b * child.a + parent.d * child.b,
+        c: parent.a * child.c + parent.c * child.d,
+        d: parent.b * child.c + parent.d * child.d,
+        e: parent.a * child.e + parent.c * child.f + parent.e,
+        f: parent.b * child.e + parent.d * child.f + parent.f,
+    }
+}
+
+fn glyph_payload_svg_transform(
+    run_to_page: LayerAffineTransform,
+    transform_to_run: Option<LayerAffineTransform>,
+) -> LayerAffineTransform {
+    transform_to_run
+        .map(|transform| compose_layer_affine_transform(run_to_page, transform))
+        .unwrap_or(run_to_page)
+}
+
+fn svg_affine_matrix_transform(transform: LayerAffineTransform) -> String {
+    format!(
+        "matrix({} {} {} {} {} {})",
+        transform.a, transform.b, transform.c, transform.d, transform.e, transform.f,
+    )
 }
 
 /// XML 특수문자 이스케이프
