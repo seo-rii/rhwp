@@ -125,7 +125,62 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       for (const attributeMatch of rawAttributes.matchAll(attributePattern)) {
         const rawName = attributeMatch[1].trim().toLowerCase();
         const value = attributeMatch[2] ?? attributeMatch[3] ?? attributeMatch[4] ?? '';
-        attributes.set(rawName, value.trim());
+        let decodedValue = '';
+        let valueCursor = 0;
+        let isAttributeValueSupported = true;
+        while (valueCursor < value.length) {
+          const entityStart = value.indexOf('&', valueCursor);
+          if (entityStart < 0) {
+            decodedValue += value.slice(valueCursor);
+            break;
+          }
+          decodedValue += value.slice(valueCursor, entityStart);
+          const entityEnd = value.indexOf(';', entityStart + 1);
+          if (entityEnd < 0) {
+            isAttributeValueSupported = false;
+            break;
+          }
+          const entity = value.slice(entityStart + 1, entityEnd);
+          let decodedEntity: string | null = null;
+          if (entity === 'amp') {
+            decodedEntity = '&';
+          } else if (entity === 'lt') {
+            decodedEntity = '<';
+          } else if (entity === 'gt') {
+            decodedEntity = '>';
+          } else if (entity === 'quot') {
+            decodedEntity = '"';
+          } else if (entity === 'apos') {
+            decodedEntity = "'";
+          } else {
+            const decimalEntity = /^#([0-9]+)$/.exec(entity);
+            const hexEntity = /^#x([0-9a-fA-F]+)$/.exec(entity);
+            const codePoint = decimalEntity
+              ? Number(decimalEntity[1])
+              : hexEntity
+                ? Number.parseInt(hexEntity[1], 16)
+                : Number.NaN;
+            const isXmlCharacter = codePoint === 0x09
+              || codePoint === 0x0a
+              || codePoint === 0x0d
+              || (codePoint >= 0x20 && codePoint <= 0xd7ff)
+              || (codePoint >= 0xe000 && codePoint <= 0xfffd)
+              || (codePoint >= 0x10000 && codePoint <= 0x10ffff);
+            if (Number.isInteger(codePoint) && isXmlCharacter) {
+              decodedEntity = String.fromCodePoint(codePoint);
+            }
+          }
+          if (decodedEntity === null) {
+            isAttributeValueSupported = false;
+            break;
+          }
+          decodedValue += decodedEntity;
+          valueCursor = entityEnd + 1;
+        }
+        if (!isAttributeValueSupported) {
+          return [];
+        }
+        attributes.set(rawName, decodedValue.trim());
         remainingAttributes = remainingAttributes.replace(attributeMatch[0], '');
       }
       if (remainingAttributes.replace(/\/\s*$/, '').trim().length > 0) {

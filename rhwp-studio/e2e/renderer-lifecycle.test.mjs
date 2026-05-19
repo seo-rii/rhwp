@@ -4985,6 +4985,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedSvgInvalidColorTree = treeFor(svgOutline);
     unsupportedSvgInvalidColorTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="definitely-not-a-color"/>';
     unsupportedSvgInvalidColorTree.resources.svgHashes[0] = 'svg-glyph-unsupported-invalid-color';
+    const unsupportedSvgUnknownEntityTree = treeFor(svgOutline);
+    unsupportedSvgUnknownEntityTree.resources.svgFragments[0] =
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="&unknown;"/>';
+    unsupportedSvgUnknownEntityTree.resources.svgHashes[0] = 'svg-glyph-unsupported-unknown-entity';
     const unsupportedSvgDoctypeTree = treeFor(svgOutline);
     unsupportedSvgDoctypeTree.resources.svgFragments[0] = '<!DOCTYPE svg><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsupportedSvgDoctypeTree.resources.svgHashes[0] = 'svg-glyph-unsupported-doctype';
@@ -5118,6 +5122,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     styleCommentSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-style-comment-resource';
+    const attributeEntitySvgResourceTree = treeFor(svgOutline);
+    attributeEntitySvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="&#35;ff00cc"/>',
+      '</svg>',
+    ].join('');
+    attributeEntitySvgResourceTree.resources.svgHashes[0] = 'svg-glyph-attribute-entity-resource';
+    const styleEntitySvgResourceTree = treeFor(svgOutline);
+    styleEntitySvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff0000" style="fill: &#x23;ff00cc"/>',
+      '</svg>',
+    ].join('');
+    styleEntitySvgResourceTree.resources.svgHashes[0] = 'svg-glyph-style-entity-resource';
     const polylineSvgResourceTree = treeFor(svgOutline);
     polylineSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -5228,6 +5246,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserStylePrecedenceSvgGlyph;
     let noDomParserStyleCascadeSvgGlyph;
     let noDomParserStyleCommentSvgGlyph;
+    let noDomParserAttributeEntitySvgGlyph;
+    let noDomParserStyleEntitySvgGlyph;
     let noDomParserPolylineSvgGlyph;
     let noDomParserRoundedRectSvgGlyph;
     let noDomParserTransformedSvgGlyph;
@@ -5244,6 +5264,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserUnsupportedSvgMalformedCommentResource;
     let noDomParserUnsupportedSvgMalformedStyleCommentResource;
     let noDomParserUnsupportedSvgInvalidColorResource;
+    let noDomParserUnsupportedSvgUnknownEntityResource;
     let noDomParserUnsupportedSvgGroupOpacityResource;
     try {
       globalThis.DOMParser = undefined;
@@ -5285,6 +5306,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserStylePrecedenceSvgGlyph = await render(stylePrecedenceSvgResourceTree);
       noDomParserStyleCascadeSvgGlyph = await render(styleCascadeSvgResourceTree);
       noDomParserStyleCommentSvgGlyph = await render(styleCommentSvgResourceTree);
+      noDomParserAttributeEntitySvgGlyph = await render(attributeEntitySvgResourceTree);
+      noDomParserStyleEntitySvgGlyph = await render(styleEntitySvgResourceTree);
       noDomParserPolylineSvgGlyph = await render(polylineSvgResourceTree);
       noDomParserRoundedRectSvgGlyph = await render(roundedRectSvgResourceTree);
       noDomParserTransformedSvgGlyph = await render(transformedSvgResourceTree);
@@ -5301,6 +5324,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedSvgMalformedCommentResource = await render(unsupportedSvgMalformedCommentTree);
       noDomParserUnsupportedSvgMalformedStyleCommentResource = await render(unsupportedSvgMalformedStyleCommentTree);
       noDomParserUnsupportedSvgInvalidColorResource = await render(unsupportedSvgInvalidColorTree);
+      noDomParserUnsupportedSvgUnknownEntityResource = await render(unsupportedSvgUnknownEntityTree);
       noDomParserUnsupportedSvgGroupOpacityResource = await render(unsupportedSvgGroupOpacityTree);
     } finally {
       if (hadDOMParser) {
@@ -5368,6 +5392,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserStyleCascadeSvgGlyph,
       styleCommentSvgGlyph: await render(styleCommentSvgResourceTree),
       noDomParserStyleCommentSvgGlyph,
+      attributeEntitySvgGlyph: await render(attributeEntitySvgResourceTree),
+      noDomParserAttributeEntitySvgGlyph,
+      styleEntitySvgGlyph: await render(styleEntitySvgResourceTree),
+      noDomParserStyleEntitySvgGlyph,
       polylineSvgGlyph: await render(polylineSvgResourceTree),
       noDomParserPolylineSvgGlyph,
       roundedRectSvgGlyph: await render(roundedRectSvgResourceTree),
@@ -5405,6 +5433,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedSvgGlyphMalformedStyleCommentResource: await render(unsupportedSvgMalformedStyleCommentTree),
       noDomParserUnsupportedSvgMalformedStyleCommentResource,
       noDomParserUnsupportedSvgInvalidColorResource,
+      unsupportedSvgGlyphUnknownEntityResource: await render(unsupportedSvgUnknownEntityTree),
+      noDomParserUnsupportedSvgUnknownEntityResource,
       noDomParserUnsupportedSvgGroupOpacityResource,
     };
   });
@@ -5919,6 +5949,42 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitNoDomParserStyleCommentSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects style-comment SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStyleCommentSvgReport)}`,
   );
+  const canvaskitAttributeEntitySvgReport = canvaskitGlyphOutlineProbe
+    .attributeEntitySvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitAttributeEntitySvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitAttributeEntitySvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects entity-encoded SvgGlyph resource=${JSON.stringify(canvaskitAttributeEntitySvgReport)}`,
+  );
+  const canvaskitNoDomParserAttributeEntitySvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserAttributeEntitySvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserAttributeEntitySvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserAttributeEntitySvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects entity-encoded SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserAttributeEntitySvgReport)}`,
+  );
+  const canvaskitStyleEntitySvgReport = canvaskitGlyphOutlineProbe
+    .styleEntitySvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitStyleEntitySvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitStyleEntitySvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects style entity-encoded SvgGlyph resource=${JSON.stringify(canvaskitStyleEntitySvgReport)}`,
+  );
+  const canvaskitNoDomParserStyleEntitySvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserStyleEntitySvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserStyleEntitySvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserStyleEntitySvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects style entity-encoded SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserStyleEntitySvgReport)}`,
+  );
   const canvaskitPolylineSvgReport = canvaskitGlyphOutlineProbe
     .polylineSvgGlyph
     ?.diagnostics
@@ -6175,6 +6241,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .noDomParserUnsupportedSvgInvalidColorResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgUnknownEntityResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphUnknownEntityResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitNoDomParserUnsupportedSvgUnknownEntityResourceReport = canvaskitGlyphOutlineProbe
+    .noDomParserUnsupportedSvgUnknownEntityResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport = canvaskitGlyphOutlineProbe
     .noDomParserUnsupportedSvgGroupOpacityResource
     ?.diagnostics
@@ -6260,6 +6334,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
+      && canvaskitUnsupportedSvgUnknownEntityResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgUnknownEntityResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitNoDomParserUnsupportedSvgUnknownEntityResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitNoDomParserUnsupportedSvgUnknownEntityResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
       && canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport?.selectedVariantId === 'textRun'
       && canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
@@ -6284,6 +6368,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedMalformedStyleComment:
         canvaskitNoDomParserUnsupportedSvgMalformedStyleCommentResourceReport,
       noDomParserUnsupportedInvalidColor: canvaskitNoDomParserUnsupportedSvgInvalidColorResourceReport,
+      unsupportedUnknownEntity: canvaskitUnsupportedSvgUnknownEntityResourceReport,
+      noDomParserUnsupportedUnknownEntity: canvaskitNoDomParserUnsupportedSvgUnknownEntityResourceReport,
       noDomParserUnsupportedGroupOpacity: canvaskitNoDomParserUnsupportedSvgGroupOpacityResourceReport,
     })}`,
   );
@@ -6516,6 +6602,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .bluePixels;
   const canvaskitNoDomParserStyleCommentSvgRedPixels = canvaskitGlyphOutlineProbe
     .noDomParserStyleCommentSvgGlyph
+    .redPixels;
+  const canvaskitAttributeEntitySvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .attributeEntitySvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserAttributeEntitySvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserAttributeEntitySvgGlyph
+    .magentaPixels;
+  const canvaskitStyleEntitySvgMagentaPixels = canvaskitGlyphOutlineProbe.styleEntitySvgGlyph.magentaPixels;
+  const canvaskitStyleEntitySvgRedPixels = canvaskitGlyphOutlineProbe.styleEntitySvgGlyph.redPixels;
+  const canvaskitNoDomParserStyleEntitySvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStyleEntitySvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserStyleEntitySvgRedPixels = canvaskitGlyphOutlineProbe
+    .noDomParserStyleEntitySvgGlyph
     .redPixels;
   const canvaskitPolylineSvgMagentaPixels = canvaskitGlyphOutlineProbe.polylineSvgGlyph.magentaPixels;
   const canvaskitNoDomParserPolylineSvgMagentaPixels = canvaskitGlyphOutlineProbe
@@ -6807,6 +6907,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitNoDomParserStyleCommentSvgBluePixels < 5
       && canvaskitNoDomParserStyleCommentSvgRedPixels < 5,
     `CanvasKit strict outline skips SvgGlyph style comments without DOMParser magenta=${canvaskitNoDomParserStyleCommentSvgMagentaPixels}, blue=${canvaskitNoDomParserStyleCommentSvgBluePixels}, red=${canvaskitNoDomParserStyleCommentSvgRedPixels}`,
+  );
+  assert(
+    canvaskitAttributeEntitySvgMagentaPixels > 100,
+    `CanvasKit strict outline decodes entity-encoded SvgGlyph attributes magenta=${canvaskitAttributeEntitySvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserAttributeEntitySvgMagentaPixels > 100,
+    `CanvasKit strict outline decodes entity-encoded SvgGlyph attributes without DOMParser magenta=${canvaskitNoDomParserAttributeEntitySvgMagentaPixels}`,
+  );
+  assert(
+    canvaskitStyleEntitySvgMagentaPixels > 100
+      && canvaskitStyleEntitySvgRedPixels < 5,
+    `CanvasKit strict outline decodes entity-encoded SvgGlyph styles magenta=${canvaskitStyleEntitySvgMagentaPixels}, red=${canvaskitStyleEntitySvgRedPixels}`,
+  );
+  assert(
+    canvaskitNoDomParserStyleEntitySvgMagentaPixels > 100
+      && canvaskitNoDomParserStyleEntitySvgRedPixels < 5,
+    `CanvasKit strict outline decodes entity-encoded SvgGlyph styles without DOMParser magenta=${canvaskitNoDomParserStyleEntitySvgMagentaPixels}, red=${canvaskitNoDomParserStyleEntitySvgRedPixels}`,
   );
   assert(
     canvaskitPolylineSvgMagentaPixels > 100,
