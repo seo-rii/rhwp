@@ -13060,6 +13060,29 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
     const noneCanvas2d = await renderWithDiagnostics(canvas2dRenderer, noneTree);
     const noneCanvaskit = await renderWithDiagnostics(canvaskitRenderer, noneTree);
+    canvaskitRenderer.resetImageEffectDiagnostics();
+    const invalidSourceImage = canvaskitRenderer.resourceCache?.imageWithEffect?.(
+      undefined,
+      base64,
+      'grayScale',
+      { x: 0, y: 0, width: 0, height: 8 },
+    );
+    const invalidSourceAfter = canvaskitRenderer.getImageEffectDiagnostics();
+    const invalidSourceFallback = {
+      imageAvailable: !!invalidSourceImage,
+      width: invalidSourceImage?.width?.() ?? null,
+      height: invalidSourceImage?.height?.() ?? null,
+      diagnostics: {
+        cacheHits: invalidSourceAfter.cacheHits,
+        cacheMisses: invalidSourceAfter.cacheMisses,
+        preprocessFailures: invalidSourceAfter.preprocessFailures,
+        fallbackToOriginal: invalidSourceAfter.fallbackToOriginal,
+        preprocessedPixels: invalidSourceAfter.preprocessedPixels,
+        preprocessedBytes: invalidSourceAfter.preprocessedBytes,
+        offscreenCanvasPreprocesses: invalidSourceAfter.offscreenCanvasPreprocesses,
+        htmlCanvasPreprocesses: invalidSourceAfter.htmlCanvasPreprocesses,
+      },
+    };
     canvas2dRenderer.resetImageEffectDiagnostics();
     canvaskitRenderer.resetImageEffectDiagnostics();
     return {
@@ -13070,6 +13093,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       tileCanvaskit,
       noneCanvas2d,
       noneCanvaskit,
+      invalidSourceFallback,
       afterReset: {
         canvas2d: canvas2dRenderer.getImageEffectDiagnostics(),
         canvaskit: canvaskitRenderer.getImageEffectDiagnostics(),
@@ -13218,6 +13242,25 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     imageEffectNoneCropDiff.passed,
     `image effect fillMode=none crop parity exact=${imageEffectNoneCropDiff.exactDiffPixels}, tolerant=${imageEffectNoneCropDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectNoneCropDiff.maxChannelDelta}`,
+  );
+  assert(
+    imageEffectCropProbe.invalidSourceFallback.imageAvailable
+      && imageEffectCropProbe.invalidSourceFallback.width === 64
+      && imageEffectCropProbe.invalidSourceFallback.height === 64,
+    `image effect invalid source rect falls back to original image=${JSON.stringify(imageEffectCropProbe.invalidSourceFallback)}`,
+  );
+  assert(
+    imageEffectCropProbe.invalidSourceFallback.diagnostics.cacheMisses === 1
+      && imageEffectCropProbe.invalidSourceFallback.diagnostics.preprocessFailures === 1
+      && imageEffectCropProbe.invalidSourceFallback.diagnostics.fallbackToOriginal === 1
+      && imageEffectCropProbe.invalidSourceFallback.diagnostics.preprocessedPixels === 0
+      && imageEffectCropProbe.invalidSourceFallback.diagnostics.preprocessedBytes === 0,
+    `image effect invalid source rect records direct fallback diagnostics=${JSON.stringify(imageEffectCropProbe.invalidSourceFallback)}`,
+  );
+  assert(
+    imageEffectCropProbe.invalidSourceFallback.diagnostics.offscreenCanvasPreprocesses
+      + imageEffectCropProbe.invalidSourceFallback.diagnostics.htmlCanvasPreprocesses === 0,
+    `image effect invalid source rect avoids Canvas2D preprocessing=${JSON.stringify(imageEffectCropProbe.invalidSourceFallback)}`,
   );
 
   setTestCase('canvaskit-dispose');
