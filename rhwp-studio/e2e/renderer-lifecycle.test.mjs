@@ -5043,6 +5043,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     nonRenderingMetadataSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-nonrendering-metadata-resource';
+    const commentSvgResourceTree = treeFor(svgOutline);
+    commentSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<!-- <path d="M9 0 L18 0 L18 18 L9 18 Z" fill="#0000ff"/> -->',
+      '<rect x="0" y="0" width="9" height="18" fill="#ff00cc"/>',
+      '</svg>',
+    ].join('');
+    commentSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-comment-resource';
     const namedCssColorSvgResourceTree = treeFor(svgOutline);
     namedCssColorSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -5176,6 +5184,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserBalancedShapeSvgGlyph;
     let noDomParserDefsSvgGlyph;
     let noDomParserNonRenderingMetadataSvgGlyph;
+    let noDomParserCommentSvgGlyph;
     let noDomParserStrokedSvgGlyph;
     let noDomParserLineSvgGlyph;
     let noDomParserShapeStrokeSvgGlyph;
@@ -5218,6 +5227,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserBalancedShapeSvgGlyph = await render(balancedShapeSvgResourceTree);
       noDomParserDefsSvgGlyph = await render(defsSvgResourceTree);
       noDomParserNonRenderingMetadataSvgGlyph = await render(nonRenderingMetadataSvgResourceTree);
+      noDomParserCommentSvgGlyph = await render(commentSvgResourceTree);
       noDomParserStrokedSvgGlyph = await render(strokedSvgResourceTree);
       noDomParserLineSvgGlyph = await render(lineSvgResourceTree);
       noDomParserShapeStrokeSvgGlyph = await render(shapeStrokeSvgResourceTree);
@@ -5290,6 +5300,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserDefsSvgGlyph,
       nonRenderingMetadataSvgGlyph: await render(nonRenderingMetadataSvgResourceTree),
       noDomParserNonRenderingMetadataSvgGlyph,
+      commentSvgGlyph: await render(commentSvgResourceTree),
+      noDomParserCommentSvgGlyph,
       strokedSvgGlyph: await render(strokedSvgResourceTree),
       noDomParserStrokedSvgGlyph,
       lineSvgGlyph: await render(lineSvgResourceTree),
@@ -5520,6 +5532,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserNonRenderingMetadataSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitNoDomParserNonRenderingMetadataSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects non-rendering metadata SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserNonRenderingMetadataSvgReport)}`,
+  );
+  const canvaskitCommentSvgReport = canvaskitGlyphOutlineProbe
+    .commentSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitCommentSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitCommentSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects comment SvgGlyph resource=${JSON.stringify(canvaskitCommentSvgReport)}`,
+  );
+  const canvaskitNoDomParserCommentSvgReport = canvaskitGlyphOutlineProbe
+    .noDomParserCommentSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  assert(
+    canvaskitNoDomParserCommentSvgReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitNoDomParserCommentSvgReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects comment SvgGlyph without DOMParser=${JSON.stringify(canvaskitNoDomParserCommentSvgReport)}`,
   );
   const canvaskitStrokedSvgReport = canvaskitGlyphOutlineProbe
     .strokedSvgGlyph
@@ -6218,6 +6248,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitNoDomParserNonRenderingMetadataSvgBluePixels = canvaskitGlyphOutlineProbe
     .noDomParserNonRenderingMetadataSvgGlyph
     .bluePixels;
+  const canvaskitCommentSvgMagentaPixels = canvaskitGlyphOutlineProbe.commentSvgGlyph.magentaPixels;
+  const canvaskitCommentSvgBluePixels = canvaskitGlyphOutlineProbe.commentSvgGlyph.bluePixels;
+  const canvaskitNoDomParserCommentSvgMagentaPixels = canvaskitGlyphOutlineProbe
+    .noDomParserCommentSvgGlyph
+    .magentaPixels;
+  const canvaskitNoDomParserCommentSvgBluePixels = canvaskitGlyphOutlineProbe
+    .noDomParserCommentSvgGlyph
+    .bluePixels;
   const canvaskitStrokedSvgBluePixels = canvaskitGlyphOutlineProbe.strokedSvgGlyph.bluePixels;
   const canvaskitStrokedSvgMagentaPixels = canvaskitGlyphOutlineProbe.strokedSvgGlyph.magentaPixels;
   const canvaskitNoDomParserStrokedSvgBluePixels = canvaskitGlyphOutlineProbe
@@ -6493,6 +6531,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitNoDomParserNonRenderingMetadataSvgMagentaPixels > 50
       && canvaskitNoDomParserNonRenderingMetadataSvgBluePixels < 5,
     `CanvasKit strict outline skips non-rendering metadata/title/desc content without DOMParser magenta=${canvaskitNoDomParserNonRenderingMetadataSvgMagentaPixels}, blue=${canvaskitNoDomParserNonRenderingMetadataSvgBluePixels}`,
+  );
+  assert(
+    canvaskitCommentSvgMagentaPixels > 50 && canvaskitCommentSvgBluePixels < 5,
+    `CanvasKit strict outline skips SVG comments magenta=${canvaskitCommentSvgMagentaPixels}, blue=${canvaskitCommentSvgBluePixels}`,
+  );
+  assert(
+    canvaskitNoDomParserCommentSvgMagentaPixels > 50 && canvaskitNoDomParserCommentSvgBluePixels < 5,
+    `CanvasKit strict outline skips SVG comments without DOMParser magenta=${canvaskitNoDomParserCommentSvgMagentaPixels}, blue=${canvaskitNoDomParserCommentSvgBluePixels}`,
   );
   assert(
     canvaskitStrokedSvgBluePixels > 80 && canvaskitStrokedSvgMagentaPixels < 5,

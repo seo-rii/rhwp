@@ -77,7 +77,8 @@ export type LayerImageEffectDiagnostics = {
 };
 
 export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[] {
-  if (hasStaticSvgUnsupportedMarkup(fragment)) {
+  const parserFragment = staticSvgMarkupWithoutComments(fragment);
+  if (parserFragment === null || hasStaticSvgUnsupportedMarkup(parserFragment)) {
     return [];
   }
   if (typeof DOMParser === 'undefined') {
@@ -98,7 +99,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     }];
     const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
     let ignoredElementDepth = 0;
-    for (const match of fragment.matchAll(tagPattern)) {
+    for (const match of parserFragment.matchAll(tagPattern)) {
       const isClosingTag = match[1] === '/';
       const elementName = match[2].toLowerCase();
       const rawAttributes = match[3] ?? '';
@@ -338,6 +339,11 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     strokeDashOffset: 0,
   });
   return layers;
+}
+
+function staticSvgMarkupWithoutComments(fragment: string): string | null {
+  const stripped = fragment.replace(/<!--[\s\S]*?-->/g, '');
+  return stripped.includes('<!--') || stripped.includes('-->') ? null : stripped;
 }
 
 function hasStaticSvgUnsupportedMarkup(fragment: string): boolean {
