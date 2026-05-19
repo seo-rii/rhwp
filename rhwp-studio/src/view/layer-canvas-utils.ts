@@ -465,11 +465,15 @@ function staticSvgStrokeLayer(
   if (!(width > 0)) {
     return undefined;
   }
+  const opacity = shapeOpacity * (opacityValue === null ? currentState.strokeOpacity : svgOpacity(opacityValue));
+  if (!(opacity > 0)) {
+    return undefined;
+  }
   const dashArray = svgStrokeDashArray(dashArrayValue);
   const dashOffset = svgStrokeDashOffset(dashOffsetValue);
   return {
     color: stroke,
-    opacity: shapeOpacity * (opacityValue === null ? currentState.strokeOpacity : svgOpacity(opacityValue)),
+    opacity,
     width,
     lineJoin: svgStrokeLineJoin(lineJoinValue) ?? currentState.strokeLineJoin,
     lineCap: svgStrokeLineCap(lineCapValue) ?? currentState.strokeLineCap,
