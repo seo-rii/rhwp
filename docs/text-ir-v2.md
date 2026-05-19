@@ -644,7 +644,7 @@ The reserved families are intentionally separate payload families:
   into the payload's local glyph box.
 - `SvgGlyph` should reference a sanitized static vector subresource. The first
   browser strict replay subset is path-vector based: sanitized path-like
-  geometry (`path`, `rect`, `circle`, `ellipse`, `polygon`, and `polyline`)
+  geometry (`path`, `rect`, `circle`, `ellipse`, `polygon`, `polyline`, and `line`)
   with fill, fill opacity, fill rule, local transforms, and a narrow solid
   stroke subset are replayed as native Canvas2D/CanvasKit paths instead of as
   overlay images. The solid stroke subset is intentionally conservative:

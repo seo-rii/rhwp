@@ -176,6 +176,12 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           const closePath = elementName === 'polygon' ? 'Z' : '';
           pathData = `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}${closePath}`;
         }
+      } else if (elementName === 'line') {
+        const x1 = Number(attributes.get('x1') ?? '0');
+        const y1 = Number(attributes.get('y1') ?? '0');
+        const x2 = Number(attributes.get('x2') ?? '0');
+        const y2 = Number(attributes.get('y2') ?? '0');
+        pathData = `M${x1} ${y1}L${x2} ${y2}`;
       } else if (elementName === 'rect') {
         const x = Number(attributes.get('x') ?? '0');
         const y = Number(attributes.get('y') ?? '0');
@@ -213,7 +219,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         currentState,
         shapeOpacity,
       );
-      const shouldFill = resolvedFill.trim().toLowerCase() !== 'none';
+      const shouldFill = elementName !== 'line' && resolvedFill.trim().toLowerCase() !== 'none';
       if (!shouldFill && !stroke) {
         continue;
       }
@@ -263,7 +269,8 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       || elementName === 'circle'
       || elementName === 'ellipse'
       || elementName === 'polygon'
-      || elementName === 'polyline') {
+      || elementName === 'polyline'
+      || elementName === 'line') {
       const pathData = staticSvgElementPathData(element);
       if (!pathData) {
         return;
@@ -279,7 +286,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
         currentState,
         svgOpacity(svgPresentationAttribute(element, 'opacity')),
       );
-      const shouldFill = fill.trim().toLowerCase() !== 'none';
+      const shouldFill = elementName !== 'line' && fill.trim().toLowerCase() !== 'none';
       if (!shouldFill && !stroke) {
         return;
       }
@@ -497,6 +504,13 @@ function staticSvgElementPathData(element: Element): string | null {
     const closePath = elementName === 'polygon' ? 'Z' : '';
     return `M${first[0]} ${first[1]}${rest.map(([x, y]) => `L${x} ${y}`).join('')}${closePath}`;
   }
+  if (elementName === 'line') {
+    const x1 = svgNumericAttribute(element, 'x1') ?? 0;
+    const y1 = svgNumericAttribute(element, 'y1') ?? 0;
+    const x2 = svgNumericAttribute(element, 'x2') ?? 0;
+    const y2 = svgNumericAttribute(element, 'y2') ?? 0;
+    return `M${x1} ${y1}L${x2} ${y2}`;
+  }
   if (elementName !== 'rect') {
     return null;
   }
@@ -615,6 +629,9 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
   if (elementName === 'polygon' || elementName === 'polyline') {
     return new Set(['id', 'class', 'points', ...paintAttributes]);
   }
+  if (elementName === 'line') {
+    return new Set(['id', 'class', 'x1', 'y1', 'x2', 'y2', ...paintAttributes]);
+  }
   if (elementName === 'svg') {
     return new Set([
       'id',
@@ -713,7 +730,16 @@ function isStaticSvgAttributeSupported(
   if (name === 'transform') {
     return parseStaticSvgTransform(value) !== undefined;
   }
-  if (name === 'x' || name === 'y' || name === 'width' || name === 'height') {
+  if (
+    name === 'x'
+    || name === 'y'
+    || name === 'width'
+    || name === 'height'
+    || name === 'x1'
+    || name === 'y1'
+    || name === 'x2'
+    || name === 'y2'
+  ) {
     return isStaticSvgNumericValueSupported(value);
   }
   if (elementName === 'rect' && (name === 'rx' || name === 'ry')) {
