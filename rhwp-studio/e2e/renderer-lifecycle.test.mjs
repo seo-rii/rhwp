@@ -13043,6 +13043,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
     const tileCanvas2d = await renderWithDiagnostics(canvas2dRenderer, tileTree);
     const tileCanvaskit = await renderWithDiagnostics(canvaskitRenderer, tileTree);
+    const noneTree = {
+      ...tree,
+      resources: {
+        ...tree.resources,
+        tableId: 996,
+      },
+      root: {
+        ...tree.root,
+        ops: [{
+          ...tree.root.ops[0],
+          fillMode: 'none',
+          crop: { left: 48, top: 48, right: 64, bottom: 64 },
+        }],
+      },
+    };
+    const noneCanvas2d = await renderWithDiagnostics(canvas2dRenderer, noneTree);
+    const noneCanvaskit = await renderWithDiagnostics(canvaskitRenderer, noneTree);
     canvas2dRenderer.resetImageEffectDiagnostics();
     canvaskitRenderer.resetImageEffectDiagnostics();
     return {
@@ -13051,6 +13068,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       directEffects,
       tileCanvas2d,
       tileCanvaskit,
+      noneCanvas2d,
+      noneCanvaskit,
       afterReset: {
         canvas2d: canvas2dRenderer.getImageEffectDiagnostics(),
         canvaskit: canvaskitRenderer.getImageEffectDiagnostics(),
@@ -13174,6 +13193,31 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     imageEffectTileCropDiff.passed,
     `image effect tile+crop parity exact=${imageEffectTileCropDiff.exactDiffPixels}, tolerant=${imageEffectTileCropDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectTileCropDiff.maxChannelDelta}`,
+  );
+  assert(
+    imageEffectCropProbe.noneCanvas2d.diagnostics.preprocessedPixels === 256
+      && imageEffectCropProbe.noneCanvaskit.diagnostics.preprocessedPixels === 256
+      && imageEffectCropProbe.noneCanvas2d.diagnostics.preprocessFailures === 0
+      && imageEffectCropProbe.noneCanvaskit.diagnostics.preprocessFailures === 0,
+    `image effect fillMode=none crop preprocessing pixels=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  assert(
+    imageEffectCropProbe.noneCanvaskit.diagnostics.offscreenCanvasPreprocesses
+      + imageEffectCropProbe.noneCanvaskit.diagnostics.htmlCanvasPreprocesses === 0,
+    `image effect fillMode=none CanvasKit preprocessing canvas diagnostics=${JSON.stringify(imageEffectCropProbe)}`,
+  );
+  const imageEffectNoneCropDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(imageEffectCropProbe.noneCanvas2d.png),
+    pngBufferFromDataUrl(imageEffectCropProbe.noneCanvaskit.png),
+    {
+      diffName: 'image-effect-none-crop-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    imageEffectNoneCropDiff.passed,
+    `image effect fillMode=none crop parity exact=${imageEffectNoneCropDiff.exactDiffPixels}, tolerant=${imageEffectNoneCropDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectNoneCropDiff.maxChannelDelta}`,
   );
 
   setTestCase('canvaskit-dispose');
