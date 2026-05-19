@@ -469,15 +469,19 @@ impl ColorLayersPayload {
                 .as_ref()
                 .is_some_and(ColorPaintGraphPayload::has_colrv1_stage1_contract)
             && self.source_font_ref.is_some()
-            && self.source_range_utf8.is_some()
-            && self.glyph_range.is_some()
+            && self
+                .source_range_utf8
+                .is_some_and(text_source_range_is_valid)
+            && self.glyph_range.is_some_and(glyph_range_is_valid)
     }
 
     pub fn colrv1_stage1_reference_layers(&self) -> Option<Vec<ColorLayerNode>> {
         if self.color_format != ColorGlyphFormat::ColrV1
             || self.source_font_ref.is_none()
-            || self.source_range_utf8.is_none()
-            || self.glyph_range.is_none()
+            || !self
+                .source_range_utf8
+                .is_some_and(text_source_range_is_valid)
+            || !self.glyph_range.is_some_and(glyph_range_is_valid)
         {
             return None;
         }
@@ -2112,6 +2116,21 @@ mod tests {
         invalid_graph_range.paint_graph.as_mut().unwrap().nodes[0].glyph_range =
             Some(GlyphRange { start: 5, end: 4 });
         assert!(!invalid_graph_range.has_colrv1_stage1_graph_contract());
+
+        let mut invalid_graph_top_level_source_range = color_layers_colrv1.clone();
+        invalid_graph_top_level_source_range.source_range_utf8 =
+            Some(TextSourceRange { start: 4, end: 3 });
+        assert!(!invalid_graph_top_level_source_range.has_colrv1_stage1_graph_contract());
+        assert!(invalid_graph_top_level_source_range
+            .colrv1_stage1_reference_layers()
+            .is_none());
+
+        let mut invalid_graph_top_level_glyph_range = color_layers_colrv1.clone();
+        invalid_graph_top_level_glyph_range.glyph_range = Some(GlyphRange { start: 7, end: 6 });
+        assert!(!invalid_graph_top_level_glyph_range.has_colrv1_stage1_graph_contract());
+        assert!(invalid_graph_top_level_glyph_range
+            .colrv1_stage1_reference_layers()
+            .is_none());
 
         let mut invalid_graph_color = color_layers_colrv1.clone();
         invalid_graph_color.paint_graph.as_mut().unwrap().nodes[0]
