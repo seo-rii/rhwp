@@ -250,18 +250,37 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                 if tab_char_idx < style.inline_tabs.len() {
                     let ext = &style.inline_tabs[tab_char_idx];
                     let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
-                    let tab_type = ext[2];
+                    let tab_type_raw = ext[2];
+                    let tab_type = inline_tab_type(ext);
+                    let fill_type = (tab_type_raw & 0xFF) as u8;
                     let tab_target = total + tab_width_px;
-                    match tab_type {
-                        1 => {
+                    let body_right = if style.available_width > 0.0 {
+                        style.available_width - style.line_x_offset
+                    } else {
+                        f64::INFINITY
+                    };
+                    match (tab_type, tab_type_raw) {
+                        (_, 1) => {
                             let seg_w =
                                 measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             total = (tab_target - seg_w).max(total);
                         }
-                        2 => {
+                        (_, 2) => {
                             let seg_w =
                                 measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             total = (tab_target - seg_w / 2.0).max(total);
+                        }
+                        (2, _) if fill_type != 0 => {
+                            let mut seg_start = i + 1;
+                            while seg_start < chars.len()
+                                && chars[seg_start] == ' '
+                                && cluster_len[seg_start] != 0
+                            {
+                                seg_start += 1;
+                            }
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, seg_start, &char_width);
+                            total = (body_right - seg_w).max(total);
                         }
                         _ => {
                             total = tab_target.max(total);
@@ -696,13 +715,53 @@ impl TextMeasurer for WasmTextMeasurer {
         };
 
         let mut total = 0.0;
+        let mut tab_char_idx = 0usize;
         for i in 0..char_count {
             let c = chars[i];
             if cluster_len[i] == 0 {
                 continue;
             }
             if c == '\t' {
-                if has_custom_tabs {
+                if tab_char_idx < style.inline_tabs.len() {
+                    let ext = &style.inline_tabs[tab_char_idx];
+                    let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
+                    let tab_type_raw = ext[2];
+                    let tab_type = inline_tab_type(ext);
+                    let fill_type = (tab_type_raw & 0xFF) as u8;
+                    let tab_target = total + tab_width_px;
+                    let body_right = if style.available_width > 0.0 {
+                        style.available_width - style.line_x_offset
+                    } else {
+                        f64::INFINITY
+                    };
+                    match (tab_type, tab_type_raw) {
+                        (_, 1) => {
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            total = (tab_target - seg_w).max(total);
+                        }
+                        (_, 2) => {
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            total = (tab_target - seg_w / 2.0).max(total);
+                        }
+                        (2, _) if fill_type != 0 => {
+                            let mut seg_start = i + 1;
+                            while seg_start < chars.len()
+                                && chars[seg_start] == ' '
+                                && cluster_len[seg_start] != 0
+                            {
+                                seg_start += 1;
+                            }
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, seg_start, &char_width);
+                            total = (body_right - seg_w).max(total);
+                        }
+                        _ => {
+                            total = tab_target.max(total);
+                        }
+                    }
+                } else if has_custom_tabs {
                     let abs_x = style.line_x_offset + total;
                     let (tab_pos, tab_type, _) = find_next_tab_stop(
                         abs_x,
@@ -733,6 +792,7 @@ impl TextMeasurer for WasmTextMeasurer {
                     let next_abs = ((abs_x / tab_w).floor() + 1.0) * tab_w;
                     total = (next_abs - style.line_x_offset).max(total);
                 }
+                tab_char_idx += 1;
                 continue;
             }
             total += char_width(i);
@@ -785,6 +845,7 @@ impl TextMeasurer for WasmTextMeasurer {
             w
         };
 
+        let mut tab_char_idx = 0usize;
         for i in 0..char_count {
             let c = chars[i];
             if cluster_len[i] == 0 {
@@ -792,7 +853,46 @@ impl TextMeasurer for WasmTextMeasurer {
                 continue;
             }
             if c == '\t' {
-                if has_custom_tabs {
+                if tab_char_idx < style.inline_tabs.len() {
+                    let ext = &style.inline_tabs[tab_char_idx];
+                    let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
+                    let tab_type_raw = ext[2];
+                    let tab_type = inline_tab_type(ext);
+                    let fill_type = (tab_type_raw & 0xFF) as u8;
+                    let tab_target = x + tab_width_px;
+                    let body_right = if style.available_width > 0.0 {
+                        style.available_width - style.line_x_offset
+                    } else {
+                        f64::INFINITY
+                    };
+                    match (tab_type, tab_type_raw) {
+                        (_, 1) => {
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            x = (tab_target - seg_w).max(x);
+                        }
+                        (_, 2) => {
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
+                            x = (tab_target - seg_w / 2.0).max(x);
+                        }
+                        (2, _) if fill_type != 0 => {
+                            let mut seg_start = i + 1;
+                            while seg_start < chars.len()
+                                && chars[seg_start] == ' '
+                                && cluster_len[seg_start] != 0
+                            {
+                                seg_start += 1;
+                            }
+                            let seg_w =
+                                measure_segment_from(&chars, &cluster_len, seg_start, &char_width);
+                            x = (body_right - seg_w).max(x);
+                        }
+                        _ => {
+                            x = tab_target.max(x);
+                        }
+                    }
+                } else if has_custom_tabs {
                     let abs_x = style.line_x_offset + x;
                     let (tab_pos, tab_type, _) = find_next_tab_stop(
                         abs_x,
@@ -823,6 +923,7 @@ impl TextMeasurer for WasmTextMeasurer {
                     let next_abs = ((abs_x / tab_w).floor() + 1.0) * tab_w;
                     x = (next_abs - style.line_x_offset).max(x);
                 }
+                tab_char_idx += 1;
                 positions.push(x);
                 continue;
             }
@@ -1399,6 +1500,29 @@ mod tests {
         for (a, b) in free_fn_result.iter().zip(trait_result.iter()) {
             assert!((a - b).abs() < 0.01, "position mismatch: {} != {}", a, b);
         }
+    }
+
+    #[test]
+    fn test_embedded_inline_tab_width_matches_positions() {
+        let mut style = TextStyle {
+            font_size: 16.0,
+            available_width: 100.0,
+            inline_tabs: vec![[720, 0, 0x0201, 0, 0, 0, 0]],
+            ..Default::default()
+        };
+        style.line_x_offset = 0.0;
+
+        let text = "\t A";
+        let width = EmbeddedTextMeasurer.estimate_text_width(text, &style);
+        let positions = EmbeddedTextMeasurer.compute_char_positions(text, &style);
+        let final_pos = *positions.last().unwrap();
+
+        assert!(
+            (width - final_pos).abs() < 0.01,
+            "inline tab width {} should match final position {}",
+            width,
+            final_pos
+        );
     }
 
     // ── build_cluster_len 테스트 ──

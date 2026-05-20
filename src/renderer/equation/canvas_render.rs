@@ -49,19 +49,19 @@ fn render_box(
             }
         }
         LayoutKind::Text(text) => {
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             set_font(ctx, fi, true, bold);
             ctx.set_fill_style_str(color);
             let _ = ctx.fill_text(text, x, y + lb.baseline);
         }
         LayoutKind::Number(text) => {
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             set_font(ctx, fi, false, bold);
             ctx.set_fill_style_str(color);
             let _ = ctx.fill_text(text, x, y + lb.baseline);
         }
         LayoutKind::Symbol(text) => {
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             set_font(ctx, fi, false, false);
             ctx.set_fill_style_str(color);
             ctx.set_text_align("center");
@@ -69,13 +69,17 @@ fn render_box(
             ctx.set_text_align("start");
         }
         LayoutKind::MathSymbol(text) => {
-            let fi = font_size_from_box(lb, fs);
+            let fi = if super::layout::is_integral_symbol(text) {
+                lb.height
+            } else {
+                fs
+            };
             set_font(ctx, fi, false, false);
             ctx.set_fill_style_str(color);
             let _ = ctx.fill_text(text, x, y + lb.baseline);
         }
         LayoutKind::Function(name) => {
-            let fi = font_size_from_box(lb, fs);
+            let fi = fs;
             set_font(ctx, fi, false, false);
             ctx.set_fill_style_str(color);
             let _ = ctx.fill_text(name, x, y + lb.baseline);
@@ -135,12 +139,19 @@ fn render_box(
         }
         LayoutKind::BigOp { symbol, sub, sup } => {
             let op_fs = fs * BIG_OP_SCALE;
-            let sup_h = sup.as_ref().map(|b| b.height + fs * 0.05).unwrap_or(0.0);
-            let op_x = x + (lb.width - estimate_op_width(symbol, op_fs)) / 2.0;
-            let op_y = y + sup_h + op_fs * 0.8;
+            let is_integral = super::layout::is_integral_symbol(symbol);
             set_font(ctx, op_fs, false, false);
             ctx.set_fill_style_str(color);
-            let _ = ctx.fill_text(symbol, op_x, op_y);
+            if is_integral {
+                let op_x = x;
+                let op_y = y + op_fs * 0.8;
+                let _ = ctx.fill_text(symbol, op_x, op_y);
+            } else {
+                let sup_h = sup.as_ref().map(|b| b.height + fs * 0.05).unwrap_or(0.0);
+                let op_x = x + (lb.width - estimate_op_width(symbol, op_fs)) / 2.0;
+                let op_y = y + sup_h + op_fs * 0.8;
+                let _ = ctx.fill_text(symbol, op_x, op_y);
+            }
             if let Some(sup_box) = sup {
                 render_box(ctx, sup_box, x, y, color, fs * SCRIPT_SCALE, false, false);
             }
