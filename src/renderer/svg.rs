@@ -1217,9 +1217,7 @@ impl SvgRenderer {
                 }
                 // 이미지 (최상위)
                 if let Some(img) = &bg.image {
-                    let base64_data = base64::engine::general_purpose::STANDARD.encode(&img.data);
-                    let mime_type = detect_image_mime_type(&img.data);
-                    let data_uri = format!("data:{};base64,{}", mime_type, base64_data);
+                    let data_uri = svg_image_data_uri(&img.data);
                     self.output.push_str(&format!(
                         "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
                         node.bbox.x, node.bbox.y,
@@ -1618,9 +1616,7 @@ impl SvgRenderer {
         }
         if let Some(image) = &background.image {
             if let Some(bytes) = resources.image_bytes(image.resource_id) {
-                let base64_data = base64::engine::general_purpose::STANDARD.encode(bytes);
-                let mime_type = detect_image_mime_type(bytes);
-                let data_uri = format!("data:{};base64,{}", mime_type, base64_data);
+                let data_uri = svg_image_data_uri(bytes);
                 self.output.push_str(&format!(
                     "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
                     bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
@@ -1958,9 +1954,7 @@ impl SvgRenderer {
         else {
             return;
         };
-        let base64_data = base64::engine::general_purpose::STANDARD.encode(bytes);
-        let mime_type = detect_image_mime_type(bytes);
-        let data_uri = format!("data:{};base64,{}", mime_type, base64_data);
+        let data_uri = svg_image_data_uri(bytes);
         let image_rendering = match payload.filtering {
             Some(BitmapGlyphFiltering::Nearest) => " image-rendering=\"pixelated\"",
             _ => "",
@@ -2694,18 +2688,7 @@ impl SvgRenderer {
                 .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
         }
 
-        let mime_type = detect_image_mime_type(data);
-
-        // WMF → SVG 변환 (브라우저는 WMF를 렌더링할 수 없으므로 SVG로 변환)
-        let (render_data, render_mime): (std::borrow::Cow<[u8]>, &str) =
-            if mime_type == "image/x-wmf" {
-                match convert_wmf_to_svg(data) {
-                    Some(svg_bytes) => (std::borrow::Cow::Owned(svg_bytes), "image/svg+xml"),
-                    None => (std::borrow::Cow::Borrowed(data), mime_type),
-                }
-            } else {
-                (std::borrow::Cow::Borrowed(data), mime_type)
-            };
+        let (render_data, render_mime) = prepare_svg_image_data(data);
 
         let base64_data = base64::engine::general_purpose::STANDARD.encode(&*render_data);
         let data_uri = format!("data:{};base64,{}", render_mime, base64_data);
@@ -3947,6 +3930,44 @@ pub(crate) fn convert_wmf_to_svg(data: &[u8]) -> Option<Vec<u8>> {
     converter.run().ok()
 }
 
+/// BMP bytes are re-encoded to PNG before embedding in SVG `<image>`.
+///
+/// Browser support for `data:image/bmp` inside SVG is inconsistent, while PNG
+/// data URIs are broadly supported by SVG renderers.
+pub(crate) fn bmp_bytes_to_png_bytes(data: &[u8]) -> Option<Vec<u8>> {
+    use image::{load_from_memory_with_format, ImageFormat};
+    use std::io::Cursor;
+
+    let img = load_from_memory_with_format(data, ImageFormat::Bmp).ok()?;
+    let mut out = Vec::new();
+    img.write_to(&mut Cursor::new(&mut out), ImageFormat::Png)
+        .ok()?;
+    Some(out)
+}
+
+fn prepare_svg_image_data(data: &[u8]) -> (std::borrow::Cow<'_, [u8]>, &'static str) {
+    let mime_type = detect_image_mime_type(data);
+    if mime_type == "image/x-wmf" {
+        return match convert_wmf_to_svg(data) {
+            Some(svg_bytes) => (std::borrow::Cow::Owned(svg_bytes), "image/svg+xml"),
+            None => (std::borrow::Cow::Borrowed(data), mime_type),
+        };
+    }
+    if mime_type == "image/bmp" {
+        return match bmp_bytes_to_png_bytes(data) {
+            Some(png_bytes) => (std::borrow::Cow::Owned(png_bytes), "image/png"),
+            None => (std::borrow::Cow::Borrowed(data), mime_type),
+        };
+    }
+    (std::borrow::Cow::Borrowed(data), mime_type)
+}
+
+fn svg_image_data_uri(data: &[u8]) -> String {
+    let (render_data, render_mime) = prepare_svg_image_data(data);
+    let base64_data = base64::engine::general_purpose::STANDARD.encode(&*render_data);
+    format!("data:{};base64,{}", render_mime, base64_data)
+}
+
 /// 이미지 데이터에서 MIME 타입 감지
 fn detect_image_mime_type(data: &[u8]) -> &'static str {
     if data.len() >= 8 {
@@ -3978,6 +3999,9 @@ fn detect_image_mime_type(data: &[u8]) -> &'static str {
         {
             return "image/tiff";
         }
+    }
+    if super::svg_fragment::is_svg_prefix(data) {
+        return "image/svg+xml";
     }
     // 알 수 없는 형식 → 기본값
     "application/octet-stream"

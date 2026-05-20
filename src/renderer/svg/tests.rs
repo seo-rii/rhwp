@@ -199,6 +199,44 @@ fn test_color_to_svg() {
     assert_eq!(color_to_svg(0x00FFFFFF), "#ffffff");
 }
 
+fn make_minimal_bmp_2x2() -> Vec<u8> {
+    let pixels: [u8; 16] = [
+        0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF,
+    ];
+    let file_size: u32 = 14 + 40 + 16;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"BM");
+    bytes.extend_from_slice(&file_size.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&54u32.to_le_bytes());
+    bytes.extend_from_slice(&40u32.to_le_bytes());
+    bytes.extend_from_slice(&2i32.to_le_bytes());
+    bytes.extend_from_slice(&2i32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&32u16.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&pixels);
+    bytes
+}
+
+#[test]
+fn test_bmp_to_png_success() {
+    let bmp = make_minimal_bmp_2x2();
+    let png = bmp_bytes_to_png_bytes(&bmp).expect("BMP should convert to PNG");
+    assert!(png.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+}
+
+#[test]
+fn test_bmp_to_png_invalid_returns_none() {
+    assert!(bmp_bytes_to_png_bytes(&[0; 32]).is_none());
+}
+
 #[test]
 fn test_svg_double_line_preserves_dash_and_arrows() {
     let mut renderer = SvgRenderer::new();

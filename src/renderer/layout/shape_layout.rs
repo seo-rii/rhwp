@@ -1323,9 +1323,25 @@ impl LayoutEngine {
                             if !rendered {
                                 if let Some((kind, bytes)) = container.native_image.as_ref() {
                                     use base64::Engine;
-                                    let b64 =
-                                        base64::engine::general_purpose::STANDARD.encode(bytes);
-                                    let href = format!("data:{};base64,{}", kind.mime(), b64);
+                                    let (render_bytes, render_mime): (
+                                        std::borrow::Cow<'_, [u8]>,
+                                        &str,
+                                    ) = if kind.mime() == "image/bmp" {
+                                        match crate::renderer::svg::bmp_bytes_to_png_bytes(bytes) {
+                                            Some(png) => {
+                                                (std::borrow::Cow::Owned(png), "image/png")
+                                            }
+                                            None => (
+                                                std::borrow::Cow::Borrowed(bytes.as_slice()),
+                                                kind.mime(),
+                                            ),
+                                        }
+                                    } else {
+                                        (std::borrow::Cow::Borrowed(bytes.as_slice()), kind.mime())
+                                    };
+                                    let b64 = base64::engine::general_purpose::STANDARD
+                                        .encode(&*render_bytes);
+                                    let href = format!("data:{};base64,{}", render_mime, b64);
                                     let svg_fragment = format!(
                                     "<image x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" preserveAspectRatio=\"xMidYMid meet\" xlink:href=\"{}\" href=\"{}\"/>",
                                     render_x, render_y, render_w, render_h, href, href
