@@ -811,8 +811,23 @@ impl LayoutEngine {
         if let Some(pbf) = page_border_fill.filter(|p| p.border_fill_id > 0) {
             let bf_idx = (pbf.border_fill_id - 1) as usize;
             if let Some(bs) = styles.border_styles.get(bf_idx) {
-                // HWP PageBorderFill.attr bit 0: 0 = paper origin, 1 = body origin.
-                let paper_based = (pbf.attr & 0x01) == 0;
+                // Upstream #952: HWP/HWPX viewer samples render the page border outline
+                // from the paper edge regardless of attr bit 0. Keep the bit visible in
+                // diagnostics because it may still describe non-outline interactions.
+                let paper_based = true;
+                if std::env::var("RHWP_DEBUG_PAGE_BORDER").is_ok() {
+                    eprintln!(
+                        "PAGE_BORDER: attr=0x{:08x} bit0={} paper_based={} bfid={} spacing(L={},R={},T={},B={})",
+                        pbf.attr,
+                        pbf.attr & 0x01,
+                        paper_based,
+                        pbf.border_fill_id,
+                        pbf.spacing_left,
+                        pbf.spacing_right,
+                        pbf.spacing_top,
+                        pbf.spacing_bottom,
+                    );
+                }
                 let (base_x, base_y, base_w, base_h) = if paper_based {
                     (0.0, 0.0, layout.page_width, layout.page_height)
                 } else {
@@ -828,10 +843,21 @@ impl LayoutEngine {
                 let sp_r = hwpunit_to_px(pbf.spacing_right as i32, self.dpi);
                 let sp_t = hwpunit_to_px(pbf.spacing_top as i32, self.dpi);
                 let sp_b = hwpunit_to_px(pbf.spacing_bottom as i32, self.dpi);
-                let bx = base_x + sp_l;
-                let by = base_y + sp_t;
-                let bw = base_w - sp_l - sp_r;
-                let bh = base_h - sp_t - sp_b;
+                let (bx, by, bw, bh) = if paper_based {
+                    (
+                        base_x + sp_l,
+                        base_y + sp_t,
+                        base_w - sp_l - sp_r,
+                        base_h - sp_t - sp_b,
+                    )
+                } else {
+                    (
+                        base_x - sp_l,
+                        base_y - sp_t,
+                        base_w + sp_l + sp_r,
+                        base_h + sp_t + sp_b,
+                    )
+                };
 
                 let borders = &bs.borders;
                 let top_nodes = create_border_line_nodes(tree, &borders[2], bx, by, bx + bw, by);
