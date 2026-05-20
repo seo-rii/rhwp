@@ -26,8 +26,8 @@ use crate::model::table::{Cell, Table, TablePageBreak, VerticalAlign};
 use crate::model::HwpUnit16;
 
 use super::utils::{
-    attr_str, local_name, parse_bool, parse_color, parse_i16, parse_i32, parse_i8, parse_u16,
-    parse_u32, parse_u8, skip_element,
+    attr_str, local_name, parse_bool, parse_color, parse_i16, parse_i32, parse_i32_wrapping,
+    parse_i8, parse_u16, parse_u32, parse_u8, skip_element,
 };
 use super::HwpxError;
 
@@ -1059,13 +1059,16 @@ fn parse_picture(
 ) -> Result<Control, HwpxError> {
     let mut img_attr = ImageAttr::default();
     let mut common = CommonObjAttr::default();
+    common.hwp5_gen_shape_attr_bit26 = true;
     let mut shape_attr = ShapeComponentAttr::default();
     let mut crop = CropInfo::default();
     let mut padding = crate::model::Padding::default();
+    let mut picture_instance_id = 0;
 
     // <hp:pic> 요소 자체의 속성 파싱
     for attr in e.attributes().flatten() {
         match attr.key.as_ref() {
+            b"id" => common.instance_id = parse_u32(&attr),
             b"zOrder" => common.z_order = parse_i32(&attr),
             b"textWrap" => {
                 common.text_wrap = match attr_str(&attr).as_str() {
@@ -1078,7 +1081,7 @@ fn parse_picture(
                     _ => TextWrap::Square,
                 };
             }
-            b"instid" => common.instance_id = parse_u32(&attr),
+            b"instid" => picture_instance_id = parse_u32(&attr),
             b"groupLevel" => shape_attr.group_level = attr_str(&attr).parse().unwrap_or(0),
             _ => {}
         }
@@ -1166,6 +1169,8 @@ fn parse_picture(
                                     common.treat_as_char =
                                         attr_str(&attr) == "1" || attr_str(&attr) == "true";
                                 }
+                                b"flowWithText" => common.flow_with_text = parse_bool(&attr),
+                                b"allowOverlap" => common.allow_overlap = parse_bool(&attr),
                                 b"vertRelTo" => {
                                     common.vert_rel_to = match attr_str(&attr).as_str() {
                                         "PAPER" => VertRelTo::Paper,
@@ -1203,8 +1208,12 @@ fn parse_picture(
                                         _ => HorzAlign::Left,
                                     };
                                 }
-                                b"vertOffset" => common.vertical_offset = parse_i32(&attr) as u32,
-                                b"horzOffset" => common.horizontal_offset = parse_i32(&attr) as u32,
+                                b"vertOffset" => {
+                                    common.vertical_offset = parse_i32_wrapping(&attr) as u32
+                                }
+                                b"horzOffset" => {
+                                    common.horizontal_offset = parse_i32_wrapping(&attr) as u32
+                                }
                                 _ => {}
                             }
                         }
@@ -1296,6 +1305,8 @@ fn parse_picture(
                         // 그룹 내 자식의 아핀 변환 행렬 파싱
                         parse_rendering_info(reader, &mut shape_attr)?;
                     }
+                    b"flip" => parse_shape_flip(ce, &mut shape_attr),
+                    b"rotationInfo" => parse_shape_rotation_info(ce, &mut shape_attr),
                     _ => {}
                 }
             }
@@ -1312,26 +1323,75 @@ fn parse_picture(
         buf.clear();
     }
 
+    if common.instance_id == 0 && picture_instance_id != 0 {
+        common.instance_id = picture_instance_id;
+    }
+    materialize_shape_hwp_storage_defaults(&mut common, &mut shape_attr, ShapeStorageKind::Picture);
+
     let mut pic = crate::model::image::Picture::default();
     pic.image_attr = img_attr;
     pic.common = common;
     pic.shape_attr = shape_attr;
     pic.crop = crop;
     pic.padding = padding;
+    pic.instance_id = picture_instance_id;
 
     Ok(Control::Picture(Box::new(pic)))
 }
 
 // ─── 그리기 객체 공통 속성 파싱 ───
 
+enum ShapeStorageKind {
+    Picture,
+    Group,
+    Drawing,
+    TextBoxDrawing,
+}
+
+#[derive(Default)]
+struct ObjectElementIds {
+    instid: u32,
+}
+
+fn materialize_shape_hwp_storage_defaults(
+    common: &mut CommonObjAttr,
+    shape_attr: &mut ShapeComponentAttr,
+    kind: ShapeStorageKind,
+) {
+    common.hwp5_gen_shape_attr_bit26 = true;
+
+    if shape_attr.flip == 0 {
+        let mut flip = match kind {
+            ShapeStorageKind::Picture => 0x2400_0000,
+            ShapeStorageKind::Group => 0x0009_0000,
+            ShapeStorageKind::TextBoxDrawing => 0x0100_0000,
+            ShapeStorageKind::Drawing => 0,
+        };
+        if shape_attr.horz_flip {
+            flip |= 0x01;
+        }
+        if shape_attr.vert_flip {
+            flip |= 0x02;
+        }
+        shape_attr.flip = flip;
+    }
+
+    if shape_attr.rotate_image {
+        shape_attr.flip |= 0x0008_0000;
+    }
+}
+
 /// `<hp:pic>`, `<hp:rect>`, `<hp:container>` 등 개체의 공통 속성을 요소 속성에서 파싱한다.
 fn parse_object_element_attrs(
     e: &quick_xml::events::BytesStart,
     common: &mut CommonObjAttr,
     shape_attr: &mut ShapeComponentAttr,
-) {
+) -> ObjectElementIds {
+    common.hwp5_gen_shape_attr_bit26 = true;
+    let mut ids = ObjectElementIds::default();
     for attr in e.attributes().flatten() {
         match attr.key.as_ref() {
+            b"id" => common.instance_id = parse_u32(&attr),
             b"zOrder" => common.z_order = parse_i32(&attr),
             b"textWrap" => {
                 common.text_wrap = match attr_str(&attr).as_str() {
@@ -1344,11 +1404,17 @@ fn parse_object_element_attrs(
                     _ => TextWrap::Square,
                 };
             }
-            b"instid" => common.instance_id = parse_u32(&attr),
+            b"instid" => ids.instid = parse_u32(&attr),
             b"groupLevel" => shape_attr.group_level = attr_str(&attr).parse().unwrap_or(0),
             _ => {}
         }
     }
+
+    if common.instance_id == 0 && ids.instid != 0 {
+        common.instance_id = ids.instid;
+    }
+
+    ids
 }
 
 /// 개체 자식 요소에서 공통 레이아웃 속성(pos, sz, curSz, orgSz, offset, outMargin)을 파싱한다.
@@ -1428,6 +1494,8 @@ fn parse_object_layout_child(
                     b"treatAsChar" => {
                         common.treat_as_char = attr_str(&attr) == "1" || attr_str(&attr) == "true";
                     }
+                    b"flowWithText" => common.flow_with_text = parse_bool(&attr),
+                    b"allowOverlap" => common.allow_overlap = parse_bool(&attr),
                     b"vertRelTo" => {
                         common.vert_rel_to = match attr_str(&attr).as_str() {
                             "PAPER" => VertRelTo::Paper,
@@ -1465,8 +1533,8 @@ fn parse_object_layout_child(
                             _ => HorzAlign::Left,
                         };
                     }
-                    b"vertOffset" => common.vertical_offset = parse_i32(&attr) as u32,
-                    b"horzOffset" => common.horizontal_offset = parse_i32(&attr) as u32,
+                    b"vertOffset" => common.vertical_offset = parse_i32_wrapping(&attr) as u32,
+                    b"horzOffset" => common.horizontal_offset = parse_i32_wrapping(&attr) as u32,
                     _ => {}
                 }
             }
@@ -1503,7 +1571,47 @@ fn parse_object_layout_child(
                 }
             }
         }
+        b"flip" => parse_shape_flip(ce, shape_attr),
+        b"rotationInfo" => parse_shape_rotation_info(ce, shape_attr),
         _ => {}
+    }
+}
+
+fn parse_shape_flip(e: &quick_xml::events::BytesStart, shape_attr: &mut ShapeComponentAttr) {
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"horizontal" => shape_attr.horz_flip = parse_bool(&attr),
+            b"vertical" => shape_attr.vert_flip = parse_bool(&attr),
+            _ => {}
+        }
+    }
+
+    if shape_attr.flip != 0 {
+        if shape_attr.horz_flip {
+            shape_attr.flip |= 0x01;
+        } else {
+            shape_attr.flip &= !0x01;
+        }
+        if shape_attr.vert_flip {
+            shape_attr.flip |= 0x02;
+        } else {
+            shape_attr.flip &= !0x02;
+        }
+    }
+}
+
+fn parse_shape_rotation_info(
+    e: &quick_xml::events::BytesStart,
+    shape_attr: &mut ShapeComponentAttr,
+) {
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"angle" => shape_attr.rotation_angle = parse_i16(&attr),
+            b"centerX" => shape_attr.rotation_center.x = parse_i32(&attr),
+            b"centerY" => shape_attr.rotation_center.y = parse_i32(&attr),
+            b"rotateimage" => shape_attr.rotate_image = parse_bool(&attr),
+            _ => {}
+        }
     }
 }
 
@@ -1525,11 +1633,22 @@ fn parse_rendering_info(
     reader: &mut Reader<&[u8]>,
     shape_attr: &mut ShapeComponentAttr,
 ) -> Result<(), HwpxError> {
+    fn hwp5_matrix_value(raw: f64) -> f64 {
+        if raw.fract() == 0.0 {
+            raw
+        } else {
+            f64::from(raw as f32)
+        }
+    }
+
     // 행렬 값 파싱 헬퍼
     fn read_matrix(ce: &quick_xml::events::BytesStart) -> [f64; 6] {
         let mut m = [0.0f64; 6];
         for attr in ce.attributes().flatten() {
-            let val: f64 = attr_str(&attr).parse().unwrap_or(0.0);
+            let val: f64 = attr_str(&attr)
+                .parse()
+                .map(hwp5_matrix_value)
+                .unwrap_or(0.0);
             match attr.key.as_ref() {
                 b"e1" => m[0] = val,
                 b"e2" => m[1] = val,
@@ -1552,6 +1671,21 @@ fn parse_rendering_info(
             a[3] * b[1] + a[4] * b[4],        // d
             a[3] * b[2] + a[4] * b[5] + a[5], // ty
         ]
+    }
+    fn push_matrix_le(out: &mut Vec<u8>, matrix: &[f64; 6]) {
+        for value in matrix {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    fn make_raw_rendering(trans: &[f64; 6], pairs: &[([f64; 6], [f64; 6])]) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(2 + 48 + pairs.len() * 96);
+        raw.extend_from_slice(&(pairs.len() as u16).to_le_bytes());
+        push_matrix_le(&mut raw, trans);
+        for (sca, rot) in pairs {
+            push_matrix_le(&mut raw, sca);
+            push_matrix_le(&mut raw, rot);
+        }
+        raw
     }
 
     let mut buf = Vec::new();
@@ -1607,6 +1741,7 @@ fn parse_rendering_info(
     shape_attr.render_c = result[3]; // c (회전/전단)
     shape_attr.render_sy = result[4]; // d
     shape_attr.render_ty = result[5]; // ty
+    shape_attr.raw_rendering = make_raw_rendering(&trans, &sca_rot_pairs);
 
     Ok(())
 }
@@ -1616,17 +1751,12 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
     let mut bl = ShapeBorderLine::default();
     for attr in e.attributes().flatten() {
         match attr.key.as_ref() {
-            b"color" => {
-                let s = attr_str(&attr);
-                if let Some(hex) = s.strip_prefix('#') {
-                    bl.color = u32::from_str_radix(hex, 16).unwrap_or(0);
-                }
-            }
+            b"color" => bl.color = parse_color(&attr),
             b"width" => bl.width = parse_i32(&attr),
             b"style" => {
                 // 선 스타일 → attr 비트 플래그 (하위 바이트)
-                let style_val: u8 = match attr_str(&attr).as_str() {
-                    "NONE" => 0,
+                let style_val: u32 = match attr_str(&attr).as_str() {
+                    "NONE" => 0x40,
                     "SOLID" => 1,
                     "DASH" => 2,
                     "DOT" => 3,
@@ -1640,7 +1770,21 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
                     "SLIM_THICK_SLIM" => 11,
                     _ => 1,
                 };
-                bl.attr = (bl.attr & !0xFF) | style_val as u32;
+                bl.attr = (bl.attr & !0xFF) | style_val;
+            }
+            b"headfill" => {
+                if parse_bool(&attr) {
+                    bl.attr |= 0x8000_0000;
+                } else {
+                    bl.attr &= !0x8000_0000;
+                }
+            }
+            b"tailfill" => {
+                if parse_bool(&attr) {
+                    bl.attr |= 0x4000_0000;
+                } else {
+                    bl.attr &= !0x4000_0000;
+                }
             }
             b"outlineStyle" => {
                 bl.outline_style = match attr_str(&attr).as_str() {
@@ -1736,6 +1880,55 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
     Ok(fill)
 }
 
+fn parse_shape_shadow_attr(e: &quick_xml::events::BytesStart) -> (u32, u32, i32, i32, u8) {
+    let mut shadow_type = 0_u32;
+    let mut shadow_color = 0_u32;
+    let mut shadow_offset_x = 0_i32;
+    let mut shadow_offset_y = 0_i32;
+    let mut shadow_alpha = 0_u8;
+
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"type" => {
+                shadow_type = match attr_str(&attr).as_str() {
+                    "NONE" => 0,
+                    "LEFT_TOP" => 1,
+                    "RIGHT_TOP" => 2,
+                    "LEFT_BOTTOM" => 3,
+                    "RIGHT_BOTTOM" => 4,
+                    "CENTER" | "INSIDE" | "OUTSIDE" => 5,
+                    _ => 0,
+                };
+            }
+            b"color" => shadow_color = parse_color(&attr),
+            b"offsetX" => shadow_offset_x = parse_i32(&attr),
+            b"offsetY" => shadow_offset_y = parse_i32(&attr),
+            b"alpha" => {
+                let raw = attr_str(&attr);
+                shadow_alpha = raw
+                    .parse::<f64>()
+                    .map(|value| {
+                        if value <= 1.0 {
+                            (value.clamp(0.0, 1.0) * 255.0) as u8
+                        } else {
+                            value.clamp(0.0, 255.0) as u8
+                        }
+                    })
+                    .unwrap_or(0);
+            }
+            _ => {}
+        }
+    }
+
+    (
+        shadow_type,
+        shadow_color,
+        shadow_offset_x,
+        shadow_offset_y,
+        shadow_alpha,
+    )
+}
+
 /// `<hp:drawText>` 내부의 `<hp:subList>` → `<hp:p>` 문단을 파싱한다.
 fn parse_draw_text(reader: &mut Reader<&[u8]>, text_box: &mut TextBox) -> Result<(), HwpxError> {
     let mut buf = Vec::new();
@@ -1806,11 +1999,12 @@ fn parse_shape_object(
     let mut border_line = ShapeBorderLine::default();
     let mut fill = Fill::default();
     let mut text_box: Option<TextBox> = None;
+    let mut shadow_acc: Option<(u32, u32, i32, i32, u8)> = None;
     let mut has_pos = false;
     let mut x_coords = [0i32; 4];
     let mut y_coords = [0i32; 4];
 
-    parse_object_element_attrs(e, &mut common, &mut shape_attr);
+    let object_ids = parse_object_element_attrs(e, &mut common, &mut shape_attr);
 
     let tag_name = String::from_utf8_lossy(shape_type).to_string();
     let mut buf = Vec::new();
@@ -1820,7 +2014,8 @@ fn parse_shape_object(
                 let cname = ce.name();
                 let local = local_name(cname.as_ref());
                 match local {
-                    b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" => {
+                    b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" | b"flip"
+                    | b"rotationInfo" => {
                         parse_object_layout_child(
                             local,
                             ce,
@@ -1881,7 +2076,7 @@ fn parse_shape_object(
                         fill = parse_shape_fill_brush(reader)?;
                     }
                     b"shadow" => {
-                        // shadow는 무시 (Start 이벤트인 경우 내부 소비)
+                        shadow_acc = Some(parse_shape_shadow_attr(ce));
                     }
                     _ => {}
                 }
@@ -1907,10 +2102,26 @@ fn parse_shape_object(
         }
     }
 
+    let storage_kind = if text_box.is_some() {
+        ShapeStorageKind::TextBoxDrawing
+    } else {
+        ShapeStorageKind::Drawing
+    };
+    materialize_shape_hwp_storage_defaults(&mut common, &mut shape_attr, storage_kind);
+
+    let (shadow_type, shadow_color, shadow_offset_x, shadow_offset_y, shadow_alpha) =
+        shadow_acc.unwrap_or((0, 0, 0, 0, 0));
+
     let drawing = DrawingObjAttr {
         shape_attr,
         border_line,
         fill,
+        shadow_type,
+        shadow_color,
+        shadow_offset_x,
+        shadow_offset_y,
+        shadow_alpha,
+        inst_id: object_ids.instid,
         text_box,
         ..Default::default()
     };
@@ -1981,7 +2192,8 @@ fn parse_container(
                 let cname = ce.name();
                 let local = local_name(cname.as_ref());
                 match local {
-                    b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" => {
+                    b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" | b"flip"
+                    | b"rotationInfo" => {
                         parse_object_layout_child(
                             local,
                             ce,
@@ -2029,6 +2241,8 @@ fn parse_container(
         }
         buf.clear();
     }
+
+    materialize_shape_hwp_storage_defaults(&mut common, &mut shape_attr, ShapeStorageKind::Group);
 
     let group = GroupShape {
         common,
@@ -2800,7 +3014,8 @@ fn parse_equation(
                 let cname = ce.name();
                 let local = local_name(cname.as_ref());
                 match local {
-                    b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" => {
+                    b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" | b"flip"
+                    | b"rotationInfo" => {
                         parse_object_layout_child(
                             local,
                             ce,
@@ -3197,9 +3412,15 @@ fn parse_common_shape_children(
                                         _ => HorzAlign::Left,
                                     };
                                 }
-                                b"vertOffset" => common.vertical_offset = parse_u32(&attr),
-                                b"horzOffset" => common.horizontal_offset = parse_u32(&attr),
+                                b"vertOffset" => {
+                                    common.vertical_offset = parse_i32_wrapping(&attr) as u32
+                                }
+                                b"horzOffset" => {
+                                    common.horizontal_offset = parse_i32_wrapping(&attr) as u32
+                                }
                                 b"treatAsChar" => common.treat_as_char = parse_bool(&attr),
+                                b"flowWithText" => common.flow_with_text = parse_bool(&attr),
+                                b"allowOverlap" => common.allow_overlap = parse_bool(&attr),
                                 _ => {}
                             }
                         }
@@ -3325,6 +3546,85 @@ mod tests {
             panic!("expected picture control");
         };
         assert_eq!(pic.image_attr.effect, ImageEffect::Pattern8x8);
+    }
+
+    #[test]
+    fn test_parse_picture_preserves_hwpx_object_contract_attrs() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:pic id="99" zOrder="0" textWrap="SQUARE" instid="42">
+      <hp:sz width="1000" height="1000"/>
+      <hp:pos treatAsChar="true" flowWithText="true" allowOverlap="true"
+              vertRelTo="PARA" horzRelTo="PARA"
+              vertOffset="4294964867" horzOffset="7"/>
+      <hp:flip horizontal="true" vertical="true"/>
+      <hp:rotationInfo angle="15" centerX="1" centerY="2" rotateimage="true"/>
+      <hp:img binaryItemIDRef="image1"/>
+    </hp:pic>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+        let Control::Picture(pic) = &para.controls[0] else {
+            panic!("expected picture control");
+        };
+
+        assert_eq!(pic.common.instance_id, 99);
+        assert_eq!(pic.instance_id, 42);
+        assert!(pic.common.flow_with_text);
+        assert!(pic.common.allow_overlap);
+        assert!(pic.common.hwp5_gen_shape_attr_bit26);
+        assert_eq!(pic.common.vertical_offset, 0xffff_f683);
+        assert_eq!(pic.common.horizontal_offset, 7);
+        assert!(pic.shape_attr.horz_flip);
+        assert!(pic.shape_attr.vert_flip);
+        assert!(pic.shape_attr.rotate_image);
+        assert_ne!(pic.shape_attr.flip & 0x2400_0000, 0);
+        assert_ne!(pic.shape_attr.flip & 0x0008_0000, 0);
+    }
+
+    #[test]
+    fn test_rendering_info_materializes_hwp5_raw_rendering_count() {
+        let xml = r#"<hp:renderingInfo xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+            xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+          <hc:transMatrix e1="1" e2="0" e3="10" e4="0" e5="1" e6="20"/>
+          <hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>
+          <hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>
+          <hc:scaMatrix e1="2" e2="0" e3="0" e4="0" e5="3" e6="0"/>
+          <hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>
+        </hp:renderingInfo>"#;
+        let mut reader = Reader::from_str(xml);
+        let mut buf = Vec::new();
+        let mut shape_attr = ShapeComponentAttr::default();
+
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Start(ref e) if local_name(e.name().as_ref()) == b"renderingInfo" => {
+                    parse_rendering_info(&mut reader, &mut shape_attr).unwrap();
+                    break;
+                }
+                Event::Eof => panic!("renderingInfo not found"),
+                _ => {}
+            }
+            buf.clear();
+        }
+
+        fn read_f64(raw: &[u8], offset: usize) -> f64 {
+            f64::from_le_bytes(raw[offset..offset + 8].try_into().unwrap())
+        }
+
+        assert_eq!(shape_attr.raw_rendering.len(), 2 + 48 + 2 * 96);
+        assert_eq!(
+            u16::from_le_bytes([shape_attr.raw_rendering[0], shape_attr.raw_rendering[1]]),
+            2
+        );
+        assert_eq!(read_f64(&shape_attr.raw_rendering, 2 + 16), 10.0);
+        assert_eq!(read_f64(&shape_attr.raw_rendering, 2 + 40), 20.0);
+        assert_eq!(read_f64(&shape_attr.raw_rendering, 2 + 48 + 96), 2.0);
+        assert_eq!(read_f64(&shape_attr.raw_rendering, 2 + 48 + 96 + 32), 3.0);
     }
 
     #[test]

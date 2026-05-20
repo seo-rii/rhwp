@@ -336,6 +336,9 @@ pub(crate) fn parse_common_obj_attr(ctrl_data: &[u8]) -> CommonObjAttr {
     let attr = r.read_u32().unwrap_or(0);
     common.attr = attr;
     common.treat_as_char = attr & 0x01 != 0;
+    common.flow_with_text = attr & (1 << 13) != 0;
+    common.allow_overlap = attr & (1 << 14) != 0;
+    common.hwp5_gen_shape_attr_bit26 = attr & (1 << 26) != 0;
     common.vert_rel_to = match (attr >> 3) & 0x03 {
         1 => VertRelTo::Page,
         2 => VertRelTo::Para,
@@ -487,6 +490,7 @@ fn parse_shape_component_full(data: &[u8]) -> ShapeComponentParsed {
     attr.flip = flip;
     attr.horz_flip = flip & 0x01 != 0;
     attr.vert_flip = flip & 0x02 != 0;
+    attr.rotate_image = flip & 0x0008_0000 != 0;
 
     attr.rotation_angle = r.read_i16().unwrap_or(0);
     attr.rotation_center.x = r.read_i32().unwrap_or(0);

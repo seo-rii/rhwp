@@ -51,6 +51,18 @@ pub fn parse_i32(attr: &quick_xml::events::attributes::Attribute) -> i32 {
     attr_str(attr).parse().unwrap_or(0)
 }
 
+/// HWPX가 음수 HWPUNIT 값을 unsigned 32-bit decimal 문자열로 저장한 경우를 보정한다.
+pub fn parse_i32_wrapping(attr: &quick_xml::events::attributes::Attribute) -> i32 {
+    let s = attr_str(attr);
+    if let Ok(v) = s.parse::<i32>() {
+        return v;
+    }
+    if let Ok(v) = s.parse::<u32>() {
+        return v as i32;
+    }
+    0
+}
+
 /// "#RRGGBB" 또는 "#AARRGGBB" 형식의 색상을 HWP ColorRef(0x00BBGGRR)로 변환
 pub fn parse_color(attr: &quick_xml::events::attributes::Attribute) -> u32 {
     let s = attr_str(attr);
