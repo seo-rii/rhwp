@@ -1611,19 +1611,42 @@ impl LayoutEngine {
             }
         }
 
-        // 세로 정렬: 전체 텍스트 높이를 계산하여 center/bottom 오프셋 적용
+        // 세로 정렬: 전체 콘텐츠 높이를 계산하여 center/bottom 오프셋 적용
         let vert_offset = {
             use crate::model::table::VerticalAlign;
             match text_box.vertical_align {
                 VerticalAlign::Center | VerticalAlign::Bottom => {
-                    // 전체 텍스트 높이 = 마지막 문단의 마지막 line_seg 끝 위치
-                    let total_text_height = text_box.paragraphs[..para_count]
+                    let mut total_content_height = text_box.paragraphs[..para_count]
                         .iter()
                         .flat_map(|p| p.line_segs.last())
                         .map(|ls| hwpunit_to_px(ls.vertical_pos + ls.line_height, self.dpi))
                         .last()
                         .unwrap_or(0.0);
-                    let free_space = (inner_area.height - total_text_height).max(0.0);
+                    for para in &text_box.paragraphs[..para_count] {
+                        let para_vpos = para
+                            .line_segs
+                            .first()
+                            .map(|ls| ls.vertical_pos)
+                            .unwrap_or(0);
+                        for ctrl in &para.controls {
+                            let common = match ctrl {
+                                Control::Picture(pic) if !pic.common.treat_as_char => {
+                                    Some(&pic.common)
+                                }
+                                Control::Shape(shape) if !shape.as_ref().common().treat_as_char => {
+                                    Some(shape.as_ref().common())
+                                }
+                                _ => None,
+                            };
+                            if let Some(common) = common {
+                                let top = para_vpos.saturating_add(common.vertical_offset as i32);
+                                let bottom = top.saturating_add(common.height as i32);
+                                total_content_height =
+                                    total_content_height.max(hwpunit_to_px(bottom, self.dpi));
+                            }
+                        }
+                    }
+                    let free_space = (inner_area.height - total_content_height).max(0.0);
                     match text_box.vertical_align {
                         VerticalAlign::Center => free_space / 2.0,
                         VerticalAlign::Bottom => free_space,
