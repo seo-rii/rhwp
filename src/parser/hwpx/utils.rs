@@ -43,6 +43,17 @@ pub fn parse_i16(attr: &quick_xml::events::attributes::Attribute) -> i16 {
     attr_str(attr).parse().unwrap_or(0)
 }
 
+/// OWPML gradient type 값을 HWP5 gradient kind 값으로 변환한다.
+pub fn parse_gradient_type(value: &str) -> i16 {
+    match value {
+        "LINEAR" => 1,
+        "RADIAL" => 2,
+        "CONICAL" => 3,
+        "SQUARE" => 4,
+        _ => value.parse().unwrap_or(0),
+    }
+}
+
 pub fn parse_u32(attr: &quick_xml::events::attributes::Attribute) -> u32 {
     attr_str(attr).parse().unwrap_or(0)
 }
@@ -149,5 +160,15 @@ mod tests {
     fn test_parse_color_str_with_alpha() {
         // AARRGGBB — alpha 무시
         assert_eq!(parse_color_str("#80FF0000"), 0x000000FF);
+    }
+
+    #[test]
+    fn test_parse_gradient_type_names() {
+        assert_eq!(parse_gradient_type("LINEAR"), 1);
+        assert_eq!(parse_gradient_type("RADIAL"), 2);
+        assert_eq!(parse_gradient_type("CONICAL"), 3);
+        assert_eq!(parse_gradient_type("SQUARE"), 4);
+        assert_eq!(parse_gradient_type("7"), 7);
+        assert_eq!(parse_gradient_type("UNKNOWN"), 0);
     }
 }

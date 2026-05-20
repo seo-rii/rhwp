@@ -26,8 +26,8 @@ use crate::model::table::{Cell, Table, TablePageBreak, VerticalAlign};
 use crate::model::HwpUnit16;
 
 use super::utils::{
-    attr_str, local_name, parse_bool, parse_color, parse_i16, parse_i32, parse_i32_wrapping,
-    parse_i8, parse_u16, parse_u32, parse_u8, skip_element,
+    attr_str, local_name, parse_bool, parse_color, parse_gradient_type, parse_i16, parse_i32,
+    parse_i32_wrapping, parse_i8, parse_u16, parse_u32, parse_u8, skip_element,
 };
 use super::HwpxError;
 
@@ -1834,10 +1834,20 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                         let mut grad = GradientFill::default();
                         for attr in ce.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"type" => grad.gradient_type = parse_i16(&attr),
+                                b"type" => {
+                                    grad.gradient_type = parse_gradient_type(&attr_str(&attr))
+                                }
                                 b"angle" => grad.angle = parse_i16(&attr),
                                 b"centerX" => grad.center_x = parse_i16(&attr),
                                 b"centerY" => grad.center_y = parse_i16(&attr),
+                                b"blur" | b"step" => grad.blur = parse_i16(&attr),
+                                b"stepCenter" => grad.step_center = parse_u8(&attr),
+                                b"alpha" => {
+                                    let val = attr_str(&attr);
+                                    if let Ok(f) = val.parse::<f64>() {
+                                        fill.alpha = (f.clamp(0.0, 1.0) * 255.0) as u8;
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -3625,6 +3635,38 @@ mod tests {
         assert_eq!(read_f64(&shape_attr.raw_rendering, 2 + 40), 20.0);
         assert_eq!(read_f64(&shape_attr.raw_rendering, 2 + 48 + 96), 2.0);
         assert_eq!(read_f64(&shape_attr.raw_rendering, 2 + 48 + 96 + 32), 3.0);
+    }
+
+    #[test]
+    fn test_parse_shape_gradient_type_step_center_and_alpha() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:rect id="7" zOrder="0">
+      <hp:sz width="1000" height="1000"/>
+      <hp:fillBrush>
+        <hp:gradation type="CONICAL" angle="25" centerX="40" centerY="60" step="35" stepCenter="45" alpha="0.25"/>
+      </hp:fillBrush>
+    </hp:rect>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let Control::Shape(shape) = &section.paragraphs[0].controls[0] else {
+            panic!("expected shape control");
+        };
+        let fill = &shape.drawing().expect("shape drawing").fill;
+        let grad = fill.gradient.as_ref().expect("gradient fill");
+
+        assert_eq!(fill.fill_type, crate::model::style::FillType::Gradient);
+        assert_eq!(fill.alpha, 63);
+        assert_eq!(grad.gradient_type, 3);
+        assert_eq!(grad.angle, 25);
+        assert_eq!(grad.center_x, 40);
+        assert_eq!(grad.center_y, 60);
+        assert_eq!(grad.blur, 35);
+        assert_eq!(grad.step_center, 45);
     }
 
     #[test]

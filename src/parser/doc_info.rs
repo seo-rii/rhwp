@@ -407,6 +407,7 @@ pub(crate) fn parse_fill(r: &mut ByteReader) -> Fill {
             center_x: cx,
             center_y: cy,
             blur,
+            step_center: 0,
             colors,
             positions,
         });
@@ -449,7 +450,11 @@ pub(crate) fn parse_fill(r: &mut ByteReader) -> Fill {
     if additional_size > 0 {
         if fill_type_val & 0x04 != 0 {
             // 그라데이션 번짐 정도 중심 (blurring center)
-            let _blurring_center = r.read_u8().unwrap_or(0);
+            if let Some(ref mut grad) = fill.gradient {
+                grad.step_center = r.read_u8().unwrap_or(0);
+            } else {
+                let _ = r.read_u8();
+            }
         } else {
             let _ = r.skip(additional_size);
         }
@@ -881,6 +886,37 @@ mod tests {
         assert_eq!(bullet.char_shape_id, 7);
         assert_eq!(bullet.text_distance, 120);
         assert_eq!(bullet.bullet_char, '\u{25C9}');
+    }
+
+    #[test]
+    fn test_parse_gradient_fill_preserves_step_center() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&0x04u32.to_le_bytes()); // gradient fill
+        data.push(2); // radial
+        data.extend_from_slice(&45u32.to_le_bytes());
+        data.extend_from_slice(&20u32.to_le_bytes());
+        data.extend_from_slice(&30u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&0x0000_00ffu32.to_le_bytes());
+        data.extend_from_slice(&0x0000_ff00u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes()); // additional step-center byte
+        data.push(77);
+        data.push(64); // gradient alpha
+
+        let mut reader = ByteReader::new(&data);
+        let fill = parse_fill(&mut reader);
+        let grad = fill.gradient.expect("gradient fill");
+
+        assert_eq!(fill.fill_type, FillType::Gradient);
+        assert_eq!(grad.gradient_type, 2);
+        assert_eq!(grad.angle, 45);
+        assert_eq!(grad.center_x, 20);
+        assert_eq!(grad.center_y, 30);
+        assert_eq!(grad.blur, 10);
+        assert_eq!(grad.step_center, 77);
+        assert_eq!(fill.alpha, 64);
+        assert_eq!(grad.colors, vec![0x0000_00ff, 0x0000_ff00]);
     }
 
     #[test]
