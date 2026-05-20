@@ -1430,6 +1430,26 @@ impl LayoutEngine {
                     let has_table_ctrl =
                         para.controls.iter().any(|c| matches!(c, Control::Table(_)));
 
+                    // If HWP/HWPX provides LINE_SEG.vpos for a cell paragraph, prefer
+                    // that absolute cell-local top over cumulative y. This avoids
+                    // double-applying paragraph spacing in compact organization-chart
+                    // style cells that pin each paragraph with explicit vpos values.
+                    if !has_table_ctrl {
+                        if let Some(first_seg) = para.line_segs.first() {
+                            if first_seg.vertical_pos >= 0 {
+                                let spacing_before = styles
+                                    .para_styles
+                                    .get(para.para_shape_id as usize)
+                                    .map(|s| s.spacing_before)
+                                    .unwrap_or(0.0);
+                                let anchored_y = cell_y
+                                    + pad_top
+                                    + hwpunit_to_px(first_seg.vertical_pos, self.dpi);
+                                para_y = anchored_y - spacing_before;
+                            }
+                        }
+                    }
+
                     let para_y_before_compose = para_y;
 
                     // 줄별 TAC 컨트롤 너비 합산: 각 TAC가 속한 줄을 판별하여 줄별 최대 너비 계산
