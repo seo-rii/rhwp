@@ -446,8 +446,13 @@ impl TypesetEngine {
     ) -> FormattedParagraph {
         let para_style_id = composed.map(|c| c.para_style_id as usize).unwrap_or(0);
         let para_style = styles.para_styles.get(para_style_id);
-        let spacing_before = para_style.map(|s| s.spacing_before).unwrap_or(0.0);
+        let raw_spacing_before = para_style.map(|s| s.spacing_before).unwrap_or(0.0);
         let spacing_after = para_style.map(|s| s.spacing_after).unwrap_or(0.0);
+        let spacing_before = if para.line_segs.is_empty() && !para.text.is_empty() {
+            0.0
+        } else {
+            raw_spacing_before
+        };
 
         let ls_val = para_style.map(|s| s.line_spacing).unwrap_or(160.0);
         let ls_type = para_style

@@ -274,7 +274,8 @@ fn inject_footnote_markers(lines: &mut [ComposedLine], positions: &[(usize, u16)
 /// 문단의 텍스트를 줄별로 분할하고, 각 줄 내에서 CharShapeRef 경계에 따라 분할한다.
 fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
     if para.line_segs.is_empty() {
-        // LineSeg가 없으면 전체 텍스트를 하나의 줄로
+        // LineSeg가 없으면 텍스트를 합성 줄로 분할한다. 일부 HWP5 변환본은
+        // PARA_LINE_SEG가 누락되어 긴 문단 전체가 한 y 좌표에 겹쳐 그려진다.
         if para.text.is_empty() {
             return Vec::new();
         }
@@ -283,22 +284,45 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
             .first()
             .map(|cs| cs.char_shape_id)
             .unwrap_or(0);
-        return vec![ComposedLine {
-            runs: split_runs_by_lang(vec![ComposedTextRun {
-                text: para.text.clone(),
-                char_style_id: default_style_id,
-                lang_index: 0,
-                char_overlap: None,
-                footnote_marker: None,
-            }]),
-            line_height: 400,
-            baseline_distance: 320,
-            segment_width: 0,
-            column_start: 0,
-            line_spacing: 0,
-            has_line_break: false,
-            char_start: 0,
-        }];
+        let chars: Vec<char> = para.text.chars().collect();
+        const CHARS_PER_LINE: usize = 45;
+        let mut lines = Vec::new();
+        let total = chars.len();
+        let mut offset = 0;
+        while offset < total {
+            let max_end = (offset + CHARS_PER_LINE).min(total);
+            let mut end = max_end;
+            if end < total {
+                let min_acceptable = offset + (CHARS_PER_LINE / 2);
+                for i in (min_acceptable..max_end).rev() {
+                    if chars[i] == ' ' || chars[i] == '\t' {
+                        end = i + 1;
+                        break;
+                    }
+                }
+            }
+            let line_text: String = chars[offset..end].iter().collect();
+            let is_last_line = end >= total;
+            lines.push(ComposedLine {
+                runs: split_runs_by_lang(vec![ComposedTextRun {
+                    text: line_text,
+                    char_style_id: default_style_id,
+                    lang_index: 0,
+                    char_overlap: None,
+                    footnote_marker: None,
+                }]),
+                line_height: 400,
+                baseline_distance: 320,
+                segment_width: 0,
+                column_start: 0,
+                line_spacing: 0,
+                // 합성 wrap의 중간 줄은 줄바꿈으로 표시해 justify 확장을 막는다.
+                has_line_break: !is_last_line,
+                char_start: offset,
+            });
+            offset = end;
+        }
+        return lines;
     }
 
     let mut lines = Vec::new();
