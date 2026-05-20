@@ -815,12 +815,18 @@ impl LayoutEngine {
                 // from the paper edge regardless of attr bit 0. Keep the bit visible in
                 // diagnostics because it may still describe non-outline interactions.
                 let paper_based = true;
+                let header_inside = (pbf.attr & 0x02) != 0;
+                let footer_inside = (pbf.attr & 0x04) != 0;
                 if std::env::var("RHWP_DEBUG_PAGE_BORDER").is_ok() {
                     eprintln!(
-                        "PAGE_BORDER: attr=0x{:08x} bit0={} paper_based={} bfid={} spacing(L={},R={},T={},B={})",
+                        "PAGE_BORDER: attr=0x{:08x} bit0={} bit1={} bit2={} paper_based={} header_inside={} footer_inside={} bfid={} spacing(L={},R={},T={},B={})",
                         pbf.attr,
                         pbf.attr & 0x01,
+                        (pbf.attr >> 1) & 0x01,
+                        (pbf.attr >> 2) & 0x01,
                         paper_based,
+                        header_inside,
+                        footer_inside,
                         pbf.border_fill_id,
                         pbf.spacing_left,
                         pbf.spacing_right,
@@ -843,7 +849,7 @@ impl LayoutEngine {
                 let sp_r = hwpunit_to_px(pbf.spacing_right as i32, self.dpi);
                 let sp_t = hwpunit_to_px(pbf.spacing_top as i32, self.dpi);
                 let sp_b = hwpunit_to_px(pbf.spacing_bottom as i32, self.dpi);
-                let (bx, by, bw, bh) = if paper_based {
+                let (bx, mut by, bw, mut bh) = if paper_based {
                     (
                         base_x + sp_l,
                         base_y + sp_t,
@@ -858,6 +864,22 @@ impl LayoutEngine {
                         base_h + sp_t + sp_b,
                     )
                 };
+                // HWP5 PageBorderFill attr bit 1/2 controls whether the outline enters
+                // header/footer areas. Current outline origin stays paper-based, but
+                // these bits still clip the vertical extent to the body area.
+                if !header_inside {
+                    let header_bottom = layout.body_area.y;
+                    if by < header_bottom {
+                        bh -= header_bottom - by;
+                        by = header_bottom;
+                    }
+                }
+                if !footer_inside {
+                    let footer_top = layout.body_area.y + layout.body_area.height;
+                    if by + bh > footer_top {
+                        bh = footer_top - by;
+                    }
+                }
 
                 let borders = &bs.borders;
                 let top_nodes = create_border_line_nodes(tree, &borders[2], bx, by, bx + bw, by);
