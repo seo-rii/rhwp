@@ -1062,6 +1062,8 @@ fn parse_picture(
     let mut shape_attr = ShapeComponentAttr::default();
     let mut crop = CropInfo::default();
     let mut padding = crate::model::Padding::default();
+    let mut border_x = [0i32; 4];
+    let mut border_y = [0i32; 4];
     let mut picture_instance_id = 0;
 
     // <hp:pic> 요소 자체의 속성 파싱
@@ -1091,6 +1093,10 @@ fn parse_picture(
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"imgRect" => {
+                parse_picture_img_rect(reader, &mut border_x, &mut border_y)?;
+            }
+            Ok(Event::Empty(ref ce)) if local_name(ce.name().as_ref()) == b"imgRect" => {}
             Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
                 let cname = ce.name();
                 let local = local_name(cname.as_ref());
@@ -1333,6 +1339,8 @@ fn parse_picture(
     pic.shape_attr = shape_attr;
     pic.crop = crop;
     pic.padding = padding;
+    pic.border_x = border_x;
+    pic.border_y = border_y;
     pic.instance_id = picture_instance_id;
 
     Ok(Control::Picture(Box::new(pic)))
@@ -1378,6 +1386,54 @@ fn materialize_shape_hwp_storage_defaults(
     if shape_attr.rotate_image {
         shape_attr.flip |= 0x0008_0000;
     }
+}
+
+fn parse_picture_img_rect(
+    reader: &mut Reader<&[u8]>,
+    border_x: &mut [i32; 4],
+    border_y: &mut [i32; 4],
+) -> Result<(), HwpxError> {
+    let mut points = [(0i32, 0i32); 4];
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
+                let index = match local_name(ce.name().as_ref()) {
+                    b"pt0" => Some(0),
+                    b"pt1" => Some(1),
+                    b"pt2" => Some(2),
+                    b"pt3" => Some(3),
+                    _ => None,
+                };
+
+                if let Some(index) = index {
+                    for attr in ce.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"x" => points[index].0 = parse_i32(&attr),
+                            b"y" => points[index].1 = parse_i32(&attr),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(ref ee)) => {
+                if local_name(ee.name().as_ref()) == b"imgRect" {
+                    break;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(HwpxError::XmlError(format!("imgRect: {}", e))),
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    // HWP SHAPE_PICTURE stores the four HWPX corner points as two scalar arrays.
+    *border_x = [points[0].0, points[0].1, points[1].0, points[1].1];
+    *border_y = [points[2].0, points[2].1, points[3].0, points[3].1];
+
+    Ok(())
 }
 
 /// `<hp:pic>`, `<hp:rect>`, `<hp:container>` 등 개체의 공통 속성을 요소 속성에서 파싱한다.
@@ -3646,6 +3702,12 @@ mod tests {
               vertOffset="4294964867" horzOffset="7"/>
       <hp:flip horizontal="true" vertical="true"/>
       <hp:rotationInfo angle="15" centerX="1" centerY="2" rotateimage="true"/>
+      <hp:imgRect>
+        <hp:pt0 x="10" y="20"/>
+        <hp:pt1 x="30" y="40"/>
+        <hp:pt2 x="50" y="60"/>
+        <hp:pt3 x="70" y="80"/>
+      </hp:imgRect>
       <hp:img binaryItemIDRef="image1"/>
     </hp:pic>
   </hp:p>
@@ -3669,6 +3731,8 @@ mod tests {
         assert!(pic.shape_attr.rotate_image);
         assert_ne!(pic.shape_attr.flip & 0x2400_0000, 0);
         assert_ne!(pic.shape_attr.flip & 0x0008_0000, 0);
+        assert_eq!(pic.border_x, [10, 20, 30, 40]);
+        assert_eq!(pic.border_y, [50, 60, 70, 80]);
     }
 
     #[test]
