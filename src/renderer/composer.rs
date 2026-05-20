@@ -107,8 +107,96 @@ pub fn compose_section(section: &Section) -> Vec<ComposedParagraph> {
     section.paragraphs.iter().map(compose_paragraph).collect()
 }
 
+/// HWP5 parser가 일부 extended inline controls의 visible marker를 text에 넣지
+/// 않는 경우를 composer 내부에서만 보정한다. 원본 paragraph는 변경하지 않는다.
+fn synthesize_marker_paragraph(para: &Paragraph) -> Option<Paragraph> {
+    let inline_ctrl_count = para
+        .controls
+        .iter()
+        .filter(|control| {
+            !matches!(
+                control,
+                Control::Header(_)
+                    | Control::Footer(_)
+                    | Control::Footnote(_)
+                    | Control::Endnote(_)
+                    | Control::HiddenComment(_)
+            )
+        })
+        .count();
+
+    if inline_ctrl_count == 0 {
+        return None;
+    }
+
+    let existing_markers = para.text.chars().filter(|ch| *ch == '\u{FFFC}').count();
+    if existing_markers >= inline_ctrl_count {
+        return None;
+    }
+
+    let offsets = &para.char_offsets;
+    let first_off = offsets.first().copied().unwrap_or(0) as usize;
+    let n_leading = first_off / 8;
+    if n_leading < 2 || inline_ctrl_count < 3 {
+        return None;
+    }
+
+    let chars: Vec<char> = para.text.chars().collect();
+    let missing_markers = inline_ctrl_count - existing_markers;
+    let mut new_text = String::with_capacity(para.text.len() + missing_markers * 3);
+    let mut new_offsets = Vec::with_capacity(para.char_offsets.len() + missing_markers);
+
+    for i in 0..n_leading {
+        new_offsets.push((i * 8) as u32);
+        new_text.push('\u{FFFC}');
+    }
+
+    for (i, &off) in offsets.iter().enumerate() {
+        let ch = chars.get(i).copied().unwrap_or(' ');
+        new_offsets.push(off);
+        new_text.push(ch);
+
+        let char_width = if (ch as u32) > 0xFFFF { 2 } else { 1 };
+        let next_off = if i + 1 < offsets.len() {
+            offsets[i + 1] as usize
+        } else {
+            continue;
+        };
+        let gap = next_off
+            .saturating_sub(off as usize)
+            .saturating_sub(char_width);
+        let n_ctrls_between = gap / 8;
+        for k in 0..n_ctrls_between {
+            new_offsets.push((off as usize + char_width + k * 8) as u32);
+            new_text.push('\u{FFFC}');
+        }
+    }
+
+    let added_so_far = new_text.chars().filter(|ch| *ch == '\u{FFFC}').count();
+    let still_needed = inline_ctrl_count.saturating_sub(added_so_far);
+    if still_needed > 0 {
+        let last_off = offsets.last().copied().unwrap_or(0) as usize;
+        let last_ch = chars.last().copied().unwrap_or(' ');
+        let last_width = if (last_ch as u32) > 0xFFFF { 2 } else { 1 };
+        let mut next_pos = last_off + last_width;
+        for _ in 0..still_needed {
+            new_offsets.push(next_pos as u32);
+            new_text.push('\u{FFFC}');
+            next_pos += 8;
+        }
+    }
+
+    let mut synth = para.clone();
+    synth.text = new_text;
+    synth.char_offsets = new_offsets;
+    Some(synth)
+}
+
 /// 문단을 줄별 텍스트 런으로 분할한다.
 pub fn compose_paragraph(para: &Paragraph) -> ComposedParagraph {
+    let synth_para = synthesize_marker_paragraph(para);
+    let para = synth_para.as_ref().unwrap_or(para);
+
     let mut lines = compose_lines(para);
     let inline_controls = identify_inline_controls(para);
 
