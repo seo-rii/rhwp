@@ -334,7 +334,10 @@ fn glyph_outline_variant_test_tree_with_bbox_and_resources(
                         ..Default::default()
                     },
                 },
-                PaintOp::GlyphOutline { bbox, outline },
+                PaintOp::GlyphOutline {
+                    bbox,
+                    outline: Box::new(outline),
+                },
             ],
         ),
         resources,
@@ -1668,7 +1671,7 @@ fn static_subtree_cache_key_includes_glyph_outline_stroke_payload() {
             Some(301),
             vec![PaintOp::GlyphOutline {
                 bbox,
-                outline: LayerGlyphOutlinePaint {
+                outline: Box::new(LayerGlyphOutlinePaint {
                     source: TextSourceSpan {
                         id: TextSourceId(0),
                         utf8_range: TextSourceRange::new(0, 1),
@@ -1731,7 +1734,7 @@ fn static_subtree_cache_key_includes_glyph_outline_stroke_payload() {
                         used_fallback_font_count: 0,
                         reason: None,
                     },
-                },
+                }),
             }],
             CacheHint::StaticSubtree,
         )

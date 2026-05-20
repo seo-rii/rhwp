@@ -33,7 +33,7 @@ pub enum PaintOp {
     },
     GlyphOutline {
         bbox: BoundingBox,
-        outline: LayerGlyphOutlinePaint,
+        outline: Box<LayerGlyphOutlinePaint>,
     },
     CharOverlap {
         bbox: BoundingBox,
@@ -1780,7 +1780,7 @@ mod tests {
         let bbox = BoundingBox::new(10.0, 20.0, 20.0, 10.0);
         let op = PaintOp::GlyphOutline {
             bbox,
-            outline: LayerGlyphOutlinePaint {
+            outline: Box::new(LayerGlyphOutlinePaint {
                 source: TextSourceSpan {
                     id: crate::paint::layer_tree::TextSourceId(0),
                     utf8_range: TextSourceRange::new(0, 1),
@@ -1839,7 +1839,7 @@ mod tests {
                     used_fallback_font_count: 0,
                     reason: None,
                 },
-            },
+            }),
         };
         let bounds = op.paint_bounds();
 

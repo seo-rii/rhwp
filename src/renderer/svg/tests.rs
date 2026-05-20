@@ -1180,7 +1180,7 @@ fn glyph_outline_fixture_tree_with_payload(
             },
             PaintOp::GlyphOutline {
                 bbox,
-                outline: LayerGlyphOutlinePaint {
+                outline: Box::new(LayerGlyphOutlinePaint {
                     source: TextSourceSpan {
                         id: TextSourceId(7),
                         utf8_range: TextSourceRange::new(0, 1),
@@ -1218,7 +1218,7 @@ fn glyph_outline_fixture_tree_with_payload(
                         used_fallback_font_count: 0,
                         reason: None,
                     },
-                },
+                }),
             },
         ],
     );

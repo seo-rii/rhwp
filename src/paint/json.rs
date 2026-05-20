@@ -3845,7 +3845,7 @@ mod tests {
         };
         let glyph_outline = PaintOp::GlyphOutline {
             bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
-            outline: LayerGlyphOutlinePaint {
+            outline: Box::new(LayerGlyphOutlinePaint {
                 source,
                 variant: PaintVariantMeta {
                     equivalence_group: "text-0".to_string(),
@@ -3904,7 +3904,7 @@ mod tests {
                     used_fallback_font_count: 0,
                     reason: None,
                 },
-            },
+            }),
         };
         let tree = PageLayerTree::new(
             40.0,
@@ -3973,7 +3973,7 @@ mod tests {
         };
         let glyph_outline = PaintOp::GlyphOutline {
             bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
-            outline: LayerGlyphOutlinePaint {
+            outline: Box::new(LayerGlyphOutlinePaint {
                 source,
                 variant: PaintVariantMeta {
                     equivalence_group: "text-0".to_string(),
@@ -4032,7 +4032,7 @@ mod tests {
                     used_fallback_font_count: 0,
                     reason: None,
                 },
-            },
+            }),
         };
         let mut stroke_glyph_outline = glyph_outline.clone();
         let PaintOp::GlyphOutline { outline, .. } = &mut stroke_glyph_outline else {
@@ -4372,7 +4372,7 @@ mod tests {
         };
         let glyph_outline = PaintOp::GlyphOutline {
             bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
-            outline: LayerGlyphOutlinePaint {
+            outline: Box::new(LayerGlyphOutlinePaint {
                 source,
                 variant: PaintVariantMeta {
                     equivalence_group: "text-0".to_string(),
@@ -4426,7 +4426,7 @@ mod tests {
                     used_fallback_font_count: 0,
                     reason: None,
                 },
-            },
+            }),
         };
         let tree = PageLayerTree::builder(
             40.0,

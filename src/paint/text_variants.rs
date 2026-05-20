@@ -408,7 +408,7 @@ mod tests {
     fn outline_op(variant: PaintVariantMeta, style: TextStyle) -> PaintOp {
         PaintOp::GlyphOutline {
             bbox: bbox(),
-            outline: LayerGlyphOutlinePaint {
+            outline: Box::new(LayerGlyphOutlinePaint {
                 source: TextSourceSpan {
                     id: TextSourceId(0),
                     utf8_range: TextSourceRange::new(0, 1),
@@ -457,7 +457,7 @@ mod tests {
                     used_fallback_font_count: 0,
                     reason: None,
                 },
-            },
+            }),
         }
     }
 

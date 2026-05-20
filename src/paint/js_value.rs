@@ -3409,7 +3409,7 @@ mod tests {
         );
         let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
         let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
-        assert_eq!(json_known_features.length(), 23);
+        assert_eq!(json_known_features.length(), 25);
         assert_eq!(json_known_features.length(), js_known_features.length());
         let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
         let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
@@ -3757,7 +3757,7 @@ mod tests {
         };
         let glyph_outline = PaintOp::GlyphOutline {
             bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
-            outline: crate::paint::LayerGlyphOutlinePaint {
+            outline: Box::new(crate::paint::LayerGlyphOutlinePaint {
                 source,
                 variant: PaintVariantMeta {
                     equivalence_group: "text-0".to_string(),
@@ -3816,7 +3816,7 @@ mod tests {
                     used_fallback_font_count: 0,
                     reason: None,
                 },
-            },
+            }),
         };
         let mut stroke_glyph_outline = glyph_outline.clone();
         let PaintOp::GlyphOutline { outline, .. } = &mut stroke_glyph_outline else {
