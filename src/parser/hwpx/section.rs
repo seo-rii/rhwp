@@ -297,17 +297,7 @@ fn parse_paragraph(
                     }
                     b"tab" => {
                         text_parts.push("\t".to_string());
-                        // HWPX 인라인 탭 속성 파싱 → tab_extended에 저장
-                        let mut ext = [0u16; 7];
-                        for attr in ce.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                b"width" => ext[0] = parse_u16(&attr),
-                                b"leader" => ext[1] = parse_u16(&attr),
-                                b"type" => ext[2] = parse_u16(&attr),
-                                _ => {}
-                            }
-                        }
-                        para.tab_extended.push(ext);
+                        para.tab_extended.push(parse_tab_extension(ce));
                     }
                     b"lineseg" => {
                         // 단독 lineseg (linesegarray 밖에 나올 경우)
@@ -571,17 +561,7 @@ fn read_text_content_with_tabs(
                     b"lineBreak" | b"columnBreak" => text.push('\n'),
                     b"tab" => {
                         text.push('\t');
-                        // HWPX 인라인 탭 속성 → tab_ext_buf에 임시 저장
-                        let mut ext = [0u16; 7];
-                        for attr in ce.attributes().flatten() {
-                            match attr.key.as_ref() {
-                                b"width" => ext[0] = parse_u16(&attr),
-                                b"leader" => ext[1] = parse_u16(&attr),
-                                b"type" => ext[2] = parse_u16(&attr),
-                                _ => {}
-                            }
-                        }
-                        tab_ext_buf.push(ext);
+                        tab_ext_buf.push(parse_tab_extension(ce));
                     }
                     b"nbSpace" => text.push('\u{00A0}'),
                     b"fwSpace" => text.push('\u{2007}'),
@@ -596,6 +576,25 @@ fn read_text_content_with_tabs(
     }
 
     Ok((text, tab_ext_buf))
+}
+
+fn parse_tab_extension(e: &quick_xml::events::BytesStart) -> [u16; 7] {
+    let mut ext = [0u16; 7];
+    ext[3] = 0x0020;
+    ext[4] = 0x0020;
+    ext[5] = 0x0020;
+    ext[6] = 0x0009;
+
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"width" => ext[0] = parse_u16(&attr),
+            b"leader" => ext[1] = parse_u16(&attr),
+            b"type" => ext[2] = (parse_u16(&attr) & 0x00ff) << 8,
+            _ => {}
+        }
+    }
+
+    ext
 }
 
 // ─── Table ───
@@ -3501,6 +3500,56 @@ mod tests {
         let para = &section.paragraphs[0];
         assert_eq!(para.text, "줄바꿈A\n줄바꿈B");
         assert_eq!(para.char_offsets, vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_parse_tab_extension_uses_hwp_inline_tab_contract() {
+        let xml = r#"<hp:tab xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+            width="720" leader="2" type="1"/>"#;
+        let mut reader = Reader::from_str(xml);
+        let mut buf = Vec::new();
+
+        let ext = loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Empty(ref e) if local_name(e.name().as_ref()) == b"tab" => {
+                    break parse_tab_extension(e);
+                }
+                Event::Eof => panic!("tab not found"),
+                _ => {}
+            }
+            buf.clear();
+        };
+
+        assert_eq!(ext[0], 720);
+        assert_eq!(ext[1], 2);
+        assert_eq!(ext[2], 0x0100);
+        assert_eq!(ext[3], 0x0020);
+        assert_eq!(ext[4], 0x0020);
+        assert_eq!(ext[5], 0x0020);
+        assert_eq!(ext[6], 0x0009);
+    }
+
+    #[test]
+    fn test_parse_text_content_tab_extension_defaults() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0">
+      <hp:t>A<hp:tab width="360" leader="1" type="2"/>B</hp:t>
+    </hp:run>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+
+        assert_eq!(para.text, "A\tB");
+        assert_eq!(para.tab_extended.len(), 1);
+        assert_eq!(
+            para.tab_extended[0],
+            [360, 1, 0x0200, 0x0020, 0x0020, 0x0020, 0x0009]
+        );
     }
 
     #[test]
