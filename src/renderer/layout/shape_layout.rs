@@ -257,7 +257,7 @@ impl LayoutEngine {
         if let Control::Equation(eq) = ctrl {
             // 인라인 좌표가 등록되어 있으면 paragraph_layout에서 이미 렌더링됨 → 스킵
             let inline_pos =
-                tree.get_inline_shape_position(section_index, para_index, control_index);
+                tree.get_inline_shape_position(section_index, para_index, control_index, None);
             if inline_pos.is_some() {
                 return;
             }
@@ -342,7 +342,7 @@ impl LayoutEngine {
 
         // 인라인 Shape: paragraph_layout에서 계산된 좌표가 있으면 사용
         let inline_pos = if common.treat_as_char {
-            tree.get_inline_shape_position(section_index, para_index, control_index)
+            tree.get_inline_shape_position(section_index, para_index, control_index, None)
         } else {
             None
         };
@@ -2067,8 +2067,35 @@ impl LayoutEngine {
                         // 글상자 내 수식: 항상 글자처럼 인라인 배치
                         let eq_w = hwpunit_to_px(eq.common.width as i32, self.dpi);
                         let eq_h = hwpunit_to_px(eq.common.height as i32, self.dpi);
+                        advance_to_control(&mut inline_x);
+                        let cell_ctx = CellContext {
+                            parent_para_index: para_index,
+                            path: {
+                                let mut path = parent_cell_path.to_vec();
+                                path.push(CellPathEntry {
+                                    control_index,
+                                    cell_index: 0,
+                                    cell_para_index: pi,
+                                    text_direction: 0,
+                                });
+                                path
+                            },
+                        };
+
+                        if tree
+                            .get_inline_shape_position(
+                                section_index,
+                                pi,
+                                ctrl_idx_in_para,
+                                Some(&cell_ctx),
+                            )
+                            .is_some()
+                        {
+                            inline_x += eq_w;
+                            continue;
+                        }
+
                         let (eq_x, eq_y) = {
-                            advance_to_control(&mut inline_x);
                             let x = inline_x;
                             inline_x += eq_w;
                             (x, para_start_y)

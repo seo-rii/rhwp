@@ -2412,6 +2412,7 @@ impl LayoutEngine {
                         page_content.section_index,
                         para_index,
                         control_index,
+                        None,
                     )
                 } else {
                     None
@@ -2676,6 +2677,7 @@ impl LayoutEngine {
                                 page_content.section_index,
                                 para_index,
                                 ci,
+                                None,
                             );
                             let (inline_x, inline_y) = if let Some((ix, iy)) = inline_pos {
                                 (Some(ix), iy)
@@ -3123,6 +3125,7 @@ impl LayoutEngine {
                                 page_content.section_index,
                                 para_index,
                                 control_index,
+                                None,
                             )
                             .is_some();
 
@@ -3171,6 +3174,7 @@ impl LayoutEngine {
                                     page_content.section_index,
                                     para_index,
                                     control_index,
+                                    None,
                                     shape_x,
                                     shape_y,
                                 );

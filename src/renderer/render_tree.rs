@@ -13,6 +13,9 @@ use crate::model::{ColorRef, Rect};
 /// 렌더 노드 고유 ID
 pub type NodeId = u32;
 
+/// Inline shape position key: (section, paragraph, control, cell/textbox path).
+pub type InlineShapeKey = (usize, usize, usize, Vec<(usize, usize, usize)>);
+
 /// 렌더 노드 (페이지 내 렌더링 가능한 요소)
 #[derive(Debug, Clone)]
 pub struct RenderNode {
@@ -763,8 +766,8 @@ pub struct PageRenderTree {
     pub root: RenderNode,
     /// 다음 노드 ID 카운터
     next_id: NodeId,
-    /// 인라인 Shape 좌표 맵: (section, para, control) → (x, y)
-    inline_shape_positions: std::collections::HashMap<(usize, usize, usize), (f64, f64)>,
+    /// 인라인 Shape 좌표 맵: (section, para, control, cell path) → (x, y)
+    inline_shape_positions: std::collections::HashMap<InlineShapeKey, (f64, f64)>,
 }
 
 impl PageRenderTree {
@@ -787,17 +790,30 @@ impl PageRenderTree {
         }
     }
 
+    fn inline_cell_path(cell_ctx: Option<&CellContext>) -> Vec<(usize, usize, usize)> {
+        cell_ctx
+            .map(|ctx| {
+                ctx.path
+                    .iter()
+                    .map(|entry| (entry.control_index, entry.cell_index, entry.cell_para_index))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// 인라인 Shape 좌표 등록
     pub fn set_inline_shape_position(
         &mut self,
         sec: usize,
         para: usize,
         ctrl: usize,
+        cell_ctx: Option<&CellContext>,
         x: f64,
         y: f64,
     ) {
+        let cell_path = Self::inline_cell_path(cell_ctx);
         self.inline_shape_positions
-            .insert((sec, para, ctrl), (x, y));
+            .insert((sec, para, ctrl, cell_path), (x, y));
     }
 
     /// 인라인 Shape 좌표 조회
@@ -806,14 +822,16 @@ impl PageRenderTree {
         sec: usize,
         para: usize,
         ctrl: usize,
+        cell_ctx: Option<&CellContext>,
     ) -> Option<(f64, f64)> {
-        self.inline_shape_positions.get(&(sec, para, ctrl)).copied()
+        let cell_path = Self::inline_cell_path(cell_ctx);
+        self.inline_shape_positions
+            .get(&(sec, para, ctrl, cell_path))
+            .copied()
     }
 
     /// 인라인 Shape 좌표 전체 참조 (hitTest용)
-    pub fn inline_shape_positions(
-        &self,
-    ) -> &std::collections::HashMap<(usize, usize, usize), (f64, f64)> {
+    pub fn inline_shape_positions(&self) -> &std::collections::HashMap<InlineShapeKey, (f64, f64)> {
         &self.inline_shape_positions
     }
 

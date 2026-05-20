@@ -257,7 +257,7 @@ impl DocumentCore {
                         let first_page = pages[0];
                         let tree = self.build_page_tree(first_page)?;
                         if let Some((sx, sy)) =
-                            tree.get_inline_shape_position(section_idx, para_idx, ci)
+                            tree.get_inline_shape_position(section_idx, para_idx, ci, None)
                         {
                             let shape_h = if let Some(Control::Shape(s)) = para.controls.get(ci) {
                                 crate::renderer::hwpunit_to_px(
@@ -660,7 +660,8 @@ impl DocumentCore {
         // inline_shape_positions에 등록된 Shape의 bbox를 검사하여
         // 클릭 시 해당 Shape의 텍스트 위치(char_offset)를 반환
         for (key, &(sx, sy)) in tree.inline_shape_positions() {
-            let (si, pi, ci) = *key;
+            let (si, pi, ci, _) = key;
+            let (si, pi, ci) = (*si, *pi, *ci);
             if let Some(section) = self.document.sections.get(si) {
                 if let Some(para) = section.paragraphs.get(pi) {
                     if let Some(ctrl) = para.controls.get(ci) {

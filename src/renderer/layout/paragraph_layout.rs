@@ -1957,6 +1957,7 @@ impl LayoutEngine {
                                     section_index,
                                     para_index,
                                     tac_ci,
+                                    cell_ctx.as_ref(),
                                     x,
                                     shape_y,
                                 );
@@ -2028,6 +2029,7 @@ impl LayoutEngine {
                                     section_index,
                                     para_index,
                                     tac_ci,
+                                    cell_ctx.as_ref(),
                                     x,
                                     eq_y,
                                 );
@@ -2067,6 +2069,7 @@ impl LayoutEngine {
                                         section_index,
                                         para_index,
                                         tac_ci,
+                                        cell_ctx.as_ref(),
                                         x,
                                         table_y,
                                     );
