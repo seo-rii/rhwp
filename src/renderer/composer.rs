@@ -150,7 +150,8 @@ pub fn compose_paragraph(para: &Paragraph) -> ComposedParagraph {
         })
         .collect();
 
-    // 각주/미주 위치 수집
+    // 각주 위치 수집. 미주는 본문 크기 인라인 텍스트("문N)")로 렌더링하므로
+    // FootnoteMarker 위치에 포함하지 않는다.
     let footnote_positions: Vec<(usize, u16, usize)> = para
         .controls
         .iter()
@@ -159,7 +160,6 @@ pub fn compose_paragraph(para: &Paragraph) -> ComposedParagraph {
             let pos = *tac_positions.get(i)?;
             match ctrl {
                 Control::Footnote(fn_) => Some((pos, fn_.number, i)),
-                Control::Endnote(en) => Some((pos, en.number, i)),
                 _ => None,
             }
         })

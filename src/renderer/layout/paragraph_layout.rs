@@ -846,6 +846,65 @@ impl LayoutEngine {
             }
         }
 
+        // Upstream #926: endnote markers are regular inline body text ("문N)"),
+        // not superscript FootnoteMarker nodes.
+        let mut endnote_marker_x_advance = 0.0f64;
+        if start_line == 0 {
+            if let Some(p) = para {
+                for ctrl in &p.controls {
+                    if let Control::Endnote(endnote) = ctrl {
+                        let marker_text = format!("문{}) ", endnote.number);
+                        let first_char_shape_id = p
+                            .char_shapes
+                            .first()
+                            .map(|char_shape| char_shape.char_shape_id)
+                            .unwrap_or(0);
+                        let style = resolved_to_text_style(styles, first_char_shape_id, 0);
+                        let marker_width = estimate_text_width(&marker_text, &style);
+                        let first_line = composed.lines.first();
+                        let baseline = hwpunit_to_px(
+                            first_line.map(|line| line.baseline_distance).unwrap_or(0),
+                            self.dpi,
+                        );
+                        let line_height = hwpunit_to_px(
+                            first_line.map(|line| line.line_height).unwrap_or(0),
+                            self.dpi,
+                        );
+                        let marker_id = tree.next_id();
+                        let marker_node = RenderNode::new(
+                            marker_id,
+                            RenderNodeType::TextRun(TextRunNode {
+                                text: marker_text,
+                                style,
+                                char_shape_id: Some(first_char_shape_id),
+                                para_shape_id: Some(composed.para_style_id),
+                                section_index: Some(section_index),
+                                para_index: Some(para_index),
+                                char_start: Some(0),
+                                cell_context: cell_ctx.clone(),
+                                is_para_end: false,
+                                is_line_break_end: false,
+                                rotation: 0.0,
+                                is_vertical: false,
+                                char_overlap: None,
+                                border_fill_id: 0,
+                                baseline,
+                                field_marker: FieldMarkerType::None,
+                            }),
+                            BoundingBox::new(
+                                col_area.x + margin_left + indent,
+                                y,
+                                marker_width,
+                                line_height,
+                            ),
+                        );
+                        col_node.children.push(marker_node);
+                        endnote_marker_x_advance += marker_width;
+                    }
+                }
+            }
+        }
+
         for line_idx in start_line..end {
             let comp_line = &composed.lines[line_idx];
 
@@ -977,7 +1036,7 @@ impl LayoutEngine {
             );
 
             let inline_offset = if line_idx == start_line {
-                first_line_x_offset
+                first_line_x_offset + endnote_marker_x_advance
             } else {
                 0.0
             };
