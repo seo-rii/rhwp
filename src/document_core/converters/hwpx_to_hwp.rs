@@ -35,8 +35,12 @@ pub struct AdapterReport {
     pub tables_ctrl_data_synthesized: u32,
     /// `table.attr` 재구성 횟수 (Stage 2)
     pub tables_attr_packed: u32,
+    /// HWPX 표 CTRL_HEADER attr 중 한컴 HWP 저장 관례 비트 보강 횟수
+    pub table_ctrl_header_attr_materialized: u32,
     /// `cell.list_attr bit 16` 보강 횟수 (Stage 3)
     pub cells_list_attr_bit16_set: u32,
+    /// HWPX 출처 셀 LIST_HEADER width_ref/raw_list_extra materialize 횟수
+    pub cells_list_header_contract_materialized: u32,
     /// `Control::SectionDef` 컨트롤 삽입 횟수 (Stage 4 — 섹션 개수)
     pub section_def_controls_inserted: u32,
 }
@@ -56,7 +60,9 @@ impl AdapterReport {
         self.skipped_reason.is_none()
             && (self.tables_ctrl_data_synthesized
                 + self.tables_attr_packed
+                + self.table_ctrl_header_attr_materialized
                 + self.cells_list_attr_bit16_set
+                + self.cells_list_header_contract_materialized
                 + self.section_def_controls_inserted)
                 > 0
     }
@@ -150,7 +156,7 @@ fn adapt_paragraph(para: &mut Paragraph, report: &mut AdapterReport) {
 fn adapt_table(table: &mut Table, report: &mut AdapterReport) {
     // 1. raw_ctrl_data 합성 (HWPX 출처는 비어있음)
     if table.raw_ctrl_data.is_empty() {
-        table.raw_ctrl_data = serialize_common_obj_attr(&table.common);
+        table.raw_ctrl_data = serialize_table_ctrl_data(table, report);
         report.tables_ctrl_data_synthesized += 1;
     }
 
@@ -158,25 +164,80 @@ fn adapt_table(table: &mut Table, report: &mut AdapterReport) {
     //    raw_ctrl_data 안의 attr 비트가 진실. table.attr 자체는 직렬화기 경로에서
     //    raw_ctrl_data 가 비어있을 때만 사용되므로 추가 작업 불필요.
     //    다만 IR 의 일관성을 위해 (다른 코드가 table.attr 을 읽을 가능성) 동기화.
-    if table.attr == 0 && !table.raw_ctrl_data.is_empty() && table.raw_ctrl_data.len() >= 4 {
+    if !table.raw_ctrl_data.is_empty() && table.raw_ctrl_data.len() >= 4 {
         let attr = u32::from_le_bytes([
             table.raw_ctrl_data[0],
             table.raw_ctrl_data[1],
             table.raw_ctrl_data[2],
             table.raw_ctrl_data[3],
         ]);
-        if attr != 0 {
+        if table.attr != attr {
             table.attr = attr;
             report.tables_attr_packed += 1;
         }
     }
 
     // 셀별 보강 + 내부 문단 재귀 (중첩 표 대응)
+    let use_cell_width_ref = table_requires_cell_width_ref_contract(table);
     for cell in &mut table.cells {
         adapt_cell_list_attr(cell, report);
+        materialize_cell_list_header_contract(cell, use_cell_width_ref, report);
         for cpara in &mut cell.paragraphs {
             adapt_paragraph(cpara, report);
         }
+    }
+}
+
+fn serialize_table_ctrl_data(table: &mut Table, report: &mut AdapterReport) -> Vec<u8> {
+    const HWP5_TABLE_CAPTION_COMMON_ATTR_BIT: u32 = 0x2000_0000;
+
+    let mut raw_ctrl_data = serialize_common_obj_attr(&table.common);
+    if table.caption.is_some() && raw_ctrl_data.len() >= 4 {
+        let before = u32::from_le_bytes(raw_ctrl_data[0..4].try_into().unwrap());
+        let after = before | HWP5_TABLE_CAPTION_COMMON_ATTR_BIT;
+        if after != before {
+            raw_ctrl_data[0..4].copy_from_slice(&after.to_le_bytes());
+            table.common.attr = after;
+            report.table_ctrl_header_attr_materialized += 1;
+        }
+    }
+
+    raw_ctrl_data
+}
+
+fn table_requires_cell_width_ref_contract(table: &Table) -> bool {
+    // HWPX 조직도류 표는 많은 논리 열로 셀 폭을 쪼개어 만든 micro-grid 형태다.
+    // 이 계열은 LIST_HEADER width_ref bit가 없으면 한컴이 셀 내부 줄나눔 폭을 너무 좁게 잡는다.
+    //
+    // 반대로 일반 표는 같은 bit를 세우면 병합 셀 높이가 과도하게 계산될 수 있다.
+    // raw_list_extra는 모든 셀에 materialize하되 width_ref bit는 고열 수 micro-grid 표에만 적용한다.
+    table.col_count >= 30
+}
+
+fn materialize_cell_list_header_contract(
+    cell: &mut Cell,
+    use_width_ref: bool,
+    report: &mut AdapterReport,
+) {
+    let before_width_ref = cell.list_header_width_ref;
+    let before_extra_len = cell.raw_list_extra.len();
+
+    if use_width_ref {
+        cell.list_header_width_ref |= 0x0001;
+    } else {
+        cell.list_header_width_ref &= !0x0001;
+    }
+
+    if cell.raw_list_extra.is_empty() {
+        let mut extra = vec![0u8; 13];
+        extra[0..4].copy_from_slice(&cell.width.to_le_bytes());
+        cell.raw_list_extra = extra;
+    }
+
+    if cell.list_header_width_ref != before_width_ref
+        || cell.raw_list_extra.len() != before_extra_len
+    {
+        report.cells_list_header_contract_materialized += 1;
     }
 }
 
@@ -252,6 +313,100 @@ mod tests {
         // 두 번째 호출은 변경 없음 (이미 정규화됨).
         assert_eq!(r2.tables_ctrl_data_synthesized, 0);
         assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn captioned_table_materializes_hancom_caption_common_attr_bit() {
+        use crate::model::shape::Caption;
+
+        let mut table = Table {
+            caption: Some(Caption {
+                paragraphs: vec![Paragraph::default()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut report = AdapterReport::new();
+
+        adapt_table(&mut table, &mut report);
+
+        let attr = u32::from_le_bytes(table.raw_ctrl_data[0..4].try_into().unwrap());
+        assert_eq!(attr & 0x2000_0000, 0x2000_0000);
+        assert_eq!(table.attr & 0x2000_0000, 0x2000_0000);
+        assert_eq!(report.table_ctrl_header_attr_materialized, 1);
+    }
+
+    #[test]
+    fn cell_list_header_contract_materializes_width_ref_and_extra() {
+        let mut cell = Cell {
+            width: 2266,
+            list_header_width_ref: 0,
+            raw_list_extra: Vec::new(),
+            ..Default::default()
+        };
+        let mut report = AdapterReport::new();
+
+        materialize_cell_list_header_contract(&mut cell, true, &mut report);
+
+        assert_eq!(cell.list_header_width_ref & 0x0001, 0x0001);
+        assert_eq!(cell.raw_list_extra.len(), 13);
+        assert_eq!(
+            u32::from_le_bytes(cell.raw_list_extra[0..4].try_into().unwrap()),
+            2266
+        );
+        assert!(cell.raw_list_extra[4..].iter().all(|&byte| byte == 0));
+        assert_eq!(report.cells_list_header_contract_materialized, 1);
+
+        materialize_cell_list_header_contract(&mut cell, true, &mut report);
+        assert_eq!(report.cells_list_header_contract_materialized, 1);
+    }
+
+    #[test]
+    fn cell_list_header_contract_keeps_width_ref_clear_for_normal_tables() {
+        let mut table = Table {
+            col_count: 8,
+            cells: vec![Cell {
+                width: 1200,
+                list_header_width_ref: 0x0001,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut report = AdapterReport::new();
+
+        adapt_table(&mut table, &mut report);
+
+        let cell = &table.cells[0];
+        assert_eq!(cell.list_header_width_ref & 0x0001, 0);
+        assert_eq!(cell.raw_list_extra.len(), 13);
+        assert_eq!(
+            u32::from_le_bytes(cell.raw_list_extra[0..4].try_into().unwrap()),
+            1200
+        );
+        assert_eq!(report.cells_list_header_contract_materialized, 1);
+    }
+
+    #[test]
+    fn cell_list_header_contract_uses_width_ref_for_micro_grid_tables() {
+        let mut table = Table {
+            col_count: 30,
+            cells: vec![Cell {
+                width: 900,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut report = AdapterReport::new();
+
+        adapt_table(&mut table, &mut report);
+
+        let cell = &table.cells[0];
+        assert_eq!(cell.list_header_width_ref & 0x0001, 0x0001);
+        assert_eq!(
+            u32::from_le_bytes(cell.raw_list_extra[0..4].try_into().unwrap()),
+            900
+        );
+        assert_eq!(report.cells_list_header_contract_materialized, 1);
     }
 
     // ============================================================
