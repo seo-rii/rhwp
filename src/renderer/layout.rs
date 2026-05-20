@@ -3113,6 +3113,77 @@ impl LayoutEngine {
                             }
                         }
                     }
+                } else if let Control::Shape(shape) = ctrl {
+                    let common = shape.common();
+                    if common.treat_as_char {
+                        let has_real_text =
+                            para.text.chars().any(|c| c > '\u{001F}' && c != '\u{FFFC}');
+                        let already_registered = tree
+                            .get_inline_shape_position(
+                                page_content.section_index,
+                                para_index,
+                                control_index,
+                            )
+                            .is_some();
+
+                        if !has_real_text {
+                            let shape_w = hwpunit_to_px(common.width as i32, self.dpi);
+                            let shape_h = hwpunit_to_px(common.height as i32, self.dpi);
+                            let shape_y = y_offset;
+
+                            if !already_registered {
+                                let comp = composed.get(para_index);
+                                let para_style_id = comp
+                                    .map(|c| c.para_style_id as usize)
+                                    .unwrap_or(para.para_shape_id as usize);
+                                let para_style_ref = styles.para_styles.get(para_style_id);
+                                let para_alignment = para_style_ref
+                                    .map(|s| s.alignment)
+                                    .unwrap_or(Alignment::Left);
+                                let para_margin_left =
+                                    para_style_ref.map(|s| s.margin_left).unwrap_or(0.0);
+                                let para_indent = para_style_ref.map(|s| s.indent).unwrap_or(0.0);
+                                let para_margin_right =
+                                    para_style_ref.map(|s| s.margin_right).unwrap_or(0.0);
+                                let effective_margin_left = if para_indent > 0.0 {
+                                    para_margin_left + para_indent
+                                } else {
+                                    para_margin_left
+                                };
+                                let avail_w =
+                                    (col_area.width - effective_margin_left - para_margin_right)
+                                        .max(shape_w);
+                                let shape_x = match para_alignment {
+                                    Alignment::Center | Alignment::Distribute => {
+                                        col_area.x
+                                            + effective_margin_left
+                                            + (avail_w - shape_w).max(0.0) / 2.0
+                                    }
+                                    Alignment::Right => {
+                                        col_area.x
+                                            + effective_margin_left
+                                            + (avail_w - shape_w).max(0.0)
+                                    }
+                                    _ => col_area.x + effective_margin_left,
+                                };
+
+                                tree.set_inline_shape_position(
+                                    page_content.section_index,
+                                    para_index,
+                                    control_index,
+                                    shape_x,
+                                    shape_y,
+                                );
+                            }
+
+                            let line_advance = para
+                                .line_segs
+                                .first()
+                                .map(|ls| hwpunit_to_px(ls.line_height + ls.line_spacing, self.dpi))
+                                .unwrap_or(shape_h);
+                            result_y = shape_y + line_advance.max(shape_h);
+                        }
+                    }
                 }
             }
         }
