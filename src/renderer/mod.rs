@@ -26,6 +26,7 @@ pub mod scheduler;
 pub mod skia;
 pub mod style_resolver;
 pub mod svg;
+pub mod svg_fragment;
 pub mod svg_layer;
 pub mod typeset;
 #[cfg(target_arch = "wasm32")]

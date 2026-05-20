@@ -69,6 +69,8 @@ fn detect_image_mime_type(data: &[u8]) -> &'static str {
             || data.starts_with(&[0x01, 0x00, 0x09, 0x00]))
     {
         "image/x-wmf"
+    } else if super::svg_fragment::is_svg_prefix(data) {
+        "image/svg+xml"
     } else {
         "application/octet-stream"
     }
@@ -902,6 +904,38 @@ impl WebCanvasRenderer {
                     eq.font_size,
                 );
                 self.ctx.restore();
+            }
+            RenderNodeType::RawSvg(raw) => {
+                if let Some(data_url) =
+                    super::svg_fragment::try_parse_single_image_data_url(&raw.svg)
+                {
+                    if let Some((_mime, bytes)) =
+                        super::svg_fragment::decode_base64_data_url(data_url)
+                    {
+                        self.draw_image(
+                            &bytes,
+                            node.bbox.x,
+                            node.bbox.y,
+                            node.bbox.width,
+                            node.bbox.height,
+                        );
+                    }
+                } else {
+                    let svg_doc = super::svg_fragment::wrap_svg_fragment(
+                        &raw.svg,
+                        node.bbox.x,
+                        node.bbox.y,
+                        node.bbox.width,
+                        node.bbox.height,
+                    );
+                    self.draw_image(
+                        svg_doc.as_bytes(),
+                        node.bbox.x,
+                        node.bbox.y,
+                        node.bbox.width,
+                        node.bbox.height,
+                    );
+                }
             }
             RenderNodeType::FormObject(form) => {
                 let form = LayerFormObjectPaint {
