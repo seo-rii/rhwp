@@ -475,7 +475,8 @@ impl TypesetEngine {
                                 .unwrap_or(0.0)
                         })
                         .fold(0.0f64, f64::max);
-                    let lh = if max_fs > 0.0 && raw_lh < max_fs {
+                    let recompute_lh = max_fs > 0.0 && raw_lh < max_fs;
+                    let lh = if recompute_lh {
                         use crate::model::style::LineSpacingType;
                         let computed = match ls_type {
                             LineSpacingType::Percent => max_fs * ls_val / 100.0,
@@ -487,7 +488,14 @@ impl TypesetEngine {
                     } else {
                         raw_lh
                     };
-                    (lh, hwpunit_to_px(line.line_spacing, self.dpi))
+                    // If the line height was recomputed from ParaShape line spacing,
+                    // the preset line_spacing has already been absorbed into `lh`.
+                    let line_spacing_px = if recompute_lh {
+                        0.0
+                    } else {
+                        hwpunit_to_px(line.line_spacing, self.dpi)
+                    };
+                    (lh, line_spacing_px)
                 })
                 .unzip()
         } else if !para.line_segs.is_empty() {
