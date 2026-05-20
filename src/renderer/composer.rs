@@ -1132,6 +1132,7 @@ fn pua_enclosed_border_type(ch: char) -> Option<u8> {
 fn pua_plain_text_display(ch: char) -> Option<&'static str> {
     match ch as u32 {
         0xF012B => Some("(인)"),
+        0xF03C5 => Some("□"),
         _ => None,
     }
 }

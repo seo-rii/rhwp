@@ -3227,10 +3227,10 @@ mod tests {
             font_size: 16.0,
             ..Default::default()
         };
-        let text = "\u{F012B}(Signature)";
-        let display_text = "(인)(Signature)";
+        let text = "\u{F012B}\u{F03C5}(Signature)";
+        let display_text = "(인)□(Signature)";
         let source_positions = vec![
-            0.0, 16.0, 24.0, 32.0, 40.0, 48.0, 56.0, 64.0, 72.0, 80.0, 88.0, 96.0,
+            0.0, 16.0, 24.0, 32.0, 40.0, 48.0, 56.0, 64.0, 72.0, 80.0, 88.0, 96.0, 104.0,
         ];
         let display_positions = compute_char_positions(display_text, &style);
         let text_run = PaintOp::TextRun {

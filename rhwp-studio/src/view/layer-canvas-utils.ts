@@ -1750,6 +1750,9 @@ export function puaToDisplayText(ch: string): string | null {
   if (cp === 0xF012B) {
     return '(인)';
   }
+  if (cp === 0xF03C5) {
+    return '□';
+  }
   if (cp >= 0xF02B1 && cp <= 0xF02C4) {
     return String(cp - 0xF02B0);
   }
