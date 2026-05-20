@@ -788,8 +788,11 @@ fn parse_border_fill(
                         b"diagonal" => {
                             for attr in ce.attributes().flatten() {
                                 match attr.key.as_ref() {
-                                    b"type" => bf.diagonal.diagonal_type = parse_u8(&attr),
-                                    b"width" => bf.diagonal.width = parse_border_width(&attr),
+                                    b"type" => {
+                                        bf.diagonal.diagonal_type =
+                                            parse_border_line_type_code(&attr)
+                                    }
+                                    b"width" => bf.diagonal.width = parse_diagonal_width(&attr),
                                     b"color" => bf.diagonal.color = parse_color(&attr),
                                     _ => {}
                                 }
@@ -897,8 +900,30 @@ fn parse_border_fill(
                         b"slash" => {
                             for attr in ce.attributes().flatten() {
                                 match attr.key.as_ref() {
-                                    b"type" => bf.diagonal.diagonal_type = parse_u8(&attr),
-                                    b"width" => bf.diagonal.width = parse_border_width(&attr),
+                                    b"type" => {
+                                        let line_type = parse_border_line_type_code(&attr);
+                                        set_diagonal_attr_bits(&mut bf, 2, line_type);
+                                        if line_type != 0 {
+                                            bf.diagonal.diagonal_type = line_type;
+                                        }
+                                    }
+                                    b"width" => bf.diagonal.width = parse_diagonal_width(&attr),
+                                    b"color" => bf.diagonal.color = parse_color(&attr),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        b"backSlash" => {
+                            for attr in ce.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"type" => {
+                                        let line_type = parse_border_line_type_code(&attr);
+                                        set_diagonal_attr_bits(&mut bf, 5, line_type);
+                                        if line_type != 0 {
+                                            bf.diagonal.diagonal_type = line_type;
+                                        }
+                                    }
+                                    b"width" => bf.diagonal.width = parse_diagonal_width(&attr),
                                     b"color" => bf.diagonal.color = parse_color(&attr),
                                     _ => {}
                                 }
@@ -1166,6 +1191,44 @@ fn parse_border_line_type(attr: &quick_xml::events::attributes::Attribute) -> Bo
     }
 }
 
+fn parse_border_line_type_code(attr: &quick_xml::events::attributes::Attribute) -> u8 {
+    match parse_border_line_type(attr) {
+        BorderLineType::None => 0,
+        BorderLineType::Solid => 1,
+        BorderLineType::Dash => 2,
+        BorderLineType::Dot => 3,
+        BorderLineType::DashDot => 4,
+        BorderLineType::DashDotDot => 5,
+        BorderLineType::LongDash => 6,
+        BorderLineType::Circle => 7,
+        BorderLineType::Double => 8,
+        BorderLineType::ThinThickDouble => 9,
+        BorderLineType::ThickThinDouble => 10,
+        BorderLineType::ThinThickThinTriple => 11,
+        BorderLineType::Wave => 12,
+        BorderLineType::DoubleWave => 13,
+        BorderLineType::Thick3D => 14,
+        BorderLineType::Thick3DReverse => 15,
+        BorderLineType::Thin3D => 16,
+        BorderLineType::Thin3DReverse => 17,
+    }
+}
+
+fn set_diagonal_attr_bits(bf: &mut BorderFill, shift: u16, line_type: u8) {
+    let mask = 0x07u16 << shift;
+    bf.attr &= !mask;
+    if line_type != 0 {
+        // HWP5 stores diagonal direction presence separately from
+        // DiagonalLine(type,width,color). Hancom-authored samples use value
+        // 2 for a visible slash/backSlash direction bit-field.
+        bf.attr |= 0x02u16 << shift;
+    }
+}
+
+fn parse_diagonal_width(attr: &quick_xml::events::attributes::Attribute) -> u8 {
+    parse_border_width(attr).max(1)
+}
+
 fn parse_border_width(attr: &quick_xml::events::attributes::Attribute) -> u8 {
     let s = attr_str(attr);
     // "0.12 mm", "0.4 mm" 등의 형식에서 두께 인덱스 추출
@@ -1263,5 +1326,24 @@ mod tests {
         assert_eq!(grad.blur, 40);
         assert_eq!(grad.step_center, 55);
         assert_eq!(grad.colors, vec![0x0033_2211]);
+    }
+
+    #[test]
+    fn test_parse_border_fill_slash_backslash_sets_diagonal_attr_bits() {
+        let xml = r##"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">
+  <hh:borderFill id="1">
+    <hh:slash type="SOLID" width="0.12 mm" color="#112233"/>
+    <hh:backSlash type="DASH" width="0.12 mm" color="#445566"/>
+  </hh:borderFill>
+</hh:head>"##;
+
+        let (doc_info, _) = parse_hwpx_header(xml).expect("header parse");
+        let bf = &doc_info.border_fills[0];
+
+        assert_eq!((bf.attr >> 2) & 0x07, 0x02);
+        assert_eq!((bf.attr >> 5) & 0x07, 0x02);
+        assert_eq!(bf.diagonal.diagonal_type, 2);
+        assert_eq!(bf.diagonal.width, 1);
+        assert_eq!(bf.diagonal.color, 0x0066_5544);
     }
 }
