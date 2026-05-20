@@ -897,15 +897,9 @@ impl SvgRenderer {
         style: &TextStyle,
         positions: Option<&[f64]>,
     ) {
-        let mapped_text;
-        let text = if text
-            .chars()
-            .any(|ch| crate::renderer::layout::map_pua_bullet_char(ch) != ch)
-        {
-            mapped_text = text
-                .chars()
-                .map(crate::renderer::layout::map_pua_bullet_char)
-                .collect::<String>();
+        let mapped_text = crate::renderer::composer::expand_pua_display_text(text);
+        let text_was_remapped = mapped_text != text;
+        let text = if text_was_remapped {
             mapped_text.as_str()
         } else {
             text
@@ -934,8 +928,16 @@ impl SvgRenderer {
         }
 
         let owned_positions;
-        let char_positions = if let Some(positions) = positions {
-            positions
+        let char_positions = if !text_was_remapped {
+            if let Some(positions) = positions {
+                positions
+            } else {
+                owned_positions = compute_char_positions(text, style);
+                &owned_positions
+            }
+        } else if text.is_empty() {
+            owned_positions = Vec::new();
+            &owned_positions
         } else {
             owned_positions = compute_char_positions(text, style);
             &owned_positions

@@ -17,9 +17,11 @@ use crate::paint::{
     TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
     TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
+use crate::renderer::composer::expand_pua_display_text;
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
+use crate::renderer::layout::compute_char_positions;
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
     ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, PatternFillInfo,
@@ -273,7 +275,11 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode, variant_ops: &
     let has_sidecar_variants = !variant_ops.is_empty();
     let has_glyph_runs = has_glyph_runs(root) || ops_have_glyph_runs(variant_ops);
     let has_glyph_outlines = has_glyph_outlines(root) || ops_have_glyph_outlines(variant_ops);
+    let has_display_text = has_display_text(root) || ops_have_display_text(variant_ops);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
+    if has_display_text {
+        buf.push_str(",\"text.displayText\"");
+    }
     if has_glyph_runs {
         buf.push_str(",\"fontResources\",\"text.glyphRun\"");
     }
@@ -308,7 +314,7 @@ fn write_text_export_metadata(buf: &mut String, root: &LayerNode, variant_ops: &
     if has_glyph_outlines {
         buf.push_str("\"text.outlineGlyph\"");
     }
-    buf.push_str("],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"");
+    buf.push_str("],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.displayText\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"");
     if has_glyph_runs {
         buf.push_str(",\"glyphRun\"");
     }
@@ -334,7 +340,11 @@ fn write_text_v2_compat_export_metadata(
     let has_variant_groups = has_text_variant_groups(root) || has_text_variant_ops(variant_ops);
     let has_glyph_runs = has_glyph_runs(root) || ops_have_glyph_runs(variant_ops);
     let has_glyph_outlines = has_glyph_outlines(root) || ops_have_glyph_outlines(variant_ops);
+    let has_display_text = has_display_text(root) || ops_have_display_text(variant_ops);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"");
+    if has_display_text {
+        buf.push_str(",\"text.displayText\"");
+    }
     if has_glyph_runs {
         buf.push_str(",\"fontResources\",\"text.glyphRun\"");
     }
@@ -366,7 +376,7 @@ fn write_text_v2_compat_export_metadata(
     if has_glyph_outlines {
         buf.push_str("\"text.outlineGlyph\"");
     }
-    buf.push_str("],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\"],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"");
+    buf.push_str("],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.displayText\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\"],\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"");
     if has_glyph_runs {
         buf.push_str(",\"glyphRun\"");
     }
@@ -406,7 +416,7 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     if externalized_visuals.contains(&"decorations") {
         buf.push_str(",\"text.decorationOp\"");
     }
-    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.displayText\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");
     if has_outline_stroke {
         buf.push_str(",\"text.glyphOutline.monochromeFillStroke\"");
     }
@@ -438,7 +448,7 @@ fn write_text_v2_strict_glyph_run_export_metadata(buf: &mut String, root: &Layer
     if externalized_visuals.contains(&"decorations") {
         buf.push_str(",\"text.decorationOp\"");
     }
-    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"fontResources\",\"text.glyphRun\"],\"text\":{\"defaultVariant\":\"glyphRun\",\"variants\":[\"glyphRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
+    buf.push_str("],\"optionalFeatures\":[],\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.displayText\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"],\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"fontResources\",\"text.glyphRun\"],\"text\":{\"defaultVariant\":\"glyphRun\",\"variants\":[\"glyphRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
         if idx > 0 {
             buf.push(',');
@@ -507,8 +517,35 @@ fn has_glyph_runs(root: &LayerNode) -> bool {
     false
 }
 
+fn has_display_text(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops_have_display_text(ops) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 fn has_text_variant_ops(ops: &[PaintOp]) -> bool {
     ops.iter().any(|op| text_v2_variant_group_id(op).is_some())
+}
+
+fn ops_have_display_text(ops: &[PaintOp]) -> bool {
+    ops.iter().any(|op| match op {
+        PaintOp::TextRun { run, .. } => display_text_for_text_run(run).is_some(),
+        _ => false,
+    })
 }
 
 fn ops_have_glyph_runs(ops: &[PaintOp]) -> bool {
@@ -1133,6 +1170,10 @@ impl PaintOp {
                     json_escape(run.projection.as_str()),
                     json_escape(run.cluster_basis.as_str()),
                 );
+                let display_text = display_text_for_text_run(run);
+                if let Some(display_text) = &display_text {
+                    let _ = write!(buf, ",\"displayText\":{}", json_escape(display_text));
+                }
                 if let Some(placement) = run.placement {
                     buf.push_str(",\"placement\":");
                     write_text_run_placement(buf, placement);
@@ -1158,6 +1199,14 @@ impl PaintOp {
                 write_text_legacy_visuals(buf, run);
                 buf.push_str(",\"positions\":");
                 write_text_positions(buf, run);
+                if let Some(display_text) = &display_text {
+                    buf.push_str(",\"displayPositions\":");
+                    if display_text.is_empty() {
+                        buf.push_str("[]");
+                    } else {
+                        write_text_positions_for_text(buf, display_text, &run.style);
+                    }
+                }
                 if !run.control_marks.is_empty() {
                     buf.push_str(",\"controlMarks\":");
                     write_text_control_marks(buf, run);
@@ -2250,6 +2299,11 @@ fn write_text_positions(buf: &mut String, run: &LayerTextRunPaint) {
     write_text_positions_slice(buf, &run.positions);
 }
 
+fn write_text_positions_for_text(buf: &mut String, text: &str, style: &TextStyle) {
+    let positions = compute_char_positions(text, style);
+    write_text_positions_slice(buf, &positions);
+}
+
 fn write_text_positions_slice(buf: &mut String, positions: &[f64]) {
     buf.push('[');
     for (idx, position) in positions.iter().enumerate() {
@@ -2259,6 +2313,11 @@ fn write_text_positions_slice(buf: &mut String, positions: &[f64]) {
         let _ = write!(buf, "{:.6}", position);
     }
     buf.push(']');
+}
+
+fn display_text_for_text_run(run: &LayerTextRunPaint) -> Option<String> {
+    let display_text = expand_pua_display_text(&run.text);
+    (display_text != run.text).then_some(display_text)
 }
 
 fn write_text_legacy_visuals(buf: &mut String, run: &LayerTextRunPaint) {
@@ -3154,11 +3213,101 @@ mod tests {
             "\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\"]"
         ));
         assert!(json.contains("\"optionalFeatures\":[]"));
-        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"]"));
+        assert!(json.contains("\"knownFeatures\":[\"fontResources\",\"fontResources.blobFaceSplit\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.crossScopeVariants\",\"text.variantGroups\",\"text.variantOps\",\"text.shapeDiagnostics\",\"text.glyphRun\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.monochromeFillStroke\",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\",\"text.glyphOutline.colorLayers.colrV1\",\"text.glyphOutline.bitmapGlyph\",\"text.glyphOutline.svgGlyph\",\"text.specialVisualOps\",\"text.charOverlapOp\",\"text.controlMarkOp\",\"text.tabLeaderOp\",\"text.decorationOp\",\"text.displayText\",\"text.layout.shapedModern\",\"text.vertical.mixedPerGlyph\"]"));
         assert!(json.contains("\"requiredFeatures\":[]"));
         assert!(json.contains("\"text\":{\"defaultVariant\":\"textRun\",\"variants\":[\"textRun\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":true,\"placementAuthority\":\"compatibilityProjection\",\"externalizedVisuals\":[]}"));
         assert!(json.contains("\"textV2\":{\"profile\":\"compatibility\",\"canonicalOp\":\"text\",\"fallbackPolicy\":\"required\",\"strictVisualFallbackFree\":false,\"paintOrderSlots\":\"reserved\"}"));
         assert!(json.contains("\"fontResources\":{\"blobs\":[],\"faces\":[]}"));
+    }
+
+    #[test]
+    fn serializes_display_text_for_pua_text_run() {
+        let style = TextStyle {
+            font_family: "Noto Sans KR".to_string(),
+            font_size: 16.0,
+            ..Default::default()
+        };
+        let text = "\u{F012B}(Signature)";
+        let display_text = "(인)(Signature)";
+        let source_positions = vec![
+            0.0, 16.0, 24.0, 32.0, 40.0, 48.0, 56.0, 64.0, 72.0, 80.0, 88.0, 96.0,
+        ];
+        let display_positions = compute_char_positions(display_text, &style);
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
+            run: LayerTextRunPaint {
+                text: text.to_string(),
+                style,
+                positions: source_positions.clone(),
+                baseline: 13.0,
+                ..Default::default()
+            },
+        };
+        let tree = PageLayerTree::new(
+            120.0,
+            80.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 120.0, 80.0),
+                None,
+                vec![text_run],
+            ),
+        );
+
+        let json = tree.to_json();
+        let source_positions_json = format!(
+            "\"positions\":[{}]",
+            source_positions
+                .iter()
+                .map(|position| format!("{:.6}", position))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let display_positions_json = format!(
+            "\"displayPositions\":[{}]",
+            display_positions
+                .iter()
+                .map(|position| format!("{:.6}", position))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        assert!(json.contains(&format!("\"text\":\"{}\"", text)));
+        assert!(json.contains(&format!("\"displayText\":\"{}\"", display_text)));
+        assert!(json.contains(&source_positions_json));
+        assert!(json.contains(&display_positions_json));
+        assert!(json.contains("\"text.displayText\""));
+    }
+
+    #[test]
+    fn serializes_empty_display_positions_for_hidden_pua_filler() {
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
+            run: LayerTextRunPaint {
+                text: "\u{F081C}".to_string(),
+                style: TextStyle {
+                    font_family: "Noto Sans KR".to_string(),
+                    font_size: 16.0,
+                    ..Default::default()
+                },
+                positions: vec![0.0, 0.0],
+                baseline: 13.0,
+                ..Default::default()
+            },
+        };
+        let tree = PageLayerTree::new(
+            120.0,
+            80.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 120.0, 80.0),
+                None,
+                vec![text_run],
+            ),
+        );
+
+        let json = tree.to_json();
+
+        assert!(json.contains("\"displayText\":\"\""));
+        assert!(json.contains("\"displayPositions\":[]"));
     }
 
     #[test]

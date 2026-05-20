@@ -53,10 +53,11 @@ import {
   decodeBase64,
   drawCanvas2DCharOverlap,
   encodeBase64,
+  estimateDisplayTextPositions,
   inferImageMime,
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
-  mapPuaBulletText,
+  mapPuaDisplayText,
   parseStaticSvgPathLayers,
   resetLayerImageEffectDiagnostics,
   resolveLayerImageCropSource,
@@ -717,7 +718,9 @@ export class Canvas2DLayerRenderer {
     const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
     const fontSize = op.style.fontSize || 12;
-    const text = mapPuaBulletText(op.text);
+    const text = op.displayText ?? mapPuaDisplayText(op.text);
+    const positions = op.displayPositions
+      ?? (text === op.text ? op.positions : estimateDisplayTextPositions(text, op.style));
     const clusters = splitIntoClusters(text);
     const baseFont = buildCanvasTextFont(op.style.fontFamily, fontSize, op.style.bold, op.style.italic);
     const currencyFallbackFont =
@@ -739,7 +742,7 @@ export class Canvas2DLayerRenderer {
     });
 
     const drawClusters = (originX: number, originY: number) => {
-      const textWidth = op.positions.at(-1) ?? 0;
+      const textWidth = positions.at(-1) ?? 0;
       const drawControlMarks = () => {
         if (op.legacyVisuals?.controlMarks === 'mirror') {
           return;
@@ -801,7 +804,7 @@ export class Canvas2DLayerRenderer {
           if (ctx.font !== clusterFont) {
             ctx.font = clusterFont;
           }
-          const x = originX + op.positions[cluster.start] + dx;
+          const x = originX + positions[cluster.start] + dx;
           const y = originY + dy;
           if (isHalfwidthScaledCluster(cluster.text) && !hasRatio) {
             ctx.save();
@@ -863,7 +866,7 @@ export class Canvas2DLayerRenderer {
           this.setCanvasTextFont(ctx, 'Noto Sans KR', fontSize * 0.3, false, false);
           ctx.fillStyle = op.style.color;
           const dotY = originY - fontSize * 1.05;
-          for (const position of op.positions.slice(0, -1)) {
+          for (const position of positions.slice(0, -1)) {
             const dotX = originX + position + (fontSize * ratio * 0.5);
             ctx.fillText(dotChar, dotX, dotY);
           }

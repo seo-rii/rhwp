@@ -1129,11 +1129,48 @@ fn pua_enclosed_border_type(ch: char) -> Option<u8> {
     None
 }
 
-/// PUA 테두리 숫자 문자를 표시 문자열로 변환한다. (렌더러 전용)
+fn pua_plain_text_display(ch: char) -> Option<&'static str> {
+    match ch as u32 {
+        0xF012B => Some("(인)"),
+        _ => None,
+    }
+}
+
+/// 일반 텍스트 렌더링/paint contract 경로에서 한컴 PUA 문자를 표시 문자열로 확장한다.
+///
+/// HWP TAC filler `U+F081C` 는 레이아웃 측정에는 원문으로 남겨 0폭 규칙을
+/// 적용하되, 실제 출력에서는 글리프가 없어 깨진 문자로 보이지 않도록 숨긴다.
+///
+/// CharOverlap 전용 숫자(`U+F02CE..=U+F02E1`)는 여기서 확장하지 않는다.
+/// 해당 문자는 `pua_to_display_text()`가 글자겹침 렌더러에서만 처리한다.
+pub fn expand_pua_display_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch == '\u{F081C}' {
+            continue;
+        }
+        if let Some(replacement) = pua_plain_text_display(ch) {
+            out.push_str(replacement);
+        } else {
+            out.push(crate::renderer::layout::map_pua_bullet_char(ch));
+        }
+    }
+    out
+}
+
+/// 일반 텍스트 렌더링 경로의 기존 helper 이름.
+pub fn expand_pua_render_text(text: &str) -> String {
+    expand_pua_display_text(text)
+}
+
+/// PUA 테두리 숫자와 한컴 PUA 기호를 표시 문자열로 변환한다. (렌더러 전용)
 ///
 /// draw_char_overlap()에서 호출하여, 실제 렌더링 시에만 변환한다.
 pub fn pua_to_display_text(ch: char) -> Option<String> {
     let cp = ch as u32;
+    if let Some(replacement) = pua_plain_text_display(ch) {
+        return Some(replacement.to_string());
+    }
     // 사각형 안의 숫자: U+F02B1(1) ~ U+F02C4(20)
     if (0xF02B1..=0xF02C4).contains(&cp) {
         let num = cp - 0xF02B0;

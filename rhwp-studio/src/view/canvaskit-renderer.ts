@@ -72,8 +72,9 @@ import {
   canPreprocessCroppedLayerImageEffect,
   computePathPaintBounds,
   decodePuaOverlapNumber,
+  estimateDisplayTextPositions,
   isHalfwidthScaledCluster,
-  mapPuaBulletText,
+  mapPuaDisplayText,
   parseStaticSvgPathLayers,
   resolveLayerImageCropSource,
   type LayerImageEffectDiagnostics,
@@ -709,7 +710,12 @@ export class CanvasKitLayerRenderer {
       op.style.color,
       1,
     );
-    const text = mapPuaBulletText(op.text);
+    const text = 'displayText' in op && typeof op.displayText === 'string'
+      ? op.displayText
+      : mapPuaDisplayText(op.text);
+    const positions = 'displayPositions' in op && Array.isArray(op.displayPositions)
+      ? op.displayPositions
+      : text === op.text ? op.positions : estimateDisplayTextPositions(text, op.style);
     const clusters = splitIntoClusters(text);
     const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
     textObjectsByFamily.set(op.style.fontFamily, primaryObjects);
@@ -773,7 +779,7 @@ export class CanvasKitLayerRenderer {
       ].join('|'));
     }
     const drawClusters = (originX: number, originY: number) => {
-      const textWidth = op.positions.at(-1) ?? 0;
+      const textWidth = positions.at(-1) ?? 0;
       const drawControlMarks = () => {
         if ('legacyVisuals' in op && op.legacyVisuals?.controlMarks === 'mirror') {
           return;
@@ -910,7 +916,7 @@ export class CanvasKitLayerRenderer {
           if (startsWithInvalidControl(cluster.text)) {
             continue;
           }
-          const x = originX + op.positions[cluster.start] + dx;
+          const x = originX + positions[cluster.start] + dx;
           const y = originY + dy;
           const drawBlobAtOrigin = () => {
             const cacheKey = `${clusterFontKeys[index]}|${cluster.text}`;
@@ -1022,7 +1028,7 @@ export class CanvasKitLayerRenderer {
       if (emphasisDot > 0) {
         const dotSize = op.style.fontSize * 0.3;
         const dotY = originY - op.style.fontSize * 1.05;
-        for (const position of op.positions.slice(0, -1)) {
+        for (const position of positions.slice(0, -1)) {
           const dotX = originX + position + (op.style.fontSize * ratio * 0.5);
           this.drawEmphasisMark(canvas, emphasisDot, dotX, dotY, dotSize, op.style.color);
         }

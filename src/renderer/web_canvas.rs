@@ -1873,18 +1873,11 @@ impl Renderer for WebCanvasRenderer {
     }
 
     fn draw_text(&mut self, text: &str, x: f64, y: f64, style: &TextStyle) {
-        let mapped_text;
-        let text = if text
-            .chars()
-            .any(|ch| crate::renderer::layout::map_pua_bullet_char(ch) != ch)
-        {
-            mapped_text = text
-                .chars()
-                .map(crate::renderer::layout::map_pua_bullet_char)
-                .collect::<String>();
-            mapped_text.as_str()
-        } else {
+        let mapped_text = crate::renderer::composer::expand_pua_display_text(text);
+        let text = if mapped_text == text {
             text
+        } else {
+            mapped_text.as_str()
         };
         // 글꼴 설정
         let font_weight = if style.bold { "bold " } else { "" };

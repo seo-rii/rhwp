@@ -18,9 +18,11 @@ use crate::paint::{
     TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
     TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
+use crate::renderer::composer::expand_pua_display_text;
 use crate::renderer::equation::ast::MatrixStyle;
 use crate::renderer::equation::layout::{LayoutBox, LayoutKind};
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
+use crate::renderer::layout::compute_char_positions;
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
     ArrowStyle, GradientFillInfo, LineRenderType, LineStyle, PathCommand, PatternFillInfo,
@@ -194,6 +196,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
     let has_glyph_runs = has_glyph_runs(&tree.root) || ops_have_glyph_runs(&tree.variant_ops);
     let has_glyph_outlines =
         has_glyph_outlines(&tree.root) || ops_have_glyph_outlines(&tree.variant_ops);
+    let has_display_text = has_display_text(&tree.root) || ops_have_display_text(&tree.variant_ops);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -203,6 +206,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         "text.projectionKind",
         "text.legacyVisuals",
     ];
+    if has_display_text {
+        used_features.push("text.displayText");
+    }
     if has_glyph_runs {
         used_features.push("fontResources");
         used_features.push("text.glyphRun");
@@ -285,6 +291,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
             "text.controlMarkOp",
             "text.tabLeaderOp",
             "text.decorationOp",
+            "text.displayText",
             "text.layout.shapedModern",
             "text.vertical.mixedPerGlyph",
         ]),
@@ -586,6 +593,7 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[
     let has_variant_groups = has_text_variant_groups(root) || has_text_variant_ops(variant_ops);
     let has_glyph_runs = has_glyph_runs(root) || ops_have_glyph_runs(variant_ops);
     let has_glyph_outlines = has_glyph_outlines(root) || ops_have_glyph_outlines(variant_ops);
+    let has_display_text = has_display_text(root) || ops_have_display_text(variant_ops);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -597,6 +605,9 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[
         "text.projectionKind",
         "text.legacyVisuals",
     ];
+    if has_display_text {
+        used_features.push("text.displayText");
+    }
     if has_glyph_runs {
         used_features.push("fontResources");
         used_features.push("text.glyphRun");
@@ -1584,6 +1595,10 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             set_string(&value, "type", "textRun");
             set_value(&value, "bbox", bbox_to_value(*bbox));
             set_string(&value, "text", &run.text);
+            let display_text = display_text_for_text_run(run);
+            if let Some(display_text) = &display_text {
+                set_string(&value, "displayText", display_text);
+            }
             set_number(&value, "baseline", run.baseline);
             set_number(&value, "rotation", run.rotation);
             set_bool(&value, "isVertical", run.is_vertical);
@@ -1621,6 +1636,18 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 "positions",
                 array_to_value(run.positions.iter().copied().map(JsValue::from_f64)),
             );
+            if let Some(display_text) = &display_text {
+                let positions = if display_text.is_empty() {
+                    Vec::new()
+                } else {
+                    compute_char_positions(display_text, &run.style)
+                };
+                set_value(
+                    &value,
+                    "displayPositions",
+                    array_to_value(positions.into_iter().map(JsValue::from_f64)),
+                );
+            }
             if !run.control_marks.is_empty() {
                 set_value(&value, "controlMarks", text_control_marks_to_value(run));
             }
@@ -2712,8 +2739,35 @@ fn has_glyph_runs(root: &LayerNode) -> bool {
     false
 }
 
+fn has_display_text(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops_have_display_text(ops) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 fn has_text_variant_ops(ops: &[PaintOp]) -> bool {
     ops.iter().any(|op| text_v2_variant_group_id(op).is_some())
+}
+
+fn ops_have_display_text(ops: &[PaintOp]) -> bool {
+    ops.iter().any(|op| match op {
+        PaintOp::TextRun { run, .. } => display_text_for_text_run(run).is_some(),
+        _ => false,
+    })
 }
 
 fn ops_have_glyph_runs(ops: &[PaintOp]) -> bool {
@@ -2899,6 +2953,11 @@ fn affine_transform_to_value(transform: LayerAffineTransform) -> JsValue {
     set_number(&value, "e", transform.e);
     set_number(&value, "f", transform.f);
     value.into()
+}
+
+fn display_text_for_text_run(run: &crate::paint::LayerTextRunPaint) -> Option<String> {
+    let display_text = expand_pua_display_text(&run.text);
+    (display_text != run.text).then_some(display_text)
 }
 
 fn text_clusters_to_value(clusters: &[TextClusterPlacement]) -> JsValue {
@@ -3409,7 +3468,7 @@ mod tests {
         );
         let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
         let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
-        assert_eq!(json_known_features.length(), 25);
+        assert_eq!(json_known_features.length(), 26);
         assert_eq!(json_known_features.length(), js_known_features.length());
         let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
         let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));

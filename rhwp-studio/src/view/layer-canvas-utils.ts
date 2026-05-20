@@ -7,6 +7,7 @@ import type {
   LayerPathCommand,
   LayerPatternFill,
   LayerTextControlMark,
+  LayerTextStyle,
   LayerTextRunOp,
 } from '@/core/types';
 import { parseSupportedCssColor } from './canvaskit/css-color';
@@ -1746,6 +1747,9 @@ export function decodePuaOverlapNumber(chars: string[]): string | null {
 
 export function puaToDisplayText(ch: string): string | null {
   const cp = ch.codePointAt(0) ?? 0;
+  if (cp === 0xF012B) {
+    return '(인)';
+  }
   if (cp >= 0xF02B1 && cp <= 0xF02C4) {
     return String(cp - 0xF02B0);
   }
@@ -1863,6 +1867,49 @@ export function mapPuaBulletText(text: string): string {
     changed ||= next !== ch;
   }
   return changed ? mapped : text;
+}
+
+export function mapPuaDisplayText(text: string): string {
+  let mapped = '';
+  let changed = false;
+  for (const ch of text) {
+    if (ch === '\uF081C') {
+      changed = true;
+      continue;
+    }
+    const plain = puaToDisplayText(ch);
+    if (plain !== null && !isPuaOverlapDisplayChar(ch)) {
+      mapped += plain;
+      changed = true;
+      continue;
+    }
+    const next = mapPuaBulletChar(ch);
+    mapped += next;
+    changed ||= next !== ch;
+  }
+  return changed ? mapped : text;
+}
+
+function isPuaOverlapDisplayChar(ch: string): boolean {
+  const cp = ch.codePointAt(0) ?? 0;
+  return (cp >= 0xF02B1 && cp <= 0xF02C4) || (cp >= 0xF02CE && cp <= 0xF02E1);
+}
+
+export function estimateDisplayTextPositions(text: string, style: LayerTextStyle): number[] {
+  const fontSize = style.fontSize || 12;
+  const ratio = typeof style.ratio === 'number' && style.ratio > 0 ? style.ratio : 1;
+  const positions = [0];
+  let cursor = 0;
+  for (const ch of Array.from(text)) {
+    const width = ch === '\t'
+      ? fontSize * 4
+      : isHalfwidthScaledCluster(ch)
+        ? fontSize * 0.5
+        : fontSize;
+    cursor += width * ratio;
+    positions.push(cursor);
+  }
+  return positions;
 }
 
 export function drawCanvas2DCharOverlap(

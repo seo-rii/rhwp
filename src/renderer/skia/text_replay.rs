@@ -1,7 +1,9 @@
 use skia_safe::{paint::Cap, Canvas, Color, Paint, PathBuilder, Point, Rect};
 
 use crate::paint::{LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint};
-use crate::renderer::composer::{decode_pua_overlap_number, pua_to_display_text};
+use crate::renderer::composer::{
+    decode_pua_overlap_number, expand_pua_display_text, pua_to_display_text,
+};
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::UnderlineType;
@@ -202,24 +204,24 @@ impl SkiaLayerRenderer {
                 .shape_text_blob(text, font, !has_rtl, 1_000_000.0, Point::default())
                 .map(|(blob, _)| blob)
         };
-        let mapped_text;
-        let text = if run
-            .text
-            .chars()
-            .any(|ch| crate::renderer::layout::map_pua_bullet_char(ch) != ch)
-        {
-            mapped_text = run
-                .text
-                .chars()
-                .map(crate::renderer::layout::map_pua_bullet_char)
-                .collect::<String>();
-            mapped_text.as_str()
-        } else {
+        let mapped_text = expand_pua_display_text(&run.text);
+        let text = if mapped_text == run.text {
             run.text.as_str()
+        } else {
+            mapped_text.as_str()
         };
         let clusters = split_into_clusters(text);
         let metrics_font = make_font(&render_style, &self.font_mgr, text);
-        let char_positions = &run.positions;
+        let display_positions;
+        let char_positions = if mapped_text == run.text {
+            &run.positions
+        } else if mapped_text.is_empty() {
+            display_positions = Vec::new();
+            &display_positions
+        } else {
+            display_positions = crate::renderer::layout::compute_char_positions(text, &run.style);
+            &display_positions
+        };
         let text_width = char_positions.last().copied().unwrap_or(0.0) as f32;
         let prefer_direct_text = replay.prefer_direct_text();
         let shade_rgb = run.style.shade_color & 0x00FF_FFFF;
