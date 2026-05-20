@@ -200,6 +200,25 @@ impl DocumentCore {
         Ok(renderer.command_count() as u32)
     }
 
+    pub fn get_canvaskit_replay_plan_native(
+        &self,
+        page_num: u32,
+        mode: &str,
+    ) -> Result<String, HwpError> {
+        use crate::renderer::canvaskit_policy::{
+            analyze_canvaskit_replay_plan, CanvasKitReplayMode,
+        };
+
+        let mode = CanvasKitReplayMode::from_str(mode).ok_or_else(|| {
+            HwpError::RenderError(format!(
+                "지원하지 않는 CanvasKit replay mode입니다: {mode}. allowed modes: default, compat"
+            ))
+        })?;
+        let tree = self.build_page_layer_tree_for_output(page_num, RenderProfile::Screen)?;
+        let plan = analyze_canvaskit_replay_plan(&tree, mode);
+        Ok(plan.to_json())
+    }
+
     pub fn get_page_layer_tree_native(&self, page_num: u32) -> Result<String, HwpError> {
         let layer_tree = self.build_page_layer_tree_for_output(page_num, RenderProfile::Screen)?;
         Ok(layer_tree.to_json())

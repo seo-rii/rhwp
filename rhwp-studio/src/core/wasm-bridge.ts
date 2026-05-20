@@ -213,6 +213,65 @@ export class WasmBridge {
     this.doc.renderPageToCanvas(pageNum, canvas, scale);
   }
 
+  /**
+   * 다층 레이어 필터를 적용한 Canvas 렌더링 (Task #516, Stage 5.2).
+   *
+   * @param layerKind 'all' = 모든 그림, 'flow' = 본문 layer (BehindText/InFrontOfText 제외),
+   *                  'behind' = BehindText overlay, 'front' = InFrontOfText overlay
+   */
+  renderPageToCanvasFiltered(
+    pageNum: number,
+    canvas: HTMLCanvasElement,
+    scale: number,
+    layerKind: 'all' | 'flow' | 'behind' | 'front',
+  ): void {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const d = this.doc as unknown as {
+      renderPageToCanvasFiltered?: (p: number, c: HTMLCanvasElement, s: number, k: string) => void;
+    };
+    if (typeof d.renderPageToCanvasFiltered === 'function') {
+      d.renderPageToCanvasFiltered(pageNum, canvas, scale, layerKind);
+      return;
+    }
+    // 구버전 WASM(public/rhwp.js 등): 레이어 필터 API 없음 → 전체 캔버스 렌더로 폴백
+    this.doc.renderPageToCanvas(pageNum, canvas, scale);
+  }
+
+  getCanvasKitReplayPlan(pageNum: number, mode: 'default' | 'compat' = 'default'): string {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const d = this.doc as unknown as {
+      getCanvasKitReplayPlan?: (p: number, mode: string) => string;
+    };
+    if (typeof d.getCanvasKitReplayPlan === 'function') {
+      return d.getCanvasKitReplayPlan(pageNum, mode);
+    }
+    return JSON.stringify({
+      mode,
+      hiddenCanvas2dOverlayAllowed: mode === 'compat',
+      directReplayRequired: mode === 'default',
+      summary: {
+        totalItems: 0,
+        directItems: 0,
+        directRequiredItems: 0,
+        compatOverlayItems: 0,
+        textFallbackItems: 0,
+        unsupportedItems: 0,
+        hiddenOverlayViolations: 0,
+      },
+      items: [],
+      textVariants: [],
+    });
+  }
+
+  getPageOverlayImages(pageNum: number): string {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const d = this.doc as unknown as { getPageOverlayImages?: (p: number) => string };
+    if (typeof d.getPageOverlayImages === 'function') {
+      return d.getPageOverlayImages(pageNum);
+    }
+    return '';
+  }
+
   renderPageSvg(pageNum: number): string {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     return this.doc.renderPageSvg(pageNum);

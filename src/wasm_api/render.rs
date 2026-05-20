@@ -145,6 +145,15 @@ impl HwpDocument {
             .map_err(|e| e.into())
     }
 
+    /// CanvasKit direct replay/compat overlay 정책 진단을 JSON 문자열로 반환한다.
+    ///
+    /// `mode` 는 `"default"` 또는 `"compat"` 를 받는다. 빈 문자열은 `"default"` 로 처리한다.
+    #[wasm_bindgen(js_name = getCanvasKitReplayPlan)]
+    pub fn get_canvaskit_replay_plan(&self, page_num: u32, mode: &str) -> Result<String, JsValue> {
+        self.get_canvaskit_replay_plan_native(page_num, mode)
+            .map_err(|e| e.into())
+    }
+
     /// 페이지 레이어 트리를 JSON 문자열로 반환한다. profile을 명시적으로 덮어쓸 수 있다.
     #[wasm_bindgen(js_name = getPageLayerTreeWithProfile)]
     pub fn get_page_layer_tree_with_profile(

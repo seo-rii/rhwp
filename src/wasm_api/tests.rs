@@ -31,6 +31,32 @@ fn test_page_layer_tree_v2_compat_export() {
 }
 
 #[test]
+fn test_canvaskit_replay_plan_export_uses_mode_policy() {
+    let doc = HwpDocument::create_empty();
+
+    let default_plan = doc
+        .get_canvaskit_replay_plan_native(0, "default")
+        .expect("default CanvasKit replay plan should export");
+    assert!(default_plan.contains("\"mode\":\"default\""));
+    assert!(default_plan.contains("\"hiddenCanvas2dOverlayAllowed\":false"));
+    assert!(default_plan.contains("\"directReplayRequired\":true"));
+
+    let compat_plan = doc
+        .get_canvaskit_replay_plan_native(0, "compat")
+        .expect("compat CanvasKit replay plan should export");
+    assert!(compat_plan.contains("\"mode\":\"compat\""));
+    assert!(compat_plan.contains("\"hiddenCanvas2dOverlayAllowed\":true"));
+    assert!(compat_plan.contains("\"directReplayRequired\":false"));
+
+    let invalid = doc
+        .get_canvaskit_replay_plan_native(0, "canvas2d")
+        .expect_err("invalid CanvasKit replay mode should fail");
+    let message = invalid.to_string();
+    assert!(message.contains("canvas2d"));
+    assert!(message.contains("allowed modes: default, compat"));
+}
+
+#[test]
 fn test_render_empty_page_svg() {
     let doc = HwpDocument::create_empty();
     let svg = doc.render_page_svg_native(0);
