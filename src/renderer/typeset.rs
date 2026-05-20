@@ -362,6 +362,27 @@ impl TypesetEngine {
 
             st.ensure_page();
 
+            if !st.current_items.is_empty() && para_idx + 1 < paragraphs.len() {
+                let next_para = &paragraphs[para_idx + 1];
+                let next_force_break = next_para.column_type == ColumnBreakType::Page
+                    || next_para.column_type == ColumnBreakType::Section;
+                let is_empty_paragraph = para.text.is_empty() && para.controls.is_empty();
+
+                if next_force_break && is_empty_paragraph {
+                    let empty_height = para
+                        .line_segs
+                        .first()
+                        .map(|seg| {
+                            hwpunit_to_px((seg.line_height + seg.line_spacing) as i32, self.dpi)
+                        })
+                        .unwrap_or(0.0);
+                    let remaining = st.available_height() - st.current_height;
+                    if empty_height > remaining {
+                        continue;
+                    }
+                }
+            }
+
             if !has_table {
                 // --- 핵심: format → fits → place/split ---
                 let formatted = self.format_paragraph(para, composed.get(para_idx), styles);
