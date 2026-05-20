@@ -1358,6 +1358,7 @@ impl LayoutEngine {
             } else {
                 cell.vertical_align
             };
+            let use_top_vpos_anchor = matches!(effective_valign, VerticalAlign::Top);
             let text_y_start = match effective_valign {
                 VerticalAlign::Top => cell_y + pad_top,
                 VerticalAlign::Center => {
@@ -1434,7 +1435,7 @@ impl LayoutEngine {
                     // that absolute cell-local top over cumulative y. This avoids
                     // double-applying paragraph spacing in compact organization-chart
                     // style cells that pin each paragraph with explicit vpos values.
-                    if !has_table_ctrl {
+                    if use_top_vpos_anchor && !has_table_ctrl {
                         if let Some(first_seg) = para.line_segs.first() {
                             if first_seg.vertical_pos >= 0 {
                                 let spacing_before = styles
@@ -2204,7 +2205,7 @@ impl LayoutEngine {
                         }
                     }
 
-                    if has_table_ctrl {
+                    if use_top_vpos_anchor && has_table_ctrl {
                         // LINE_SEG vpos 기반으로 para_y 보정.
                         // LINE_SEG.line_height에는 중첩 표 높이가 미포함될 수 있으므로
                         // layout_table 반환값과 vpos 기반 중 적절한 값을 선택한다.
