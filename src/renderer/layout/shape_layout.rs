@@ -1,6 +1,6 @@
 //! 도형/글상자/그룹 개체 레이아웃
 
-use super::super::composer::compose_paragraph;
+use super::super::composer::{compose_paragraph, ComposedParagraph};
 use super::super::page_layout::LayoutRect;
 use super::super::pagination::PageItem;
 use super::super::render_tree::*;
@@ -21,6 +21,104 @@ use crate::model::paragraph::Paragraph;
 use crate::model::shape::CommonObjAttr;
 use crate::model::shape::{HorzAlign, HorzRelTo, VertAlign, VertRelTo};
 use crate::model::style::Alignment;
+
+fn measure_composed_text_range_width(
+    composed: &ComposedParagraph,
+    styles: &ResolvedStyleSet,
+    start: usize,
+    end: usize,
+    space_advance_override: Option<f64>,
+) -> f64 {
+    if start >= end {
+        return 0.0;
+    }
+
+    let tab_width = styles
+        .para_styles
+        .get(composed.para_style_id as usize)
+        .map(|s| s.default_tab_width)
+        .unwrap_or(0.0);
+    let mut width = 0.0;
+
+    for line in &composed.lines {
+        let mut run_start = line.char_start;
+        for run in &line.runs {
+            let run_len = run.text.chars().count();
+            let run_end = run_start + run_len;
+            let seg_start = start.max(run_start);
+            let seg_end = end.min(run_end);
+
+            if seg_start < seg_end {
+                let seg_text: String = run
+                    .text
+                    .chars()
+                    .skip(seg_start - run_start)
+                    .take(seg_end - seg_start)
+                    .collect();
+                if let Some(space_advance) = space_advance_override {
+                    let space_count = seg_text.chars().filter(|&ch| ch == ' ').count();
+                    if space_count > 0 && seg_text.chars().all(|ch| ch == ' ') {
+                        width += space_advance * space_count as f64;
+                        run_start = run_end;
+                        continue;
+                    }
+                }
+                let mut style = resolved_to_text_style(styles, run.char_style_id, run.lang_index);
+                style.default_tab_width = tab_width;
+                width += estimate_text_width(&seg_text, &style);
+            }
+
+            run_start = run_end;
+        }
+    }
+
+    width
+}
+
+fn textbox_tac_space_advance_override(
+    para: &Paragraph,
+    composed: &ComposedParagraph,
+    total_inline_width: f64,
+    alignment: Alignment,
+    dpi: f64,
+) -> Option<f64> {
+    if !matches!(alignment, Alignment::Left) || total_inline_width <= 0.0 {
+        return None;
+    }
+
+    let first_line = composed.lines.first()?;
+    let mut space_count = 0usize;
+    let mut has_non_space_text = false;
+    for run in &first_line.runs {
+        for ch in run.text.chars() {
+            if ch == ' ' {
+                space_count += 1;
+            } else {
+                has_non_space_text = true;
+            }
+        }
+    }
+    if space_count == 0 || has_non_space_text {
+        return None;
+    }
+
+    let line_width_hu = para
+        .line_segs
+        .first()
+        .map(|seg| seg.segment_width)
+        .unwrap_or(first_line.segment_width);
+    if line_width_hu <= 0 {
+        return None;
+    }
+
+    let line_width = hwpunit_to_px(line_width_hu, dpi);
+    let remaining = line_width - total_inline_width;
+    if remaining > 0.0 {
+        Some(remaining / space_count as f64)
+    } else {
+        None
+    }
+}
 
 impl LayoutEngine {
     pub(crate) fn scan_textbox_overflow(
@@ -1834,7 +1932,38 @@ impl LayoutEngine {
                 _ => inner_area.x,
             };
 
+            let space_advance_override = if pi < composed_paras.len() {
+                textbox_tac_space_advance_override(
+                    para,
+                    &composed_paras[pi],
+                    total_inline_width,
+                    para_alignment,
+                    self.dpi,
+                )
+            } else {
+                None
+            };
+            let control_text_positions = para.control_text_positions();
+            let mut text_cursor = 0usize;
+
             for (ctrl_idx_in_para, ctrl) in para.controls.iter().enumerate() {
+                let ctrl_text_pos = control_text_positions
+                    .get(ctrl_idx_in_para)
+                    .copied()
+                    .unwrap_or(text_cursor);
+                let mut advance_to_control = |inline_x: &mut f64| {
+                    if ctrl_text_pos > text_cursor && pi < composed_paras.len() {
+                        *inline_x += measure_composed_text_range_width(
+                            &composed_paras[pi],
+                            styles,
+                            text_cursor,
+                            ctrl_text_pos,
+                            space_advance_override,
+                        );
+                        text_cursor = ctrl_text_pos;
+                    }
+                };
+
                 match ctrl {
                     Control::Shape(shape) => {
                         let child_common = shape.as_ref().common();
@@ -1843,7 +1972,8 @@ impl LayoutEngine {
                         let child_h = hwpunit_to_px(child_common.height as i32, self.dpi);
 
                         let (child_x, child_y) = if child_common.treat_as_char {
-                            // 인라인 도형: 수평으로 순차 배치
+                            // 인라인 도형: 텍스트 내 삽입 위치까지의 advance를 반영하여 배치
+                            advance_to_control(&mut inline_x);
                             let x = inline_x;
                             inline_x += child_w;
                             (x, para_start_y)
@@ -1888,7 +2018,8 @@ impl LayoutEngine {
                     }
                     Control::Picture(pic) => {
                         if pic.common.treat_as_char {
-                            // 인라인 이미지: 수평으로 순차 배치
+                            // 인라인 이미지: 텍스트 내 삽입 위치까지의 advance를 반영하여 배치
+                            advance_to_control(&mut inline_x);
                             let pic_w = hwpunit_to_px(pic.common.width as i32, self.dpi);
                             let pic_h = hwpunit_to_px(pic.common.height as i32, self.dpi);
                             let pic_container = LayoutRect {
@@ -1937,6 +2068,7 @@ impl LayoutEngine {
                         let eq_w = hwpunit_to_px(eq.common.width as i32, self.dpi);
                         let eq_h = hwpunit_to_px(eq.common.height as i32, self.dpi);
                         let (eq_x, eq_y) = {
+                            advance_to_control(&mut inline_x);
                             let x = inline_x;
                             inline_x += eq_w;
                             (x, para_start_y)
