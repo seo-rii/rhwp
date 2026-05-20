@@ -1572,12 +1572,16 @@ impl LayoutEngine {
                 let is_line_break = comp_line.has_line_break && is_last_run_of_line(run_idx);
 
                 // treat_as_char 분기점: run 내 이미지 위치 목록 (rel_pos, width_px, control_index)
-                // 마지막 run에서는 run_char_end 위치의 TAC도 포함 (문단 끝 수식/그림)
+                // 마지막 run에서는 run_char_end 위치의 TAC도 포함 (문단 끝 수식/그림).
+                // A line ending with an explicit line break can also own a TAC at run_char_end
+                // when the control is mapped to the line-break character position.
+                let allow_end_tac =
+                    is_last_run || (comp_line.has_line_break && is_last_run_of_line(run_idx));
                 let run_tacs: Vec<(usize, f64, usize)> = tac_offsets_px
                     .iter()
                     .filter(|(pos, _, _)| {
                         *pos >= run_char_pos
-                            && (*pos < run_char_end || (is_last_run && *pos == run_char_end))
+                            && (*pos < run_char_end || (allow_end_tac && *pos == run_char_end))
                     })
                     .map(|(pos, w, ci)| (pos - run_char_pos, *w, *ci))
                     .collect();
