@@ -263,6 +263,19 @@ impl Renderer for HtmlRenderer {
     }
 
     fn draw_text(&mut self, text: &str, x: f64, y: f64, style: &TextStyle) {
+        let mapped_text;
+        let text = if text
+            .chars()
+            .any(|ch| crate::renderer::layout::map_pua_bullet_char(ch) != ch)
+        {
+            mapped_text = text
+                .chars()
+                .map(crate::renderer::layout::map_pua_bullet_char)
+                .collect::<String>();
+            mapped_text.as_str()
+        } else {
+            text
+        };
         let font_size = if style.font_size > 0.0 {
             style.font_size
         } else {

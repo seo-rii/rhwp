@@ -1755,6 +1755,116 @@ export function puaToDisplayText(ch: string): string | null {
   return null;
 }
 
+export function mapPuaBulletChar(ch: string): string {
+  const cp = ch.codePointAt(0) ?? 0;
+  if (cp < 0xF020 || cp > 0xF0FF) {
+    return ch;
+  }
+  switch (cp - 0xF000) {
+    case 0x6c:
+    case 0x6d:
+      return '\u25CF';
+    case 0x6e:
+      return '\u25A0';
+    case 0x6f:
+    case 0x70:
+    case 0x71:
+    case 0x72:
+      return '\u25A1';
+    case 0x73:
+      return '\u2B27';
+    case 0x74:
+      return '\u29EB';
+    case 0x75:
+      return '\u25C6';
+    case 0x76:
+      return '\u2756';
+    case 0x77:
+      return '\u2B25';
+    case 0x9e:
+      return '\u00B7';
+    case 0x9f:
+      return '\u2022';
+    case 0xa0:
+    case 0xa7:
+      return '\u25AA';
+    case 0xa1:
+      return '\u26AA';
+    case 0xa2:
+    case 0xa3:
+      return '\u25CB';
+    case 0xa4:
+      return '\u25C9';
+    case 0xa5:
+      return '\u25CE';
+    case 0xa8:
+      return '\u25FB';
+    case 0xaa:
+      return '\u2726';
+    case 0xab:
+      return '\u2605';
+    case 0xac:
+      return '\u2736';
+    case 0xad:
+      return '\u2734';
+    case 0xae:
+      return '\u2739';
+    case 0x45:
+      return '\u261C';
+    case 0x46:
+      return '\u261E';
+    case 0x47:
+      return '\u261D';
+    case 0x48:
+      return '\u261F';
+    case 0xfb:
+      return '\u2717';
+    case 0xfc:
+      return '\u2714';
+    case 0xfd:
+      return '\u2612';
+    case 0xfe:
+      return '\u2611';
+    case 0xef:
+      return '\u21E6';
+    case 0xf0:
+      return '\u21E8';
+    case 0xf1:
+      return '\u21E7';
+    case 0xf2:
+      return '\u21E9';
+    case 0x22:
+      return '\u2702';
+    case 0x36:
+      return '\u231B';
+    case 0x4a:
+      return '\u263A';
+    case 0x4e:
+      return '\u2620';
+    case 0x52:
+      return '\u263C';
+    case 0x54:
+      return '\u2744';
+    case 0x58:
+      return '\u2720';
+    case 0x59:
+      return '\u2721';
+    default:
+      return ch;
+  }
+}
+
+export function mapPuaBulletText(text: string): string {
+  let mapped = '';
+  let changed = false;
+  for (const ch of text) {
+    const next = mapPuaBulletChar(ch);
+    mapped += next;
+    changed ||= next !== ch;
+  }
+  return changed ? mapped : text;
+}
+
 export function drawCanvas2DCharOverlap(
   ctx: CanvasRenderingContext2D,
   op: LayerTextRunOp | LayerCharOverlapOp,

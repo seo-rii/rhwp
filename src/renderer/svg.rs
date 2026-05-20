@@ -897,6 +897,19 @@ impl SvgRenderer {
         style: &TextStyle,
         positions: Option<&[f64]>,
     ) {
+        let mapped_text;
+        let text = if text
+            .chars()
+            .any(|ch| crate::renderer::layout::map_pua_bullet_char(ch) != ch)
+        {
+            mapped_text = text
+                .chars()
+                .map(crate::renderer::layout::map_pua_bullet_char)
+                .collect::<String>();
+            mapped_text.as_str()
+        } else {
+            text
+        };
         let color = color_to_svg(style.color);
         let font_size = if style.font_size > 0.0 {
             style.font_size

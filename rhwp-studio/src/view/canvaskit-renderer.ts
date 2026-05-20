@@ -73,6 +73,7 @@ import {
   computePathPaintBounds,
   decodePuaOverlapNumber,
   isHalfwidthScaledCluster,
+  mapPuaBulletText,
   parseStaticSvgPathLayers,
   resolveLayerImageCropSource,
   type LayerImageEffectDiagnostics,
@@ -708,7 +709,8 @@ export class CanvasKitLayerRenderer {
       op.style.color,
       1,
     );
-    const clusters = splitIntoClusters(op.text);
+    const text = mapPuaBulletText(op.text);
+    const clusters = splitIntoClusters(text);
     const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
     textObjectsByFamily.set(op.style.fontFamily, primaryObjects);
     const fallbackFamilies = [

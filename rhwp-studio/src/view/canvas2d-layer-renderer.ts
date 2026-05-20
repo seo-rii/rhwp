@@ -56,6 +56,7 @@ import {
   inferImageMime,
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
+  mapPuaBulletText,
   parseStaticSvgPathLayers,
   resetLayerImageEffectDiagnostics,
   resolveLayerImageCropSource,
@@ -716,7 +717,8 @@ export class Canvas2DLayerRenderer {
     const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
     const fontSize = op.style.fontSize || 12;
-    const clusters = splitIntoClusters(op.text);
+    const text = mapPuaBulletText(op.text);
+    const clusters = splitIntoClusters(text);
     const baseFont = buildCanvasTextFont(op.style.fontFamily, fontSize, op.style.bold, op.style.italic);
     const currencyFallbackFont =
       `${op.style.italic ? 'italic ' : ''}${op.style.bold ? 'bold ' : ''}${fontSize.toFixed(3)}px 'Malgun Gothic','맑은 고딕',sans-serif`;
