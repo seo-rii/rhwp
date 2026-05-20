@@ -2289,10 +2289,12 @@ fn parse_ctrl(
                     b"header" => {
                         let ctrl = parse_ctrl_header(ce, reader)?;
                         controls.push(ctrl);
+                        text_parts.push("\u{0002}".to_string());
                     }
                     b"footer" => {
                         let ctrl = parse_ctrl_footer(ce, reader)?;
                         controls.push(ctrl);
+                        text_parts.push("\u{0002}".to_string());
                     }
                     b"footNote" => {
                         let ctrl = parse_ctrl_footnote(ce, reader)?;
@@ -2327,11 +2329,13 @@ fn parse_ctrl(
                     b"pageHiding" => {
                         let ph = parse_page_hiding_attrs(ce);
                         controls.push(Control::PageHide(ph));
+                        text_parts.push("\u{0002}".to_string());
                         skip_element(reader, b"pageHiding")?;
                     }
                     b"pageNum" => {
                         let pn = parse_page_num_attrs(ce);
                         controls.push(Control::PageNumberPos(pn));
+                        text_parts.push("\u{0002}".to_string());
                         skip_element(reader, b"pageNum")?;
                     }
                     b"bookmark" => {
@@ -2361,10 +2365,12 @@ fn parse_ctrl(
                     b"pageHiding" => {
                         let ph = parse_page_hiding_attrs(ce);
                         controls.push(Control::PageHide(ph));
+                        text_parts.push("\u{0002}".to_string());
                     }
                     b"pageNum" => {
                         let pn = parse_page_num_attrs(ce);
                         controls.push(Control::PageNumberPos(pn));
+                        text_parts.push("\u{0002}".to_string());
                     }
                     b"bookmark" => {
                         let bm = parse_bookmark_attrs(ce);
@@ -3583,6 +3589,26 @@ mod tests {
         assert_eq!(para.char_shapes[0].start_pos, 0);
         assert_eq!(para.char_shapes[1].start_pos, 9);
         assert_eq!(para.controls.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_page_number_control_preserves_offset_gap() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0"><hp:t>A</hp:t></hp:run>
+    <hp:ctrl><hp:pageNum pos="BOTTOM_CENTER"/></hp:ctrl>
+    <hp:run charPrIDRef="0"><hp:t>B</hp:t></hp:run>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+
+        assert_eq!(para.text, "AB");
+        assert_eq!(para.char_offsets, vec![0, 9]);
+        assert!(matches!(para.controls[0], Control::PageNumberPos(_)));
     }
 
     #[test]
