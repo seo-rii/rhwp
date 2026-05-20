@@ -1606,3 +1606,73 @@ fn write_hwp_with_cfb_crate(orig_data: &[u8]) -> Vec<u8> {
     let cursor = cfb.into_inner();
     cursor.into_inner()
 }
+
+#[test]
+fn test_ole_storage_size_prefix_restored() {
+    use crate::model::bin_data::{BinData, BinDataContent, BinDataType};
+
+    let mut ole_cfb = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    ole_cfb.extend_from_slice(&[0x42u8; 64]);
+
+    let mut doc_info = DocInfo::default();
+    doc_info.bin_data_list.push(BinData {
+        data_type: BinDataType::Storage,
+        storage_id: 1,
+        extension: Some("OLE".to_string()),
+        ..Default::default()
+    });
+
+    let doc = Document {
+        header: FileHeader {
+            version: HwpVersion {
+                major: 5,
+                minor: 0,
+                build: 6,
+                revision: 1,
+            },
+            flags: 0,
+            compressed: false,
+            encrypted: false,
+            distribution: false,
+            raw_data: None,
+        },
+        doc_properties: DocProperties {
+            section_count: 1,
+            page_start_num: 1,
+            ..Default::default()
+        },
+        doc_info,
+        sections: vec![crate::model::document::Section {
+            section_def: SectionDef::default(),
+            paragraphs: vec![Paragraph {
+                line_segs: vec![LineSeg {
+                    line_height: 400,
+                    baseline_distance: 320,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            raw_stream: None,
+        }],
+        preview: None,
+        bin_data_content: vec![BinDataContent {
+            id: 1,
+            data: ole_cfb.clone(),
+            extension: "OLE".to_string(),
+        }],
+        extra_streams: Vec::new(),
+    };
+
+    let bytes = serialize_hwp(&doc).unwrap();
+    let mut cfb = crate::parser::cfb_reader::CfbReader::open(&bytes).unwrap();
+    let stream = cfb.read_bin_data("BIN0001.OLE").unwrap();
+
+    assert!(stream.len() >= 12);
+    let prefix = u32::from_le_bytes([stream[0], stream[1], stream[2], stream[3]]);
+    assert_eq!(prefix as usize, ole_cfb.len());
+    assert_eq!(
+        &stream[4..12],
+        &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1],
+    );
+    assert_eq!(&stream[4..], &ole_cfb[..]);
+}

@@ -103,15 +103,31 @@ fn write_hwp_cfb(
 
     // 4. /BinData/BIN{XXXX}.{ext}
     // BinData는 개별 압축 속성에 따라 재압축
+    const CFB_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
     for content in bin_data_content {
         let (storage_id, ext, should_compress) =
             find_bin_data_info_with_compress(bin_data_list, content, compressed);
         let storage_name = format!("BIN{:04X}.{}", storage_id, ext);
         let path = format!("/BinData/{}", storage_name);
-        let data = if should_compress {
-            compress_stream(&content.data).unwrap_or_else(|_| content.data.clone())
+
+        let is_ole_storage = content.data.len() >= CFB_MAGIC.len()
+            && content.data[..CFB_MAGIC.len()] == CFB_MAGIC
+            && bin_data_list
+                .iter()
+                .any(|bd| bd.data_type == BinDataType::Storage && bd.storage_id == content.id);
+        let payload = if is_ole_storage {
+            let mut bytes = Vec::with_capacity(content.data.len() + 4);
+            bytes.extend_from_slice(&(content.data.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&content.data);
+            bytes
         } else {
             content.data.clone()
+        };
+
+        let data = if should_compress {
+            compress_stream(&payload).unwrap_or_else(|_| payload.clone())
+        } else {
+            payload
         };
         streams.push((path, data));
     }
