@@ -723,20 +723,17 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 } else {
                     record.y
                 } + match self.context_current.text_align_vertical {
-                    // VTA_TOP: y 좌표에 font ascent를 더해 alphabetic baseline으로 변환
-                    // (dominant-baseline="text-top"은 SVG 렌더러 호환성이 낮음)
+                    // WMF y is already a baseline for BASELINE. TOP/BOTTOM need conversion
+                    // to the SVG alphabetic baseline used by the text element.
                     VerticalTextAlignmentMode::VTA_TOP => {
-                        // font.height가 음수면 절대값이 em height, 양수면 cell height
-                        // ascent ≈ 0.8 × em height 근사
                         let em = font.height.abs();
                         (em as f64 * 0.8) as i16
                     }
-                    VerticalTextAlignmentMode::VTA_BASELINE
-                    | VerticalTextAlignmentMode::VTA_BOTTOM
-                        if font.height < 0 =>
-                    {
-                        -font.height
+                    VerticalTextAlignmentMode::VTA_BOTTOM => {
+                        let em = font.height.abs();
+                        -((em as f64 * 0.2) as i16)
                     }
+                    VerticalTextAlignmentMode::VTA_BASELINE => 0,
                     _ => 0,
                 },
             };
@@ -1408,17 +1405,15 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 x: record.x_start,
                 y: record.y_start
                     + match self.context_current.text_align_vertical {
-                        // VTA_TOP: y 좌표에 font ascent를 더해 alphabetic baseline으로 변환
                         VerticalTextAlignmentMode::VTA_TOP => {
                             let em = font.height.abs();
                             (em as f64 * 0.8) as i16
                         }
-                        VerticalTextAlignmentMode::VTA_BASELINE
-                        | VerticalTextAlignmentMode::VTA_BOTTOM
-                            if font.height < 0 =>
-                        {
-                            -font.height
+                        VerticalTextAlignmentMode::VTA_BOTTOM => {
+                            let em = font.height.abs();
+                            -((em as f64 * 0.2) as i16)
                         }
+                        VerticalTextAlignmentMode::VTA_BASELINE => 0,
                         _ => 0,
                     },
             };
@@ -2056,13 +2051,14 @@ impl crate::wmf::converter::Player for SVGPlayer {
             .into_iter()
             .find(|a| record.text_alignment_mode & (*a as u16) == *a as u16)
             .unwrap_or(TextAlignmentMode::TA_LEFT);
-        let align_vertical = [
-            VerticalTextAlignmentMode::VTA_BOTTOM,
-            VerticalTextAlignmentMode::VTA_TOP,
-        ]
-        .into_iter()
-        .find(|a| record.text_alignment_mode & (*a as u16) == *a as u16)
-        .unwrap_or(VerticalTextAlignmentMode::VTA_BASELINE);
+        let vertical_bits = record.text_alignment_mode & 0x0018;
+        let align_vertical = if vertical_bits == 0x0018 {
+            VerticalTextAlignmentMode::VTA_BASELINE
+        } else if vertical_bits == 0x0008 {
+            VerticalTextAlignmentMode::VTA_BOTTOM
+        } else {
+            VerticalTextAlignmentMode::VTA_TOP
+        };
 
         self.context_current = self
             .context_current
