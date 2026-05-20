@@ -3044,6 +3044,7 @@ impl LayoutEngine {
                                 width: col_area.width,
                                 height: col_area.height - (pic_y - col_area.y),
                             };
+                            let saved_y_offset = y_offset;
                             result_y = self.layout_body_picture(
                                 tree,
                                 col_node,
@@ -3065,6 +3066,29 @@ impl LayoutEngine {
                                 para_index,
                                 control_index,
                             );
+                            if matches!(pic.common.horz_rel_to, HorzRelTo::Column) {
+                                let pic_width_px = hwpunit_to_px(pic.common.width as i32, self.dpi);
+                                let h_offset_px =
+                                    hwpunit_to_px(pic.common.horizontal_offset as i32, self.dpi);
+                                let pic_emit_x = match pic.common.horz_align {
+                                    crate::model::shape::HorzAlign::Left
+                                    | crate::model::shape::HorzAlign::Inside => {
+                                        col_area.x + h_offset_px
+                                    }
+                                    crate::model::shape::HorzAlign::Center => {
+                                        col_area.x
+                                            + (col_area.width - pic_width_px) / 2.0
+                                            + h_offset_px
+                                    }
+                                    crate::model::shape::HorzAlign::Right
+                                    | crate::model::shape::HorzAlign::Outside => {
+                                        col_area.x + col_area.width - pic_width_px - h_offset_px
+                                    }
+                                };
+                                if pic_emit_x >= col_area.x + col_area.width {
+                                    result_y = saved_y_offset;
+                                }
+                            }
                         }
                     }
                 }
