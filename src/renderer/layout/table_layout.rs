@@ -1585,21 +1585,14 @@ impl LayoutEngine {
                             Control::Picture(pic) => {
                                 if pic.common.treat_as_char {
                                     let pic_w = hwpunit_to_px(pic.common.width as i32, self.dpi);
-                                    // layout_composed_paragraph에서 텍스트 흐름 안에 렌더링됐는지 확인:
-                                    // 이미지 위치가 실제 run 범위에 포함될 때만 스킵
-                                    let will_render_inline =
-                                        composed.tac_controls.iter().any(|&(abs_pos, _, ci)| {
-                                            ci == ctrl_idx
-                                                && composed.lines.iter().any(|line| {
-                                                    let line_chars: usize = line
-                                                        .runs
-                                                        .iter()
-                                                        .map(|r| r.text.chars().count())
-                                                        .sum();
-                                                    abs_pos >= line.char_start
-                                                        && abs_pos < line.char_start + line_chars
-                                                })
-                                        });
+                                    let will_render_inline = tree
+                                        .get_inline_shape_position(
+                                            section_index,
+                                            cp_idx,
+                                            ctrl_idx,
+                                            cell_context.as_ref(),
+                                        )
+                                        .is_some();
                                     if !will_render_inline {
                                         // LINE_SEG 기반 줄 판별
                                         let target_line = if all_runs_empty
@@ -1722,115 +1715,136 @@ impl LayoutEngine {
                                 if shape.common().treat_as_char {
                                     let shape_w =
                                         hwpunit_to_px(shape.common().width as i32, self.dpi);
+                                    let will_render_inline = tree
+                                        .get_inline_shape_position(
+                                            section_index,
+                                            cp_idx,
+                                            ctrl_idx,
+                                            cell_context.as_ref(),
+                                        )
+                                        .is_some();
                                     // Shape 앞의 텍스트 너비 계산: tac_controls에서 이 Shape의 text_pos와
                                     // 이전 Shape의 text_pos 차이에 해당하는 텍스트 너비를 inline_x에 반영
-                                    if let Some(&(tac_pos, _, _)) = composed
-                                        .tac_controls
-                                        .iter()
-                                        .find(|&&(_, _, ci)| ci == ctrl_idx)
-                                    {
-                                        // 이 Shape 앞에 아직 inline_x에 반영되지 않은 텍스트가 있는지 계산
-                                        let text_before: String = composed
-                                            .lines
-                                            .first()
-                                            .map(|line| {
-                                                let mut chars_so_far = 0usize;
-                                                let mut result = String::new();
-                                                for run in &line.runs {
-                                                    for ch in run.text.chars() {
-                                                        if chars_so_far >= prev_tac_text_pos
-                                                            && chars_so_far < tac_pos
-                                                        {
-                                                            result.push(ch);
+                                    if !will_render_inline {
+                                        if let Some(&(tac_pos, _, _)) = composed
+                                            .tac_controls
+                                            .iter()
+                                            .find(|&&(_, _, ci)| ci == ctrl_idx)
+                                        {
+                                            // 이 Shape 앞에 아직 inline_x에 반영되지 않은 텍스트가 있는지 계산
+                                            let text_before: String = composed
+                                                .lines
+                                                .first()
+                                                .map(|line| {
+                                                    let mut chars_so_far = 0usize;
+                                                    let mut result = String::new();
+                                                    for run in &line.runs {
+                                                        for ch in run.text.chars() {
+                                                            if chars_so_far >= prev_tac_text_pos
+                                                                && chars_so_far < tac_pos
+                                                            {
+                                                                result.push(ch);
+                                                            }
+                                                            chars_so_far += 1;
                                                         }
-                                                        chars_so_far += 1;
                                                     }
-                                                }
-                                                result
-                                            })
-                                            .unwrap_or_default();
-                                        if !text_before.is_empty() {
-                                            let char_style_id = composed
-                                                .lines
-                                                .first()
-                                                .and_then(|l| l.runs.first())
-                                                .map(|r| r.char_style_id)
-                                                .unwrap_or(0);
-                                            let lang_index = composed
-                                                .lines
-                                                .first()
-                                                .and_then(|l| l.runs.first())
-                                                .map(|r| r.lang_index)
-                                                .unwrap_or(0);
-                                            let ts = resolved_to_text_style(
-                                                styles,
-                                                char_style_id,
-                                                lang_index,
-                                            );
-                                            let text_w = estimate_text_width(&text_before, &ts);
-                                            let text_font_size = ts.font_size;
-                                            // 텍스트 렌더링: Shape 사이에 배치
-                                            // 텍스트 y를 Shape 하단 baseline에 맞춤
-                                            // (Shape 높이 - 폰트 줄 높이)만큼 아래로 이동
-                                            let text_baseline = text_font_size * 0.85;
-                                            let font_line_h = text_font_size * 1.2;
-                                            // 인접 Shape의 높이를 사용하여 텍스트 y를 baseline 정렬
-                                            let adjacent_shape_h = para
-                                                .controls
-                                                .iter()
-                                                .find_map(|c| {
-                                                    if let Control::Shape(s) = c {
-                                                        if s.common().treat_as_char {
-                                                            Some(hwpunit_to_px(
-                                                                s.common().height as i32,
-                                                                self.dpi,
-                                                            ))
+                                                    result
+                                                })
+                                                .unwrap_or_default();
+                                            if !text_before.is_empty() {
+                                                let char_style_id = composed
+                                                    .lines
+                                                    .first()
+                                                    .and_then(|l| l.runs.first())
+                                                    .map(|r| r.char_style_id)
+                                                    .unwrap_or(0);
+                                                let lang_index = composed
+                                                    .lines
+                                                    .first()
+                                                    .and_then(|l| l.runs.first())
+                                                    .map(|r| r.lang_index)
+                                                    .unwrap_or(0);
+                                                let ts = resolved_to_text_style(
+                                                    styles,
+                                                    char_style_id,
+                                                    lang_index,
+                                                );
+                                                let text_w = estimate_text_width(&text_before, &ts);
+                                                let text_font_size = ts.font_size;
+                                                // 텍스트 렌더링: Shape 사이에 배치
+                                                // 텍스트 y를 Shape 하단 baseline에 맞춤
+                                                // (Shape 높이 - 폰트 줄 높이)만큼 아래로 이동
+                                                let text_baseline = text_font_size * 0.85;
+                                                let font_line_h = text_font_size * 1.2;
+                                                // 인접 Shape의 높이를 사용하여 텍스트 y를 baseline 정렬
+                                                let adjacent_shape_h = para
+                                                    .controls
+                                                    .iter()
+                                                    .find_map(|c| {
+                                                        if let Control::Shape(s) = c {
+                                                            if s.common().treat_as_char {
+                                                                Some(hwpunit_to_px(
+                                                                    s.common().height as i32,
+                                                                    self.dpi,
+                                                                ))
+                                                            } else {
+                                                                None
+                                                            }
                                                         } else {
                                                             None
                                                         }
-                                                    } else {
-                                                        None
-                                                    }
-                                                })
-                                                .unwrap_or(0.0);
-                                            let text_y = para_y_before_compose
-                                                + (adjacent_shape_h - font_line_h).max(0.0);
-                                            let text_node_id = tree.next_id();
-                                            let text_node = RenderNode::new(
-                                                text_node_id,
-                                                RenderNodeType::TextRun(TextRunNode {
-                                                    text: text_before,
-                                                    style: ts,
-                                                    char_shape_id: Some(char_style_id),
-                                                    para_shape_id: Some(composed.para_style_id),
-                                                    section_index: Some(section_index),
-                                                    para_index: None,
-                                                    char_start: None,
-                                                    cell_context: None,
-                                                    is_para_end: false,
-                                                    is_line_break_end: false,
-                                                    rotation: 0.0,
-                                                    is_vertical: false,
-                                                    char_overlap: None,
-                                                    border_fill_id: 0,
-                                                    baseline: text_baseline,
-                                                    field_marker: FieldMarkerType::None,
-                                                }),
-                                                BoundingBox::new(
-                                                    inline_x,
-                                                    text_y,
-                                                    text_w,
-                                                    font_line_h,
-                                                ),
-                                            );
-                                            cell_node.children.push(text_node);
-                                            inline_x += text_w;
+                                                    })
+                                                    .unwrap_or(0.0);
+                                                let text_y = para_y_before_compose
+                                                    + (adjacent_shape_h - font_line_h).max(0.0);
+                                                let text_node_id = tree.next_id();
+                                                let text_node = RenderNode::new(
+                                                    text_node_id,
+                                                    RenderNodeType::TextRun(TextRunNode {
+                                                        text: text_before,
+                                                        style: ts,
+                                                        char_shape_id: Some(char_style_id),
+                                                        para_shape_id: Some(composed.para_style_id),
+                                                        section_index: Some(section_index),
+                                                        para_index: None,
+                                                        char_start: None,
+                                                        cell_context: None,
+                                                        is_para_end: false,
+                                                        is_line_break_end: false,
+                                                        rotation: 0.0,
+                                                        is_vertical: false,
+                                                        char_overlap: None,
+                                                        border_fill_id: 0,
+                                                        baseline: text_baseline,
+                                                        field_marker: FieldMarkerType::None,
+                                                    }),
+                                                    BoundingBox::new(
+                                                        inline_x,
+                                                        text_y,
+                                                        text_w,
+                                                        font_line_h,
+                                                    ),
+                                                );
+                                                cell_node.children.push(text_node);
+                                                inline_x += text_w;
+                                            }
+                                            prev_tac_text_pos = tac_pos;
                                         }
-                                        prev_tac_text_pos = tac_pos;
                                     }
+                                    let (shape_x, shape_y) = if will_render_inline {
+                                        tree.get_inline_shape_position(
+                                            section_index,
+                                            cp_idx,
+                                            ctrl_idx,
+                                            cell_context.as_ref(),
+                                        )
+                                        .unwrap_or((inline_x, tac_img_y))
+                                    } else {
+                                        (inline_x, para_y_before_compose)
+                                    };
                                     let shape_area = LayoutRect {
-                                        x: inline_x,
-                                        y: para_y_before_compose,
+                                        x: shape_x,
+                                        y: shape_y,
                                         width: shape_w,
                                         height: inner_area.height,
                                     };
