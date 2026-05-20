@@ -19,6 +19,7 @@
 use crate::model::control::Control;
 use crate::model::document::{Document, Section};
 use crate::model::paragraph::Paragraph;
+use crate::model::shape::{ShapeObject, TextBox};
 use crate::model::table::{Cell, Table};
 use crate::parser::FileFormat;
 
@@ -43,6 +44,10 @@ pub struct AdapterReport {
     pub cells_list_header_contract_materialized: u32,
     /// `Control::SectionDef` 컨트롤 삽입 횟수 (Stage 4 — 섹션 개수)
     pub section_def_controls_inserted: u32,
+    /// HWPX drawText TextBox LIST_HEADER tail materialize 횟수
+    pub text_box_list_header_tail_materialized: u32,
+    /// HWPX drawText 내부 paragraph PARA_HEADER tail materialize 횟수
+    pub text_box_para_header_tail_materialized: u32,
 }
 
 impl AdapterReport {
@@ -63,7 +68,9 @@ impl AdapterReport {
                 + self.table_ctrl_header_attr_materialized
                 + self.cells_list_attr_bit16_set
                 + self.cells_list_header_contract_materialized
-                + self.section_def_controls_inserted)
+                + self.section_def_controls_inserted
+                + self.text_box_list_header_tail_materialized
+                + self.text_box_para_header_tail_materialized)
                 > 0
     }
 }
@@ -147,10 +154,67 @@ fn insert_section_def_control(section: &mut Section, report: &mut AdapterReport)
 
 fn adapt_paragraph(para: &mut Paragraph, report: &mut AdapterReport) {
     for ctrl in &mut para.controls {
-        if let Control::Table(table) = ctrl {
-            adapt_table(table, report);
+        match ctrl {
+            Control::Table(table) => adapt_table(table, report),
+            Control::Shape(shape) => adapt_shape(shape, report),
+            _ => {}
         }
     }
+}
+
+fn adapt_shape(shape: &mut ShapeObject, report: &mut AdapterReport) {
+    if let Some(drawing) = shape.drawing_mut() {
+        if let Some(text_box) = &mut drawing.text_box {
+            materialize_text_box_hwp5_envelope(text_box, report);
+            for para in &mut text_box.paragraphs {
+                adapt_paragraph(para, report);
+            }
+        }
+    }
+
+    if let ShapeObject::Group(group) = shape {
+        for child in &mut group.children {
+            adapt_shape(child, report);
+        }
+    }
+}
+
+fn materialize_text_box_hwp5_envelope(text_box: &mut TextBox, report: &mut AdapterReport) {
+    if !is_draw_text_hwp5_envelope_candidate(text_box) {
+        return;
+    }
+
+    if text_box.raw_list_header_extra.is_empty() {
+        text_box.raw_list_header_extra = vec![0; 13];
+        report.text_box_list_header_tail_materialized += 1;
+    }
+
+    for para in &mut text_box.paragraphs {
+        if para.raw_header_extra.len() >= 12 {
+            continue;
+        }
+
+        let mut extra = vec![0; 12];
+        let char_shape_count = para.char_shapes.len().max(1).min(u16::MAX as usize) as u16;
+        let range_tag_count = para.range_tags.len().min(u16::MAX as usize) as u16;
+        let line_seg_count = para.line_segs.len().min(u16::MAX as usize) as u16;
+
+        extra[0..2].copy_from_slice(&char_shape_count.to_le_bytes());
+        extra[2..4].copy_from_slice(&range_tag_count.to_le_bytes());
+        extra[4..6].copy_from_slice(&line_seg_count.to_le_bytes());
+        extra[6..10].copy_from_slice(&0x8000_0000_u32.to_le_bytes());
+
+        para.raw_header_extra = extra;
+        report.text_box_para_header_tail_materialized += 1;
+    }
+}
+
+fn is_draw_text_hwp5_envelope_candidate(text_box: &TextBox) -> bool {
+    text_box.paragraphs.iter().any(|para| {
+        para.controls
+            .iter()
+            .any(|control| matches!(control, Control::Picture(_)))
+    })
 }
 
 fn adapt_table(table: &mut Table, report: &mut AdapterReport) {
@@ -407,6 +471,52 @@ mod tests {
             900
         );
         assert_eq!(report.cells_list_header_contract_materialized, 1);
+    }
+
+    #[test]
+    fn draw_text_textbox_envelope_materializes_picture_paragraph_contract() {
+        use crate::model::image::Picture;
+        use crate::model::shape::{DrawingObjAttr, RectangleShape};
+
+        let mut text_box_para = Paragraph::default();
+        text_box_para
+            .controls
+            .push(Control::Picture(Box::new(Picture::default())));
+
+        let shape = ShapeObject::Rectangle(RectangleShape {
+            drawing: DrawingObjAttr {
+                text_box: Some(TextBox {
+                    paragraphs: vec![text_box_para],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        let mut para = Paragraph {
+            controls: vec![Control::Shape(Box::new(shape))],
+            ..Default::default()
+        };
+        let mut report = AdapterReport::new();
+
+        adapt_paragraph(&mut para, &mut report);
+
+        let Control::Shape(shape) = &para.controls[0] else {
+            panic!("expected shape control");
+        };
+        let text_box = shape
+            .drawing()
+            .and_then(|drawing| drawing.text_box.as_ref())
+            .expect("shape should keep textbox");
+        assert_eq!(text_box.raw_list_header_extra, vec![0; 13]);
+        assert_eq!(text_box.paragraphs[0].raw_header_extra.len(), 12);
+        assert_eq!(
+            &text_box.paragraphs[0].raw_header_extra[0..10],
+            &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0x80]
+        );
+        assert_eq!(report.text_box_list_header_tail_materialized, 1);
+        assert_eq!(report.text_box_para_header_tail_materialized, 1);
     }
 
     // ============================================================
