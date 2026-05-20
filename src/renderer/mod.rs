@@ -152,6 +152,13 @@ pub struct TextStyle {
     pub shade_color: ColorRef,
 }
 
+impl TextStyle {
+    /// CharShape bold flag 또는 face 이름 자체가 굵은 display 계열인 경우.
+    pub fn is_visually_bold(&self) -> bool {
+        self.bold || crate::renderer::style_resolver::is_heavy_display_face(&self.font_family)
+    }
+}
+
 impl Default for TextStyle {
     fn default() -> Self {
         Self {

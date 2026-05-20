@@ -926,7 +926,7 @@ impl SvgRenderer {
             escape_xml(&font_family),
             font_size,
         );
-        if style.bold {
+        if style.is_visually_bold() {
             base_attrs.push_str(" font-weight=\"bold\"");
         }
         if style.italic {
@@ -3081,7 +3081,7 @@ impl SvgRenderer {
             escape_xml(&font_family_str),
             inner_font_size
         );
-        if style.bold {
+        if style.is_visually_bold() {
             font_attrs.push_str(" font-weight=\"bold\"");
         }
         if style.italic {
@@ -3177,7 +3177,7 @@ impl SvgRenderer {
             escape_xml(&font_family_str),
             inner_font_size
         );
-        if style.bold {
+        if style.is_visually_bold() {
             font_attrs.push_str(" font-weight=\"bold\"");
         }
         if style.italic {
@@ -3699,7 +3699,7 @@ impl Renderer for SvgRenderer {
         self.overlay_skip_depth = 0;
         self.overlay_page_section = -1;
         self.output.push_str(&format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">\n",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">\n",
             width, height, width, height,
         ));
         self.defs_insert_pos = self.output.len();

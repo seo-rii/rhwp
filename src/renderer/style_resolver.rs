@@ -620,6 +620,27 @@ fn resolve_ttf_font(name: &str) -> Option<&'static str> {
     }
 }
 
+pub(crate) fn is_heavy_display_face(font_family: &str) -> bool {
+    let primary = font_family
+        .split(',')
+        .next()
+        .unwrap_or(font_family)
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"');
+    matches!(
+        primary,
+        "HY헤드라인M"
+            | "HYHeadLine M"
+            | "HYHeadLine Medium"
+            | "HY견고딕"
+            | "HY견명조"
+            | "HY견명조B"
+            | "HY그래픽"
+            | "HY그래픽M"
+    )
+}
+
 /// ParaShape → ResolvedParaStyle 목록
 fn resolve_para_styles(doc_info: &DocInfo, dpi: f64) -> Vec<ResolvedParaStyle> {
     doc_info
@@ -1185,6 +1206,14 @@ mod tests {
         assert_eq!(resolve_ttf_font("가는안상수체"), Some("돋움"));
         assert_eq!(resolve_ttf_font("중간안상수체"), Some("돋움"));
         assert_eq!(resolve_ttf_font("굵은안상수체"), Some("돋움"));
+    }
+
+    #[test]
+    fn test_heavy_display_face_detection() {
+        assert!(is_heavy_display_face("HY헤드라인M"));
+        assert!(is_heavy_display_face("'HY견고딕', sans-serif"));
+        assert!(!is_heavy_display_face("맑은 고딕"));
+        assert!(!is_heavy_display_face("'Malgun Gothic', sans-serif"));
     }
 
     #[test]

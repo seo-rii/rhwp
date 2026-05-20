@@ -1345,3 +1345,35 @@ fn test_numbering_state_different_numbering_id_resets() {
     let c6 = state.advance(4, 1, None);
     assert_eq!(c6[1], 2); // "2"
 }
+
+#[test]
+fn test_geometric_shapes_treated_as_fullwidth() {
+    let style = TextStyle {
+        font_size: 20.0,
+        ..Default::default()
+    };
+    for ch in ['□', '■', '▲', '▼', '◆', '○', '●', '◇'] {
+        let text = ch.to_string();
+        let positions = compute_char_positions(&text, &style);
+        assert!(
+            (positions[1] - 20.0).abs() < 0.01,
+            "'{}' expected full-width advance 20.0, got {}",
+            ch,
+            positions[1]
+        );
+    }
+}
+
+#[test]
+fn test_square_bullet_with_space_preserves_layout() {
+    let style = TextStyle {
+        font_size: 20.0,
+        letter_spacing: -1.6,
+        ..Default::default()
+    };
+    let positions = compute_char_positions("□ 가", &style);
+    assert_eq!(positions.len(), 4);
+    assert!((positions[1] - 18.4).abs() < 0.01);
+    assert!((positions[2] - 26.8).abs() < 0.01);
+    assert!((positions[3] - 45.2).abs() < 0.01);
+}

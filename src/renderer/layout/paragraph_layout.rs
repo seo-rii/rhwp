@@ -2725,14 +2725,15 @@ impl LayoutEngine {
         }
 
         // 문단 테두리/배경 범위 수집 (build_single_column에서 연속 그룹으로 병합 렌더링)
+        // 문단 좌우 여백을 반영하여 텍스트 영역과 같은 폭으로 잡는다.
         if para_border_fill_id > 0 {
             let bg_height = y - bg_y_start;
             if bg_height > 0.0 {
                 self.para_border_ranges.borrow_mut().push((
                     para_border_fill_id,
-                    col_area.x,
+                    col_area.x + margin_left,
                     bg_y_start,
-                    col_area.width,
+                    col_area.width - margin_left - margin_right,
                     y,
                 ));
             }
