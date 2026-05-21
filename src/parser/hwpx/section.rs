@@ -215,9 +215,11 @@ fn parse_paragraph(
                         parse_section_def_start(ce, &mut sd);
                         let col_def_opt = parse_sec_pr_children(reader, &mut sd)?;
                         sec_def = Some(sd);
+                        text_parts.push("\u{0002}".to_string());
                         // colPr이 있으면 ColumnDef 컨트롤 추가 (초기 단 정의)
                         if let Some(cd) = col_def_opt {
                             para.controls.push(Control::ColumnDef(cd));
+                            text_parts.push("\u{0002}".to_string());
                         }
                     }
                     b"linesegarray" => {
@@ -2340,6 +2342,7 @@ fn parse_ctrl(
                     b"colPr" => {
                         let cd = parse_col_pr(ce);
                         controls.push(Control::ColumnDef(cd));
+                        text_parts.push("\u{0002}".to_string());
                         skip_element(reader, b"colPr")?;
                     }
                     b"header" => {
@@ -2417,6 +2420,7 @@ fn parse_ctrl(
                     b"colPr" => {
                         let cd = parse_col_pr(ce);
                         controls.push(Control::ColumnDef(cd));
+                        text_parts.push("\u{0002}".to_string());
                     }
                     b"pageHiding" => {
                         let ph = parse_page_hiding_attrs(ce);
@@ -3665,6 +3669,74 @@ mod tests {
         assert_eq!(para.text, "AB");
         assert_eq!(para.char_offsets, vec![0, 9]);
         assert!(matches!(para.controls[0], Control::PageNumberPos(_)));
+    }
+
+    #[test]
+    fn test_parse_section_def_and_column_def_preserve_offset_gaps() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:secPr>
+      <hp:colPr type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="120"/>
+    </hp:secPr>
+    <hp:run charPrIDRef="0"><hp:t>A</hp:t></hp:run>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+
+        assert_eq!(para.text, "A");
+        assert_eq!(para.char_offsets, vec![16]);
+        assert_eq!(para.char_shapes[0].start_pos, 16);
+        assert_eq!(para.controls.len(), 1);
+        let Control::ColumnDef(col_def) = &para.controls[0] else {
+            panic!("expected ColumnDef control");
+        };
+        assert_eq!(col_def.column_count, 2);
+    }
+
+    #[test]
+    fn test_parse_ctrl_column_def_preserves_empty_offset_gap() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0"><hp:t>A</hp:t></hp:run>
+    <hp:ctrl><hp:colPr type="NEWSPAPER" layout="LEFT" colCount="2"/></hp:ctrl>
+    <hp:run charPrIDRef="0"><hp:t>B</hp:t></hp:run>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+
+        assert_eq!(para.text, "AB");
+        assert_eq!(para.char_offsets, vec![0, 9]);
+        assert_eq!(para.char_shapes[1].start_pos, 9);
+        assert!(matches!(para.controls[0], Control::ColumnDef(_)));
+    }
+
+    #[test]
+    fn test_parse_ctrl_column_def_preserves_start_end_offset_gap() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0"><hp:t>A</hp:t></hp:run>
+    <hp:ctrl><hp:colPr type="NEWSPAPER" layout="LEFT" colCount="2"></hp:colPr></hp:ctrl>
+    <hp:run charPrIDRef="0"><hp:t>B</hp:t></hp:run>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+
+        assert_eq!(para.text, "AB");
+        assert_eq!(para.char_offsets, vec![0, 9]);
+        assert_eq!(para.char_shapes[1].start_pos, 9);
+        assert!(matches!(para.controls[0], Control::ColumnDef(_)));
     }
 
     #[test]
