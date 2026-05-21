@@ -352,6 +352,10 @@ impl Paginator {
                 let any_seg_matches = para.line_segs.iter().any(|s| {
                     s.column_start == wrap_around_cs && s.segment_width as i32 == wrap_around_sw
                 });
+                let first_seg_matches = para_cs == wrap_around_cs && para_sw == wrap_around_sw;
+                let last_seg_matches = para.line_segs.last().is_some_and(|s| {
+                    s.column_start == wrap_around_cs && s.segment_width as i32 == wrap_around_sw
+                });
                 // sw=0인 어울림 표: 표가 전체 폭을 차지하므로
                 // 후속 빈 문단의 sw가 문서 본문 폭보다 현저히 작으면 어울림 문단
                 let body_w = (page_def.width as i32)
@@ -359,7 +363,7 @@ impl Paginator {
                     - (page_def.margin_right as i32);
                 let sw0_match =
                     wrap_around_sw == 0 && is_empty_para && para_sw > 0 && para_sw < body_w / 2;
-                if para_cs == wrap_around_cs && para_sw == wrap_around_sw
+                if (first_seg_matches && (last_seg_matches || is_empty_para))
                     || (any_seg_matches && is_empty_para)
                     || sw0_match
                 {
