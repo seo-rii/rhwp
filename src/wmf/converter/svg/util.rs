@@ -19,7 +19,11 @@ pub fn as_point_string(point: &PointS) -> String {
 impl crate::wmf::converter::Bitmap {
     pub fn as_data_url(&self) -> String {
         use base64::{engine::general_purpose::STANDARD, Engine};
-        format!("data:image/bmp;base64,{}", STANDARD.encode(self.as_slice()))
+        if let Some(png) = crate::renderer::svg::bmp_bytes_to_png_bytes(self.as_slice()) {
+            format!("data:image/png;base64,{}", STANDARD.encode(&png))
+        } else {
+            format!("data:image/bmp;base64,{}", STANDARD.encode(self.as_slice()))
+        }
     }
 }
 

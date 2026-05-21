@@ -212,6 +212,8 @@ pub struct Window {
     pub scale_y: f32,
     /// SetWindowExt가 명시적으로 호출되었는지 여부
     pub ext_explicitly_set: bool,
+    /// SetWindowExt의 y가 음수이면 WMF 좌표계가 bottom-up으로 설정된다.
+    pub y_inverted: bool,
 }
 
 impl Default for Window {
@@ -224,6 +226,7 @@ impl Default for Window {
             scale_x: 1.0,
             scale_y: 1.0,
             ext_explicitly_set: false,
+            y_inverted: false,
         }
     }
 }
@@ -237,6 +240,9 @@ impl Window {
         self.x = x.abs();
         self.y = y.abs();
         self.ext_explicitly_set = true;
+        if y < 0 {
+            self.y_inverted = true;
+        }
         self
     }
 

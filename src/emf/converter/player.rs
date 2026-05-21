@@ -413,7 +413,7 @@ pub struct StrokeSpec {
     pub width: f32,
 }
 
-/// DIB(BITMAPINFO + bits)를 BMP 파일 포맷으로 래핑하여 base64 data URL로 반환.
+/// DIB(BITMAPINFO + bits)를 BMP 파일 포맷으로 래핑한 뒤 base64 data URL로 반환.
 ///
 /// BMP 파일 헤더(14B): `"BM"` + file_size(u32) + reserved(u32)=0 + data_offset(u32)
 fn dib_to_bmp_data_url(bmi: &[u8], bits: &[u8]) -> String {
@@ -430,6 +430,11 @@ fn dib_to_bmp_data_url(bmi: &[u8], bits: &[u8]) -> String {
     bmp.extend_from_slice(bmi);
     bmp.extend_from_slice(bits);
 
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bmp);
-    format!("data:image/bmp;base64,{b64}")
+    if let Some(png) = crate::renderer::svg::bmp_bytes_to_png_bytes(&bmp) {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        format!("data:image/png;base64,{b64}")
+    } else {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bmp);
+        format!("data:image/bmp;base64,{b64}")
+    }
 }

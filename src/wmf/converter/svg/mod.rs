@@ -73,10 +73,30 @@ impl crate::wmf::converter::Player for SVGPlayer {
             ..
         } = self;
 
-        let (x, y, width, height) = context_current.window.as_view_box();
+        let (raw_vb_x, raw_vb_y, raw_vb_w, raw_vb_h) = context_current.window.as_view_box();
+        let mut vb_x = i32::from(raw_vb_x);
+        let mut vb_y = i32::from(raw_vb_y);
+        let mut vb_right = vb_x + i32::from(raw_vb_w);
+        let mut vb_bottom = vb_y + i32::from(raw_vb_h);
+        for elem in elements.iter() {
+            if let Some(max_x) = element_max_x(elem) {
+                vb_right = vb_right.max(max_x);
+            }
+            if let Some(max_y) = element_max_y(elem) {
+                vb_bottom = vb_bottom.max(max_y);
+            }
+            if let Some(min_x) = element_min_x(elem) {
+                vb_x = vb_x.min(min_x);
+            }
+            if let Some(min_y) = element_min_y(elem) {
+                vb_y = vb_y.min(min_y);
+            }
+        }
+        let vb_w = vb_right - vb_x;
+        let vb_h = vb_bottom - vb_y;
         let mut document = Node::new("svg")
             .set("xmlns", "http://www.w3.org/2000/svg")
-            .set("viewBox", format!("{x} {y} {width} {height}"));
+            .set("viewBox", format!("{vb_x} {vb_y} {vb_w} {vb_h}"));
 
         if !definitions.is_empty() {
             let mut defs = Node::new("defs");
@@ -87,8 +107,17 @@ impl crate::wmf::converter::Player for SVGPlayer {
             document = document.add(defs);
         }
 
-        for v in elements {
-            document = document.add(v);
+        if context_current.window.y_inverted {
+            let mut group =
+                Node::new("g").set("transform", format!("translate(0,{vb_h}) scale(1,-1)"));
+            for v in elements {
+                group = group.add(v);
+            }
+            document = document.add(group);
+        } else {
+            for v in elements {
+                document = document.add(v);
+            }
         }
 
         Ok(document.to_string().into_bytes())
@@ -115,8 +144,12 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 target,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator =
-                    TernaryRasterOperator::new(raster_operation, x_dest, y_dest, height, width);
+                    TernaryRasterOperator::new(raster_operation, pt.x, pt.y, height, width);
 
                 if raster_operation.use_selected_brush() {
                     operator = operator.brush(self.selected_brush().clone());
@@ -136,8 +169,12 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 x_dest,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator =
-                    TernaryRasterOperator::new(raster_operation, x_dest, y_dest, height, width);
+                    TernaryRasterOperator::new(raster_operation, pt.x, pt.y, height, width);
 
                 if raster_operation.use_selected_brush() {
                     operator = operator.brush(self.selected_brush().clone());
@@ -182,8 +219,12 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 target,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator =
-                    TernaryRasterOperator::new(raster_operation, x_dest, y_dest, height, width);
+                    TernaryRasterOperator::new(raster_operation, pt.x, pt.y, height, width);
 
                 if raster_operation.use_selected_brush() {
                     operator = operator.brush(self.selected_brush().clone());
@@ -203,8 +244,12 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 x_dest,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator =
-                    TernaryRasterOperator::new(raster_operation, x_dest, y_dest, height, width);
+                    TernaryRasterOperator::new(raster_operation, pt.x, pt.y, height, width);
 
                 if raster_operation.use_selected_brush() {
                     operator = operator.brush(self.selected_brush().clone());
@@ -249,10 +294,14 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 target,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator = TernaryRasterOperator::new(
                     raster_operation,
-                    x_dest,
-                    y_dest,
+                    pt.x,
+                    pt.y,
                     dest_height,
                     dest_width,
                 );
@@ -275,10 +324,14 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 x_dest,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator = TernaryRasterOperator::new(
                     raster_operation,
-                    x_dest,
-                    y_dest,
+                    pt.x,
+                    pt.y,
                     dest_height,
                     dest_width,
                 );
@@ -340,10 +393,14 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 target,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator = TernaryRasterOperator::new(
                     raster_operation,
-                    x_dest,
-                    y_dest,
+                    pt.x,
+                    pt.y,
                     dest_height,
                     dest_width,
                 );
@@ -366,10 +423,14 @@ impl crate::wmf::converter::Player for SVGPlayer {
                 x_dest,
                 ..
             } => {
+                let pt = self.context_current.point_s_to_absolute_point(&PointS {
+                    x: x_dest,
+                    y: y_dest,
+                });
                 let mut operator = TernaryRasterOperator::new(
                     raster_operation,
-                    x_dest,
-                    y_dest,
+                    pt.x,
+                    pt.y,
                     dest_height,
                     dest_width,
                 );
@@ -417,8 +478,11 @@ impl crate::wmf::converter::Player for SVGPlayer {
             ..
         } = record;
 
+        let pt = self
+            .context_current
+            .point_s_to_absolute_point(&PointS { x: x_dst, y: y_dst });
         let mut operator =
-            TernaryRasterOperator::new(raster_operation, x_dst, y_dst, dest_height, dest_width);
+            TernaryRasterOperator::new(raster_operation, pt.x, pt.y, dest_height, dest_width);
 
         if raster_operation.use_selected_brush() {
             operator = operator.brush(self.selected_brush().clone());
@@ -2184,4 +2248,46 @@ impl crate::wmf::converter::Player for SVGPlayer {
     fn escape(self, record_number: usize, record: META_ESCAPE) -> Result<Self, PlayError> {
         Ok(self)
     }
+}
+
+fn element_max_x(elem: &Node) -> Option<i32> {
+    let s = elem.to_string();
+    let x = parse_attr_i32(&s, "x").unwrap_or(0);
+    let width = parse_attr_i32(&s, "width").unwrap_or(0);
+    if width > 0 {
+        Some(x + width)
+    } else {
+        None
+    }
+}
+
+fn element_max_y(elem: &Node) -> Option<i32> {
+    let s = elem.to_string();
+    let y = parse_attr_i32(&s, "y").unwrap_or(0);
+    let height = parse_attr_i32(&s, "height").unwrap_or(0);
+    if height > 0 {
+        return Some(y + height);
+    }
+    if s.starts_with("<text ") {
+        if let Some(font_size) = parse_attr_i32(&s, "font-size") {
+            return Some(y + font_size);
+        }
+    }
+    None
+}
+
+fn element_min_x(elem: &Node) -> Option<i32> {
+    parse_attr_i32(&elem.to_string(), "x")
+}
+
+fn element_min_y(elem: &Node) -> Option<i32> {
+    parse_attr_i32(&elem.to_string(), "y")
+}
+
+fn parse_attr_i32(s: &str, attr: &str) -> Option<i32> {
+    let needle = format!(" {attr}=\"");
+    let start = s.find(&needle)?;
+    let value_start = start + needle.len();
+    let value_end = s[value_start..].find('"')?;
+    s[value_start..value_start + value_end].parse().ok()
 }
