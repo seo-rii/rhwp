@@ -208,6 +208,38 @@ fn test_compose_with_ctrl_char_gap() {
     assert_eq!(composed.lines[0].runs[0].char_style_id, 1);
 }
 
+#[test]
+fn test_char_shape_start_pos_uses_visible_index_with_ctrl_gap() {
+    let para = Paragraph {
+        text: "ABC".to_string(),
+        char_offsets: vec![8, 9, 10],
+        char_count: 12,
+        char_shapes: vec![
+            CharShapeRef {
+                start_pos: 0,
+                char_shape_id: 1,
+            },
+            CharShapeRef {
+                start_pos: 3,
+                char_shape_id: 2,
+            },
+        ],
+        line_segs: vec![LineSeg {
+            text_start: 0,
+            line_height: 400,
+            baseline_distance: 320,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let composed = compose_paragraph(&para);
+    assert_eq!(composed.lines.len(), 1);
+    assert_eq!(composed.lines[0].runs.len(), 1);
+    assert_eq!(composed.lines[0].runs[0].text, "ABC");
+    assert_eq!(composed.lines[0].runs[0].char_style_id, 1);
+}
+
 /// 인라인 컨트롤 식별
 #[test]
 fn test_identify_inline_controls_table() {
@@ -728,6 +760,46 @@ fn test_tokenize_korean_eojeol() {
             ..
         }
     ));
+}
+
+#[test]
+fn test_tokenize_uses_visible_char_shape_index_with_ctrl_gap() {
+    use crate::renderer::style_resolver::{ResolvedCharStyle, ResolvedParaStyle, ResolvedStyleSet};
+
+    let styles = ResolvedStyleSet {
+        char_styles: vec![
+            ResolvedCharStyle {
+                font_size: 10.0,
+                ratio: 1.0,
+                ..Default::default()
+            },
+            ResolvedCharStyle {
+                font_size: 30.0,
+                ratio: 1.0,
+                ..Default::default()
+            },
+        ],
+        para_styles: vec![ResolvedParaStyle::default()],
+        ..Default::default()
+    };
+    let text: Vec<char> = "ABC".chars().collect();
+    let offsets = vec![8, 9, 10];
+    let shapes = vec![
+        CharShapeRef {
+            start_pos: 0,
+            char_shape_id: 0,
+        },
+        CharShapeRef {
+            start_pos: 3,
+            char_shape_id: 1,
+        },
+    ];
+
+    let tokens = tokenize_paragraph(&text, &offsets, &shapes, &styles, 0, 0);
+    let BreakToken::Text { max_font_size, .. } = tokens[0] else {
+        panic!("expected text token");
+    };
+    assert_eq!(max_font_size, 10.0);
 }
 
 /// 토크나이저: 영어 단어 토큰화

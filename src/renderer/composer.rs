@@ -614,44 +614,19 @@ fn split_by_char_shapes(
         }]);
     }
 
-    // 이 줄 범위에 영향을 미치는 CharShapeRef 찾기
-    // CharShapeRef.start_pos는 UTF-16 위치이므로 텍스트 인덱스로 변환해야 함
-    let line_utf16_start = if text_start < char_offsets.len() {
-        char_offsets[text_start]
-    } else if !char_offsets.is_empty() {
-        *char_offsets.last().unwrap() + 1
-    } else {
-        text_start as u32
-    };
-
-    let line_utf16_end = if text_end < char_offsets.len() {
-        char_offsets[text_end]
-    } else if !char_offsets.is_empty() {
-        *char_offsets.last().unwrap() + 1
-    } else {
-        text_end as u32
-    };
-
-    // 이 줄에 적용되는 CharShapeRef 구간 수집
-    // 각 구간: (텍스트 내 시작 인덱스, char_style_id)
+    // CharShapeRef.start_pos는 visible character index로 해석한다.
+    // UTF-16 stream gap 기준으로 해석하면 inline control 앞뒤 문단에서 스타일
+    // 경계가 실제 표시 문자보다 앞당겨진다.
+    let total_chars = char_offsets.len();
     let mut segments: Vec<(usize, u32)> = Vec::new();
 
     for cs in char_shapes {
-        if cs.start_pos < line_utf16_end {
-            // 이 CharShapeRef의 시작 위치를 줄 내 텍스트 인덱스로 변환
-            let text_idx = if cs.start_pos <= line_utf16_start {
-                0 // 줄 시작 이전이면 0
-            } else {
-                // char_offsets에서 cs.start_pos에 해당하는 텍스트 인덱스 찾기
-                let global_idx = char_offsets
-                    .iter()
-                    .position(|&off| off >= cs.start_pos)
-                    .unwrap_or(text_end);
-                global_idx.saturating_sub(text_start)
-            };
-
-            segments.push((text_idx, cs.char_shape_id));
+        let cs_visible_idx = (cs.start_pos as usize).min(total_chars);
+        if cs_visible_idx >= text_end {
+            continue;
         }
+        let text_idx = cs_visible_idx.saturating_sub(text_start);
+        segments.push((text_idx, cs.char_shape_id));
     }
 
     // 시작 인덱스로 정렬 (동일 인덱스 내에서는 원래 순서 유지)
@@ -666,7 +641,7 @@ fn split_by_char_shapes(
     // segments가 비어있으면 첫 번째 CharShapeRef 사용
     if segments.is_empty() {
         // 줄 시작 위치 이전의 마지막 CharShapeRef 찾기
-        let style_id = find_active_char_shape(char_shapes, line_utf16_start);
+        let style_id = find_active_char_shape_visible(char_shapes, text_start);
         return split_runs_by_lang(vec![ComposedTextRun {
             text: line_text.to_string(),
             char_style_id: style_id,
@@ -705,7 +680,7 @@ fn split_by_char_shapes(
 
     // 첫 번째 segment가 0이 아닌 경우, 앞 부분 처리
     if !segments.is_empty() && segments[0].0 > 0 {
-        let style_id = find_active_char_shape(char_shapes, line_utf16_start);
+        let style_id = find_active_char_shape_visible(char_shapes, text_start);
         let end_idx = segments[0].0.min(chars.len());
         let prefix_text: String = chars[..end_idx].iter().collect();
         if !prefix_text.is_empty() {
@@ -723,7 +698,7 @@ fn split_by_char_shapes(
     }
 
     if runs.is_empty() {
-        let style_id = find_active_char_shape(char_shapes, line_utf16_start);
+        let style_id = find_active_char_shape_visible(char_shapes, text_start);
         runs.push(ComposedTextRun {
             text: line_text.to_string(),
             char_style_id: style_id,
@@ -737,11 +712,23 @@ fn split_by_char_shapes(
     split_runs_by_lang(runs)
 }
 
-/// 주어진 UTF-16 위치에서 활성화된 CharShapeRef의 char_shape_id를 찾는다.
+/// 주어진 위치에서 활성화된 CharShapeRef의 char_shape_id를 찾는다.
+///
+/// `CharShapeRef.start_pos`는 renderer에서는 visible character index로 해석한다.
+/// 기존 호출자 호환을 위해 이름은 유지하지만, 인자는 visible index로 넘기는
+/// 것이 정확하다.
 pub(crate) fn find_active_char_shape(char_shapes: &[CharShapeRef], utf16_pos: u32) -> u32 {
+    find_active_char_shape_visible(char_shapes, utf16_pos as usize)
+}
+
+/// 주어진 visible character index에서 활성화된 CharShapeRef의 char_shape_id를 찾는다.
+pub(crate) fn find_active_char_shape_visible(
+    char_shapes: &[CharShapeRef],
+    visible_idx: usize,
+) -> u32 {
     let mut active_id = char_shapes.first().map(|cs| cs.char_shape_id).unwrap_or(0);
     for cs in char_shapes {
-        if cs.start_pos <= utf16_pos {
+        if (cs.start_pos as usize) <= visible_idx {
             active_id = cs.char_shape_id;
         } else {
             break;

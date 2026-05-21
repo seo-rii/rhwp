@@ -3,7 +3,7 @@
 //! 문단 텍스트를 토큰화하고 줄 나눔을 수행한다.
 //! 한글 어절/글자, 영어 단어/하이픈, CJK 개별 분할을 지원한다.
 
-use super::{find_active_char_shape, is_lang_neutral};
+use super::{find_active_char_shape_visible, is_lang_neutral};
 use crate::model::paragraph::{CharShapeRef, LineSeg, Paragraph};
 use crate::model::style::LineSpacingType;
 use crate::renderer::layout::{
@@ -150,7 +150,7 @@ fn is_cjk_ideograph(ch: char) -> bool {
 /// 문단 텍스트를 줄 나눔 토큰으로 분할한다.
 pub(crate) fn tokenize_paragraph(
     text_chars: &[char],
-    char_offsets: &[u32],
+    _char_offsets: &[u32],
     char_shapes: &[CharShapeRef],
     styles: &ResolvedStyleSet,
     english_break_unit: u8,
@@ -177,12 +177,7 @@ pub(crate) fn tokenize_paragraph(
 
         // 탭
         if ch == '\t' {
-            let utf16_pos = if i < char_offsets.len() {
-                char_offsets[i]
-            } else {
-                i as u32
-            };
-            let style_id = find_active_char_shape(char_shapes, utf16_pos);
+            let style_id = find_active_char_shape_visible(char_shapes, i);
             let ts = resolved_to_text_style(styles, style_id, current_lang);
             let font_size = if ts.font_size > 0.0 {
                 ts.font_size
@@ -199,12 +194,7 @@ pub(crate) fn tokenize_paragraph(
 
         // 공백 (줄 바꿈 지점) — NonBreakingSpace(\u{00A0})는 제외
         if ch == ' ' {
-            let utf16_pos = if i < char_offsets.len() {
-                char_offsets[i]
-            } else {
-                i as u32
-            };
-            let style_id = find_active_char_shape(char_shapes, utf16_pos);
+            let style_id = find_active_char_shape_visible(char_shapes, i);
             let ts = resolved_to_text_style(styles, style_id, current_lang);
             let font_size = if ts.font_size > 0.0 {
                 ts.font_size
@@ -243,13 +233,7 @@ pub(crate) fn tokenize_paragraph(
                     if is_cjk_ideograph(c) {
                         break;
                     }
-
-                    let utf16_pos = if i < char_offsets.len() {
-                        char_offsets[i]
-                    } else {
-                        i as u32
-                    };
-                    let style_id = find_active_char_shape(char_shapes, utf16_pos);
+                    let style_id = find_active_char_shape_visible(char_shapes, i);
                     let lang = if is_lang_neutral(c) {
                         token_lang
                     } else {
@@ -278,12 +262,7 @@ pub(crate) fn tokenize_paragraph(
                     && text_chars[i] != '\t'
                 {
                     let c = text_chars[i];
-                    let utf16_pos = if i < char_offsets.len() {
-                        char_offsets[i]
-                    } else {
-                        i as u32
-                    };
-                    let style_id = find_active_char_shape(char_shapes, utf16_pos);
+                    let style_id = find_active_char_shape_visible(char_shapes, i);
                     let lang = if is_lang_neutral(c) {
                         current_lang
                     } else {
@@ -305,14 +284,8 @@ pub(crate) fn tokenize_paragraph(
                 }
 
                 if !token_text.is_empty() {
-                    let width = measure_token_width(
-                        &token_text,
-                        start,
-                        char_offsets,
-                        char_shapes,
-                        styles,
-                        current_lang,
-                    );
+                    let width =
+                        measure_token_width(&token_text, start, char_shapes, styles, current_lang);
                     tokens.push(BreakToken::Text {
                         start_idx: start,
                         end_idx: i,
@@ -324,12 +297,7 @@ pub(crate) fn tokenize_paragraph(
                 continue;
             } else {
                 // 글자 모드: 한글 개별 분할
-                let utf16_pos = if i < char_offsets.len() {
-                    char_offsets[i]
-                } else {
-                    i as u32
-                };
-                let style_id = find_active_char_shape(char_shapes, utf16_pos);
+                let style_id = find_active_char_shape_visible(char_shapes, i);
                 current_lang = detect_lang_category(ch);
                 let ts = resolved_to_text_style(styles, style_id, current_lang);
                 let fs = if ts.font_size > 0.0 {
@@ -368,12 +336,7 @@ pub(crate) fn tokenize_paragraph(
                     }
                     // 하이픈 모드: 하이픈에서 분할 (하이픈 포함 후 분리)
                     if english_break_unit == 1 && c == '-' && !token_text.is_empty() {
-                        let utf16_pos = if i < char_offsets.len() {
-                            char_offsets[i]
-                        } else {
-                            i as u32
-                        };
-                        let style_id = find_active_char_shape(char_shapes, utf16_pos);
+                        let style_id = find_active_char_shape_visible(char_shapes, i);
                         let lang = 1usize; // English
                         let ts = resolved_to_text_style(styles, style_id, lang);
                         let fs = if ts.font_size > 0.0 {
@@ -388,13 +351,7 @@ pub(crate) fn tokenize_paragraph(
                         i += 1;
                         break; // 하이픈 뒤에서 분할
                     }
-
-                    let utf16_pos = if i < char_offsets.len() {
-                        char_offsets[i]
-                    } else {
-                        i as u32
-                    };
-                    let style_id = find_active_char_shape(char_shapes, utf16_pos);
+                    let style_id = find_active_char_shape_visible(char_shapes, i);
                     let lang = if is_lang_neutral(c) {
                         current_lang
                     } else {
@@ -415,24 +372,13 @@ pub(crate) fn tokenize_paragraph(
                 }
 
                 if !token_text.is_empty() {
-                    let width = measure_token_width(
-                        &token_text,
-                        start,
-                        char_offsets,
-                        char_shapes,
-                        styles,
-                        current_lang,
-                    );
+                    let width =
+                        measure_token_width(&token_text, start, char_shapes, styles, current_lang);
                     // 개별 글자 폭 수집 (char_level_break용)
                     let cw: Vec<f64> = (start..i)
                         .map(|ci| {
                             let c = text_chars[ci];
-                            let u16p = if ci < char_offsets.len() {
-                                char_offsets[ci]
-                            } else {
-                                ci as u32
-                            };
-                            let sid = find_active_char_shape(char_shapes, u16p);
+                            let sid = find_active_char_shape_visible(char_shapes, ci);
                             let lang = if is_lang_neutral(c) { current_lang } else { 1 };
                             let ts = resolved_to_text_style(styles, sid, lang);
                             estimate_text_width_unrounded(&c.to_string(), &ts)
@@ -449,12 +395,7 @@ pub(crate) fn tokenize_paragraph(
                 continue;
             } else {
                 // 글자 모드
-                let utf16_pos = if i < char_offsets.len() {
-                    char_offsets[i]
-                } else {
-                    i as u32
-                };
-                let style_id = find_active_char_shape(char_shapes, utf16_pos);
+                let style_id = find_active_char_shape_visible(char_shapes, i);
                 current_lang = 1;
                 let ts = resolved_to_text_style(styles, style_id, current_lang);
                 let fs = if ts.font_size > 0.0 {
@@ -477,12 +418,7 @@ pub(crate) fn tokenize_paragraph(
 
         // CJK 한자/일본어: 항상 개별 토큰
         if is_cjk_ideograph(ch) {
-            let utf16_pos = if i < char_offsets.len() {
-                char_offsets[i]
-            } else {
-                i as u32
-            };
-            let style_id = find_active_char_shape(char_shapes, utf16_pos);
+            let style_id = find_active_char_shape_visible(char_shapes, i);
             current_lang = detect_lang_category(ch);
             let ts = resolved_to_text_style(styles, style_id, current_lang);
             let fs = if ts.font_size > 0.0 {
@@ -504,12 +440,7 @@ pub(crate) fn tokenize_paragraph(
 
         // 기타 문자 (기호, NonBreakingSpace 등): 개별 Text 토큰
         {
-            let utf16_pos = if i < char_offsets.len() {
-                char_offsets[i]
-            } else {
-                i as u32
-            };
-            let style_id = find_active_char_shape(char_shapes, utf16_pos);
+            let style_id = find_active_char_shape_visible(char_shapes, i);
             let lang = if is_lang_neutral(ch) {
                 current_lang
             } else {
@@ -542,7 +473,6 @@ pub(crate) fn tokenize_paragraph(
 fn measure_token_width(
     text: &str,
     start_char_idx: usize,
-    char_offsets: &[u32],
     char_shapes: &[CharShapeRef],
     styles: &ResolvedStyleSet,
     default_lang: usize,
@@ -551,12 +481,7 @@ fn measure_token_width(
     let mut current_lang = default_lang;
     for (offset, ch) in text.chars().enumerate() {
         let idx = start_char_idx + offset;
-        let utf16_pos = if idx < char_offsets.len() {
-            char_offsets[idx]
-        } else {
-            idx as u32
-        };
-        let style_id = find_active_char_shape(char_shapes, utf16_pos);
+        let style_id = find_active_char_shape_visible(char_shapes, idx);
         let lang = if is_lang_neutral(ch) {
             current_lang
         } else {
