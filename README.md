@@ -182,6 +182,12 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 | Field marker metadata | document/layer semantic | yes | JSON/JS export preserves `fieldMarker`; Canvas2D, CanvasKit, SVG layer, and native Skia consume the lowered visible text run. |
 | Field marker visual paint | diagnostic/editing display | fixture-gated | Synthetic browser and SVG-vs-Skia fixtures cover begin/end/begin-end/shape markers; actual HWP corpus parity remains a regression target. |
 
+Field marker metadata is not a backend paint guarantee. Consumers should treat
+`fieldMarker` as document/layer semantics, and use the lowered visible TextRun or
+backend capability/fixture results to decide whether diagnostic marker paint is
+available. A backend that only preserves marker metadata must not synthesize
+untracked marker visuals silently.
+
 ### Web Editor (웹 에디터)
 - Text editing (insert, delete, undo/redo)
 - Character/paragraph formatting dialogs
