@@ -15,6 +15,30 @@ use super::utils::{
 };
 use super::HwpxError;
 
+/// `<hh:strikeout shape="..."/>` shape 값이 실제 취소선인지 판정한다.
+///
+/// HWPX exporter는 `shape="3D"` 같은 placeholder 값을 본문 charPr에 넣을 수 있다.
+/// 알 수 없는 값을 취소선으로 fail-open하면 본문 전체가 잘못 그어질 수 있으므로,
+/// OWPML LineSym2에서 실제 선으로 해석되는 값만 허용한다.
+pub(crate) fn is_real_strike_shape(shape: &str) -> bool {
+    matches!(
+        shape,
+        "SOLID"
+            | "DASH"
+            | "DOT"
+            | "DASH_DOT"
+            | "DASH_DOT_DOT"
+            | "LONG_DASH"
+            | "CIRCLE"
+            | "DOUBLE_SLIM"
+            | "SLIM_THICK"
+            | "THICK_SLIM"
+            | "SLIM_THICK_SLIM"
+            | "WAVE"
+            | "DOUBLE_WAVE"
+    )
+}
+
 /// header.xml을 파싱하여 DocInfo와 DocProperties를 생성한다.
 pub fn parse_hwpx_header(xml: &str) -> Result<(DocInfo, DocProperties), HwpxError> {
     let mut doc_info = DocInfo::default();
@@ -295,8 +319,7 @@ fn parse_char_shape(
                                 match attr.key.as_ref() {
                                     b"shape" => {
                                         let val = attr_str(&attr);
-                                        // 유효한 취소선: NONE/3D 이외의 선 스타일
-                                        cs.strikethrough = !matches!(val.as_str(), "NONE" | "3D");
+                                        cs.strikethrough = is_real_strike_shape(&val);
                                         cs.strike_shape = match val.as_str() {
                                             "SOLID" => 0,
                                             "DASH" => 1,
@@ -1345,5 +1368,50 @@ mod tests {
         assert_eq!(bf.diagonal.diagonal_type, 2);
         assert_eq!(bf.diagonal.width, 1);
         assert_eq!(bf.diagonal.color, 0x0066_5544);
+    }
+
+    #[test]
+    fn test_real_strike_shape_whitelist_accepts_supported_shapes() {
+        for shape in [
+            "SOLID",
+            "DASH",
+            "DOT",
+            "DASH_DOT",
+            "DASH_DOT_DOT",
+            "LONG_DASH",
+            "CIRCLE",
+            "DOUBLE_SLIM",
+            "SLIM_THICK",
+            "THICK_SLIM",
+            "SLIM_THICK_SLIM",
+            "WAVE",
+            "DOUBLE_WAVE",
+        ] {
+            assert!(is_real_strike_shape(shape), "{shape}");
+        }
+    }
+
+    #[test]
+    fn test_real_strike_shape_whitelist_rejects_placeholders_and_unknowns() {
+        for shape in ["NONE", "3D", "4D", "Ghost", "", "solid"] {
+            assert!(!is_real_strike_shape(shape), "{shape}");
+        }
+    }
+
+    #[test]
+    fn test_parse_char_shape_rejects_placeholder_strikeout_shape() {
+        let xml = r##"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">
+  <hh:charPr id="0">
+    <hh:strikeout shape="3D" color="#112233"/>
+  </hh:charPr>
+  <hh:charPr id="1">
+    <hh:strikeout shape="SOLID" color="#112233"/>
+  </hh:charPr>
+</hh:head>"##;
+
+        let (doc_info, _) = parse_hwpx_header(xml).expect("header parse");
+
+        assert!(!doc_info.char_shapes[0].strikethrough);
+        assert!(doc_info.char_shapes[1].strikethrough);
     }
 }
