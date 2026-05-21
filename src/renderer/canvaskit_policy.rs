@@ -728,10 +728,8 @@ fn canvaskit_glyph_outline_payload_status(
         }
         GlyphOutlinePayloadKind::ColorLayers => {
             if outline.color_layers.as_ref().is_some_and(|payload| {
-                matches!(
-                    payload.color_format,
-                    crate::paint::ColorGlyphFormat::ColrV0 | crate::paint::ColorGlyphFormat::ColrV1
-                )
+                payload.has_colrv0_resolved_layer_contract()
+                    || payload.has_colrv1_stage1_graph_contract()
             }) {
                 (true, None)
             } else {
@@ -743,12 +741,7 @@ fn canvaskit_glyph_outline_payload_status(
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             };
             if bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
-                || payload.alpha_mode.is_none()
-                || payload.scaling_policy.is_none()
-                || payload.filtering.is_none()
-                || payload
-                    .filtering
-                    .is_some_and(|filtering| filtering.as_str() == "backendDefault")
+                || !payload.has_strict_visual_contract()
                 || resources.image_bytes(payload.image_resource_id).is_none()
             {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
@@ -760,11 +753,7 @@ fn canvaskit_glyph_outline_payload_status(
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
             if bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
-                || payload.view_box.is_none()
-                || payload.script_allowed
-                || payload.animation_allowed
-                || payload.external_resources_allowed
-                || payload.interactivity_allowed
+                || !payload.has_static_sanitized_contract()
                 || resources.svg_fragment(payload.vector_resource_id).is_none()
             {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
@@ -862,5 +851,283 @@ fn cache_hint_detail(cache_hint: CacheHint) -> &'static str {
         CacheHint::StaticSubtree => "staticSubtree",
         CacheHint::PreferRaster => "preferRaster",
         CacheHint::PreferVectorRecording => "preferVectorRecording",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        canvaskit_glyph_outline_payload_status, GlyphOutlinePayloadKind, VariantRejectReason,
+    };
+    use crate::paint::{
+        BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
+        BitmapStrikeSelection, ColorGlyphFormat, ColorLayersPayload, ColorPaintGraphNode,
+        ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintSolidPathNode,
+        ColorPaintTransformNode, FontColorGlyphRef, GlyphOutlineFillRule, GlyphRange,
+        GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
+        LayerGlyphOutlinePaint, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena,
+        SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceId,
+        TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality,
+    };
+    use crate::renderer::render_tree::BoundingBox;
+    use crate::renderer::{PathCommand, TextStyle};
+
+    fn identity() -> LayerAffineTransform {
+        LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
+    }
+
+    fn placement() -> TextRunPlacement {
+        TextRunPlacement {
+            run_to_page: identity(),
+            baseline_y: 0.0,
+        }
+    }
+
+    fn source_span() -> TextSourceSpan {
+        TextSourceSpan {
+            id: TextSourceId(0),
+            utf8_range: TextSourceRange::new(0, 1),
+            utf16_range: TextSourceRange::new(0, 1),
+            stable_source_key: None,
+        }
+    }
+
+    fn variant() -> PaintVariantMeta {
+        PaintVariantMeta {
+            equivalence_group: "text-0".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: Vec::new(),
+            quality: Some(TextVariantQuality::Exact),
+            anchor_op_id: Some("op-text-0".to_string()),
+            local_paint_order: Some(0),
+        }
+    }
+
+    fn diagnostics() -> GlyphRunDiagnostics {
+        GlyphRunDiagnostics {
+            quality: TextVariantQuality::Exact,
+            replay_eligibility: GlyphRunReplayEligibility::Portable,
+            strict_visual_eligible: true,
+            max_origin_delta_px: 0.0,
+            max_advance_delta_px: 0.0,
+            max_residual_after_adjustment_px: 0.0,
+            cluster_mismatch_count: 0,
+            missing_glyph_count: 0,
+            used_fallback_font_count: 0,
+            reason: None,
+        }
+    }
+
+    fn outline(payload_kind: GlyphOutlinePayloadKind) -> LayerGlyphOutlinePaint {
+        LayerGlyphOutlinePaint {
+            source: source_span(),
+            variant: variant(),
+            payload_kind,
+            stroke: None,
+            color_layers: None,
+            bitmap_glyph: None,
+            svg_glyph: None,
+            paint_style: PaintTextStyle::from(&TextStyle::default()),
+            placement: placement(),
+            paths: Vec::new(),
+            diagnostics: diagnostics(),
+        }
+    }
+
+    fn valid_bbox() -> BoundingBox {
+        BoundingBox::new(0.0, 0.0, 16.0, 16.0)
+    }
+
+    fn source_font_ref(format: ColorGlyphFormat) -> FontColorGlyphRef {
+        FontColorGlyphRef {
+            face_key: Some("fixture-face".to_string()),
+            glyph_id: Some(42),
+            palette_index: Some(0),
+            color_format: Some(format),
+        }
+    }
+
+    fn colrv1_stage1_payload() -> ColorLayersPayload {
+        let source_range = TextSourceRange::new(0, 1);
+        let glyph_range = GlyphRange::new(0, 1);
+        let source_font_ref = source_font_ref(ColorGlyphFormat::ColrV1);
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 1,
+                nodes: vec![
+                    ColorPaintGraphNode {
+                        node_id: 0,
+                        kind: ColorPaintGraphNodeKind::SolidPath,
+                        solid_path: Some(ColorPaintSolidPathNode {
+                            commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(12.0, 0.0),
+                                PathCommand::LineTo(12.0, 12.0),
+                                PathCommand::ClosePath,
+                            ],
+                            fill: ResolvedColor {
+                                color_space: Some("srgb".to_string()),
+                                rgba: [0.0, 1.0, 0.0, 1.0],
+                            },
+                            fill_rule: GlyphOutlineFillRule::NonZero,
+                            source_glyph_id: Some(42),
+                            palette_index: Some(0),
+                        }),
+                        transform: None,
+                        source_range_utf8: Some(source_range),
+                        glyph_range: Some(glyph_range),
+                        source_font_ref: Some(source_font_ref),
+                    },
+                    ColorPaintGraphNode {
+                        node_id: 1,
+                        kind: ColorPaintGraphNodeKind::Transform,
+                        solid_path: None,
+                        transform: Some(ColorPaintTransformNode {
+                            child_node_id: 0,
+                            transform: identity(),
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                ],
+            }),
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(glyph_range),
+        }
+    }
+
+    fn bitmap_payload(image_resource_id: crate::paint::ImageResourceId) -> BitmapGlyphPayload {
+        BitmapGlyphPayload {
+            image_resource_id,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(placement()),
+            transform_to_run: Some(identity()),
+            strike_ppem: Some((16, 16)),
+            strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: None,
+            alpha_mode: Some(BitmapAlphaMode::Premultiplied),
+            scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(BitmapGlyphFiltering::Linear),
+        }
+    }
+
+    fn svg_payload(vector_resource_id: crate::paint::SvgResourceId) -> SvgGlyphPayload {
+        SvgGlyphPayload {
+            vector_resource_id,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(placement()),
+            transform_to_run: Some(identity()),
+            view_box: Some(SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 16.0,
+                height: 16.0,
+            }),
+            intrinsic_size: None,
+            security_mode: SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        }
+    }
+
+    #[test]
+    fn canvaskit_rejects_incomplete_color_layers_payload() {
+        let mut outline = outline(GlyphOutlinePayloadKind::ColorLayers);
+        outline.color_layers = Some(ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref(ColorGlyphFormat::ColrV1)),
+            palette_ref: None,
+            layers: Vec::new(),
+            paint_graph: None,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+        });
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(valid_bbox()),
+                &ResourceArena::default(),
+            ),
+            (false, Some(VariantRejectReason::UnsupportedColorGlyph))
+        );
+    }
+
+    #[test]
+    fn canvaskit_accepts_colrv1_stage1_color_graph_contract() {
+        let mut outline = outline(GlyphOutlinePayloadKind::ColorLayers);
+        outline.color_layers = Some(colrv1_stage1_payload());
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(valid_bbox()),
+                &ResourceArena::default(),
+            ),
+            (true, None)
+        );
+    }
+
+    #[test]
+    fn canvaskit_requires_bitmap_strict_visual_contract() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
+        let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        let mut payload = bitmap_payload(image_id);
+        payload.filtering = Some(BitmapGlyphFiltering::BackendDefault);
+        outline.bitmap_glyph = Some(payload);
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
+
+        outline.bitmap_glyph = Some(bitmap_payload(image_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (true, None)
+        );
+    }
+
+    #[test]
+    fn canvaskit_requires_svg_static_sanitized_contract() {
+        let mut resources = ResourceArena::default();
+        let svg_id = resources.intern_svg_fragment("<svg viewBox=\"0 0 16 16\"></svg>");
+        let mut outline = outline(GlyphOutlinePayloadKind::SvgGlyph);
+        let mut payload = svg_payload(svg_id);
+        payload.script_allowed = true;
+        outline.svg_glyph = Some(payload);
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+
+        outline.svg_glyph = Some(svg_payload(svg_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (true, None)
+        );
     }
 }
