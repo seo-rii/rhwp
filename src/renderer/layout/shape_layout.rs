@@ -690,6 +690,7 @@ impl LayoutEngine {
 
         // 공통: 회전/대칭 정보 추출
         let transform = extract_shape_transform(shape.shape_attr());
+        let parent_treat_as_char = shape.common().treat_as_char;
 
         // 회전/대칭이 있으면 current 크기로 중앙 배치
         // 그렇지 않으면 호출자가 전달한 w, h를 그대로 사용
@@ -756,6 +757,7 @@ impl LayoutEngine {
                     bin_data_content,
                     overflow_map,
                     parent_cell_path,
+                    parent_treat_as_char,
                 );
                 parent.children.push(node);
             }
@@ -1002,6 +1004,7 @@ impl LayoutEngine {
                     bin_data_content,
                     &empty_map,
                     parent_cell_path,
+                    parent_treat_as_char,
                 );
                 parent.children.push(node);
             }
@@ -1173,6 +1176,7 @@ impl LayoutEngine {
                     bin_data_content,
                     &empty_map,
                     parent_cell_path,
+                    parent_treat_as_char,
                 );
                 parent.children.push(node);
             }
@@ -1228,6 +1232,7 @@ impl LayoutEngine {
                     bin_data_content,
                     &empty_map,
                     parent_cell_path,
+                    parent_treat_as_char,
                 );
                 parent.children.push(node);
             }
@@ -1549,6 +1554,7 @@ impl LayoutEngine {
         bin_data_content: &[BinDataContent],
         overflow_map: &std::collections::HashMap<(usize, usize), Vec<Paragraph>>,
         parent_cell_path: &[CellPathEntry],
+        parent_treat_as_char: bool,
     ) {
         let text_box = match &drawing.text_box {
             Some(tb) => tb,
@@ -1566,6 +1572,41 @@ impl LayoutEngine {
             width: (w - margin_left - margin_right).max(0.0),
             height: (h - margin_top - margin_bottom).max(0.0),
         };
+
+        // Expanded master-page text boxes scale their internal font down in
+        // HWP-compatible output. Keep the heuristic limited to isotropic
+        // enlargement so stretched normal text boxes and inline shapes do not
+        // inherit an unintended shrink factor.
+        let sa = &drawing.shape_attr;
+        let local_styles_scaled: Option<ResolvedStyleSet> = {
+            let sw_ratio = if sa.original_width > 0 && sa.current_width > 0 {
+                sa.current_width as f64 / sa.original_width as f64
+            } else {
+                1.0
+            };
+            let sh_ratio = if sa.original_height > 0 && sa.current_height > 0 {
+                sa.current_height as f64 / sa.original_height as f64
+            } else {
+                1.0
+            };
+            let max_ratio = sw_ratio.max(sh_ratio);
+            let min_ratio = sw_ratio.min(sh_ratio);
+            if min_ratio > 1.5 && !parent_treat_as_char {
+                let inv = (2.0 / max_ratio).min(1.0);
+                let mut local = styles.clone();
+                for cs in local.char_styles.iter_mut() {
+                    cs.font_size *= inv;
+                    cs.letter_spacing *= inv;
+                    for ls in cs.letter_spacings.iter_mut() {
+                        *ls *= inv;
+                    }
+                }
+                Some(local)
+            } else {
+                None
+            }
+        };
+        let styles: &ResolvedStyleSet = local_styles_scaled.as_ref().unwrap_or(styles);
 
         // 세로쓰기 판정: 글상자 list_attr bit 0~2 = text_direction
         // (0=가로, 1=영문 눕힘, 2=영문 세움)
