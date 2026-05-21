@@ -1,6 +1,11 @@
 use super::*;
 use crate::model::paragraph::{CharShapeRef, LineSeg, Paragraph};
 
+#[test]
+fn expand_pua_display_text_maps_hanyang_old_hangul() {
+    assert_eq!(expand_pua_display_text("A\u{E1A7}Z"), "A\u{1100}\u{119E}Z");
+}
+
 /// 단일 줄, 단일 스타일 문단
 #[test]
 fn test_compose_single_line_single_style() {

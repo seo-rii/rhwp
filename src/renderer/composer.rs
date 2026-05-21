@@ -1129,9 +1129,13 @@ fn pua_plain_text_display(ch: char) -> Option<&'static str> {
 /// HWP TAC filler `U+F081C` 는 레이아웃 측정에는 원문으로 남겨 0폭 규칙을
 /// 적용하되, 실제 출력에서는 글리프가 없어 깨진 문자로 보이지 않도록 숨긴다.
 ///
+/// Hanyang-PUA 옛한글은 KS X 1026-1:2007 자모 시퀀스로 확장한다.
+///
 /// CharOverlap 전용 숫자(`U+F02CE..=U+F02E1`)는 여기서 확장하지 않는다.
 /// 해당 문자는 `pua_to_display_text()`가 글자겹침 렌더러에서만 처리한다.
 pub fn expand_pua_display_text(text: &str) -> String {
+    use crate::renderer::pua_oldhangul::map_pua_old_hangul;
+
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         if ch == '\u{F081C}' {
@@ -1139,6 +1143,8 @@ pub fn expand_pua_display_text(text: &str) -> String {
         }
         if let Some(replacement) = pua_plain_text_display(ch) {
             out.push_str(replacement);
+        } else if let Some(jamos) = map_pua_old_hangul(ch) {
+            out.extend(jamos.iter().copied());
         } else {
             out.push(crate::renderer::layout::map_pua_bullet_char(ch));
         }
