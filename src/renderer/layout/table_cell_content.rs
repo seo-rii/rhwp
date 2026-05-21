@@ -660,6 +660,16 @@ impl LayoutEngine {
                 for (ctrl_idx, ctrl) in para.controls.iter().enumerate() {
                     match ctrl {
                         Control::Picture(pic) => {
+                            let is_tac_picture = pic.common.treat_as_char
+                                && composed
+                                    .tac_controls
+                                    .iter()
+                                    .any(|(_, _, tac_ctrl_idx)| *tac_ctrl_idx == ctrl_idx);
+                            let has_text_flow =
+                                composed.lines.iter().any(|line| !line.runs.is_empty());
+                            if is_tac_picture && has_text_flow {
+                                continue;
+                            }
                             let pic_w = hwpunit_to_px(pic.common.width as i32, self.dpi);
                             let pic_h = hwpunit_to_px(pic.common.height as i32, self.dpi);
                             // 셀 내부에 맞추어 크기 제한

@@ -1596,14 +1596,13 @@ impl LayoutEngine {
                             Control::Picture(pic) => {
                                 if pic.common.treat_as_char {
                                     let pic_w = hwpunit_to_px(pic.common.width as i32, self.dpi);
-                                    let will_render_inline = tree
-                                        .get_inline_shape_position(
-                                            section_index,
-                                            cp_idx,
-                                            ctrl_idx,
-                                            cell_context.as_ref(),
-                                        )
-                                        .is_some();
+                                    // Inline image positions are emitted directly by paragraph
+                                    // layout rather than registered in the inline-shape map.
+                                    let will_render_inline = composed
+                                        .tac_controls
+                                        .iter()
+                                        .any(|&(_, _, ci)| ci == ctrl_idx)
+                                        && composed.lines.iter().any(|line| !line.runs.is_empty());
                                     if !will_render_inline {
                                         // LINE_SEG 기반 줄 판별
                                         let target_line = if all_runs_empty

@@ -866,21 +866,14 @@ impl LayoutEngine {
                             Control::Picture(pic) => {
                                 if pic.common.treat_as_char {
                                     let pic_w = hwpunit_to_px(pic.common.width as i32, self.dpi);
-                                    // layout_composed_paragraph에서 텍스트 흐름 안에 렌더링됐는지 확인:
-                                    // 이미지 위치가 실제 run 범위에 포함될 때만 스킵
-                                    let will_render_inline =
-                                        composed.tac_controls.iter().any(|&(abs_pos, _, ci)| {
-                                            ci == ctrl_idx
-                                                && composed.lines.iter().any(|line| {
-                                                    let line_chars: usize = line
-                                                        .runs
-                                                        .iter()
-                                                        .map(|r| r.text.chars().count())
-                                                        .sum();
-                                                    abs_pos >= line.char_start
-                                                        && abs_pos < line.char_start + line_chars
-                                                })
-                                        });
+                                    // layout_composed_paragraph handles TAC images for text-bearing
+                                    // cell paragraphs, including controls after the last run. Keep
+                                    // direct cell placement for image-only TAC paragraphs.
+                                    let will_render_inline = composed
+                                        .tac_controls
+                                        .iter()
+                                        .any(|&(_, _, ci)| ci == ctrl_idx)
+                                        && composed.lines.iter().any(|line| !line.runs.is_empty());
                                     if !will_render_inline {
                                         // 단독 이미지(텍스트 없는 문단): 직접 렌더링
                                         let pic_h =
