@@ -46,7 +46,7 @@ fn test_canvaskit_replay_plan_export_uses_mode_policy() {
         .expect("compat CanvasKit replay plan should export");
     assert!(compat_plan.contains("\"mode\":\"compat\""));
     assert!(compat_plan.contains("\"hiddenCanvas2dOverlayAllowed\":false"));
-    assert!(compat_plan.contains("\"directReplayRequired\":false"));
+    assert!(compat_plan.contains("\"directReplayRequired\":true"));
 
     let invalid = doc
         .get_canvaskit_replay_plan_native(0, "canvas2d")

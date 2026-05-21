@@ -357,7 +357,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
         CanvasKitReplayPlan {
             mode: self.mode,
             hidden_canvas2d_overlay_allowed: self.mode.allows_canvas2d_overlay(),
-            direct_replay_required: matches!(self.mode, CanvasKitReplayMode::Default),
+            direct_replay_required: true,
             summary: self.summary,
             items: self.items,
             text_variants: self.text_variants,
