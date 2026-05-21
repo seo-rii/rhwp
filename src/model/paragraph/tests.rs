@@ -24,6 +24,25 @@ fn test_column_break_type() {
 }
 
 #[test]
+fn test_control_text_positions_uses_object_replacement_markers() {
+    let para = Paragraph {
+        text: "A\u{FFFC}B\u{FFFC}C".to_string(),
+        char_offsets: vec![0, 1, 2, 3, 4],
+        controls: vec![
+            crate::model::control::Control::Bookmark(crate::model::control::Bookmark {
+                name: "first".to_string(),
+            }),
+            crate::model::control::Control::Bookmark(crate::model::control::Bookmark {
+                name: "second".to_string(),
+            }),
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(para.control_text_positions(), vec![1, 3]);
+}
+
+#[test]
 fn test_insert_text_at_middle() {
     let mut para = Paragraph {
         text: "안녕세계".to_string(),

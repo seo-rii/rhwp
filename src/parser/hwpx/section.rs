@@ -292,6 +292,15 @@ fn parse_paragraph(
                 let cname = ce.name();
                 let local = local_name(cname.as_ref());
                 match local {
+                    b"run" => {
+                        for attr in ce.attributes().flatten() {
+                            if attr.key.as_ref() == b"charPrIDRef" {
+                                current_char_shape_id = parse_u32(&attr);
+                            }
+                        }
+                        let utf16_pos = calc_utf16_len_from_parts(&text_parts);
+                        char_shape_changes.push((utf16_pos, current_char_shape_id));
+                    }
                     b"lineBreak" | b"softHyphen" => {
                         text_parts.push("\n".to_string());
                     }
@@ -3679,6 +3688,27 @@ mod tests {
         assert_eq!(para.text, "AB");
         assert_eq!(para.char_offsets, vec![0, 9]);
         assert!(matches!(para.controls[0], Control::PageNumberPos(_)));
+    }
+
+    #[test]
+    fn test_parse_empty_run_preserves_char_shape_change() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0"><hp:t>A</hp:t></hp:run>
+    <hp:run charPrIDRef="7"/>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+
+        assert_eq!(para.text, "A");
+        assert!(para
+            .char_shapes
+            .iter()
+            .any(|shape| shape.start_pos == 1 && shape.char_shape_id == 7));
     }
 
     #[test]

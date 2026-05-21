@@ -85,6 +85,15 @@ fn resolve_metric_alias(name: &str) -> &str {
         "굴림체" => "GulimChe",
         "돋움체" => "DotumChe",
         "궁서체" => "GungsuhChe",
+        // HY 계열 한국어 사용명
+        "HY수평선B" => "HYsupB",
+        "HY수평선M" => "HYsupM",
+        "HY울릉도B" => "HYwulB",
+        "HY울릉도M" => "HYwulM",
+        "HY태백B" => "HYtbrB",
+        "HY동녘B" => "HYdnkB",
+        "HY동녘M" => "HYdnkM",
+        "HY각헤드라인M" => "HYHeadLine-Medium",
         // 오픈소스 대체 폰트
         "D2Coding" | "D2 Coding" => "D2Coding",
         "고운바탕" | "Gowun Batang" => "Gowun Batang",
@@ -124,6 +133,29 @@ pub fn find_metric(name: &str, bold: bool, italic: bool) -> Option<MetricMatch> 
             metric: m,
             bold_fallback: bold,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hy_korean_metric_aliases_resolve() {
+        for (korean_name, expected_metric_name) in [
+            ("HY수평선B", "HYsupB"),
+            ("HY수평선M", "HYsupM"),
+            ("HY울릉도B", "HYwulB"),
+            ("HY울릉도M", "HYwulM"),
+            ("HY태백B", "HYtbrB"),
+            ("HY동녘B", "HYdnkB"),
+            ("HY동녘M", "HYdnkM"),
+            ("HY각헤드라인M", "HYHeadLine-Medium"),
+        ] {
+            let metric = find_metric(korean_name, false, false)
+                .unwrap_or_else(|| panic!("missing metric alias for {korean_name}"));
+            assert_eq!(metric.metric.name, expected_metric_name);
+        }
+    }
 }
 
 static FONT_0_LATIN_0: [u16; 95] = [

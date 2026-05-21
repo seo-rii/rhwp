@@ -279,8 +279,18 @@ impl Paragraph {
             }
         }
 
+        let mut search_start = positions.last().copied().unwrap_or(0);
         while positions.len() < total_controls {
-            positions.push(chars.len());
+            let next_marker = chars[search_start..]
+                .iter()
+                .position(|&c| c == '\u{FFFC}')
+                .map(|rel| search_start + rel);
+            if let Some(marker_pos) = next_marker {
+                positions.push(marker_pos);
+                search_start = marker_pos + 1;
+            } else {
+                positions.push(chars.len());
+            }
         }
 
         positions
