@@ -1,6 +1,7 @@
 //! PaginationState: paginate_with_measured의 가변 상태를 캡슐화
 
 use super::{ColumnContent, PageContent, PageItem, WrapAroundPara};
+use crate::model::page::ColumnType;
 use crate::renderer::page_layout::PageLayoutInfo;
 use std::collections::HashMap;
 
@@ -21,6 +22,7 @@ pub(super) struct PaginationState {
     pub layout: PageLayoutInfo,
     pub current_zone_y_offset: f64,
     pub current_zone_layout: Option<PageLayoutInfo>,
+    pub current_zone_column_type: ColumnType,
     pub on_first_multicolumn_page: bool,
     pub section_index: usize,
     pub footnote_separator_overhead: f64,
@@ -47,6 +49,7 @@ impl PaginationState {
     pub fn new(
         layout: PageLayoutInfo,
         col_count: u16,
+        column_type: ColumnType,
         section_index: usize,
         footnote_separator_overhead: f64,
         footnote_safety_margin: f64,
@@ -62,6 +65,7 @@ impl PaginationState {
             layout,
             current_zone_y_offset: 0.0,
             current_zone_layout: None,
+            current_zone_column_type: column_type,
             on_first_multicolumn_page: false,
             section_index,
             footnote_separator_overhead,

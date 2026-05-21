@@ -4,7 +4,7 @@ use super::state::PaginationState;
 use super::*;
 use crate::model::control::Control;
 use crate::model::header_footer::HeaderFooterApply;
-use crate::model::page::{ColumnDef, PageDef};
+use crate::model::page::{ColumnDef, ColumnType, PageDef};
 use crate::model::paragraph::{ColumnBreakType, Paragraph};
 use crate::model::shape::CaptionDirection;
 use crate::renderer::height_measurer::{HeightMeasurer, MeasuredSection};
@@ -55,6 +55,7 @@ impl Paginator {
         let mut st = PaginationState::new(
             layout,
             col_count,
+            column_def.column_type,
             section_index,
             footnote_separator_overhead,
             footnote_safety_margin,
@@ -137,7 +138,7 @@ impl Paginator {
             // 단 나누기(Column)
             if para.column_type == ColumnBreakType::Column {
                 if !st.current_items.is_empty() {
-                    self.process_column_break(&mut st);
+                    self.process_column_break(&mut st, para_idx, paragraphs);
                 }
             }
 
@@ -678,6 +679,7 @@ impl Paginator {
         for ctrl in &paragraphs[para_idx].controls {
             if let Control::ColumnDef(cd) = ctrl {
                 st.col_count = cd.column_count.max(1);
+                st.current_zone_column_type = cd.column_type;
                 let new_layout = PageLayoutInfo::from_page_def(page_def, cd, self.dpi);
                 st.current_zone_layout = Some(new_layout.clone());
                 st.layout = new_layout;
@@ -687,8 +689,109 @@ impl Paginator {
     }
 
     /// 단 나누기 처리
-    fn process_column_break(&self, st: &mut PaginationState) {
-        st.advance_column_or_new_page();
+    fn process_column_break(
+        &self,
+        st: &mut PaginationState,
+        para_idx: usize,
+        paragraphs: &[Paragraph],
+    ) {
+        let is_last_column = st.current_column + 1 >= st.col_count;
+        if is_last_column
+            && st.col_count > 1
+            && st.current_zone_column_type == ColumnType::Distribute
+        {
+            self.start_new_column_band(st, para_idx, paragraphs);
+        } else {
+            st.advance_column_or_new_page();
+        }
+    }
+
+    /// 마지막 배분 단에서 명시적 단나누기를 만나면 같은 페이지의 새 단 밴드를 시작한다.
+    fn start_new_column_band(
+        &self,
+        st: &mut PaginationState,
+        para_idx: usize,
+        paragraphs: &[Paragraph],
+    ) {
+        st.flush_column();
+
+        if Self::upcoming_band_has_floating_object(para_idx, paragraphs) {
+            st.force_new_page();
+            return;
+        }
+
+        let zone_offset = st.current_zone_y_offset;
+        let mut band_height_px = 0.0_f64;
+        if let Some(page) = st.pages.last() {
+            for column in page.column_contents.iter().rev() {
+                if column.zone_y_offset != zone_offset {
+                    break;
+                }
+                let last_para_idx = column.items.last().map(|item| match item {
+                    PageItem::FullParagraph { para_index }
+                    | PageItem::PartialParagraph { para_index, .. }
+                    | PageItem::Table { para_index, .. }
+                    | PageItem::PartialTable { para_index, .. }
+                    | PageItem::Shape { para_index, .. } => *para_index,
+                });
+                if let Some(last_para_idx) = last_para_idx {
+                    if let Some(seg) = paragraphs
+                        .get(last_para_idx)
+                        .and_then(|p| p.line_segs.last())
+                    {
+                        let vpos_end = seg.vertical_pos + seg.line_height + seg.line_spacing;
+                        band_height_px =
+                            band_height_px.max(crate::renderer::hwpunit_to_px(vpos_end, self.dpi));
+                    }
+                }
+            }
+        }
+        if band_height_px <= 0.0 {
+            band_height_px = st.current_height;
+        }
+
+        let first_line_h = paragraphs
+            .get(para_idx)
+            .and_then(|p| p.line_segs.first())
+            .map(|s| crate::renderer::hwpunit_to_px(s.line_height + s.line_spacing, self.dpi))
+            .filter(|h| *h > 0.0)
+            .unwrap_or(1.0);
+        let room_after_band = st.available_height() - band_height_px;
+
+        if room_after_band >= first_line_h {
+            st.current_zone_y_offset += band_height_px;
+            st.current_column = 0;
+            st.current_height = 0.0;
+            st.on_first_multicolumn_page = true;
+        } else {
+            st.force_new_page();
+        }
+    }
+
+    fn upcoming_band_has_floating_object(para_idx: usize, paragraphs: &[Paragraph]) -> bool {
+        for (offset, para) in paragraphs[para_idx..].iter().enumerate() {
+            if offset > 0
+                && (para.column_type != ColumnBreakType::None
+                    || para
+                        .controls
+                        .iter()
+                        .any(|control| matches!(control, Control::ColumnDef(_))))
+            {
+                break;
+            }
+            for control in &para.controls {
+                let floating = match control {
+                    Control::Table(table) => !table.common.treat_as_char,
+                    Control::Shape(shape) => !shape.common().treat_as_char,
+                    Control::Picture(picture) => !picture.common.treat_as_char,
+                    _ => false,
+                };
+                if floating {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// 쪽 나누기 처리
