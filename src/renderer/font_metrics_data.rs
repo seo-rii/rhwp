@@ -136,6 +136,7 @@ pub fn find_metric(name: &str, bold: bool, italic: bool) -> Option<MetricMatch> 
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

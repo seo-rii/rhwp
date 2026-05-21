@@ -481,7 +481,7 @@ mod tests {
         let mut text_box_para = Paragraph::default();
         text_box_para
             .controls
-            .push(Control::Picture(Box::new(Picture::default())));
+            .push(Control::Picture(Box::default()));
 
         let shape = ShapeObject::Rectangle(RectangleShape {
             drawing: DrawingObjAttr {
