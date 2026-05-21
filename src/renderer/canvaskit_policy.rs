@@ -29,7 +29,7 @@ impl CanvasKitReplayMode {
     }
 
     pub fn allows_canvas2d_overlay(self) -> bool {
-        matches!(self, Self::Compat)
+        false
     }
 
     fn as_str(self) -> &'static str {

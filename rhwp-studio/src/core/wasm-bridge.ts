@@ -247,7 +247,7 @@ export class WasmBridge {
     }
     return JSON.stringify({
       mode,
-      hiddenCanvas2dOverlayAllowed: mode === 'compat',
+      hiddenCanvas2dOverlayAllowed: false,
       directReplayRequired: mode === 'default',
       summary: {
         totalItems: 0,
