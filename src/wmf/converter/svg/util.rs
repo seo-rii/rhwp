@@ -407,12 +407,27 @@ impl Font {
             );
         }
 
-        let mut font_family: Vec<&str> = vec![];
+        let mut font_family: Vec<String> = vec![];
 
-        font_family.push(self.facename.as_str());
+        font_family.push(self.facename.clone());
         self.fallback_facename.iter().for_each(|f| {
-            font_family.push(f.as_str());
+            font_family.push(f.clone());
         });
+
+        let has_korean = font_family
+            .iter()
+            .any(|f| f.chars().any(|c| ('\u{AC00}'..='\u{D7A3}').contains(&c)));
+        if has_korean {
+            for fallback in [
+                "Apple SD Gothic Neo",
+                "Malgun Gothic",
+                "Nanum Gothic",
+                "Noto Sans CJK KR",
+                "sans-serif",
+            ] {
+                font_family.push(fallback.to_string());
+            }
+        }
 
         elem = elem
             .set("font-family", format!("'{}'", font_family.join("','")))

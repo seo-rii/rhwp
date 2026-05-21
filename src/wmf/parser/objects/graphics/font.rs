@@ -183,7 +183,11 @@ impl Font {
             // Convert bytes to UTF-8 string from specified charset
             let as_charset = crate::wmf::parser::bytes_into_utf8(&bytes[..len], charset)?;
 
-            (as_latin1, as_charset)
+            if charset != crate::wmf::parser::CharacterSet::ANSI_CHARSET {
+                (as_charset, as_latin1)
+            } else {
+                (as_latin1, as_charset)
+            }
         };
 
         let mut fallback_facename = Vec::new();
