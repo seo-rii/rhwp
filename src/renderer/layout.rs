@@ -3133,6 +3133,7 @@ impl LayoutEngine {
 
                         if !has_real_text {
                             let shape_w = hwpunit_to_px(common.width as i32, self.dpi);
+                            let shape_h = hwpunit_to_px(common.height as i32, self.dpi);
                             let shape_y = y_offset;
 
                             if !already_registered {
@@ -3181,15 +3182,16 @@ impl LayoutEngine {
                                 );
                             }
 
-                            // The paired FullParagraph item has already advanced this line.
-                            // Shape items for empty TAC shape paragraphs should only keep the
-                            // small inter-line cushion that Hancom leaves around the object.
-                            let line_spacing_px = para
+                            // The paired FullParagraph item already advanced the line. Keep the
+                            // previous line-height/shape-height max instead of the older
+                            // line_spacing * 3 cushion, which under-advances non-variant TAC
+                            // shape paragraphs and shifts following paragraphs/tables upward.
+                            let line_advance = para
                                 .line_segs
                                 .first()
-                                .map(|ls| hwpunit_to_px(ls.line_spacing, self.dpi))
-                                .unwrap_or(0.0);
-                            result_y = y_offset + line_spacing_px * 3.0;
+                                .map(|ls| hwpunit_to_px(ls.line_height + ls.line_spacing, self.dpi))
+                                .unwrap_or(shape_h);
+                            result_y = shape_y + line_advance.max(shape_h);
                         }
                     }
                 }
