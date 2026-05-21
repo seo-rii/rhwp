@@ -8,14 +8,15 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_stroke,
-    CacheHint, ClipKind, GlyphCluster, GlyphOutlineStrokeStyle, GlyphRunDiagnostics,
-    GlyphTransform, LayerAffineTransform, LayerNode, LayerNodeKind, LayerPoint, LayerSemantic,
-    LayerTextPaintOpV2, LayerTextRunPaint, LayerTextVariantPart, LayerTextVariantPayload,
-    LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
-    ResourceArena, ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation,
-    TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
-    TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
+    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_colrv1_stage1,
+    has_supported_strict_glyph_outline_stroke, CacheHint, ClipKind, GlyphCluster,
+    GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
+    LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextRunPaint,
+    LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
+    PaintOp, PaintTextStyle, PaintVariantMeta, ResourceArena, ShapeKey, TextClusterPlacement,
+    TextRunPlacement, TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan,
+    TextSourceTable, TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions,
+    LAYER_TREE_SCHEMA,
 };
 use crate::renderer::composer::expand_pua_display_text;
 use crate::renderer::equation::ast::MatrixStyle;
@@ -397,12 +398,19 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     let externalized_visuals = externalized_text_visuals(root);
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
+    let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1_stage1(root);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");
     if has_outline_stroke {
         buf.push_str(",\"text.glyphOutline.monochromeFillStroke\"");
     }
+    if has_colrv0_color_layers || has_colrv1_color_layers {
+        buf.push_str(",\"text.glyphOutline.colorLayers\"");
+    }
     if has_colrv0_color_layers {
-        buf.push_str(",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\"");
+        buf.push_str(",\"text.glyphOutline.colorLayers.colrV0\"");
+    }
+    if has_colrv1_color_layers {
+        buf.push_str(",\"text.glyphOutline.colorLayers.colrV1\"");
     }
     if externalized_visuals.contains(&"charOverlap") {
         buf.push_str(",\"text.charOverlapOp\"");
@@ -420,8 +428,14 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     if has_outline_stroke {
         buf.push_str(",\"text.glyphOutline.monochromeFillStroke\"");
     }
+    if has_colrv0_color_layers || has_colrv1_color_layers {
+        buf.push_str(",\"text.glyphOutline.colorLayers\"");
+    }
     if has_colrv0_color_layers {
-        buf.push_str(",\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV0\"");
+        buf.push_str(",\"text.glyphOutline.colorLayers.colrV0\"");
+    }
+    if has_colrv1_color_layers {
+        buf.push_str(",\"text.glyphOutline.colorLayers.colrV1\"");
     }
     buf.push_str("],\"text\":{\"defaultVariant\":\"glyphOutline\",\"variants\":[\"glyphOutline\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
@@ -3154,10 +3168,12 @@ mod tests {
     use crate::model::image::ImageEffect;
     use crate::paint::{
         CacheHint, ClipKind, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload,
-        FontColorGlyphRef, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
-        GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
-        GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
-        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
+        ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
+        ColorPaintSolidPathNode, ColorPaintTransformNode, FontColorGlyphRef, FontFaceKey,
+        FontFallbackPolicyId, FontInstanceKey, GlyphCluster, GlyphOutlineFillRule,
+        GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap,
+        GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics,
+        GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
         LayerCharOverlapPaint, LayerEquationPaint, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
         LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode, LayerOutputOptions,
         LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTextControlMark,
@@ -4306,6 +4322,95 @@ mod tests {
         assert!(color_json.contains(
             "\"fill\":{\"colorSpace\":\"srgb\",\"rgba\":[0.000000,0.000000,1.000000,1.000000]}"
         ));
+
+        let mut colrv1_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut colrv1_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        let source_font_ref = FontColorGlyphRef {
+            face_key: Some("fixture-face".to_string()),
+            glyph_id: Some(42),
+            palette_index: Some(1),
+            color_format: Some(ColorGlyphFormat::ColrV1),
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::ColorLayers;
+        outline.variant.requires = vec![
+            "text.glyphOutline.colorLayers".to_string(),
+            "text.glyphOutline.colorLayers.colrV1".to_string(),
+        ];
+        outline.color_layers = Some(ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 1,
+                nodes: vec![
+                    ColorPaintGraphNode {
+                        node_id: 1,
+                        kind: ColorPaintGraphNodeKind::Transform,
+                        solid_path: None,
+                        transform: Some(ColorPaintTransformNode {
+                            child_node_id: 2,
+                            transform: LayerAffineTransform {
+                                a: 1.0,
+                                b: 0.0,
+                                c: 0.0,
+                                d: 1.0,
+                                e: 2.0,
+                                f: 0.0,
+                            },
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                    ColorPaintGraphNode {
+                        node_id: 2,
+                        kind: ColorPaintGraphNodeKind::SolidPath,
+                        solid_path: Some(ColorPaintSolidPathNode {
+                            commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(8.0, 0.0),
+                                PathCommand::LineTo(8.0, 8.0),
+                                PathCommand::ClosePath,
+                            ],
+                            fill: ResolvedColor {
+                                color_space: Some("srgb".to_string()),
+                                rgba: [1.0, 0.0, 0.0, 1.0],
+                            },
+                            fill_rule: GlyphOutlineFillRule::NonZero,
+                            source_glyph_id: Some(42),
+                            palette_index: Some(1),
+                        }),
+                        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                        glyph_range: Some(GlyphRange::new(0, 1)),
+                        source_font_ref: Some(source_font_ref),
+                        transform: None,
+                    },
+                ],
+            }),
+        });
+        let colrv1_tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, colrv1_glyph_outline],
+            ),
+        );
+        let colrv1_json = colrv1_tree
+            .to_json_v2_strict_glyph_outline()
+            .expect("valid strict COLRv1 stage-1 glyph outline export");
+        assert!(colrv1_json.contains(
+            "\"text.glyphOutline.colorLayers\",\"text.glyphOutline.colorLayers.colrV1\""
+        ));
+        assert!(colrv1_json.contains("\"payloadKind\":\"colorLayers\""));
+        assert!(colrv1_json.contains("\"colorLayers\":{\"colorFormat\":\"colrV1\""));
+        assert!(colrv1_json.contains("\"paintGraph\":{\"rootNodeId\":1"));
     }
 
     #[test]

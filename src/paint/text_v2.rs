@@ -49,6 +49,7 @@ pub struct TextV2ValidationOptions {
     pub allow_cross_scope_variants: bool,
     pub allow_richer_glyph_outline_payloads: bool,
     pub allow_colrv0_color_layers_payloads: bool,
+    pub allow_colrv1_stage1_color_graph_payloads: bool,
     pub allow_bitmap_glyph_payloads: bool,
     pub allow_svg_glyph_payloads: bool,
     pub allow_mixed_per_glyph_orientation: bool,
@@ -63,6 +64,7 @@ impl Default for TextV2ValidationOptions {
             allow_cross_scope_variants: false,
             allow_richer_glyph_outline_payloads: false,
             allow_colrv0_color_layers_payloads: false,
+            allow_colrv1_stage1_color_graph_payloads: false,
             allow_bitmap_glyph_payloads: false,
             allow_svg_glyph_payloads: false,
             allow_mixed_per_glyph_orientation: false,
@@ -509,6 +511,7 @@ pub fn strict_glyph_outline_text_v2_slots(
         options.allow_fallback_free = true;
         options.allow_richer_glyph_outline_payloads = true;
         options.allow_colrv0_color_layers_payloads = true;
+        options.allow_colrv1_stage1_color_graph_payloads = true;
         options.allow_bitmap_glyph_payloads = true;
         options.allow_svg_glyph_payloads = true;
         issues.extend(validate_text_v2_op(&strict_op, &options));
@@ -601,10 +604,10 @@ fn strict_glyph_outline_paint_eligible(outline: &LayerGlyphOutlinePaint) -> bool
             .is_some_and(|stroke| stroke.is_supported_monochrome_subset()),
         GlyphOutlinePayloadKind::ColorLayers => {
             outline.stroke.is_none()
-                && outline
-                    .color_layers
-                    .as_ref()
-                    .is_some_and(|payload| payload.has_colrv0_resolved_layer_contract())
+                && outline.color_layers.as_ref().is_some_and(|payload| {
+                    payload.has_colrv0_resolved_layer_contract()
+                        || payload.has_colrv1_stage1_graph_contract()
+                })
         }
         GlyphOutlinePayloadKind::BitmapGlyph => {
             outline.stroke.is_none()
@@ -636,7 +639,24 @@ pub fn has_supported_strict_glyph_outline_stroke(root: &LayerNode) -> bool {
 pub fn has_supported_strict_glyph_outline_colrv0(root: &LayerNode) -> bool {
     has_supported_strict_glyph_outline_payload(root, |outline| {
         outline.payload_kind == GlyphOutlinePayloadKind::ColorLayers
-            && strict_glyph_outline_paint_eligible(outline)
+            && outline
+                .color_layers
+                .as_ref()
+                .is_some_and(|payload| payload.has_colrv0_resolved_layer_contract())
+            && outline.paint_style.is_fill_only_glyph_replay()
+            && outline.diagnostics.strict_visual_eligible
+    })
+}
+
+pub fn has_supported_strict_glyph_outline_colrv1_stage1(root: &LayerNode) -> bool {
+    has_supported_strict_glyph_outline_payload(root, |outline| {
+        outline.payload_kind == GlyphOutlinePayloadKind::ColorLayers
+            && outline
+                .color_layers
+                .as_ref()
+                .is_some_and(|payload| payload.has_colrv1_stage1_graph_contract())
+            && outline.paint_style.is_fill_only_glyph_replay()
+            && outline.diagnostics.strict_visual_eligible
     })
 }
 
@@ -846,12 +866,14 @@ fn validate_variant_parts(
                                 Some(part.part_index),
                             ));
                         }
-                        issues.push(text_v2_issue(
-                            op,
-                            TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
-                            Some(&variant.variant_id),
-                            Some(part.part_index),
-                        ));
+                        if !options.allow_colrv1_stage1_color_graph_payloads {
+                            issues.push(text_v2_issue(
+                                op,
+                                TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
+                                Some(&variant.variant_id),
+                                Some(part.part_index),
+                            ));
+                        }
                     } else if !options.allow_colrv0_color_layers_payloads
                         || !has_color_layers_feature
                         || !has_colrv0_feature
@@ -2555,6 +2577,62 @@ mod tests {
             invalid_codes.contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid),
             "invalid COLRv1 stage-1 graph must report contract invalid"
         );
+    }
+
+    #[test]
+    fn accepts_colrv1_stage1_color_graph_with_writer_gate() {
+        let text = text_op(PaintVariantMeta::text_run_default("text-5-colrv1-open"));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-colrv1-open".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec![
+                    "text.glyphOutline.colorLayers".to_string(),
+                    "text.glyphOutline.colorLayers.colrV1".to_string(),
+                ],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5-colrv1-open".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::ColorLayers;
+        outline.color_layers = Some(colrv1_stage1_color_layers_payload());
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_colrv1_stage1_color_graph_payloads = true;
+        let issues = validate_text_v2_op(&text_ops[0], &options);
+        assert!(issues.is_empty(), "{issues:?}");
+
+        let strict_slots =
+            strict_glyph_outline_text_v2_slots(&text_ops).expect("strict COLRv1 outline slot");
+        assert_eq!(
+            strict_slots[0].default_variant_id.as_deref(),
+            Some("glyphOutline")
+        );
+        let LayerTextVariantPayload::GlyphOutline(strict_outline) =
+            &strict_slots[0].variants[0].parts[0].payload
+        else {
+            panic!("expected strict glyph outline payload");
+        };
+        assert_eq!(
+            strict_outline.payload_kind,
+            GlyphOutlinePayloadKind::ColorLayers
+        );
+        assert!(strict_outline
+            .color_layers
+            .as_ref()
+            .is_some_and(ColorLayersPayload::has_colrv1_stage1_graph_contract));
     }
 
     #[test]

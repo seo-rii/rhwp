@@ -9,14 +9,14 @@ use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     font_blob_resource_key, has_supported_strict_glyph_outline_colrv0,
-    has_supported_strict_glyph_outline_stroke, image_resource_key, resource_digest_hex,
-    svg_resource_key, CacheHint, ClipKind, GlyphCluster, GlyphOutlineStrokeStyle,
-    GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode, LayerNodeKind,
-    LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart, LayerTextVariantPayload,
-    LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
-    ShapeKey, TextClusterPlacement, TextRunPlacement, TextSourceAnnotation, TextSourceEntry,
-    TextSourceRange, TextSourceSpan, TextSourceTable, TextV2ValidationIssue,
-    TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
+    has_supported_strict_glyph_outline_colrv1_stage1, has_supported_strict_glyph_outline_stroke,
+    image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, GlyphCluster,
+    GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
+    LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart,
+    LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree, PaintOp,
+    PaintTextStyle, PaintVariantMeta, ShapeKey, TextClusterPlacement, TextRunPlacement,
+    TextSourceAnnotation, TextSourceEntry, TextSourceRange, TextSourceSpan, TextSourceTable,
+    TextV2ValidationIssue, TextV2ValidationIssueCode, TextV2ValidationOptions, LAYER_TREE_SCHEMA,
 };
 use crate::renderer::composer::expand_pua_display_text;
 use crate::renderer::equation::ast::MatrixStyle;
@@ -662,6 +662,7 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
+    let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1_stage1(root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -679,9 +680,14 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     if has_outline_stroke {
         used_features.push("text.glyphOutline.monochromeFillStroke");
     }
-    if has_colrv0_color_layers {
+    if has_colrv0_color_layers || has_colrv1_color_layers {
         used_features.push("text.glyphOutline.colorLayers");
+    }
+    if has_colrv0_color_layers {
         used_features.push("text.glyphOutline.colorLayers.colrV0");
+    }
+    if has_colrv1_color_layers {
+        used_features.push("text.glyphOutline.colorLayers.colrV1");
     }
     if externalized_visuals
         .iter()
@@ -718,9 +724,14 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     if has_outline_stroke {
         required_features.push("text.glyphOutline.monochromeFillStroke");
     }
-    if has_colrv0_color_layers {
+    if has_colrv0_color_layers || has_colrv1_color_layers {
         required_features.push("text.glyphOutline.colorLayers");
+    }
+    if has_colrv0_color_layers {
         required_features.push("text.glyphOutline.colorLayers.colrV0");
+    }
+    if has_colrv1_color_layers {
+        required_features.push("text.glyphOutline.colorLayers.colrV1");
     }
     set_value(
         value,

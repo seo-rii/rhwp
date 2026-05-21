@@ -86,10 +86,10 @@ pub use text_shape::{
 };
 pub use text_v2::{
     downgrade_text_v2_op_to_v1_compat, has_supported_strict_glyph_outline_colrv0,
-    has_supported_strict_glyph_outline_stroke, lower_v1_layer_node_text_variants_to_v2,
-    lower_v1_layer_tree_text_variants_to_v2, lower_v1_leaf_text_variants_to_v2,
-    lower_v1_leaf_text_variants_with_sidecars_to_v2, sidecars_for_leaf_ops,
-    strict_glyph_outline_text_v2_slots, strict_glyph_run_text_v2_slots,
+    has_supported_strict_glyph_outline_colrv1_stage1, has_supported_strict_glyph_outline_stroke,
+    lower_v1_layer_node_text_variants_to_v2, lower_v1_layer_tree_text_variants_to_v2,
+    lower_v1_leaf_text_variants_to_v2, lower_v1_leaf_text_variants_with_sidecars_to_v2,
+    sidecars_for_leaf_ops, strict_glyph_outline_text_v2_slots, strict_glyph_run_text_v2_slots,
     text_v2_validation_issues_to_json, validate_text_v2_op, validate_text_v2_ops,
     LayerTextPaintOpV2, LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet,
     PaintOrderSlotId, PaintScopeId, TextFallbackPolicy, TextV2Profile, TextV2ValidationIssue,
