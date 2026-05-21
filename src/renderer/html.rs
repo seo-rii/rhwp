@@ -263,18 +263,11 @@ impl Renderer for HtmlRenderer {
     }
 
     fn draw_text(&mut self, text: &str, x: f64, y: f64, style: &TextStyle) {
-        let mapped_text;
-        let text = if text
-            .chars()
-            .any(|ch| crate::renderer::layout::map_pua_bullet_char(ch) != ch)
-        {
-            mapped_text = text
-                .chars()
-                .map(crate::renderer::layout::map_pua_bullet_char)
-                .collect::<String>();
-            mapped_text.as_str()
-        } else {
+        let mapped_text = crate::renderer::composer::expand_pua_display_text(text);
+        let text = if mapped_text == text {
             text
+        } else {
+            mapped_text.as_str()
         };
         let font_size = if style.font_size > 0.0 {
             style.font_size
@@ -554,6 +547,17 @@ mod tests {
         let output = renderer.output();
         assert!(output.contains("font-weight:bold"));
         assert!(output.contains("font-style:italic"));
+    }
+
+    #[test]
+    fn test_html_draw_text_expands_hwp_pua_text() {
+        let mut renderer = HtmlRenderer::new();
+        renderer.begin_page(800.0, 600.0);
+        renderer.draw_text("\u{F012B}\u{F081C}X", 10.0, 20.0, &TextStyle::default());
+
+        let output = renderer.output();
+        assert!(output.contains("(인)X"));
+        assert!(!output.contains('\u{F081C}'));
     }
 
     #[test]

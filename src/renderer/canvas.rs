@@ -216,8 +216,8 @@ impl Renderer for CanvasRenderer {
     }
 
     fn draw_text(&mut self, text: &str, x: f64, y: f64, _style: &TextStyle) {
-        self.commands
-            .push(CanvasCommand::FillText(text.to_string(), x, y));
+        let text = crate::renderer::composer::expand_pua_display_text(text);
+        self.commands.push(CanvasCommand::FillText(text, x, y));
     }
 
     fn draw_rect(
@@ -317,6 +317,17 @@ mod tests {
         renderer.draw_text("Hello", 10.0, 20.0, &TextStyle::default());
         renderer.end_page();
         assert_eq!(renderer.command_count(), 3);
+    }
+
+    #[test]
+    fn test_canvas_renderer_expands_hwp_pua_text() {
+        let mut renderer = CanvasRenderer::new();
+        renderer.draw_text("\u{F012B}\u{F081C}X", 10.0, 20.0, &TextStyle::default());
+
+        match &renderer.commands()[0] {
+            CanvasCommand::FillText(text, _, _) => assert_eq!(text, "(인)X"),
+            other => panic!("expected FillText command, got {other:?}"),
+        }
     }
 
     #[test]
