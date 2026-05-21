@@ -6,7 +6,8 @@ use super::super::page_layout::LayoutRect;
 use super::super::render_tree::*;
 use super::super::style_resolver::ResolvedStyleSet;
 use super::super::{
-    format_number, hwpunit_to_px, AutoNumberCounter, NumberFormat as NumFmt, ShapeStyle, TextStyle,
+    format_number, hwpunit_to_px, AutoNumberCounter, NumberFormat as NumFmt, ShapeStyle, TabStop,
+    TextStyle,
 };
 use super::border_rendering::create_border_line_nodes;
 use super::text_measurement::{
@@ -31,6 +32,45 @@ pub(crate) fn ensure_min_baseline(raw_baseline: f64, max_font_size: f64) -> f64 
     }
     let min_baseline = max_font_size * 0.8;
     raw_baseline.max(min_baseline)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn right_tab_block_width(
+    runs: &[crate::renderer::composer::ComposedTextRun],
+    start: usize,
+    styles: &ResolvedStyleSet,
+    default_tab_width: f64,
+    tab_stops: &[TabStop],
+    auto_tab_right: bool,
+    available_width: f64,
+) -> f64 {
+    let mut width = 0.0;
+    for run in runs.iter().skip(start) {
+        if run.text.contains('\t') {
+            break;
+        }
+        let mut text_style = resolved_to_text_style(styles, run.char_style_id, run.lang_index);
+        if run.char_overlap.is_some() {
+            let font_size = if text_style.font_size > 0.0 {
+                text_style.font_size
+            } else {
+                12.0
+            };
+            let chars: Vec<char> = run.text.chars().collect();
+            width += if crate::renderer::composer::decode_pua_overlap_number(&chars).is_some() {
+                font_size
+            } else {
+                font_size * chars.len() as f64
+            };
+            continue;
+        }
+        text_style.default_tab_width = default_tab_width;
+        text_style.tab_stops = tab_stops.to_vec();
+        text_style.auto_tab_right = auto_tab_right;
+        text_style.available_width = available_width;
+        width += estimate_text_width(&run.text, &text_style);
+    }
+    width
 }
 
 impl LayoutEngine {
@@ -1055,7 +1095,7 @@ impl LayoutEngine {
             let est_x_start = est_x;
             let mut pending_right_tab_est: Option<(f64, u8)> = None;
             let mut run_char_pos_est = comp_line.char_start;
-            for run in &comp_line.runs {
+            for (run_idx_est, run) in comp_line.runs.iter().enumerate() {
                 let run_char_count_est = if run.char_overlap.is_some() {
                     let chars: Vec<char> = run.text.chars().collect();
                     if crate::renderer::composer::decode_pua_overlap_number(&chars).is_some() {
@@ -1076,7 +1116,15 @@ impl LayoutEngine {
                 // 교차 run 오른쪽/가운데 탭: 이 run의 시작 위치를 역방향으로 조정
                 if let Some((tab_pos, tab_type)) = pending_right_tab_est.take() {
                     ts.line_x_offset = est_x;
-                    let run_w = estimate_text_width(&run.text, &ts);
+                    let run_w = right_tab_block_width(
+                        &comp_line.runs,
+                        run_idx_est,
+                        styles,
+                        tab_width,
+                        &tab_stops,
+                        auto_tab_right,
+                        available_width,
+                    );
                     match tab_type {
                         1 => est_x = tab_pos - run_w,
                         2 => est_x = tab_pos - run_w / 2.0,
@@ -1492,7 +1540,15 @@ impl LayoutEngine {
                 // 해당 탭이 오른쪽/가운데 탭이면 이 run을 역방향으로 이동
                 if let Some((tab_pos, tab_type)) = pending_right_tab_render.take() {
                     text_style.line_x_offset = x - col_area.x;
-                    let next_w = estimate_text_width(&run.text, &text_style);
+                    let next_w = right_tab_block_width(
+                        &comp_line.runs,
+                        run_idx,
+                        styles,
+                        tab_width,
+                        &tab_stops,
+                        auto_tab_right,
+                        available_width,
+                    );
                     match tab_type {
                         1 => x = col_area.x + tab_pos - next_w,
                         2 => x = col_area.x + tab_pos - next_w / 2.0,

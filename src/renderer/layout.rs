@@ -1235,6 +1235,8 @@ impl LayoutEngine {
                 3 => StrokeDash::Dot,
                 4 => StrokeDash::DashDot,
                 5 => StrokeDash::DashDotDot,
+                6 => StrokeDash::Dash,
+                7 => StrokeDash::Dot,
                 _ => StrokeDash::Solid,
             };
             for i in 0..layout.column_areas.len() - 1 {

@@ -252,7 +252,6 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                     let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
                     let tab_type_raw = ext[2];
                     let tab_type = inline_tab_type(ext);
-                    let fill_type = (tab_type_raw & 0xFF) as u8;
                     let tab_target = total + tab_width_px;
                     let body_right = if style.available_width > 0.0 {
                         style.available_width - style.line_x_offset
@@ -270,7 +269,7 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                                 measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             total = (tab_target - seg_w / 2.0).max(total);
                         }
-                        (2, _) if fill_type != 0 => {
+                        (2, _) => {
                             let mut seg_start = i + 1;
                             while seg_start < chars.len()
                                 && chars[seg_start] == ' '
@@ -396,7 +395,6 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                     let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
                     let tab_type_raw = ext[2];
                     let tab_type = inline_tab_type(ext);
-                    let fill_type = (tab_type_raw & 0xFF) as u8;
                     let tab_target = x + tab_width_px;
                     let body_right = if style.available_width > 0.0 {
                         style.available_width - style.line_x_offset
@@ -425,7 +423,7 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                                 measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             x = (tab_target - seg_w / 2.0).max(x);
                         }
-                        (2, _) if fill_type != 0 => {
+                        (2, _) => {
                             // RIGHT + leader means "extend to the body right
                             // edge"; ext[0] can contain producer-side segment
                             // width, so use our measured segment width once.
@@ -727,7 +725,6 @@ impl TextMeasurer for WasmTextMeasurer {
                     let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
                     let tab_type_raw = ext[2];
                     let tab_type = inline_tab_type(ext);
-                    let fill_type = (tab_type_raw & 0xFF) as u8;
                     let tab_target = total + tab_width_px;
                     let body_right = if style.available_width > 0.0 {
                         style.available_width - style.line_x_offset
@@ -745,7 +742,7 @@ impl TextMeasurer for WasmTextMeasurer {
                                 measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             total = (tab_target - seg_w / 2.0).max(total);
                         }
-                        (2, _) if fill_type != 0 => {
+                        (2, _) => {
                             let mut seg_start = i + 1;
                             while seg_start < chars.len()
                                 && chars[seg_start] == ' '
@@ -858,7 +855,6 @@ impl TextMeasurer for WasmTextMeasurer {
                     let tab_width_px = ext[0] as f64 * 96.0 / 7200.0;
                     let tab_type_raw = ext[2];
                     let tab_type = inline_tab_type(ext);
-                    let fill_type = (tab_type_raw & 0xFF) as u8;
                     let tab_target = x + tab_width_px;
                     let body_right = if style.available_width > 0.0 {
                         style.available_width - style.line_x_offset
@@ -876,7 +872,7 @@ impl TextMeasurer for WasmTextMeasurer {
                                 measure_segment_from(&chars, &cluster_len, i + 1, &char_width);
                             x = (tab_target - seg_w / 2.0).max(x);
                         }
-                        (2, _) if fill_type != 0 => {
+                        (2, _) => {
                             let mut seg_start = i + 1;
                             while seg_start < chars.len()
                                 && chars[seg_start] == ' '
