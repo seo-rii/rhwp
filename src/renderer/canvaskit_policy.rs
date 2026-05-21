@@ -28,16 +28,34 @@ impl CanvasKitReplayMode {
         }
     }
 
-    pub fn allows_canvas2d_overlay(self) -> bool {
-        false
-    }
-
     fn as_str(self) -> &'static str {
         match self {
             Self::Default => "default",
             Self::Compat => "compat",
         }
     }
+
+    fn policy(self) -> CanvasKitReplayPolicy {
+        match self {
+            // `compat` remains a public mode for URL/API compatibility and
+            // future conservative direct-replay tuning, but it must not mean a
+            // hidden Canvas2D paint overlay.
+            Self::Default | Self::Compat => CanvasKitReplayPolicy::DIRECT_ONLY,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CanvasKitReplayPolicy {
+    hidden_canvas2d_overlay_allowed: bool,
+    direct_replay_required: bool,
+}
+
+impl CanvasKitReplayPolicy {
+    const DIRECT_ONLY: Self = Self {
+        hidden_canvas2d_overlay_allowed: false,
+        direct_replay_required: true,
+    };
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -336,6 +354,7 @@ pub fn analyze_canvaskit_replay_plan(
 
 struct CanvasKitReplayPlanBuilder<'a> {
     mode: CanvasKitReplayMode,
+    policy: CanvasKitReplayPolicy,
     tree: &'a PageLayerTree,
     summary: CanvasKitReplaySummary,
     items: Vec<CanvasKitReplayItem>,
@@ -346,6 +365,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
     fn new(mode: CanvasKitReplayMode, tree: &'a PageLayerTree) -> Self {
         Self {
             mode,
+            policy: mode.policy(),
             tree,
             summary: CanvasKitReplaySummary::default(),
             items: Vec::new(),
@@ -356,8 +376,8 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
     fn finish(self) -> CanvasKitReplayPlan {
         CanvasKitReplayPlan {
             mode: self.mode,
-            hidden_canvas2d_overlay_allowed: self.mode.allows_canvas2d_overlay(),
-            direct_replay_required: true,
+            hidden_canvas2d_overlay_allowed: self.policy.hidden_canvas2d_overlay_allowed,
+            direct_replay_required: self.policy.direct_replay_required,
             summary: self.summary,
             items: self.items,
             text_variants: self.text_variants,
