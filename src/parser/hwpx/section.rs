@@ -26,8 +26,9 @@ use crate::model::table::{Cell, Table, TablePageBreak, VerticalAlign};
 use crate::model::HwpUnit16;
 
 use super::utils::{
-    attr_str, local_name, parse_bool, parse_color, parse_gradient_type, parse_i16, parse_i32,
-    parse_i32_wrapping, parse_i8, parse_u16, parse_u32, parse_u8, skip_element,
+    attr_str, local_name, parse_bool, parse_color, parse_gradient_type, parse_hatch_style,
+    parse_i16, parse_i32, parse_i32_wrapping, parse_i8, parse_u16, parse_u32, parse_u8,
+    skip_element,
 };
 use super::HwpxError;
 
@@ -1870,11 +1871,20 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                 match local {
                     b"winBrush" => {
                         fill.fill_type = FillType::Solid;
-                        let mut solid = SolidFill::default();
+                        let mut solid = SolidFill {
+                            pattern_type: -1,
+                            ..SolidFill::default()
+                        };
                         for attr in ce.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"faceColor" => solid.background_color = parse_color(&attr),
                                 b"hatchColor" => solid.pattern_color = parse_color(&attr),
+                                b"hatchStyle" => {
+                                    if let Some(pattern_type) = parse_hatch_style(&attr_str(&attr))
+                                    {
+                                        solid.pattern_type = pattern_type;
+                                    }
+                                }
                                 b"alpha" => {
                                     let val = attr_str(&attr);
                                     if let Ok(f) = val.parse::<f64>() {
@@ -3878,6 +3888,58 @@ mod tests {
         assert_eq!(grad.center_y, 60);
         assert_eq!(grad.blur, 35);
         assert_eq!(grad.step_center, 45);
+    }
+
+    #[test]
+    fn test_parse_shape_winbrush_defaults_to_no_pattern() {
+        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:rect id="7" zOrder="0">
+      <hp:sz width="1000" height="1000"/>
+      <hp:fillBrush>
+        <hp:winBrush faceColor="#112233" hatchColor="#445566"/>
+      </hp:fillBrush>
+    </hp:rect>
+  </hp:p>
+</hs:sec>"##;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let Control::Shape(shape) = &section.paragraphs[0].controls[0] else {
+            panic!("expected shape control");
+        };
+        let fill = &shape.drawing().expect("shape drawing").fill;
+        let solid = fill.solid.expect("solid fill");
+
+        assert_eq!(solid.pattern_type, -1);
+        assert_eq!(solid.background_color, 0x0033_2211);
+        assert_eq!(solid.pattern_color, 0x0066_5544);
+    }
+
+    #[test]
+    fn test_parse_shape_winbrush_preserves_hatch_style() {
+        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:rect id="7" zOrder="0">
+      <hp:sz width="1000" height="1000"/>
+      <hp:fillBrush>
+        <hp:winBrush faceColor="#112233" hatchColor="#445566" hatchStyle="CROSS"/>
+      </hp:fillBrush>
+    </hp:rect>
+  </hp:p>
+</hs:sec>"##;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let Control::Shape(shape) = &section.paragraphs[0].controls[0] else {
+            panic!("expected shape control");
+        };
+        let fill = &shape.drawing().expect("shape drawing").fill;
+        let solid = fill.solid.expect("solid fill");
+
+        assert_eq!(solid.pattern_type, 5);
     }
 
     #[test]

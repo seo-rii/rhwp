@@ -10,8 +10,8 @@ use crate::model::document::{DocInfo, DocProperties};
 use crate::model::style::*;
 
 use super::utils::{
-    attr_str, local_name, parse_bool, parse_color, parse_gradient_type, parse_i16, parse_i32,
-    parse_i8, parse_u16, parse_u32, parse_u8,
+    attr_str, local_name, parse_bool, parse_color, parse_gradient_type, parse_hatch_style,
+    parse_i16, parse_i32, parse_i8, parse_u16, parse_u32, parse_u8,
 };
 use super::HwpxError;
 
@@ -827,11 +827,21 @@ fn parse_border_fill(
                         }
                         b"winBrush" => {
                             bf.fill.fill_type = FillType::Solid;
-                            let mut solid = SolidFill::default();
+                            let mut solid = SolidFill {
+                                pattern_type: -1,
+                                ..SolidFill::default()
+                            };
                             for attr in ce.attributes().flatten() {
                                 match attr.key.as_ref() {
                                     b"faceColor" => solid.background_color = parse_color(&attr),
                                     b"hatchColor" => solid.pattern_color = parse_color(&attr),
+                                    b"hatchStyle" => {
+                                        if let Some(pattern_type) =
+                                            parse_hatch_style(&attr_str(&attr))
+                                        {
+                                            solid.pattern_type = pattern_type;
+                                        }
+                                    }
                                     b"alpha" => {
                                         // HWPX alpha: 0.0=완전투명 ~ 1.0=불투명 (float string)
                                         let val = attr_str(&attr);
@@ -1368,6 +1378,40 @@ mod tests {
         assert_eq!(bf.diagonal.diagonal_type, 2);
         assert_eq!(bf.diagonal.width, 1);
         assert_eq!(bf.diagonal.color, 0x0066_5544);
+    }
+
+    #[test]
+    fn test_parse_border_fill_winbrush_defaults_to_no_pattern() {
+        let xml = r##"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">
+  <hh:borderFill id="1">
+    <hh:fillBrush>
+      <hh:winBrush faceColor="#112233" hatchColor="#445566"/>
+    </hh:fillBrush>
+  </hh:borderFill>
+</hh:head>"##;
+
+        let (doc_info, _) = parse_hwpx_header(xml).expect("header parse");
+        let solid = doc_info.border_fills[0].fill.solid.expect("solid fill");
+
+        assert_eq!(solid.pattern_type, -1);
+        assert_eq!(solid.background_color, 0x0033_2211);
+        assert_eq!(solid.pattern_color, 0x0066_5544);
+    }
+
+    #[test]
+    fn test_parse_border_fill_winbrush_preserves_hatch_style() {
+        let xml = r##"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">
+  <hh:borderFill id="1">
+    <hh:fillBrush>
+      <hh:winBrush faceColor="#112233" hatchColor="#445566" hatchStyle="CROSS_DIAGONAL"/>
+    </hh:fillBrush>
+  </hh:borderFill>
+</hh:head>"##;
+
+        let (doc_info, _) = parse_hwpx_header(xml).expect("header parse");
+        let solid = doc_info.border_fills[0].fill.solid.expect("solid fill");
+
+        assert_eq!(solid.pattern_type, 6);
     }
 
     #[test]
