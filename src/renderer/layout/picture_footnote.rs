@@ -419,6 +419,16 @@ impl LayoutEngine {
             return 0.0;
         }
 
+        if caption.paragraphs.iter().all(|para| {
+            para.controls.is_empty()
+                && para
+                    .text
+                    .chars()
+                    .all(|c| c <= '\u{001F}' || c == '\u{FFFC}')
+        }) {
+            return 0.0;
+        }
+
         let mut total_height = 0.0;
         for para in &caption.paragraphs {
             let composed = compose_paragraph(para);
@@ -1091,5 +1101,41 @@ impl LayoutEngine {
             BoundingBox::new(x, y, w, h),
         );
         parent.children.push(border_node);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn caption_with_text(text: &str) -> Caption {
+        Caption {
+            paragraphs: vec![Paragraph {
+                text: text.to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn caption_height_ignores_placeholder_only_caption() {
+        let engine = LayoutEngine::with_default_dpi();
+        let caption = caption_with_text("\u{FFFC}");
+
+        assert_eq!(
+            engine.calculate_caption_height(&Some(caption), &ResolvedStyleSet::default()),
+            0.0
+        );
+    }
+
+    #[test]
+    fn caption_height_keeps_visible_caption_text() {
+        let engine = LayoutEngine::with_default_dpi();
+        let caption = caption_with_text("caption");
+
+        assert!(
+            engine.calculate_caption_height(&Some(caption), &ResolvedStyleSet::default()) > 0.0
+        );
     }
 }
