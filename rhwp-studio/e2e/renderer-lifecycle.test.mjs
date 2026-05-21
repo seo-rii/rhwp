@@ -109,6 +109,8 @@ function countPixels(dataUrl, predicate) {
     for (let x = 0; x < png.width; x += 1) {
       const offset = (y * png.width + x) * 4;
       if (predicate({
+        x,
+        y,
         red: png.data[offset],
         green: png.data[offset + 1],
         blue: png.data[offset + 2],
@@ -7379,7 +7381,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       variant: variantFor('outline-parity-bitmap', ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph']),
       paths: [],
       bitmapGlyph: {
-        imageResourceId: 'bitmap-glyph-pixel',
+        imageResourceId: 'glyph-outline-parity-pixel',
         sourceRangeUtf8: { start: 0, end: 1 },
         glyphRange: { start: 0, end: 1 },
         placement: {
@@ -7414,9 +7416,58 @@ runTest('Renderer lifecycle', async ({ page }) => {
         interactivityAllowed: false,
       },
     });
-    const outlines = [colorV0Outline, colorV1Outline, bitmapOutline, svgOutline];
+    const transformedBitmapOutline = outlineBase('outline-parity-bitmap-transform', 114, {
+      bbox: { x: 114, y: 8, width: 18, height: 12 },
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('outline-parity-bitmap-transform', ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph']),
+      paths: [],
+      bitmapGlyph: {
+        imageResourceId: 'glyph-outline-parity-pixel',
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 114, f: 8 },
+          baselineY: 0,
+        },
+        transformToRun: { a: 1.5, b: 0, c: 0, d: 1, e: 3, f: 2 },
+        strikeSelection: 'producerResolved',
+        alphaMode: 'premultiplied',
+        scalingPolicy: 'scaleToEm',
+        filtering: 'nearest',
+      },
+    });
+    const transformedSvgOutline = outlineBase('outline-parity-svg-transform-viewbox', 146, {
+      bbox: { x: 146, y: 8, width: 18, height: 12 },
+      payloadKind: 'svgGlyph',
+      variant: variantFor('outline-parity-svg-transform-viewbox', ['text.outlineGlyph', 'text.glyphOutline.svgGlyph']),
+      paths: [],
+      svgGlyph: {
+        vectorResourceId: 'svg-glyph-offset-magenta-rect',
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 146, f: 8 },
+          baselineY: 0,
+        },
+        transformToRun: { a: 1, b: 0, c: 0, d: 1, e: 3, f: 2 },
+        viewBox: { x: 4, y: 5, width: 9, height: 6 },
+        securityMode: 'staticSanitized',
+        scriptAllowed: false,
+        animationAllowed: false,
+        externalResourcesAllowed: false,
+        interactivityAllowed: false,
+      },
+    });
+    const outlines = [
+      colorV0Outline,
+      colorV1Outline,
+      bitmapOutline,
+      svgOutline,
+      transformedBitmapOutline,
+      transformedSvgOutline,
+    ];
     const tree = {
-      pageWidth: 116,
+      pageWidth: 172,
       pageHeight: 32,
       profile: 'screen',
       outputOptions: {
@@ -7431,9 +7482,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         images: [pixelBytes],
         imageHashes: ['glyph-outline-parity-pixel'],
         imageKeys: ['glyph-outline-parity-pixel'],
-        svgFragments: ['<path d="M0 0 L14 0 L14 14 L0 14 Z" fill="#ff00cc"/>'],
-        svgHashes: ['glyph-outline-parity-svg-magenta'],
-        svgKeys: ['glyph-outline-parity-svg-magenta'],
+        svgFragments: [
+          '<path d="M0 0 L14 0 L14 14 L0 14 Z" fill="#ff00cc"/>',
+          '<path d="M4 5 L13 5 L13 11 L4 11 Z" fill="#ff00cc"/>',
+        ],
+        svgHashes: ['glyph-outline-parity-svg-magenta', 'glyph-outline-parity-svg-offset-magenta'],
+        svgKeys: ['glyph-outline-parity-svg-magenta', 'svg-glyph-offset-magenta-rect'],
         fontBlobs: [],
         fontBlobHashes: [],
         fontBlobKeys: [],
@@ -7448,10 +7502,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1902,
-        bounds: { x: 0, y: 0, width: 116, height: 32 },
+        bounds: { x: 0, y: 0, width: 172, height: 32 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 116, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 172, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
           ...outlines.flatMap((outline) => [
             textRunFor(outline.variant.equivalenceGroup, outline.bbox.x),
             outline,
@@ -7522,9 +7576,37 @@ runTest('Renderer lifecycle', async ({ page }) => {
     glyphOutlinePayloadParityProbe.canvaskit.png,
     (pixel) => pixel.alpha > 32 && pixel.red > 200 && pixel.blue > 180 && pixel.green < 80,
   );
+  const transformedBitmapCanvas2dBlackPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvas2d.png,
+    (pixel) => pixel.x >= 117 && pixel.x < 144 && pixel.y >= 10 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const transformedBitmapCanvasKitBlackPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvaskit.png,
+    (pixel) => pixel.x >= 117 && pixel.x < 144 && pixel.y >= 10 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  const transformedSvgCanvas2dMagentaPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvas2d.png,
+    (pixel) => pixel.x >= 149 && pixel.x < 167 && pixel.y >= 10 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red > 200 && pixel.blue > 180 && pixel.green < 80,
+  );
+  const transformedSvgCanvasKitMagentaPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvaskit.png,
+    (pixel) => pixel.x >= 149 && pixel.x < 167 && pixel.y >= 10 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red > 200 && pixel.blue > 180 && pixel.green < 80,
+  );
+  assert(
+    transformedBitmapCanvas2dBlackPixels > 120 && transformedBitmapCanvasKitBlackPixels > 120,
+    `transformed BitmapGlyph payload painted expected region canvas2d=${transformedBitmapCanvas2dBlackPixels}, canvaskit=${transformedBitmapCanvasKitBlackPixels}`,
+  );
+  assert(
+    transformedSvgCanvas2dMagentaPixels > 120 && transformedSvgCanvasKitMagentaPixels > 120,
+    `transformed SvgGlyph payload painted viewBox-normalized region canvas2d=${transformedSvgCanvas2dMagentaPixels}, canvaskit=${transformedSvgCanvasKitMagentaPixels}`,
+  );
   assert(
     glyphOutlinePayloadDiff.passed,
-    `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}, canvas2dMagenta=${glyphOutlinePayloadCanvas2dMagentaPixels}, canvaskitMagenta=${glyphOutlinePayloadCanvasKitMagentaPixels}`,
+    `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}, canvas2dMagenta=${glyphOutlinePayloadCanvas2dMagentaPixels}, canvaskitMagenta=${glyphOutlinePayloadCanvasKitMagentaPixels}, transformedBitmapCanvas2d=${transformedBitmapCanvas2dBlackPixels}, transformedBitmapCanvaskit=${transformedBitmapCanvasKitBlackPixels}, transformedSvgCanvas2d=${transformedSvgCanvas2dMagentaPixels}, transformedSvgCanvaskit=${transformedSvgCanvasKitMagentaPixels}`,
   );
 
   setTestCase('canvas-layer-form-object-parity');
