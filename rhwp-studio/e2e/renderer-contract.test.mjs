@@ -102,6 +102,7 @@ function compareCaseLabels(canvas2dLabels, canvaskitLabels, contractName) {
   );
 }
 
+compareCaseContract('renderNode', 'LayerNode dispatch');
 compareCaseContract('renderOp', 'LayerPaintOp dispatch');
 compareCaseContract('renderFormObject', 'form object replay');
 compareCaseContract('renderLine', 'line style replay');
