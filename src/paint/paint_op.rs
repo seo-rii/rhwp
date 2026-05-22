@@ -1892,6 +1892,138 @@ mod tests {
         assert!(!BitmapGlyphFiltering::BackendDefault.is_strict_deterministic());
     }
 
+    fn colrv1_solid_node(node_id: u32) -> ColorPaintGraphNode {
+        ColorPaintGraphNode {
+            node_id,
+            kind: ColorPaintGraphNodeKind::SolidPath,
+            solid_path: Some(ColorPaintSolidPathNode {
+                commands: vec![
+                    PathCommand::MoveTo(0.0, 0.0),
+                    PathCommand::LineTo(10.0, 0.0),
+                    PathCommand::ClosePath,
+                ],
+                fill: ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba: [0.0, 1.0, 0.0, 0.75],
+                },
+                fill_rule: GlyphOutlineFillRule::NonZero,
+                source_glyph_id: Some(77),
+                palette_index: Some(1),
+            }),
+            transform: None,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            source_font_ref: Some(FontColorGlyphRef {
+                face_key: Some("fixture-face".to_string()),
+                glyph_id: Some(77),
+                palette_index: Some(1),
+                color_format: Some(ColorGlyphFormat::ColrV1),
+            }),
+        }
+    }
+
+    fn colrv1_transform_node(
+        node_id: u32,
+        child_node_id: u32,
+        transform: LayerAffineTransform,
+    ) -> ColorPaintGraphNode {
+        ColorPaintGraphNode {
+            node_id,
+            kind: ColorPaintGraphNodeKind::Transform,
+            solid_path: None,
+            transform: Some(ColorPaintTransformNode {
+                child_node_id,
+                transform,
+            }),
+            source_range_utf8: None,
+            glyph_range: None,
+            source_font_ref: None,
+        }
+    }
+
+    #[test]
+    fn colrv1_stage1_reference_layer_composes_transform_chain() {
+        let root_transform = LayerAffineTransform {
+            a: 2.0,
+            b: 0.0,
+            c: 0.0,
+            d: 2.0,
+            e: 10.0,
+            f: 20.0,
+        };
+        let child_transform = LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 3.0,
+            f: 4.0,
+        };
+        let graph = ColorPaintGraphPayload {
+            root_node_id: 2,
+            nodes: vec![
+                colrv1_solid_node(0),
+                colrv1_transform_node(1, 0, child_transform),
+                colrv1_transform_node(2, 1, root_transform),
+            ],
+        };
+
+        let layer = graph
+            .colrv1_stage1_reference_layer()
+            .expect("tree-only COLRv1 stage-1 graph produces a reference layer");
+
+        assert_eq!(layer.layer_index, Some(0));
+        assert_eq!(layer.glyph_id, Some(77));
+        assert_eq!(layer.opacity, Some(0.75));
+        assert_eq!(
+            layer.transform_to_run,
+            Some(LayerAffineTransform {
+                a: 2.0,
+                b: 0.0,
+                c: 0.0,
+                d: 2.0,
+                e: 16.0,
+                f: 28.0,
+            })
+        );
+    }
+
+    #[test]
+    fn colrv1_stage1_reference_layer_rejects_invalid_graph_shapes() {
+        let identity = LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        };
+        let valid_graph = ColorPaintGraphPayload {
+            root_node_id: 1,
+            nodes: vec![colrv1_solid_node(0), colrv1_transform_node(1, 0, identity)],
+        };
+        assert!(valid_graph.has_colrv1_stage1_contract());
+
+        let mut duplicate_node = valid_graph.clone();
+        duplicate_node.nodes.push(colrv1_solid_node(0));
+        assert!(!duplicate_node.has_colrv1_stage1_contract());
+
+        let mut missing_root = valid_graph.clone();
+        missing_root.root_node_id = 99;
+        assert!(!missing_root.has_colrv1_stage1_contract());
+
+        let mut transform_with_solid = valid_graph.clone();
+        transform_with_solid.nodes[1].solid_path = transform_with_solid.nodes[0].solid_path.clone();
+        assert!(!transform_with_solid.has_colrv1_stage1_contract());
+
+        let mut solid_with_transform = valid_graph;
+        solid_with_transform.nodes[0].transform = Some(ColorPaintTransformNode {
+            child_node_id: 0,
+            transform: identity,
+        });
+        assert!(!solid_with_transform.has_colrv1_stage1_contract());
+    }
+
     #[test]
     fn reserved_glyph_payload_envelopes_carry_canonical_fields() {
         let source_range = TextSourceRange::new(0, 1);
