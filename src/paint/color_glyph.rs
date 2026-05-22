@@ -416,14 +416,58 @@ mod tests {
         u32::from(face.glyph_index('\u{E000}').expect("fixture color glyph").0)
     }
 
+    fn sfnt_table_record_offset(font: &[u8], tag: &[u8; 4]) -> usize {
+        let num_tables = read_u16(font, 4).expect("sfnt table count") as usize;
+        for index in 0..num_tables {
+            let offset = 12 + index * 16;
+            if font.get(offset..offset + 4) == Some(tag) {
+                return offset;
+            }
+        }
+        panic!("fixture contains table record");
+    }
+
+    fn sfnt_table_range(font: &[u8], tag: &[u8; 4]) -> (usize, usize) {
+        let record_offset = sfnt_table_record_offset(font, tag);
+        let offset = read_u32(font, record_offset + 8).expect("table offset") as usize;
+        let length = read_u32(font, record_offset + 12).expect("table length") as usize;
+        (offset, length)
+    }
+
     fn replace_table_tag(font: &[u8], tag: &[u8; 4], replacement: &[u8; 4]) -> Vec<u8> {
-        let offset = font
-            .windows(tag.len())
-            .position(|window| window == tag)
-            .expect("fixture contains table tag");
+        let offset = sfnt_table_record_offset(font, tag);
         let mut patched = font.to_vec();
         patched[offset..offset + tag.len()].copy_from_slice(replacement);
         patched
+    }
+
+    fn write_u16_be(bytes: &mut [u8], offset: usize, value: u16) {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_be_bytes());
+    }
+
+    fn colrv0_base_record_offset(font: &[u8], glyph_id: u32) -> usize {
+        let (colr_offset, colr_len) = sfnt_table_range(font, b"COLR");
+        let colr_data = &font[colr_offset..colr_offset + colr_len];
+        let num_base_glyphs = read_u16(colr_data, 2).expect("COLR base glyph count");
+        let base_glyphs_offset =
+            read_u32(colr_data, 4).expect("COLR base glyph records offset") as usize;
+        for index in 0..num_base_glyphs {
+            let record = colr_offset + base_glyphs_offset + usize::from(index) * 6;
+            if read_u16(font, record).map(u32::from) == Some(glyph_id) {
+                return record;
+            }
+        }
+        panic!("fixture contains base glyph record");
+    }
+
+    fn first_layer_record_offset(font: &[u8], glyph_id: u32) -> usize {
+        let (colr_offset, colr_len) = sfnt_table_range(font, b"COLR");
+        let colr_data = &font[colr_offset..colr_offset + colr_len];
+        let colr = ParsedColrV0::parse(colr_data).expect("fixture COLRv0 table parses");
+        let base = colr
+            .base_glyph(glyph_id as u16)
+            .expect("fixture contains COLRv0 base glyph");
+        colr_offset + colr.layers_offset + usize::from(base.first_layer_index) * 4
     }
 
     #[test]
@@ -551,6 +595,84 @@ mod tests {
 
         assert_eq!(colr_error, Colrv0ColorLayersDecodeError::MissingColrTable);
         assert_eq!(cpal_error, Colrv0ColorLayersDecodeError::MissingCpalTable);
+    }
+
+    #[test]
+    fn rejects_unsupported_colr_versions() {
+        let font = fixture_font();
+        let glyph_id = fixture_color_glyph_id(font);
+        let options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+        let (colr_offset, _) = sfnt_table_range(font, b"COLR");
+        let mut patched = font.to_vec();
+        write_u16_be(&mut patched, colr_offset, 1);
+
+        let error = decode_colrv0_color_layers_payload(&patched, 0, glyph_id, &options)
+            .expect_err("COLRv1 tables are not decoded by the COLRv0 helper");
+
+        assert_eq!(error, Colrv0ColorLayersDecodeError::UnsupportedColrVersion);
+        assert_eq!(error.as_str(), "unsupportedColrVersion");
+    }
+
+    #[test]
+    fn rejects_invalid_colrv0_layer_ranges() {
+        let font = fixture_font();
+        let glyph_id = fixture_color_glyph_id(font);
+        let options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+        let base_record = colrv0_base_record_offset(font, glyph_id);
+        let mut patched = font.to_vec();
+        write_u16_be(&mut patched, base_record + 4, u16::MAX);
+
+        let error = decode_colrv0_color_layers_payload(&patched, 0, glyph_id, &options)
+            .expect_err("base glyph layer range must stay inside layer records");
+
+        assert_eq!(error, Colrv0ColorLayersDecodeError::InvalidLayerRange);
+        assert_eq!(error.as_str(), "invalidLayerRange");
+    }
+
+    #[test]
+    fn rejects_layers_without_decodable_outlines() {
+        let font = fixture_font();
+        let glyph_id = fixture_color_glyph_id(font);
+        let options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+        let first_layer_record = first_layer_record_offset(font, glyph_id);
+        let mut patched = font.to_vec();
+        write_u16_be(&mut patched, first_layer_record, u16::MAX);
+
+        let error = decode_colrv0_color_layers_payload(&patched, 0, glyph_id, &options)
+            .expect_err("layer glyph must have a decodable outline");
+
+        assert_eq!(error, Colrv0ColorLayersDecodeError::MissingLayerOutline);
+        assert_eq!(error.as_str(), "missingLayerOutline");
+    }
+
+    #[test]
+    fn resolves_colrv0_foreground_palette_layers_from_options() {
+        let font = fixture_font();
+        let glyph_id = fixture_color_glyph_id(font);
+        let first_layer_record = first_layer_record_offset(font, glyph_id);
+        let mut patched = font.to_vec();
+        write_u16_be(&mut patched, first_layer_record + 2, u16::MAX);
+        let mut options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+        options.foreground_color = ResolvedColor {
+            color_space: Some("display-p3".to_string()),
+            rgba: [0.25, 0.5, 0.75, 0.8],
+        };
+
+        let payload = decode_colrv0_color_layers_payload(&patched, 0, glyph_id, &options)
+            .expect("foreground COLRv0 layer resolves from options");
+        let foreground_layer = payload
+            .layers
+            .iter()
+            .find(|layer| layer.palette_index == Some(u16::MAX))
+            .expect("patched layer uses foreground palette sentinel");
+
+        assert_eq!(foreground_layer.fill, Some(options.foreground_color));
+        assert_eq!(foreground_layer.color, None);
+        assert!(payload.has_colrv0_resolved_layer_contract());
     }
 
     #[test]
