@@ -5,7 +5,9 @@ import type { LayerGroupNode, LayerRenderProfile, PageLayerTree } from '@/core/t
 export class CanvasKitStaticPictureCache {
   private readonly pictures = new Map<string, SkPicture>();
   private readonly layerTreeIds = new WeakMap<PageLayerTree, number>();
+  private readonly nodeIds = new WeakMap<LayerGroupNode, number>();
   private nextLayerTreeId = 1;
+  private nextNodeId = 1;
 
   get size(): number {
     return this.pictures.size;
@@ -30,9 +32,16 @@ export class CanvasKitStaticPictureCache {
     profile: LayerRenderProfile,
     node: LayerGroupNode,
   ): string {
+    let nodeId = this.nodeIds.get(node);
+    if (nodeId === undefined) {
+      nodeId = this.nextNodeId;
+      this.nextNodeId += 1;
+      this.nodeIds.set(node, nodeId);
+    }
     return [
       layerTreeCacheKey,
       profile,
+      `node:${nodeId}`,
       node.sourceNodeId ?? 'anon',
       node.bounds.x.toFixed(3),
       node.bounds.y.toFixed(3),

@@ -432,13 +432,36 @@ runTest('Renderer lifecycle', async ({ page }) => {
         semantic: { role: 'page' },
         bounds: { x: 0, y: 0, width: 100, height: 100 },
         cacheHint: 'staticSubtree',
-        children: [{
-          kind: 'leaf',
-          sourceNodeId: 2000 + pageIdx,
-          bounds: { x: 0, y: 0, width: 100, height: 100 },
-          cacheHint: 'none',
-          ops: [],
-        }],
+        children: [
+          {
+            kind: 'group',
+            sourceNodeId: 2000,
+            semantic: { role: 'generic' },
+            bounds: { x: 0, y: 0, width: 50, height: 50 },
+            cacheHint: 'staticSubtree',
+            children: [{
+              kind: 'leaf',
+              sourceNodeId: 3000 + pageIdx,
+              bounds: { x: 0, y: 0, width: 50, height: 50 },
+              cacheHint: 'none',
+              ops: [],
+            }],
+          },
+          {
+            kind: 'group',
+            sourceNodeId: 2000,
+            semantic: { role: 'generic' },
+            bounds: { x: 0, y: 0, width: 50, height: 50 },
+            cacheHint: 'staticSubtree',
+            children: [{
+              kind: 'leaf',
+              sourceNodeId: 4000 + pageIdx,
+              bounds: { x: 0, y: 0, width: 50, height: 50 },
+              cacheHint: 'none',
+              ops: [],
+            }],
+          },
+        ],
       },
     });
 
@@ -478,7 +501,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
   assert(!staticPictureProbe.error, staticPictureProbe.error || 'canvaskit static picture cache probe available');
   assert(
-    staticPictureProbe.afterFirstPage > 0,
+    staticPictureProbe.afterFirstPage >= 3,
     `static picture cache populated after first page=${staticPictureProbe.afterFirstPage}`,
   );
   assert(
