@@ -64,7 +64,10 @@ function extractMethodBody(source, methodName) {
 }
 
 function extractFunctionBody(source, functionName) {
-  const signatureIndex = source.indexOf(`export function ${functionName}(`);
+  let signatureIndex = source.indexOf(`export function ${functionName}(`);
+  if (signatureIndex === -1) {
+    signatureIndex = source.indexOf(`function ${functionName}(`);
+  }
   assert.notEqual(signatureIndex, -1, `missing function ${functionName}`);
 
   return extractBlockBody(source, signatureIndex, functionName);
@@ -102,6 +105,17 @@ function compareCaseLabels(canvas2dLabels, canvaskitLabels, contractName) {
 compareCaseContract('renderOp', 'LayerPaintOp dispatch');
 compareCaseContract('renderFormObject', 'form object replay');
 compareCaseContract('renderLine', 'line style replay');
+compareCaseContract('resolveImagePlacement', 'image fill placement');
+compareCaseLabels(
+  caseLabels(extractFunctionBody(canvas2dSource, 'appendPathCommands')),
+  caseLabels(extractMethodBody(canvaskitSource, 'makePath')),
+  'path command replay',
+);
+compareCaseLabels(
+  caseLabels(extractFunctionBody(canvas2dSource, 'strokeDashPattern')),
+  caseLabels(extractMethodBody(canvaskitSource, 'strokeDashPattern')),
+  'line dash replay',
+);
 compareCaseLabels(
   caseLabels(extractFunctionBody(layerCanvasUtilsSource, 'renderEquationLayoutBox')),
   caseLabels(extractMethodBody(canvaskitSource, 'renderEquationBox')),
