@@ -1856,6 +1856,42 @@ fn static_subtree_cache_key_includes_glyph_variant_diagnostics() {
 }
 
 #[test]
+fn static_subtree_cache_key_includes_referenced_glyph_run_font_resource() {
+    let tree_a = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let mut tree_b = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let blob = tree_b
+        .resources
+        .font_resources_mut()
+        .blobs
+        .first_mut()
+        .expect("portable font blob");
+    blob.digest.as_mut().expect("font digest").value = "other-font-digest".to_string();
+    if let FontPortability::PortableBlob { digest, .. } = &mut blob.portability {
+        digest.value = "other-font-digest".to_string();
+    }
+
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node(&tree.root, &tree.resources);
+        cache_key.finish()
+    };
+
+    assert_eq!(
+        cache_key(&tree_a),
+        cache_key(&glyph_variant_test_tree(
+            &[1],
+            GlyphRunReplayEligibility::Portable
+        )),
+        "equal referenced font resources should produce stable static subtree keys"
+    );
+    assert_ne!(
+        cache_key(&tree_a),
+        cache_key(&tree_b),
+        "referenced GlyphRun font blob identity must affect static subtree cache keys"
+    );
+}
+
+#[test]
 fn static_subtree_picture_cache_evicts_old_entries() {
     let renderer = SkiaLayerRenderer::new();
 

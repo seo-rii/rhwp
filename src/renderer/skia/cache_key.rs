@@ -259,7 +259,7 @@ impl StaticSubtreeCacheKey {
             PaintOp::GlyphRun { bbox, run } => {
                 self.mix_u8(14);
                 self.mix_bbox(bbox);
-                self.mix_glyph_run(run);
+                self.mix_glyph_run(run, resources);
             }
             PaintOp::GlyphOutline { bbox, outline } => {
                 self.mix_u8(15);
@@ -511,11 +511,12 @@ impl StaticSubtreeCacheKey {
         self.mix_bool(run.is_line_break_end);
     }
 
-    fn mix_glyph_run(&mut self, run: &LayerGlyphRunPaint) {
+    fn mix_glyph_run(&mut self, run: &LayerGlyphRunPaint, resources: &ResourceArena) {
         self.mix_variant_meta(Some(&run.variant));
         self.mix_glyph_run_diagnostics(&run.diagnostics);
         self.mix_paint_text_style(&run.paint_style);
         self.mix_str(&run.shape_key.font_instance.face_key.0);
+        self.mix_font_face_resource(resources, &run.shape_key.font_instance.face_key);
         self.mix_f64(run.shape_key.font_instance.size_px);
         self.mix_usize(run.shape_key.font_instance.variations.len());
         for variation in &run.shape_key.font_instance.variations {
@@ -667,6 +668,116 @@ impl StaticSubtreeCacheKey {
         self.mix_u32(diagnostics.missing_glyph_count);
         self.mix_u32(diagnostics.used_fallback_font_count);
         self.mix_option_str(diagnostics.reason.as_deref());
+    }
+
+    fn mix_font_face_resource(
+        &mut self,
+        resources: &ResourceArena,
+        face_key: &crate::paint::FontFaceKey,
+    ) {
+        let font_resources = resources.font_resources();
+        let Some(face) = font_resources
+            .faces
+            .iter()
+            .find(|face| face.id == *face_key)
+        else {
+            self.mix_bool(false);
+            return;
+        };
+        self.mix_bool(true);
+        self.mix_str(&face.id.0);
+        self.mix_str(&face.blob_key.0);
+        self.mix_u32(face.face_index);
+        self.mix_option_str(face.postscript_name.as_deref());
+        self.mix_usize(face.family_names.len());
+        for name in &face.family_names {
+            self.mix_option_str(name.locale.as_deref());
+            self.mix_str(&name.value);
+        }
+        self.mix_usize(face.style_names.len());
+        for name in &face.style_names {
+            self.mix_option_str(name.locale.as_deref());
+            self.mix_str(&name.value);
+        }
+        self.mix_option_u16(face.weight_class);
+        self.mix_option_u16(face.width_class);
+        match face.italic {
+            Some(value) => {
+                self.mix_bool(true);
+                self.mix_bool(value);
+            }
+            None => self.mix_bool(false),
+        }
+
+        let Some(blob) = font_resources
+            .blobs
+            .iter()
+            .find(|blob| blob.id == face.blob_key)
+        else {
+            self.mix_bool(false);
+            return;
+        };
+        self.mix_bool(true);
+        self.mix_str(&blob.id.0);
+        self.mix_font_digest(blob.digest.as_ref());
+        self.mix_u8(match blob.source {
+            crate::paint::FontResourceSource::Embedded => 0,
+            crate::paint::FontResourceSource::Bundled => 1,
+            crate::paint::FontResourceSource::SystemResolved => 2,
+            crate::paint::FontResourceSource::ExternalUrl => 3,
+            crate::paint::FontResourceSource::UnresolvedFallback => 4,
+        });
+        self.mix_binary_resource_ref(blob.data_ref.as_ref());
+        self.mix_font_portability(&blob.portability);
+    }
+
+    fn mix_font_digest(&mut self, digest: Option<&crate::paint::FontDigest>) {
+        match digest {
+            Some(digest) => {
+                self.mix_bool(true);
+                self.mix_str(&digest.algorithm);
+                self.mix_str(&digest.value);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_binary_resource_ref(&mut self, data_ref: Option<&crate::paint::BinaryResourceRef>) {
+        match data_ref {
+            Some(data_ref) => {
+                self.mix_bool(true);
+                self.mix_u8(match data_ref.kind {
+                    crate::paint::BinaryResourceKind::FontBlob => 0,
+                    crate::paint::BinaryResourceKind::ExternalFont => 1,
+                });
+                self.mix_str(&data_ref.id);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_font_portability(&mut self, portability: &crate::paint::FontPortability) {
+        match portability {
+            crate::paint::FontPortability::PortableBlob { digest, data_ref } => {
+                self.mix_u8(0);
+                self.mix_font_digest(Some(digest));
+                self.mix_binary_resource_ref(Some(data_ref));
+            }
+            crate::paint::FontPortability::ExternalVerified {
+                digest,
+                external_ref,
+            } => {
+                self.mix_u8(1);
+                self.mix_font_digest(Some(digest));
+                self.mix_str(&external_ref.url);
+            }
+            crate::paint::FontPortability::ResolvedButNotEmbedded { digest } => {
+                self.mix_u8(2);
+                self.mix_font_digest(digest.as_ref());
+            }
+            crate::paint::FontPortability::SystemNameOnly => self.mix_u8(3),
+            crate::paint::FontPortability::UnresolvedFallback => self.mix_u8(4),
+        }
     }
 
     fn mix_text_run_placement(&mut self, placement: crate::paint::TextRunPlacement) {
