@@ -3916,7 +3916,7 @@ mod tests {
             LayerNode::leaf(
                 BoundingBox::new(0.0, 0.0, 40.0, 40.0),
                 None,
-                vec![text_run, glyph_outline],
+                vec![text_run.clone(), glyph_outline.clone()],
             ),
         );
 
@@ -4029,6 +4029,373 @@ mod tests {
         let stroke = prop(&stroke_payload, "stroke");
         assert_eq!(number_prop(&stroke, "widthPx"), 1.0);
         assert_eq!(string_prop(&stroke, "join"), "miter");
+
+        let payload_pair_for = |outline_op: PaintOp,
+                                expected_features: &[&str]|
+         -> (JsValue, JsValue) {
+            let payload_tree = PageLayerTree::new(
+                40.0,
+                40.0,
+                LayerNode::leaf(
+                    BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                    None,
+                    vec![text_run.clone(), outline_op],
+                ),
+            );
+            let json_value = js_sys::JSON::parse(
+                &payload_tree
+                    .to_json_v2_strict_glyph_outline()
+                    .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}")),
+            )
+            .unwrap_or_else(|_| panic!("failed to parse v2 strict payload JSON export"));
+            let js_value = page_layer_tree_to_js_value_v2_strict_glyph_outline(&payload_tree)
+                .unwrap_or_else(|issues| panic!("unexpected v2 validation issues: {issues:?}"));
+
+            let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
+            let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
+            assert_eq!(
+                json_required_features.length(),
+                js_required_features.length()
+            );
+            for index in 0..json_required_features.length() {
+                assert_eq!(
+                    json_required_features.get(index).as_string(),
+                    js_required_features.get(index).as_string()
+                );
+            }
+
+            let json_text = Array::from(&prop(&prop(&json_value, "root"), "ops")).get(0);
+            let js_text = Array::from(&prop(&prop(&js_value, "root"), "ops")).get(0);
+            let json_variant = Array::from(&prop(&json_text, "variants")).get(0);
+            let js_variant = Array::from(&prop(&js_text, "variants")).get(0);
+            let json_variant_features = Array::from(&prop(&json_variant, "requiredFeatures"));
+            let js_variant_features = Array::from(&prop(&js_variant, "requiredFeatures"));
+            assert_eq!(json_variant_features.length(), js_variant_features.length());
+            for index in 0..json_variant_features.length() {
+                assert_eq!(
+                    json_variant_features.get(index).as_string(),
+                    js_variant_features.get(index).as_string()
+                );
+            }
+            for expected_feature in expected_features {
+                let top_level_has_feature = (0..js_required_features.length()).any(|index| {
+                    js_required_features.get(index).as_string().as_deref()
+                        == Some(*expected_feature)
+                });
+                let variant_has_feature = (0..js_variant_features.length()).any(|index| {
+                    js_variant_features.get(index).as_string().as_deref() == Some(*expected_feature)
+                });
+                assert!(
+                    top_level_has_feature || variant_has_feature,
+                    "missing required feature {expected_feature}"
+                );
+            }
+            let json_part = Array::from(&prop(&json_variant, "parts")).get(0);
+            let js_part = Array::from(&prop(&js_variant, "parts")).get(0);
+            (prop(&json_part, "payload"), prop(&js_part, "payload"))
+        };
+
+        let mut color_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut color_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        let colrv0_source_font_ref = crate::paint::FontColorGlyphRef {
+            face_key: Some("fixture-face".to_string()),
+            glyph_id: Some(42),
+            palette_index: Some(0),
+            color_format: Some(crate::paint::ColorGlyphFormat::ColrV0),
+        };
+        outline.payload_kind = crate::paint::GlyphOutlinePayloadKind::ColorLayers;
+        outline.variant.requires = vec![
+            "text.glyphOutline.colorLayers".to_string(),
+            "text.glyphOutline.colorLayers.colrV0".to_string(),
+        ];
+        outline.stroke = None;
+        outline.color_layers = Some(crate::paint::ColorLayersPayload {
+            color_format: crate::paint::ColorGlyphFormat::ColrV0,
+            source_font_ref: Some(colrv0_source_font_ref.clone()),
+            palette_ref: Some(crate::paint::PaletteRef {
+                id: Some("palette-0".to_string()),
+                index: Some(0),
+                cpal_digest: Some("cpal-digest".to_string()),
+            }),
+            layers: vec![crate::paint::ColorLayerNode {
+                layer_index: Some(0),
+                glyph_id: Some(42),
+                glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                source_font_ref: Some(colrv0_source_font_ref),
+                path_index: Some(0),
+                commands: Some(vec![PathCommand::MoveTo(0.0, 0.0), PathCommand::ClosePath]),
+                fill: Some(crate::paint::ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba: [0.0, 0.0, 1.0, 1.0],
+                }),
+                fill_rule: Some(crate::paint::GlyphOutlineFillRule::NonZero),
+                palette_index: Some(0),
+                color: Some(0x0000ff),
+                opacity: Some(1.0),
+                transform_to_run: Some(LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 2.0,
+                    f: 3.0,
+                }),
+            }],
+            paint_graph: None,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
+        });
+        let (json_color_payload, js_color_payload) = payload_pair_for(
+            color_glyph_outline,
+            &[
+                "text.glyphOutline.colorLayers",
+                "text.glyphOutline.colorLayers.colrV0",
+            ],
+        );
+        assert_same_string(&json_color_payload, &js_color_payload, "payloadKind");
+        assert_eq!(string_prop(&js_color_payload, "payloadKind"), "colorLayers");
+        let json_color_layers = prop(&json_color_payload, "colorLayers");
+        let js_color_layers = prop(&js_color_payload, "colorLayers");
+        assert_same_string(&json_color_layers, &js_color_layers, "colorFormat");
+        assert_eq!(string_prop(&js_color_layers, "colorFormat"), "colrV0");
+        assert_same_string(
+            &prop(&json_color_layers, "sourceFontRef"),
+            &prop(&js_color_layers, "sourceFontRef"),
+            "colorFormat",
+        );
+        let json_color_layer = Array::from(&prop(&json_color_layers, "layers")).get(0);
+        let js_color_layer = Array::from(&prop(&js_color_layers, "layers")).get(0);
+        assert_eq!(number_prop(&js_color_layer, "glyphId"), 42.0);
+        assert_same_string(&json_color_layer, &js_color_layer, "color");
+        assert_eq!(
+            Array::from(&prop(&prop(&js_color_layer, "fill"), "rgba"))
+                .get(2)
+                .as_f64()
+                .expect("COLRv0 blue channel should be numeric"),
+            1.0
+        );
+        assert_eq!(
+            number_prop(&prop(&js_color_layer, "transformToRun"), "e"),
+            2.0
+        );
+
+        let mut colrv1_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut colrv1_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        let colrv1_source_font_ref = crate::paint::FontColorGlyphRef {
+            face_key: Some("fixture-face".to_string()),
+            glyph_id: Some(42),
+            palette_index: Some(1),
+            color_format: Some(crate::paint::ColorGlyphFormat::ColrV1),
+        };
+        outline.payload_kind = crate::paint::GlyphOutlinePayloadKind::ColorLayers;
+        outline.variant.requires = vec![
+            "text.glyphOutline.colorLayers".to_string(),
+            "text.glyphOutline.colorLayers.colrV1".to_string(),
+        ];
+        outline.stroke = None;
+        outline.color_layers = Some(crate::paint::ColorLayersPayload {
+            color_format: crate::paint::ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(colrv1_source_font_ref.clone()),
+            palette_ref: None,
+            layers: Vec::new(),
+            paint_graph: Some(crate::paint::ColorPaintGraphPayload {
+                root_node_id: 1,
+                nodes: vec![
+                    crate::paint::ColorPaintGraphNode {
+                        node_id: 1,
+                        kind: crate::paint::ColorPaintGraphNodeKind::Transform,
+                        solid_path: None,
+                        transform: Some(crate::paint::ColorPaintTransformNode {
+                            child_node_id: 2,
+                            transform: LayerAffineTransform {
+                                a: 1.0,
+                                b: 0.0,
+                                c: 0.0,
+                                d: 1.0,
+                                e: 2.0,
+                                f: 0.0,
+                            },
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                    crate::paint::ColorPaintGraphNode {
+                        node_id: 2,
+                        kind: crate::paint::ColorPaintGraphNodeKind::SolidPath,
+                        solid_path: Some(crate::paint::ColorPaintSolidPathNode {
+                            commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(8.0, 0.0),
+                                PathCommand::LineTo(8.0, 8.0),
+                                PathCommand::ClosePath,
+                            ],
+                            fill: crate::paint::ResolvedColor {
+                                color_space: Some("srgb".to_string()),
+                                rgba: [1.0, 0.0, 0.0, 1.0],
+                            },
+                            fill_rule: crate::paint::GlyphOutlineFillRule::NonZero,
+                            source_glyph_id: Some(42),
+                            palette_index: Some(1),
+                        }),
+                        transform: None,
+                        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                        glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
+                        source_font_ref: Some(colrv1_source_font_ref),
+                    },
+                ],
+            }),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
+        });
+        let (json_colrv1_payload, js_colrv1_payload) = payload_pair_for(
+            colrv1_glyph_outline,
+            &[
+                "text.glyphOutline.colorLayers",
+                "text.glyphOutline.colorLayers.colrV1",
+            ],
+        );
+        assert_same_string(&json_colrv1_payload, &js_colrv1_payload, "payloadKind");
+        let js_colrv1_layers = prop(&js_colrv1_payload, "colorLayers");
+        assert_eq!(string_prop(&js_colrv1_layers, "colorFormat"), "colrV1");
+        let graph = prop(&js_colrv1_layers, "paintGraph");
+        assert_eq!(number_prop(&graph, "rootNodeId"), 1.0);
+        let nodes = Array::from(&prop(&graph, "nodes"));
+        assert_eq!(nodes.length(), 2);
+        assert_eq!(string_prop(&nodes.get(0), "kind"), "transform");
+        assert_eq!(
+            number_prop(&prop(&nodes.get(0), "transform"), "childNodeId"),
+            2.0
+        );
+        assert_eq!(string_prop(&nodes.get(1), "kind"), "solidPath");
+        assert_eq!(
+            Array::from(&prop(
+                &prop(&prop(&nodes.get(1), "solidPath"), "fill"),
+                "rgba",
+            ))
+            .get(0)
+            .as_f64()
+            .expect("COLRv1 red channel should be numeric"),
+            1.0
+        );
+
+        let mut bitmap_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut bitmap_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = crate::paint::GlyphOutlinePayloadKind::BitmapGlyph;
+        outline.variant.requires = vec!["text.glyphOutline.bitmapGlyph".to_string()];
+        outline.stroke = None;
+        outline.bitmap_glyph = Some(crate::paint::BitmapGlyphPayload {
+            image_resource_id: crate::paint::ImageResourceId(7),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 12.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: Some(LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 1.0,
+                f: 2.0,
+            }),
+            strike_ppem: Some((16, 16)),
+            strike_selection: Some(crate::paint::BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: Some("srgb".to_string()),
+            alpha_mode: Some(crate::paint::BitmapAlphaMode::Premultiplied),
+            scaling_policy: Some(crate::paint::BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(crate::paint::BitmapGlyphFiltering::Linear),
+        });
+        let (json_bitmap_payload, js_bitmap_payload) =
+            payload_pair_for(bitmap_glyph_outline, &["text.glyphOutline.bitmapGlyph"]);
+        assert_same_string(&json_bitmap_payload, &js_bitmap_payload, "payloadKind");
+        assert_eq!(
+            string_prop(&js_bitmap_payload, "payloadKind"),
+            "bitmapGlyph"
+        );
+        let bitmap = prop(&js_bitmap_payload, "bitmapGlyph");
+        assert_eq!(number_prop(&bitmap, "imageResourceId"), 7.0);
+        assert_eq!(string_prop(&bitmap, "strikeSelection"), "producerResolved");
+        assert_eq!(string_prop(&bitmap, "alphaMode"), "premultiplied");
+        assert_eq!(string_prop(&bitmap, "scalingPolicy"), "explicitTransform");
+        assert_eq!(string_prop(&bitmap, "filtering"), "linear");
+        assert_eq!(number_prop(&prop(&bitmap, "transformToRun"), "e"), 1.0);
+
+        let mut svg_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut svg_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = crate::paint::GlyphOutlinePayloadKind::SvgGlyph;
+        outline.variant.requires = vec!["text.glyphOutline.svgGlyph".to_string()];
+        outline.stroke = None;
+        outline.svg_glyph = Some(crate::paint::SvgGlyphPayload {
+            vector_resource_id: crate::paint::SvgResourceId(3),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 12.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: Some(LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 4.0,
+                f: 5.0,
+            }),
+            view_box: Some(crate::paint::SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+            intrinsic_size: Some(crate::paint::SvgGlyphIntrinsicSize {
+                width: 10.0,
+                height: 10.0,
+            }),
+            security_mode: crate::paint::SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        });
+        let (json_svg_payload, js_svg_payload) =
+            payload_pair_for(svg_glyph_outline, &["text.glyphOutline.svgGlyph"]);
+        assert_same_string(&json_svg_payload, &js_svg_payload, "payloadKind");
+        assert_eq!(string_prop(&js_svg_payload, "payloadKind"), "svgGlyph");
+        let svg = prop(&js_svg_payload, "svgGlyph");
+        assert_eq!(number_prop(&svg, "vectorResourceId"), 3.0);
+        assert_eq!(string_prop(&svg, "securityMode"), "staticSanitized");
+        assert_eq!(bool_prop(&svg, "scriptAllowed"), false);
+        assert_eq!(bool_prop(&svg, "animationAllowed"), false);
+        assert_eq!(bool_prop(&svg, "externalResourcesAllowed"), false);
+        assert_eq!(bool_prop(&svg, "interactivityAllowed"), false);
+        assert_eq!(number_prop(&prop(&svg, "viewBox"), "width"), 10.0);
+        assert_eq!(number_prop(&prop(&svg, "transformToRun"), "e"), 4.0);
     }
 
     #[wasm_bindgen_test]
