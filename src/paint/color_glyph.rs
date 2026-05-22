@@ -407,16 +407,44 @@ fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
 mod tests {
     use super::*;
 
+    fn fixture_font() -> &'static [u8] {
+        include_bytes!("../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf")
+    }
+
+    fn fixture_color_glyph_id(font: &[u8]) -> u32 {
+        let face = ttf_parser::Face::parse(font, 0).expect("fixture font parses");
+        u32::from(face.glyph_index('\u{E000}').expect("fixture color glyph").0)
+    }
+
+    fn replace_table_tag(font: &[u8], tag: &[u8; 4], replacement: &[u8; 4]) -> Vec<u8> {
+        let offset = font
+            .windows(tag.len())
+            .position(|window| window == tag)
+            .expect("fixture contains table tag");
+        let mut patched = font.to_vec();
+        patched[offset..offset + tag.len()].copy_from_slice(replacement);
+        patched
+    }
+
     #[test]
     fn decodes_colrv0_fixture_to_resolved_color_layers() {
-        let font = include_bytes!("../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf");
-        let face = ttf_parser::Face::parse(font, 0).expect("fixture font parses");
-        let glyph = face.glyph_index('\u{E000}').expect("fixture color glyph");
+        let font = fixture_font();
+        let glyph_id = fixture_color_glyph_id(font);
+        let transform = LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 2.0,
+            f: 3.0,
+        };
         let mut options =
             Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 3), GlyphRange::new(0, 1));
         options.face_key = Some("color-smoke-face".to_string());
+        options.color_space = Some("display-p3".to_string());
+        options.transform_to_run = Some(transform);
 
-        let payload = decode_colrv0_color_layers_payload(font, 0, u32::from(glyph.0), &options)
+        let payload = decode_colrv0_color_layers_payload(font, 0, glyph_id, &options)
             .expect("fixture COLRv0 payload decodes");
 
         assert_eq!(payload.color_format, ColorGlyphFormat::ColrV0);
@@ -427,7 +455,7 @@ mod tests {
                 .source_font_ref
                 .as_ref()
                 .and_then(|source| source.glyph_id),
-            Some(u32::from(glyph.0))
+            Some(glyph_id)
         );
         assert_eq!(
             payload
@@ -448,6 +476,14 @@ mod tests {
                 .and_then(|source| source.color_format)
                 == Some(ColorGlyphFormat::ColrV0)
         }));
+        assert!(payload.layers.iter().all(|layer| {
+            layer.transform_to_run == Some(transform)
+                && layer
+                    .fill
+                    .as_ref()
+                    .and_then(|fill| fill.color_space.as_deref())
+                    == Some("display-p3")
+        }));
         assert!(payload.layers.iter().any(|layer| {
             layer
                 .fill
@@ -458,7 +494,7 @@ mod tests {
 
     #[test]
     fn rejects_non_colr_base_glyph() {
-        let font = include_bytes!("../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf");
+        let font = fixture_font();
         let options =
             Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
 
@@ -467,5 +503,68 @@ mod tests {
 
         assert_eq!(error, Colrv0ColorLayersDecodeError::MissingBaseGlyph);
         assert_eq!(error.as_str(), "missingBaseGlyph");
+    }
+
+    #[test]
+    fn rejects_unparseable_font_before_table_lookup() {
+        let options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+
+        let error = decode_colrv0_color_layers_payload(b"not-a-font", 0, 0, &options)
+            .expect_err("invalid font should not be treated as a color glyph");
+
+        assert_eq!(error, Colrv0ColorLayersDecodeError::FaceParseFailed);
+        assert_eq!(error.as_str(), "faceParseFailed");
+    }
+
+    #[test]
+    fn rejects_glyph_ids_outside_colrv0_backend_range() {
+        let options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+
+        let error = decode_colrv0_color_layers_payload(
+            b"not-needed-for-range-guard",
+            0,
+            u32::from(u16::MAX) + 1,
+            &options,
+        )
+        .expect_err("COLRv0 glyph ids are table u16 values");
+
+        assert_eq!(error, Colrv0ColorLayersDecodeError::GlyphIdOutOfRange);
+        assert_eq!(error.as_str(), "glyphIdOutOfRange");
+    }
+
+    #[test]
+    fn rejects_missing_colr_and_cpal_tables() {
+        let font = fixture_font();
+        let glyph_id = fixture_color_glyph_id(font);
+        let options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+
+        let missing_colr = replace_table_tag(font, b"COLR", b"XXXX");
+        let missing_cpal = replace_table_tag(font, b"CPAL", b"YYYY");
+
+        let colr_error = decode_colrv0_color_layers_payload(&missing_colr, 0, glyph_id, &options)
+            .expect_err("COLR table is required for COLRv0 decoding");
+        let cpal_error = decode_colrv0_color_layers_payload(&missing_cpal, 0, glyph_id, &options)
+            .expect_err("CPAL table is required for COLRv0 decoding");
+
+        assert_eq!(colr_error, Colrv0ColorLayersDecodeError::MissingColrTable);
+        assert_eq!(cpal_error, Colrv0ColorLayersDecodeError::MissingCpalTable);
+    }
+
+    #[test]
+    fn rejects_missing_palette_for_resolved_strict_layers() {
+        let font = fixture_font();
+        let glyph_id = fixture_color_glyph_id(font);
+        let mut options =
+            Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1));
+        options.palette_index = u16::MAX;
+
+        let error = decode_colrv0_color_layers_payload(font, 0, glyph_id, &options)
+            .expect_err("producer must resolve all CPAL palette colors");
+
+        assert_eq!(error, Colrv0ColorLayersDecodeError::MissingPalette);
+        assert_eq!(error.as_str(), "missingPalette");
     }
 }
