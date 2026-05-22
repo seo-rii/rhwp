@@ -1375,6 +1375,37 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_rejects_bitmap_payload_without_resource_or_replayable_bbox() {
+        let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        outline.bitmap_glyph = Some(bitmap_payload(crate::paint::ImageResourceId(999)));
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(valid_bbox()),
+                &ResourceArena::default(),
+            ),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
+
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
+        outline.bitmap_glyph = Some(bitmap_payload(image_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(BoundingBox::new(0.0, 0.0, 0.0, 16.0)),
+                &resources,
+            ),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, None, &resources),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
+    }
+
+    #[test]
     fn canvaskit_requires_svg_static_sanitized_contract() {
         let mut resources = ResourceArena::default();
         let empty_svg_id = resources.intern_svg_fragment("<svg viewBox=\"0 0 16 16\"></svg>");
@@ -1400,6 +1431,38 @@ mod tests {
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
             (true, None)
+        );
+    }
+
+    #[test]
+    fn canvaskit_rejects_svg_payload_without_resource_or_replayable_bbox() {
+        let mut outline = outline(GlyphOutlinePayloadKind::SvgGlyph);
+        outline.svg_glyph = Some(svg_payload(crate::paint::SvgResourceId(999)));
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(valid_bbox()),
+                &ResourceArena::default(),
+            ),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+
+        let mut resources = ResourceArena::default();
+        let path_svg_id = resources
+            .intern_svg_fragment("<path d=\"M0 0 L16 0 L16 16 L0 16 Z\" fill=\"#00ffff\"/>");
+        outline.svg_glyph = Some(svg_payload(path_svg_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(BoundingBox::new(0.0, 0.0, 16.0, 0.0)),
+                &resources,
+            ),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, None, &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
         );
     }
 
