@@ -1686,6 +1686,102 @@ fn static_subtree_cache_key_includes_svg_glyph_resource_fingerprint() {
 }
 
 #[test]
+fn static_subtree_cache_key_includes_color_layers_payload_contents() {
+    let bbox = BoundingBox::new(2.0, 2.0, 24.0, 24.0);
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("test-face".to_string()),
+        glyph_id: Some(1),
+        palette_index: Some(2),
+        color_format: Some(ColorGlyphFormat::ColrV0),
+    };
+    let make_tree = |rgba: [f32; 4], transform_x: f64| {
+        let color_layers = ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV0,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            layers: vec![ColorLayerNode {
+                layer_index: Some(0),
+                glyph_id: Some(1),
+                glyph_range: Some(GlyphRange::new(0, 1)),
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                source_font_ref: Some(source_font_ref.clone()),
+                path_index: Some(0),
+                commands: Some(vec![
+                    PathCommand::MoveTo(0.0, 0.0),
+                    PathCommand::LineTo(12.0, 0.0),
+                    PathCommand::LineTo(12.0, 12.0),
+                    PathCommand::ClosePath,
+                ]),
+                fill: Some(ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba,
+                }),
+                fill_rule: Some(GlyphOutlineFillRule::NonZero),
+                palette_index: Some(2),
+                color: None,
+                opacity: Some(rgba[3] as f64),
+                transform_to_run: Some(LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: transform_x,
+                    f: 0.0,
+                }),
+            }],
+            paint_graph: None,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+        };
+        let outline = glyph_outline_test_paint(
+            GlyphOutlinePayloadKind::ColorLayers,
+            None,
+            Some(color_layers),
+        );
+        let leaf = LayerNode::leaf_with_hint(
+            bbox,
+            Some(306),
+            vec![PaintOp::GlyphOutline {
+                bbox,
+                outline: Box::new(outline),
+            }],
+            CacheHint::StaticSubtree,
+        );
+        let root = LayerNode::group(
+            bbox,
+            Some(307),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        PageLayerTree::with_resources(32.0, 32.0, root, ResourceArena::default())
+    };
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node(&tree.root, &tree.resources);
+        cache_key.finish()
+    };
+
+    let green_key = cache_key(&make_tree([0.0, 1.0, 0.0, 1.0], 0.0));
+    let green_key_again = cache_key(&make_tree([0.0, 1.0, 0.0, 1.0], 0.0));
+    let blue_key = cache_key(&make_tree([0.0, 0.0, 1.0, 1.0], 0.0));
+    let translated_key = cache_key(&make_tree([0.0, 1.0, 0.0, 1.0], 4.0));
+
+    assert_eq!(
+        green_key, green_key_again,
+        "equal ColorLayers payloads should produce stable static subtree keys"
+    );
+    assert_ne!(
+        green_key, blue_key,
+        "resolved ColorLayers fill colors must affect static subtree cache keys"
+    );
+    assert_ne!(
+        green_key, translated_key,
+        "ColorLayers per-layer transforms must affect static subtree cache keys"
+    );
+}
+
+#[test]
 fn static_subtree_picture_cache_evicts_old_entries() {
     let renderer = SkiaLayerRenderer::new();
 
