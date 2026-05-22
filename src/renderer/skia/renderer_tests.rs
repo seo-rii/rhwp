@@ -1554,6 +1554,138 @@ fn static_picture_cache_ignores_unreferenced_resources() {
 }
 
 #[test]
+fn static_subtree_cache_key_includes_bitmap_glyph_resource_fingerprint() {
+    let bbox = BoundingBox::new(2.0, 2.0, 24.0, 24.0);
+    let make_tree = |image_bytes: &[u8]| {
+        let mut resources = ResourceArena::default();
+        let image_resource_id = resources.intern_image_bytes(image_bytes);
+        let mut outline =
+            glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
+        outline.paths.clear();
+        outline.bitmap_glyph = Some(BitmapGlyphPayload {
+            image_resource_id,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(outline.placement),
+            transform_to_run: None,
+            strike_ppem: Some((16, 16)),
+            strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: Some("srgb".to_string()),
+            alpha_mode: Some(BitmapAlphaMode::Premultiplied),
+            scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(BitmapGlyphFiltering::Nearest),
+        });
+        let leaf = LayerNode::leaf_with_hint(
+            bbox,
+            Some(302),
+            vec![PaintOp::GlyphOutline {
+                bbox,
+                outline: Box::new(outline),
+            }],
+            CacheHint::StaticSubtree,
+        );
+        let root = LayerNode::group(
+            bbox,
+            Some(303),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        PageLayerTree::with_resources(32.0, 32.0, root, resources)
+    };
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node(&tree.root, &tree.resources);
+        cache_key.finish()
+    };
+
+    let key_a = cache_key(&make_tree(b"bitmap-glyph-resource-a"));
+    let key_a_again = cache_key(&make_tree(b"bitmap-glyph-resource-a"));
+    let key_b = cache_key(&make_tree(b"bitmap-glyph-resource-b"));
+
+    assert_eq!(
+        key_a, key_a_again,
+        "equal BitmapGlyph image resources should produce stable static subtree keys"
+    );
+    assert_ne!(
+        key_a, key_b,
+        "BitmapGlyph resource bytes must affect static subtree cache keys even when resource ids match"
+    );
+}
+
+#[test]
+fn static_subtree_cache_key_includes_svg_glyph_resource_fingerprint() {
+    let bbox = BoundingBox::new(2.0, 2.0, 24.0, 24.0);
+    let make_tree = |svg_fragment: &str| {
+        let mut resources = ResourceArena::default();
+        let vector_resource_id = resources.intern_svg_fragment(svg_fragment);
+        let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::SvgGlyph, None, None);
+        outline.paths.clear();
+        outline.svg_glyph = Some(SvgGlyphPayload {
+            vector_resource_id,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(outline.placement),
+            transform_to_run: None,
+            view_box: Some(SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 12.0,
+                height: 12.0,
+            }),
+            intrinsic_size: None,
+            security_mode: SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        });
+        let leaf = LayerNode::leaf_with_hint(
+            bbox,
+            Some(304),
+            vec![PaintOp::GlyphOutline {
+                bbox,
+                outline: Box::new(outline),
+            }],
+            CacheHint::StaticSubtree,
+        );
+        let root = LayerNode::group(
+            bbox,
+            Some(305),
+            vec![leaf],
+            CacheHint::StaticSubtree,
+            LayerSemantic::default(),
+        );
+        PageLayerTree::with_resources(32.0, 32.0, root, resources)
+    };
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node(&tree.root, &tree.resources);
+        cache_key.finish()
+    };
+
+    let key_a = cache_key(&make_tree(
+        "<rect width=\"12\" height=\"12\" fill=\"#00ffff\"/>",
+    ));
+    let key_a_again = cache_key(&make_tree(
+        "<rect width=\"12\" height=\"12\" fill=\"#00ffff\"/>",
+    ));
+    let key_b = cache_key(&make_tree(
+        "<circle cx=\"6\" cy=\"6\" r=\"6\" fill=\"#00ffff\"/>",
+    ));
+
+    assert_eq!(
+        key_a, key_a_again,
+        "equal SvgGlyph vector resources should produce stable static subtree keys"
+    );
+    assert_ne!(
+        key_a, key_b,
+        "SvgGlyph resource text must affect static subtree cache keys even when resource ids match"
+    );
+}
+
+#[test]
 fn static_subtree_picture_cache_evicts_old_entries() {
     let renderer = SkiaLayerRenderer::new();
 

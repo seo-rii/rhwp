@@ -273,8 +273,8 @@ impl StaticSubtreeCacheKey {
                 });
                 self.mix_glyph_outline_stroke(outline.stroke.as_ref());
                 self.mix_glyph_outline_color_layers(outline.color_layers.as_ref());
-                self.mix_glyph_outline_bitmap_glyph(outline.bitmap_glyph.as_ref());
-                self.mix_glyph_outline_svg_glyph(outline.svg_glyph.as_ref());
+                self.mix_glyph_outline_bitmap_glyph(outline.bitmap_glyph.as_ref(), resources);
+                self.mix_glyph_outline_svg_glyph(outline.svg_glyph.as_ref(), resources);
                 self.mix_paint_text_style(&outline.paint_style);
                 self.mix_text_run_placement(outline.placement);
                 self.mix_usize(outline.paths.len());
@@ -852,6 +852,7 @@ impl StaticSubtreeCacheKey {
     fn mix_glyph_outline_bitmap_glyph(
         &mut self,
         payload: Option<&crate::paint::BitmapGlyphPayload>,
+        resources: &ResourceArena,
     ) {
         let Some(payload) = payload else {
             self.mix_bool(false);
@@ -859,6 +860,7 @@ impl StaticSubtreeCacheKey {
         };
         self.mix_bool(true);
         self.mix_usize(payload.image_resource_id.0);
+        self.mix_image_resource(resources, Some(payload.image_resource_id));
         self.mix_text_source_range_option(payload.source_range_utf8);
         self.mix_glyph_range_option(payload.glyph_range);
         match payload.placement {
@@ -928,13 +930,18 @@ impl StaticSubtreeCacheKey {
         }
     }
 
-    fn mix_glyph_outline_svg_glyph(&mut self, payload: Option<&crate::paint::SvgGlyphPayload>) {
+    fn mix_glyph_outline_svg_glyph(
+        &mut self,
+        payload: Option<&crate::paint::SvgGlyphPayload>,
+        resources: &ResourceArena,
+    ) {
         let Some(payload) = payload else {
             self.mix_bool(false);
             return;
         };
         self.mix_bool(true);
         self.mix_usize(payload.vector_resource_id.0);
+        self.mix_svg_resource(resources, payload.vector_resource_id);
         self.mix_text_source_range_option(payload.source_range_utf8);
         self.mix_glyph_range_option(payload.glyph_range);
         match payload.placement {
