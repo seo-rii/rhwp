@@ -6,11 +6,35 @@ import { fileURLToPath } from 'node:url';
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const canvas2dPath = path.join(studioRoot, 'src/view/canvas2d-layer-renderer.ts');
 const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
+const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
+const canvaskitSourceFiles = [
+  { label: path.relative(studioRoot, canvaskitPath), source: canvaskitSource },
+  ...fs.readdirSync(canvaskitDirectory)
+    .filter((fileName) => fileName.endsWith('.ts'))
+    .sort()
+    .map((fileName) => {
+      const filePath = path.join(canvaskitDirectory, fileName);
+      return {
+        label: path.relative(studioRoot, filePath),
+        source: fs.readFileSync(filePath, 'utf8'),
+      };
+    }),
+];
+const forbiddenCanvas2dApiPatterns = [
+  [/document\s*\.\s*createElement\b/, 'document.createElement'],
+  [/\.getContext\s*\(/, 'HTMLCanvasElement.getContext'],
+  [/\bCanvasRenderingContext2D\b/, 'CanvasRenderingContext2D'],
+  [/\bPath2D\b/, 'Path2D'],
+  [/\.measureText\s*\(/, 'CanvasRenderingContext2D.measureText'],
+  [/\bOffscreenCanvas\b/, 'OffscreenCanvas'],
+  [/\bImageData\b/, 'ImageData'],
+  [/\bcreateImageBitmap\s*\(/, 'createImageBitmap'],
+];
 
 function extractBlockBody(source, signatureIndex, blockName) {
   const bodyStart = source.indexOf('{', signatureIndex);
@@ -83,5 +107,15 @@ compareCaseLabels(
   caseLabels(extractMethodBody(canvaskitSource, 'renderEquationBox')),
   'equation layout replay',
 );
+
+for (const { label, source } of canvaskitSourceFiles) {
+  for (const [pattern, apiName] of forbiddenCanvas2dApiPatterns) {
+    assert.equal(
+      pattern.test(source),
+      false,
+      `CanvasKit renderer source must not depend on ${apiName}: ${label}`,
+    );
+  }
+}
 
 console.log('renderer backend contract parity passed');
