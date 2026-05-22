@@ -34,6 +34,13 @@ const forbiddenCanvas2dApiPatterns = [
   [/\bOffscreenCanvas\b/, 'OffscreenCanvas'],
   [/\bImageData\b/, 'ImageData'],
   [/\bcreateImageBitmap\s*\(/, 'createImageBitmap'],
+  [/\bImageBitmap\b/, 'ImageBitmap'],
+  [/\bHTMLImageElement\b/, 'HTMLImageElement'],
+  [/\bnew\s+Image\s*\(/, 'new Image'],
+  [/\bDOMParser\b/, 'DOMParser'],
+  [/\bXMLSerializer\b/, 'XMLSerializer'],
+  [/\bURL\s*\.\s*createObjectURL\s*\(/, 'URL.createObjectURL'],
+  [/\bFileReader\b/, 'FileReader'],
 ];
 
 function extractBlockBody(source, signatureIndex, blockName) {
