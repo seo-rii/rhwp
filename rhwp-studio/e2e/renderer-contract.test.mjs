@@ -41,6 +41,8 @@ const forbiddenCanvas2dApiPatterns = [
   [/\bXMLSerializer\b/, 'XMLSerializer'],
   [/\bURL\s*\.\s*createObjectURL\s*\(/, 'URL.createObjectURL'],
   [/\bFileReader\b/, 'FileReader'],
+  [/\bCanvas2DLayerRenderer\b/, 'Canvas2DLayerRenderer'],
+  [/canvas2d-layer-renderer/, 'canvas2d-layer-renderer import'],
 ];
 
 function extractBlockBody(source, signatureIndex, blockName) {
