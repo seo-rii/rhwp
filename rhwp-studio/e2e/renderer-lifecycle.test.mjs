@@ -336,6 +336,120 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `CanvasKit render dispatch avoids Canvas2D overlay=${JSON.stringify(noCanvas2DOverlayProbe)}`,
   );
 
+  setTestCase('canvaskit-margin-guide-gpu-fallback-rerenders-content');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
+  const marginGuideFallbackProbe = await page.evaluate(() => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!renderer?.surfaceCache) {
+      return { error: 'CanvasKit renderer internals unavailable' };
+    }
+
+    const originalSurfaceGet = renderer.surfaceCache.get.bind(renderer.surfaceCache);
+    const originalReplaceWithSoftware = renderer.surfaceCache.replaceWithSoftware.bind(renderer.surfaceCache);
+    const originalRenderSurface = renderer.renderSurface.bind(renderer);
+    const originalDrawMarginGuidesOnSurface = renderer.drawMarginGuidesOnSurface.bind(renderer);
+    const originalLastRenderedTree = renderer.lastRenderedTree;
+    const originalLastScale = renderer.lastScale;
+
+    const fakeTree = {
+      pageWidth: 96,
+      pageHeight: 64,
+      profile: 'screen',
+      resources: { tableId: 3, images: [], svgFragments: [] },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 0,
+        bounds: { x: 0, y: 0, width: 96, height: 64 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'rectangle',
+          bbox: { x: 4, y: 4, width: 16, height: 16 },
+          fill: '#3366ff',
+          stroke: null,
+          shadow: null,
+          transform: null,
+        }],
+      },
+    };
+    const gpuSurface = { label: 'gpu' };
+    const softwareSurface = { label: 'software' };
+    const renderCalls = [];
+    const drawCalls = [];
+    let replaceCalls = 0;
+    renderer.lastRenderedTree = fakeTree;
+    renderer.lastScale = 1.25;
+    renderer.surfaceCache.get = () => ({
+      surface: gpuSurface,
+      usedGpuSurface: true,
+      backend: 'webgl',
+    });
+    renderer.surfaceCache.replaceWithSoftware = () => {
+      replaceCalls += 1;
+      return softwareSurface;
+    };
+    renderer.renderSurface = (surface, tree, scale) => {
+      renderCalls.push({
+        surface: surface?.label ?? 'unknown',
+        treeMatches: tree === fakeTree,
+        scale,
+      });
+    };
+    renderer.drawMarginGuidesOnSurface = (surface, _pageInfo, scale) => {
+      drawCalls.push({
+        surface: surface?.label ?? 'unknown',
+        scale,
+      });
+      if (surface === gpuSurface) {
+        throw new Error('forced GPU margin guide failure');
+      }
+    };
+
+    const canvas = document.createElement('canvas');
+    const pageInfo = {
+      pageIndex: 0,
+      width: 96,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 8,
+      marginRight: 8,
+      marginTop: 8,
+      marginBottom: 8,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+    try {
+      renderer.drawMarginGuides(pageInfo, canvas, 1.25);
+      return { replaceCalls, renderCalls, drawCalls };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        replaceCalls,
+        renderCalls,
+        drawCalls,
+      };
+    } finally {
+      renderer.surfaceCache.get = originalSurfaceGet;
+      renderer.surfaceCache.replaceWithSoftware = originalReplaceWithSoftware;
+      renderer.renderSurface = originalRenderSurface;
+      renderer.drawMarginGuidesOnSurface = originalDrawMarginGuidesOnSurface;
+      renderer.lastRenderedTree = originalLastRenderedTree;
+      renderer.lastScale = originalLastScale;
+    }
+  });
+  assert(
+    !marginGuideFallbackProbe.error,
+    marginGuideFallbackProbe.error || 'CanvasKit margin guide fallback probe available',
+  );
+  assert(
+    marginGuideFallbackProbe.replaceCalls === 1
+      && marginGuideFallbackProbe.renderCalls.length === 1
+      && marginGuideFallbackProbe.renderCalls[0].surface === 'software'
+      && marginGuideFallbackProbe.renderCalls[0].treeMatches === true
+      && marginGuideFallbackProbe.renderCalls[0].scale === 1.25
+      && marginGuideFallbackProbe.drawCalls.map((call) => call.surface).join(',') === 'gpu,software',
+    `CanvasKit margin guide fallback rerenders content before drawing guides=${JSON.stringify(marginGuideFallbackProbe)}`,
+  );
+
   setTestCase('async-resource-rerender');
   await loadApp(page, '?renderer=canvas2d');
   const asyncRerenderProbe = await page.evaluate(async () => {

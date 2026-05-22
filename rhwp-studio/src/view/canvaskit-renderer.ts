@@ -288,6 +288,9 @@ export class CanvasKitLayerRenderer {
     if (!fallbackSurface) {
       throw renderError;
     }
+    if (this.lastRenderedTree) {
+      this.renderSurface(fallbackSurface, this.lastRenderedTree, scale);
+    }
     this.drawMarginGuidesOnSurface(fallbackSurface, pageInfo, scale);
   }
 
