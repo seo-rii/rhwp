@@ -264,6 +264,8 @@ impl StaticSubtreeCacheKey {
             PaintOp::GlyphOutline { bbox, outline } => {
                 self.mix_u8(15);
                 self.mix_bbox(bbox);
+                self.mix_variant_meta(Some(&outline.variant));
+                self.mix_glyph_run_diagnostics(&outline.diagnostics);
                 self.mix_u8(match outline.payload_kind {
                     crate::paint::GlyphOutlinePayloadKind::MonochromeFill => 0,
                     crate::paint::GlyphOutlinePayloadKind::MonochromeFillStroke => 1,
@@ -478,6 +480,7 @@ impl StaticSubtreeCacheKey {
     }
 
     fn mix_text_run(&mut self, run: &LayerTextRunPaint) {
+        self.mix_variant_meta(run.variant.as_ref());
         self.mix_str(&run.text);
         self.mix_text_style(&run.style);
         self.mix_usize(run.positions.len());
@@ -509,6 +512,8 @@ impl StaticSubtreeCacheKey {
     }
 
     fn mix_glyph_run(&mut self, run: &LayerGlyphRunPaint) {
+        self.mix_variant_meta(Some(&run.variant));
+        self.mix_glyph_run_diagnostics(&run.diagnostics);
         self.mix_paint_text_style(&run.paint_style);
         self.mix_str(&run.shape_key.font_instance.face_key.0);
         self.mix_f64(run.shape_key.font_instance.size_px);
@@ -596,6 +601,72 @@ impl StaticSubtreeCacheKey {
             crate::paint::GlyphRunOrientation::VerticalSideways => 2,
             crate::paint::GlyphRunOrientation::MixedPerGlyph => 3,
         });
+    }
+
+    fn mix_variant_meta(&mut self, variant: Option<&crate::paint::PaintVariantMeta>) {
+        let Some(variant) = variant else {
+            self.mix_bool(false);
+            return;
+        };
+        self.mix_bool(true);
+        self.mix_str(&variant.equivalence_group);
+        self.mix_str(&variant.variant_id);
+        self.mix_u8(match variant.variant_kind {
+            crate::paint::TextVariantKind::TextRun => 0,
+            crate::paint::TextVariantKind::GlyphRun => 1,
+            crate::paint::TextVariantKind::GlyphOutline => 2,
+        });
+        self.mix_u32(variant.part_index);
+        self.mix_u32(variant.part_count);
+        self.mix_bool(variant.is_default_fallback);
+        self.mix_usize(variant.requires.len());
+        for feature in &variant.requires {
+            self.mix_str(feature);
+        }
+        self.mix_text_variant_quality_option(variant.quality);
+        self.mix_option_str(variant.anchor_op_id.as_deref());
+        self.mix_option_u32(variant.local_paint_order);
+    }
+
+    fn mix_text_variant_quality_option(
+        &mut self,
+        quality: Option<crate::paint::TextVariantQuality>,
+    ) {
+        match quality {
+            Some(quality) => {
+                self.mix_bool(true);
+                self.mix_text_variant_quality(quality);
+            }
+            None => self.mix_bool(false),
+        }
+    }
+
+    fn mix_text_variant_quality(&mut self, quality: crate::paint::TextVariantQuality) {
+        self.mix_u8(match quality {
+            crate::paint::TextVariantQuality::Exact => 0,
+            crate::paint::TextVariantQuality::PositionAdjusted => 1,
+            crate::paint::TextVariantQuality::Approximate => 2,
+            crate::paint::TextVariantQuality::DiagnosticOnly => 3,
+            crate::paint::TextVariantQuality::Omitted => 4,
+        });
+    }
+
+    fn mix_glyph_run_diagnostics(&mut self, diagnostics: &crate::paint::GlyphRunDiagnostics) {
+        self.mix_text_variant_quality(diagnostics.quality);
+        self.mix_u8(match diagnostics.replay_eligibility {
+            crate::paint::GlyphRunReplayEligibility::Portable => 0,
+            crate::paint::GlyphRunReplayEligibility::ConditionalExternalFont => 1,
+            crate::paint::GlyphRunReplayEligibility::LocalDiagnosticOnly => 2,
+            crate::paint::GlyphRunReplayEligibility::NotReplayable => 3,
+        });
+        self.mix_bool(diagnostics.strict_visual_eligible);
+        self.mix_f64(diagnostics.max_origin_delta_px);
+        self.mix_f64(diagnostics.max_advance_delta_px);
+        self.mix_f64(diagnostics.max_residual_after_adjustment_px);
+        self.mix_u32(diagnostics.cluster_mismatch_count);
+        self.mix_u32(diagnostics.missing_glyph_count);
+        self.mix_u32(diagnostics.used_fallback_font_count);
+        self.mix_option_str(diagnostics.reason.as_deref());
     }
 
     fn mix_text_run_placement(&mut self, placement: crate::paint::TextRunPlacement) {

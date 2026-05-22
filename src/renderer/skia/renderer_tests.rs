@@ -1782,6 +1782,80 @@ fn static_subtree_cache_key_includes_color_layers_payload_contents() {
 }
 
 #[test]
+fn static_subtree_cache_key_includes_text_variant_metadata() {
+    let tree_a = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let mut tree_b = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let LayerNodeKind::Leaf { ops, .. } = &mut tree_b.root.kind else {
+        panic!("expected leaf root");
+    };
+    let PaintOp::TextRun { run, .. } = &mut ops[0] else {
+        panic!("expected TextRun fallback");
+    };
+    run.variant
+        .as_mut()
+        .expect("text variant metadata")
+        .equivalence_group = "text-variant-other".to_string();
+
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node(&tree.root, &tree.resources);
+        cache_key.finish()
+    };
+
+    assert_eq!(
+        cache_key(&tree_a),
+        cache_key(&glyph_variant_test_tree(
+            &[1],
+            GlyphRunReplayEligibility::Portable
+        )),
+        "equal text variant metadata should produce stable static subtree keys"
+    );
+    assert_ne!(
+        cache_key(&tree_a),
+        cache_key(&tree_b),
+        "TextRun variant grouping metadata affects text variant selection and must affect static subtree cache keys"
+    );
+}
+
+#[test]
+fn static_subtree_cache_key_includes_glyph_variant_diagnostics() {
+    let glyph_run_tree = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let mut rejected_glyph_run_tree =
+        glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let LayerNodeKind::Leaf { ops, .. } = &mut rejected_glyph_run_tree.root.kind else {
+        panic!("expected leaf root");
+    };
+    let PaintOp::GlyphRun { run, .. } = &mut ops[1] else {
+        panic!("expected GlyphRun variant");
+    };
+    run.diagnostics.strict_visual_eligible = false;
+    run.diagnostics.reason = Some("strictVisualDisabled".to_string());
+
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::MonochromeFill, None, None);
+    let outline_tree = glyph_outline_variant_test_tree(outline.clone(), true);
+    outline.diagnostics.strict_visual_eligible = false;
+    outline.diagnostics.reason = Some("strictVisualDisabled".to_string());
+    let rejected_outline_tree = glyph_outline_variant_test_tree(outline, true);
+
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node(&tree.root, &tree.resources);
+        cache_key.finish()
+    };
+
+    assert_ne!(
+        cache_key(&glyph_run_tree),
+        cache_key(&rejected_glyph_run_tree),
+        "GlyphRun diagnostics affect variant selection and must affect static subtree cache keys"
+    );
+    assert_ne!(
+        cache_key(&outline_tree),
+        cache_key(&rejected_outline_tree),
+        "GlyphOutline diagnostics affect variant selection and must affect static subtree cache keys"
+    );
+}
+
+#[test]
 fn static_subtree_picture_cache_evicts_old_entries() {
     let renderer = SkiaLayerRenderer::new();
 
