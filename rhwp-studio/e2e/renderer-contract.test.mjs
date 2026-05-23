@@ -82,8 +82,28 @@ function extractFunctionBody(source, functionName) {
   return extractBlockBody(source, signatureIndex, functionName);
 }
 
+function extractSwitchCaseBlock(methodBody, caseLabel) {
+  const casePattern = new RegExp(`^\\s*case '${caseLabel}':`, 'm');
+  const caseMatch = methodBody.match(casePattern);
+  assert.notEqual(caseMatch, null, `missing switch case ${caseLabel}`);
+
+  const startIndex = caseMatch.index;
+  const nextCasePattern = /^(\s*)(case\s+'[^']+':|default:)/gm;
+  nextCasePattern.lastIndex = startIndex + caseMatch[0].length;
+  for (let match = nextCasePattern.exec(methodBody); match !== null; match = nextCasePattern.exec(methodBody)) {
+    return methodBody.slice(startIndex, match.index);
+  }
+
+  return methodBody.slice(startIndex);
+}
+
 function caseLabels(methodBody) {
   return [...methodBody.matchAll(/case\s+'([^']+)'/g)].map((match) => match[1]);
+}
+
+function stringEqualityLiterals(body, variablePattern) {
+  const pattern = new RegExp(`\\b${variablePattern}\\s*===\\s*'([^']+)'`, 'g');
+  return [...body.matchAll(pattern)].map((match) => match[1]);
 }
 
 function compareCaseContract(methodName, contractName) {
@@ -130,6 +150,27 @@ compareCaseLabels(
   caseLabels(extractFunctionBody(layerCanvasUtilsSource, 'renderEquationLayoutBox')),
   caseLabels(extractMethodBody(canvaskitSource, 'renderEquationBox')),
   'equation layout replay',
+);
+
+const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(
+  extractMethodBody(canvas2dSource, 'renderOp'),
+  'glyphOutline',
+);
+const canvaskitGlyphOutlineReplayBlock = extractMethodBody(canvaskitSource, 'renderGlyphOutline');
+assert.deepEqual(
+  stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'payloadKind'),
+  stringEqualityLiterals(canvaskitGlyphOutlineReplayBlock, 'payloadKind'),
+  'glyph outline payload kind replay branches must stay aligned between Canvas2D and CanvasKit',
+);
+assert.deepEqual(
+  stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'colorFormat'),
+  stringEqualityLiterals(canvaskitGlyphOutlineReplayBlock, 'colorFormat'),
+  'glyph outline color format replay branches must stay aligned between Canvas2D and CanvasKit',
+);
+assert.deepEqual(
+  stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'node\\.kind'),
+  stringEqualityLiterals(canvaskitGlyphOutlineReplayBlock, 'node\\.kind'),
+  'glyph outline COLRv1 graph node replay branches must stay aligned between Canvas2D and CanvasKit',
 );
 
 for (const { label, source } of canvaskitSourceFiles) {
