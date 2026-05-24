@@ -10,6 +10,7 @@ const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
+const glyphOutlinePayloadStatusPath = path.join(studioRoot, 'src/view/glyph-outline-payload-status.ts');
 const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
 const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-utils.ts');
 const staticSvgPathLayersPath = path.join(studioRoot, 'src/view/static-svg-path-layers.ts');
@@ -21,6 +22,7 @@ const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
+const glyphOutlinePayloadStatusSource = fs.readFileSync(glyphOutlinePayloadStatusPath, 'utf8');
 const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
 const layerGeometryUtilsSource = fs.readFileSync(layerGeometryUtilsPath, 'utf8');
 const staticSvgPathLayersSource = fs.readFileSync(staticSvgPathLayersPath, 'utf8');
@@ -47,6 +49,7 @@ const canvaskitSourceFiles = [
     label: path.relative(studioRoot, filePath),
     source: fs.readFileSync(filePath, 'utf8'),
   })),
+  { label: path.relative(studioRoot, glyphOutlinePayloadStatusPath), source: glyphOutlinePayloadStatusSource },
   { label: path.relative(studioRoot, imageEffectPixelsPath), source: imageEffectPixelsSource },
   { label: path.relative(studioRoot, layerGeometryUtilsPath), source: layerGeometryUtilsSource },
   { label: path.relative(studioRoot, staticSvgPathLayersPath), source: staticSvgPathLayersSource },
