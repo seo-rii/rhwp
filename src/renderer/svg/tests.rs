@@ -1149,6 +1149,40 @@ fn test_layer_svg_strict_glyph_outline_rejects_svg_glyph_without_resource() {
     }));
 }
 
+#[test]
+fn test_layer_svg_strict_glyph_outline_rejects_unsafe_svg_glyph_resource() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let mut tree =
+        glyph_outline_fixture_tree_with_svg_glyph(PaintTextStyle::from(&text_style), true);
+    let mut resources = ResourceArena::default();
+    resources.intern_svg_fragment("<path d=\"M0 0 L10 0 L10 10 Z\" onclick=\"alert(1)\"/>");
+    tree.resources = resources;
+
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(output.contains(">A</text>"));
+    assert!(!output.contains("source-backed static sanitized SVG glyph"));
+    assert!(!output.contains("onclick"));
+
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict unsafe svg glyph resource report");
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedSvgGlyph)
+    }));
+}
+
 fn glyph_outline_fixture_tree(
     outline_paint_style: PaintTextStyle,
     paths: Vec<LayerGlyphOutlinePath>,

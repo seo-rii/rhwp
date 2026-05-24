@@ -27,6 +27,7 @@ use crate::renderer::layer_renderer::{
     VariantOutlineEligibilityReport, VariantRejectReason, VariantReplayStatus,
     VariantSelectionBackend, VariantSelectionContext, VariantSelectionReport,
 };
+use crate::renderer::static_svg::static_svg_fragment_has_path_layer;
 use base64::Engine;
 
 /// SVG 폰트 임베딩 모드
@@ -387,7 +388,9 @@ impl SvgRenderer {
                                                                 .svg_fragment(
                                                                     payload.vector_resource_id,
                                                                 )
-                                                                .is_some()
+                                                                .is_some_and(
+                                                                    static_svg_fragment_has_path_layer,
+                                                                )
                                                     },
                                                 );
                                             if supported {
@@ -2032,6 +2035,9 @@ impl SvgRenderer {
         let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
             return;
         };
+        if !static_svg_fragment_has_path_layer(fragment) {
+            return;
+        }
         let (Some(glyph_range), Some(source_range), Some(view_box)) = (
             payload.glyph_range,
             payload.source_range_utf8,
