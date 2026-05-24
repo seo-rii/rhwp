@@ -2383,6 +2383,18 @@ mod tests {
         unsafe_svg.animation_allowed = true;
         assert!(!unsafe_svg.has_static_sanitized_contract());
 
+        let mut script_svg = svg_glyph.clone();
+        script_svg.script_allowed = true;
+        assert!(!script_svg.has_static_sanitized_contract());
+
+        let mut external_svg = svg_glyph.clone();
+        external_svg.external_resources_allowed = true;
+        assert!(!external_svg.has_static_sanitized_contract());
+
+        let mut interactive_svg = svg_glyph.clone();
+        interactive_svg.interactivity_allowed = true;
+        assert!(!interactive_svg.has_static_sanitized_contract());
+
         let mut invalid_view_box_svg = svg_glyph.clone();
         invalid_view_box_svg.view_box = Some(SvgGlyphViewBox {
             x: 0.0,

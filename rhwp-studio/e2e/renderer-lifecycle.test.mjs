@@ -3901,6 +3901,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2SvgUnsafeFlagsPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              scriptAllowed: true,
+              externalResourcesAllowed: true,
+              interactivityAllowed: true,
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const invalidReservedV2SvgViewBoxPayload = render(
         makeReservedV2OutlinePayloadTree(
           'svgGlyph',
@@ -3910,6 +3927,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
             svgGlyph: {
               ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
               viewBox: { x: 0, y: 0, width: 0, height: 10 },
+            },
+          },
+          true,
+        ),
+        true,
+      );
+      const invalidReservedV2SvgIntrinsicSizePayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              intrinsicSize: { width: 10, height: Number.POSITIVE_INFINITY },
             },
           },
           true,
@@ -4025,7 +4057,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2BitmapFilteringPayload,
         reservedV2SvgPayload,
         invalidReservedV2SvgPayload,
+        invalidReservedV2SvgUnsafeFlagsPayload,
         invalidReservedV2SvgViewBoxPayload,
+        invalidReservedV2SvgIntrinsicSizePayload,
         invalidReservedV2SvgRangePayload,
         invalidReservedV2SvgResourcePayload,
         validReservedV2SvgTransformPayload,
@@ -4546,6 +4580,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2SvgViewBoxPayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2SvgUnsafeFlagsIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgUnsafeFlagsPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2SvgIntrinsicSizeIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgIntrinsicSizePayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidReservedV2SvgRangeIssueCodes = canvas2dGlyphOutlineProbe
     .invalidReservedV2SvgRangePayload
     ?.textV2Validation
@@ -4561,6 +4603,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     invalidReservedV2SvgViewBoxIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgViewBoxIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2SvgUnsafeFlagsIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgUnsafeFlagsIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2SvgIntrinsicSizeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgIntrinsicSizeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgRangeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -4569,6 +4615,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !validReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
     `Canvas2D strict profile validates SvgGlyph transform contract=${JSON.stringify({
       invalidV2SvgViewBoxValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgViewBoxPayload
+        ?.textV2Validation,
+      invalidV2SvgUnsafeFlagsValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgUnsafeFlagsPayload
+        ?.textV2Validation,
+      invalidV2SvgIntrinsicSizeValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2SvgIntrinsicSizePayload
         ?.textV2Validation,
       invalidV2SvgRangeValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgRangePayload
         ?.textV2Validation,
