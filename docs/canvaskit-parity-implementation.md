@@ -70,12 +70,13 @@ feature-gated direct replay contracts. The current baseline covers
 `MonochromeFill`, `MonochromeFillStroke`, `ColorLayers.ColrV0`,
 `ColorLayers.ColrV1` stage 1 (`solidPath` plus local `transform`),
 `BitmapGlyph` with a single producer-selected image strike, and `SvgGlyph`
-with a sanitized static vector resource. Studio Canvas2D/CanvasKit and native
-Skia now replay the first COLRv1 stage-2 subset: `linearGradientPath` and
-`radialGradientPath` leaf nodes with resolved color stops. Studio
-Canvas2D/CanvasKit, Rust JSON/JS bridges, Rust SVG eligibility, native Skia,
-and the Rust CanvasKit replay plan share the same payload eligibility
-vocabulary and deterministic fallback/reject reasons for those subsets.
+with a sanitized static vector resource. Studio Canvas2D/CanvasKit, Rust SVG,
+and native Skia now replay the first COLRv1 stage-2 subset:
+`linearGradientPath` and `radialGradientPath` leaf nodes with resolved color
+stops. Studio Canvas2D/CanvasKit, Rust JSON/JS bridges, Rust SVG eligibility
+and output, native Skia, and the Rust CanvasKit replay plan share the same
+payload eligibility vocabulary and deterministic fallback/reject reasons for
+those subsets.
 
 ## Architecture
 
@@ -206,7 +207,7 @@ Later COLRv1 additions should be staged as independent v2 feature additions:
 | Stage | New graph capability | Writer status |
 | --- | --- | --- |
 | 1 | solid color plus transform | implemented baseline; continue fixture hardening |
-| 2 | linear and radial gradients | browser Canvas2D/CanvasKit and native Skia implemented for resolved gradient path leaves; SVG/pixel parity fixture hardening remains follow-up work |
+| 2 | linear and radial gradients | browser Canvas2D/CanvasKit, Rust SVG, and native Skia implemented for resolved gradient path leaves; wider pixel parity fixture hardening remains follow-up work |
 | 3 | sweep gradients | after gradient coordinate semantics are fixed |
 | 4 | composite and blend | after reference compositing semantics are fixed |
 | 5 | clip and reusable graph nodes | after DAG, cycle, depth, and reuse rules are fixed |

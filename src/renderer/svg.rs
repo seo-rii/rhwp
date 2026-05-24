@@ -520,34 +520,15 @@ impl SvgRenderer {
                     escape_xml(&outline.variant.equivalence_group),
                     escape_xml(&outline.variant.variant_id),
                 ));
-                let path_data = |commands: &[PathCommand]| {
-                    let mut d = String::new();
-                    for command in commands {
-                        match command {
-                            PathCommand::MoveTo(x, y) => d.push_str(&format!("M{} {} ", x, y)),
-                            PathCommand::LineTo(x, y) => d.push_str(&format!("L{} {} ", x, y)),
-                            PathCommand::CurveTo(x1, y1, x2, y2, x, y) => {
-                                d.push_str(&format!("C{} {} {} {} {} {} ", x1, y1, x2, y2, x, y));
-                            }
-                            PathCommand::ArcTo(rx, ry, x_rot, large_arc, sweep, x, y) => {
-                                d.push_str(&format!(
-                                    "A{} {} {} {} {} {} {} ",
-                                    rx,
-                                    ry,
-                                    x_rot,
-                                    if *large_arc { 1 } else { 0 },
-                                    if *sweep { 1 } else { 0 },
-                                    x,
-                                    y
-                                ));
-                            }
-                            PathCommand::ClosePath => d.push_str("Z "),
-                        }
-                    }
-                    d
-                };
                 if outline.payload_kind == GlyphOutlinePayloadKind::ColorLayers {
                     if let Some(color_layers) = outline.color_layers.as_ref() {
+                        if color_layers.color_format.as_str() == "colrV1" {
+                            if let Some(graph) = color_layers.paint_graph.as_ref() {
+                                self.render_glyph_outline_colrv1_graph(outline, graph);
+                                self.output.push_str("</g>\n");
+                                return;
+                            }
+                        }
                         let layers = color_layers
                             .colrv1_stage1_reference_layers()
                             .unwrap_or_else(|| color_layers.layers.clone());
@@ -607,7 +588,7 @@ impl SvgRenderer {
                                 .unwrap_or_default();
                             self.output.push_str(&format!(
                                 "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\"{} data-rhwp-color-format=\"{}\" data-rhwp-color-layer-index=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\"{}{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed {} glyph color layer</desc></path>\n",
-                                path_data(commands).trim(),
+                                svg_path_data(commands).trim(),
                                 fill_color,
                                 fill_opacity,
                                 layer
@@ -637,7 +618,7 @@ impl SvgRenderer {
                 for path in &outline.paths {
                     self.output.push_str(&format!(
                         "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\" data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed glyph outline</desc></path>\n",
-                        path_data(&path.commands).trim(),
+                        svg_path_data(&path.commands).trim(),
                         fill,
                         stroke_attrs,
                         path.fill_rule.as_str(),
@@ -1949,6 +1930,179 @@ impl SvgRenderer {
         if temp.transform.has_transform() {
             self.output.push_str("</g>\n");
         }
+    }
+
+    fn render_glyph_outline_colrv1_graph(
+        &mut self,
+        outline: &LayerGlyphOutlinePaint,
+        graph: &crate::paint::ColorPaintGraphPayload,
+    ) {
+        self.render_glyph_outline_colrv1_graph_node(outline, graph, graph.root_node_id, None, 0);
+    }
+
+    fn render_glyph_outline_colrv1_graph_node(
+        &mut self,
+        outline: &LayerGlyphOutlinePaint,
+        graph: &crate::paint::ColorPaintGraphPayload,
+        node_id: u32,
+        transform_to_run: Option<LayerAffineTransform>,
+        depth: usize,
+    ) {
+        if depth > 64 {
+            return;
+        }
+        let Some(node) = graph.nodes.iter().find(|node| node.node_id == node_id) else {
+            return;
+        };
+        match node.kind {
+            crate::paint::ColorPaintGraphNodeKind::SolidPath => {
+                let Some(solid) = node.solid_path.as_ref() else {
+                    return;
+                };
+                let Some(glyph_range) = node.glyph_range else {
+                    return;
+                };
+                let Some(source_range) = node.source_range_utf8 else {
+                    return;
+                };
+                let fill_color = resolved_color_to_svg(&solid.fill);
+                let fill_opacity = resolved_color_opacity_attr(&solid.fill);
+                self.output.push_str(&format!(
+                    "<path d=\"{}\" fill=\"{}\"{} fill-rule=\"{}\"{} data-rhwp-color-format=\"colrV1\" data-rhwp-color-graph-node-kind=\"solidPath\" data-rhwp-color-graph-node-id=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\"{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed COLRv1 glyph color graph solid path</desc></path>\n",
+                    svg_path_data(&solid.commands).trim(),
+                    fill_color,
+                    fill_opacity,
+                    solid.fill_rule.as_str(),
+                    transform_to_run
+                        .map(|transform| format!(" transform=\"{}\"", svg_affine_matrix_transform(transform)))
+                        .unwrap_or_default(),
+                    node.node_id,
+                    solid.source_glyph_id.unwrap_or(0),
+                    glyph_range.start,
+                    glyph_range.end,
+                    outline.source.id.0,
+                    source_range.start,
+                    source_range.end,
+                    solid
+                        .palette_index
+                        .map(|index| format!(" data-rhwp-palette-index=\"{}\"", index))
+                        .unwrap_or_default(),
+                    escape_xml(&outline.variant.equivalence_group),
+                    escape_xml(&outline.variant.variant_id),
+                ));
+            }
+            crate::paint::ColorPaintGraphNodeKind::LinearGradientPath => {
+                let Some(gradient_path) = node.linear_gradient_path.as_ref() else {
+                    return;
+                };
+                let Some(glyph_range) = node.glyph_range else {
+                    return;
+                };
+                let Some(source_range) = node.source_range_utf8 else {
+                    return;
+                };
+                let gradient_id = self.create_colrv1_linear_gradient_def(&gradient_path.gradient);
+                self.output.push_str(&format!(
+                    "<path d=\"{}\" fill=\"url(#{})\" fill-rule=\"{}\"{} data-rhwp-color-format=\"colrV1\" data-rhwp-color-graph-node-kind=\"linearGradientPath\" data-rhwp-color-graph-node-id=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\"{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed COLRv1 glyph color graph linear gradient path</desc></path>\n",
+                    svg_path_data(&gradient_path.commands).trim(),
+                    gradient_id,
+                    gradient_path.fill_rule.as_str(),
+                    transform_to_run
+                        .map(|transform| format!(" transform=\"{}\"", svg_affine_matrix_transform(transform)))
+                        .unwrap_or_default(),
+                    node.node_id,
+                    gradient_path.source_glyph_id.unwrap_or(0),
+                    glyph_range.start,
+                    glyph_range.end,
+                    outline.source.id.0,
+                    source_range.start,
+                    source_range.end,
+                    gradient_path
+                        .palette_index
+                        .map(|index| format!(" data-rhwp-palette-index=\"{}\"", index))
+                        .unwrap_or_default(),
+                    escape_xml(&outline.variant.equivalence_group),
+                    escape_xml(&outline.variant.variant_id),
+                ));
+            }
+            crate::paint::ColorPaintGraphNodeKind::RadialGradientPath => {
+                let Some(gradient_path) = node.radial_gradient_path.as_ref() else {
+                    return;
+                };
+                let Some(glyph_range) = node.glyph_range else {
+                    return;
+                };
+                let Some(source_range) = node.source_range_utf8 else {
+                    return;
+                };
+                let gradient_id = self.create_colrv1_radial_gradient_def(&gradient_path.gradient);
+                self.output.push_str(&format!(
+                    "<path d=\"{}\" fill=\"url(#{})\" fill-rule=\"{}\"{} data-rhwp-color-format=\"colrV1\" data-rhwp-color-graph-node-kind=\"radialGradientPath\" data-rhwp-color-graph-node-id=\"{}\" data-rhwp-glyph-id=\"{}\" data-rhwp-glyph-start=\"{}\" data-rhwp-glyph-end=\"{}\" data-rhwp-source-id=\"{}\" data-rhwp-source-utf8-start=\"{}\" data-rhwp-source-utf8-end=\"{}\"{} data-rhwp-equivalence-group=\"{}\" data-rhwp-variant-id=\"{}\"><desc>source-backed COLRv1 glyph color graph radial gradient path</desc></path>\n",
+                    svg_path_data(&gradient_path.commands).trim(),
+                    gradient_id,
+                    gradient_path.fill_rule.as_str(),
+                    transform_to_run
+                        .map(|transform| format!(" transform=\"{}\"", svg_affine_matrix_transform(transform)))
+                        .unwrap_or_default(),
+                    node.node_id,
+                    gradient_path.source_glyph_id.unwrap_or(0),
+                    glyph_range.start,
+                    glyph_range.end,
+                    outline.source.id.0,
+                    source_range.start,
+                    source_range.end,
+                    gradient_path
+                        .palette_index
+                        .map(|index| format!(" data-rhwp-palette-index=\"{}\"", index))
+                        .unwrap_or_default(),
+                    escape_xml(&outline.variant.equivalence_group),
+                    escape_xml(&outline.variant.variant_id),
+                ));
+            }
+            crate::paint::ColorPaintGraphNodeKind::Transform => {
+                let Some(transform) = node.transform.as_ref() else {
+                    return;
+                };
+                let next_transform = transform_to_run
+                    .map(|existing| compose_layer_affine_transform(existing, transform.transform))
+                    .unwrap_or(transform.transform);
+                self.render_glyph_outline_colrv1_graph_node(
+                    outline,
+                    graph,
+                    transform.child_node_id,
+                    Some(next_transform),
+                    depth + 1,
+                );
+            }
+        }
+    }
+
+    fn create_colrv1_linear_gradient_def(
+        &mut self,
+        gradient: &crate::paint::ColorLinearGradient,
+    ) -> String {
+        self.gradient_counter += 1;
+        let id = format!("grad{}", self.gradient_counter);
+        let stops = colrv1_gradient_stops_to_svg(&gradient.stops);
+        self.defs.push(format!(
+            "<linearGradient id=\"{}\" gradientUnits=\"userSpaceOnUse\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\">\n{}</linearGradient>\n",
+            id, gradient.x0, gradient.y0, gradient.x1, gradient.y1, stops,
+        ));
+        id
+    }
+
+    fn create_colrv1_radial_gradient_def(
+        &mut self,
+        gradient: &crate::paint::ColorRadialGradient,
+    ) -> String {
+        self.gradient_counter += 1;
+        let id = format!("grad{}", self.gradient_counter);
+        let stops = colrv1_gradient_stops_to_svg(&gradient.stops);
+        self.defs.push(format!(
+            "<radialGradient id=\"{}\" gradientUnits=\"userSpaceOnUse\" cx=\"{}\" cy=\"{}\" r=\"{}\">\n{}</radialGradient>\n",
+            id, gradient.cx, gradient.cy, gradient.radius, stops,
+        ));
+        id
     }
 
     fn render_layer_glyph_outline_bitmap(
@@ -3859,6 +4013,71 @@ fn color_to_svg(color: u32) -> String {
     let g = (color >> 8) & 0xFF;
     let r = color & 0xFF;
     format!("#{:02x}{:02x}{:02x}", r, g, b)
+}
+
+fn svg_path_data(commands: &[PathCommand]) -> String {
+    let mut d = String::new();
+    for command in commands {
+        match command {
+            PathCommand::MoveTo(x, y) => d.push_str(&format!("M{} {} ", x, y)),
+            PathCommand::LineTo(x, y) => d.push_str(&format!("L{} {} ", x, y)),
+            PathCommand::CurveTo(x1, y1, x2, y2, x, y) => {
+                d.push_str(&format!("C{} {} {} {} {} {} ", x1, y1, x2, y2, x, y));
+            }
+            PathCommand::ArcTo(rx, ry, x_rot, large_arc, sweep, x, y) => {
+                d.push_str(&format!(
+                    "A{} {} {} {} {} {} {} ",
+                    rx,
+                    ry,
+                    x_rot,
+                    if *large_arc { 1 } else { 0 },
+                    if *sweep { 1 } else { 0 },
+                    x,
+                    y
+                ));
+            }
+            PathCommand::ClosePath => d.push_str("Z "),
+        }
+    }
+    d
+}
+
+fn resolved_color_to_svg(color: &crate::paint::ResolvedColor) -> String {
+    let channel = |component: f32| -> u8 { (component.clamp(0.0, 1.0) * 255.0).round() as u8 };
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        channel(color.rgba[0]),
+        channel(color.rgba[1]),
+        channel(color.rgba[2])
+    )
+}
+
+fn resolved_color_opacity_attr(color: &crate::paint::ResolvedColor) -> String {
+    let alpha = color.rgba[3].clamp(0.0, 1.0);
+    if alpha < 1.0 {
+        format!(" fill-opacity=\"{}\"", alpha)
+    } else {
+        String::new()
+    }
+}
+
+fn colrv1_gradient_stops_to_svg(stops: &[crate::paint::ColorGradientStop]) -> String {
+    let mut output = String::new();
+    for stop in stops {
+        let stop_opacity = stop.color.rgba[3].clamp(0.0, 1.0);
+        let stop_opacity_attr = if stop_opacity < 1.0 {
+            format!(" stop-opacity=\"{}\"", stop_opacity)
+        } else {
+            String::new()
+        };
+        output.push_str(&format!(
+            "<stop offset=\"{}\" stop-color=\"{}\"{} />\n",
+            stop.offset,
+            resolved_color_to_svg(&stop.color),
+            stop_opacity_attr,
+        ));
+    }
+    output
 }
 
 fn compose_layer_affine_transform(

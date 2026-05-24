@@ -1,10 +1,11 @@
 use super::*;
 use crate::paint::{
     BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
-    BitmapStrikeSelection, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload,
-    ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintSolidPathNode,
-    ColorPaintTransformNode, FontColorGlyphRef, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
-    GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    BitmapStrikeSelection, ColorGlyphFormat, ColorGradientStop, ColorLayerNode, ColorLayersPayload,
+    ColorLinearGradient, ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
+    ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode,
+    ColorPaintTransformNode, ColorRadialGradient, FontColorGlyphRef, GlyphOutlineFillRule,
+    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
     LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
     LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
@@ -888,7 +889,8 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
     assert!(output.contains("fill=\"#00ff00\""));
     assert!(output.contains("transform=\"matrix(1 0 0 1 5 0)\""));
     assert!(output.contains("data-rhwp-color-format=\"colrV1\""));
-    assert!(output.contains("source-backed COLRv1 glyph color layer"));
+    assert!(output.contains("data-rhwp-color-graph-node-kind=\"solidPath\""));
+    assert!(output.contains("source-backed COLRv1 glyph color graph solid path"));
     let report = renderer
         .text_variant_selection_diagnostics()
         .iter()
@@ -904,6 +906,139 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
                 && eligibility.replay_eligible
                 && eligibility.reason.is_none()
         }));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_replays_colrv1_gradient_graph_leaves() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("fixture-face".to_string()),
+        glyph_id: Some(42),
+        palette_index: Some(3),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let color_stops = vec![
+        ColorGradientStop {
+            offset: 0.0,
+            color: ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba: [1.0, 0.0, 0.0, 1.0],
+            },
+        },
+        ColorGradientStop {
+            offset: 1.0,
+            color: ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba: [0.0, 0.0, 1.0, 0.5],
+            },
+        },
+    ];
+    let make_tree = |node: ColorPaintGraphNode| {
+        glyph_outline_fixture_tree_with_color_layers(
+            PaintTextStyle::from(&text_style),
+            ColorLayersPayload {
+                color_format: ColorGlyphFormat::ColrV1,
+                source_font_ref: Some(source_font_ref.clone()),
+                palette_ref: Some(PaletteRef {
+                    id: Some("fixture-palette".to_string()),
+                    index: Some(0),
+                    cpal_digest: Some("blake3:fixture-cpal".to_string()),
+                }),
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+                layers: Vec::new(),
+                paint_graph: Some(ColorPaintGraphPayload {
+                    root_node_id: 0,
+                    nodes: vec![node],
+                }),
+            },
+        )
+    };
+    let linear_tree = make_tree(ColorPaintGraphNode {
+        node_id: 0,
+        kind: ColorPaintGraphNodeKind::LinearGradientPath,
+        solid_path: None,
+        linear_gradient_path: Some(ColorPaintLinearGradientPathNode {
+            commands: vec![
+                PathCommand::MoveTo(0.0, 0.0),
+                PathCommand::LineTo(8.0, 0.0),
+                PathCommand::LineTo(8.0, 8.0),
+                PathCommand::ClosePath,
+            ],
+            gradient: ColorLinearGradient {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 8.0,
+                y1: 0.0,
+                stops: color_stops.clone(),
+            },
+            fill_rule: GlyphOutlineFillRule::NonZero,
+            source_glyph_id: Some(42),
+            palette_index: Some(3),
+        }),
+        radial_gradient_path: None,
+        transform: None,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+        source_font_ref: Some(source_font_ref.clone()),
+    });
+    let radial_tree = make_tree(ColorPaintGraphNode {
+        node_id: 0,
+        kind: ColorPaintGraphNodeKind::RadialGradientPath,
+        solid_path: None,
+        linear_gradient_path: None,
+        radial_gradient_path: Some(ColorPaintRadialGradientPathNode {
+            commands: vec![
+                PathCommand::MoveTo(0.0, 0.0),
+                PathCommand::LineTo(8.0, 0.0),
+                PathCommand::LineTo(8.0, 8.0),
+                PathCommand::ClosePath,
+            ],
+            gradient: ColorRadialGradient {
+                cx: 4.0,
+                cy: 4.0,
+                radius: 4.0,
+                stops: color_stops,
+            },
+            fill_rule: GlyphOutlineFillRule::EvenOdd,
+            source_glyph_id: Some(42),
+            palette_index: Some(3),
+        }),
+        transform: None,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+        source_font_ref: Some(source_font_ref.clone()),
+    });
+
+    let mut linear_renderer = SvgRenderer::new();
+    linear_renderer.set_strict_glyph_outline_replay(true);
+    linear_renderer.render_layer_tree(&linear_tree);
+    let linear_output = linear_renderer.output();
+    assert!(!linear_output.contains(">A</text>"));
+    assert!(linear_output.contains("<linearGradient id=\"grad1\" gradientUnits=\"userSpaceOnUse\" x1=\"0\" y1=\"0\" x2=\"8\" y2=\"0\""));
+    assert!(linear_output.contains("<stop offset=\"0\" stop-color=\"#ff0000\""));
+    assert!(
+        linear_output.contains("<stop offset=\"1\" stop-color=\"#0000ff\" stop-opacity=\"0.5\"")
+    );
+    assert!(linear_output.contains("fill=\"url(#grad1)\""));
+    assert!(linear_output.contains("data-rhwp-color-graph-node-kind=\"linearGradientPath\""));
+    assert!(linear_output.contains("source-backed COLRv1 glyph color graph linear gradient path"));
+
+    let mut radial_renderer = SvgRenderer::new();
+    radial_renderer.set_strict_glyph_outline_replay(true);
+    radial_renderer.render_layer_tree(&radial_tree);
+    let radial_output = radial_renderer.output();
+    assert!(!radial_output.contains(">A</text>"));
+    assert!(radial_output.contains(
+        "<radialGradient id=\"grad1\" gradientUnits=\"userSpaceOnUse\" cx=\"4\" cy=\"4\" r=\"4\""
+    ));
+    assert!(radial_output.contains("fill=\"url(#grad1)\""));
+    assert!(radial_output.contains("fill-rule=\"evenodd\""));
+    assert!(radial_output.contains("data-rhwp-color-graph-node-kind=\"radialGradientPath\""));
+    assert!(radial_output.contains("source-backed COLRv1 glyph color graph radial gradient path"));
 }
 
 #[test]
