@@ -4,14 +4,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(studioRoot, '..');
 const canvas2dPath = path.join(studioRoot, 'src/view/canvas2d-layer-renderer.ts');
 const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
+const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
+const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const canvaskitSourceFiles = [
   { label: path.relative(studioRoot, canvaskitPath), source: canvaskitSource },
   ...fs.readdirSync(canvaskitDirectory)
@@ -43,6 +46,48 @@ const forbiddenCanvas2dApiPatterns = [
   [/\bFileReader\b/, 'FileReader'],
   [/\bCanvas2DLayerRenderer\b/, 'Canvas2DLayerRenderer'],
   [/canvas2d-layer-renderer/, 'canvas2d-layer-renderer import'],
+];
+const implementationPlanTouchpoints = [
+  {
+    docToken: 'src/paint/text_v2.rs',
+    filePath: path.join(repoRoot, 'src/paint/text_v2.rs'),
+    kind: 'file',
+  },
+  {
+    docToken: 'rhwp-studio/src/core/text-variants.ts',
+    filePath: path.join(studioRoot, 'src/core/text-variants.ts'),
+    kind: 'file',
+  },
+  {
+    docToken: 'glyph-outline-payload-status',
+    filePath: path.join(studioRoot, 'src/view/glyph-outline-payload-status.ts'),
+    kind: 'file',
+  },
+  {
+    docToken: 'rhwp-studio/src/view/canvaskit-renderer.ts',
+    filePath: canvaskitPath,
+    kind: 'file',
+  },
+  {
+    docToken: 'rhwp-studio/src/view/canvaskit/*',
+    filePath: canvaskitDirectory,
+    kind: 'directory',
+  },
+  {
+    docToken: 'rhwp-studio/src/view/canvas2d-layer-renderer.ts',
+    filePath: canvas2dPath,
+    kind: 'file',
+  },
+  {
+    docToken: 'rhwp-studio/e2e/renderer-contract.test.mjs',
+    filePath: fileURLToPath(import.meta.url),
+    kind: 'file',
+  },
+  {
+    docToken: 'rhwp-studio/e2e/renderer-lifecycle.test.mjs',
+    filePath: path.join(studioRoot, 'e2e/renderer-lifecycle.test.mjs'),
+    kind: 'file',
+  },
 ];
 
 function extractBlockBody(source, signatureIndex, blockName) {
@@ -151,6 +196,20 @@ compareCaseLabels(
   caseLabels(extractMethodBody(canvaskitSource, 'renderEquationBox')),
   'equation layout replay',
 );
+
+for (const { docToken, filePath, kind } of implementationPlanTouchpoints) {
+  assert.equal(
+    textIrV2DocSource.includes(docToken),
+    true,
+    `CanvasKit implementation plan must mention ${docToken}`,
+  );
+  const stat = fs.statSync(filePath);
+  assert.equal(
+    kind === 'directory' ? stat.isDirectory() : stat.isFile(),
+    true,
+    `CanvasKit implementation plan touchpoint must resolve to ${kind}: ${docToken}`,
+  );
+}
 
 const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(
   extractMethodBody(canvas2dSource, 'renderOp'),
