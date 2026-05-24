@@ -1776,6 +1776,22 @@ mod tests {
             (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
         );
 
+        let mut payload = svg_payload(path_svg_id);
+        payload.animation_allowed = true;
+        outline.svg_glyph = Some(payload);
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+
+        let mut payload = svg_payload(path_svg_id);
+        payload.view_box = None;
+        outline.svg_glyph = Some(payload);
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+
         outline.svg_glyph = Some(svg_payload(empty_svg_id));
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),

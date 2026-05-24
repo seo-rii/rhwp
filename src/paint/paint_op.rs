@@ -2761,6 +2761,31 @@ mod tests {
         interactive_svg.interactivity_allowed = true;
         assert!(!interactive_svg.has_static_sanitized_contract());
 
+        let mut missing_source_svg = svg_glyph.clone();
+        missing_source_svg.source_range_utf8 = None;
+        assert!(!missing_source_svg.has_static_sanitized_contract());
+
+        let mut invalid_glyph_range_svg = svg_glyph.clone();
+        invalid_glyph_range_svg.glyph_range = Some(GlyphRange { start: 3, end: 2 });
+        assert!(!invalid_glyph_range_svg.has_static_sanitized_contract());
+
+        let mut missing_placement_svg = svg_glyph.clone();
+        missing_placement_svg.placement = None;
+        assert!(!missing_placement_svg.has_static_sanitized_contract());
+
+        let mut invalid_placement_svg = svg_glyph.clone();
+        invalid_placement_svg
+            .placement
+            .as_mut()
+            .unwrap()
+            .run_to_page
+            .e = f64::NAN;
+        assert!(!invalid_placement_svg.has_static_sanitized_contract());
+
+        let mut missing_view_box_svg = svg_glyph.clone();
+        missing_view_box_svg.view_box = None;
+        assert!(!missing_view_box_svg.has_static_sanitized_contract());
+
         let mut invalid_view_box_svg = svg_glyph.clone();
         invalid_view_box_svg.view_box = Some(SvgGlyphViewBox {
             x: 0.0,
