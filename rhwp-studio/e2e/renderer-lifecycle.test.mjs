@@ -3962,6 +3962,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidRangeReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const mixedLayerReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      mixedLayerReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .layers
+        .push(clonePayloadEnvelope(reservedPayloadEnvelopes.colorLayers.colorLayers.layers[0]));
+      const mixedLayerReservedV2ColorPayloadColrV1 = render(
+        mixedLayerReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const invalidReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
       delete invalidReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
         .find((variant) => variant.variantId === 'glyphOutline')
@@ -4483,6 +4495,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidProvenanceReservedV2ColorPayload,
         reservedV2ColorPayloadColrV1,
         invalidRangeReservedV2ColorPayloadColrV1,
+        mixedLayerReservedV2ColorPayloadColrV1,
         invalidReservedV2ColorPayloadColrV1,
         cyclicReservedV2ColorPayloadColrV1,
         oversizedReservedV2ColorPayloadColrV1,
@@ -4789,6 +4802,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidRangeReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const mixedLayerReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .mixedLayerReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
     .invalidReservedV2ColorPayloadColrV1
     ?.textV2Validation
@@ -4848,6 +4865,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidProvenanceReservedV2ColorPayloadIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidRangeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidRangeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && mixedLayerReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !mixedLayerReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && !invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -4871,6 +4890,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       v2ColrV1Validation: canvas2dGlyphOutlineProbe.reservedV2ColorPayloadColrV1?.textV2Validation,
       invalidRangeV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidRangeReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      mixedLayerV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .mixedLayerReservedV2ColorPayloadColrV1
         ?.textV2Validation,
       invalidV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidReservedV2ColorPayloadColrV1

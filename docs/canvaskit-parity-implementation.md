@@ -192,6 +192,9 @@ Implementation shape:
 - treat `linearGradientPath` and `radialGradientPath` as the first stage-2
   graph leaves; their gradients carry producer-resolved color stops and
   remain inside the glyph payload's run-local coordinate space;
+- keep COLRv1 graph payloads exclusive from legacy `layers`; a payload that
+  carries both the normalized graph and resolved layer list is invalid because
+  it gives renderers two canonical paint descriptions;
 - allow only run-local affine transforms inside the glyph payload;
 - reject graph nodes that alter `PaintOp` order, clip scope, effect scope,
   cache scope, or cross-scope variant behavior;

@@ -866,6 +866,8 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     || payload.stroke
     || colorLayers?.colorFormat !== 'colrV1'
     || colorLayers.sourceFontRef === undefined
+    || !Array.isArray(colorLayers.layers)
+    || colorLayers.layers.length !== 0
     || !isValidPayloadRange(colorLayers.sourceRangeUtf8)
     || !isValidPayloadRange(colorLayers.glyphRange)
     || graph === undefined

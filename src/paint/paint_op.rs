@@ -670,6 +670,7 @@ impl ColorLayersPayload {
 
     pub fn has_colrv1_stage1_graph_contract(&self) -> bool {
         self.color_format == ColorGlyphFormat::ColrV1
+            && self.layers.is_empty()
             && self
                 .paint_graph
                 .as_ref()
@@ -2648,6 +2649,12 @@ mod tests {
             .transform
             .a = f64::NAN;
         assert!(!invalid_graph_transform.has_colrv1_stage1_graph_contract());
+
+        let mut graph_with_legacy_layers = color_layers_colrv1.clone();
+        graph_with_legacy_layers
+            .layers
+            .push(color_layers.layers[0].clone());
+        assert!(!graph_with_legacy_layers.has_colrv1_stage1_graph_contract());
 
         let mut unreachable_graph = color_layers_colrv1.clone();
         unreachable_graph
