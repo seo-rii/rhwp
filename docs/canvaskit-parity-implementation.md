@@ -143,11 +143,16 @@ explicit unsupported diagnostic, and a targeted lifecycle/parity fixture.
 | form and equation objects | direct CanvasKit geometry and text/path drawing | branch parity and fixture for geometry bounds |
 | text visual ops | CanvasKit text/path primitives using HWP-compatible positions | no CanvasKit text measurement authority in `hwpCompat` |
 | `GlyphRun` variants | exact font/face/instance replay only | selected/rejected diagnostics exact |
-| `GlyphOutline` payloads | feature-gated strict replay | payload family validator and unsupported fixture |
+| `GlyphOutline` payloads | feature-gated strict replay | shared payload family validator and unsupported fixture |
 
 P2 does not require every unsupported branch to be fully replayed immediately.
 It does require every branch to be visible in diagnostics, with a deterministic
 fallback or rejection path.
+
+The `GlyphOutline` payload-family guard is shared by the v2 text validator,
+CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
+must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload
+families now fall back or hard-reject before any backend tries to replay them.
 
 ### P3. Native-Ready Strict Payloads
 
@@ -240,6 +245,8 @@ covered for strict `SvgGlyph` vector resources so stale static pictures cannot
 survive a same-key vector payload change. CanvasKit lifecycle also rejects
 `BitmapGlyph` payloads with missing required strict fields or backend strike
 reselection, missing image resources, and ambiguous resource keys before replay.
+The Rust renderer path also rejects mixed bitmap/color/SVG payload families
+through the same `GlyphOutline` exclusivity guard before replay.
 Before writer emission is widened, add broader real-document resource corpus
 coverage.
 
@@ -269,7 +276,9 @@ and `clipPath`, as `unsupportedSvgGlyph` in both DOMParser and no-DOMParser
 paths. CanvasKit lifecycle also rejects strict `SvgGlyph` payloads with missing
 `viewBox`, unsafe static-vector flags, or raw inline SVG replay fields before
 replay, and rejects missing or ambiguous vector resources. Before writer
-emission is widened, add broader real-document resource corpus coverage.
+emission is widened, add broader real-document resource corpus coverage. The
+same exclusivity guard prevents sanitized SVG payloads from being replayed when
+bitmap, color, or stroke sibling fields are present.
 
 ### 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 
