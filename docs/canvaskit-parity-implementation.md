@@ -238,9 +238,9 @@ payload subset. Static picture cache keys already include image and
 covered for strict `SvgGlyph` vector resources so stale static pictures cannot
 survive a same-key vector payload change. CanvasKit lifecycle also rejects
 `BitmapGlyph` payloads with missing required strict fields or backend strike
-reselection before replay. Before writer emission is widened, add more negative
-fixtures for malformed resource refs and remaining resource identity cache reuse
-cases.
+reselection, missing image resources, and ambiguous resource keys before replay.
+Before writer emission is widened, add broader real-document resource corpus
+coverage.
 
 ### 3. SvgGlyph Static Vector Hardening
 
@@ -267,8 +267,8 @@ plus unsupported vector primitives such as `foreignObject`, `filter`, `mask`,
 and `clipPath`, as `unsupportedSvgGlyph` in both DOMParser and no-DOMParser
 paths. CanvasKit lifecycle also rejects strict `SvgGlyph` payloads with missing
 `viewBox`, unsafe static-vector flags, or raw inline SVG replay fields before
-replay. Before writer emission is widened, add more negative fixtures for
-remaining resource identity cache reuse cases.
+replay, and rejects missing or ambiguous vector resources. Before writer
+emission is widened, add broader real-document resource corpus coverage.
 
 ### 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 

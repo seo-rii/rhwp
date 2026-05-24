@@ -6100,6 +6100,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
         strikeSelection: 'backendResolved',
       },
     });
+    const missingResourceBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-resource', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-missing-resource', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-missing-resource',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        imageResourceId: 'bitmap-glyph-missing',
+      },
+    });
     const svgOutline = outlineFor('canvaskit-outline-svg', {
       payloadKind: 'svgGlyph',
       variant: variantFor('canvaskit-outline-svg', 'glyphOutline', {
@@ -6123,6 +6136,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
         animationAllowed: false,
         externalResourcesAllowed: false,
         interactivityAllowed: false,
+      },
+    });
+    const missingResourceSvgOutline = outlineFor('canvaskit-outline-svg-missing-resource', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-missing-resource', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-missing-resource',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        vectorResourceId: 'svg-glyph-missing',
       },
     });
     const nonpositiveSvgBBoxOutline = outlineFor('canvaskit-outline-svg-empty-bbox', {
@@ -6753,8 +6780,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
       missingFilteringBitmapGlyph: await render(treeFor(missingFilteringBitmapOutline)),
       strikeReselectionBitmapGlyph: await render(treeFor(strikeReselectionBitmapOutline)),
+      missingResourceBitmapGlyph: await render(treeFor(missingResourceBitmapOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
+      missingResourceSvgGlyph: await render(treeFor(missingResourceSvgOutline)),
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
       missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
       unsafeFlagsSvgGlyph: await render(treeFor(unsafeFlagsSvgOutline)),
@@ -6989,6 +7018,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ),
     `CanvasKit rejects BitmapGlyph backend strike reselection=${JSON.stringify(canvaskitStrikeReselectionBitmapReport)}`,
   );
+  const canvaskitMissingResourceBitmapReport = canvaskitGlyphOutlineProbe
+    .missingResourceBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-missing-resource');
+  assert(
+    canvaskitMissingResourceBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingResourceBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph missing image resource=${JSON.stringify(canvaskitMissingResourceBitmapReport)}`,
+  );
   const canvaskitDuplicateBitmapKeyReport = canvaskitGlyphOutlineProbe
     .duplicateBitmapGlyphKey
     ?.diagnostics
@@ -7008,6 +7049,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects SvgGlyph GlyphOutline=${JSON.stringify(canvaskitSvgReport)}`,
+  );
+  const canvaskitMissingResourceSvgReport = canvaskitGlyphOutlineProbe
+    .missingResourceSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-resource');
+  assert(
+    canvaskitMissingResourceSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingResourceSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph missing vector resource=${JSON.stringify(canvaskitMissingResourceSvgReport)}`,
   );
   const canvaskitNonpositiveSvgBBoxReport = canvaskitGlyphOutlineProbe
     .nonpositiveSvgBBoxGlyph
