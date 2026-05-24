@@ -825,7 +825,12 @@ export function isSupportedGlyphOutlineStrokeStyle(
 }
 
 export function hasGlyphOutlinePathsContract(payload: LayerGlyphOutlineOp): boolean {
-  return payload.paths.length > 0
+  const payloadKind = payload.payloadKind ?? 'monochromeFill';
+  return (payloadKind === 'monochromeFill' || payloadKind === 'monochromeFillStroke')
+    && payload.colorLayers === undefined
+    && payload.bitmapGlyph === undefined
+    && payload.svgGlyph === undefined
+    && payload.paths.length > 0
     && payload.paths.every((path) =>
       isValidPayloadGlyphId(path.glyphId)
       && isValidPayloadRange(path.sourceRangeUtf8)
@@ -839,6 +844,8 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
   const colorLayers = payload.colorLayers;
   return payload.payloadKind === 'colorLayers'
     && !payload.stroke
+    && payload.bitmapGlyph === undefined
+    && payload.svgGlyph === undefined
     && colorLayers?.colorFormat === 'colrV0'
     && isValidPayloadRange(colorLayers.sourceRangeUtf8)
     && isValidPayloadRange(colorLayers.glyphRange)
@@ -864,6 +871,8 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
   if (
     payload.payloadKind !== 'colorLayers'
     || payload.stroke
+    || payload.bitmapGlyph !== undefined
+    || payload.svgGlyph !== undefined
     || colorLayers?.colorFormat !== 'colrV1'
     || colorLayers.sourceFontRef === undefined
     || !Array.isArray(colorLayers.layers)
@@ -1038,6 +1047,9 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
 export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): boolean {
   const bitmapGlyph = payload.bitmapGlyph;
   return payload.payloadKind === 'bitmapGlyph'
+    && !payload.stroke
+    && payload.colorLayers === undefined
+    && payload.svgGlyph === undefined
     && bitmapGlyph !== undefined
     && isValidResourceId(bitmapGlyph.imageResourceId)
     && isValidPayloadRange(bitmapGlyph.sourceRangeUtf8)
@@ -1055,6 +1067,9 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
   const svgGlyph = payload.svgGlyph;
   const viewBox = svgGlyph?.viewBox;
   return payload.payloadKind === 'svgGlyph'
+    && !payload.stroke
+    && payload.colorLayers === undefined
+    && payload.bitmapGlyph === undefined
     && svgGlyph !== undefined
     && isValidResourceId(svgGlyph.vectorResourceId)
     && isValidPayloadRange(svgGlyph.sourceRangeUtf8)

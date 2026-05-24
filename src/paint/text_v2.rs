@@ -596,6 +596,9 @@ fn strict_glyph_run_paint_eligible(run: &LayerGlyphRunPaint) -> bool {
 }
 
 fn strict_glyph_outline_paint_eligible(outline: &LayerGlyphOutlinePaint) -> bool {
+    if !outline.has_exclusive_payload_family() {
+        return false;
+    }
     let payload_supported = match outline.payload_kind {
         GlyphOutlinePayloadKind::MonochromeFill => outline.stroke.is_none(),
         GlyphOutlinePayloadKind::MonochromeFillStroke => outline
@@ -808,6 +811,14 @@ fn validate_variant_parts(
             ));
         }
         if let LayerTextVariantPayload::GlyphOutline(outline) = &part.payload {
+            if !outline.has_exclusive_payload_family() {
+                issues.push(text_v2_issue(
+                    op,
+                    TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid,
+                    Some(&variant.variant_id),
+                    Some(part.part_index),
+                ));
+            }
             match outline.payload_kind {
                 GlyphOutlinePayloadKind::MonochromeFill => {
                     if outline.stroke.is_some() {
@@ -2466,6 +2477,105 @@ mod tests {
             .svg_glyph
             .as_ref()
             .is_some_and(SvgGlyphPayload::has_static_sanitized_contract));
+    }
+
+    #[test]
+    fn rejects_mixed_glyph_outline_payload_families() {
+        let text = text_op(PaintVariantMeta::text_run_default(
+            "text-5-bitmap-mixed-payload",
+        ));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-bitmap-mixed-payload".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.bitmapGlyph".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5-bitmap-mixed-payload".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::BitmapGlyph;
+        outline.bitmap_glyph = Some(bitmap_glyph_payload());
+        outline.color_layers = Some(colrv0_color_layers_payload());
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_bitmap_glyph_payloads = true;
+        let issue_codes: Vec<_> = validate_text_v2_op(&text_ops[0], &options)
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+        assert!(
+            issue_codes.contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid),
+            "{issue_codes:?}"
+        );
+        let strict_issue_codes: Vec<_> = strict_glyph_outline_text_v2_slots(&text_ops)
+            .expect_err("mixed bitmap/color payload should not be strict eligible")
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+        assert!(
+            strict_issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing),
+            "{strict_issue_codes:?}"
+        );
+
+        let text = text_op(PaintVariantMeta::text_run_default(
+            "text-5-svg-mixed-payload",
+        ));
+        let outline = outline_op(
+            PaintVariantMeta {
+                equivalence_group: "text-5-svg-mixed-payload".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: TextVariantKind::GlyphOutline,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphOutline.svgGlyph".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("text-anchor-5-svg-mixed-payload".to_string()),
+                local_paint_order: Some(0),
+            },
+            12.0,
+        );
+        let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::SvgGlyph;
+        outline.svg_glyph = Some(svg_glyph_payload());
+        outline.bitmap_glyph = Some(bitmap_glyph_payload());
+
+        let mut options = TextV2ValidationOptions::default();
+        options.allow_svg_glyph_payloads = true;
+        let issue_codes: Vec<_> = validate_text_v2_op(&text_ops[0], &options)
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+        assert!(
+            issue_codes.contains(&TextV2ValidationIssueCode::GlyphOutlinePayloadContractInvalid),
+            "{issue_codes:?}"
+        );
+        let strict_issue_codes: Vec<_> = strict_glyph_outline_text_v2_slots(&text_ops)
+            .expect_err("mixed svg/bitmap payload should not be strict eligible")
+            .into_iter()
+            .map(|issue| issue.code)
+            .collect();
+        assert!(
+            strict_issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing),
+            "{strict_issue_codes:?}"
+        );
     }
 
     #[test]

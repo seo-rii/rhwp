@@ -181,6 +181,29 @@ impl GlyphOutlinePayloadKind {
     }
 }
 
+impl LayerGlyphOutlinePaint {
+    pub fn has_exclusive_payload_family(&self) -> bool {
+        let has_color_layers = self.color_layers.is_some();
+        let has_bitmap_glyph = self.bitmap_glyph.is_some();
+        let has_svg_glyph = self.svg_glyph.is_some();
+        match self.payload_kind {
+            GlyphOutlinePayloadKind::MonochromeFill
+            | GlyphOutlinePayloadKind::MonochromeFillStroke => {
+                !has_color_layers && !has_bitmap_glyph && !has_svg_glyph
+            }
+            GlyphOutlinePayloadKind::ColorLayers => {
+                has_color_layers && !has_bitmap_glyph && !has_svg_glyph
+            }
+            GlyphOutlinePayloadKind::BitmapGlyph => {
+                !has_color_layers && has_bitmap_glyph && !has_svg_glyph
+            }
+            GlyphOutlinePayloadKind::SvgGlyph => {
+                !has_color_layers && !has_bitmap_glyph && has_svg_glyph
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorGlyphFormat {
     ColrV0,

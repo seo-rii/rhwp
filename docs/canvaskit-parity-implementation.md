@@ -360,6 +360,9 @@ Expected code shape:
 
 - `BitmapGlyph` strict payload validation requires one producer-selected image
   strike;
+- `BitmapGlyph` payloads are exclusive to the bitmap family: sibling
+  `colorLayers`, `svgGlyph`, or stroke payload fields make the strict contract
+  invalid;
 - available strikes, chosen-strike reason, and missing ideal strike remain
   diagnostics/provenance only;
 - strict replay requires `alphaMode`, `scalingPolicy`, `filtering`,
@@ -391,6 +394,9 @@ writer emission.
 Expected code shape:
 
 - canonical payload references `VectorResourceId` instead of inline raw SVG;
+- `SvgGlyph` payloads are exclusive to the static vector family: sibling
+  `colorLayers`, `bitmapGlyph`, or stroke payload fields make the strict
+  contract invalid;
 - producer is responsible for sanitizing into static vector content;
 - validator requires `securityMode=staticSanitized`;
 - strict replay requires `scriptAllowed=false`,
