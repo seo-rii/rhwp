@@ -8,7 +8,8 @@ use crate::paint::{
     ResourceArena, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
-    select_text_variant_sets_with_report, VariantRejectReason, VariantReplayStatus,
+    select_text_variant_sets_with_report, VariantFontVerificationReport,
+    VariantOutlineEligibilityReport, VariantRejectReason, VariantReplayStatus,
     VariantSelectedReason, VariantSelectionBackend, VariantSelectionContext,
     VariantSelectionReport,
 };
@@ -135,6 +136,8 @@ pub struct CanvasKitTextVariantReport {
     pub anchor_op_id: Option<String>,
     pub parts_expected: u32,
     pub parts_replayed: u32,
+    pub font_verification: Option<VariantFontVerificationReport>,
+    pub outline_eligibility: Option<VariantOutlineEligibilityReport>,
     pub parts: Vec<CanvasKitTextVariantPartReport>,
     pub rejected_variants: Vec<CanvasKitRejectedTextVariant>,
 }
@@ -149,6 +152,8 @@ pub struct CanvasKitTextVariantPartReport {
     pub replayable: bool,
     pub reason: Option<&'static str>,
     pub details: Option<String>,
+    pub font_verification: Option<VariantFontVerificationReport>,
+    pub outline_eligibility: Option<VariantOutlineEligibilityReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -295,6 +300,14 @@ impl CanvasKitTextVariantReport {
             ",\"partsExpected\":{},\"partsReplayed\":{}",
             self.parts_expected, self.parts_replayed
         );
+        if let Some(font_verification) = &self.font_verification {
+            out.push_str(",\"fontVerification\":");
+            write_font_verification_json(out, font_verification);
+        }
+        if let Some(outline_eligibility) = &self.outline_eligibility {
+            out.push_str(",\"outlineEligibility\":");
+            write_outline_eligibility_json(out, outline_eligibility);
+        }
         out.push_str(",\"parts\":[");
         for (index, part) in self.parts.iter().enumerate() {
             if index != 0 {
@@ -337,6 +350,14 @@ impl CanvasKitTextVariantPartReport {
         if let Some(details) = &self.details {
             out.push_str(",\"details\":");
             push_json_str(out, details);
+        }
+        if let Some(font_verification) = &self.font_verification {
+            out.push_str(",\"fontVerification\":");
+            write_font_verification_json(out, font_verification);
+        }
+        if let Some(outline_eligibility) = &self.outline_eligibility {
+            out.push_str(",\"outlineEligibility\":");
+            write_outline_eligibility_json(out, outline_eligibility);
         }
         out.push('}');
     }
@@ -383,6 +404,145 @@ fn push_json_str(out: &mut String, value: &str) {
         }
     }
     out.push('"');
+}
+
+fn write_font_verification_json(out: &mut String, report: &VariantFontVerificationReport) {
+    out.push('{');
+    let mut needs_comma = false;
+    push_optional_string_field(out, &mut needs_comma, "faceKey", report.face_key.as_deref());
+    push_optional_string_field(out, &mut needs_comma, "blobKey", report.blob_key.as_deref());
+    push_optional_string_field(
+        out,
+        &mut needs_comma,
+        "portability",
+        report.portability.as_deref(),
+    );
+    push_optional_string_field(
+        out,
+        &mut needs_comma,
+        "expectedDigest",
+        report.expected_digest.as_deref(),
+    );
+    push_optional_bool_field(out, &mut needs_comma, "blobResolved", report.blob_resolved);
+    push_optional_bool_field(
+        out,
+        &mut needs_comma,
+        "digestMatched",
+        report.digest_matched,
+    );
+    push_optional_bool_field(
+        out,
+        &mut needs_comma,
+        "exactFaceInstantiated",
+        report.exact_face_instantiated,
+    );
+    push_optional_bool_field(
+        out,
+        &mut needs_comma,
+        "faceIndexSupported",
+        report.face_index_supported,
+    );
+    push_optional_bool_field(
+        out,
+        &mut needs_comma,
+        "variationSupported",
+        report.variation_supported,
+    );
+    push_optional_bool_field(
+        out,
+        &mut needs_comma,
+        "effectSupported",
+        report.effect_supported,
+    );
+    push_bool_field(
+        out,
+        &mut needs_comma,
+        "replayEligible",
+        report.replay_eligible,
+    );
+    push_optional_string_field(
+        out,
+        &mut needs_comma,
+        "reason",
+        report.reason.map(VariantRejectReason::as_str),
+    );
+    out.push('}');
+}
+
+fn write_outline_eligibility_json(out: &mut String, report: &VariantOutlineEligibilityReport) {
+    out.push('{');
+    let mut needs_comma = false;
+    push_bool_field(
+        out,
+        &mut needs_comma,
+        "strictVisualEligible",
+        report.strict_visual_eligible,
+    );
+    push_bool_field(
+        out,
+        &mut needs_comma,
+        "payloadSupported",
+        report.payload_supported,
+    );
+    push_bool_field(
+        out,
+        &mut needs_comma,
+        "paintStyleSupported",
+        report.paint_style_supported,
+    );
+    push_bool_field(
+        out,
+        &mut needs_comma,
+        "replayEligible",
+        report.replay_eligible,
+    );
+    push_optional_string_field(
+        out,
+        &mut needs_comma,
+        "reason",
+        report.reason.map(VariantRejectReason::as_str),
+    );
+    out.push('}');
+}
+
+fn push_optional_string_field(
+    out: &mut String,
+    needs_comma: &mut bool,
+    name: &str,
+    value: Option<&str>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    push_field_prefix(out, needs_comma, name);
+    push_json_str(out, value);
+}
+
+fn push_optional_bool_field(
+    out: &mut String,
+    needs_comma: &mut bool,
+    name: &str,
+    value: Option<bool>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    push_bool_field(out, needs_comma, name, value);
+}
+
+fn push_bool_field(out: &mut String, needs_comma: &mut bool, name: &str, value: bool) {
+    push_field_prefix(out, needs_comma, name);
+    out.push_str(bool_json(value));
+}
+
+fn push_field_prefix(out: &mut String, needs_comma: &mut bool, name: &str) {
+    if *needs_comma {
+        out.push(',');
+    }
+    *needs_comma = true;
+    out.push('"');
+    out.push_str(name);
+    out.push_str("\":");
 }
 
 fn bool_json(value: bool) -> &'static str {
@@ -612,6 +772,8 @@ fn text_variant_report(report: VariantSelectionReport) -> CanvasKitTextVariantRe
         anchor_op_id: report.anchor_op_id,
         parts_expected: report.parts_expected,
         parts_replayed: report.parts_replayed,
+        font_verification: report.font_verification,
+        outline_eligibility: report.outline_eligibility,
         parts: report
             .parts
             .into_iter()
@@ -624,6 +786,8 @@ fn text_variant_report(report: VariantSelectionReport) -> CanvasKitTextVariantRe
                 replayable: part.replayable,
                 reason: part.reason.map(|reason| reason.as_str()),
                 details: part.details,
+                font_verification: part.font_verification,
+                outline_eligibility: part.outline_eligibility,
             })
             .collect(),
         rejected_variants: report
@@ -971,6 +1135,7 @@ mod tests {
         SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceId,
         TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality,
     };
+    use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
     use crate::renderer::render_tree::BoundingBox;
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -1165,6 +1330,14 @@ mod tests {
             anchor_op_id: Some("op-text-0".to_string()),
             parts_expected: 1,
             parts_replayed: 1,
+            font_verification: None,
+            outline_eligibility: Some(VariantOutlineEligibilityReport {
+                strict_visual_eligible: true,
+                payload_supported: true,
+                paint_style_supported: true,
+                replay_eligible: true,
+                reason: None,
+            }),
             parts: vec![CanvasKitTextVariantPartReport {
                 equivalence_group: "outline-parity-bitmap".to_string(),
                 variant_id: "glyphOutline".to_string(),
@@ -1174,6 +1347,14 @@ mod tests {
                 replayable: true,
                 reason: None,
                 details: Some("colorSpaceDefaulted=srgb".to_string()),
+                font_verification: None,
+                outline_eligibility: Some(VariantOutlineEligibilityReport {
+                    strict_visual_eligible: true,
+                    payload_supported: true,
+                    paint_style_supported: true,
+                    replay_eligible: true,
+                    reason: None,
+                }),
             }],
             rejected_variants: Vec::new(),
         };
@@ -1183,6 +1364,7 @@ mod tests {
         assert!(json.contains("\"parts\":[{"));
         assert!(json.contains("\"variantId\":\"glyphOutline\""));
         assert!(json.contains("\"details\":\"colorSpaceDefaulted=srgb\""));
+        assert!(json.contains("\"outlineEligibility\":{\"strictVisualEligible\":true"));
         assert!(json.contains("\"partsReplayed\":1"));
     }
 
