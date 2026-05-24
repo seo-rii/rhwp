@@ -298,6 +298,12 @@ adapter and future native Skia renderer on the same replay contract. Canvas2D is
 therefore the compatibility reference, while native Skia constraints are the
 design guardrail.
 
+The concrete CanvasKit implementation plan lives in
+`docs/canvaskit-parity-implementation.md`. This section keeps the schema and
+text-IR constraints; the dedicated implementation document is authoritative for
+the current renderer work order, dependency-boundary cleanup, and verification
+sequence.
+
 Every remaining CanvasKit feature should follow the same sequence:
 
 1. identify the Canvas2D behavior and the `PageLayerTree` data it consumes;
