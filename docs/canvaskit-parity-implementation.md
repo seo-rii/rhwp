@@ -173,5 +173,12 @@ usually:
 node e2e/renderer-lifecycle.test.mjs
 ```
 
+When a change touches strict payload semantics or native-ready Skia behavior,
+also run the targeted native Skia replay suite:
+
+```bash
+cargo test --features native-skia native_skia
+```
+
 Larger native-vs-CanvasKit PNG matrices remain report-first until thresholds and
 flake rates are understood.
