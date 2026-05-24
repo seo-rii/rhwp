@@ -90,6 +90,9 @@ jobs:
       - name: Capture WebGPU-preferred CanvasKit baseline
         run: python3 scripts/renderer_baseline.py --profiles screen --browser-mode headless --canvaskit-surface webgpu --skip-native --output output/renderer-baseline/workflow-dispatch-webgpu
 
+      - name: Capture software CanvasKit baseline
+        run: python3 scripts/renderer_baseline.py --profiles screen --browser-mode headless --canvaskit-surface software --skip-native --output output/renderer-baseline/workflow-dispatch-software
+
       - name: Upload full renderer sweep artifacts
         if: always()
         uses: actions/upload-artifact@v7

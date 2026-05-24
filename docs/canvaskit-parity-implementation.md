@@ -489,3 +489,8 @@ cargo test --features native-skia native_skia
 
 Larger native-vs-CanvasKit PNG matrices remain report-first until thresholds and
 flake rates are understood.
+
+The manual `Full Renderer Sweep` workflow captures the representative
+multi-profile baseline, then captures separate WebGPU-preferred and software
+CanvasKit baselines. Those surface-axis outputs are artifacts for diagnosis and
+threshold tuning, not default CI gates.
