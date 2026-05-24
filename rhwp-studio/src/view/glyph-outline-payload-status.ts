@@ -19,6 +19,7 @@ export type GlyphOutlinePayloadReplayStatus = {
 export function glyphOutlinePayloadStatus(
   op: LayerGlyphOutlineOp,
   resources?: LayerResources | null,
+  options: { allowDomParserForSvg?: boolean } = {},
 ): GlyphOutlinePayloadReplayStatus {
   const payloadKind = op.payloadKind ?? 'monochromeFill';
   if (payloadKind === 'colorLayers') {
@@ -78,7 +79,7 @@ export function glyphOutlinePayloadStatus(
         && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
         && hasReplayableGlyphPayloadBBox(op)
         && typeof fragment === 'string'
-        && parseStaticSvgPathLayers(fragment).length > 0,
+        && parseStaticSvgPathLayers(fragment, { allowDomParser: options.allowDomParserForSvg }).length > 0,
       reason: 'unsupportedSvgGlyph',
     };
   }

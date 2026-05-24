@@ -77,12 +77,15 @@ export type LayerImageEffectDiagnostics = {
   htmlCanvasPreprocesses: number;
 };
 
-export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[] {
+export function parseStaticSvgPathLayers(
+  fragment: string,
+  options: { allowDomParser?: boolean } = {},
+): StaticSvgPathLayer[] {
   const parserFragment = staticSvgMarkupWithoutComments(fragment);
   if (parserFragment === null || hasStaticSvgUnsupportedMarkup(parserFragment)) {
     return [];
   }
-  if (typeof DOMParser === 'undefined') {
+  if (options.allowDomParser === false || typeof DOMParser === 'undefined') {
     const layers: StaticSvgPathLayer[] = [];
     const paintStateStack: StaticSvgPaintState[] = [{
       color: '#000000',

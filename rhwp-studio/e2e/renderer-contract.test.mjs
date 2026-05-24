@@ -255,6 +255,17 @@ for (const apiName of requiredDirectReplayForbiddenApis) {
   );
 }
 
+assert.equal(
+  canvaskitSource.includes('allowDomParserForSvg: false'),
+  true,
+  'CanvasKit SvgGlyph eligibility must use the DOM-free static parser contract',
+);
+assert.equal(
+  canvaskitSource.includes('parseStaticSvgPathLayers(fragment, { allowDomParser: false })'),
+  true,
+  'CanvasKit SvgGlyph replay must not use DOMParser-backed SVG parsing',
+);
+
 const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(
   extractMethodBody(canvas2dSource, 'renderOp'),
   'glyphOutline',

@@ -568,7 +568,11 @@ export class CanvasKitLayerRenderer {
   }
 
   private glyphOutlineVariantReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
-    const payloadStatus = glyphOutlinePayloadStatus(op, this.lastRenderedTree?.resources);
+    const payloadStatus = glyphOutlinePayloadStatus(
+      op,
+      this.lastRenderedTree?.resources,
+      { allowDomParserForSvg: false },
+    );
     const payloadSupported = op.diagnostics.strictVisualEligible && payloadStatus.supported;
     const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
     const replayable = payloadSupported && paintStyleSupported;
@@ -1397,7 +1401,7 @@ export class CanvasKitLayerRenderer {
     if (typeof fragment !== 'string') {
       return;
     }
-    const pathLayers = parseStaticSvgPathLayers(fragment);
+    const pathLayers = parseStaticSvgPathLayers(fragment, { allowDomParser: false });
     if (pathLayers.length === 0) {
       return;
     }
