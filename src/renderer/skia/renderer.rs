@@ -19,6 +19,7 @@ use crate::renderer::layer_renderer::{
     VariantSelectionBackend, VariantSelectionContext,
 };
 use crate::renderer::render_tree::BoundingBox;
+use crate::renderer::static_svg::static_svg_fragment_has_path_layer;
 use crate::renderer::{ArrowStyle, LineRenderType};
 
 use super::cache::StaticPictureCache;
@@ -359,6 +360,9 @@ fn native_skia_glyph_outline_payload_status(
             let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
+            if !static_svg_fragment_has_path_layer(fragment) {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            }
             let Some(bbox) = bbox else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
@@ -1121,6 +1125,9 @@ impl SkiaLayerRenderer {
         let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
             return;
         };
+        if !static_svg_fragment_has_path_layer(fragment) {
+            return;
+        }
         let Some(view_box) = payload.view_box else {
             return;
         };
