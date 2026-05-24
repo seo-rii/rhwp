@@ -3446,6 +3446,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
         false,
       );
       const invalidV2FallbackFreeTextOnly = render(makeV2FallbackFreeTextOnlyTree(), false);
+      const missingStrokeV2Payload = render(
+        makeReservedV2OutlinePayloadTree(
+          'monochromeFillStroke',
+          'text.glyphOutline.monochromeFillStroke',
+          missingStrokePayload,
+          true,
+        ),
+        true,
+      );
       const reservedV2ColorPayload = render(makeReservedV2ColorPayloadTree(), true);
       const invalidRangeReservedV2ColorPayloadTree = makeReservedV2ColorPayloadTree();
       invalidRangeReservedV2ColorPayloadTree.root.ops[0].variants
@@ -3944,6 +3953,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidV2FallbackFreeCompatibilityProfile,
         invalidV2FallbackFreeDisabledFlag,
         invalidV2FallbackFreeTextOnly,
+        missingStrokeV2Payload,
         reservedV2ColorPayload,
         invalidRangeReservedV2ColorPayload,
         invalidColorReservedV2ColorPayload,
@@ -4169,6 +4179,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && missingStrokePayloadSidecarReport?.outlineEligibility?.replayEligible === false,
     `Canvas2D strict profile rejects missing stroke outline payload=${JSON.stringify(
       missingStrokePayloadSidecarReport,
+    )}`,
+  );
+  const missingStrokeV2PayloadIssueCodes = canvas2dGlyphOutlineProbe
+    .missingStrokeV2Payload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  assert(
+    missingStrokeV2PayloadIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !missingStrokeV2PayloadIssueCodes.includes('glyphOutlineStrokeStyleUnsupported'),
+    `Canvas2D schema v2 treats missing MonochromeFillStroke style as payload contract invalid=${JSON.stringify(
+      canvas2dGlyphOutlineProbe.missingStrokeV2Payload?.textV2Validation,
     )}`,
   );
   const colorPayloadSidecarReport = canvas2dGlyphOutlineProbe.colorPayloadSidecar?.diagnostics?.find(

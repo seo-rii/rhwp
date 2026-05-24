@@ -595,7 +595,16 @@ export function validateLayerTextV2Op(
                 partIndex,
               });
             }
-            if (!isSupportedGlyphOutlineStrokeStyle(part.payload.stroke)) {
+            if (!part.payload.stroke) {
+              issues.push({
+                code: 'glyphOutlinePayloadContractInvalid',
+                message: `Text variant '${variant.variantId}' carries a monochromeFillStroke payload without a stroke style.`,
+                opId: op.id,
+                paintOrderSlotId: op.paintOrderSlotId,
+                variantId: variant.variantId,
+                partIndex,
+              });
+            } else if (!isSupportedGlyphOutlineStrokeStyle(part.payload.stroke)) {
               issues.push({
                 code: 'glyphOutlineStrokeStyleUnsupported',
                 message: `Text variant '${variant.variantId}' uses an unsupported monochromeFillStroke style.`,
