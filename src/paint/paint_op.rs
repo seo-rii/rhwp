@@ -2033,6 +2033,16 @@ mod tests {
         missing_root.root_node_id = 99;
         assert!(!missing_root.has_colrv1_stage1_contract());
 
+        let shared_child_graph = ColorPaintGraphPayload {
+            root_node_id: 2,
+            nodes: vec![
+                colrv1_solid_node(0),
+                colrv1_transform_node(1, 0, identity),
+                colrv1_transform_node(2, 0, identity),
+            ],
+        };
+        assert!(!shared_child_graph.has_colrv1_stage1_contract());
+
         let mut transform_with_solid = valid_graph.clone();
         transform_with_solid.nodes[1].solid_path = transform_with_solid.nodes[0].solid_path.clone();
         assert!(!transform_with_solid.has_colrv1_stage1_contract());
