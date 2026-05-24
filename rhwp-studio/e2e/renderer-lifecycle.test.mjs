@@ -4628,6 +4628,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2SvgRawInlinePayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              rawSvg: '<svg><path d="M0 0 L10 0 L10 10 Z"/></svg>',
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const validReservedV2SvgTransformPayload = render(
         makeReservedV2OutlinePayloadTree(
           'svgGlyph',
@@ -4728,6 +4743,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2SvgIntrinsicSizePayload,
         invalidReservedV2SvgRangePayload,
         invalidReservedV2SvgResourcePayload,
+        invalidReservedV2SvgRawInlinePayload,
         validReservedV2SvgTransformPayload,
         mixedReservedV2SvgPayload,
         unsupported,
@@ -5302,6 +5318,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2SvgResourcePayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2SvgRawInlineIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgRawInlinePayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const validReservedV2SvgTransformIssueCodes = canvas2dGlyphOutlineProbe
     .validReservedV2SvgTransformPayload
     ?.textV2Validation
@@ -5321,6 +5341,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidReservedV2SvgRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2SvgRawInlineIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgRawInlineIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && !validReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !validReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && mixedReservedV2SvgIssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -5336,6 +5358,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidV2SvgRangeValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgRangePayload
         ?.textV2Validation,
       invalidV2SvgResourceValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgResourcePayload
+        ?.textV2Validation,
+      invalidV2SvgRawInlineValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgRawInlinePayload
         ?.textV2Validation,
       validV2SvgTransformValidation: canvas2dGlyphOutlineProbe.validReservedV2SvgTransformPayload
         ?.textV2Validation,
@@ -6068,6 +6092,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
         externalResourcesAllowed: true,
       },
     });
+    const rawInlineSvgOutline = outlineFor('canvaskit-outline-svg-raw-inline', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-raw-inline', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-raw-inline',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        rawSvg: '<svg><path d="M0 0 L18 0 L18 18 L0 18 Z"/></svg>',
+      },
+    });
     const duplicateBitmapResourceTree = treeFor(bitmapOutline);
     duplicateBitmapResourceTree.resources.images.push(pixelBytes);
     duplicateBitmapResourceTree.resources.imageHashes.push('bitmap-glyph-pixel-duplicate');
@@ -6642,6 +6680,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
       missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
       unsafeFlagsSvgGlyph: await render(treeFor(unsafeFlagsSvgOutline)),
+      rawInlineSvgGlyph: await render(treeFor(rawInlineSvgOutline)),
       noDomParserSvgGlyph,
       wrappedSvgGlyph: await render(wrappedSvgResourceTree),
       noDomParserWrappedSvgGlyph,
@@ -6903,6 +6942,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
       ),
     `CanvasKit rejects SvgGlyph with unsafe static-vector flags=${JSON.stringify(canvaskitUnsafeFlagsSvgReport)}`,
+  );
+  const canvaskitRawInlineSvgReport = canvaskitGlyphOutlineProbe
+    .rawInlineSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-raw-inline');
+  assert(
+    canvaskitRawInlineSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitRawInlineSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph raw inline replay fields=${JSON.stringify(canvaskitRawInlineSvgReport)}`,
   );
   const canvaskitNoDomParserSvgReport = canvaskitGlyphOutlineProbe
     .noDomParserSvgGlyph

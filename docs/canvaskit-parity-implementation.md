@@ -265,9 +265,9 @@ rejects external/reference primitives such as `<image href>` and `<use href>`,
 plus unsupported vector primitives such as `foreignObject`, `filter`, `mask`,
 and `clipPath`, as `unsupportedSvgGlyph` in both DOMParser and no-DOMParser
 paths. CanvasKit lifecycle also rejects strict `SvgGlyph` payloads with missing
-`viewBox` or unsafe static-vector flags before replay. Before writer emission is
-widened, add more negative fixtures for raw SVG replay attempts and remaining
-resource identity cache reuse cases.
+`viewBox`, unsafe static-vector flags, or raw inline SVG replay fields before
+replay. Before writer emission is widened, add more negative fixtures for
+remaining resource identity cache reuse cases.
 
 ### 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 

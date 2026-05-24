@@ -1063,6 +1063,21 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
     && isSupportedBitmapFiltering(bitmapGlyph.filtering);
 }
 
+const RAW_INLINE_SVG_GLYPH_FIELDS = [
+  'rawSvg',
+  'inlineSvg',
+  'svgText',
+  'svgFragment',
+  'svg',
+  'fragment',
+  'markup',
+] as const;
+
+function hasRawInlineSvgGlyphReplayField(svgGlyph: NonNullable<LayerGlyphOutlineOp['svgGlyph']>): boolean {
+  const fields = svgGlyph as unknown as Record<string, unknown>;
+  return RAW_INLINE_SVG_GLYPH_FIELDS.some((field) => fields[field] !== undefined);
+}
+
 export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp): boolean {
   const svgGlyph = payload.svgGlyph;
   const viewBox = svgGlyph?.viewBox;
@@ -1071,6 +1086,7 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
     && payload.colorLayers === undefined
     && payload.bitmapGlyph === undefined
     && svgGlyph !== undefined
+    && !hasRawInlineSvgGlyphReplayField(svgGlyph)
     && isValidResourceId(svgGlyph.vectorResourceId)
     && isValidPayloadRange(svgGlyph.sourceRangeUtf8)
     && isValidPayloadRange(svgGlyph.glyphRange)
