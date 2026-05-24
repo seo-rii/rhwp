@@ -24,7 +24,11 @@ export class CanvasKitStaticPictureCache {
       this.nextLayerTreeId += 1;
       this.layerTreeIds.set(tree, treeId);
     }
-    return String(treeId);
+    return [
+      treeId,
+      stableValueFingerprint(tree.resources ?? null),
+      stableValueFingerprint(tree.fontResources ?? null),
+    ].join(':');
   }
 
   keyForStaticSubtree(
@@ -48,6 +52,7 @@ export class CanvasKitStaticPictureCache {
       node.bounds.width.toFixed(3),
       node.bounds.height.toFixed(3),
       node.children.length,
+      stableValueFingerprint(node),
     ].join(':');
   }
 
@@ -83,4 +88,68 @@ export class CanvasKitStaticPictureCache {
     }
     this.pictures.clear();
   }
+}
+
+function stableValueFingerprint(value: unknown): string {
+  let hash = 0x811c9dc5;
+
+  const appendByte = (byte: number): void => {
+    hash ^= byte & 0xff;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  };
+  const appendString = (text: string): void => {
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      appendByte(code & 0xff);
+      appendByte((code >>> 8) & 0xff);
+    }
+  };
+  const appendValue = (item: unknown): void => {
+    if (item === null || item === undefined) {
+      appendString(String(item));
+      return;
+    }
+    if (typeof item === 'string') {
+      appendString(`s:${item.length}:`);
+      appendString(item);
+      return;
+    }
+    if (typeof item === 'number' || typeof item === 'boolean') {
+      appendString(`${typeof item}:${String(item)}`);
+      return;
+    }
+    if (ArrayBuffer.isView(item)) {
+      const view = item as ArrayBufferView;
+      const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+      appendString(`bytes:${bytes.length}:`);
+      for (const byte of bytes) {
+        appendByte(byte);
+      }
+      return;
+    }
+    if (Array.isArray(item)) {
+      appendString(`array:${item.length}:`);
+      for (const entry of item) {
+        appendValue(entry);
+        appendByte(0);
+      }
+      return;
+    }
+    if (typeof item === 'object') {
+      const record = item as Record<string, unknown>;
+      const keys = Object.keys(record).sort();
+      appendString(`object:${keys.length}:`);
+      for (const key of keys) {
+        appendString(key);
+        appendByte(0);
+        appendValue(record[key]);
+        appendByte(0);
+      }
+      return;
+    }
+    appendString(typeof item);
+  };
+
+  appendValue(value);
+  return hash.toString(16).padStart(8, '0');
 }

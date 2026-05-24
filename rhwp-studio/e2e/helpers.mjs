@@ -145,23 +145,22 @@ export async function loadApp(page, search = '') {
   const targetUrl = `${VITE_URL}${search}`;
   let lastError = null;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
+      if (attempt > 0) {
+        try {
+          await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 });
+        } catch {
+          // best-effort reset before retrying the app load
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
       await page.goto(targetUrl, { waitUntil: 'networkidle0', timeout: 30000 });
       await page.waitForFunction(() => !!window.__wasm && !!window.__canvasView, { timeout: 15000 });
       await page.evaluate(() => new Promise(r => setTimeout(r, 500)));
       return;
     } catch (error) {
       lastError = error;
-      if (attempt === 1) {
-        break;
-      }
-      try {
-        await page.goto('about:blank', { waitUntil: 'load', timeout: 5000 });
-      } catch {
-        // best-effort reset before retrying the app load
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
 

@@ -624,6 +624,131 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(staticPictureProbe.afterClear === 0, `static picture cache released with layer tree cache=${staticPictureProbe.afterClear}`);
 
+  setTestCase('canvaskit-static-picture-cache-resource-payload-invalidation');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const staticPictureResourceProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const makePixelBytes = (color) => {
+      const pixelCanvas = document.createElement('canvas');
+      pixelCanvas.width = 1;
+      pixelCanvas.height = 1;
+      const pixelContext = pixelCanvas.getContext('2d');
+      if (!pixelContext) {
+        return null;
+      }
+      pixelContext.fillStyle = color;
+      pixelContext.fillRect(0, 0, 1, 1);
+      const pixelPngBase64 = pixelCanvas.toDataURL('image/png').split(',')[1];
+      return Uint8Array.from(atob(pixelPngBase64), (ch) => ch.charCodeAt(0));
+    };
+    const blackBytes = makePixelBytes('#000000');
+    const whiteBytes = makePixelBytes('#ffffff');
+    if (!blackBytes || !whiteBytes) {
+      return { error: 'bitmap fixture canvas unavailable' };
+    }
+
+    const tree = {
+      pageWidth: 64,
+      pageHeight: 64,
+      profile: 'screen',
+      resources: {
+        tableId: 81,
+        images: [blackBytes],
+        imageHashes: [],
+        imageKeys: ['mutable-static-image'],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'group',
+        sourceNodeId: 8100,
+        semantic: { role: 'page' },
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'staticSubtree',
+        children: [{
+          kind: 'leaf',
+          sourceNodeId: 8101,
+          bounds: { x: 0, y: 0, width: 64, height: 64 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'image',
+            bbox: { x: 8, y: 8, width: 48, height: 48 },
+            resourceId: 0,
+            fillMode: 'stretch',
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          }],
+        }],
+      },
+    };
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = () => tree;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const pageInfo = {
+      pageIndex: 0,
+      width: 64,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      pageRenderer.clearLayerTreeCache();
+      renderer.clearStaticPictureCache?.();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      pageRenderer.cancelReRender?.(0);
+      const firstPng = canvas.toDataURL('image/png');
+      const afterFirstKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
+
+      tree.resources.images[0] = whiteBytes;
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      pageRenderer.cancelReRender?.(0);
+      const secondPng = canvas.toDataURL('image/png');
+      const afterSecondKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
+
+      return {
+        firstPng,
+        secondPng,
+        afterFirstKeys,
+        afterSecondKeys,
+        cacheSize: renderer.staticPictureCache?.size ?? -1,
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      renderer.clearStaticPictureCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+      canvas.remove();
+    }
+  });
+
+  assert(
+    !staticPictureResourceProbe.error,
+    staticPictureResourceProbe.error || 'canvaskit static picture resource invalidation probe available',
+  );
+  assert(
+    staticPictureResourceProbe.firstPng !== staticPictureResourceProbe.secondPng,
+    `static picture cache key invalidates when resource bytes change=${JSON.stringify(staticPictureResourceProbe)}`,
+  );
+  assert(
+    staticPictureResourceProbe.cacheSize >= 2
+      && staticPictureResourceProbe.afterSecondKeys.length > staticPictureResourceProbe.afterFirstKeys.length,
+    `static picture cache keeps distinct resource payload keys=${JSON.stringify(staticPictureResourceProbe)}`,
+  );
+
   setTestCase('canvaskit-software-surface-backend');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
   const softwareSurfaceProbe = await page.evaluate(() => {
