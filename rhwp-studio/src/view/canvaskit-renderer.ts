@@ -339,7 +339,11 @@ export class CanvasKitLayerRenderer {
         reasons: [...variant.reasons],
         details: variant.details ? [...variant.details] : undefined,
       })),
-      parts: report.parts.map((part) => ({ ...part })),
+      parts: report.parts.map((part) => ({
+        ...part,
+        fontVerification: part.fontVerification ? { ...part.fontVerification } : undefined,
+        outlineEligibility: part.outlineEligibility ? { ...part.outlineEligibility } : undefined,
+      })),
       fontVerification: report.fontVerification ? { ...report.fontVerification } : undefined,
       outlineEligibility: report.outlineEligibility ? { ...report.outlineEligibility } : undefined,
     }));
