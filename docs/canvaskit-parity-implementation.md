@@ -58,6 +58,13 @@ The contract test fails if CanvasKit source reintroduces the broad
 `layer-canvas-utils` import or browser-canvas/SVG DOM APIs. The remaining work
 therefore moves to P2 feature-family parity audits and P3 strict payload gates.
 
+Schema-v1 `variantOps` sidecar payloads are now part of the native-ready replay
+baseline. Studio Canvas2D/CanvasKit, Rust SVG, native Skia, and the Rust
+CanvasKit replay plan all merge sidecars into the same leaf-local text variant
+selection set as their anchored `TextRun` fallback. Native Skia static subtree
+cache keys include those sidecar payloads as well, so cached pictures cannot be
+reused across different strict text alternatives.
+
 ## Architecture
 
 CanvasKit parity is implemented through four layers:
