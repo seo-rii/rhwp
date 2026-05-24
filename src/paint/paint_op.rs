@@ -283,6 +283,9 @@ pub struct ColorPaintGraphPayload {
     pub nodes: Vec<ColorPaintGraphNode>,
 }
 
+const MAX_COLRV1_STAGE1_GRAPH_NODES: usize = 64;
+const MAX_COLRV1_STAGE1_GRAPH_DEPTH: usize = 64;
+
 fn text_source_range_is_valid(range: TextSourceRange) -> bool {
     range.end >= range.start
 }
@@ -337,6 +340,10 @@ impl ColorPaintGraphPayload {
     pub fn colrv1_stage1_reference_layer(&self) -> Option<ColorLayerNode> {
         use std::collections::{HashMap, HashSet};
 
+        if self.nodes.is_empty() || self.nodes.len() > MAX_COLRV1_STAGE1_GRAPH_NODES {
+            return None;
+        }
+
         let mut nodes_by_id = HashMap::with_capacity(self.nodes.len());
         for node in &self.nodes {
             if nodes_by_id.insert(node.node_id, node).is_some() {
@@ -347,7 +354,11 @@ impl ColorPaintGraphPayload {
         let mut visited = HashSet::new();
         let mut node_id = self.root_node_id;
         let mut transform_to_run = None;
+        let mut depth = 1usize;
         loop {
+            if depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH {
+                return None;
+            }
             if !visited.insert(node_id) {
                 return None;
             }
@@ -419,6 +430,7 @@ impl ColorPaintGraphPayload {
                         None => transform.transform,
                     });
                     node_id = transform.child_node_id;
+                    depth += 1;
                 }
             }
         }
@@ -2003,6 +2015,23 @@ mod tests {
             nodes: vec![colrv1_solid_node(0), colrv1_transform_node(1, 0, identity)],
         };
         assert!(valid_graph.has_colrv1_stage1_contract());
+
+        let empty_graph = ColorPaintGraphPayload {
+            root_node_id: 0,
+            nodes: Vec::new(),
+        };
+        assert!(!empty_graph.has_colrv1_stage1_contract());
+
+        let mut excessive_graph = ColorPaintGraphPayload {
+            root_node_id: MAX_COLRV1_STAGE1_GRAPH_NODES as u32,
+            nodes: vec![colrv1_solid_node(0)],
+        };
+        for node_id in 1..=MAX_COLRV1_STAGE1_GRAPH_NODES as u32 {
+            excessive_graph
+                .nodes
+                .push(colrv1_transform_node(node_id, node_id - 1, identity));
+        }
+        assert!(!excessive_graph.has_colrv1_stage1_contract());
 
         let mut duplicate_node = valid_graph.clone();
         duplicate_node.nodes.push(colrv1_solid_node(0));
