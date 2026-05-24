@@ -233,10 +233,13 @@ Implementation shape:
   `colorSpaceDefaulted`.
 
 Canvas2D/CanvasKit, Rust SVG, and native Skia now share the single-strike strict
-payload subset. Before writer emission is widened, add more negative fixtures
-for missing required strict fields, backend strike reselection,
-backend-default filtering, malformed resource refs, and resource identity cache
-reuse.
+payload subset. Static picture cache keys already include image and
+`ArrayBuffer` resource payload fingerprints; the same cache contract is now
+covered for strict `SvgGlyph` vector resources so stale static pictures cannot
+survive a same-key vector payload change. Before writer emission is widened,
+add more negative fixtures for missing required strict fields, backend strike
+reselection, backend-default filtering, malformed resource refs, and remaining
+resource identity cache reuse cases.
 
 ### 3. SvgGlyph Static Vector Hardening
 
@@ -255,10 +258,12 @@ Implementation shape:
 - `intrinsicSize` is optional and diagnostic/layout-aid only.
 
 The current baseline replays static path-layer fragments without DOM parsing in
-Canvas2D/CanvasKit, Rust SVG, and native Skia. Before writer emission is
-widened, add more negative fixtures for unsafe flags, missing `viewBox`, raw SVG
-replay attempts, external resource references, unsupported vector primitives,
-and resource identity cache reuse.
+Canvas2D/CanvasKit, Rust SVG, and native Skia. CanvasKit lifecycle coverage now
+mutates a same-key `VectorResourceId` payload inside a static subtree and
+requires a distinct static picture cache entry and changed pixels. Before writer
+emission is widened, add more negative fixtures for unsafe flags, missing
+`viewBox`, raw SVG replay attempts, external resource references, unsupported
+vector primitives, and remaining resource identity cache reuse cases.
 
 ### 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 

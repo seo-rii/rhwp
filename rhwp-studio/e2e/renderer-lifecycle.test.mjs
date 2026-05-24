@@ -862,6 +862,185 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `static picture cache key fingerprints ArrayBuffer resources=${JSON.stringify(staticPictureArrayBufferProbe)}`,
   );
 
+  setTestCase('canvaskit-static-picture-cache-svg-resource-invalidation');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const staticPictureSvgResourceProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const svgFragment = (fill) => `<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="${fill}"/>`;
+    const source = { id: 8301, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } };
+    const glyphOutline = {
+      id: 'op-static-svg-outline',
+      type: 'glyphOutline',
+      bbox: { x: 8, y: 8, width: 32, height: 32 },
+      payloadKind: 'svgGlyph',
+      source,
+      variant: {
+        equivalenceGroup: 'static-svg-resource',
+        variantId: 'glyphOutline',
+        variantKind: 'glyphOutline',
+        partIndex: 0,
+        partCount: 1,
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-static-svg-text',
+        localPaintOrder: 0,
+      },
+      paintStyle: {
+        fontFamily: 'Noto Sans KR',
+        fontSize: 20,
+        color: '#000000',
+        bold: false,
+        italic: false,
+        ratio: 1,
+        underline: 'none',
+        underlineShape: 0,
+        strikethrough: false,
+        strikeShape: 0,
+        outlineType: 0,
+        shadowType: 0,
+        shadowColor: '#000000',
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        emboss: false,
+        engrave: false,
+        emphasisDot: 0,
+        underlineColor: '#000000',
+        strikeColor: '#000000',
+        shadeColor: '#ffffff',
+      },
+      placement: {
+        runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+        baselineY: 0,
+      },
+      paths: [],
+      svgGlyph: {
+        vectorResourceId: 'mutable-static-svg',
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+          baselineY: 0,
+        },
+        viewBox: { x: 0, y: 0, width: 18, height: 18 },
+        securityMode: 'staticSanitized',
+        scriptAllowed: false,
+        animationAllowed: false,
+        externalResourcesAllowed: false,
+        interactivityAllowed: false,
+      },
+      diagnostics: {
+        quality: 'exact',
+        replayEligibility: 'portable',
+        strictVisualEligible: true,
+        maxOriginDeltaPx: 0,
+        maxAdvanceDeltaPx: 0,
+        maxResidualAfterAdjustmentPx: 0,
+        clusterMismatchCount: 0,
+        missingGlyphCount: 0,
+        usedFallbackFontCount: 0,
+      },
+    };
+    const tree = {
+      pageWidth: 64,
+      pageHeight: 64,
+      profile: 'screen',
+      resources: {
+        tableId: 83,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [svgFragment('#ff00cc')],
+        svgHashes: [],
+        svgKeys: ['mutable-static-svg'],
+      },
+      root: {
+        kind: 'group',
+        sourceNodeId: 8300,
+        semantic: { role: 'page' },
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'staticSubtree',
+        children: [{
+          kind: 'leaf',
+          sourceNodeId: 8301,
+          bounds: { x: 0, y: 0, width: 64, height: 64 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 64, height: 64 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          }, glyphOutline],
+        }],
+      },
+    };
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = () => tree;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const pageInfo = {
+      pageIndex: 0,
+      width: 64,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      pageRenderer.clearLayerTreeCache();
+      renderer.clearStaticPictureCache?.();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      pageRenderer.cancelReRender?.(0);
+      const firstPng = canvas.toDataURL('image/png');
+      const afterFirstKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
+
+      tree.resources.svgFragments[0] = svgFragment('#00ffff');
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      pageRenderer.cancelReRender?.(0);
+      const secondPng = canvas.toDataURL('image/png');
+      const afterSecondKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
+
+      return {
+        firstPng,
+        secondPng,
+        afterFirstKeys,
+        afterSecondKeys,
+        cacheSize: renderer.staticPictureCache?.size ?? -1,
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      renderer.clearStaticPictureCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+      canvas.remove();
+    }
+  });
+
+  assert(
+    !staticPictureSvgResourceProbe.error,
+    staticPictureSvgResourceProbe.error || 'canvaskit static picture SvgGlyph resource invalidation probe available',
+  );
+  assert(
+    staticPictureSvgResourceProbe.firstPng !== staticPictureSvgResourceProbe.secondPng,
+    `static picture cache key invalidates when SvgGlyph vector resource changes=${JSON.stringify(staticPictureSvgResourceProbe)}`,
+  );
+  assert(
+    staticPictureSvgResourceProbe.cacheSize >= 2
+      && staticPictureSvgResourceProbe.afterSecondKeys.length > staticPictureSvgResourceProbe.afterFirstKeys.length,
+    `static picture cache keeps distinct SvgGlyph resource payload keys=${JSON.stringify(staticPictureSvgResourceProbe)}`,
+  );
+
   setTestCase('canvaskit-software-surface-backend');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
   const softwareSurfaceProbe = await page.evaluate(() => {
