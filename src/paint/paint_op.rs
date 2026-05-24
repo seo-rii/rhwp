@@ -2717,6 +2717,34 @@ mod tests {
         });
         assert!(!invalid_transform_bitmap.has_strict_visual_contract());
 
+        let mut missing_placement_bitmap = bitmap_glyph.clone();
+        missing_placement_bitmap.placement = None;
+        assert!(!missing_placement_bitmap.has_strict_visual_contract());
+
+        let mut invalid_placement_bitmap = bitmap_glyph.clone();
+        invalid_placement_bitmap
+            .placement
+            .as_mut()
+            .unwrap()
+            .baseline_y = f64::NAN;
+        assert!(!invalid_placement_bitmap.has_strict_visual_contract());
+
+        let mut diagnostic_only_bitmap = bitmap_glyph.clone();
+        diagnostic_only_bitmap.strike_selection = Some(BitmapStrikeSelection::DiagnosticOnly);
+        assert!(!diagnostic_only_bitmap.has_strict_visual_contract());
+
+        let mut missing_alpha_bitmap = bitmap_glyph.clone();
+        missing_alpha_bitmap.alpha_mode = None;
+        assert!(!missing_alpha_bitmap.has_strict_visual_contract());
+
+        let mut missing_scaling_bitmap = bitmap_glyph.clone();
+        missing_scaling_bitmap.scaling_policy = None;
+        assert!(!missing_scaling_bitmap.has_strict_visual_contract());
+
+        let mut missing_filtering_bitmap = bitmap_glyph.clone();
+        missing_filtering_bitmap.filtering = None;
+        assert!(!missing_filtering_bitmap.has_strict_visual_contract());
+
         let mut unsafe_svg = svg_glyph.clone();
         unsafe_svg.animation_allowed = true;
         assert!(!unsafe_svg.has_static_sanitized_contract());
