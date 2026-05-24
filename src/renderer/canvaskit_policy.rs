@@ -135,7 +135,20 @@ pub struct CanvasKitTextVariantReport {
     pub anchor_op_id: Option<String>,
     pub parts_expected: u32,
     pub parts_replayed: u32,
+    pub parts: Vec<CanvasKitTextVariantPartReport>,
     pub rejected_variants: Vec<CanvasKitRejectedTextVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanvasKitTextVariantPartReport {
+    pub equivalence_group: String,
+    pub variant_id: String,
+    pub variant_kind: &'static str,
+    pub part_index: u32,
+    pub part_count: u32,
+    pub replayable: bool,
+    pub reason: Option<&'static str>,
+    pub details: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,6 +295,14 @@ impl CanvasKitTextVariantReport {
             ",\"partsExpected\":{},\"partsReplayed\":{}",
             self.parts_expected, self.parts_replayed
         );
+        out.push_str(",\"parts\":[");
+        for (index, part) in self.parts.iter().enumerate() {
+            if index != 0 {
+                out.push(',');
+            }
+            part.write_json(out);
+        }
+        out.push(']');
         out.push_str(",\"rejectedVariants\":[");
         for (index, rejected) in self.rejected_variants.iter().enumerate() {
             if index != 0 {
@@ -290,6 +311,34 @@ impl CanvasKitTextVariantReport {
             rejected.write_json(out);
         }
         out.push_str("]}");
+    }
+}
+
+impl CanvasKitTextVariantPartReport {
+    fn write_json(&self, out: &mut String) {
+        out.push('{');
+        out.push_str("\"equivalenceGroup\":");
+        push_json_str(out, &self.equivalence_group);
+        out.push_str(",\"variantId\":");
+        push_json_str(out, &self.variant_id);
+        out.push_str(",\"variantKind\":");
+        push_json_str(out, self.variant_kind);
+        let _ = write!(
+            out,
+            ",\"partIndex\":{},\"partCount\":{},\"replayable\":{}",
+            self.part_index,
+            self.part_count,
+            bool_json(self.replayable)
+        );
+        if let Some(reason) = self.reason {
+            out.push_str(",\"reason\":");
+            push_json_str(out, reason);
+        }
+        if let Some(details) = &self.details {
+            out.push_str(",\"details\":");
+            push_json_str(out, details);
+        }
+        out.push('}');
     }
 }
 
@@ -563,6 +612,20 @@ fn text_variant_report(report: VariantSelectionReport) -> CanvasKitTextVariantRe
         anchor_op_id: report.anchor_op_id,
         parts_expected: report.parts_expected,
         parts_replayed: report.parts_replayed,
+        parts: report
+            .parts
+            .into_iter()
+            .map(|part| CanvasKitTextVariantPartReport {
+                equivalence_group: part.equivalence_group,
+                variant_id: part.variant_id,
+                variant_kind: part.variant_kind.as_str(),
+                part_index: part.part_index,
+                part_count: part.part_count,
+                replayable: part.replayable,
+                reason: part.reason.map(|reason| reason.as_str()),
+                details: part.details,
+            })
+            .collect(),
         rejected_variants: report
             .rejected_variants
             .into_iter()
@@ -895,7 +958,8 @@ fn cache_hint_detail(cache_hint: CacheHint) -> &'static str {
 mod tests {
     use super::{
         canvaskit_glyph_outline_payload_status, canvaskit_static_svg_fragment_has_path_layer,
-        GlyphOutlinePayloadKind, VariantRejectReason,
+        CanvasKitTextVariantPartReport, CanvasKitTextVariantReport, GlyphOutlinePayloadKind,
+        VariantRejectReason,
     };
     use crate::paint::{
         BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
@@ -1087,6 +1151,39 @@ mod tests {
             external_resources_allowed: false,
             interactivity_allowed: false,
         }
+    }
+
+    #[test]
+    fn canvaskit_text_variant_json_serializes_selected_part_details() {
+        let report = CanvasKitTextVariantReport {
+            backend: "canvaskit",
+            render_profile: "screen".to_string(),
+            equivalence_group: "outline-parity-bitmap".to_string(),
+            selected_variant_id: "glyphOutline".to_string(),
+            selected_variant_kind: "glyphOutline",
+            selected_reason: "glyphOutlineStrictProfile",
+            anchor_op_id: Some("op-text-0".to_string()),
+            parts_expected: 1,
+            parts_replayed: 1,
+            parts: vec![CanvasKitTextVariantPartReport {
+                equivalence_group: "outline-parity-bitmap".to_string(),
+                variant_id: "glyphOutline".to_string(),
+                variant_kind: "glyphOutline",
+                part_index: 0,
+                part_count: 1,
+                replayable: true,
+                reason: None,
+                details: Some("colorSpaceDefaulted=srgb".to_string()),
+            }],
+            rejected_variants: Vec::new(),
+        };
+        let mut json = String::new();
+        report.write_json(&mut json);
+
+        assert!(json.contains("\"parts\":[{"));
+        assert!(json.contains("\"variantId\":\"glyphOutline\""));
+        assert!(json.contains("\"details\":\"colorSpaceDefaulted=srgb\""));
+        assert!(json.contains("\"partsReplayed\":1"));
     }
 
     #[test]
