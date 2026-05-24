@@ -6039,6 +6039,35 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ...svgOutline.svgGlyph,
       },
     });
+    const missingViewBoxSvgOutline = outlineFor('canvaskit-outline-svg-missing-viewbox', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-missing-viewbox', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-missing-viewbox',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        viewBox: undefined,
+      },
+    });
+    const unsafeFlagsSvgOutline = outlineFor('canvaskit-outline-svg-unsafe-flags', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-unsafe-flags', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-unsafe-flags',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        scriptAllowed: true,
+        externalResourcesAllowed: true,
+      },
+    });
     const duplicateBitmapResourceTree = treeFor(bitmapOutline);
     duplicateBitmapResourceTree.resources.images.push(pixelBytes);
     duplicateBitmapResourceTree.resources.imageHashes.push('bitmap-glyph-pixel-duplicate');
@@ -6611,6 +6640,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
+      missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
+      unsafeFlagsSvgGlyph: await render(treeFor(unsafeFlagsSvgOutline)),
       noDomParserSvgGlyph,
       wrappedSvgGlyph: await render(wrappedSvgResourceTree),
       noDomParserWrappedSvgGlyph,
@@ -6848,6 +6879,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
       ),
     `CanvasKit rejects non-positive SvgGlyph bbox before replay=${JSON.stringify(canvaskitNonpositiveSvgBBoxReport)}`,
+  );
+  const canvaskitMissingViewBoxSvgReport = canvaskitGlyphOutlineProbe
+    .missingViewBoxSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-viewbox');
+  assert(
+    canvaskitMissingViewBoxSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingViewBoxSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with missing viewBox=${JSON.stringify(canvaskitMissingViewBoxSvgReport)}`,
+  );
+  const canvaskitUnsafeFlagsSvgReport = canvaskitGlyphOutlineProbe
+    .unsafeFlagsSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-unsafe-flags');
+  assert(
+    canvaskitUnsafeFlagsSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsafeFlagsSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with unsafe static-vector flags=${JSON.stringify(canvaskitUnsafeFlagsSvgReport)}`,
   );
   const canvaskitNoDomParserSvgReport = canvaskitGlyphOutlineProbe
     .noDomParserSvgGlyph
