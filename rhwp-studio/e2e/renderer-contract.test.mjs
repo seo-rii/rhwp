@@ -11,6 +11,7 @@ const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
 const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
+const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-utils.ts');
 const textReplayUtilsPath = path.join(studioRoot, 'src/view/text-replay-utils.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
@@ -20,6 +21,7 @@ const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
 const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
+const layerGeometryUtilsSource = fs.readFileSync(layerGeometryUtilsPath, 'utf8');
 const textReplayUtilsSource = fs.readFileSync(textReplayUtilsPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
@@ -44,6 +46,7 @@ const canvaskitSourceFiles = [
     source: fs.readFileSync(filePath, 'utf8'),
   })),
   { label: path.relative(studioRoot, imageEffectPixelsPath), source: imageEffectPixelsSource },
+  { label: path.relative(studioRoot, layerGeometryUtilsPath), source: layerGeometryUtilsSource },
   { label: path.relative(studioRoot, textReplayUtilsPath), source: textReplayUtilsSource },
 ];
 const forbiddenCanvas2dApiPatterns = [
@@ -321,6 +324,22 @@ assert.equal(
   canvaskitSource.includes("from './text-replay-utils'"),
   true,
   'CanvasKit renderer must import shared text replay helpers from the native-ready module',
+);
+for (const geometryHelperName of [
+  'angleToCanvasCoords',
+  'calculateArrowDimensions',
+  'computePathPaintBounds',
+]) {
+  assert.equal(
+    canvaskitLayerCanvasUtilsImport.includes(geometryHelperName),
+    false,
+    `CanvasKit renderer must import ${geometryHelperName} from native-ready geometry helpers`,
+  );
+}
+assert.equal(
+  canvaskitSource.includes("from './layer-geometry-utils'"),
+  true,
+  'CanvasKit renderer must import shared geometry helpers from the native-ready module',
 );
 
 const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(

@@ -66,9 +66,6 @@ import type {
   PageLayerTree,
 } from '@/core/types';
 import {
-  angleToCanvasCoords,
-  calculateArrowDimensions,
-  computePathPaintBounds,
   parseStaticSvgPathLayers,
 } from './layer-canvas-utils';
 import {
@@ -76,6 +73,11 @@ import {
   resolveLayerImageCropSource,
   type LayerImageEffectDiagnostics,
 } from './image-effect-pixels';
+import {
+  angleToCanvasCoords,
+  calculateArrowDimensions,
+  computePathPaintBounds,
+} from './layer-geometry-utils';
 import {
   allowsTextControlMark,
   decodePuaOverlapNumber,
