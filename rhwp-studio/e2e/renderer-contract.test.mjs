@@ -16,6 +16,7 @@ const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-ut
 const staticSvgPathLayersPath = path.join(studioRoot, 'src/view/static-svg-path-layers.ts');
 const textReplayUtilsPath = path.join(studioRoot, 'src/view/text-replay-utils.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
+const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-implementation.md');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
@@ -113,6 +114,11 @@ const implementationPlanTouchpoints = [
   {
     docToken: 'rhwp-studio/e2e/renderer-lifecycle.test.mjs',
     filePath: path.join(studioRoot, 'e2e/renderer-lifecycle.test.mjs'),
+    kind: 'file',
+  },
+  {
+    docToken: 'docs/canvaskit-parity-implementation.md',
+    filePath: canvaskitParityPlanDocPath,
     kind: 'file',
   },
 ];
