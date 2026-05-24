@@ -402,15 +402,14 @@ This gives CanvasKit three implementation priorities:
 | P2 | Canvas2D parity closures | Each Canvas2D paint-op branch has a CanvasKit direct replay branch or deterministic unsupported diagnostic |
 | P3 | Native-ready strict replay | Strict payloads such as COLRv1, `BitmapGlyph`, `SvgGlyph`, variation fonts, TTC/OTC faces, and future native Skia fixtures use the same feature gates and diagnostics |
 
-The immediate design target is P1. CanvasKit may still share pure geometry,
-color, path, pixel, and text-cluster utilities with Canvas2D, but any shared
-module used by CanvasKit must be native-ready by construction. Broad imports
-from a Canvas2D utility module are acceptable only as a temporary migration
-state; new CanvasKit work should either depend on `rhwp-studio/src/view/canvaskit/*`
-helpers or on small shared modules whose public API has no browser canvas
-types.
+P1 dependency-boundary cleanup is complete. CanvasKit may still share pure
+geometry, color, path, pixel, and text-cluster utilities with Canvas2D, but any
+shared module used by CanvasKit must be native-ready by construction and must
+remain guarded by the renderer contract test. New CanvasKit work should either
+depend on `rhwp-studio/src/view/canvaskit/*` helpers or on small shared modules
+whose public API has no browser canvas types.
 
-After P1, P2 proceeds in small coherent batches. A batch should include the
+P2 now proceeds in small coherent batches. A batch should include the
 Canvas2D behavior audit, the CanvasKit direct replay change, exact diagnostics,
 and a targeted lifecycle or parity fixture. The first skipped branch in a
 family should be converted to an explicit unsupported reason before adding more
