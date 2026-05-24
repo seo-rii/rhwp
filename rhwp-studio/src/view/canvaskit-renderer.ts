@@ -69,19 +69,21 @@ import {
   allowsTextControlMark,
   angleToCanvasCoords,
   calculateArrowDimensions,
-  canPreprocessCroppedLayerImageEffect,
   computePathPaintBounds,
   decodePuaOverlapNumber,
   estimateDisplayTextPositions,
   isHalfwidthScaledCluster,
   mapPuaDisplayText,
   parseStaticSvgPathLayers,
-  resolveLayerImageCropSource,
-  type LayerImageEffectDiagnostics,
   puaToDisplayText,
   splitIntoClusters,
   startsWithInvalidControl,
 } from './layer-canvas-utils';
+import {
+  canPreprocessCroppedLayerImageEffect,
+  resolveLayerImageCropSource,
+  type LayerImageEffectDiagnostics,
+} from './image-effect-pixels';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
 import { clampCanvasKitUnit, parseCanvasKitCssColor } from './canvaskit/css-color';

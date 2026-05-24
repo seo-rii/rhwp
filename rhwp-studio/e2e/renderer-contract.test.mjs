@@ -282,6 +282,22 @@ assert.equal(
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',
 );
+const canvaskitLayerCanvasUtilsImport = canvaskitSource.match(/import \{[\s\S]*?\} from '\.\/layer-canvas-utils';/)?.[0] ?? '';
+assert.equal(
+  canvaskitLayerCanvasUtilsImport.includes('resolveLayerImageCropSource'),
+  false,
+  'CanvasKit renderer must import image crop helpers from native-ready image helpers',
+);
+assert.equal(
+  canvaskitLayerCanvasUtilsImport.includes('canPreprocessCroppedLayerImageEffect'),
+  false,
+  'CanvasKit renderer must import image effect gating helpers from native-ready image helpers',
+);
+assert.equal(
+  canvaskitSource.includes("from './image-effect-pixels'"),
+  true,
+  'CanvasKit renderer must import shared image helpers from the native-ready module',
+);
 
 const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(
   extractMethodBody(canvas2dSource, 'renderOp'),

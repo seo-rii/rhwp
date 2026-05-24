@@ -92,6 +92,51 @@ export function decodeBase64(base64: string): Uint8Array {
   return bytes.subarray(0, outputLength);
 }
 
+export function resolveLayerImageCropSource(
+  imageWidth: number,
+  imageHeight: number,
+  crop?: LayerImageOp['crop'],
+): LayerImageEffectSourceRect | null {
+  if (!crop) {
+    return null;
+  }
+  if (
+    !Number.isFinite(imageWidth)
+    || !Number.isFinite(imageHeight)
+    || imageWidth <= 0
+    || imageHeight <= 0
+    || !Number.isFinite(crop.left)
+    || !Number.isFinite(crop.top)
+    || !Number.isFinite(crop.right)
+    || !Number.isFinite(crop.bottom)
+  ) {
+    return null;
+  }
+
+  const scaleX = crop.right / imageWidth;
+  const scaleY = crop.bottom / imageHeight;
+  if (scaleX <= 0 || scaleY <= 0) {
+    return null;
+  }
+
+  const srcX = crop.left / scaleX;
+  const srcY = crop.top / scaleY;
+  const srcW = (crop.right - crop.left) / scaleX;
+  const srcH = (crop.bottom - crop.top) / scaleY;
+  const isCropped = srcX > 0.5
+    || srcY > 0.5
+    || Math.abs(srcW - imageWidth) > 1
+    || Math.abs(srcH - imageHeight) > 1;
+
+  return isCropped && srcW > 0 && srcH > 0
+    ? { x: srcX, y: srcY, width: srcW, height: srcH }
+    : null;
+}
+
+export function canPreprocessCroppedLayerImageEffect(fillMode = 'fitToSize'): boolean {
+  return fillMode === 'fitToSize' || fillMode === 'none';
+}
+
 export function applyLayerImageEffectPixels(
   data: Uint8Array | Uint8ClampedArray,
   width: number,
