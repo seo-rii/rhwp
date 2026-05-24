@@ -269,6 +269,27 @@ impl SvgRenderer {
                                         false,
                                         outline.paint_style.is_fill_only_glyph_replay(),
                                     )
+                                } else if !outline.has_exclusive_payload_family() {
+                                    (
+                                        false,
+                                        Some(match outline.payload_kind {
+                                            GlyphOutlinePayloadKind::ColorLayers => {
+                                                VariantRejectReason::UnsupportedColorGlyph
+                                            }
+                                            GlyphOutlinePayloadKind::BitmapGlyph => {
+                                                VariantRejectReason::UnsupportedBitmapGlyph
+                                            }
+                                            GlyphOutlinePayloadKind::SvgGlyph => {
+                                                VariantRejectReason::UnsupportedSvgGlyph
+                                            }
+                                            GlyphOutlinePayloadKind::MonochromeFill
+                                            | GlyphOutlinePayloadKind::MonochromeFillStroke => {
+                                                VariantRejectReason::UnsupportedOutlinePayload
+                                            }
+                                        }),
+                                        false,
+                                        outline.paint_style.is_fill_only_glyph_replay(),
+                                    )
                                 } else {
                                     let (payload_supported, payload_reason) = match outline
                                         .payload_kind
@@ -483,6 +504,9 @@ impl SvgRenderer {
             }
             PaintOp::GlyphOutline { bbox, outline } => {
                 if !self.strict_glyph_outline_replay {
+                    return;
+                }
+                if !outline.has_exclusive_payload_family() {
                     return;
                 }
                 if outline.payload_kind == GlyphOutlinePayloadKind::BitmapGlyph {
@@ -2117,6 +2141,9 @@ impl SvgRenderer {
         let Some(payload) = outline.bitmap_glyph.as_ref() else {
             return;
         };
+        if !outline.has_exclusive_payload_family() {
+            return;
+        }
         if !payload.has_strict_visual_contract() {
             return;
         }
@@ -2198,6 +2225,9 @@ impl SvgRenderer {
         let Some(payload) = outline.svg_glyph.as_ref() else {
             return;
         };
+        if !outline.has_exclusive_payload_family() {
+            return;
+        }
         if !payload.has_static_sanitized_contract() {
             return;
         }

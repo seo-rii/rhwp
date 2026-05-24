@@ -320,6 +320,20 @@ fn native_skia_glyph_outline_payload_status(
     {
         return (false, Some(VariantRejectReason::VariantUnsupported));
     }
+    if !outline.has_exclusive_payload_family() {
+        return (
+            false,
+            Some(match outline.payload_kind {
+                GlyphOutlinePayloadKind::ColorLayers => VariantRejectReason::UnsupportedColorGlyph,
+                GlyphOutlinePayloadKind::BitmapGlyph => VariantRejectReason::UnsupportedBitmapGlyph,
+                GlyphOutlinePayloadKind::SvgGlyph => VariantRejectReason::UnsupportedSvgGlyph,
+                GlyphOutlinePayloadKind::MonochromeFill
+                | GlyphOutlinePayloadKind::MonochromeFillStroke => {
+                    VariantRejectReason::UnsupportedOutlinePayload
+                }
+            }),
+        );
+    }
     match outline.payload_kind {
         GlyphOutlinePayloadKind::MonochromeFill => {
             if glyph_outline_paths_are_replayable(outline) {

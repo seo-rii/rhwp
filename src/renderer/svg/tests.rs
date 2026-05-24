@@ -1202,6 +1202,62 @@ fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_nonpositive_bbox() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_rejects_mixed_payload_family() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let mut tree =
+        glyph_outline_fixture_tree_with_bitmap_glyph(PaintTextStyle::from(&text_style), true);
+    let vector_resource_id = tree
+        .resources
+        .intern_svg_fragment("<path d=\"M0 0 L10 0 L10 10 Z\" fill=\"#00ff00\"/>");
+    if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
+            panic!("expected glyph outline");
+        };
+        outline.svg_glyph = Some(SvgGlyphPayload {
+            vector_resource_id,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            placement: Some(outline.placement),
+            transform_to_run: None,
+            view_box: Some(SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+            intrinsic_size: None,
+            security_mode: SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        });
+    }
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(output.contains(">A</text>"));
+    assert!(!output.contains("source-backed bitmap glyph"));
+    assert!(!output.contains("source-backed static sanitized SVG glyph"));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict mixed payload family report");
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
+    }));
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_replays_svg_glyph() {
     let text_style = TextStyle {
         font_size: 12.0,
