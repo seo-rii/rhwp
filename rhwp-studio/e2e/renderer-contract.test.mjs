@@ -15,18 +15,25 @@ const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
+
+function tsFilesUnder(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return tsFilesUnder(entryPath);
+      }
+      return entry.name.endsWith('.ts') ? [entryPath] : [];
+    })
+    .sort();
+}
+
 const canvaskitSourceFiles = [
   { label: path.relative(studioRoot, canvaskitPath), source: canvaskitSource },
-  ...fs.readdirSync(canvaskitDirectory)
-    .filter((fileName) => fileName.endsWith('.ts'))
-    .sort()
-    .map((fileName) => {
-      const filePath = path.join(canvaskitDirectory, fileName);
-      return {
-        label: path.relative(studioRoot, filePath),
-        source: fs.readFileSync(filePath, 'utf8'),
-      };
-    }),
+  ...tsFilesUnder(canvaskitDirectory).map((filePath) => ({
+    label: path.relative(studioRoot, filePath),
+    source: fs.readFileSync(filePath, 'utf8'),
+  })),
 ];
 const forbiddenCanvas2dApiPatterns = [
   [/document\s*\.\s*createElement\b/, 'document.createElement'],
