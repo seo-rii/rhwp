@@ -51,10 +51,7 @@ const STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES = new Set([
   'unset',
 ]);
 
-export function parseStaticSvgPathLayers(
-  fragment: string,
-  _options: { allowDomParser?: boolean } = {},
-): StaticSvgPathLayer[] {
+export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[] {
   const parserFragment = staticSvgMarkupWithoutComments(fragment);
   if (parserFragment === null || hasStaticSvgUnsupportedMarkup(parserFragment)) {
     return [];

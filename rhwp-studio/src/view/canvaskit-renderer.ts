@@ -575,7 +575,6 @@ export class CanvasKitLayerRenderer {
     const payloadStatus = glyphOutlinePayloadStatus(
       op,
       this.lastRenderedTree?.resources,
-      { allowDomParserForSvg: false },
     );
     const payloadSupported = op.diagnostics.strictVisualEligible && payloadStatus.supported;
     const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
@@ -1405,7 +1404,7 @@ export class CanvasKitLayerRenderer {
     if (typeof fragment !== 'string') {
       return;
     }
-    const pathLayers = parseStaticSvgPathLayers(fragment, { allowDomParser: false });
+    const pathLayers = parseStaticSvgPathLayers(fragment);
     if (pathLayers.length === 0) {
       return;
     }

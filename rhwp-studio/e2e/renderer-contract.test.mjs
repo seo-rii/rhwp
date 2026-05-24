@@ -280,20 +280,26 @@ for (const apiName of requiredDirectReplayForbiddenApis) {
 }
 
 assert.equal(
-  canvaskitSource.includes('allowDomParserForSvg: false'),
+  canvaskitSource.includes('parseStaticSvgPathLayers(fragment)'),
   true,
-  'CanvasKit SvgGlyph eligibility must use the DOM-free static parser contract',
-);
-assert.equal(
-  canvaskitSource.includes('parseStaticSvgPathLayers(fragment, { allowDomParser: false })'),
-  true,
-  'CanvasKit SvgGlyph replay must not use DOMParser-backed SVG parsing',
+  'CanvasKit SvgGlyph replay must use the DOM-free static parser contract',
 );
 assert.equal(
   canvaskitSource.includes("from './static-svg-path-layers'"),
   true,
   'CanvasKit SvgGlyph replay must import the native-ready static SVG parser',
 );
+for (const [label, source] of [
+  ['canvaskit renderer', canvaskitSource],
+  ['glyph outline payload status', glyphOutlinePayloadStatusSource],
+  ['static SVG parser', staticSvgPathLayersSource],
+]) {
+  assert.equal(
+    source.includes('allowDomParser'),
+    false,
+    `CanvasKit static SVG parser path must not expose DOM parser toggles: ${label}`,
+  );
+}
 assert.equal(
   canvaskitResourceCacheSource.includes("from '../layer-canvas-utils'"),
   false,
