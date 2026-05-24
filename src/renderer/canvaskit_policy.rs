@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use crate::model::style::UnderlineType;
+use crate::model::image::ImageEffect;
+use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     sidecars_for_leaf_ops, CacheHint, ClipKind, GlyphOutlinePayloadKind, GlyphRunOrientation,
     GlyphRunReplayEligibility, LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode,
@@ -674,10 +675,11 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
         path: String,
     ) -> CanvasKitReplayItem {
         match op {
-            PaintOp::PageBackground { .. } => direct_item(
+            PaintOp::PageBackground { background, .. } => direct_item_with_detail(
                 path,
                 "pageBackground",
                 CanvasKitReplayFeature::PageBackground,
+                page_background_detail(background),
             ),
             PaintOp::TextRun { run, .. } => {
                 if let Some(variant) = &run.variant {
@@ -707,9 +709,18 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             | PaintOp::Path { .. } => {
                 direct_item(path, paint_op_type(op), CanvasKitReplayFeature::VectorShape)
             }
-            PaintOp::Image { .. } => {
-                direct_item(path, "image", CanvasKitReplayFeature::RasterImage)
-            }
+            PaintOp::Image { image, .. } => direct_item_with_detail(
+                path,
+                "image",
+                CanvasKitReplayFeature::RasterImage,
+                Some(image_replay_detail(
+                    image.fill_mode,
+                    image.original_size,
+                    image.crop,
+                    Some(image.effect),
+                    Some(image.transform),
+                )),
+            ),
             PaintOp::Equation { .. } => {
                 direct_item(path, "equation", CanvasKitReplayFeature::Equation)
             }
@@ -1118,6 +1129,15 @@ fn direct_item(
     op_type: &'static str,
     feature: CanvasKitReplayFeature,
 ) -> CanvasKitReplayItem {
+    direct_item_with_detail(path, op_type, feature, None)
+}
+
+fn direct_item_with_detail(
+    path: String,
+    op_type: &'static str,
+    feature: CanvasKitReplayFeature,
+    detail: Option<String>,
+) -> CanvasKitReplayItem {
     CanvasKitReplayItem {
         path,
         op_type,
@@ -1125,7 +1145,87 @@ fn direct_item(
         status: CanvasKitReplayStatus::Direct,
         reason: CanvasKitReplayReason::DirectReplaySupported,
         compat_overlay_allowed: false,
-        detail: None,
+        detail,
+    }
+}
+
+fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -> Option<String> {
+    let image = background.image.as_ref()?;
+    Some(image_replay_detail(
+        Some(image.fill_mode),
+        None,
+        None,
+        None,
+        None,
+    ))
+}
+
+fn image_replay_detail(
+    fill_mode: Option<ImageFillMode>,
+    original_size: Option<(f64, f64)>,
+    crop: Option<(i32, i32, i32, i32)>,
+    effect: Option<ImageEffect>,
+    transform: Option<crate::renderer::render_tree::ShapeTransform>,
+) -> String {
+    let mut detail = String::new();
+    detail.push_str("fillMode=");
+    detail.push_str(fill_mode.map_or("default", image_fill_mode_detail));
+
+    if let Some((width, height)) = original_size {
+        let _ = write!(detail, ";originalSize={width:.3}x{height:.3}");
+    } else {
+        detail.push_str(";originalSize=source");
+    }
+
+    if let Some((left, top, right, bottom)) = crop {
+        let _ = write!(detail, ";crop={left},{top},{right},{bottom}");
+    } else {
+        detail.push_str(";crop=none");
+    }
+
+    if let Some(effect) = effect {
+        detail.push_str(";effect=");
+        detail.push_str(image_effect_detail(effect));
+    }
+
+    if let Some(transform) = transform {
+        let _ = write!(
+            detail,
+            ";transform=rotation:{:.3},horzFlip:{},vertFlip:{}",
+            transform.rotation, transform.horz_flip, transform.vert_flip
+        );
+    }
+
+    detail
+}
+
+fn image_fill_mode_detail(value: ImageFillMode) -> &'static str {
+    match value {
+        ImageFillMode::TileAll => "tileAll",
+        ImageFillMode::TileHorzTop => "tileHorzTop",
+        ImageFillMode::TileHorzBottom => "tileHorzBottom",
+        ImageFillMode::TileVertLeft => "tileVertLeft",
+        ImageFillMode::TileVertRight => "tileVertRight",
+        ImageFillMode::FitToSize => "fitToSize",
+        ImageFillMode::Center => "center",
+        ImageFillMode::CenterTop => "centerTop",
+        ImageFillMode::CenterBottom => "centerBottom",
+        ImageFillMode::LeftCenter => "leftCenter",
+        ImageFillMode::LeftTop => "leftTop",
+        ImageFillMode::LeftBottom => "leftBottom",
+        ImageFillMode::RightCenter => "rightCenter",
+        ImageFillMode::RightTop => "rightTop",
+        ImageFillMode::RightBottom => "rightBottom",
+        ImageFillMode::None => "none",
+    }
+}
+
+fn image_effect_detail(value: ImageEffect) -> &'static str {
+    match value {
+        ImageEffect::RealPic => "realPic",
+        ImageEffect::GrayScale => "grayScale",
+        ImageEffect::BlackWhite => "blackWhite",
+        ImageEffect::Pattern8x8 => "pattern8x8",
     }
 }
 
@@ -1179,6 +1279,8 @@ mod tests {
         CanvasKitReplayMode, CanvasKitReplayStatus, CanvasKitTextVariantPartReport,
         CanvasKitTextVariantReport, GlyphOutlinePayloadKind, VariantRejectReason,
     };
+    use crate::model::image::ImageEffect;
+    use crate::model::style::ImageFillMode;
     use crate::paint::{
         BinaryResourceKind, BinaryResourceRef, BitmapAlphaMode, BitmapGlyphFiltering,
         BitmapGlyphPayload, BitmapGlyphScalingPolicy, BitmapStrikeSelection, ColorGlyphFormat,
@@ -1186,15 +1288,17 @@ mod tests {
         ColorPaintSolidPathNode, ColorPaintTransformNode, FontBlobKey, FontBlobResource,
         FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId,
         FontInstanceKey, FontPortability, FontResourceSource, GlyphOutlineFillRule, GlyphRange,
-        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
-        LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerNode, LayerPoint,
-        LayerTextRunPaint, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor,
-        ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
-        SvgGlyphViewBox, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
-        TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
+        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, ImageResourceId,
+        LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint,
+        LayerImagePaint, LayerNode, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
+        LayerPoint, LayerTextRunPaint, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
+        ResolvedColor, ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload,
+        SvgGlyphSecurityMode, SvgGlyphViewBox, TextDirection, TextRunPlacement, TextSourceId,
+        TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue,
+        WritingMode,
     };
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
-    use crate::renderer::render_tree::BoundingBox;
+    use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
     use crate::renderer::{PathCommand, TextStyle};
 
     fn identity() -> LayerAffineTransform {
@@ -1595,6 +1699,81 @@ mod tests {
                 && item.op_type == "glyphOutline"
                 && item.status == CanvasKitReplayStatus::Direct
         }));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_reports_image_payload_details() {
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![
+                    PaintOp::PageBackground {
+                        bbox: valid_bbox(),
+                        background: LayerPageBackgroundPaint {
+                            background_color: None,
+                            border_color: None,
+                            border_width: 0.0,
+                            gradient: None,
+                            image: Some(LayerPageBackgroundImagePaint {
+                                resource_id: ImageResourceId(7),
+                                fill_mode: ImageFillMode::TileHorzBottom,
+                            }),
+                        },
+                    },
+                    PaintOp::Image {
+                        bbox: valid_bbox(),
+                        image: LayerImagePaint {
+                            resource_id: None,
+                            fill_mode: Some(ImageFillMode::CenterBottom),
+                            original_size: Some((40.0, 30.0)),
+                            crop: Some((75, 150, 225, 300)),
+                            effect: ImageEffect::Pattern8x8,
+                            transform: ShapeTransform {
+                                rotation: 12.5,
+                                horz_flip: true,
+                                vert_flip: false,
+                            },
+                        },
+                    },
+                ],
+            ),
+        )
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+
+        assert_eq!(plan.items.len(), 2);
+        assert_eq!(plan.summary.total_items, plan.items.len() as u32);
+        assert_eq!(plan.summary.direct_items, plan.items.len() as u32);
+
+        let page_background_detail = plan
+            .items
+            .iter()
+            .find(|item| item.op_type == "pageBackground")
+            .and_then(|item| item.detail.as_deref())
+            .expect("page background image replay detail");
+        assert!(page_background_detail.contains("fillMode=tileHorzBottom"));
+        assert!(page_background_detail.contains("originalSize=source"));
+        assert!(page_background_detail.contains("crop=none"));
+
+        let image_detail = plan
+            .items
+            .iter()
+            .find(|item| item.op_type == "image")
+            .and_then(|item| item.detail.as_deref())
+            .expect("image replay detail");
+        assert!(image_detail.contains("fillMode=centerBottom"));
+        assert!(image_detail.contains("originalSize=40.000x30.000"));
+        assert!(image_detail.contains("crop=75,150,225,300"));
+        assert!(image_detail.contains("effect=pattern8x8"));
+        assert!(image_detail.contains("transform=rotation:12.500,horzFlip:true,vertFlip:false"));
+
+        let json = plan.to_json();
+        assert!(json.contains("\"detail\":\"fillMode=tileHorzBottom"));
+        assert!(json.contains("effect=pattern8x8"));
     }
 
     #[test]
