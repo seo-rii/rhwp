@@ -435,6 +435,79 @@ fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_replays_sidecar_variant_ops() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let mut tree = glyph_outline_fixture_tree(
+        PaintTextStyle::from(&text_style),
+        vec![glyph_outline_fixture_path()],
+    );
+    let sidecar_outline = if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind
+    {
+        assert_eq!(ops.len(), 2);
+        ops.remove(1)
+    } else {
+        panic!("expected leaf root");
+    };
+    tree.variant_ops = vec![sidecar_outline];
+
+    let mut default_renderer = SvgRenderer::new();
+    default_renderer.render_layer_tree(&tree);
+    let default_output = default_renderer.output();
+    assert!(default_output.contains(">A</text>"));
+    assert!(!default_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    let default_report = default_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg default sidecar variant report");
+    assert_eq!(default_report.selected_variant_id, "textRun");
+    assert_eq!(default_report.parts.len(), 2);
+    assert!(default_report.parts.iter().any(|part| {
+        part.variant_id == "glyphOutline"
+            && !part.replayable
+            && part.reason == Some(VariantRejectReason::BackendDoesNotSupportVariant)
+    }));
+
+    let mut strict_renderer = SvgRenderer::new();
+    strict_renderer.set_strict_glyph_outline_replay(true);
+    strict_renderer.render_layer_tree(&tree);
+    let strict_output = strict_renderer.output();
+    assert!(!strict_output.contains(">A</text>"));
+    assert!(strict_output.contains("<path d=\"M0 0 L8 0 L8 8 Z\""));
+    assert!(strict_output.contains("data-rhwp-variant-id=\"glyphOutline\""));
+    assert!(strict_output.contains("data-rhwp-glyph-id=\"42\""));
+    assert!(strict_output.contains("matrix(1 0 0 1 3 4)"));
+
+    let strict_report = strict_renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict sidecar variant report");
+    assert_eq!(strict_report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        strict_report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+    assert_eq!(strict_report.anchor_op_id.as_deref(), Some("op-text-0"));
+    assert_eq!(strict_report.parts_expected, 1);
+    assert_eq!(strict_report.parts_replayed, 1);
+    assert!(strict_report.rejected_variants.is_empty());
+    assert!(strict_report.parts.iter().any(|part| {
+        part.variant_id == "glyphOutline"
+            && part.variant_kind == TextVariantKind::GlyphOutline
+            && part.replayable
+            && part.reason.is_none()
+            && part
+                .outline_eligibility
+                .as_ref()
+                .is_some_and(|eligibility| eligibility.replay_eligible)
+    }));
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
     let text_style = TextStyle {
         font_size: 12.0,
