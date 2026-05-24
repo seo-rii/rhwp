@@ -1025,14 +1025,24 @@ fn canvaskit_glyph_outline_payload_status(
     }
     match outline.payload_kind {
         GlyphOutlinePayloadKind::MonochromeFill => {
-            if outline.paths.is_empty() || outline.stroke.is_some() {
+            if outline.paths.is_empty()
+                || outline.stroke.is_some()
+                || outline.color_layers.is_some()
+                || outline.bitmap_glyph.is_some()
+                || outline.svg_glyph.is_some()
+            {
                 (false, Some(VariantRejectReason::UnsupportedOutlinePayload))
             } else {
                 (true, None)
             }
         }
         GlyphOutlinePayloadKind::MonochromeFillStroke => {
-            if outline.paths.is_empty() || outline.stroke.is_none() {
+            if outline.paths.is_empty()
+                || outline.stroke.is_none()
+                || outline.color_layers.is_some()
+                || outline.bitmap_glyph.is_some()
+                || outline.svg_glyph.is_some()
+            {
                 return (false, Some(VariantRejectReason::UnsupportedOutlinePayload));
             }
             if !outline
@@ -1048,6 +1058,12 @@ fn canvaskit_glyph_outline_payload_status(
             (true, None)
         }
         GlyphOutlinePayloadKind::ColorLayers => {
+            if outline.stroke.is_some()
+                || outline.bitmap_glyph.is_some()
+                || outline.svg_glyph.is_some()
+            {
+                return (false, Some(VariantRejectReason::UnsupportedColorGlyph));
+            }
             if outline.color_layers.as_ref().is_some_and(|payload| {
                 payload.has_colrv0_resolved_layer_contract()
                     || payload.has_colrv1_stage1_graph_contract()
@@ -1061,7 +1077,10 @@ fn canvaskit_glyph_outline_payload_status(
             let Some(payload) = &outline.bitmap_glyph else {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             };
-            if bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
+            if outline.stroke.is_some()
+                || outline.color_layers.is_some()
+                || outline.svg_glyph.is_some()
+                || bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
                 || !payload.has_strict_visual_contract()
                 || resources.image_bytes(payload.image_resource_id).is_none()
             {
@@ -1076,7 +1095,10 @@ fn canvaskit_glyph_outline_payload_status(
             let Some(fragment) = resources.svg_fragment(payload.vector_resource_id) else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
-            if bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
+            if outline.stroke.is_some()
+                || outline.color_layers.is_some()
+                || outline.bitmap_glyph.is_some()
+                || bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
                 || !payload.has_static_sanitized_contract()
                 || !canvaskit_static_svg_fragment_has_path_layer(fragment)
             {
@@ -1940,6 +1962,50 @@ mod tests {
                 &ResourceArena::default(),
             ),
             (false, Some(VariantRejectReason::UnsupportedColorGlyph))
+        );
+    }
+
+    #[test]
+    fn canvaskit_rejects_mixed_glyph_outline_payload_families() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
+        let svg_id = resources
+            .intern_svg_fragment("<path d=\"M0 0 L16 0 L16 16 L0 16 Z\" fill=\"#00ffff\"/>");
+
+        let mut monochrome = outline(GlyphOutlinePayloadKind::MonochromeFill);
+        monochrome.paths.push(outline_path());
+        monochrome.color_layers = Some(colrv1_stage1_payload());
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &monochrome,
+                Some(valid_bbox()),
+                &ResourceArena::default(),
+            ),
+            (false, Some(VariantRejectReason::UnsupportedOutlinePayload))
+        );
+
+        let mut color = outline(GlyphOutlinePayloadKind::ColorLayers);
+        color.color_layers = Some(colrv1_stage1_payload());
+        color.bitmap_glyph = Some(bitmap_payload(image_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&color, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedColorGlyph))
+        );
+
+        let mut bitmap = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        bitmap.bitmap_glyph = Some(bitmap_payload(image_id));
+        bitmap.svg_glyph = Some(svg_payload(svg_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&bitmap, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
+
+        let mut svg = outline(GlyphOutlinePayloadKind::SvgGlyph);
+        svg.svg_glyph = Some(svg_payload(svg_id));
+        svg.bitmap_glyph = Some(bitmap_payload(image_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&svg, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
         );
     }
 
