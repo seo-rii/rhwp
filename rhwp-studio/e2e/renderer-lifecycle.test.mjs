@@ -4515,6 +4515,36 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2BitmapMissingFilteringPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              filtering: undefined,
+            },
+          },
+          true,
+        ),
+        true,
+      );
+      const invalidReservedV2BitmapStrikeReselectionPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              strikeSelection: 'backendResolved',
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const mixedReservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -4735,6 +4765,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2BitmapScalingPayload,
         invalidReservedV2BitmapScalingFilterValuePayload,
         invalidReservedV2BitmapFilteringPayload,
+        invalidReservedV2BitmapMissingFilteringPayload,
+        invalidReservedV2BitmapStrikeReselectionPayload,
         mixedReservedV2BitmapPayload,
         reservedV2SvgPayload,
         invalidReservedV2SvgPayload,
@@ -5242,6 +5274,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2BitmapFilteringPayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapMissingFilteringIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapMissingFilteringPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapStrikeReselectionIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapStrikeReselectionPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const mixedReservedV2BitmapIssueCodes = canvas2dGlyphOutlineProbe
     .mixedReservedV2BitmapPayload
     ?.textV2Validation
@@ -5267,6 +5307,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidReservedV2BitmapScalingFilterValueIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapFilteringIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapFilteringIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapMissingFilteringIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapMissingFilteringIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapStrikeReselectionIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapStrikeReselectionIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && mixedReservedV2BitmapIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !mixedReservedV2BitmapIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
     `Canvas2D strict profile validates BitmapGlyph transform contract=${JSON.stringify({
@@ -5293,6 +5337,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         .invalidReservedV2BitmapScalingFilterValuePayload
         ?.textV2Validation,
       invalidV2BitmapFilteringValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapFilteringPayload
+        ?.textV2Validation,
+      invalidV2BitmapMissingFilteringValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2BitmapMissingFilteringPayload
+        ?.textV2Validation,
+      invalidV2BitmapStrikeReselectionValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2BitmapStrikeReselectionPayload
         ?.textV2Validation,
       mixedV2BitmapValidation: canvas2dGlyphOutlineProbe.mixedReservedV2BitmapPayload
         ?.textV2Validation,
@@ -6024,6 +6074,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ...bitmapOutline.bitmapGlyph,
       },
     });
+    const missingFilteringBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-filtering', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-missing-filtering', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-missing-filtering',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        filtering: undefined,
+      },
+    });
+    const strikeReselectionBitmapOutline = outlineFor('canvaskit-outline-bitmap-strike-reselection', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-strike-reselection', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-strike-reselection',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        strikeSelection: 'backendResolved',
+      },
+    });
     const svgOutline = outlineFor('canvaskit-outline-svg', {
       payloadKind: 'svgGlyph',
       variant: variantFor('canvaskit-outline-svg', 'glyphOutline', {
@@ -6675,6 +6751,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       colorLayersColrV1Gradient: await render(treeFor(colorV1GradientOutline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
       nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
+      missingFilteringBitmapGlyph: await render(treeFor(missingFilteringBitmapOutline)),
+      strikeReselectionBitmapGlyph: await render(treeFor(strikeReselectionBitmapOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
@@ -6886,6 +6964,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedBitmapGlyph'),
       ),
     `CanvasKit rejects non-positive BitmapGlyph bbox before replay=${JSON.stringify(canvaskitNonpositiveBitmapBBoxReport)}`,
+  );
+  const canvaskitMissingFilteringBitmapReport = canvaskitGlyphOutlineProbe
+    .missingFilteringBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-missing-filtering');
+  assert(
+    canvaskitMissingFilteringBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingFilteringBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with missing strict filtering=${JSON.stringify(canvaskitMissingFilteringBitmapReport)}`,
+  );
+  const canvaskitStrikeReselectionBitmapReport = canvaskitGlyphOutlineProbe
+    .strikeReselectionBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-strike-reselection');
+  assert(
+    canvaskitStrikeReselectionBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitStrikeReselectionBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph backend strike reselection=${JSON.stringify(canvaskitStrikeReselectionBitmapReport)}`,
   );
   const canvaskitDuplicateBitmapKeyReport = canvaskitGlyphOutlineProbe
     .duplicateBitmapGlyphKey

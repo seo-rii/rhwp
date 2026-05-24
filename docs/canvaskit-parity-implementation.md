@@ -236,10 +236,11 @@ Canvas2D/CanvasKit, Rust SVG, and native Skia now share the single-strike strict
 payload subset. Static picture cache keys already include image and
 `ArrayBuffer` resource payload fingerprints; the same cache contract is now
 covered for strict `SvgGlyph` vector resources so stale static pictures cannot
-survive a same-key vector payload change. Before writer emission is widened,
-add more negative fixtures for missing required strict fields, backend strike
-reselection, backend-default filtering, malformed resource refs, and remaining
-resource identity cache reuse cases.
+survive a same-key vector payload change. CanvasKit lifecycle also rejects
+`BitmapGlyph` payloads with missing required strict fields or backend strike
+reselection before replay. Before writer emission is widened, add more negative
+fixtures for malformed resource refs and remaining resource identity cache reuse
+cases.
 
 ### 3. SvgGlyph Static Vector Hardening
 
