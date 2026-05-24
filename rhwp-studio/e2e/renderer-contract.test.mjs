@@ -8,11 +8,17 @@ const repoRoot = path.resolve(studioRoot, '..');
 const canvas2dPath = path.join(studioRoot, 'src/view/canvas2d-layer-renderer.ts');
 const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
+const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
+const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
+const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
+const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
+const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
+const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
@@ -35,6 +41,7 @@ const canvaskitSourceFiles = [
     label: path.relative(studioRoot, filePath),
     source: fs.readFileSync(filePath, 'utf8'),
   })),
+  { label: path.relative(studioRoot, imageEffectPixelsPath), source: imageEffectPixelsSource },
 ];
 const forbiddenCanvas2dApiPatterns = [
   [/document\s*\.\s*createElement\b/, 'document.createElement'],
@@ -264,6 +271,16 @@ assert.equal(
   canvaskitSource.includes('parseStaticSvgPathLayers(fragment, { allowDomParser: false })'),
   true,
   'CanvasKit SvgGlyph replay must not use DOMParser-backed SVG parsing',
+);
+assert.equal(
+  canvaskitResourceCacheSource.includes("from '../layer-canvas-utils'"),
+  false,
+  'CanvasKit resource cache must use native-ready image/font helpers instead of broad Canvas2D utilities',
+);
+assert.equal(
+  canvaskitFontsSource.includes("from '../layer-canvas-utils'"),
+  false,
+  'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',
 );
 
 const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(

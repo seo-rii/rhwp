@@ -7,7 +7,7 @@ import {
   resetLayerImageEffectDiagnostics,
   type LayerImageEffectDiagnostics,
   type LayerImageEffectSourceRect,
-} from '../layer-canvas-utils';
+} from '../image-effect-pixels';
 import { parseCanvasKitCssColor } from './css-color';
 
 export type CanvasKitPatternDiagnostics = {

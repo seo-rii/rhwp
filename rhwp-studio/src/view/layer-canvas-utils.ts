@@ -11,6 +11,22 @@ import type {
   LayerTextRunOp,
 } from '@/core/types';
 import { parseSupportedCssColor } from './canvaskit/css-color';
+import {
+  applyLayerImageEffectPixels,
+  decodeBase64,
+  type LayerImageEffectDiagnostics,
+  type LayerImageEffectSourceRect,
+} from './image-effect-pixels';
+
+export {
+  applyLayerImageEffectPixels,
+  decodeBase64,
+  resetLayerImageEffectDiagnostics,
+} from './image-effect-pixels';
+export type {
+  LayerImageEffectDiagnostics,
+  LayerImageEffectSourceRect,
+} from './image-effect-pixels';
 
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
@@ -27,7 +43,6 @@ const STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES = new Set([
 export type LayerCanvasImageEffectSource = HTMLCanvasElement | OffscreenCanvas;
 export type LayerCanvasImageSource = HTMLImageElement | LayerCanvasImageEffectSource;
 export type LayerImageEffectCache = WeakMap<LayerCanvasImageSource, Map<string, LayerCanvasImageEffectSource>>;
-export type LayerImageEffectSourceRect = { x: number; y: number; width: number; height: number };
 export type StaticSvgPathLayer = {
   pathData: string;
   fill: string | null;
@@ -61,22 +76,6 @@ type StaticSvgPaintState = {
   strokeDashOffset: number;
   transform?: LayerAffineTransform;
 };
-export type LayerImageEffectDiagnostics = {
-  cacheHits: number;
-  cacheMisses: number;
-  preprocessFailures: number;
-  fallbackToOriginal: number;
-  preprocessedPixels: number;
-  preprocessedBytes: number;
-  maxPreprocessedBytes: number;
-  preprocessTimeMs: number;
-  maxPreprocessTimeMs: number;
-  heapDeltaBytes: number;
-  maxHeapDeltaBytes: number;
-  offscreenCanvasPreprocesses: number;
-  htmlCanvasPreprocesses: number;
-};
-
 export function parseStaticSvgPathLayers(
   fragment: string,
   options: { allowDomParser?: boolean } = {},
@@ -702,22 +701,6 @@ function staticSvgRectPathData(
   return `M${x} ${y}H${x + width}V${y + height}H${x}Z`;
 }
 
-export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDiagnostics): void {
-  diagnostics.cacheHits = 0;
-  diagnostics.cacheMisses = 0;
-  diagnostics.preprocessFailures = 0;
-  diagnostics.fallbackToOriginal = 0;
-  diagnostics.preprocessedPixels = 0;
-  diagnostics.preprocessedBytes = 0;
-  diagnostics.maxPreprocessedBytes = 0;
-  diagnostics.preprocessTimeMs = 0;
-  diagnostics.maxPreprocessTimeMs = 0;
-  diagnostics.heapDeltaBytes = 0;
-  diagnostics.maxHeapDeltaBytes = 0;
-  diagnostics.offscreenCanvasPreprocesses = 0;
-  diagnostics.htmlCanvasPreprocesses = 0;
-}
-
 function svgPresentationAttribute(element: Element, name: string): string | null {
   const style = element.getAttribute('style');
   if (style) {
@@ -1311,63 +1294,7 @@ function svgFillRule(value: string | null): CanvasFillRule | undefined {
   return value?.trim().toLowerCase() === 'evenodd' ? 'evenodd' : undefined;
 }
 
-const ORDERED_DITHER_8X8 = [
-  0, 48, 12, 60, 3, 51, 15, 63,
-  32, 16, 44, 28, 35, 19, 47, 31,
-  8, 56, 4, 52, 11, 59, 7, 55,
-  40, 24, 36, 20, 43, 27, 39, 23,
-  2, 50, 14, 62, 1, 49, 13, 61,
-  34, 18, 46, 30, 33, 17, 45, 29,
-  10, 58, 6, 54, 9, 57, 5, 53,
-  42, 26, 38, 22, 41, 25, 37, 21,
-] as const;
-
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-export function decodeBase64(base64: string): Uint8Array {
-  const runtimeAtob = globalThis.atob;
-  if (typeof runtimeAtob === 'function') {
-    const binary = runtimeAtob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let idx = 0; idx < binary.length; idx += 1) {
-      bytes[idx] = binary.charCodeAt(idx);
-    }
-    return bytes;
-  }
-
-  const normalized = base64.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
-  if (normalized.length === 0) {
-    return new Uint8Array();
-  }
-  if (normalized.length % 4 === 1) {
-    throw new Error('Invalid base64 payload length');
-  }
-  const firstPadding = normalized.indexOf('=');
-  if (firstPadding >= 0 && !/^=+$/.test(normalized.slice(firstPadding))) {
-    throw new Error('Invalid base64 padding');
-  }
-  const bytes = new Uint8Array(Math.floor((normalized.length * 3) / 4));
-  let outputLength = 0;
-  let accumulator = 0;
-  let bits = 0;
-  for (const char of normalized) {
-    if (char === '=') {
-      break;
-    }
-    const value = BASE64_ALPHABET.indexOf(char);
-    if (value < 0) {
-      throw new Error('Invalid base64 character');
-    }
-    accumulator = (accumulator << 6) | value;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes[outputLength] = (accumulator >> bits) & 0xff;
-      outputLength += 1;
-    }
-  }
-  return bytes.subarray(0, outputLength);
-}
 
 export function encodeBase64(bytes: Uint8Array): string {
   const runtimeBtoa = globalThis.btoa;
@@ -1503,37 +1430,6 @@ function imageEffectCacheKey(effect: NonNullable<LayerImageOp['effect']>, source
     sourceRect.width.toFixed(3),
     sourceRect.height.toFixed(3),
   ].join(':');
-}
-
-export function applyLayerImageEffectPixels(
-  data: Uint8Array | Uint8ClampedArray,
-  width: number,
-  effect: LayerImageOp['effect'] | undefined,
-  patternPhaseX = 0,
-  patternPhaseY = 0,
-): boolean {
-  if (!effect || effect === 'realPic' || !Number.isFinite(width) || width <= 0) {
-    return false;
-  }
-
-  for (let index = 0; index < data.length; index += 4) {
-    const luma = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
-    let value = luma;
-    if (effect === 'blackWhite') {
-      value = luma >= 128 ? 255 : 0;
-    } else if (effect === 'pattern8x8') {
-      const pixel = index / 4;
-      const x = pixel % width;
-      const y = Math.floor(pixel / width);
-      const matrix = ORDERED_DITHER_8X8[((y + patternPhaseY) & 7) * 8 + ((x + patternPhaseX) & 7)];
-      const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
-      value = luma > threshold ? 255 : 0;
-    }
-    data[index] = value;
-    data[index + 1] = value;
-    data[index + 2] = value;
-  }
-  return true;
 }
 
 export function applyLayerImageEffect(
