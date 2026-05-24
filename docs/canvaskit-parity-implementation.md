@@ -144,6 +144,135 @@ These are v2 feature additions, not v3 triggers, unless they force a change to
 variant selection, paint-order semantics, fallback-free export semantics, layout
 authority, or source/cluster identity.
 
+## Next Implementation Blueprint
+
+The remaining CanvasKit work should be implemented in this order. The order is
+chosen to keep one backend contract in flight at a time while preserving the
+existing Canvas2D compatibility export.
+
+### 1. COLRv1 Graph Skeleton
+
+Purpose: add the first COLRv1-capable payload shape without changing text
+variant selection or paint-order semantics.
+
+Implementation shape:
+
+- keep `ColorLayers` canonical as producer-normalized paint data, not a
+  font-native COLR table reference;
+- keep COLR/CPAL table references, source glyph ids, palette indices, font
+  digest, and face identity as provenance/debug/cache data;
+- start with a tree-only graph containing only `solidPath` and local
+  `transform` nodes;
+- allow only run-local affine transforms inside the glyph payload;
+- reject graph nodes that alter `PaintOp` order, clip scope, effect scope,
+  cache scope, or cross-scope variant behavior;
+- reject unreachable nodes, cycles, node counts over the stage limit, and depth
+  over the stage limit.
+
+The first implementation batch should add:
+
+1. the stage-1 graph schema/type shape;
+2. graph validator rules and negative fixtures;
+3. a deterministic internal/native reference fixture;
+4. CanvasKit replay only after the graph semantics are fixed.
+
+Later COLRv1 additions should be staged as independent v2 feature additions:
+
+| Stage | New graph capability | Writer status |
+| --- | --- | --- |
+| 1 | solid color plus transform | first implementation target |
+| 2 | linear and radial gradients | after stage-1 fixtures are stable |
+| 3 | sweep gradients | after gradient coordinate semantics are fixed |
+| 4 | composite and blend | after reference compositing semantics are fixed |
+| 5 | clip and reusable graph nodes | after DAG, cycle, depth, and reuse rules are fixed |
+
+### 2. BitmapGlyph Strict Replay Profile
+
+Purpose: close the strict image-strike contract before enabling broad writer
+emission.
+
+Implementation shape:
+
+- canonical payload contains one producer-selected image strike;
+- available strikes, missing ideal strikes, and chosen-strike reasons are
+  diagnostics/provenance only;
+- strict replay must not let the backend select a different strike;
+- strict replay requires explicit `alphaMode`, `scalingPolicy`, `filtering`,
+  placement, `sourceRangeUtf8`, and `glyphRange`;
+- strict replay rejects `backendDefault` scaling or filtering;
+- missing color space defaults to sRGB only when the diagnostic records
+  `colorSpaceDefaulted`.
+
+The first writer target should be Canvas2D/SVG strict replay, because the
+payload is already an image resource. Native Skia and CanvasKit should follow
+with the same resource identity and diagnostics. Before writer emission is
+widened, add negative fixtures for missing required strict fields, backend
+strike reselection, backend-default filtering, and malformed resource refs.
+
+### 3. SvgGlyph Static Vector Contract
+
+Purpose: close the sanitized vector-resource contract without reintroducing raw
+SVG-in-font replay or DOM/SVG overlay dependencies.
+
+Implementation shape:
+
+- canonical payload references a `VectorResourceId`, not inline raw SVG;
+- the producer sanitizes the SVG glyph into static vector content;
+- consumers and validators require `securityMode=staticSanitized`;
+- strict replay requires `scriptAllowed=false`, `animationAllowed=false`,
+  `externalResourcesAllowed=false`, and `interactivityAllowed=false`;
+- `viewBox` is required because mapping into glyph/run coordinates is part of
+  strict replay;
+- `intrinsicSize` is optional and diagnostic/layout-aid only.
+
+The first writer target should be the SVG exporter. Canvas2D, CanvasKit, and
+native Skia lowering come later because they must convert the sanitized vector
+resource into backend-native path or scene commands without using DOM parsing.
+Before writer emission is widened, add negative fixtures for unsafe flags,
+missing `viewBox`, raw SVG replay attempts, external resource references, and
+unsupported vector primitives.
+
+### 4. CanvasKit Variation And TTC Proof Fixtures
+
+Purpose: keep CanvasKit exact-font replay conservative until exact face and
+instance construction is proven.
+
+Current policy stays unchanged:
+
+- variation-required `GlyphRun` rejected by CanvasKit reports
+  `variationUnsupported`;
+- TTC/OTC non-zero `faceIndex` rejected by CanvasKit reports
+  `faceIndexUnsupported`;
+- native Skia may select `GlyphRun` while CanvasKit selects `TextRun` fallback;
+  the backend divergence is explained by `VariantSelectionReport`.
+
+The proof fixtures required before enabling CanvasKit strict replay are:
+
+| Capability | Positive proof | Negative proof |
+| --- | --- | --- |
+| variation font | same variable font blob, canonical axis tuple, expected glyph ids, expected advances/bounds, stable native-vs-CanvasKit fuzzy output | unsupported axis, out-of-range axis, same font with different axis tuple, default-axis omission policy |
+| TTC/OTC face index | same collection blob, explicit non-zero `faceIndex`, expected face metadata, expected glyph id mapping | wrong-face index and ambiguous metadata diagnostics |
+
+CanvasKit glyph id replay must keep the adapter range guard for public `u32`
+glyph ids because the browser binding currently uses a 16-bit glyph id path.
+
+### 5. Layout, Scope, And Vertical Writer Gates
+
+These features remain vocabulary/validator work until their authority gates are
+met.
+
+| Feature | Current implementation action | Writer gate |
+| --- | --- | --- |
+| shapedModern width input | keep `lineBreakRisk` report-only and keep `lineBreakWouldChange` absent | representative HWP corpus, understood width-delta distribution, stable fallback split, stable cluster mapping, stable vertical metrics, table/cell review, `hwpCompat` still default |
+| shapedModern line breaking | document pass criteria only | opt-in width input stable, calibrated line-break risk threshold, expected pagination differences documented |
+| cross-scope variants | keep `text.crossScopeVariants` vocabulary and boundary diagnostics | concrete use case requiring scopeRef across leaf/clip/transform/effect/cache boundary |
+| `MixedPerGlyph` | keep cluster/grapheme orientation semantics and `GlyphTransformRun` vocabulary | stable per-cluster mapping, transform semantics, GlyphRun/GlyphOutline transform replay, vertical policy fixtures |
+
+Compatibility writers must continue to fall back to same-scope `TextRun` or
+homogeneous run splitting when those fallbacks are available. Fallback-free
+strict writers must reject unsupported scope or mixed-orientation replay rather
+than silently skipping it.
+
 ## Commit Shape
 
 Keep commits small and coherent:
