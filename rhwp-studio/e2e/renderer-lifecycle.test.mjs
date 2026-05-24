@@ -6158,6 +6158,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedSvgIndirectPaintTree = treeFor(svgOutline);
     unsupportedSvgIndirectPaintTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="url (#glyph-paint)"/>';
     unsupportedSvgIndirectPaintTree.resources.svgHashes[0] = 'svg-glyph-unsupported-indirect-paint';
+    const unsupportedSvgImageHrefTree = treeFor(svgOutline);
+    unsupportedSvgImageHrefTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<image href="https://example.invalid/glyph.png" x="0" y="0" width="18" height="18"/>',
+      '</svg>',
+    ].join('');
+    unsupportedSvgImageHrefTree.resources.svgHashes[0] = 'svg-glyph-unsupported-image-href';
+    const unsupportedSvgUseHrefTree = treeFor(svgOutline);
+    unsupportedSvgUseHrefTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<defs><path id="glyph-path" d="M0 0 L18 0 L18 18 L0 18 Z"/></defs>',
+      '<use href="#glyph-path" fill="#ff00cc"/>',
+      '</svg>',
+    ].join('');
+    unsupportedSvgUseHrefTree.resources.svgHashes[0] = 'svg-glyph-unsupported-use-href';
     const unsupportedSvgInvalidColorTree = treeFor(svgOutline);
     unsupportedSvgInvalidColorTree.resources.svgFragments[0] = '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="definitely-not-a-color"/>';
     unsupportedSvgInvalidColorTree.resources.svgHashes[0] = 'svg-glyph-unsupported-invalid-color';
@@ -6466,6 +6481,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     let noDomParserUnsupportedSvgCdataEndResource;
     let noDomParserUnsupportedSvgTextEntityResource;
     let noDomParserUnsupportedSvgGroupOpacityResource;
+    let noDomParserUnsupportedSvgImageHrefResource;
+    let noDomParserUnsupportedSvgUseHrefResource;
     try {
       globalThis.DOMParser = undefined;
       noDomParserSvgGlyph = await render(treeFor(svgOutline));
@@ -6530,6 +6547,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserUnsupportedSvgCdataEndResource = await render(unsupportedSvgCdataEndTree);
       noDomParserUnsupportedSvgTextEntityResource = await render(unsupportedSvgTextEntityTree);
       noDomParserUnsupportedSvgGroupOpacityResource = await render(unsupportedSvgGroupOpacityTree);
+      noDomParserUnsupportedSvgImageHrefResource = await render(unsupportedSvgImageHrefTree);
+      noDomParserUnsupportedSvgUseHrefResource = await render(unsupportedSvgUseHrefTree);
     } finally {
       if (hadDOMParser) {
         globalThis.DOMParser = originalDOMParser;
@@ -6632,6 +6651,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedSvgGlyphGroupOpacityResource: await render(unsupportedSvgGroupOpacityTree),
       unsupportedSvgGlyphFillRuleResource: await render(unsupportedSvgFillRuleTree),
       unsupportedSvgGlyphIndirectPaintResource: await render(unsupportedSvgIndirectPaintTree),
+      unsupportedSvgGlyphImageHrefResource: await render(unsupportedSvgImageHrefTree),
+      noDomParserUnsupportedSvgImageHrefResource,
+      unsupportedSvgGlyphUseHrefResource: await render(unsupportedSvgUseHrefTree),
+      noDomParserUnsupportedSvgUseHrefResource,
       unsupportedSvgGlyphInvalidColorResource: await render(unsupportedSvgInvalidColorTree),
       noDomParserUnsupportedSvgDoctypeResource,
       noDomParserUnsupportedSvgClosingTagResource,
@@ -7479,6 +7502,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsupportedSvgGlyphIndirectPaintResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgImageHrefResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphImageHrefResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitNoDomParserUnsupportedSvgImageHrefResourceReport = canvaskitGlyphOutlineProbe
+    .noDomParserUnsupportedSvgImageHrefResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgUseHrefResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphUseHrefResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitNoDomParserUnsupportedSvgUseHrefResourceReport = canvaskitGlyphOutlineProbe
+    .noDomParserUnsupportedSvgUseHrefResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitUnsupportedSvgInvalidColorResourceReport = canvaskitGlyphOutlineProbe
     .unsupportedSvgGlyphInvalidColorResource
     ?.diagnostics
@@ -7594,6 +7633,26 @@ runTest('Renderer lifecycle', async ({ page }) => {
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
+      && canvaskitUnsupportedSvgImageHrefResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgImageHrefResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitNoDomParserUnsupportedSvgImageHrefResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitNoDomParserUnsupportedSvgImageHrefResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitUnsupportedSvgUseHrefResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgUseHrefResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitNoDomParserUnsupportedSvgUseHrefResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitNoDomParserUnsupportedSvgUseHrefResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
       && canvaskitUnsupportedSvgInvalidColorResourceReport?.selectedVariantId === 'textRun'
       && canvaskitUnsupportedSvgInvalidColorResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
@@ -7706,6 +7765,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedGroupOpacity: canvaskitUnsupportedSvgGroupOpacityResourceReport,
       unsupportedFillRule: canvaskitUnsupportedSvgFillRuleResourceReport,
       unsupportedIndirectPaint: canvaskitUnsupportedSvgIndirectPaintResourceReport,
+      unsupportedImageHref: canvaskitUnsupportedSvgImageHrefResourceReport,
+      noDomParserUnsupportedImageHref: canvaskitNoDomParserUnsupportedSvgImageHrefResourceReport,
+      unsupportedUseHref: canvaskitUnsupportedSvgUseHrefResourceReport,
+      noDomParserUnsupportedUseHref: canvaskitNoDomParserUnsupportedSvgUseHrefResourceReport,
       unsupportedInvalidColor: canvaskitUnsupportedSvgInvalidColorResourceReport,
       noDomParserUnsupportedDoctype: canvaskitNoDomParserUnsupportedSvgDoctypeResourceReport,
       noDomParserUnsupportedClosingTag: canvaskitNoDomParserUnsupportedSvgClosingTagResourceReport,

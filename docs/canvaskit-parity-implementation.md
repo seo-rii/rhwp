@@ -260,10 +260,12 @@ Implementation shape:
 The current baseline replays static path-layer fragments without DOM parsing in
 Canvas2D/CanvasKit, Rust SVG, and native Skia. CanvasKit lifecycle coverage now
 mutates a same-key `VectorResourceId` payload inside a static subtree and
-requires a distinct static picture cache entry and changed pixels. Before writer
+requires a distinct static picture cache entry and changed pixels. It also
+rejects external/reference primitives such as `<image href>` and `<use href>` as
+`unsupportedSvgGlyph` in both DOMParser and no-DOMParser paths. Before writer
 emission is widened, add more negative fixtures for unsafe flags, missing
-`viewBox`, raw SVG replay attempts, external resource references, unsupported
-vector primitives, and remaining resource identity cache reuse cases.
+`viewBox`, raw SVG replay attempts, other unsupported vector primitives, and
+remaining resource identity cache reuse cases.
 
 ### 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 
@@ -415,8 +417,9 @@ Likely touchpoints:
 - shared static vector resource validation;
 - SVG exporter eligibility checks;
 - CanvasKit/native Skia fallback diagnostics;
-- negative fixtures for unsafe flags, missing `viewBox`, external references,
-  raw replay attempts, and unsupported vector primitives.
+- negative fixtures for unsafe flags, missing `viewBox`, raw replay attempts,
+  unsupported vector primitives, and external/reference primitives such as
+  `<image href>` and `<use href>`.
 
 Definition of done:
 
