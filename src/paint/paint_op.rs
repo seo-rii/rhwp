@@ -2359,6 +2359,11 @@ mod tests {
         backend_default_bitmap.filtering = Some(BitmapGlyphFiltering::BackendDefault);
         assert!(!backend_default_bitmap.has_strict_visual_contract());
 
+        let mut backend_default_scaling_bitmap = bitmap_glyph.clone();
+        backend_default_scaling_bitmap.scaling_policy =
+            Some(BitmapGlyphScalingPolicy::BackendDefault);
+        assert!(!backend_default_scaling_bitmap.has_strict_visual_contract());
+
         let mut zero_strike_bitmap = bitmap_glyph.clone();
         zero_strike_bitmap.strike_ppem = Some((0, 16));
         assert!(!zero_strike_bitmap.has_strict_visual_contract());
