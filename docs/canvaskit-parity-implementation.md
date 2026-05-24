@@ -45,13 +45,13 @@ the broad Canvas2D utility module:
 | image effect pixels, crop preprocessing, base64 decode | `rhwp-studio/src/view/image-effect-pixels.ts` | resource cache, font blob registration, cropped effect replay |
 | HWP text replay helpers and PUA projection helpers | `rhwp-studio/src/view/text-replay-utils.ts` | root `TextRun`, special text ops, control marks, overlap text |
 | geometry helpers and conservative bounds | `rhwp-studio/src/view/layer-geometry-utils.ts` | paths, arrows, transformed bounds |
+| static SVG path parsing | `rhwp-studio/src/view/static-svg-path-layers.ts` | strict `SvgGlyph` and SVG-style outline replay |
 
-The remaining P1 boundary item is static SVG path parsing. CanvasKit currently
-needs a static path parser for `SvgGlyph` and SVG-style strict outline replay,
-but that parser must not depend on `DOMParser`, `Path2D`, SVG DOM nodes, or
-Canvas2D APIs. The next boundary closure is to promote that parsing into a
-native-ready helper and make the contract test fail if CanvasKit imports the
-broad `layer-canvas-utils` module again.
+P1 dependency-boundary closure is now complete. CanvasKit strict `SvgGlyph`
+and SVG-style outline replay use the DOM-free `static-svg-path-layers.ts`
+parser, and the contract test fails if CanvasKit source reintroduces the broad
+`layer-canvas-utils` import or browser-canvas/SVG DOM APIs. The remaining work
+therefore moves to P2 feature-family parity audits and P3 strict payload gates.
 
 ## Architecture
 
@@ -80,6 +80,8 @@ instead of hiding it behind a Canvas2D overlay.
 
 P1 removes CanvasKit dependencies on broad Canvas2D/browser helpers.
 
+Status: complete. Keep the exit criteria below as regression requirements.
+
 Exit criteria:
 
 - `canvaskit-renderer.ts` and `rhwp-studio/src/view/canvaskit/*` do not import
@@ -92,7 +94,7 @@ Exit criteria:
 - Static SVG parsing used by CanvasKit is handled by a DOM-free parser with
   deterministic unsupported results.
 
-Immediate P1 implementation order:
+Completed P1 implementation:
 
 1. Add `static-svg-path-layers.ts` as the CanvasKit-safe parser surface.
 2. Wire CanvasKit replay and glyph-outline payload eligibility to that parser.
