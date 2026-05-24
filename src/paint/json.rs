@@ -2000,6 +2000,14 @@ fn write_glyph_outline_color_paint_graph_node(
         buf.push_str(",\"solidPath\":");
         write_glyph_outline_color_solid_path_node(buf, solid);
     }
+    if let Some(gradient_path) = &node.linear_gradient_path {
+        buf.push_str(",\"linearGradientPath\":");
+        write_glyph_outline_color_linear_gradient_path_node(buf, gradient_path);
+    }
+    if let Some(gradient_path) = &node.radial_gradient_path {
+        buf.push_str(",\"radialGradientPath\":");
+        write_glyph_outline_color_radial_gradient_path_node(buf, gradient_path);
+    }
     if let Some(transform) = &node.transform {
         buf.push_str(",\"transform\":");
         write_glyph_outline_color_transform_node(buf, transform);
@@ -2039,6 +2047,78 @@ fn write_glyph_outline_color_solid_path_node(
         let _ = write!(buf, ",\"sourceGlyphId\":{}", source_glyph_id);
     }
     if let Some(palette_index) = solid.palette_index {
+        let _ = write!(buf, ",\"paletteIndex\":{}", palette_index);
+    }
+    buf.push('}');
+}
+
+fn write_glyph_outline_color_gradient_stops(
+    buf: &mut String,
+    stops: &[crate::paint::ColorGradientStop],
+) {
+    buf.push('[');
+    for (idx, stop) in stops.iter().enumerate() {
+        if idx > 0 {
+            buf.push(',');
+        }
+        let _ = write!(buf, "{{\"offset\":{}", stop.offset);
+        buf.push_str(",\"color\":");
+        write_resolved_color(buf, &stop.color);
+        buf.push('}');
+    }
+    buf.push(']');
+}
+
+fn write_glyph_outline_color_linear_gradient_path_node(
+    buf: &mut String,
+    gradient_path: &crate::paint::ColorPaintLinearGradientPathNode,
+) {
+    buf.push_str("{\"commands\":");
+    write_path_commands(buf, &gradient_path.commands);
+    let _ = write!(
+        buf,
+        ",\"gradient\":{{\"x0\":{},\"y0\":{},\"x1\":{},\"y1\":{},\"stops\":",
+        gradient_path.gradient.x0,
+        gradient_path.gradient.y0,
+        gradient_path.gradient.x1,
+        gradient_path.gradient.y1
+    );
+    write_glyph_outline_color_gradient_stops(buf, &gradient_path.gradient.stops);
+    let _ = write!(
+        buf,
+        "}},\"fillRule\":{}",
+        json_escape(gradient_path.fill_rule.as_str())
+    );
+    if let Some(source_glyph_id) = gradient_path.source_glyph_id {
+        let _ = write!(buf, ",\"sourceGlyphId\":{}", source_glyph_id);
+    }
+    if let Some(palette_index) = gradient_path.palette_index {
+        let _ = write!(buf, ",\"paletteIndex\":{}", palette_index);
+    }
+    buf.push('}');
+}
+
+fn write_glyph_outline_color_radial_gradient_path_node(
+    buf: &mut String,
+    gradient_path: &crate::paint::ColorPaintRadialGradientPathNode,
+) {
+    buf.push_str("{\"commands\":");
+    write_path_commands(buf, &gradient_path.commands);
+    let _ = write!(
+        buf,
+        ",\"gradient\":{{\"cx\":{},\"cy\":{},\"radius\":{},\"stops\":",
+        gradient_path.gradient.cx, gradient_path.gradient.cy, gradient_path.gradient.radius
+    );
+    write_glyph_outline_color_gradient_stops(buf, &gradient_path.gradient.stops);
+    let _ = write!(
+        buf,
+        "}},\"fillRule\":{}",
+        json_escape(gradient_path.fill_rule.as_str())
+    );
+    if let Some(source_glyph_id) = gradient_path.source_glyph_id {
+        let _ = write!(buf, ",\"sourceGlyphId\":{}", source_glyph_id);
+    }
+    if let Some(palette_index) = gradient_path.palette_index {
         let _ = write!(buf, ",\"paletteIndex\":{}", palette_index);
     }
     buf.push('}');
@@ -3167,13 +3247,13 @@ mod tests {
     use super::*;
     use crate::model::image::ImageEffect;
     use crate::paint::{
-        CacheHint, ClipKind, ColorGlyphFormat, ColorLayerNode, ColorLayersPayload,
-        ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
-        ColorPaintSolidPathNode, ColorPaintTransformNode, FontColorGlyphRef, FontFaceKey,
-        FontFallbackPolicyId, FontInstanceKey, GlyphCluster, GlyphOutlineFillRule,
-        GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap,
-        GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics,
-        GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
+        CacheHint, ClipKind, ColorGlyphFormat, ColorGradientStop, ColorLayerNode,
+        ColorLayersPayload, ColorLinearGradient, ColorPaintGraphNode, ColorPaintGraphNodeKind,
+        ColorPaintGraphPayload, ColorPaintLinearGradientPathNode, ColorPaintTransformNode,
+        FontColorGlyphRef, FontFaceKey, FontFallbackPolicyId, FontInstanceKey, GlyphCluster,
+        GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
+        GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
+        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
         LayerCharOverlapPaint, LayerEquationPaint, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
         LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode, LayerOutputOptions,
         LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTextControlMark,
@@ -4398,6 +4478,8 @@ mod tests {
                         node_id: 1,
                         kind: ColorPaintGraphNodeKind::Transform,
                         solid_path: None,
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
                         transform: Some(ColorPaintTransformNode {
                             child_node_id: 2,
                             transform: LayerAffineTransform {
@@ -4415,22 +4497,42 @@ mod tests {
                     },
                     ColorPaintGraphNode {
                         node_id: 2,
-                        kind: ColorPaintGraphNodeKind::SolidPath,
-                        solid_path: Some(ColorPaintSolidPathNode {
+                        kind: ColorPaintGraphNodeKind::LinearGradientPath,
+                        solid_path: None,
+                        linear_gradient_path: Some(ColorPaintLinearGradientPathNode {
                             commands: vec![
                                 PathCommand::MoveTo(0.0, 0.0),
                                 PathCommand::LineTo(8.0, 0.0),
                                 PathCommand::LineTo(8.0, 8.0),
                                 PathCommand::ClosePath,
                             ],
-                            fill: ResolvedColor {
-                                color_space: Some("srgb".to_string()),
-                                rgba: [1.0, 0.0, 0.0, 1.0],
+                            gradient: ColorLinearGradient {
+                                x0: 0.0,
+                                y0: 0.0,
+                                x1: 8.0,
+                                y1: 0.0,
+                                stops: vec![
+                                    ColorGradientStop {
+                                        offset: 0.0,
+                                        color: ResolvedColor {
+                                            color_space: Some("srgb".to_string()),
+                                            rgba: [1.0, 0.0, 0.0, 1.0],
+                                        },
+                                    },
+                                    ColorGradientStop {
+                                        offset: 1.0,
+                                        color: ResolvedColor {
+                                            color_space: Some("srgb".to_string()),
+                                            rgba: [0.0, 0.0, 1.0, 1.0],
+                                        },
+                                    },
+                                ],
                             },
                             fill_rule: GlyphOutlineFillRule::NonZero,
                             source_glyph_id: Some(42),
                             palette_index: Some(1),
                         }),
+                        radial_gradient_path: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(GlyphRange::new(0, 1)),
                         source_font_ref: Some(source_font_ref),
@@ -4457,6 +4559,10 @@ mod tests {
         assert!(colrv1_json.contains("\"payloadKind\":\"colorLayers\""));
         assert!(colrv1_json.contains("\"colorLayers\":{\"colorFormat\":\"colrV1\""));
         assert!(colrv1_json.contains("\"paintGraph\":{\"rootNodeId\":1"));
+        assert!(colrv1_json.contains("\"kind\":\"linearGradientPath\""));
+        assert!(colrv1_json.contains("\"linearGradientPath\":{\"commands\""));
+        assert!(colrv1_json.contains("\"gradient\":{\"x0\":0,\"y0\":0,\"x1\":8,\"y1\":0"));
+        assert!(colrv1_json.contains("\"stops\":[{\"offset\":0,\"color\":{\"colorSpace\":\"srgb\",\"rgba\":[1.000000,0.000000,0.000000,1.000000]}}"));
     }
 
     #[test]

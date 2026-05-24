@@ -3385,6 +3385,8 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
                     node_id: 10,
                     kind: ColorPaintGraphNodeKind::Transform,
                     solid_path: None,
+                    linear_gradient_path: None,
+                    radial_gradient_path: None,
                     transform: Some(ColorPaintTransformNode {
                         child_node_id: 20,
                         transform: LayerAffineTransform {
@@ -3419,6 +3421,8 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
                         source_glyph_id: Some(1),
                         palette_index: Some(3),
                     }),
+                    linear_gradient_path: None,
+                    radial_gradient_path: None,
                     source_range_utf8: Some(TextSourceRange::new(0, 1)),
                     glyph_range: Some(GlyphRange::new(0, 1)),
                     source_font_ref: Some(source_font_ref),

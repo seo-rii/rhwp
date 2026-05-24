@@ -2108,6 +2108,20 @@ fn glyph_outline_color_paint_graph_node_to_value(
             glyph_outline_color_solid_path_node_to_value(solid),
         );
     }
+    if let Some(gradient_path) = &node.linear_gradient_path {
+        set_value(
+            &value,
+            "linearGradientPath",
+            glyph_outline_color_linear_gradient_path_node_to_value(gradient_path),
+        );
+    }
+    if let Some(gradient_path) = &node.radial_gradient_path {
+        set_value(
+            &value,
+            "radialGradientPath",
+            glyph_outline_color_radial_gradient_path_node_to_value(gradient_path),
+        );
+    }
     if let Some(transform) = &node.transform {
         set_value(
             &value,
@@ -2145,6 +2159,76 @@ fn glyph_outline_color_solid_path_node_to_value(
         set_number(&value, "sourceGlyphId", source_glyph_id as f64);
     }
     if let Some(palette_index) = solid.palette_index {
+        set_number(&value, "paletteIndex", palette_index as f64);
+    }
+    value.into()
+}
+
+fn glyph_outline_color_gradient_stops_to_value(
+    stops: &[crate::paint::ColorGradientStop],
+) -> JsValue {
+    array_to_value(stops.iter().map(|stop| {
+        let value = Object::new();
+        set_number(&value, "offset", stop.offset);
+        set_value(&value, "color", resolved_color_to_value(&stop.color));
+        value.into()
+    }))
+}
+
+fn glyph_outline_color_linear_gradient_path_node_to_value(
+    gradient_path: &crate::paint::ColorPaintLinearGradientPathNode,
+) -> JsValue {
+    let value = Object::new();
+    set_value(
+        &value,
+        "commands",
+        path_commands_to_value(&gradient_path.commands),
+    );
+    let gradient = Object::new();
+    set_number(&gradient, "x0", gradient_path.gradient.x0);
+    set_number(&gradient, "y0", gradient_path.gradient.y0);
+    set_number(&gradient, "x1", gradient_path.gradient.x1);
+    set_number(&gradient, "y1", gradient_path.gradient.y1);
+    set_value(
+        &gradient,
+        "stops",
+        glyph_outline_color_gradient_stops_to_value(&gradient_path.gradient.stops),
+    );
+    set_value(&value, "gradient", gradient.into());
+    set_string(&value, "fillRule", gradient_path.fill_rule.as_str());
+    if let Some(source_glyph_id) = gradient_path.source_glyph_id {
+        set_number(&value, "sourceGlyphId", source_glyph_id as f64);
+    }
+    if let Some(palette_index) = gradient_path.palette_index {
+        set_number(&value, "paletteIndex", palette_index as f64);
+    }
+    value.into()
+}
+
+fn glyph_outline_color_radial_gradient_path_node_to_value(
+    gradient_path: &crate::paint::ColorPaintRadialGradientPathNode,
+) -> JsValue {
+    let value = Object::new();
+    set_value(
+        &value,
+        "commands",
+        path_commands_to_value(&gradient_path.commands),
+    );
+    let gradient = Object::new();
+    set_number(&gradient, "cx", gradient_path.gradient.cx);
+    set_number(&gradient, "cy", gradient_path.gradient.cy);
+    set_number(&gradient, "radius", gradient_path.gradient.radius);
+    set_value(
+        &gradient,
+        "stops",
+        glyph_outline_color_gradient_stops_to_value(&gradient_path.gradient.stops),
+    );
+    set_value(&value, "gradient", gradient.into());
+    set_string(&value, "fillRule", gradient_path.fill_rule.as_str());
+    if let Some(source_glyph_id) = gradient_path.source_glyph_id {
+        set_number(&value, "sourceGlyphId", source_glyph_id as f64);
+    }
+    if let Some(palette_index) = gradient_path.palette_index {
         set_number(&value, "paletteIndex", palette_index as f64);
     }
     value.into()
@@ -4210,6 +4294,8 @@ mod tests {
                         node_id: 1,
                         kind: crate::paint::ColorPaintGraphNodeKind::Transform,
                         solid_path: None,
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
                         transform: Some(crate::paint::ColorPaintTransformNode {
                             child_node_id: 2,
                             transform: LayerAffineTransform {
@@ -4243,6 +4329,8 @@ mod tests {
                             source_glyph_id: Some(42),
                             palette_index: Some(1),
                         }),
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
                         transform: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),

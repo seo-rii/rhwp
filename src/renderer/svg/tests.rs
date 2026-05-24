@@ -847,6 +847,8 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
                             source_glyph_id: Some(42),
                             palette_index: Some(3),
                         }),
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
                         transform: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(GlyphRange { start: 0, end: 1 }),
@@ -856,6 +858,8 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
                         node_id: 1,
                         kind: ColorPaintGraphNodeKind::Transform,
                         solid_path: None,
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
                         transform: Some(ColorPaintTransformNode {
                             child_node_id: 0,
                             transform: LayerAffineTransform {

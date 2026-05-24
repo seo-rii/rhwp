@@ -1317,6 +1317,8 @@ mod tests {
                             source_glyph_id: Some(42),
                             palette_index: Some(0),
                         }),
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
                         transform: None,
                         source_range_utf8: Some(source_range),
                         glyph_range: Some(glyph_range),
@@ -1326,6 +1328,8 @@ mod tests {
                         node_id: 1,
                         kind: ColorPaintGraphNodeKind::Transform,
                         solid_path: None,
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
                         transform: Some(ColorPaintTransformNode {
                             child_node_id: 0,
                             transform: LayerAffineTransform {

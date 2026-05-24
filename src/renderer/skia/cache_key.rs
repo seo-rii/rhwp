@@ -990,7 +990,9 @@ impl StaticSubtreeCacheKey {
                 self.mix_u32(node.node_id);
                 self.mix_u8(match node.kind {
                     crate::paint::ColorPaintGraphNodeKind::SolidPath => 0,
-                    crate::paint::ColorPaintGraphNodeKind::Transform => 1,
+                    crate::paint::ColorPaintGraphNodeKind::LinearGradientPath => 1,
+                    crate::paint::ColorPaintGraphNodeKind::RadialGradientPath => 2,
+                    crate::paint::ColorPaintGraphNodeKind::Transform => 3,
                 });
                 if let Some(solid) = &node.solid_path {
                     self.mix_bool(true);
@@ -1008,6 +1010,45 @@ impl StaticSubtreeCacheKey {
                     });
                     self.mix_option_u32(solid.source_glyph_id);
                     self.mix_option_u16(solid.palette_index);
+                } else {
+                    self.mix_bool(false);
+                }
+                if let Some(gradient_path) = &node.linear_gradient_path {
+                    self.mix_bool(true);
+                    self.mix_usize(gradient_path.commands.len());
+                    for command in &gradient_path.commands {
+                        self.mix_path_command(command);
+                    }
+                    self.mix_f64(gradient_path.gradient.x0);
+                    self.mix_f64(gradient_path.gradient.y0);
+                    self.mix_f64(gradient_path.gradient.x1);
+                    self.mix_f64(gradient_path.gradient.y1);
+                    self.mix_color_gradient_stops(&gradient_path.gradient.stops);
+                    self.mix_u8(match gradient_path.fill_rule {
+                        crate::paint::GlyphOutlineFillRule::NonZero => 0,
+                        crate::paint::GlyphOutlineFillRule::EvenOdd => 1,
+                    });
+                    self.mix_option_u32(gradient_path.source_glyph_id);
+                    self.mix_option_u16(gradient_path.palette_index);
+                } else {
+                    self.mix_bool(false);
+                }
+                if let Some(gradient_path) = &node.radial_gradient_path {
+                    self.mix_bool(true);
+                    self.mix_usize(gradient_path.commands.len());
+                    for command in &gradient_path.commands {
+                        self.mix_path_command(command);
+                    }
+                    self.mix_f64(gradient_path.gradient.cx);
+                    self.mix_f64(gradient_path.gradient.cy);
+                    self.mix_f64(gradient_path.gradient.radius);
+                    self.mix_color_gradient_stops(&gradient_path.gradient.stops);
+                    self.mix_u8(match gradient_path.fill_rule {
+                        crate::paint::GlyphOutlineFillRule::NonZero => 0,
+                        crate::paint::GlyphOutlineFillRule::EvenOdd => 1,
+                    });
+                    self.mix_option_u32(gradient_path.source_glyph_id);
+                    self.mix_option_u16(gradient_path.palette_index);
                 } else {
                     self.mix_bool(false);
                 }
@@ -1042,6 +1083,17 @@ impl StaticSubtreeCacheKey {
             }
         } else {
             self.mix_bool(false);
+        }
+    }
+
+    fn mix_color_gradient_stops(&mut self, stops: &[crate::paint::ColorGradientStop]) {
+        self.mix_usize(stops.len());
+        for stop in stops {
+            self.mix_f64(stop.offset);
+            self.mix_option_str(stop.color.color_space.as_deref());
+            for channel in stop.color.rgba {
+                self.mix_u32(channel.to_bits());
+            }
         }
     }
 

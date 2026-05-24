@@ -1,6 +1,7 @@
 use skia_safe::{
-    surfaces, Canvas, Color, EncodedImageFormat, FontMgr, Matrix, Paint, PathBuilder,
-    PictureRecorder, Rect, Shaper,
+    gradient_shader::{Gradient, GradientColors, Interpolation as GradientInterpolation},
+    shaders, surfaces, Canvas, Color, Color4f, EncodedImageFormat, FontMgr, Matrix, Paint,
+    PathBuilder, PictureRecorder, Point, Rect, Shaper, TileMode,
 };
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
@@ -304,27 +305,7 @@ fn color_layers_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {
         });
     }
     if payload.has_colrv1_stage1_graph_contract() {
-        return payload
-            .colrv1_stage1_reference_layers()
-            .as_ref()
-            .is_some_and(|layers| {
-                layers.iter().all(|layer| {
-                    layer
-                        .commands
-                        .as_ref()
-                        .is_some_and(|commands| path_commands_are_finite(commands))
-                        && layer.fill.as_ref().is_some_and(|fill| {
-                            fill.rgba.iter().all(|component| {
-                                component.is_finite() && (0.0..=1.0).contains(component)
-                            })
-                        })
-                        && layer
-                            .transform_to_run
-                            .as_ref()
-                            .map(affine_is_finite)
-                            .unwrap_or(true)
-                })
-            });
+        return true;
     }
     false
 }
@@ -1013,6 +994,12 @@ impl SkiaLayerRenderer {
         let Some(payload) = outline.color_layers.as_ref() else {
             return;
         };
+        if payload.color_format == crate::paint::ColorGlyphFormat::ColrV1 {
+            if let Some(graph) = &payload.paint_graph {
+                self.render_glyph_outline_color_graph(canvas, graph, replay);
+            }
+            return;
+        }
         let reference_layers;
         let layers = if payload.has_colrv0_resolved_layer_contract() {
             &payload.layers
@@ -1051,6 +1038,155 @@ impl SkiaLayerRenderer {
                 );
             }
         }
+    }
+
+    fn render_glyph_outline_color_graph(
+        &self,
+        canvas: &Canvas,
+        graph: &crate::paint::ColorPaintGraphPayload,
+        replay: &SkiaReplayContext,
+    ) {
+        self.render_glyph_outline_color_graph_node(canvas, graph, graph.root_node_id, replay, 0);
+    }
+
+    fn render_glyph_outline_color_graph_node(
+        &self,
+        canvas: &Canvas,
+        graph: &crate::paint::ColorPaintGraphPayload,
+        node_id: u32,
+        replay: &SkiaReplayContext,
+        depth: usize,
+    ) {
+        if depth > 64 {
+            return;
+        }
+        let Some(node) = graph.nodes.iter().find(|node| node.node_id == node_id) else {
+            return;
+        };
+        match node.kind {
+            crate::paint::ColorPaintGraphNodeKind::SolidPath => {
+                let Some(solid) = node.solid_path.as_ref() else {
+                    return;
+                };
+                let mut fill_paint = Paint::default();
+                fill_paint.set_anti_alias(replay.vector_antialias());
+                fill_paint.set_style(skia_safe::paint::Style::Fill);
+                fill_paint.set_color(Self::glyph_outline_resolved_color(&solid.fill, None));
+                Self::render_glyph_outline_path(
+                    canvas,
+                    &solid.commands,
+                    solid.fill_rule,
+                    &fill_paint,
+                    None,
+                );
+            }
+            crate::paint::ColorPaintGraphNodeKind::LinearGradientPath => {
+                let Some(gradient_path) = node.linear_gradient_path.as_ref() else {
+                    return;
+                };
+                let Some(shader_gradient) =
+                    Self::glyph_outline_gradient(&gradient_path.gradient.stops)
+                else {
+                    return;
+                };
+                let Some(shader) = shaders::linear_gradient(
+                    (
+                        Point::new(
+                            gradient_path.gradient.x0 as f32,
+                            gradient_path.gradient.y0 as f32,
+                        ),
+                        Point::new(
+                            gradient_path.gradient.x1 as f32,
+                            gradient_path.gradient.y1 as f32,
+                        ),
+                    ),
+                    &shader_gradient,
+                    None,
+                ) else {
+                    return;
+                };
+                let mut fill_paint = Paint::default();
+                fill_paint.set_anti_alias(replay.vector_antialias());
+                fill_paint.set_style(skia_safe::paint::Style::Fill);
+                fill_paint.set_shader(shader);
+                Self::render_glyph_outline_path(
+                    canvas,
+                    &gradient_path.commands,
+                    gradient_path.fill_rule,
+                    &fill_paint,
+                    None,
+                );
+            }
+            crate::paint::ColorPaintGraphNodeKind::RadialGradientPath => {
+                let Some(gradient_path) = node.radial_gradient_path.as_ref() else {
+                    return;
+                };
+                let Some(shader_gradient) =
+                    Self::glyph_outline_gradient(&gradient_path.gradient.stops)
+                else {
+                    return;
+                };
+                let Some(shader) = shaders::radial_gradient(
+                    (
+                        Point::new(
+                            gradient_path.gradient.cx as f32,
+                            gradient_path.gradient.cy as f32,
+                        ),
+                        gradient_path.gradient.radius as f32,
+                    ),
+                    &shader_gradient,
+                    None,
+                ) else {
+                    return;
+                };
+                let mut fill_paint = Paint::default();
+                fill_paint.set_anti_alias(replay.vector_antialias());
+                fill_paint.set_style(skia_safe::paint::Style::Fill);
+                fill_paint.set_shader(shader);
+                Self::render_glyph_outline_path(
+                    canvas,
+                    &gradient_path.commands,
+                    gradient_path.fill_rule,
+                    &fill_paint,
+                    None,
+                );
+            }
+            crate::paint::ColorPaintGraphNodeKind::Transform => {
+                let Some(transform) = node.transform.as_ref() else {
+                    return;
+                };
+                canvas.save();
+                canvas.concat(&Self::glyph_outline_matrix(transform.transform));
+                self.render_glyph_outline_color_graph_node(
+                    canvas,
+                    graph,
+                    transform.child_node_id,
+                    replay,
+                    depth + 1,
+                );
+                canvas.restore();
+            }
+        }
+    }
+
+    fn glyph_outline_gradient(stops: &[crate::paint::ColorGradientStop]) -> Option<Gradient> {
+        if stops.len() < 2 {
+            return None;
+        }
+        let colors: Vec<Color4f> = stops
+            .iter()
+            .map(|stop| {
+                Color4f::new(
+                    stop.color.rgba[0],
+                    stop.color.rgba[1],
+                    stop.color.rgba[2],
+                    stop.color.rgba[3],
+                )
+            })
+            .collect();
+        let positions: Vec<f32> = stops.iter().map(|stop| stop.offset as f32).collect();
+        let colors = GradientColors::new(&colors, Some(&positions), TileMode::Clamp, None);
+        Some(Gradient::new(colors, GradientInterpolation::default()))
     }
 
     fn render_glyph_outline(

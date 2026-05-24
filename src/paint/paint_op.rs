@@ -239,6 +239,8 @@ pub struct ColorLayerNode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorPaintGraphNodeKind {
     SolidPath,
+    LinearGradientPath,
+    RadialGradientPath,
     Transform,
 }
 
@@ -246,6 +248,8 @@ impl ColorPaintGraphNodeKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SolidPath => "solidPath",
+            Self::LinearGradientPath => "linearGradientPath",
+            Self::RadialGradientPath => "radialGradientPath",
             Self::Transform => "transform",
         }
     }
@@ -255,6 +259,47 @@ impl ColorPaintGraphNodeKind {
 pub struct ColorPaintSolidPathNode {
     pub commands: Vec<PathCommand>,
     pub fill: ResolvedColor,
+    pub fill_rule: GlyphOutlineFillRule,
+    pub source_glyph_id: Option<u32>,
+    pub palette_index: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorGradientStop {
+    pub offset: f64,
+    pub color: ResolvedColor,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorLinearGradient {
+    pub x0: f64,
+    pub y0: f64,
+    pub x1: f64,
+    pub y1: f64,
+    pub stops: Vec<ColorGradientStop>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorRadialGradient {
+    pub cx: f64,
+    pub cy: f64,
+    pub radius: f64,
+    pub stops: Vec<ColorGradientStop>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorPaintLinearGradientPathNode {
+    pub commands: Vec<PathCommand>,
+    pub gradient: ColorLinearGradient,
+    pub fill_rule: GlyphOutlineFillRule,
+    pub source_glyph_id: Option<u32>,
+    pub palette_index: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorPaintRadialGradientPathNode {
+    pub commands: Vec<PathCommand>,
+    pub gradient: ColorRadialGradient,
     pub fill_rule: GlyphOutlineFillRule,
     pub source_glyph_id: Option<u32>,
     pub palette_index: Option<u16>,
@@ -271,6 +316,8 @@ pub struct ColorPaintGraphNode {
     pub node_id: u32,
     pub kind: ColorPaintGraphNodeKind,
     pub solid_path: Option<ColorPaintSolidPathNode>,
+    pub linear_gradient_path: Option<ColorPaintLinearGradientPathNode>,
+    pub radial_gradient_path: Option<ColorPaintRadialGradientPathNode>,
     pub transform: Option<ColorPaintTransformNode>,
     pub source_range_utf8: Option<TextSourceRange>,
     pub glyph_range: Option<GlyphRange>,
@@ -332,9 +379,153 @@ fn resolved_color_is_valid(fill: &ResolvedColor) -> bool {
             .all(|component| component.is_finite() && (0.0..=1.0).contains(component))
 }
 
+fn color_gradient_stops_are_valid(stops: &[ColorGradientStop]) -> bool {
+    if stops.len() < 2 {
+        return false;
+    }
+    let mut previous_offset = f64::NEG_INFINITY;
+    stops.iter().all(|stop| {
+        let valid = stop.offset.is_finite()
+            && (0.0..=1.0).contains(&stop.offset)
+            && stop.offset >= previous_offset
+            && resolved_color_is_valid(&stop.color);
+        previous_offset = stop.offset;
+        valid
+    })
+}
+
+fn graph_leaf_metadata_is_valid(node: &ColorPaintGraphNode) -> bool {
+    node.source_range_utf8
+        .is_some_and(text_source_range_is_valid)
+        && node.glyph_range.is_some_and(glyph_range_is_valid)
+        && node.source_font_ref.is_some()
+}
+
 impl ColorPaintGraphPayload {
     pub fn has_colrv1_stage1_contract(&self) -> bool {
-        self.colrv1_stage1_reference_layer().is_some()
+        self.has_colrv1_supported_graph_contract()
+    }
+
+    pub fn has_colrv1_supported_graph_contract(&self) -> bool {
+        use std::collections::{HashMap, HashSet};
+
+        if self.nodes.is_empty() || self.nodes.len() > MAX_COLRV1_STAGE1_GRAPH_NODES {
+            return false;
+        }
+
+        let mut nodes_by_id = HashMap::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            if nodes_by_id.insert(node.node_id, node).is_some() {
+                return false;
+            }
+        }
+
+        let mut visited = HashSet::new();
+        let mut node_id = self.root_node_id;
+        let mut depth = 1usize;
+        loop {
+            if depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH {
+                return false;
+            }
+            if !visited.insert(node_id) {
+                return false;
+            }
+            let Some(node) = nodes_by_id.get(&node_id) else {
+                return false;
+            };
+            match node.kind {
+                ColorPaintGraphNodeKind::SolidPath => {
+                    if visited.len() != self.nodes.len()
+                        || node.transform.is_some()
+                        || node.linear_gradient_path.is_some()
+                        || node.radial_gradient_path.is_some()
+                        || !graph_leaf_metadata_is_valid(node)
+                    {
+                        return false;
+                    }
+                    let Some(solid) = node.solid_path.as_ref() else {
+                        return false;
+                    };
+                    if !path_commands_are_finite(&solid.commands)
+                        || !resolved_color_is_valid(&solid.fill)
+                    {
+                        return false;
+                    }
+                    return true;
+                }
+                ColorPaintGraphNodeKind::LinearGradientPath => {
+                    if visited.len() != self.nodes.len()
+                        || node.solid_path.is_some()
+                        || node.transform.is_some()
+                        || node.radial_gradient_path.is_some()
+                        || !graph_leaf_metadata_is_valid(node)
+                    {
+                        return false;
+                    }
+                    let Some(gradient_path) = node.linear_gradient_path.as_ref() else {
+                        return false;
+                    };
+                    if !path_commands_are_finite(&gradient_path.commands)
+                        || !gradient_path.gradient.x0.is_finite()
+                        || !gradient_path.gradient.y0.is_finite()
+                        || !gradient_path.gradient.x1.is_finite()
+                        || !gradient_path.gradient.y1.is_finite()
+                        || !color_gradient_stops_are_valid(&gradient_path.gradient.stops)
+                    {
+                        return false;
+                    }
+                    return true;
+                }
+                ColorPaintGraphNodeKind::RadialGradientPath => {
+                    if visited.len() != self.nodes.len()
+                        || node.solid_path.is_some()
+                        || node.transform.is_some()
+                        || node.linear_gradient_path.is_some()
+                        || !graph_leaf_metadata_is_valid(node)
+                    {
+                        return false;
+                    }
+                    let Some(gradient_path) = node.radial_gradient_path.as_ref() else {
+                        return false;
+                    };
+                    if !path_commands_are_finite(&gradient_path.commands)
+                        || !gradient_path.gradient.cx.is_finite()
+                        || !gradient_path.gradient.cy.is_finite()
+                        || !gradient_path.gradient.radius.is_finite()
+                        || gradient_path.gradient.radius <= 0.0
+                        || !color_gradient_stops_are_valid(&gradient_path.gradient.stops)
+                    {
+                        return false;
+                    }
+                    return true;
+                }
+                ColorPaintGraphNodeKind::Transform => {
+                    if node.solid_path.is_some()
+                        || node.linear_gradient_path.is_some()
+                        || node.radial_gradient_path.is_some()
+                    {
+                        return false;
+                    }
+                    if node
+                        .source_range_utf8
+                        .is_some_and(|range| !text_source_range_is_valid(range))
+                        || node
+                            .glyph_range
+                            .is_some_and(|range| !glyph_range_is_valid(range))
+                    {
+                        return false;
+                    }
+                    let Some(transform) = node.transform.as_ref() else {
+                        return false;
+                    };
+                    if !affine_transform_is_finite(transform.transform) {
+                        return false;
+                    }
+                    node_id = transform.child_node_id;
+                    depth += 1;
+                }
+            }
+        }
     }
 
     pub fn colrv1_stage1_reference_layer(&self) -> Option<ColorLayerNode> {
@@ -356,29 +547,23 @@ impl ColorPaintGraphPayload {
         let mut transform_to_run = None;
         let mut depth = 1usize;
         loop {
-            if depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH {
-                return None;
-            }
-            if !visited.insert(node_id) {
+            if depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH || !visited.insert(node_id) {
                 return None;
             }
             let node = nodes_by_id.get(&node_id)?;
             match node.kind {
                 ColorPaintGraphNodeKind::SolidPath => {
-                    if visited.len() != self.nodes.len() || node.transform.is_some() {
+                    if visited.len() != self.nodes.len()
+                        || node.transform.is_some()
+                        || node.linear_gradient_path.is_some()
+                        || node.radial_gradient_path.is_some()
+                        || !graph_leaf_metadata_is_valid(node)
+                    {
                         return None;
                     }
                     let solid = node.solid_path.as_ref()?;
                     if !path_commands_are_finite(&solid.commands)
                         || !resolved_color_is_valid(&solid.fill)
-                    {
-                        return None;
-                    }
-                    if !node
-                        .source_range_utf8
-                        .is_some_and(text_source_range_is_valid)
-                        || !node.glyph_range.is_some_and(glyph_range_is_valid)
-                        || node.source_font_ref.is_none()
                     {
                         return None;
                     }
@@ -399,7 +584,10 @@ impl ColorPaintGraphPayload {
                     });
                 }
                 ColorPaintGraphNodeKind::Transform => {
-                    if node.solid_path.is_some() {
+                    if node.solid_path.is_some()
+                        || node.linear_gradient_path.is_some()
+                        || node.radial_gradient_path.is_some()
+                    {
                         return None;
                     }
                     if node
@@ -416,24 +604,30 @@ impl ColorPaintGraphPayload {
                         return None;
                     }
                     transform_to_run = Some(match transform_to_run {
-                        Some(existing) => {
-                            let next = transform.transform;
-                            LayerAffineTransform {
-                                a: existing.a * next.a + existing.c * next.b,
-                                b: existing.b * next.a + existing.d * next.b,
-                                c: existing.a * next.c + existing.c * next.d,
-                                d: existing.b * next.c + existing.d * next.d,
-                                e: existing.a * next.e + existing.c * next.f + existing.e,
-                                f: existing.b * next.e + existing.d * next.f + existing.f,
-                            }
-                        }
+                        Some(existing) => compose_affine(existing, transform.transform),
                         None => transform.transform,
                     });
                     node_id = transform.child_node_id;
                     depth += 1;
                 }
+                ColorPaintGraphNodeKind::LinearGradientPath
+                | ColorPaintGraphNodeKind::RadialGradientPath => return None,
             }
         }
+    }
+}
+
+fn compose_affine(
+    existing: LayerAffineTransform,
+    next: LayerAffineTransform,
+) -> LayerAffineTransform {
+    LayerAffineTransform {
+        a: existing.a * next.a + existing.c * next.b,
+        b: existing.b * next.a + existing.d * next.b,
+        c: existing.a * next.c + existing.c * next.d,
+        d: existing.b * next.c + existing.d * next.d,
+        e: existing.a * next.e + existing.c * next.f + existing.e,
+        f: existing.b * next.e + existing.d * next.f + existing.f,
     }
 }
 
@@ -1860,6 +2054,16 @@ mod tests {
         assert_eq!(ColorGlyphFormat::ColrV0.as_str(), "colrV0");
         assert_eq!(ColorGlyphFormat::ColrV1.as_str(), "colrV1");
         assert_eq!(ColorGlyphFormat::Other.as_str(), "other");
+        assert_eq!(ColorPaintGraphNodeKind::SolidPath.as_str(), "solidPath");
+        assert_eq!(
+            ColorPaintGraphNodeKind::LinearGradientPath.as_str(),
+            "linearGradientPath"
+        );
+        assert_eq!(
+            ColorPaintGraphNodeKind::RadialGradientPath.as_str(),
+            "radialGradientPath"
+        );
+        assert_eq!(ColorPaintGraphNodeKind::Transform.as_str(), "transform");
         assert_eq!(
             BitmapStrikeSelection::ProducerResolved.as_str(),
             "producerResolved"
@@ -1914,6 +2118,8 @@ mod tests {
                 source_glyph_id: Some(77),
                 palette_index: Some(1),
             }),
+            linear_gradient_path: None,
+            radial_gradient_path: None,
             transform: None,
             source_range_utf8: Some(TextSourceRange::new(0, 1)),
             glyph_range: Some(GlyphRange::new(0, 1)),
@@ -1935,6 +2141,8 @@ mod tests {
             node_id,
             kind: ColorPaintGraphNodeKind::Transform,
             solid_path: None,
+            linear_gradient_path: None,
+            radial_gradient_path: None,
             transform: Some(ColorPaintTransformNode {
                 child_node_id,
                 transform,
@@ -2056,6 +2264,130 @@ mod tests {
     }
 
     #[test]
+    fn colrv1_gradient_path_graph_contract_accepts_ordered_stops() {
+        let source_font_ref = FontColorGlyphRef {
+            face_key: Some("fixture-face".to_string()),
+            glyph_id: Some(77),
+            palette_index: Some(1),
+            color_format: Some(ColorGlyphFormat::ColrV1),
+        };
+        let source_range = TextSourceRange::new(0, 1);
+        let glyph_range = GlyphRange::new(0, 1);
+        let gradient_stops = vec![
+            ColorGradientStop {
+                offset: 0.0,
+                color: ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba: [1.0, 0.0, 0.0, 1.0],
+                },
+            },
+            ColorGradientStop {
+                offset: 1.0,
+                color: ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba: [0.0, 0.0, 1.0, 1.0],
+                },
+            },
+        ];
+        let linear_graph = ColorPaintGraphPayload {
+            root_node_id: 1,
+            nodes: vec![
+                ColorPaintGraphNode {
+                    node_id: 0,
+                    kind: ColorPaintGraphNodeKind::LinearGradientPath,
+                    solid_path: None,
+                    linear_gradient_path: Some(ColorPaintLinearGradientPathNode {
+                        commands: vec![
+                            PathCommand::MoveTo(0.0, 0.0),
+                            PathCommand::LineTo(10.0, 0.0),
+                            PathCommand::ClosePath,
+                        ],
+                        gradient: ColorLinearGradient {
+                            x0: 0.0,
+                            y0: 0.0,
+                            x1: 10.0,
+                            y1: 0.0,
+                            stops: gradient_stops.clone(),
+                        },
+                        fill_rule: GlyphOutlineFillRule::NonZero,
+                        source_glyph_id: Some(77),
+                        palette_index: Some(1),
+                    }),
+                    radial_gradient_path: None,
+                    transform: None,
+                    source_range_utf8: Some(source_range),
+                    glyph_range: Some(glyph_range),
+                    source_font_ref: Some(source_font_ref.clone()),
+                },
+                colrv1_transform_node(
+                    1,
+                    0,
+                    LayerAffineTransform {
+                        a: 1.0,
+                        b: 0.0,
+                        c: 0.0,
+                        d: 1.0,
+                        e: 2.0,
+                        f: 0.0,
+                    },
+                ),
+            ],
+        };
+        assert!(linear_graph.has_colrv1_stage1_contract());
+        assert!(linear_graph.colrv1_stage1_reference_layer().is_none());
+
+        let radial_graph = ColorPaintGraphPayload {
+            root_node_id: 0,
+            nodes: vec![ColorPaintGraphNode {
+                node_id: 0,
+                kind: ColorPaintGraphNodeKind::RadialGradientPath,
+                solid_path: None,
+                linear_gradient_path: None,
+                radial_gradient_path: Some(ColorPaintRadialGradientPathNode {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(10.0, 0.0),
+                        PathCommand::ClosePath,
+                    ],
+                    gradient: ColorRadialGradient {
+                        cx: 5.0,
+                        cy: 5.0,
+                        radius: 8.0,
+                        stops: gradient_stops,
+                    },
+                    fill_rule: GlyphOutlineFillRule::EvenOdd,
+                    source_glyph_id: Some(77),
+                    palette_index: Some(1),
+                }),
+                transform: None,
+                source_range_utf8: Some(source_range),
+                glyph_range: Some(glyph_range),
+                source_font_ref: Some(source_font_ref),
+            }],
+        };
+        assert!(radial_graph.has_colrv1_stage1_contract());
+
+        let mut unordered_stops = linear_graph.clone();
+        unordered_stops.nodes[0]
+            .linear_gradient_path
+            .as_mut()
+            .unwrap()
+            .gradient
+            .stops[1]
+            .offset = -0.25;
+        assert!(!unordered_stops.has_colrv1_stage1_contract());
+
+        let mut invalid_radius = radial_graph;
+        invalid_radius.nodes[0]
+            .radial_gradient_path
+            .as_mut()
+            .unwrap()
+            .gradient
+            .radius = 0.0;
+        assert!(!invalid_radius.has_colrv1_stage1_contract());
+    }
+
+    #[test]
     fn reserved_glyph_payload_envelopes_carry_canonical_fields() {
         let source_range = TextSourceRange::new(0, 1);
         let glyph_range = GlyphRange::new(0, 1);
@@ -2135,6 +2467,8 @@ mod tests {
                         source_glyph_id: Some(77),
                         palette_index: Some(1),
                     }),
+                    linear_gradient_path: None,
+                    radial_gradient_path: None,
                     transform: None,
                     source_range_utf8: Some(source_range),
                     glyph_range: Some(glyph_range),
@@ -2149,6 +2483,8 @@ mod tests {
                     node_id: 1,
                     kind: ColorPaintGraphNodeKind::Transform,
                     solid_path: None,
+                    linear_gradient_path: None,
+                    radial_gradient_path: None,
                     transform: Some(ColorPaintTransformNode {
                         child_node_id: 0,
                         transform: identity,
@@ -2332,6 +2668,8 @@ mod tests {
                     source_glyph_id: Some(78),
                     palette_index: Some(2),
                 }),
+                linear_gradient_path: None,
+                radial_gradient_path: None,
                 transform: None,
                 source_range_utf8: Some(source_range),
                 glyph_range: Some(glyph_range),
