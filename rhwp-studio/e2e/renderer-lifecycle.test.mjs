@@ -3160,6 +3160,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         cap: 'square',
       },
     };
+    const missingStrokePayload = {
+      payloadKind: 'monochromeFillStroke',
+    };
     const reservedPayloadEnvelopes = {
       colorLayers: {
         payloadKind: 'colorLayers',
@@ -3352,6 +3355,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       );
       const unsupportedStrokeJoinCapSidecar = render(
         makeTree(style, [outlinePath], true, unsupportedStrokeJoinCapPayload),
+        true,
+      );
+      const missingStrokePayloadSidecar = render(
+        makeTree(style, [outlinePath], true, missingStrokePayload),
         true,
       );
       const colorPayloadSidecar = render(
@@ -3917,6 +3924,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         strokePayloadSidecar,
         unsupportedStrokePayloadSidecar,
         unsupportedStrokeJoinCapSidecar,
+        missingStrokePayloadSidecar,
         colorPayloadSidecar,
         colorV1PayloadSidecar,
         reservedColorPayloadSidecar,
@@ -4144,6 +4152,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && unsupportedStrokeJoinCapSidecarReport?.outlineEligibility?.replayEligible === false,
     `Canvas2D strict profile rejects unsupported stroke join/cap outline payload=${JSON.stringify(
       unsupportedStrokeJoinCapSidecarReport,
+    )}`,
+  );
+  const missingStrokePayloadSidecarReport = canvas2dGlyphOutlineProbe
+    .missingStrokePayloadSidecar
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'outline-fixture-0');
+  assert(
+    missingStrokePayloadSidecarReport?.selectedVariantId === 'textRun'
+      && missingStrokePayloadSidecarReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedOutlinePayload'),
+      )
+      && missingStrokePayloadSidecarReport?.outlineEligibility?.payloadSupported === false
+      && missingStrokePayloadSidecarReport?.outlineEligibility?.paintStyleSupported === true
+      && missingStrokePayloadSidecarReport?.outlineEligibility?.replayEligible === false,
+    `Canvas2D strict profile rejects missing stroke outline payload=${JSON.stringify(
+      missingStrokePayloadSidecarReport,
     )}`,
   );
   const colorPayloadSidecarReport = canvas2dGlyphOutlineProbe.colorPayloadSidecar?.diagnostics?.find(
@@ -4663,6 +4688,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvas2dGlyphOutlineProbe.unsupportedStrokeJoinCapSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
   );
+  const missingStrokePayloadBlackPixels = countPixels(
+    canvas2dGlyphOutlineProbe.missingStrokePayloadSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
   const v2StrictBlackPixels = countPixels(
     canvas2dGlyphOutlineProbe.v2Strict.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
@@ -4694,6 +4723,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     unsupportedStrokeJoinCapBlackPixels < 20,
     `Canvas2D strict outline does not replay unsupported stroke join/cap payload black=${unsupportedStrokeJoinCapBlackPixels}`,
+  );
+  assert(
+    missingStrokePayloadBlackPixels < 20,
+    `Canvas2D strict outline does not replay missing stroke payload black=${missingStrokePayloadBlackPixels}`,
   );
   assert(
     v2StrictBlackPixels > 100,
@@ -4933,6 +4966,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
         miterLimit: 4,
         paintOrder: 'fillThenStroke',
       },
+    });
+    const missingStrokeOutline = outlineFor('canvaskit-outline-stroke-missing-style', {
+      payloadKind: 'monochromeFillStroke',
+      variant: variantFor('canvaskit-outline-stroke-missing-style', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.monochromeFillStroke'],
+        anchorOpId: 'op-text-canvaskit-outline-stroke-missing-style',
+        localPaintOrder: 0,
+      }),
     });
     const colorOutline = outlineFor('canvaskit-outline-color', {
       payloadKind: 'colorLayers',
@@ -5588,6 +5630,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
       stroke: await render(treeFor(strokeOutline)),
       unsupportedStrokeJoinCap: await render(treeFor(unsupportedStrokeJoinCapOutline)),
+      missingStroke: await render(treeFor(missingStrokeOutline)),
       colorLayers: await render(treeFor(colorOutline)),
       colorLayersColrV1: await render(treeFor(colorV1Outline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
@@ -5729,6 +5772,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('glyphOutlineStrokeStyleUnsupported'),
       ),
     `CanvasKit rejects unsupported stroke join/cap payload=${JSON.stringify(canvaskitUnsupportedStrokeJoinCapReport)}`,
+  );
+  const canvaskitMissingStrokeReport = canvaskitGlyphOutlineProbe
+    .missingStroke
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-stroke-missing-style');
+  assert(
+    canvaskitMissingStrokeReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingStrokeReport?.outlineEligibility?.payloadSupported === false
+      && canvaskitMissingStrokeReport?.outlineEligibility?.replayEligible === false
+      && canvaskitMissingStrokeReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedOutlinePayload'),
+      ),
+    `CanvasKit rejects missing stroke payload=${JSON.stringify(canvaskitMissingStrokeReport)}`,
   );
   const canvaskitColorReport = canvaskitGlyphOutlineProbe.colorLayers?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'canvaskit-outline-color',
@@ -6767,6 +6824,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const canvaskitUnsupportedStrokeJoinCapBlackPixels = canvaskitGlyphOutlineProbe
     .unsupportedStrokeJoinCap
     .blackPixels;
+  const canvaskitMissingStrokeBlackPixels = canvaskitGlyphOutlineProbe.missingStroke.blackPixels;
   const canvaskitColorBluePixels = countPixels(
     canvaskitGlyphOutlineProbe.colorLayers.png,
     (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 100 && pixel.green < 120,
@@ -7062,6 +7120,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitUnsupportedStrokeJoinCapBlackPixels < 20,
     `CanvasKit strict outline does not replay unsupported stroke join/cap payload black=${canvaskitUnsupportedStrokeJoinCapBlackPixels}`,
+  );
+  assert(
+    canvaskitMissingStrokeBlackPixels < 20,
+    `CanvasKit strict outline does not replay missing stroke payload black=${canvaskitMissingStrokeBlackPixels}`,
   );
   assert(
     canvaskitColorBluePixels > 100,

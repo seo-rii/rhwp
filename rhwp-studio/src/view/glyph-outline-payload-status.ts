@@ -45,9 +45,11 @@ export function glyphOutlinePayloadStatus(
     };
   }
   if (payloadKind === 'monochromeFillStroke') {
+    const hasPaths = hasGlyphOutlinePathsContract(op);
+    const hasStroke = op.stroke !== undefined;
     return {
-      supported: hasGlyphOutlinePathsContract(op) && isSupportedGlyphOutlineStrokeStyle(op.stroke),
-      reason: !hasGlyphOutlinePathsContract(op) ? 'unsupportedOutlinePayload' : 'glyphOutlineStrokeStyleUnsupported',
+      supported: hasPaths && hasStroke && isSupportedGlyphOutlineStrokeStyle(op.stroke),
+      reason: !hasPaths || !hasStroke ? 'unsupportedOutlinePayload' : 'glyphOutlineStrokeStyleUnsupported',
     };
   }
   if (payloadKind === 'bitmapGlyph') {
