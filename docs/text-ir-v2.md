@@ -331,6 +331,38 @@ The implementation lanes are:
 | Layout migration | shaped measurement and shapedModern | report-only telemetry corpus exists | opt-in profile only; `hwpCompat` remains default until a v3 authority decision |
 | Cross-scope/vertical | cross-scope variants and `MixedPerGlyph` | concrete use case and backend semantics identified | writer emission behind required feature, with compatibility fallback or strict rejection |
 
+The direct-replay architecture has three layers:
+
+1. a paint-op dispatcher that mirrors Canvas2D traversal order and clipping
+   policy, but dispatches only to CanvasKit primitives;
+2. backend-local builders for paths, paints, shaders, text blobs, images,
+   surfaces, and pictures, each fed by `PageLayerTree` resources and schema
+   payloads rather than DOM objects;
+3. diagnostics and cache keys that record why a CanvasKit path is selected,
+   rejected, or downgraded without mutating the replay contract.
+
+This means CanvasKit may use Canvas2D as a behavior reference in tests, but it
+must not call into the Canvas2D renderer at runtime. The expected implementation
+shape for existing Canvas2D functionality is:
+
+| Canvas2D behavior | CanvasKit implementation shape | Native-ready constraint |
+| --- | --- | --- |
+| Page, clip, and leaf traversal | `SkCanvas.save/restore`, rect clips, and the same leaf-local variant selection order | no DOM clip or overlay layer |
+| Basic shapes and arbitrary paths | CanvasKit `Path` plus `Paint` fill/stroke configuration | all path conversion is explicit and reusable by native Skia |
+| Gradients and pattern fills | CanvasKit shaders or offscreen CanvasKit picture/image resources with cache diagnostics | no CSS/Canvas2D pattern object dependency |
+| Shadows and image effects | CanvasKit paints, image filters, offscreen surfaces, or explicit fallback diagnostics | no hidden browser pre-pass unless it has a native-equivalent resource pipeline |
+| Images and bitmap glyphs | encoded resource bytes decoded into CanvasKit images and keyed by resource table/hash | no `HTMLImageElement`, object URL, or DOM decode dependency |
+| Text fallback and special text ops | CanvasKit text/blob/path primitives with existing HWP-compatible positions | no CanvasKit text measurement authority in `hwpCompat` |
+| `GlyphRun` and `GlyphOutline` variants | strict feature gates plus exact selected/rejected diagnostics | unsupported strict variants reject or fallback deterministically |
+| SvgGlyph-style vector resources | sanitized static vector resources lowered to CanvasKit path/picture commands | no raw SVG-in-font or DOM/SVG overlay replay |
+
+Surface choice is orthogonal to feature semantics. A CanvasKit render may use
+WebGPU, WebGL, or software surfaces, but the selected surface must not change
+which `PageLayerTree` feature is considered supported. If a surface backend
+cannot execute a feature faithfully, the renderer records a backend-specific
+diagnostic and follows the same compatibility fallback or strictVisual hard
+reject policy as any other unsupported CanvasKit capability.
+
 The main implementation touchpoints are:
 
 | Touchpoint | Role |
