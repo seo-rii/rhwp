@@ -16,11 +16,11 @@ use super::{
 use crate::model::control::FormType;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    BitmapGlyphFiltering, ClipKind, GlyphOutlineFillRule, GlyphOutlinePayloadKind,
-    LayerAffineTransform, LayerEquationPaint, LayerFormObjectPaint, LayerGlyphOutlinePaint,
-    LayerImagePaint, LayerNode, LayerNodeKind, LayerPageBackgroundPaint, LayerSemantic,
-    LayerSemanticRole, LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint,
-    PageLayerTree, PaintOp, ResourceArena, TextSourceEntry, TextSourceTable,
+    sidecars_for_leaf_ops, BitmapGlyphFiltering, ClipKind, GlyphOutlineFillRule,
+    GlyphOutlinePayloadKind, LayerAffineTransform, LayerEquationPaint, LayerFormObjectPaint,
+    LayerGlyphOutlinePaint, LayerImagePaint, LayerNode, LayerNodeKind, LayerPageBackgroundPaint,
+    LayerSemantic, LayerSemanticRole, LayerTextDecorationKind, LayerTextDecorationPaint,
+    LayerTextRunPaint, PageLayerTree, PaintOp, ResourceArena, TextSourceEntry, TextSourceTable,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant,
@@ -179,7 +179,7 @@ impl SvgRenderer {
         if self.strict_glyph_outline_replay && !tree.text_sources.is_empty() {
             self.render_text_source_metadata(&tree.text_sources);
         }
-        self.render_layer_node(&tree.root, &tree.resources);
+        self.render_layer_node(&tree.root, &tree.resources, &tree.variant_ops);
         self.end_page();
     }
 
@@ -191,12 +191,17 @@ impl SvgRenderer {
         self.output.push_str("</metadata>\n");
     }
 
-    fn render_layer_node(&mut self, node: &LayerNode, resources: &ResourceArena) {
+    fn render_layer_node(
+        &mut self,
+        node: &LayerNode,
+        resources: &ResourceArena,
+        variant_ops: &[PaintOp],
+    ) {
         match &node.kind {
             LayerNodeKind::Group { children, .. } => {
                 self.enter_layer_group(node.bounds, &node.semantic);
                 for child in children {
-                    self.render_layer_node(child, resources);
+                    self.render_layer_node(child, resources, variant_ops);
                 }
                 self.leave_layer_group(node.bounds, &node.semantic);
             }
@@ -207,7 +212,7 @@ impl SvgRenderer {
                 clip_policy,
             } => {
                 if !self.clip_enabled {
-                    self.render_layer_node(child, resources);
+                    self.render_layer_node(child, resources, variant_ops);
                     return;
                 }
                 let clip_id = match clip_kind {
@@ -231,13 +236,17 @@ impl SvgRenderer {
                 ));
                 self.output
                     .push_str(&format!("<g clip-path=\"url(#{})\">", clip_id));
-                self.render_layer_node(child, resources);
+                self.render_layer_node(child, resources, variant_ops);
                 self.output.push_str("</g>\n");
             }
             LayerNodeKind::Leaf { ops, .. } => {
                 let strict_outline = self.strict_glyph_outline_replay;
+                let sidecars = sidecars_for_leaf_ops(ops, variant_ops);
+                let mut selection_ops = Vec::with_capacity(ops.len() + sidecars.len());
+                selection_ops.extend(ops.iter().cloned());
+                selection_ops.extend(sidecars.iter().cloned());
                 let selection = select_text_variant_sets_with_report(
-                    ops,
+                    &selection_ops,
                     |_| {
                         VariantReplayStatus::rejected(
                             VariantRejectReason::BackendDoesNotSupportVariant,
@@ -445,6 +454,12 @@ impl SvgRenderer {
                 self.text_variant_selection_diagnostics
                     .extend(selection.reports);
                 for op in ops {
+                    if !should_render_selected_text_variant(op, &selection.selected) {
+                        continue;
+                    }
+                    self.render_layer_op(op, resources);
+                }
+                for op in &sidecars {
                     if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }

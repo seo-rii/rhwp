@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
 use crate::paint::{
-    CacheHint, GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRunOrientation,
-    GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphRunPaint,
-    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextRunPlacement,
-    TextVariantQuality,
+    sidecars_for_leaf_ops, CacheHint, GlyphOutlineFillRule, GlyphOutlinePayloadKind,
+    GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint,
+    LayerGlyphRunPaint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
+    TextRunPlacement, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant, LayerRasterRenderer,
@@ -682,7 +682,13 @@ impl SkiaLayerRenderer {
         let setup_time = setup_start.elapsed();
 
         let replay_start = Instant::now();
-        self.render_node(canvas, &tree.root, &tree.resources, &mut replay);
+        self.render_node(
+            canvas,
+            &tree.root,
+            &tree.resources,
+            &tree.variant_ops,
+            &mut replay,
+        );
         let replay_time = replay_start.elapsed();
 
         let encode_start = Instant::now();
@@ -726,6 +732,7 @@ impl SkiaLayerRenderer {
         canvas: &Canvas,
         node: &LayerNode,
         resources: &ResourceArena,
+        variant_ops: &[PaintOp],
         replay: &mut SkiaReplayContext,
     ) {
         replay.record_layer_node_replay();
@@ -788,7 +795,7 @@ impl SkiaLayerRenderer {
                     let recording_canvas = recorder.begin_recording(cull_rect, true);
                     replay.push_cache_hint(*cache_hint);
                     for child in children {
-                        self.render_node(recording_canvas, child, resources, replay);
+                        self.render_node(recording_canvas, child, resources, variant_ops, replay);
                     }
                     replay.pop_cache_hint();
                     if let Some(picture) = recorder.finish_recording_as_picture(Some(&cull_rect)) {
@@ -824,7 +831,7 @@ impl SkiaLayerRenderer {
 
                 replay.push_cache_hint(*cache_hint);
                 for child in children {
-                    self.render_node(canvas, child, resources, replay);
+                    self.render_node(canvas, child, resources, variant_ops, replay);
                 }
                 replay.pop_cache_hint();
             }
@@ -835,7 +842,7 @@ impl SkiaLayerRenderer {
                 ..
             } => {
                 if !replay.output_options.clip_enabled {
-                    self.render_node(canvas, child, resources, replay);
+                    self.render_node(canvas, child, resources, variant_ops, replay);
                     return;
                 }
                 canvas.save();
@@ -849,13 +856,17 @@ impl SkiaLayerRenderer {
                     None,
                     Some(replay.clip_antialias()),
                 );
-                self.render_node(canvas, child, resources, replay);
+                self.render_node(canvas, child, resources, variant_ops, replay);
                 canvas.restore();
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
                 replay.push_cache_hint(*cache_hint);
+                let sidecars = sidecars_for_leaf_ops(ops, variant_ops);
+                let mut selection_ops = Vec::with_capacity(ops.len() + sidecars.len());
+                selection_ops.extend(ops.iter().cloned());
+                selection_ops.extend(sidecars.iter().cloned());
                 let selection = select_text_variant_sets_with_report(
-                    ops,
+                    &selection_ops,
                     |op| match op {
                         PaintOp::GlyphRun { run, .. } => {
                             native_skia_glyph_run_replay_status(run, resources)
@@ -880,6 +891,12 @@ impl SkiaLayerRenderer {
                     .variant_selections
                     .extend(selection.reports);
                 for op in ops {
+                    if !should_render_selected_text_variant(op, &selection.selected) {
+                        continue;
+                    }
+                    self.render_op(canvas, op, resources, replay);
+                }
+                for op in &sidecars {
                     if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }

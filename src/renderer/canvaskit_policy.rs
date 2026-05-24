@@ -3,9 +3,9 @@ use std::fmt::Write;
 
 use crate::model::style::UnderlineType;
 use crate::paint::{
-    CacheHint, ClipKind, GlyphOutlinePayloadKind, GlyphRunOrientation, GlyphRunReplayEligibility,
-    LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp,
-    ResourceArena, TextVariantKind, TextVariantQuality,
+    sidecars_for_leaf_ops, CacheHint, ClipKind, GlyphOutlinePayloadKind, GlyphRunOrientation,
+    GlyphRunReplayEligibility, LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode,
+    LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, VariantFontVerificationReport,
@@ -623,8 +623,12 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 self.visit_node(child, &format!("{path}/clip/child"));
             }
             LayerNodeKind::Leaf { ops, .. } => {
+                let sidecars = sidecars_for_leaf_ops(ops, &self.tree.variant_ops);
+                let mut selection_ops = Vec::with_capacity(ops.len() + sidecars.len());
+                selection_ops.extend(ops.iter().cloned());
+                selection_ops.extend(sidecars.iter().cloned());
                 let selection = select_text_variant_sets_with_report(
-                    ops,
+                    &selection_ops,
                     |op| match op {
                         PaintOp::GlyphRun { run, .. } => {
                             canvaskit_glyph_run_replay_status(run, &self.tree.resources)
@@ -651,6 +655,13 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                     .extend(selection.reports.into_iter().map(text_variant_report));
                 for (index, op) in ops.iter().enumerate() {
                     self.push(self.item_for_op(op, &selected, format!("{path}/leaf/{index}")));
+                }
+                for (index, op) in sidecars.iter().enumerate() {
+                    self.push(self.item_for_op(
+                        op,
+                        &selected,
+                        format!("{path}/leaf/variantOps/{index}"),
+                    ));
                 }
             }
         }
@@ -1121,7 +1132,8 @@ fn cache_hint_detail(cache_hint: CacheHint) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        canvaskit_glyph_outline_payload_status, canvaskit_static_svg_fragment_has_path_layer,
+        analyze_canvaskit_replay_plan, canvaskit_glyph_outline_payload_status,
+        canvaskit_static_svg_fragment_has_path_layer, CanvasKitReplayMode, CanvasKitReplayStatus,
         CanvasKitTextVariantPartReport, CanvasKitTextVariantReport, GlyphOutlinePayloadKind,
         VariantRejectReason,
     };
@@ -1131,9 +1143,10 @@ mod tests {
         ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintSolidPathNode,
         ColorPaintTransformNode, FontColorGlyphRef, GlyphOutlineFillRule, GlyphRange,
         GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
-        LayerGlyphOutlinePaint, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena,
-        SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceId,
-        TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality,
+        LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerNode, LayerTextRunPaint, PageLayerTree,
+        PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena, SvgGlyphPayload,
+        SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceId, TextSourceRange,
+        TextSourceSpan, TextVariantKind, TextVariantQuality,
     };
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
     use crate::renderer::render_tree::BoundingBox;
@@ -1212,8 +1225,34 @@ mod tests {
         }
     }
 
+    fn outline_path() -> LayerGlyphOutlinePath {
+        LayerGlyphOutlinePath {
+            glyph_id: 1,
+            source_range_utf8: TextSourceRange::new(0, 1),
+            glyph_range: GlyphRange::new(0, 1),
+            commands: vec![
+                PathCommand::MoveTo(0.0, 0.0),
+                PathCommand::LineTo(12.0, 0.0),
+                PathCommand::LineTo(12.0, 12.0),
+                PathCommand::ClosePath,
+            ],
+            fill_rule: GlyphOutlineFillRule::NonZero,
+        }
+    }
+
     fn valid_bbox() -> BoundingBox {
         BoundingBox::new(0.0, 0.0, 16.0, 16.0)
+    }
+
+    fn text_run_op(equivalence_group: &str) -> PaintOp {
+        PaintOp::TextRun {
+            bbox: valid_bbox(),
+            run: LayerTextRunPaint {
+                variant: Some(PaintVariantMeta::text_run_default(equivalence_group)),
+                text: "A".to_string(),
+                ..LayerTextRunPaint::default()
+            },
+        }
     }
 
     fn source_font_ref(format: ColorGlyphFormat) -> FontColorGlyphRef {
@@ -1366,6 +1405,69 @@ mod tests {
         assert!(json.contains("\"details\":\"colorSpaceDefaulted=srgb\""));
         assert!(json.contains("\"outlineEligibility\":{\"strictVisualEligible\":true"));
         assert!(json.contains("\"partsReplayed\":1"));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_selects_sidecar_variant_ops() {
+        let text = text_run_op("text-0");
+        let anchor_op_id = match &text {
+            PaintOp::TextRun { run, .. } => run
+                .variant
+                .as_ref()
+                .expect("text fallback variant")
+                .stable_op_id(),
+            _ => unreachable!("helper returns textRun"),
+        };
+        let mut outline = outline(GlyphOutlinePayloadKind::MonochromeFill);
+        outline.variant = PaintVariantMeta {
+            equivalence_group: "text-0".to_string(),
+            variant_id: "glyphOutline".to_string(),
+            variant_kind: TextVariantKind::GlyphOutline,
+            part_index: 0,
+            part_count: 1,
+            is_default_fallback: false,
+            requires: vec!["text.glyphOutline.monochromeFill".to_string()],
+            quality: Some(TextVariantQuality::Exact),
+            anchor_op_id: Some(anchor_op_id),
+            local_paint_order: Some(0),
+        };
+        outline.paths = vec![outline_path()];
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        )
+        .variant_ops(vec![PaintOp::GlyphOutline {
+            bbox: valid_bbox(),
+            outline: Box::new(outline),
+        }])
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let report = plan
+            .text_variants
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("sidecar variant report");
+
+        assert_eq!(report.selected_variant_id, "glyphOutline");
+        assert_eq!(report.parts_expected, 1);
+        assert_eq!(report.parts_replayed, 1);
+        assert_eq!(report.parts.len(), 2);
+        assert!(report
+            .parts
+            .iter()
+            .any(|part| part.variant_id == "glyphOutline" && part.replayable));
+        assert!(plan.items.iter().any(|item| {
+            item.path == "root/leaf/0"
+                && item.op_type == "textRun"
+                && item.status == CanvasKitReplayStatus::TextFallback
+        }));
+        assert!(plan.items.iter().any(|item| {
+            item.path == "root/leaf/variantOps/0"
+                && item.op_type == "glyphOutline"
+                && item.status == CanvasKitReplayStatus::Direct
+        }));
     }
 
     #[test]
