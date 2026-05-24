@@ -422,8 +422,8 @@ fixture before SVG/Canvas2D exporters are widened. `BitmapGlyph` starts with a
 single producer-selected image strike and deterministic alpha, scaling, and
 filtering. `SvgGlyph` starts with a `VectorResourceId` pointing at sanitized
 static vector content and hard-false script, animation, external resource, and
-interactivity flags. CanvasKit variation and TTC/OTC support remain fallback
-only until exact face/instance proof fixtures pass.
+interactivity flags. CanvasKit and native Skia variation and TTC/OTC support
+remain fallback-only until exact face/instance proof fixtures pass.
 
 The main implementation touchpoints are:
 
@@ -444,8 +444,8 @@ The next implementation order is intentionally narrow:
    fixture before expanding graph nodes beyond solid color plus transform;
 3. strengthen `BitmapGlyph` and `SvgGlyph` validators and negative fixtures
    before widening writer emission;
-4. keep CanvasKit variation and TTC/OTC strict replay fallback-only until exact
-   construction proof fixtures pass;
+4. keep CanvasKit and native Skia variation and TTC/OTC strict replay
+   fallback-only until exact construction proof fixtures pass;
 5. keep shapedModern, cross-scope variants, and `MixedPerGlyph` writer emission
    blocked until their corpus, scope, and vertical semantics gates are met.
 
@@ -1147,7 +1147,7 @@ that every reserved writer is enabled:
 | `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset |
 | `GlyphOutline` `svgGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support sanitized static path-vector resources |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
-| CanvasKit variation and TTC/OTC strict replay | Blocked until exact construction fixtures pass |
+| CanvasKit and native Skia variation/TTC strict replay | Blocked until exact construction fixtures pass |
 | shaped measurement and `lineBreakRisk` telemetry | Report-only artifact outside replay schema |
 | shapedModern layout authority | Metadata reserved; opt-in layout migration only |
 | cross-scope variants and public `MixedPerGlyph` | Vocabulary and validator gate only |

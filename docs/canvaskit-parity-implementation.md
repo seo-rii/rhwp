@@ -156,8 +156,8 @@ fixtures can isolate schema behavior from renderer gaps.
 | `ColorLayers.ColrV1` | tree-only solid color plus transform graph and native/internal deterministic reference fixture |
 | `BitmapGlyph` | one producer-selected image strike, deterministic alpha/scaling/filtering, no strict `backendDefault` |
 | `SvgGlyph` | `VectorResourceId` to sanitized static vector content, required `viewBox`, hard-false script/animation/external/interactivity flags |
-| CanvasKit variation fonts | exact construction proof fixture with fixed axis tuple and negative axis cases |
-| CanvasKit TTC/OTC faces | exact face-index proof fixture with wrong-face negative case |
+| CanvasKit/native Skia variation fonts | exact construction proof fixture with fixed axis tuple and negative axis cases |
+| CanvasKit/native Skia TTC/OTC faces | exact face-index proof fixture with wrong-face negative case |
 | shapedModern | report-only corpus first, then opt-in width input, then opt-in line breaking |
 | cross-scope variants | concrete use case plus backend scope semantics |
 | `MixedPerGlyph` | cluster/grapheme orientation semantics and transform-run fixtures |
