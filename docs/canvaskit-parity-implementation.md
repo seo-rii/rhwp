@@ -46,10 +46,14 @@ the broad Canvas2D utility module:
 | HWP text replay helpers and PUA projection helpers | `rhwp-studio/src/view/text-replay-utils.ts` | root `TextRun`, special text ops, control marks, overlap text |
 | geometry helpers and conservative bounds | `rhwp-studio/src/view/layer-geometry-utils.ts` | paths, arrows, transformed bounds |
 | static SVG path parsing | `rhwp-studio/src/view/static-svg-path-layers.ts` | strict `SvgGlyph` and SVG-style outline replay |
+| static SVG glyph fragment validation | `src/renderer/static_svg.rs` | CanvasKit replay-plan eligibility and strict SVG exporter fallback |
 
 P1 dependency-boundary closure is now complete. CanvasKit strict `SvgGlyph`
 and SVG-style outline replay use the DOM-free `static-svg-path-layers.ts`
-parser, and the contract test fails if CanvasKit source reintroduces the broad
+parser. The Rust `static_svg.rs` validator mirrors the same static path-layer
+contract for replay-plan eligibility and the SVG exporter, so unsafe
+`SvgGlyph` resources fall back instead of being embedded as raw strict output.
+The contract test fails if CanvasKit source reintroduces the broad
 `layer-canvas-utils` import or browser-canvas/SVG DOM APIs. The remaining work
 therefore moves to P2 feature-family parity audits and P3 strict payload gates.
 
