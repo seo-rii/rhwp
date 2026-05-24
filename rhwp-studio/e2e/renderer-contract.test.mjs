@@ -15,6 +15,7 @@ const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
+const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
 
 function tsFilesUnder(directory) {
   return fs.readdirSync(directory, { withFileTypes: true })
@@ -95,6 +96,26 @@ const implementationPlanTouchpoints = [
     filePath: path.join(studioRoot, 'e2e/renderer-lifecycle.test.mjs'),
     kind: 'file',
   },
+];
+const directReplayPlanTokens = [
+  'dispatches only to CanvasKit primitives',
+  'must not call into the Canvas2D renderer at runtime',
+  'no DOM clip or overlay layer',
+  'no `HTMLImageElement`, object URL, or DOM decode dependency',
+  'no raw SVG-in-font or DOM/SVG overlay replay',
+  'Surface choice is orthogonal to feature semantics',
+  'WebGPU, WebGL, or software surfaces',
+  'compatibility fallback or strictVisual hard reject policy',
+];
+const requiredDirectReplayForbiddenApis = [
+  'CanvasRenderingContext2D',
+  'Path2D',
+  'HTMLImageElement',
+  'new Image',
+  'DOMParser',
+  'URL.createObjectURL',
+  'Canvas2DLayerRenderer',
+  'canvas2d-layer-renderer import',
 ];
 
 function extractBlockBody(source, signatureIndex, blockName) {
@@ -215,6 +236,22 @@ for (const { docToken, filePath, kind } of implementationPlanTouchpoints) {
     kind === 'directory' ? stat.isDirectory() : stat.isFile(),
     true,
     `CanvasKit implementation plan touchpoint must resolve to ${kind}: ${docToken}`,
+  );
+}
+
+for (const docToken of directReplayPlanTokens) {
+  assert.equal(
+    normalizedTextIrV2DocSource.includes(docToken.replace(/\s+/g, ' ')),
+    true,
+    `CanvasKit direct replay plan must keep explicit contract text: ${docToken}`,
+  );
+}
+
+for (const apiName of requiredDirectReplayForbiddenApis) {
+  assert.equal(
+    forbiddenCanvas2dApiPatterns.some(([, forbiddenApiName]) => forbiddenApiName === apiName),
+    true,
+    `CanvasKit direct replay dependency guard must forbid ${apiName}`,
   );
 }
 
