@@ -15,8 +15,8 @@ use crate::paint::{
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant, LayerRasterRenderer,
     LayerRenderError, LayerRenderResult, RasterOutputFormat, RasterRenderOptions,
-    RasterRenderOutput, VariantOutlineEligibilityReport, VariantRejectReason, VariantReplayStatus,
-    VariantSelectionBackend, VariantSelectionContext,
+    RasterRenderOutput, VariantFontVerificationReport, VariantOutlineEligibilityReport,
+    VariantRejectReason, VariantReplayStatus, VariantSelectionBackend, VariantSelectionContext,
 };
 use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::static_svg::static_svg_fragment_has_path_layer;
@@ -151,6 +151,14 @@ fn native_skia_glyph_run_replay_status(
     {
         return VariantReplayStatus::rejected(VariantRejectReason::UnsupportedPaintEffect);
     }
+    if !run.shape_key.font_instance.variations.is_empty() {
+        let mut status =
+            native_skia_glyph_run_font_rejection(run, VariantRejectReason::VariationUnsupported);
+        if let Some(report) = status.font_verification.as_mut() {
+            report.variation_supported = Some(false);
+        }
+        return status;
+    }
     let font_resources = resources.font_resources();
     let Some(face) = font_resources
         .faces
@@ -166,6 +174,18 @@ fn native_skia_glyph_run_replay_status(
     else {
         return VariantReplayStatus::rejected(VariantRejectReason::ExactFaceUnavailable);
     };
+    if face.face_index != 0 {
+        let mut status =
+            native_skia_glyph_run_font_rejection(run, VariantRejectReason::FaceIndexUnsupported);
+        if let Some(report) = status.font_verification.as_mut() {
+            report.blob_key = Some(face.blob_key.0.clone());
+            report.portability = Some(blob.portability.kind().as_str().to_string());
+            report.blob_resolved = Some(true);
+            report.exact_face_instantiated = Some(false);
+            report.face_index_supported = Some(false);
+        }
+        return status;
+    }
     if !blob.portability.is_self_contained_replayable() {
         return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
     }
@@ -196,6 +216,28 @@ fn native_skia_glyph_run_replay_status(
         return VariantReplayStatus::rejected(VariantRejectReason::GlyphIdOutOfRange);
     }
     VariantReplayStatus::replayable()
+}
+
+fn native_skia_glyph_run_font_rejection(
+    run: &LayerGlyphRunPaint,
+    reason: VariantRejectReason,
+) -> VariantReplayStatus {
+    let mut status = VariantReplayStatus::rejected(reason);
+    status.font_verification = Some(VariantFontVerificationReport {
+        face_key: Some(run.shape_key.font_instance.face_key.0.clone()),
+        blob_key: None,
+        portability: None,
+        expected_digest: None,
+        blob_resolved: None,
+        digest_matched: None,
+        exact_face_instantiated: None,
+        face_index_supported: None,
+        variation_supported: None,
+        effect_supported: None,
+        replay_eligible: false,
+        reason: Some(reason),
+    });
+    status
 }
 
 fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &ResourceArena) -> bool {

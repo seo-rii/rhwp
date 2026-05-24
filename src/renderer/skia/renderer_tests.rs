@@ -21,7 +21,7 @@ use crate::paint::{
     PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena,
     ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
     SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
-    TextVariantKind, TextVariantQuality, WritingMode,
+    TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -4105,6 +4105,125 @@ fn native_skia_keeps_text_fallback_for_out_of_range_glyph_id() {
         bounds.min_x > 95,
         "native Skia must keep TextRun fallback when GlyphRun has a backend-incompatible glyph id, got {bounds:?}"
     );
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_variation_glyph_run_until_exact_construction() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.shape_key
+                    .font_instance
+                    .variations
+                    .push(VariationAxisValue {
+                        tag: "wght".to_string(),
+                        value: 700.0,
+                    });
+            }
+        }
+    }
+
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("variation glyph run fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia variation fallback report");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when GlyphRun has unresolved variation axes, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphRun"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::VariationUnsupported)
+    }));
+    assert_eq!(
+        report
+            .font_verification
+            .as_ref()
+            .and_then(|verification| verification.variation_supported),
+        Some(false)
+    );
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_nonzero_face_index_until_exact_construction() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    tree.resources.font_resources_mut().faces[0].face_index = 1;
+
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("face-index glyph run fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia face-index fallback report");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when GlyphRun has unresolved face index, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphRun"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::FaceIndexUnsupported)
+    }));
+    let font_report = report
+        .font_verification
+        .as_ref()
+        .expect("face-index rejection should carry font verification");
+    assert_eq!(font_report.blob_key.as_deref(), Some("font-blob-0"));
+    assert_eq!(font_report.blob_resolved, Some(true));
+    assert_eq!(font_report.exact_face_instantiated, Some(false));
+    assert_eq!(font_report.face_index_supported, Some(false));
 }
 
 #[test]
