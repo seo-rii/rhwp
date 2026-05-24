@@ -7741,6 +7741,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     transformedSvgCanvas2dMagentaPixels > 120 && transformedSvgCanvasKitMagentaPixels > 120,
     `transformed SvgGlyph payload painted viewBox-normalized region canvas2d=${transformedSvgCanvas2dMagentaPixels}, canvaskit=${transformedSvgCanvasKitMagentaPixels}`,
   );
+  for (const [backend, diagnostics] of [
+    ['canvas2d', glyphOutlinePayloadParityProbe.canvas2d.diagnostics],
+    ['canvaskit', glyphOutlinePayloadParityProbe.canvaskit.diagnostics],
+  ]) {
+    const bitmapReport = diagnostics.find((report) =>
+      report.equivalenceGroup === 'outline-parity-bitmap',
+    );
+    const bitmapOutlinePart = bitmapReport?.parts?.find((part) =>
+      part.variantId === 'glyphOutline',
+    );
+    assert(
+      bitmapOutlinePart?.details === 'colorSpaceDefaulted=srgb',
+      `${backend} BitmapGlyph missing colorSpace records sRGB default diagnostic=${JSON.stringify(bitmapOutlinePart)}`,
+    );
+  }
   assert(
     glyphOutlinePayloadDiff.passed,
     `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}, canvas2dMagenta=${glyphOutlinePayloadCanvas2dMagentaPixels}, canvaskitMagenta=${glyphOutlinePayloadCanvasKitMagentaPixels}, transformedBitmapCanvas2d=${transformedBitmapCanvas2dBlackPixels}, transformedBitmapCanvaskit=${transformedBitmapCanvasKitBlackPixels}, transformedSvgCanvas2d=${transformedSvgCanvas2dMagentaPixels}, transformedSvgCanvaskit=${transformedSvgCanvasKitMagentaPixels}`,

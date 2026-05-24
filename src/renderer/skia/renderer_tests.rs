@@ -3356,6 +3356,15 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
         report.selected_reason,
         VariantSelectedReason::GlyphOutlineStrictProfile
     );
+    let outline_part = report
+        .parts
+        .iter()
+        .find(|part| part.variant_id == "glyphOutline")
+        .expect("BitmapGlyph outline part report");
+    assert_eq!(
+        outline_part.details.as_deref(),
+        Some("colorSpaceDefaulted=srgb")
+    );
 }
 
 #[test]

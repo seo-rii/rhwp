@@ -437,6 +437,15 @@ fn native_skia_glyph_outline_replay_status(
     } else {
         VariantReplayStatus::rejected(reason.unwrap_or(VariantRejectReason::VariantUnsupported))
     };
+    if replay_eligible
+        && outline.payload_kind == GlyphOutlinePayloadKind::BitmapGlyph
+        && outline
+            .bitmap_glyph
+            .as_ref()
+            .is_some_and(|payload| payload.color_space.is_none())
+    {
+        status.details = Some("colorSpaceDefaulted=srgb".to_string());
+    }
     status.outline_eligibility = Some(VariantOutlineEligibilityReport {
         strict_visual_eligible,
         payload_supported,

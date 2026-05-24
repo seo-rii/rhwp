@@ -588,6 +588,7 @@ export class CanvasKitLayerRenderer {
     return {
       replayable,
       reason,
+      details: payloadStatus.details,
       outlineEligibility: {
         strictVisualEligible: op.diagnostics.strictVisualEligible,
         payloadSupported,

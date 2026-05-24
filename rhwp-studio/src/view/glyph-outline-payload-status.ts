@@ -14,6 +14,7 @@ import { parseStaticSvgPathLayers } from './static-svg-path-layers';
 export type GlyphOutlinePayloadReplayStatus = {
   supported: boolean;
   reason?: LayerTextVariantReplayStatus['reason'];
+  details?: string;
 };
 
 export function glyphOutlinePayloadStatus(
@@ -56,13 +57,17 @@ export function glyphOutlinePayloadStatus(
       resources?.imageKeys,
       resources?.images.length ?? 0,
     );
+    const supported = hasStrictBitmapGlyphContract(op)
+      && op.variant.requires?.includes('text.glyphOutline.bitmapGlyph') === true
+      && hasReplayableGlyphPayloadBBox(op)
+      && resourceIndex !== undefined
+      && resources?.images?.[resourceIndex] !== undefined;
     return {
-      supported: hasStrictBitmapGlyphContract(op)
-        && op.variant.requires?.includes('text.glyphOutline.bitmapGlyph') === true
-        && hasReplayableGlyphPayloadBBox(op)
-        && resourceIndex !== undefined
-        && resources?.images?.[resourceIndex] !== undefined,
+      supported,
       reason: 'unsupportedBitmapGlyph',
+      details: supported && op.bitmapGlyph && op.bitmapGlyph.colorSpace === undefined
+        ? 'colorSpaceDefaulted=srgb'
+        : undefined,
     };
   }
   if (payloadKind === 'svgGlyph') {
