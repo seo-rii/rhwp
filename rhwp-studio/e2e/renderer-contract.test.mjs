@@ -256,6 +256,11 @@ compareCaseLabels(
   caseLabels(extractMethodBody(canvaskitSource, 'strokeDashPattern')),
   'line dash replay',
 );
+assert(
+  extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('gradientStopPositions(')
+    && extractMethodBody(canvaskitSource, 'makeGradientShader').includes('gradientStopPositions('),
+  'Canvas2D and CanvasKit gradient replay must share stop position normalization',
+);
 compareCaseLabels(
   caseLabels(extractFunctionBody(layerCanvasUtilsSource, 'renderEquationLayoutBox')),
   caseLabels(extractMethodBody(canvaskitSource, 'renderEquationBox')),

@@ -68,6 +68,7 @@ import {
   splitIntoClusters,
   startsWithInvalidControl,
 } from './layer-canvas-utils';
+import { gradientStopPositions } from './layer-geometry-utils';
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -1915,11 +1916,9 @@ export class Canvas2DLayerRenderer {
       canvasGradient = ctx.createLinearGradient(x0, y0, x1, y1);
     }
 
-    const positions = gradient.positions.length > 0
-      ? gradient.positions
-      : gradient.colors.map((_, index) => index / (gradient.colors.length - 1));
+    const positions = gradientStopPositions(gradient.colors.length, gradient.positions);
     for (const [index, color] of gradient.colors.entries()) {
-      canvasGradient.addColorStop(positions[index] ?? 0, color);
+      canvasGradient.addColorStop(positions[index], color);
     }
     return canvasGradient;
   }

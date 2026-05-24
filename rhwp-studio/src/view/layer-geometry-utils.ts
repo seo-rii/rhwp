@@ -41,6 +41,25 @@ export function angleToCanvasCoords(
   }
 }
 
+export function gradientStopPositions(
+  colorCount: number,
+  positions: readonly number[],
+): number[] {
+  if (colorCount <= 0) {
+    return [];
+  }
+
+  if (positions.length > 0) {
+    return Array.from({ length: colorCount }, (_, index) => positions[index] ?? 0);
+  }
+
+  if (colorCount === 1) {
+    return [0];
+  }
+
+  return Array.from({ length: colorCount }, (_, index) => index / (colorCount - 1));
+}
+
 export function computePathPaintBounds(
   commands: LayerPathCommand[],
   fallback: LayerBounds,

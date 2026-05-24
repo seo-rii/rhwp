@@ -137,7 +137,7 @@ explicit unsupported diagnostic, and a targeted lifecycle/parity fixture.
 | --- | --- | --- |
 | traversal and clips | save/restore and clip semantics match Canvas2D ordering | dispatch case parity and clip lifecycle fixture |
 | paths, strokes, arrows, line styles | CanvasKit `Path` / `Paint` replay covers Canvas2D path commands and line style branches | command and style case parity plus visual fixture |
-| gradients and patterns | CanvasKit shaders or offscreen CanvasKit picture/image resources | no CSS or Canvas2D pattern object dependency |
+| gradients and patterns | CanvasKit shaders or offscreen CanvasKit picture/image resources | shared stop-position normalization plus no CSS or Canvas2D pattern object dependency |
 | images and image fills | encoded resource bytes decoded into CanvasKit images | deterministic resource key and cache diagnostics |
 | image effects and shadows | CanvasKit image filters, paints, or native-ready pixel preprocessing | no hidden browser pre-pass without a resource contract |
 | form and equation objects | direct CanvasKit geometry and text/path drawing | branch parity and fixture for geometry bounds |
@@ -153,6 +153,10 @@ The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload
 families now fall back or hard-reject before any backend tries to replay them.
+Canvas2D and CanvasKit gradient replay also share the same stop-position
+normalization helper, including the Canvas2D behavior where missing explicit
+stops are materialized as `0` instead of being passed through as a short Skia
+positions array.
 
 ### P3. Native-Ready Strict Payloads
 
