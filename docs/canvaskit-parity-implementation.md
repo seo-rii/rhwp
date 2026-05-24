@@ -191,7 +191,8 @@ Implementation shape:
   nodes as the cross-backend compatibility baseline;
 - treat `linearGradientPath` and `radialGradientPath` as the first stage-2
   graph leaves; their gradients carry producer-resolved color stops and
-  remain inside the glyph payload's run-local coordinate space;
+  remain inside the glyph payload's run-local coordinate space; non-finite,
+  out-of-range, or unordered stop offsets are invalid;
 - keep COLRv1 graph payloads exclusive from legacy `layers`; a payload that
   carries both the normalized graph and resolved layer list is invalid because
   it gives renderers two canonical paint descriptions;
@@ -210,7 +211,7 @@ Later COLRv1 additions should be staged as independent v2 feature additions:
 | Stage | New graph capability | Writer status |
 | --- | --- | --- |
 | 1 | solid color plus transform | implemented baseline; continue fixture hardening |
-| 2 | linear and radial gradients | browser Canvas2D/CanvasKit, Rust SVG, and native Skia implemented for resolved gradient path leaves; wider pixel parity fixture hardening remains follow-up work |
+| 2 | linear and radial gradients | browser Canvas2D/CanvasKit, Rust SVG, and native Skia implemented for resolved gradient path leaves; malformed stop offsets now reject deterministically; wider pixel parity fixture hardening remains follow-up work |
 | 3 | sweep gradients | after gradient coordinate semantics are fixed |
 | 4 | composite and blend | after reference compositing semantics are fixed |
 | 5 | clip and reusable graph nodes | after DAG, cycle, depth, and reuse rules are fixed |

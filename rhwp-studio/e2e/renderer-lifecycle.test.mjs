@@ -4338,6 +4338,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidGradientReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const unorderedGradientReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      const unorderedGradientReservedV2ColorPayloadColrV1Payload =
+        unorderedGradientReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
+          .find((variant) => variant.variantId === 'glyphOutline')
+          .parts[0]
+          .payload;
+      Object.assign(
+        unorderedGradientReservedV2ColorPayloadColrV1Payload,
+        clonePayloadEnvelope(colrV1GradientPayloadEnvelope),
+      );
+      unorderedGradientReservedV2ColorPayloadColrV1Payload.colorLayers
+        .paintGraph
+        .nodes
+        .find((node) => node.kind === 'linearGradientPath')
+        .linearGradientPath
+        .gradient
+        .stops = [
+          { offset: 0.75, color: { rgba: [1, 0, 0, 1] } },
+          { offset: 0.25, color: { rgba: [0, 0, 1, 1] } },
+        ];
+      const unorderedGradientReservedV2ColorPayloadColrV1 = render(
+        unorderedGradientReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -4753,6 +4777,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidCommandReservedV2ColorPayloadColrV1,
         invalidProvenanceReservedV2ColorPayloadColrV1,
         invalidGradientReservedV2ColorPayloadColrV1,
+        unorderedGradientReservedV2ColorPayloadColrV1,
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
         invalidReservedV2BitmapBackendDefaultScalingPayload,
@@ -5095,6 +5120,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidGradientReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const unorderedGradientReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .unorderedGradientReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
       && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
@@ -5125,7 +5154,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidGradientReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
-      && !invalidGradientReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+      && !invalidGradientReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && unorderedGradientReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !unorderedGradientReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
     `Canvas2D strict profile rejects reserved color outline payload=${JSON.stringify({
       report: reservedColorPayloadSidecarReport,
       sidecarValidation: canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.textV2Validation,
@@ -5155,6 +5186,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ?.textV2Validation,
       invalidGradientV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidGradientReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      unorderedGradientV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .unorderedGradientReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );
