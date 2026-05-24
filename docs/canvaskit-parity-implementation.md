@@ -65,6 +65,16 @@ selection set as their anchored `TextRun` fallback. Native Skia static subtree
 cache keys include those sidecar payloads as well, so cached pictures cannot be
 reused across different strict text alternatives.
 
+The first strict `GlyphOutline` payload subsets are also implemented as
+feature-gated direct replay contracts. The current baseline covers
+`MonochromeFill`, `MonochromeFillStroke`, `ColorLayers.ColrV0`,
+`ColorLayers.ColrV1` stage 1 (`solidPath` plus local `transform`),
+`BitmapGlyph` with a single producer-selected image strike, and `SvgGlyph`
+with a sanitized static vector resource. Studio Canvas2D/CanvasKit, Rust SVG,
+native Skia, and the Rust CanvasKit replay plan share the same payload
+eligibility vocabulary and deterministic fallback/reject reasons for those
+subsets.
+
 ## Architecture
 
 CanvasKit parity is implemented through four layers:
@@ -156,16 +166,17 @@ These are v2 feature additions, not v3 triggers, unless they force a change to
 variant selection, paint-order semantics, fallback-free export semantics, layout
 authority, or source/cluster identity.
 
-## Next Implementation Blueprint
+## Hardening And Widening Blueprint
 
-The remaining CanvasKit work should be implemented in this order. The order is
-chosen to keep one backend contract in flight at a time while preserving the
-existing Canvas2D compatibility export.
+The remaining CanvasKit work should harden the implemented strict subsets first,
+then widen one payload or backend capability at a time. The order is chosen to
+keep one backend contract in flight while preserving the existing Canvas2D
+compatibility export.
 
-### 1. COLRv1 Graph Skeleton
+### 1. COLRv1 Graph Widening
 
-Purpose: add the first COLRv1-capable payload shape without changing text
-variant selection or paint-order semantics.
+Purpose: extend the current COLRv1 stage-1 graph without changing text variant
+selection or paint-order semantics.
 
 Implementation shape:
 
@@ -173,34 +184,31 @@ Implementation shape:
   font-native COLR table reference;
 - keep COLR/CPAL table references, source glyph ids, palette indices, font
   digest, and face identity as provenance/debug/cache data;
-- start with a tree-only graph containing only `solidPath` and local
-  `transform` nodes;
+- keep the current tree-only stage-1 graph containing only `solidPath` and
+  local `transform` nodes as the compatibility baseline;
 - allow only run-local affine transforms inside the glyph payload;
 - reject graph nodes that alter `PaintOp` order, clip scope, effect scope,
   cache scope, or cross-scope variant behavior;
 - reject unreachable nodes, cycles, node counts over the stage limit, and depth
   over the stage limit.
 
-The first implementation batch should add:
-
-1. the stage-1 graph schema/type shape;
-2. graph validator rules and negative fixtures;
-3. a deterministic internal/native reference fixture;
-4. CanvasKit replay only after the graph semantics are fixed.
+The next implementation batches should add negative and parity fixtures around
+the existing stage-1 graph, then widen to later COLRv1 graph nodes only after
+their reference semantics are fixed.
 
 Later COLRv1 additions should be staged as independent v2 feature additions:
 
 | Stage | New graph capability | Writer status |
 | --- | --- | --- |
-| 1 | solid color plus transform | first implementation target |
+| 1 | solid color plus transform | implemented baseline; continue fixture hardening |
 | 2 | linear and radial gradients | after stage-1 fixtures are stable |
 | 3 | sweep gradients | after gradient coordinate semantics are fixed |
 | 4 | composite and blend | after reference compositing semantics are fixed |
 | 5 | clip and reusable graph nodes | after DAG, cycle, depth, and reuse rules are fixed |
 
-### 2. BitmapGlyph Strict Replay Profile
+### 2. BitmapGlyph Strict Replay Hardening
 
-Purpose: close the strict image-strike contract before enabling broad writer
+Purpose: harden the strict image-strike contract before enabling broader writer
 emission.
 
 Implementation shape:
@@ -215,15 +223,15 @@ Implementation shape:
 - missing color space defaults to sRGB only when the diagnostic records
   `colorSpaceDefaulted`.
 
-The first writer target should be Canvas2D/SVG strict replay, because the
-payload is already an image resource. Native Skia and CanvasKit should follow
-with the same resource identity and diagnostics. Before writer emission is
-widened, add negative fixtures for missing required strict fields, backend
-strike reselection, backend-default filtering, and malformed resource refs.
+Canvas2D/CanvasKit, Rust SVG, and native Skia now share the single-strike strict
+payload subset. Before writer emission is widened, add more negative fixtures
+for missing required strict fields, backend strike reselection,
+backend-default filtering, malformed resource refs, and resource identity cache
+reuse.
 
-### 3. SvgGlyph Static Vector Contract
+### 3. SvgGlyph Static Vector Hardening
 
-Purpose: close the sanitized vector-resource contract without reintroducing raw
+Purpose: harden the sanitized vector-resource contract without reintroducing raw
 SVG-in-font replay or DOM/SVG overlay dependencies.
 
 Implementation shape:
@@ -237,12 +245,11 @@ Implementation shape:
   strict replay;
 - `intrinsicSize` is optional and diagnostic/layout-aid only.
 
-The first writer target should be the SVG exporter. Canvas2D, CanvasKit, and
-native Skia lowering come later because they must convert the sanitized vector
-resource into backend-native path or scene commands without using DOM parsing.
-Before writer emission is widened, add negative fixtures for unsafe flags,
-missing `viewBox`, raw SVG replay attempts, external resource references, and
-unsupported vector primitives.
+The current baseline replays static path-layer fragments without DOM parsing in
+Canvas2D/CanvasKit, Rust SVG, and native Skia. Before writer emission is
+widened, add more negative fixtures for unsafe flags, missing `viewBox`, raw SVG
+replay attempts, external resource references, unsupported vector primitives,
+and resource identity cache reuse.
 
 ### 4. CanvasKit Variation And TTC Proof Fixtures
 
@@ -293,15 +300,15 @@ batch discovers that it needs browser-only parsing, hidden Canvas2D drawing, or
 backend-dependent semantics, stop the writer work and add a validator,
 diagnostic, or resource contract instead.
 
-### Batch 1. COLRv1 Stage-1 Graph Skeleton
+### Batch 1. COLRv1 Stage-1 Graph Hardening
 
-Goal: add the first COLRv1 graph vocabulary and validation without enabling a
-broad writer path.
+Goal: harden the current COLRv1 stage-1 graph vocabulary and validation without
+enabling a broad writer path.
 
 Expected code shape:
 
-- schema/type vocabulary adds a `ColorLayers.ColrV1` graph family with
-  stage-1 nodes only;
+- schema/type vocabulary keeps `ColorLayers.ColrV1` stage-1 nodes as the
+  baseline;
 - stage-1 nodes are tree-only `solidPath` and local affine `transform`;
 - each `solidPath` contains producer-resolved path commands, resolved RGBA,
   `fillRule`, layer/source glyph provenance, palette provenance, and source
@@ -309,8 +316,8 @@ Expected code shape:
 - graph validation rejects cycles, unreachable nodes, unknown nodes,
   unsupported gradients/blends/clips, scope-changing transforms, excessive
   depth, and excessive node count;
-- the first fixture is an internal or native deterministic reference fixture,
-  not an SVG/Canvas2D exporter widening.
+- fixtures continue to use deterministic internal/native reference behavior
+  before any SVG/Canvas2D exporter widening beyond stage 1.
 
 Likely touchpoints:
 
@@ -321,8 +328,8 @@ Likely touchpoints:
 
 Definition of done:
 
-- COLRv1 stage-1 payloads validate when they contain only solid color and local
-  transform nodes;
+- COLRv1 stage-1 payloads continue to validate when they contain only solid
+  color and local transform nodes;
 - COLRv1 stage-2 or later nodes produce deterministic unsupported diagnostics;
 - no CanvasKit writer starts relying on font-native COLR table interpretation;
 - no paint-order, clip, effect, cache, or cross-scope semantics change.
