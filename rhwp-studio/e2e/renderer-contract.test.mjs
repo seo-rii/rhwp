@@ -319,6 +319,16 @@ assert.equal(
   'CanvasKit resource cache must use native-ready image/font helpers instead of broad Canvas2D utilities',
 );
 assert.equal(
+  canvaskitResourceCacheSource.includes('imageResourcePayloadFingerprint'),
+  true,
+  'CanvasKit resource cache must fingerprint resource bytes when producer image hashes are unavailable',
+);
+assert.equal(
+  canvaskitResourceCacheSource.includes("?? 'unknown'"),
+  false,
+  'CanvasKit resource cache must not collapse missing resource hashes into a shared unknown cache key',
+);
+assert.equal(
   canvaskitFontsSource.includes("from '../layer-canvas-utils'"),
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',

@@ -267,8 +267,16 @@ export class CanvasKitResourceCache {
   }
 
   private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
-    if (typeof resourceId === 'number' && this.resources?.images?.[resourceId]) {
-      return `res:${this.resources.tableId}:${resourceId}:${this.resources.imageHashes?.[resourceId] ?? 'unknown'}`;
+    const resources = this.resources;
+    const resourceBytes = typeof resourceId === 'number'
+      ? resources?.images?.[resourceId]
+      : undefined;
+    if (typeof resourceId === 'number' && resources && resourceBytes) {
+      const resourceHash = resources.imageHashes?.[resourceId];
+      const payloadIdentity = resourceHash && resourceHash.length > 0
+        ? resourceHash
+        : `fp:${imageResourcePayloadFingerprint(resourceBytes)}`;
+      return `res:${resources.tableId}:${resourceId}:${payloadIdentity}`;
     }
     return base64 ? `b64:${base64}` : null;
   }
@@ -357,4 +365,13 @@ export class CanvasKitResourceCache {
       this.imageCache.delete(key);
     }
   }
+}
+
+function imageResourcePayloadFingerprint(bytes: Uint8Array): string {
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${bytes.length}:${hash.toString(16).padStart(8, '0')}`;
 }
