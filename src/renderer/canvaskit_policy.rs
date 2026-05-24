@@ -1643,7 +1643,7 @@ mod tests {
             Some(VariantRejectReason::VariationUnsupported)
         );
         assert_eq!(font_report.variation_supported, Some(false));
-        assert_eq!(font_report.replay_eligible, false);
+        assert!(!font_report.replay_eligible);
     }
 
     #[test]
@@ -1670,7 +1670,7 @@ mod tests {
         assert_eq!(font_report.blob_resolved, Some(true));
         assert_eq!(font_report.exact_face_instantiated, Some(false));
         assert_eq!(font_report.face_index_supported, Some(false));
-        assert_eq!(font_report.replay_eligible, false);
+        assert!(!font_report.replay_eligible);
     }
 
     #[test]
