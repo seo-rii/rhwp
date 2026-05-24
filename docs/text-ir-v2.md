@@ -363,6 +363,64 @@ cannot execute a feature faithfully, the renderer records a backend-specific
 diagnostic and follows the same compatibility fallback or strictVisual hard
 reject policy as any other unsupported CanvasKit capability.
 
+### CanvasKit Parity Roadmap
+
+The CanvasKit parity goal is to make the existing Canvas2D renderer behavior
+available through a Skia-shaped backend without adding overlay fallbacks. The
+implementation should therefore move from broad parity guards to narrow direct
+replay closures, not from Canvas2D delegation to partial CanvasKit patches.
+
+The roadmap is:
+
+1. keep a static renderer-contract test that compares Canvas2D and CanvasKit
+   dispatch cases, glyph payload branches, and forbidden dependencies;
+2. isolate shared preprocessing into native-ready helpers before CanvasKit uses
+   it. Helpers may be shared with Canvas2D, but they must not require
+   `CanvasRenderingContext2D`, DOM image elements, `DOMParser`, `Path2D`, object
+   URLs, or browser text measurement;
+3. close CanvasKit feature gaps by paint-op family, with one fixture per family:
+   traversal/clip, vector paths and strokes, gradients and patterns, images,
+   image effects, form/equation objects, text visual ops, `GlyphRun`, and
+   `GlyphOutline` payloads;
+4. record explicit backend diagnostics for every unsupported CanvasKit case
+   before adding a fallback or strictVisual writer path;
+5. keep native Skia in the design loop: if the CanvasKit implementation needs a
+   browser-only pre-pass, first promote that pre-pass into a resource payload or
+   pure preprocessing step that a native renderer can reproduce.
+
+This gives CanvasKit three implementation priorities:
+
+| Priority | Work | Done when |
+| --- | --- | --- |
+| P1 | Dependency boundary cleanup | CanvasKit source and direct helpers have no Canvas2D/DOM resource dependency, and the contract test guards that boundary |
+| P2 | Canvas2D parity closures | Each Canvas2D paint-op branch has a CanvasKit direct replay branch or deterministic unsupported diagnostic |
+| P3 | Native-ready strict replay | Strict payloads such as COLRv1, `BitmapGlyph`, `SvgGlyph`, variation fonts, TTC/OTC faces, and future native Skia fixtures use the same feature gates and diagnostics |
+
+The immediate design target is P1. CanvasKit may still share pure geometry,
+color, path, pixel, and text-cluster utilities with Canvas2D, but any shared
+module used by CanvasKit must be native-ready by construction. Broad imports
+from a Canvas2D utility module are acceptable only as a temporary migration
+state; new CanvasKit work should either depend on `rhwp-studio/src/view/canvaskit/*`
+helpers or on small shared modules whose public API has no browser canvas
+types.
+
+After P1, P2 proceeds in small coherent batches. A batch should include the
+Canvas2D behavior audit, the CanvasKit direct replay change, exact diagnostics,
+and a targeted lifecycle or parity fixture. The first skipped branch in a
+family should be converted to an explicit unsupported reason before adding more
+visual approximation. `compat` mode may select a schema fallback, but it must
+not draw through an invisible Canvas2D overlay. `strictVisual` must fail closed
+when a required CanvasKit capability is missing.
+
+P3 starts only after the corresponding P2 branch is stable. COLRv1 begins with
+a tree-only solid-color-plus-transform graph and an internal/native reference
+fixture before SVG/Canvas2D exporters are widened. `BitmapGlyph` starts with a
+single producer-selected image strike and deterministic alpha, scaling, and
+filtering. `SvgGlyph` starts with a `VectorResourceId` pointing at sanitized
+static vector content and hard-false script, animation, external resource, and
+interactivity flags. CanvasKit variation and TTC/OTC support remain fallback
+only until exact face/instance proof fixtures pass.
+
 The main implementation touchpoints are:
 
 | Touchpoint | Role |
