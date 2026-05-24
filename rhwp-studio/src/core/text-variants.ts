@@ -810,8 +810,8 @@ export function isSupportedGlyphOutlineStrokeStyle(
     && stroke.widthPx > 0
     && (stroke.miterLimit === undefined
       || (Number.isFinite(stroke.miterLimit) && stroke.miterLimit >= 0))
-    && ['miter', 'round', 'bevel'].includes(stroke.join ?? 'miter')
-    && ['butt', 'round', 'square'].includes(stroke.cap ?? 'butt')
+    && (stroke.join ?? 'miter') === 'miter'
+    && (stroke.cap ?? 'butt') === 'butt'
     && (stroke.paintOrder ?? 'fillThenStroke') === 'fillThenStroke';
 }
 

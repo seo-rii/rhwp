@@ -3152,6 +3152,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
         widthPx: 0,
       },
     };
+    const unsupportedStrokeJoinCapPayload = {
+      payloadKind: 'monochromeFillStroke',
+      stroke: {
+        ...strokePayload.stroke,
+        join: 'round',
+        cap: 'square',
+      },
+    };
     const reservedPayloadEnvelopes = {
       colorLayers: {
         payloadKind: 'colorLayers',
@@ -3340,6 +3348,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const strokePayloadSidecar = render(makeTree(style, [outlinePath], true, strokePayload), true);
       const unsupportedStrokePayloadSidecar = render(
         makeTree(style, [outlinePath], true, unsupportedStrokePayload),
+        true,
+      );
+      const unsupportedStrokeJoinCapSidecar = render(
+        makeTree(style, [outlinePath], true, unsupportedStrokeJoinCapPayload),
         true,
       );
       const colorPayloadSidecar = render(
@@ -3904,6 +3916,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidPathCommandSidecar,
         strokePayloadSidecar,
         unsupportedStrokePayloadSidecar,
+        unsupportedStrokeJoinCapSidecar,
         colorPayloadSidecar,
         colorV1PayloadSidecar,
         reservedColorPayloadSidecar,
@@ -4114,6 +4127,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && unsupportedStrokePayloadSidecarReport?.outlineEligibility?.replayEligible === false,
     `Canvas2D strict profile rejects unsupported stroke outline payload=${JSON.stringify(
       unsupportedStrokePayloadSidecarReport,
+    )}`,
+  );
+  const unsupportedStrokeJoinCapSidecarReport = canvas2dGlyphOutlineProbe
+    .unsupportedStrokeJoinCapSidecar
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'outline-fixture-0');
+  assert(
+    unsupportedStrokeJoinCapSidecarReport?.selectedVariantId === 'textRun'
+      && unsupportedStrokeJoinCapSidecarReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('glyphOutlineStrokeStyleUnsupported'),
+      )
+      && unsupportedStrokeJoinCapSidecarReport?.outlineEligibility?.payloadSupported === false
+      && unsupportedStrokeJoinCapSidecarReport?.outlineEligibility?.paintStyleSupported === true
+      && unsupportedStrokeJoinCapSidecarReport?.outlineEligibility?.replayEligible === false,
+    `Canvas2D strict profile rejects unsupported stroke join/cap outline payload=${JSON.stringify(
+      unsupportedStrokeJoinCapSidecarReport,
     )}`,
   );
   const colorPayloadSidecarReport = canvas2dGlyphOutlineProbe.colorPayloadSidecar?.diagnostics?.find(
@@ -4629,6 +4659,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvas2dGlyphOutlineProbe.unsupportedStrokePayloadSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
   );
+  const unsupportedStrokeJoinCapBlackPixels = countPixels(
+    canvas2dGlyphOutlineProbe.unsupportedStrokeJoinCapSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
   const v2StrictBlackPixels = countPixels(
     canvas2dGlyphOutlineProbe.v2Strict.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
@@ -4656,6 +4690,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     unsupportedStrokePayloadBlackPixels < 20,
     `Canvas2D strict outline does not replay unsupported stroke payload black=${unsupportedStrokePayloadBlackPixels}`,
+  );
+  assert(
+    unsupportedStrokeJoinCapBlackPixels < 20,
+    `Canvas2D strict outline does not replay unsupported stroke join/cap payload black=${unsupportedStrokeJoinCapBlackPixels}`,
   );
   assert(
     v2StrictBlackPixels > 100,
