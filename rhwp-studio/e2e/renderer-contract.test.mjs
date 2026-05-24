@@ -15,6 +15,7 @@ const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixel
 const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-utils.ts');
 const staticSvgPathLayersPath = path.join(studioRoot, 'src/view/static-svg-path-layers.ts');
 const textReplayUtilsPath = path.join(studioRoot, 'src/view/text-replay-utils.ts');
+const textVariantsPath = path.join(studioRoot, 'src/core/text-variants.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-implementation.md');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
@@ -28,6 +29,7 @@ const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
 const layerGeometryUtilsSource = fs.readFileSync(layerGeometryUtilsPath, 'utf8');
 const staticSvgPathLayersSource = fs.readFileSync(staticSvgPathLayersPath, 'utf8');
 const textReplayUtilsSource = fs.readFileSync(textReplayUtilsPath, 'utf8');
+const textVariantsSource = fs.readFileSync(textVariantsPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
@@ -83,7 +85,7 @@ const implementationPlanTouchpoints = [
   },
   {
     docToken: 'rhwp-studio/src/core/text-variants.ts',
-    filePath: path.join(studioRoot, 'src/core/text-variants.ts'),
+    filePath: textVariantsPath,
     kind: 'file',
   },
   {
@@ -379,6 +381,31 @@ assert.equal(
   true,
   'CanvasKit renderer must import shared geometry helpers from the native-ready module',
 );
+
+assert.equal(
+  canvas2dSource.includes('layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps)'),
+  true,
+  'Canvas2D leaf replay must merge schema-v1 sidecar variantOps into text variant selection',
+);
+assert.equal(
+  canvaskitSource.includes('layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps)'),
+  true,
+  'CanvasKit leaf replay must merge schema-v1 sidecar variantOps into text variant selection',
+);
+const sidecarTextVariantMergeBlock = extractFunctionBody(textVariantsSource, 'layerTextVariantOpsForLeaf');
+for (const requiredToken of [
+  'variantOps',
+  'sidecarsByAnchor',
+  'sidecarAnchorOpId(sidecar)',
+  'rootVariantKeys.has(sidecarKey)',
+  'merged.push(...sidecars.sort(compareVariantPaintOrder))',
+]) {
+  assert.equal(
+    sidecarTextVariantMergeBlock.includes(requiredToken),
+    true,
+    `shared text variant helper must keep sidecar variantOps contract: ${requiredToken}`,
+  );
+}
 
 const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(
   extractMethodBody(canvas2dSource, 'renderOp'),
