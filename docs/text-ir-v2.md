@@ -770,7 +770,8 @@ strict-export gate; `payloadKind: "bitmapGlyph"` is now a family-specific
 strict gate for one producer-selected image strike; and
 `payloadKind: "svgGlyph"` is now a family-specific strict gate for a sanitized
 static vector subresource in the SVG exporter. `colorLayers.colrV1` now has
-the stage-1 normalized graph gate. Current validators keep each richer family behind its own gate
+the stage-1 normalized graph gate plus a browser stage-2 gradient leaf subset
+for Canvas2D/CanvasKit. Current validators keep each richer family behind its own gate
 even when the generic richer-outline option is enabled. They report
 `glyphOutlinePayloadKindFeatureMissing` until a family gets its own payload
 schema, writer gate, strict replay fixture, and deterministic fallback path.
@@ -798,9 +799,12 @@ The reserved families are intentionally separate payload families:
   the font palette for strict visual output. COLRv0 can start as a solid
   palette layer stack. COLRv1 uses a separate normalized paint graph envelope:
   the stage-1 skeleton admits solid path nodes and transform nodes with source
-  range, glyph range, and source-font provenance, while gradients, blending,
-  clips, and reusable graph nodes stay behind later feature additions. Stage-1
-  graph validation is tree-only: the root must reach every node, cycles are
+  range, glyph range, and source-font provenance. The first browser stage-2
+  subset admits `linearGradientPath` and `radialGradientPath` leaves with
+  producer-resolved color stops, finite run-local coordinates, and the same
+  source/glyph provenance requirements; blending, clips, sweep gradients, and
+  reusable graph nodes stay behind later feature additions. Graph validation is
+  tree-only for stages 1 and 2: the root must reach every node, cycles are
   rejected, the current Studio validator bounds the stage-1 graph to 64 nodes
   and depth 64, and shared child subgraphs remain reserved for the later reusable
   graph stage. The feature vocabulary is split as
@@ -846,10 +850,13 @@ implicitly change schema authority:
   browser Canvas2D/CanvasKit replay coverage. Stage 1 is tree-only: a transform chain
   resolves to one `solidPath` reference layer, rejects unreachable nodes/cycles,
   rejects graphs over 64 nodes or depth 64, and carries the composed run-local
-  affine transform without changing paint order or clip/effect/cache scope. The
-  graph can then grow in stages:
-  linear/radial gradients, sweep gradients, composite/blend, then clip or
-  reusable graph nodes. Reusable graph/DAG behavior belongs to the later
+  affine transform without changing paint order or clip/effect/cache scope.
+  Browser Canvas2D/CanvasKit now also replay the first stage-2 subset:
+  `linearGradientPath` and `radialGradientPath` leaves with ordered color stops.
+  Native/internal reference and SVG coverage for those gradient leaves remain
+  follow-up work. The graph can then continue to grow in stages:
+  sweep gradients, composite/blend, then clip or reusable graph nodes. Reusable
+  graph/DAG behavior belongs to the later
   clip/reusable-graph stage, with cycle detection and node/depth limits.
   It becomes a v3 concern only if it forces a new text variant selection model,
   paint-order/compositing semantics, or source/cluster identity model.
@@ -1144,7 +1151,7 @@ that every reserved writer is enabled:
 | `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
 | `GlyphOutline` `colorLayers.colrV0` | V2 feature addition; strict export supports resolved-layer payloads, and native producer-side COLR/CPAL decoding can generate the resolved layers |
 | `GlyphOutline` `bitmapGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support one producer-selected image strike |
-| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset |
+| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset; browser Canvas2D/CanvasKit additionally support stage-2 linear/radial gradient path leaves |
 | `GlyphOutline` `svgGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support sanitized static path-vector resources |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
 | CanvasKit and native Skia variation/TTC strict replay | Blocked until exact construction fixtures pass |

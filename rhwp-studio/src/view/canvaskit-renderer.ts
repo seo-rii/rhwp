@@ -1203,6 +1203,70 @@ export class CanvasKitLayerRenderer {
               path.delete();
               return;
             }
+            if (node.kind === 'linearGradientPath') {
+              const gradientPath = node.linearGradientPath;
+              if (!gradientPath) {
+                return;
+              }
+              const path = this.makePath(gradientPath.commands);
+              this.applyPathFillRule(path, gradientPath.fillRule);
+              const paint = new this.canvasKit.Paint();
+              paint.setAntiAlias(true);
+              paint.setStyle(this.canvasKit.PaintStyle.Fill);
+              const shader = this.canvasKit.Shader.MakeLinearGradient(
+                [gradientPath.gradient.x0, gradientPath.gradient.y0],
+                [gradientPath.gradient.x1, gradientPath.gradient.y1],
+                gradientPath.gradient.stops.map((stop) => {
+                  const [r, g, b, a] = stop.color.rgba;
+                  return [
+                    clampCanvasKitUnit(r),
+                    clampCanvasKitUnit(g),
+                    clampCanvasKitUnit(b),
+                    clampCanvasKitUnit(a),
+                  ] as any;
+                }),
+                gradientPath.gradient.stops.map((stop) => stop.offset),
+                this.canvasKit.TileMode.Clamp,
+              );
+              paint.setShader(shader);
+              canvas.drawPath(path, paint);
+              shader.delete();
+              paint.delete();
+              path.delete();
+              return;
+            }
+            if (node.kind === 'radialGradientPath') {
+              const gradientPath = node.radialGradientPath;
+              if (!gradientPath) {
+                return;
+              }
+              const path = this.makePath(gradientPath.commands);
+              this.applyPathFillRule(path, gradientPath.fillRule);
+              const paint = new this.canvasKit.Paint();
+              paint.setAntiAlias(true);
+              paint.setStyle(this.canvasKit.PaintStyle.Fill);
+              const shader = this.canvasKit.Shader.MakeRadialGradient(
+                [gradientPath.gradient.cx, gradientPath.gradient.cy],
+                gradientPath.gradient.radius,
+                gradientPath.gradient.stops.map((stop) => {
+                  const [r, g, b, a] = stop.color.rgba;
+                  return [
+                    clampCanvasKitUnit(r),
+                    clampCanvasKitUnit(g),
+                    clampCanvasKitUnit(b),
+                    clampCanvasKitUnit(a),
+                  ] as any;
+                }),
+                gradientPath.gradient.stops.map((stop) => stop.offset),
+                this.canvasKit.TileMode.Clamp,
+              );
+              paint.setShader(shader);
+              canvas.drawPath(path, paint);
+              shader.delete();
+              paint.delete();
+              path.delete();
+              return;
+            }
             if (node.kind === 'transform') {
               const transformNode = node.transform;
               if (!transformNode) {

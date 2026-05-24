@@ -3295,6 +3295,59 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     };
+    const colrV1GradientPayloadEnvelope = {
+      ...colrV1PayloadEnvelope,
+      colorLayers: {
+        ...colrV1PayloadEnvelope.colorLayers,
+        paintGraph: {
+          rootNodeId: 1,
+          nodes: [
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 2,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+              },
+            },
+            {
+              nodeId: 2,
+              kind: 'linearGradientPath',
+              linearGradientPath: {
+                commands: [
+                  { type: 'moveTo', x: 0, y: 0 },
+                  { type: 'lineTo', x: 10, y: 0 },
+                  { type: 'lineTo', x: 10, y: 10 },
+                  { type: 'lineTo', x: 0, y: 10 },
+                  { type: 'closePath' },
+                ],
+                gradient: {
+                  x0: 0,
+                  y0: 0,
+                  x1: 10,
+                  y1: 0,
+                  stops: [
+                    { offset: 0, color: { colorSpace: 'srgb', rgba: [1, 0, 0, 1] } },
+                    { offset: 1, color: { colorSpace: 'srgb', rgba: [0, 0, 1, 1] } },
+                  ],
+                },
+                fillRule: 'nonzero',
+                sourceGlyphId: 42,
+                paletteIndex: 0,
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: {
+                faceKey: 'fixture-face',
+                glyphId: 42,
+                paletteIndex: 0,
+                colorFormat: 'colrV1',
+              },
+            },
+          ],
+        },
+      },
+    };
     const render = (tree, strict) => {
       const canvas = document.createElement('canvas');
       canvas.width = tree.pageWidth;
@@ -3378,6 +3431,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const colorV1PayloadSidecar = render(
         makeTree(style, [], true, {
           ...colrV1PayloadEnvelope,
+          variant: {
+            ...outlineVariant,
+            requires: [
+              'text.outlineGlyph',
+              'text.glyphOutline.colorLayers',
+              'text.glyphOutline.colorLayers.colrV1',
+            ],
+          },
+        }),
+        true,
+      );
+      const colorV1GradientPayloadSidecar = render(
+        makeTree(style, [], true, {
+          ...colrV1GradientPayloadEnvelope,
           variant: {
             ...outlineVariant,
             requires: [
@@ -3700,6 +3767,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidProvenanceReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const invalidGradientReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      const invalidGradientReservedV2ColorPayloadColrV1Payload =
+        invalidGradientReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
+          .find((variant) => variant.variantId === 'glyphOutline')
+          .parts[0]
+          .payload;
+      Object.assign(
+        invalidGradientReservedV2ColorPayloadColrV1Payload,
+        clonePayloadEnvelope(colrV1GradientPayloadEnvelope),
+      );
+      invalidGradientReservedV2ColorPayloadColrV1Payload.colorLayers
+        .paintGraph
+        .nodes
+        .find((node) => node.kind === 'linearGradientPath')
+        .linearGradientPath
+        .gradient
+        .stops[1]
+        .offset = 1.5;
+      const invalidGradientReservedV2ColorPayloadColrV1 = render(
+        invalidGradientReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const reservedV2BitmapPayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -4009,6 +4098,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         missingStrokePayloadSidecar,
         colorPayloadSidecar,
         colorV1PayloadSidecar,
+        colorV1GradientPayloadSidecar,
         reservedColorPayloadSidecar,
         reservedBitmapPayloadSidecar,
         reservedSvgPayloadSidecar,
@@ -4043,6 +4133,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidTransformReservedV2ColorPayloadColrV1,
         invalidCommandReservedV2ColorPayloadColrV1,
         invalidProvenanceReservedV2ColorPayloadColrV1,
+        invalidGradientReservedV2ColorPayloadColrV1,
         reservedV2BitmapPayload,
         invalidReservedV2BitmapPayload,
         invalidReservedV2BitmapBackendDefaultScalingPayload,
@@ -4293,6 +4384,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
       colorV1PayloadSidecarReport,
     )}`,
   );
+  const colorV1GradientPayloadSidecarReport = canvas2dGlyphOutlineProbe
+    .colorV1GradientPayloadSidecar
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'outline-fixture-0');
+  assert(
+    colorV1GradientPayloadSidecarReport?.selectedVariantId === 'glyphOutline'
+      && colorV1GradientPayloadSidecarReport?.rejectedVariants?.length === 0
+      && colorV1GradientPayloadSidecarReport?.outlineEligibility?.payloadSupported === true
+      && colorV1GradientPayloadSidecarReport?.outlineEligibility?.replayEligible === true,
+    `Canvas2D strict profile replays COLRv1 gradient color graph outline payload=${JSON.stringify(
+      colorV1GradientPayloadSidecarReport,
+    )}`,
+  );
   const reservedColorPayloadSidecarReport = canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'outline-fixture-0',
   );
@@ -4359,6 +4463,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidProvenanceReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidGradientReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .invalidGradientReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   assert(
     reservedColorPayloadSidecarReport?.selectedVariantId === 'textRun'
       && reservedColorPayloadSidecarReport?.rejectedVariants?.some(
@@ -4385,7 +4493,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
-      && !invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
+      && !invalidProvenanceReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidGradientReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidGradientReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadKindFeatureMissing'),
     `Canvas2D strict profile rejects reserved color outline payload=${JSON.stringify({
       report: reservedColorPayloadSidecarReport,
       sidecarValidation: canvas2dGlyphOutlineProbe.reservedColorPayloadSidecar?.textV2Validation,
@@ -4409,6 +4519,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ?.textV2Validation,
       invalidProvenanceV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .invalidProvenanceReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      invalidGradientV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .invalidGradientReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );
@@ -4812,6 +4925,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvas2dGlyphOutlineProbe.colorV1PayloadSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.green > 120 && pixel.red < 100 && pixel.blue < 100,
   );
+  const colorV1GradientRedPixels = countPixels(
+    canvas2dGlyphOutlineProbe.colorV1GradientPayloadSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.red > 150 && pixel.green < 100 && pixel.blue < 120,
+  );
+  const colorV1GradientBluePixels = countPixels(
+    canvas2dGlyphOutlineProbe.colorV1GradientPayloadSidecar.png,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.green < 100 && pixel.red < 120,
+  );
   const unsupportedStrokePayloadBlackPixels = countPixels(
     canvas2dGlyphOutlineProbe.unsupportedStrokePayloadSidecar.png,
     (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
@@ -4847,6 +4968,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     colorV1PayloadGreenPixels > 20,
     `Canvas2D strict outline paints COLRv1 stage-1 color graph green=${colorV1PayloadGreenPixels}`,
+  );
+  assert(
+    colorV1GradientRedPixels > 5 && colorV1GradientBluePixels > 5,
+    `Canvas2D strict outline paints COLRv1 gradient graph red=${colorV1GradientRedPixels}, blue=${colorV1GradientBluePixels}`,
   );
   assert(
     unsupportedStrokePayloadBlackPixels < 20,
@@ -5172,6 +5297,60 @@ runTest('Renderer lifecycle', async ({ page }) => {
               solidPath: {
                 commands: outlinePath.commands,
                 fill: { rgba: [0, 0.75, 0, 1] },
+                fillRule: 'nonzero',
+                sourceGlyphId: 77,
+                paletteIndex: 5,
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 77, paletteIndex: 5, colorFormat: 'colrV1' },
+            },
+          ],
+        },
+      },
+    });
+    const colorV1GradientOutline = outlineFor('canvaskit-outline-color-v1-gradient', {
+      payloadKind: 'colorLayers',
+      variant: variantFor('canvaskit-outline-color-v1-gradient', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.colorLayers', 'text.glyphOutline.colorLayers.colrV1'],
+        anchorOpId: 'op-text-canvaskit-outline-color-v1-gradient',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      colorLayers: {
+        colorFormat: 'colrV1',
+        sourceFontRef: { faceKey: 'fixture-face', glyphId: 42, colorFormat: 'colrV1' },
+        paletteRef: { index: 0, cpalDigest: 'fixture-cpal' },
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        layers: [],
+        paintGraph: {
+          rootNodeId: 1,
+          nodes: [
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 2,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 4, f: 4 },
+              },
+            },
+            {
+              nodeId: 2,
+              kind: 'linearGradientPath',
+              linearGradientPath: {
+                commands: outlinePath.commands,
+                gradient: {
+                  x0: 0,
+                  y0: 0,
+                  x1: 18,
+                  y1: 0,
+                  stops: [
+                    { offset: 0, color: { rgba: [1, 0, 0, 1] } },
+                    { offset: 1, color: { rgba: [0, 0, 1, 1] } },
+                  ],
+                },
                 fillRule: 'nonzero',
                 sourceGlyphId: 77,
                 paletteIndex: 5,
@@ -5765,6 +5944,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       missingStroke: await render(treeFor(missingStrokeOutline)),
       colorLayers: await render(treeFor(colorOutline)),
       colorLayersColrV1: await render(treeFor(colorV1Outline)),
+      colorLayersColrV1Gradient: await render(treeFor(colorV1GradientOutline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
       nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
@@ -5934,6 +6114,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitColorV1Report?.selectedVariantId === 'glyphOutline'
       && canvaskitColorV1Report?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects COLRv1 stage-1 ColorLayers GlyphOutline=${JSON.stringify(canvaskitColorV1Report)}`,
+  );
+  const canvaskitColorV1GradientReport = canvaskitGlyphOutlineProbe
+    .colorLayersColrV1Gradient
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-color-v1-gradient');
+  assert(
+    canvaskitColorV1GradientReport?.selectedVariantId === 'glyphOutline'
+      && canvaskitColorV1GradientReport?.selectedVariantKind === 'glyphOutline',
+    `CanvasKit selects COLRv1 gradient ColorLayers GlyphOutline=${JSON.stringify(canvaskitColorV1GradientReport)}`,
   );
   const canvaskitBitmapReport = canvaskitGlyphOutlineProbe.bitmapGlyph?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'canvaskit-outline-bitmap',
@@ -6965,6 +7154,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitGlyphOutlineProbe.colorLayersColrV1.png,
     (pixel) => pixel.alpha > 32 && pixel.green > 120 && pixel.red < 100 && pixel.blue < 100,
   );
+  const canvaskitColorV1GradientRedPixels = countPixels(
+    canvaskitGlyphOutlineProbe.colorLayersColrV1Gradient.png,
+    (pixel) => pixel.alpha > 32 && pixel.red > 150 && pixel.green < 100 && pixel.blue < 120,
+  );
+  const canvaskitColorV1GradientBluePixels = countPixels(
+    canvaskitGlyphOutlineProbe.colorLayersColrV1Gradient.png,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.green < 100 && pixel.red < 120,
+  );
   const canvaskitBitmapBlackPixels = canvaskitGlyphOutlineProbe.bitmapGlyph.blackPixels;
   const canvaskitSvgMagentaPixels = canvaskitGlyphOutlineProbe.svgGlyph.magentaPixels;
   const canvaskitNoDomParserSvgMagentaPixels = canvaskitGlyphOutlineProbe.noDomParserSvgGlyph.magentaPixels;
@@ -7264,6 +7461,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitColorV1GreenPixels > 100,
     `CanvasKit strict outline paints COLRv1 stage-1 color graph green=${canvaskitColorV1GreenPixels}`,
+  );
+  assert(
+    canvaskitColorV1GradientRedPixels > 20 && canvaskitColorV1GradientBluePixels > 20,
+    `CanvasKit strict outline paints COLRv1 gradient graph red=${canvaskitColorV1GradientRedPixels}, blue=${canvaskitColorV1GradientBluePixels}`,
   );
   assert(
     canvaskitBitmapBlackPixels > 100,

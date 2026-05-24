@@ -908,11 +908,49 @@ export interface LayerGlyphOutlineColorLayerNode {
 
 export type LayerGlyphOutlineColorPaintGraphNodeKind =
   | 'solidPath'
+  | 'linearGradientPath'
+  | 'radialGradientPath'
   | 'transform';
 
 export interface LayerGlyphOutlineColorSolidPathNode {
   commands: LayerPathCommand[];
   fill: LayerGlyphOutlineResolvedColor;
+  fillRule: CanvasFillRule;
+  sourceGlyphId?: number;
+  paletteIndex?: number;
+}
+
+export interface LayerGlyphOutlineColorGradientStop {
+  offset: number;
+  color: LayerGlyphOutlineResolvedColor;
+}
+
+export interface LayerGlyphOutlineColorLinearGradient {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  stops: LayerGlyphOutlineColorGradientStop[];
+}
+
+export interface LayerGlyphOutlineColorRadialGradient {
+  cx: number;
+  cy: number;
+  radius: number;
+  stops: LayerGlyphOutlineColorGradientStop[];
+}
+
+export interface LayerGlyphOutlineColorLinearGradientPathNode {
+  commands: LayerPathCommand[];
+  gradient: LayerGlyphOutlineColorLinearGradient;
+  fillRule: CanvasFillRule;
+  sourceGlyphId?: number;
+  paletteIndex?: number;
+}
+
+export interface LayerGlyphOutlineColorRadialGradientPathNode {
+  commands: LayerPathCommand[];
+  gradient: LayerGlyphOutlineColorRadialGradient;
   fillRule: CanvasFillRule;
   sourceGlyphId?: number;
   paletteIndex?: number;
@@ -927,6 +965,8 @@ export interface LayerGlyphOutlineColorPaintGraphNode {
   nodeId: number;
   kind: LayerGlyphOutlineColorPaintGraphNodeKind;
   solidPath?: LayerGlyphOutlineColorSolidPathNode;
+  linearGradientPath?: LayerGlyphOutlineColorLinearGradientPathNode;
+  radialGradientPath?: LayerGlyphOutlineColorRadialGradientPathNode;
   transform?: LayerGlyphOutlineColorTransformNode;
   sourceRangeUtf8?: LayerTextSourceRange;
   glyphRange?: { start: number; end: number };

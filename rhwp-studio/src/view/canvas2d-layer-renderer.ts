@@ -525,6 +525,50 @@ export class Canvas2DLayerRenderer {
                   ctx.fill(solidPath.fillRule);
                   return;
                 }
+                if (node.kind === 'linearGradientPath') {
+                  const gradientPath = node.linearGradientPath;
+                  if (!gradientPath) {
+                    return;
+                  }
+                  const gradient = gradientPath.gradient;
+                  const fill = ctx.createLinearGradient(
+                    gradient.x0,
+                    gradient.y0,
+                    gradient.x1,
+                    gradient.y1,
+                  );
+                  for (const stop of gradient.stops) {
+                    fill.addColorStop(stop.offset, resolvedColorToCss(stop.color));
+                  }
+                  ctx.beginPath();
+                  appendPathCommands(ctx, gradientPath.commands);
+                  ctx.fillStyle = fill;
+                  ctx.fill(gradientPath.fillRule);
+                  return;
+                }
+                if (node.kind === 'radialGradientPath') {
+                  const gradientPath = node.radialGradientPath;
+                  if (!gradientPath) {
+                    return;
+                  }
+                  const gradient = gradientPath.gradient;
+                  const fill = ctx.createRadialGradient(
+                    gradient.cx,
+                    gradient.cy,
+                    0,
+                    gradient.cx,
+                    gradient.cy,
+                    gradient.radius,
+                  );
+                  for (const stop of gradient.stops) {
+                    fill.addColorStop(stop.offset, resolvedColorToCss(stop.color));
+                  }
+                  ctx.beginPath();
+                  appendPathCommands(ctx, gradientPath.commands);
+                  ctx.fillStyle = fill;
+                  ctx.fill(gradientPath.fillRule);
+                  return;
+                }
                 if (node.kind === 'transform') {
                   const transformNode = node.transform;
                   if (!transformNode) {

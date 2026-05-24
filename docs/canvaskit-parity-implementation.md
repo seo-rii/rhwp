@@ -70,10 +70,12 @@ feature-gated direct replay contracts. The current baseline covers
 `MonochromeFill`, `MonochromeFillStroke`, `ColorLayers.ColrV0`,
 `ColorLayers.ColrV1` stage 1 (`solidPath` plus local `transform`),
 `BitmapGlyph` with a single producer-selected image strike, and `SvgGlyph`
-with a sanitized static vector resource. Studio Canvas2D/CanvasKit, Rust SVG,
-native Skia, and the Rust CanvasKit replay plan share the same payload
-eligibility vocabulary and deterministic fallback/reject reasons for those
-subsets.
+with a sanitized static vector resource. Studio Canvas2D/CanvasKit additionally
+replay the first COLRv1 stage-2 browser subset: `linearGradientPath` and
+`radialGradientPath` leaf nodes with resolved color stops. Studio
+Canvas2D/CanvasKit, Rust SVG, native Skia, and the Rust CanvasKit replay plan
+share the same payload eligibility vocabulary and deterministic
+fallback/reject reasons for those subsets.
 
 ## Architecture
 
@@ -153,7 +155,7 @@ fixtures can isolate schema behavior from renderer gaps.
 
 | Payload or feature | First implementation gate |
 | --- | --- |
-| `ColorLayers.ColrV1` | tree-only solid color plus transform graph and native/internal deterministic reference fixture |
+| `ColorLayers.ColrV1` | tree-only solid color plus transform graph and native/internal deterministic reference fixture; browser gradient leaves after that baseline |
 | `BitmapGlyph` | one producer-selected image strike, deterministic alpha/scaling/filtering, no strict `backendDefault` |
 | `SvgGlyph` | `VectorResourceId` to sanitized static vector content, required `viewBox`, hard-false script/animation/external/interactivity flags |
 | CanvasKit/native Skia variation fonts | exact construction proof fixture with fixed axis tuple and negative axis cases |
@@ -184,8 +186,11 @@ Implementation shape:
   font-native COLR table reference;
 - keep COLR/CPAL table references, source glyph ids, palette indices, font
   digest, and face identity as provenance/debug/cache data;
-- keep the current tree-only stage-1 graph containing only `solidPath` and
-  local `transform` nodes as the compatibility baseline;
+- keep the tree-only stage-1 graph containing `solidPath` and local `transform`
+  nodes as the cross-backend compatibility baseline;
+- treat `linearGradientPath` and `radialGradientPath` as the first browser
+  stage-2 graph leaves; their gradients carry producer-resolved color stops and
+  remain inside the glyph payload's run-local coordinate space;
 - allow only run-local affine transforms inside the glyph payload;
 - reject graph nodes that alter `PaintOp` order, clip scope, effect scope,
   cache scope, or cross-scope variant behavior;
@@ -201,7 +206,7 @@ Later COLRv1 additions should be staged as independent v2 feature additions:
 | Stage | New graph capability | Writer status |
 | --- | --- | --- |
 | 1 | solid color plus transform | implemented baseline; continue fixture hardening |
-| 2 | linear and radial gradients | after stage-1 fixtures are stable |
+| 2 | linear and radial gradients | browser Canvas2D/CanvasKit implemented for resolved gradient path leaves; native/internal reference fixture still pending |
 | 3 | sweep gradients | after gradient coordinate semantics are fixed |
 | 4 | composite and blend | after reference compositing semantics are fixed |
 | 5 | clip and reusable graph nodes | after DAG, cycle, depth, and reuse rules are fixed |
@@ -311,14 +316,17 @@ enabling a broad writer path.
 Expected code shape:
 
 - schema/type vocabulary keeps `ColorLayers.ColrV1` stage-1 nodes as the
-  baseline;
+  cross-backend baseline and admits browser stage-2 gradient path leaves;
 - stage-1 nodes are tree-only `solidPath` and local affine `transform`;
+- stage-2 browser nodes are tree-only `linearGradientPath` and
+  `radialGradientPath` leaves with finite coordinates, ordered stop offsets, and
+  resolved RGBA colors;
 - each `solidPath` contains producer-resolved path commands, resolved RGBA,
   `fillRule`, layer/source glyph provenance, palette provenance, and source
   range metadata;
 - graph validation rejects cycles, unreachable nodes, unknown nodes,
-  unsupported gradients/blends/clips, scope-changing transforms, excessive
-  depth, and excessive node count;
+  malformed gradients, unsupported blends/clips, scope-changing transforms,
+  excessive depth, and excessive node count;
 - fixtures continue to use deterministic internal/native reference behavior
   before any SVG/Canvas2D exporter widening beyond stage 1.
 
@@ -332,8 +340,10 @@ Likely touchpoints:
 Definition of done:
 
 - COLRv1 stage-1 payloads continue to validate when they contain only solid
-  color and local transform nodes;
-- COLRv1 stage-2 or later nodes produce deterministic unsupported diagnostics;
+  color and local transform nodes, and browser stage-2 gradient path leaves
+  validate only with finite coordinates and ordered resolved-color stops;
+- unsupported COLRv1 nodes and malformed stage-2 gradients produce deterministic
+  payload-contract diagnostics;
 - no CanvasKit writer starts relying on font-native COLR table interpretation;
 - no paint-order, clip, effect, cache, or cross-scope semantics change.
 

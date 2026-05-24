@@ -631,7 +631,7 @@ export function validateLayerTextV2Op(
               if (!hasColrv1Stage1ColorGraphContract(part.payload)) {
                 issues.push({
                   code: 'glyphOutlinePayloadContractInvalid',
-                  message: `Text variant '${variant.variantId}' carries a COLRv1 colorLayers payload without the stage-1 normalized graph contract.`,
+                  message: `Text variant '${variant.variantId}' carries a COLRv1 colorLayers payload without the supported normalized graph contract.`,
                   opId: op.id,
                   paintOrderSlotId: op.paintOrderSlotId,
                   variantId: variant.variantId,
@@ -898,6 +898,8 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         !(
           node.solidPath !== undefined
         && node.transform === undefined
+        && node.linearGradientPath === undefined
+        && node.radialGradientPath === undefined
         && isValidPathCommands(node.solidPath.commands)
         && isValidResolvedColor(node.solidPath.fill)
         && isSupportedFillRule(node.solidPath.fillRule)
@@ -906,6 +908,60 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && isValidPayloadRange(node.sourceRangeUtf8)
         && isValidPayloadRange(node.glyphRange)
           && node.sourceFontRef !== undefined
+        )
+      ) {
+        return false;
+      }
+      continue;
+    }
+    if (node.kind === 'linearGradientPath') {
+      const gradientPath = node.linearGradientPath;
+      if (
+        !(
+          gradientPath !== undefined
+        && node.solidPath === undefined
+        && node.transform === undefined
+        && node.radialGradientPath === undefined
+        && isValidPathCommands(gradientPath.commands)
+        && isSupportedFillRule(gradientPath.fillRule)
+        && gradientPath.gradient !== undefined
+        && Number.isFinite(gradientPath.gradient.x0)
+        && Number.isFinite(gradientPath.gradient.y0)
+        && Number.isFinite(gradientPath.gradient.x1)
+        && Number.isFinite(gradientPath.gradient.y1)
+        && isValidColorGradientStops(gradientPath.gradient.stops)
+        && (gradientPath.sourceGlyphId === undefined || isValidPayloadGlyphId(gradientPath.sourceGlyphId))
+        && (gradientPath.paletteIndex === undefined || isValidPayloadIndex(gradientPath.paletteIndex))
+        && isValidPayloadRange(node.sourceRangeUtf8)
+        && isValidPayloadRange(node.glyphRange)
+        && node.sourceFontRef !== undefined
+        )
+      ) {
+        return false;
+      }
+      continue;
+    }
+    if (node.kind === 'radialGradientPath') {
+      const gradientPath = node.radialGradientPath;
+      if (
+        !(
+          gradientPath !== undefined
+        && node.solidPath === undefined
+        && node.transform === undefined
+        && node.linearGradientPath === undefined
+        && isValidPathCommands(gradientPath.commands)
+        && isSupportedFillRule(gradientPath.fillRule)
+        && gradientPath.gradient !== undefined
+        && Number.isFinite(gradientPath.gradient.cx)
+        && Number.isFinite(gradientPath.gradient.cy)
+        && Number.isFinite(gradientPath.gradient.radius)
+        && gradientPath.gradient.radius > 0
+        && isValidColorGradientStops(gradientPath.gradient.stops)
+        && (gradientPath.sourceGlyphId === undefined || isValidPayloadGlyphId(gradientPath.sourceGlyphId))
+        && (gradientPath.paletteIndex === undefined || isValidPayloadIndex(gradientPath.paletteIndex))
+        && isValidPayloadRange(node.sourceRangeUtf8)
+        && isValidPayloadRange(node.glyphRange)
+        && node.sourceFontRef !== undefined
         )
       ) {
         return false;
@@ -922,6 +978,8 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
       if (
         !(
           node.solidPath === undefined
+        && node.linearGradientPath === undefined
+        && node.radialGradientPath === undefined
         && node.transform !== undefined
         && isValidPayloadGraphNodeId(node.transform.childNodeId)
         && nodeIds.has(node.transform.childNodeId)
@@ -1118,6 +1176,28 @@ function isValidResolvedColor(
     && Array.isArray(color.rgba)
     && color.rgba.length === 4
     && color.rgba.every((channel) => Number.isFinite(channel) && channel >= 0 && channel <= 1);
+}
+
+function isValidColorGradientStops(
+  stops: { offset: number; color: { colorSpace?: string; rgba: [number, number, number, number] } }[] | undefined,
+): boolean {
+  if (!Array.isArray(stops) || stops.length < 2) {
+    return false;
+  }
+  let previousOffset = -Infinity;
+  for (const stop of stops) {
+    if (
+      !Number.isFinite(stop.offset)
+      || stop.offset < 0
+      || stop.offset > 1
+      || stop.offset < previousOffset
+      || !isValidResolvedColor(stop.color)
+    ) {
+      return false;
+    }
+    previousOffset = stop.offset;
+  }
+  return true;
 }
 
 function isSupportedFillRule(fillRule: CanvasFillRule | undefined): boolean {
