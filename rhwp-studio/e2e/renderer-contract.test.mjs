@@ -241,6 +241,11 @@ compareCaseContract('renderOp', 'LayerPaintOp dispatch');
 compareCaseContract('renderFormObject', 'form object replay');
 compareCaseContract('renderLine', 'line style replay');
 compareCaseContract('resolveImagePlacement', 'image fill placement');
+assert.deepEqual(
+  stringEqualityLiterals(extractMethodBody(canvas2dSource, 'drawDomImage'), 'fillMode'),
+  stringEqualityLiterals(extractMethodBody(canvaskitSource, 'drawEncodedImage'), 'fillMode'),
+  'image fill-mode replay branches must stay aligned between Canvas2D and CanvasKit',
+);
 compareCaseLabels(
   caseLabels(extractFunctionBody(canvas2dSource, 'appendPathCommands')),
   caseLabels(extractMethodBody(canvaskitSource, 'makePath')),
