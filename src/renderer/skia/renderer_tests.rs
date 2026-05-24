@@ -1818,6 +1818,60 @@ fn static_subtree_cache_key_includes_text_variant_metadata() {
 }
 
 #[test]
+fn static_subtree_cache_key_includes_sidecar_variant_ops() {
+    fn tree_with_sidecar_outline(outline: LayerGlyphOutlinePaint) -> PageLayerTree {
+        let bbox = BoundingBox::new(0.0, 0.0, 190.0, 82.0);
+        PageLayerTree::builder(
+            190.0,
+            82.0,
+            LayerNode::leaf(
+                bbox,
+                None,
+                vec![PaintOp::TextRun {
+                    bbox,
+                    run: LayerTextRunPaint {
+                        source: Some(outline.source.clone()),
+                        variant: Some(PaintVariantMeta::text_run_default("text-0")),
+                        text: "A".to_string(),
+                        style: TextStyle {
+                            font_family: "sans-serif".to_string(),
+                            font_size: 32.0,
+                            color: 0x000000,
+                            ..Default::default()
+                        },
+                        positions: vec![118.0, 150.0],
+                        baseline: 54.0,
+                        ..Default::default()
+                    },
+                }],
+            ),
+        )
+        .variant_ops(vec![PaintOp::GlyphOutline {
+            bbox,
+            outline: Box::new(outline),
+        }])
+        .build()
+    }
+
+    let outline_a = glyph_outline_test_paint(GlyphOutlinePayloadKind::MonochromeFill, None, None);
+    let mut outline_b = outline_a.clone();
+    outline_b.paths[0].commands[1] = PathCommand::LineTo(20.0, 0.0);
+    let tree_a = tree_with_sidecar_outline(outline_a);
+    let tree_b = tree_with_sidecar_outline(outline_b);
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node_with_sidecars(&tree.root, &tree.resources, &tree.variant_ops);
+        cache_key.finish()
+    };
+
+    assert_ne!(
+        cache_key(&tree_a),
+        cache_key(&tree_b),
+        "sidecar GlyphOutline payloads affect selected replay and must affect static subtree cache keys"
+    );
+}
+
+#[test]
 fn static_subtree_cache_key_includes_glyph_variant_diagnostics() {
     let glyph_run_tree = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
     let mut rejected_glyph_run_tree =

@@ -2,9 +2,10 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::paint::{
-    CacheHint, ClipKind, ClipPolicy, ImageResourceId, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
-    LayerOutputOptions, LayerSemantic, LayerSemanticRole, LayerTextControlMarkKind,
-    LayerTextOrientation, LayerTextRunPaint, PaintOp, PaintTextStyle, ResourceArena, SvgResourceId,
+    sidecars_for_leaf_ops, CacheHint, ClipKind, ClipPolicy, ImageResourceId, LayerGlyphRunPaint,
+    LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic, LayerSemanticRole,
+    LayerTextControlMarkKind, LayerTextOrientation, LayerTextRunPaint, PaintOp, PaintTextStyle,
+    ResourceArena, SvgResourceId,
 };
 use crate::renderer::render_tree::{BoundingBox, FieldMarkerType, ShapeTransform};
 use crate::renderer::{
@@ -195,6 +196,15 @@ impl StaticSubtreeCacheKey {
     }
 
     pub(super) fn mix_layer_node(&mut self, node: &LayerNode, resources: &ResourceArena) {
+        self.mix_layer_node_with_sidecars(node, resources, &[]);
+    }
+
+    pub(super) fn mix_layer_node_with_sidecars(
+        &mut self,
+        node: &LayerNode,
+        resources: &ResourceArena,
+        variant_ops: &[PaintOp],
+    ) {
         self.mix_bbox(&node.bounds);
         self.mix_option_u32(node.source_node_id);
         self.mix_semantic(&node.semantic);
@@ -207,7 +217,7 @@ impl StaticSubtreeCacheKey {
                 self.mix_cache_hint(*cache_hint);
                 self.mix_usize(children.len());
                 for child in children {
-                    self.mix_layer_node(child, resources);
+                    self.mix_layer_node_with_sidecars(child, resources, variant_ops);
                 }
             }
             LayerNodeKind::ClipRect {
@@ -220,13 +230,17 @@ impl StaticSubtreeCacheKey {
                 self.mix_bbox(clip);
                 self.mix_clip_kind(*clip_kind);
                 self.mix_clip_policy(clip_policy);
-                self.mix_layer_node(child, resources);
+                self.mix_layer_node_with_sidecars(child, resources, variant_ops);
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
+                let sidecars = sidecars_for_leaf_ops(ops, variant_ops);
                 self.mix_u8(2);
                 self.mix_cache_hint(*cache_hint);
-                self.mix_usize(ops.len());
+                self.mix_usize(ops.len() + sidecars.len());
                 for op in ops {
+                    self.mix_paint_op(op, resources);
+                }
+                for op in &sidecars {
                     self.mix_paint_op(op, resources);
                 }
             }

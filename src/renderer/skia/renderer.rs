@@ -753,7 +753,7 @@ impl SkiaLayerRenderer {
                     cache_key.mix_str(replay.profile.as_str());
                     cache_key.mix_output_options(&replay.output_options);
                     cache_key.mix_f64(replay.scale);
-                    cache_key.mix_layer_node(node, resources);
+                    cache_key.mix_layer_node_with_sidecars(node, resources, variant_ops);
                     let cache_key = cache_key.finish();
                     let lookup = {
                         let mut cache = self.static_picture_cache.borrow_mut();
