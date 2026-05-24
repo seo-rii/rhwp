@@ -749,6 +749,119 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `static picture cache keeps distinct resource payload keys=${JSON.stringify(staticPictureResourceProbe)}`,
   );
 
+  setTestCase('canvaskit-static-picture-cache-arraybuffer-resource-invalidation');
+  await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
+  const staticPictureArrayBufferProbe = await page.evaluate(() => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const renderer = pageRenderer?.canvaskitRenderer;
+    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const tree = {
+      pageWidth: 64,
+      pageHeight: 64,
+      profile: 'screen',
+      resources: {
+        tableId: 82,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [new Uint8Array([1, 2, 3, 4]).buffer],
+        fontBlobHashes: ['same-producer-hash'],
+        fontBlobKeys: ['mutable-font-blob'],
+      },
+      root: {
+        kind: 'group',
+        sourceNodeId: 8200,
+        semantic: { role: 'page' },
+        bounds: { x: 0, y: 0, width: 64, height: 64 },
+        cacheHint: 'staticSubtree',
+        children: [{
+          kind: 'leaf',
+          sourceNodeId: 8201,
+          bounds: { x: 0, y: 0, width: 64, height: 64 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'path',
+            bbox: { x: 10, y: 10, width: 24, height: 24 },
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+            commands: [
+              { type: 'moveTo', x: 10, y: 10 },
+              { type: 'lineTo', x: 34, y: 10 },
+              { type: 'lineTo', x: 34, y: 34 },
+              { type: 'lineTo', x: 10, y: 34 },
+              { type: 'closePath' },
+            ],
+            style: {
+              fillColor: '#000000',
+              strokeColor: null,
+              strokeWidth: 1,
+              strokeDash: 'solid',
+              opacity: 1,
+            },
+          }],
+        }],
+      },
+    };
+
+    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    pageRenderer.wasm.getPageLayerTree = () => tree;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const pageInfo = {
+      pageIndex: 0,
+      width: 64,
+      height: 64,
+      sectionIndex: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      marginHeader: 0,
+      marginFooter: 0,
+    };
+
+    try {
+      pageRenderer.clearLayerTreeCache();
+      renderer.clearStaticPictureCache?.();
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      pageRenderer.cancelReRender?.(0);
+      const afterFirstKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
+
+      tree.resources.fontBlobs[0] = new Uint8Array([9, 8, 7, 6]).buffer;
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      pageRenderer.cancelReRender?.(0);
+      const afterSecondKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
+
+      return {
+        afterFirstKeys,
+        afterSecondKeys,
+        cacheSize: renderer.staticPictureCache?.size ?? -1,
+      };
+    } finally {
+      pageRenderer.cancelAll?.();
+      pageRenderer.clearLayerTreeCache?.();
+      renderer.clearStaticPictureCache?.();
+      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
+      canvas.remove();
+    }
+  });
+
+  assert(
+    !staticPictureArrayBufferProbe.error,
+    staticPictureArrayBufferProbe.error || 'canvaskit static picture ArrayBuffer invalidation probe available',
+  );
+  assert(
+    staticPictureArrayBufferProbe.cacheSize >= 2
+      && staticPictureArrayBufferProbe.afterSecondKeys.length > staticPictureArrayBufferProbe.afterFirstKeys.length,
+    `static picture cache key fingerprints ArrayBuffer resources=${JSON.stringify(staticPictureArrayBufferProbe)}`,
+  );
+
   setTestCase('canvaskit-software-surface-backend');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
   const softwareSurfaceProbe = await page.evaluate(() => {

@@ -118,6 +118,14 @@ function stableValueFingerprint(value: unknown): string {
       appendString(`${typeof item}:${String(item)}`);
       return;
     }
+    if (item instanceof ArrayBuffer) {
+      const bytes = new Uint8Array(item);
+      appendString(`buffer:${bytes.length}:`);
+      for (const byte of bytes) {
+        appendByte(byte);
+      }
+      return;
+    }
     if (ArrayBuffer.isView(item)) {
       const view = item as ArrayBufferView;
       const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
