@@ -278,6 +278,161 @@ homogeneous run splitting when those fallbacks are available. Fallback-free
 strict writers must reject unsupported scope or mixed-orientation replay rather
 than silently skipping it.
 
+## Implementation-Ready Backlog
+
+This backlog turns the design choices above into code-sized batches. Each batch
+must leave CanvasKit and future native Skia on the same replay contract. If a
+batch discovers that it needs browser-only parsing, hidden Canvas2D drawing, or
+backend-dependent semantics, stop the writer work and add a validator,
+diagnostic, or resource contract instead.
+
+### Batch 1. COLRv1 Stage-1 Graph Skeleton
+
+Goal: add the first COLRv1 graph vocabulary and validation without enabling a
+broad writer path.
+
+Expected code shape:
+
+- schema/type vocabulary adds a `ColorLayers.ColrV1` graph family with
+  stage-1 nodes only;
+- stage-1 nodes are tree-only `solidPath` and local affine `transform`;
+- each `solidPath` contains producer-resolved path commands, resolved RGBA,
+  `fillRule`, layer/source glyph provenance, palette provenance, and source
+  range metadata;
+- graph validation rejects cycles, unreachable nodes, unknown nodes,
+  unsupported gradients/blends/clips, scope-changing transforms, excessive
+  depth, and excessive node count;
+- the first fixture is an internal or native deterministic reference fixture,
+  not an SVG/Canvas2D exporter widening.
+
+Likely touchpoints:
+
+- Rust schema and text payload definitions;
+- Studio text variant and glyph-outline payload status helpers;
+- renderer contract tests for new payload vocabulary and unsupported reasons;
+- native/internal fixture code that can assert the normalized graph result.
+
+Definition of done:
+
+- COLRv1 stage-1 payloads validate when they contain only solid color and local
+  transform nodes;
+- COLRv1 stage-2 or later nodes produce deterministic unsupported diagnostics;
+- no CanvasKit writer starts relying on font-native COLR table interpretation;
+- no paint-order, clip, effect, cache, or cross-scope semantics change.
+
+### Batch 2. BitmapGlyph Strict Validator
+
+Goal: close the strict image-strike contract before enabling broader writer
+emission.
+
+Expected code shape:
+
+- `BitmapGlyph` strict payload validation requires one producer-selected image
+  strike;
+- available strikes, chosen-strike reason, and missing ideal strike remain
+  diagnostics/provenance only;
+- strict replay requires `alphaMode`, `scalingPolicy`, `filtering`,
+  placement, `sourceRangeUtf8`, and `glyphRange`;
+- strict replay rejects backend strike reselection and `backendDefault`
+  scaling/filtering;
+- missing color space maps to explicit sRGB default plus a
+  `colorSpaceDefaulted` diagnostic.
+
+Likely touchpoints:
+
+- glyph-outline payload status helpers;
+- renderer diagnostics vocabulary;
+- negative fixtures for missing required fields, backend-default filtering,
+  malformed resource refs, and strike reselection attempts.
+
+Definition of done:
+
+- compatibility export can still fall back to `TextRun` or `GlyphRun`;
+- strictVisual without a valid image-strike payload hard rejects;
+- Canvas2D/SVG writer work remains blocked until the validator and negative
+  fixtures are stable.
+
+### Batch 3. SvgGlyph Static Vector Contract
+
+Goal: make the sanitized vector resource contract explicit before widening
+writer emission.
+
+Expected code shape:
+
+- canonical payload references `VectorResourceId` instead of inline raw SVG;
+- producer is responsible for sanitizing into static vector content;
+- validator requires `securityMode=staticSanitized`;
+- strict replay requires `scriptAllowed=false`,
+  `animationAllowed=false`, `externalResourcesAllowed=false`, and
+  `interactivityAllowed=false`;
+- `viewBox` is required and `intrinsicSize` remains optional;
+- raw SVG-in-font direct replay remains unsupported.
+
+Likely touchpoints:
+
+- shared static vector resource validation;
+- SVG exporter eligibility checks;
+- CanvasKit/native Skia fallback diagnostics;
+- negative fixtures for unsafe flags, missing `viewBox`, external references,
+  raw replay attempts, and unsupported vector primitives.
+
+Definition of done:
+
+- strict SVG/native Skia/CanvasKit eligibility all agree on the same sanitized
+  static-vector contract;
+- unsafe vector resources choose compatibility fallback or strict rejection;
+- no DOM parser, object URL, browser SVG element, or Canvas2D overlay is added.
+
+### Batch 4. CanvasKit Variation And TTC Proof Fixtures
+
+Goal: keep exact-font replay conservative while adding proof fixtures that can
+eventually unlock CanvasKit support.
+
+Expected code shape:
+
+- CanvasKit continues to reject required variation instances with
+  `variationUnsupported`;
+- CanvasKit continues to reject unsupported TTC/OTC face indices with
+  `faceIndexUnsupported`;
+- native Skia may select `GlyphRun` while CanvasKit selects `TextRun`
+  fallback, with the divergence recorded in `VariantSelectionReport`;
+- proof fixtures record the exact blob, face, axis tuple, glyph ids, advances,
+  bounds, and negative mismatch cases.
+
+Definition of done:
+
+- no CanvasKit strict replay enablement happens without the positive and
+  negative proof fixtures;
+- public `u32` glyph ids keep the CanvasKit adapter range guard;
+- backend divergence is deterministic and visible in diagnostics.
+
+### Batch 5. Layout, Scope, And Vertical Gates
+
+Goal: keep large-authority changes out of CanvasKit parity closure while their
+vocabulary and diagnostics remain ready.
+
+Expected code shape:
+
+- `lineBreakRisk` stays report-only and `lineBreakWouldChange` remains absent;
+- shapedModern width input waits for a representative HWP corpus, width-delta
+  distribution, stable fallback font split, stable cluster mapping, vertical
+  metric diagnostics, and table/cell review;
+- `text.crossScopeVariants` remains a required feature for any `scopeRef` that
+  differs from the text op scope;
+- cross-scope diagnostics name the boundary type: `crossLeaf`, `crossClip`,
+  `crossTransform`, `crossEffect`, or `crossCacheBoundary`;
+- public `MixedPerGlyph` writer emission remains blocked until cluster-level
+  orientation semantics, transform runs, and fallback/reject policy are stable.
+
+Definition of done:
+
+- compatibility writers use same-scope `TextRun` fallback or homogeneous run
+  splitting when available;
+- fallback-free strict writers reject unsupported layout, scope, or mixed
+  orientation paths;
+- no hwpCompat measurement, line breaking, pagination, or layout authority
+  changes occur in CanvasKit parity batches.
+
 ## Commit Shape
 
 Keep commits small and coherent:
