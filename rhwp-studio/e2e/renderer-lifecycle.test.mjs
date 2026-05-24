@@ -4916,6 +4916,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
         paintOrder: 'fillThenStroke',
       },
     });
+    const unsupportedStrokeJoinCapOutline = outlineFor('canvaskit-outline-stroke-unsupported-join-cap', {
+      payloadKind: 'monochromeFillStroke',
+      variant: variantFor('canvaskit-outline-stroke-unsupported-join-cap', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.monochromeFillStroke'],
+        anchorOpId: 'op-text-canvaskit-outline-stroke-unsupported-join-cap',
+        localPaintOrder: 0,
+      }),
+      stroke: {
+        widthPx: 3,
+        color: '#0000ff',
+        opacity: 1,
+        join: 'round',
+        cap: 'square',
+        miterLimit: 4,
+        paintOrder: 'fillThenStroke',
+      },
+    });
     const colorOutline = outlineFor('canvaskit-outline-color', {
       payloadKind: 'colorLayers',
       variant: variantFor('canvaskit-outline-color', 'glyphOutline', {
@@ -5569,6 +5587,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     return {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
       stroke: await render(treeFor(strokeOutline)),
+      unsupportedStrokeJoinCap: await render(treeFor(unsupportedStrokeJoinCapOutline)),
       colorLayers: await render(treeFor(colorOutline)),
       colorLayersColrV1: await render(treeFor(colorV1Outline)),
       bitmapGlyph: await render(treeFor(bitmapOutline)),
@@ -5696,6 +5715,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitStrokeReport?.selectedVariantId === 'glyphOutline'
       && canvaskitStrokeReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects stroke GlyphOutline=${JSON.stringify(canvaskitStrokeReport)}`,
+  );
+  const canvaskitUnsupportedStrokeJoinCapReport = canvaskitGlyphOutlineProbe
+    .unsupportedStrokeJoinCap
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-stroke-unsupported-join-cap');
+  assert(
+    canvaskitUnsupportedStrokeJoinCapReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedStrokeJoinCapReport?.outlineEligibility?.payloadSupported === false
+      && canvaskitUnsupportedStrokeJoinCapReport?.outlineEligibility?.replayEligible === false
+      && canvaskitUnsupportedStrokeJoinCapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('glyphOutlineStrokeStyleUnsupported'),
+      ),
+    `CanvasKit rejects unsupported stroke join/cap payload=${JSON.stringify(canvaskitUnsupportedStrokeJoinCapReport)}`,
   );
   const canvaskitColorReport = canvaskitGlyphOutlineProbe.colorLayers?.diagnostics?.find(
     (report) => report.equivalenceGroup === 'canvaskit-outline-color',
@@ -6731,6 +6764,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitGlyphOutlineProbe.stroke.png,
     (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 100 && pixel.green < 120,
   );
+  const canvaskitUnsupportedStrokeJoinCapBlackPixels = canvaskitGlyphOutlineProbe
+    .unsupportedStrokeJoinCap
+    .blackPixels;
   const canvaskitColorBluePixels = countPixels(
     canvaskitGlyphOutlineProbe.colorLayers.png,
     (pixel) => pixel.alpha > 32 && pixel.blue > 150 && pixel.red < 100 && pixel.green < 120,
@@ -7022,6 +7058,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     canvaskitStrokeBluePixels > 20,
     `CanvasKit strict outline paints stroke path blue=${canvaskitStrokeBluePixels}`,
+  );
+  assert(
+    canvaskitUnsupportedStrokeJoinCapBlackPixels < 20,
+    `CanvasKit strict outline does not replay unsupported stroke join/cap payload black=${canvaskitUnsupportedStrokeJoinCapBlackPixels}`,
   );
   assert(
     canvaskitColorBluePixels > 100,
