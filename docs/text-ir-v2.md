@@ -335,10 +335,10 @@ The main implementation touchpoints are:
 
 | Touchpoint | Role |
 | --- | --- |
-| Rust layer schema and `src/core/text-variants.ts` | payload validity, feature gates, downgrade/reject policy, and selected/rejected reason vocabulary |
+| Rust layer schema, `src/paint/text_v2.rs`, and `rhwp-studio/src/core/text-variants.ts` | payload validity, feature gates, downgrade/reject policy, and selected/rejected reason vocabulary |
 | Studio JSON readers and `glyph-outline-payload-status` helpers | family-specific payload eligibility and user-facing diagnostics |
-| `rhwp-studio/src/lib/rendering/canvaskit-renderer.ts` and `canvaskit/*` helpers | direct CanvasKit replay, resource caches, and native-ready adapter boundaries |
-| `rhwp-studio/src/lib/rendering/canvas2d-layer-renderer.ts` | compatibility reference only; CanvasKit may compare behavior but must not import or delegate to it |
+| `rhwp-studio/src/view/canvaskit-renderer.ts` and `rhwp-studio/src/view/canvaskit/*` helpers | direct CanvasKit replay, resource caches, and native-ready adapter boundaries |
+| `rhwp-studio/src/view/canvas2d-layer-renderer.ts` | compatibility reference only; CanvasKit may compare behavior but must not import or delegate to it |
 | `rhwp-studio/e2e/renderer-contract.test.mjs` | static parity and dependency guard for dispatch cases, payload branches, and forbidden backend dependencies |
 | `rhwp-studio/e2e/renderer-lifecycle.test.mjs` | runtime lifecycle, resource, fallback, and fuzzy visual fixtures |
 
