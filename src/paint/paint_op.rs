@@ -2391,15 +2391,32 @@ mod tests {
         };
         assert!(radial_graph.has_colrv1_stage1_contract());
 
-        let mut unordered_stops = linear_graph.clone();
-        unordered_stops.nodes[0]
+        let mut decreasing_stops = linear_graph.clone();
+        decreasing_stops.nodes[0]
+            .linear_gradient_path
+            .as_mut()
+            .unwrap()
+            .gradient
+            .stops[0]
+            .offset = 0.75;
+        decreasing_stops.nodes[0]
+            .linear_gradient_path
+            .as_mut()
+            .unwrap()
+            .gradient
+            .stops[1]
+            .offset = 0.5;
+        assert!(!decreasing_stops.has_colrv1_stage1_contract());
+
+        let mut out_of_range_stops = linear_graph.clone();
+        out_of_range_stops.nodes[0]
             .linear_gradient_path
             .as_mut()
             .unwrap()
             .gradient
             .stops[1]
             .offset = -0.25;
-        assert!(!unordered_stops.has_colrv1_stage1_contract());
+        assert!(!out_of_range_stops.has_colrv1_stage1_contract());
 
         let mut invalid_radius = radial_graph;
         invalid_radius.nodes[0]
