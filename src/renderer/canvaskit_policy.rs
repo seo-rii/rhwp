@@ -864,6 +864,14 @@ fn canvaskit_glyph_run_replay_status(
     if !run.paint_style.is_fill_only_glyph_replay() {
         return VariantReplayStatus::rejected(VariantRejectReason::UnsupportedPaintEffect);
     }
+    if !run.shape_key.font_instance.variations.is_empty() {
+        let mut status =
+            canvaskit_glyph_run_font_rejection(run, VariantRejectReason::VariationUnsupported);
+        if let Some(report) = status.font_verification.as_mut() {
+            report.variation_supported = Some(false);
+        }
+        return status;
+    }
     let font_resources = resources.font_resources();
     let Some(face) = font_resources
         .faces
@@ -879,6 +887,18 @@ fn canvaskit_glyph_run_replay_status(
     else {
         return VariantReplayStatus::rejected(VariantRejectReason::ExactFaceUnavailable);
     };
+    if face.face_index != 0 {
+        let mut status =
+            canvaskit_glyph_run_font_rejection(run, VariantRejectReason::FaceIndexUnsupported);
+        if let Some(report) = status.font_verification.as_mut() {
+            report.blob_key = Some(face.blob_key.0.clone());
+            report.portability = Some(blob.portability.kind().as_str().to_string());
+            report.blob_resolved = Some(true);
+            report.exact_face_instantiated = Some(false);
+            report.face_index_supported = Some(false);
+        }
+        return status;
+    }
     if !blob.portability.is_self_contained_replayable() {
         return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
     }
@@ -909,6 +929,28 @@ fn canvaskit_glyph_run_replay_status(
         return VariantReplayStatus::rejected(VariantRejectReason::GlyphIdOutOfRange);
     }
     VariantReplayStatus::replayable()
+}
+
+fn canvaskit_glyph_run_font_rejection(
+    run: &LayerGlyphRunPaint,
+    reason: VariantRejectReason,
+) -> VariantReplayStatus {
+    let mut status = VariantReplayStatus::rejected(reason);
+    status.font_verification = Some(VariantFontVerificationReport {
+        face_key: Some(run.shape_key.font_instance.face_key.0.clone()),
+        blob_key: None,
+        portability: None,
+        expected_digest: None,
+        blob_resolved: None,
+        digest_matched: None,
+        exact_face_instantiated: None,
+        face_index_supported: None,
+        variation_supported: None,
+        effect_supported: None,
+        replay_eligible: false,
+        reason: Some(reason),
+    });
+    status
 }
 
 fn canvaskit_glyph_outline_replay_status(
@@ -1133,20 +1175,23 @@ fn cache_hint_detail(cache_hint: CacheHint) -> &'static str {
 mod tests {
     use super::{
         analyze_canvaskit_replay_plan, canvaskit_glyph_outline_payload_status,
-        canvaskit_static_svg_fragment_has_path_layer, CanvasKitReplayMode, CanvasKitReplayStatus,
-        CanvasKitTextVariantPartReport, CanvasKitTextVariantReport, GlyphOutlinePayloadKind,
-        VariantRejectReason,
+        canvaskit_glyph_run_replay_status, canvaskit_static_svg_fragment_has_path_layer,
+        CanvasKitReplayMode, CanvasKitReplayStatus, CanvasKitTextVariantPartReport,
+        CanvasKitTextVariantReport, GlyphOutlinePayloadKind, VariantRejectReason,
     };
     use crate::paint::{
-        BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
-        BitmapStrikeSelection, ColorGlyphFormat, ColorLayersPayload, ColorPaintGraphNode,
-        ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintSolidPathNode,
-        ColorPaintTransformNode, FontColorGlyphRef, GlyphOutlineFillRule, GlyphRange,
-        GlyphRunDiagnostics, GlyphRunReplayEligibility, LayerAffineTransform,
-        LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerNode, LayerTextRunPaint, PageLayerTree,
-        PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena, SvgGlyphPayload,
-        SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceId, TextSourceRange,
-        TextSourceSpan, TextVariantKind, TextVariantQuality,
+        BinaryResourceKind, BinaryResourceRef, BitmapAlphaMode, BitmapGlyphFiltering,
+        BitmapGlyphPayload, BitmapGlyphScalingPolicy, BitmapStrikeSelection, ColorGlyphFormat,
+        ColorLayersPayload, ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
+        ColorPaintSolidPathNode, ColorPaintTransformNode, FontBlobKey, FontBlobResource,
+        FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId,
+        FontInstanceKey, FontPortability, FontResourceSource, GlyphOutlineFillRule, GlyphRange,
+        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
+        LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerNode, LayerPoint,
+        LayerTextRunPaint, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor,
+        ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
+        SvgGlyphViewBox, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
+        TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
     };
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
     use crate::renderer::render_tree::BoundingBox;
@@ -1206,6 +1251,84 @@ mod tests {
             missing_glyph_count: 0,
             used_fallback_font_count: 0,
             reason: None,
+        }
+    }
+
+    fn add_portable_test_font(resources: &mut ResourceArena, face_index: u32) -> FontFaceKey {
+        let blob_key = FontBlobKey("test-blob".to_string());
+        let face_key = FontFaceKey("test-face".to_string());
+        let digest = FontDigest {
+            algorithm: "sha256".to_string(),
+            value: "test-digest".to_string(),
+        };
+        let data_ref = BinaryResourceRef {
+            kind: BinaryResourceKind::FontBlob,
+            id: "test-font-binary".to_string(),
+        };
+        resources.font_resources_mut().blobs.push(FontBlobResource {
+            id: blob_key.clone(),
+            digest: Some(digest.clone()),
+            source: FontResourceSource::Embedded,
+            data_ref: Some(data_ref.clone()),
+            portability: FontPortability::PortableBlob { digest, data_ref },
+        });
+        resources.font_resources_mut().faces.push(FontFaceResource {
+            id: face_key.clone(),
+            blob_key,
+            face_index,
+            postscript_name: Some("TestFace".to_string()),
+            family_names: Vec::new(),
+            style_names: Vec::new(),
+            weight_class: None,
+            width_class: None,
+            italic: None,
+        });
+        face_key
+    }
+
+    fn glyph_run(face_key: FontFaceKey, variations: Vec<VariationAxisValue>) -> LayerGlyphRunPaint {
+        LayerGlyphRunPaint {
+            source: source_span(),
+            variant: PaintVariantMeta {
+                equivalence_group: "text-0".to_string(),
+                variant_id: "glyphRun".to_string(),
+                variant_kind: TextVariantKind::GlyphRun,
+                part_index: 0,
+                part_count: 1,
+                is_default_fallback: false,
+                requires: vec!["text.glyphRun".to_string()],
+                quality: Some(TextVariantQuality::Exact),
+                anchor_op_id: Some("op-text-0".to_string()),
+                local_paint_order: Some(0),
+            },
+            paint_style: PaintTextStyle::from(&TextStyle::default()),
+            shape_key: ShapeKey {
+                font_instance: FontInstanceKey {
+                    face_key,
+                    size_px: 12.0,
+                    variations,
+                    synthetic_bold: false,
+                    synthetic_italic: false,
+                },
+                direction: TextDirection::Ltr,
+                writing_mode: WritingMode::HorizontalTb,
+                script: None,
+                language: None,
+                features: Vec::new(),
+                shaping_engine: ShapingEngineId("test-shaper".to_string()),
+                fallback_policy: FontFallbackPolicyId("none".to_string()),
+            },
+            placement: placement(),
+            glyph_ids: vec![1],
+            positions: vec![LayerPoint { x: 0.0, y: 0.0 }],
+            advances: None,
+            clusters: Vec::new(),
+            direction: TextDirection::Ltr,
+            bidi_level: None,
+            writing_mode: WritingMode::HorizontalTb,
+            orientation: GlyphRunOrientation::Horizontal,
+            glyph_transforms: None,
+            diagnostics: diagnostics(),
         }
     }
 
@@ -1491,6 +1614,63 @@ mod tests {
             ),
             (false, Some(VariantRejectReason::UnsupportedColorGlyph))
         );
+    }
+
+    #[test]
+    fn canvaskit_rejects_variation_instances_until_exact_construction_is_proven() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let run = glyph_run(
+            face_key,
+            vec![VariationAxisValue {
+                tag: "wght".to_string(),
+                value: 700.0,
+            }],
+        );
+
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(!status.replayable);
+        assert_eq!(
+            status.reason,
+            Some(VariantRejectReason::VariationUnsupported)
+        );
+        let font_report = status
+            .font_verification
+            .expect("variation rejection should carry font verification");
+        assert_eq!(
+            font_report.reason,
+            Some(VariantRejectReason::VariationUnsupported)
+        );
+        assert_eq!(font_report.variation_supported, Some(false));
+        assert_eq!(font_report.replay_eligible, false);
+    }
+
+    #[test]
+    fn canvaskit_rejects_nonzero_face_index_until_exact_construction_is_proven() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 1);
+        let run = glyph_run(face_key, Vec::new());
+
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(!status.replayable);
+        assert_eq!(
+            status.reason,
+            Some(VariantRejectReason::FaceIndexUnsupported)
+        );
+        let font_report = status
+            .font_verification
+            .expect("face-index rejection should carry font verification");
+        assert_eq!(
+            font_report.reason,
+            Some(VariantRejectReason::FaceIndexUnsupported)
+        );
+        assert_eq!(font_report.blob_key.as_deref(), Some("test-blob"));
+        assert_eq!(font_report.blob_resolved, Some(true));
+        assert_eq!(font_report.exact_face_instantiated, Some(false));
+        assert_eq!(font_report.face_index_supported, Some(false));
+        assert_eq!(font_report.replay_eligible, false);
     }
 
     #[test]
