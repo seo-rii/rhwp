@@ -289,6 +289,87 @@ future native Skia renderer. Native Skia parity should therefore be considered
 when choosing the canonical CanvasKit direct path, even if the first fixture is
 browser-only.
 
+## CanvasKit Implementation Plan
+
+CanvasKit feature work should now proceed as native-ready direct replay rather
+than as a preview shim. The implementation goal is not merely to make the web
+canvas view look close to Canvas2D; it is to converge the browser CanvasKit
+adapter and future native Skia renderer on the same replay contract. Canvas2D is
+therefore the compatibility reference, while native Skia constraints are the
+design guardrail.
+
+Every remaining CanvasKit feature should follow the same sequence:
+
+1. identify the Canvas2D behavior and the `PageLayerTree` data it consumes;
+2. add or extend a renderer-contract test so Canvas2D and CanvasKit cannot drift
+   in dispatch cases, payload branches, resource requirements, or fallback
+   reasons;
+3. implement direct CanvasKit replay with CanvasKit paths, paints, images,
+   fonts, surfaces, and resource caches instead of DOM or Canvas2D overlay
+   passes;
+4. add an E2E fixture that asserts exact semantic decisions and uses fuzzy
+   pixel comparison only for rasterizer output;
+5. keep unsupported cases explicit with deterministic diagnostics and fallback
+   selection.
+
+CanvasKit source files must stay free of browser-canvas dependencies such as
+`CanvasRenderingContext2D`, `Path2D`, DOM image elements, `DOMParser`, object
+URLs, browser text measurement, or imports from the Canvas2D renderer. If a
+feature needs preprocessing that is currently easier in the browser, the
+preprocessing must be promoted into an explicit resource pipeline with a
+diagnostic record and a native Skia equivalent, not hidden inside the CanvasKit
+backend.
+
+The implementation lanes are:
+
+| Lane | Scope | Entry gate | Exit gate |
+| --- | --- | --- | --- |
+| Direct replay parity | Canvas2D paint-op coverage in CanvasKit | Canvas2D behavior and payload branches identified | CanvasKit dispatch/branch contract test plus E2E visual or semantic fixture |
+| Resource replay | images, patterns, vector resources, font blobs | resource identity and cache key defined | no DOM resource dependency, deterministic cache diagnostics, native-ready resource shape |
+| `GlyphOutline` payloads | `colorLayers`, `bitmapGlyph`, `svgGlyph`, stroke | family feature gate and validator exist | strict replay fixture, unsupported payload fixture, selected/rejected reason exact |
+| Font capability | CanvasKit `GlyphRun` exact font/face/instance support | portable blob and expected face/instance identity available | positive proof fixture plus negative fallback fixture |
+| Layout migration | shaped measurement and shapedModern | report-only telemetry corpus exists | opt-in profile only; `hwpCompat` remains default until a v3 authority decision |
+| Cross-scope/vertical | cross-scope variants and `MixedPerGlyph` | concrete use case and backend semantics identified | writer emission behind required feature, with compatibility fallback or strict rejection |
+
+The main implementation touchpoints are:
+
+| Touchpoint | Role |
+| --- | --- |
+| Rust layer schema and `src/core/text-variants.ts` | payload validity, feature gates, downgrade/reject policy, and selected/rejected reason vocabulary |
+| Studio JSON readers and `glyph-outline-payload-status` helpers | family-specific payload eligibility and user-facing diagnostics |
+| `rhwp-studio/src/lib/rendering/canvaskit-renderer.ts` and `canvaskit/*` helpers | direct CanvasKit replay, resource caches, and native-ready adapter boundaries |
+| `rhwp-studio/src/lib/rendering/canvas2d-layer-renderer.ts` | compatibility reference only; CanvasKit may compare behavior but must not import or delegate to it |
+| `rhwp-studio/e2e/renderer-contract.test.mjs` | static parity and dependency guard for dispatch cases, payload branches, and forbidden backend dependencies |
+| `rhwp-studio/e2e/renderer-lifecycle.test.mjs` | runtime lifecycle, resource, fallback, and fuzzy visual fixtures |
+
+The next implementation order is intentionally narrow:
+
+1. keep broad CanvasKit-vs-Canvas2D parity tests as the first guard for any
+   newly touched paint-op family;
+2. add the COLRv1 graph skeleton and deterministic native/internal reference
+   fixture before expanding graph nodes beyond solid color plus transform;
+3. strengthen `BitmapGlyph` and `SvgGlyph` validators and negative fixtures
+   before widening writer emission;
+4. keep CanvasKit variation and TTC/OTC strict replay fallback-only until exact
+   construction proof fixtures pass;
+5. keep shapedModern, cross-scope variants, and `MixedPerGlyph` writer emission
+   blocked until their corpus, scope, and vertical semantics gates are met.
+
+Each commit should keep one lane coherent: either a renderer implementation with
+its fixture, a validator/diagnostic tightening with negative fixtures, or a
+contract-test guard. Mixing unrelated payload families in one patch makes it
+harder to tell whether a later CanvasKit/native Skia regression is a schema
+problem, a resource problem, or a rasterization problem.
+
+The first implementation batch after this design update should therefore be
+documentation-neutral and test-first:
+
+1. add a contract or lifecycle fixture that describes the next missing
+   COLRv1/BitmapGlyph/SvgGlyph or CanvasKit capability case;
+2. tighten the validator or renderer branch until that fixture passes;
+3. run the targeted E2E file and the Studio build;
+4. push only that coherent unit before moving to the next payload family.
+
 ## GlyphRun Parity Fixture Milestone
 
 The next milestone is limited to `GlyphRun` replay parity and fallback
