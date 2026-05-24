@@ -168,6 +168,11 @@ function extractFunctionBody(source, functionName) {
   return extractBlockBody(source, signatureIndex, functionName);
 }
 
+function importBlockFrom(source, specifier) {
+  const blocks = source.match(/^import[\s\S]*?;$/gm) ?? [];
+  return blocks.find((block) => block.includes(`from '${specifier}'`)) ?? '';
+}
+
 function extractSwitchCaseBlock(methodBody, caseLabel) {
   const casePattern = new RegExp(`^\\s*case '${caseLabel}':`, 'm');
   const caseMatch = methodBody.match(casePattern);
@@ -288,14 +293,24 @@ assert.equal(
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',
 );
-const canvaskitLayerCanvasUtilsImport = canvaskitSource.match(/import \{[\s\S]*?\} from '\.\/layer-canvas-utils';/)?.[0] ?? '';
+const canvaskitLayerCanvasUtilsImportBody = importBlockFrom(
+  canvaskitSource,
+  './layer-canvas-utils',
+).match(/\{([\s\S]*?)\}/)?.[1] ?? '';
+assert.deepEqual(
+  [...canvaskitLayerCanvasUtilsImportBody.matchAll(/\b([A-Za-z][A-Za-z0-9_]*)\b/g)]
+    .map((match) => match[1])
+    .filter((token) => token !== 'type'),
+  ['parseStaticSvgPathLayers'],
+  'CanvasKit renderer broad layer-canvas-utils import must stay limited to the temporary SVG parser dependency',
+);
 assert.equal(
-  canvaskitLayerCanvasUtilsImport.includes('resolveLayerImageCropSource'),
+  canvaskitLayerCanvasUtilsImportBody.includes('resolveLayerImageCropSource'),
   false,
   'CanvasKit renderer must import image crop helpers from native-ready image helpers',
 );
 assert.equal(
-  canvaskitLayerCanvasUtilsImport.includes('canPreprocessCroppedLayerImageEffect'),
+  canvaskitLayerCanvasUtilsImportBody.includes('canPreprocessCroppedLayerImageEffect'),
   false,
   'CanvasKit renderer must import image effect gating helpers from native-ready image helpers',
 );
@@ -315,7 +330,7 @@ for (const textHelperName of [
   'startsWithInvalidControl',
 ]) {
   assert.equal(
-    canvaskitLayerCanvasUtilsImport.includes(textHelperName),
+    canvaskitLayerCanvasUtilsImportBody.includes(textHelperName),
     false,
     `CanvasKit renderer must import ${textHelperName} from native-ready text helpers`,
   );
@@ -331,7 +346,7 @@ for (const geometryHelperName of [
   'computePathPaintBounds',
 ]) {
   assert.equal(
-    canvaskitLayerCanvasUtilsImport.includes(geometryHelperName),
+    canvaskitLayerCanvasUtilsImportBody.includes(geometryHelperName),
     false,
     `CanvasKit renderer must import ${geometryHelperName} from native-ready geometry helpers`,
   );
