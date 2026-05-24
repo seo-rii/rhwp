@@ -1106,9 +1106,7 @@ impl StaticSubtreeCacheKey {
                     crate::paint::BitmapGlyphScalingPolicy::NoScale => 0,
                     crate::paint::BitmapGlyphScalingPolicy::ScaleToEm => 1,
                     crate::paint::BitmapGlyphScalingPolicy::ExplicitTransform => 2,
-                    crate::paint::BitmapGlyphScalingPolicy::Nearest => 3,
-                    crate::paint::BitmapGlyphScalingPolicy::Linear => 4,
-                    crate::paint::BitmapGlyphScalingPolicy::BackendDefault => 5,
+                    crate::paint::BitmapGlyphScalingPolicy::BackendDefault => 3,
                 });
             }
             None => self.mix_bool(false),

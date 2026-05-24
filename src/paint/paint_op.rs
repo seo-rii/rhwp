@@ -539,8 +539,6 @@ pub enum BitmapGlyphScalingPolicy {
     NoScale,
     ScaleToEm,
     ExplicitTransform,
-    Nearest,
-    Linear,
     BackendDefault,
 }
 
@@ -550,8 +548,6 @@ impl BitmapGlyphScalingPolicy {
             Self::NoScale => "noScale",
             Self::ScaleToEm => "scaleToEm",
             Self::ExplicitTransform => "explicitTransform",
-            Self::Nearest => "nearest",
-            Self::Linear => "linear",
             Self::BackendDefault => "backendDefault",
         }
     }
@@ -1880,8 +1876,6 @@ mod tests {
             BitmapGlyphScalingPolicy::ExplicitTransform.as_str(),
             "explicitTransform"
         );
-        assert_eq!(BitmapGlyphScalingPolicy::Nearest.as_str(), "nearest");
-        assert_eq!(BitmapGlyphScalingPolicy::Linear.as_str(), "linear");
         assert_eq!(
             BitmapGlyphScalingPolicy::BackendDefault.as_str(),
             "backendDefault"
@@ -1898,8 +1892,6 @@ mod tests {
         );
         assert!(BitmapGlyphScalingPolicy::ExplicitTransform.is_strict_deterministic());
         assert!(BitmapGlyphFiltering::Linear.is_strict_deterministic());
-        assert!(!BitmapGlyphScalingPolicy::Nearest.is_strict_deterministic());
-        assert!(!BitmapGlyphScalingPolicy::Linear.is_strict_deterministic());
         assert!(!BitmapGlyphScalingPolicy::BackendDefault.is_strict_deterministic());
         assert!(!BitmapGlyphFiltering::BackendDefault.is_strict_deterministic());
     }
