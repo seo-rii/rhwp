@@ -66,7 +66,7 @@ const implementationPlanTouchpoints = [
     kind: 'file',
   },
   {
-    docToken: 'glyph-outline-payload-status',
+    docToken: 'rhwp-studio/src/view/glyph-outline-payload-status.ts',
     filePath: path.join(studioRoot, 'src/view/glyph-outline-payload-status.ts'),
     kind: 'file',
   },
