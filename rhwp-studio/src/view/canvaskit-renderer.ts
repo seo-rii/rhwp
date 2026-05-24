@@ -65,9 +65,7 @@ import type {
   LayerTextControlMarkOp,
   PageLayerTree,
 } from '@/core/types';
-import {
-  parseStaticSvgPathLayers,
-} from './layer-canvas-utils';
+import { parseStaticSvgPathLayers } from './static-svg-path-layers';
 import {
   canPreprocessCroppedLayerImageEffect,
   resolveLayerImageCropSource,

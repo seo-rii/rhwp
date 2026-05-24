@@ -9,7 +9,7 @@ import {
   type LayerTextVariantReplayStatus,
 } from '@/core/text-variants';
 import type { LayerGlyphOutlineOp, LayerResources } from '@/core/types';
-import { parseStaticSvgPathLayers } from './layer-canvas-utils';
+import { parseStaticSvgPathLayers } from './static-svg-path-layers';
 
 export type GlyphOutlinePayloadReplayStatus = {
   supported: boolean;

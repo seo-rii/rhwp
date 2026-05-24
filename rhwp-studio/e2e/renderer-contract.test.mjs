@@ -12,6 +12,7 @@ const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
 const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
 const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-utils.ts');
+const staticSvgPathLayersPath = path.join(studioRoot, 'src/view/static-svg-path-layers.ts');
 const textReplayUtilsPath = path.join(studioRoot, 'src/view/text-replay-utils.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
@@ -22,6 +23,7 @@ const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
 const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
 const layerGeometryUtilsSource = fs.readFileSync(layerGeometryUtilsPath, 'utf8');
+const staticSvgPathLayersSource = fs.readFileSync(staticSvgPathLayersPath, 'utf8');
 const textReplayUtilsSource = fs.readFileSync(textReplayUtilsPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
@@ -47,6 +49,7 @@ const canvaskitSourceFiles = [
   })),
   { label: path.relative(studioRoot, imageEffectPixelsPath), source: imageEffectPixelsSource },
   { label: path.relative(studioRoot, layerGeometryUtilsPath), source: layerGeometryUtilsSource },
+  { label: path.relative(studioRoot, staticSvgPathLayersPath), source: staticSvgPathLayersSource },
   { label: path.relative(studioRoot, textReplayUtilsPath), source: textReplayUtilsSource },
 ];
 const forbiddenCanvas2dApiPatterns = [
@@ -284,6 +287,11 @@ assert.equal(
   'CanvasKit SvgGlyph replay must not use DOMParser-backed SVG parsing',
 );
 assert.equal(
+  canvaskitSource.includes("from './static-svg-path-layers'"),
+  true,
+  'CanvasKit SvgGlyph replay must import the native-ready static SVG parser',
+);
+assert.equal(
   canvaskitResourceCacheSource.includes("from '../layer-canvas-utils'"),
   false,
   'CanvasKit resource cache must use native-ready image/font helpers instead of broad Canvas2D utilities',
@@ -301,8 +309,8 @@ assert.deepEqual(
   [...canvaskitLayerCanvasUtilsImportBody.matchAll(/\b([A-Za-z][A-Za-z0-9_]*)\b/g)]
     .map((match) => match[1])
     .filter((token) => token !== 'type'),
-  ['parseStaticSvgPathLayers'],
-  'CanvasKit renderer broad layer-canvas-utils import must stay limited to the temporary SVG parser dependency',
+  [],
+  'CanvasKit renderer must not import broad layer-canvas-utils helpers',
 );
 assert.equal(
   canvaskitLayerCanvasUtilsImportBody.includes('resolveLayerImageCropSource'),
