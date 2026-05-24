@@ -11,6 +11,7 @@ const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
 const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
+const textReplayUtilsPath = path.join(studioRoot, 'src/view/text-replay-utils.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
 
@@ -19,6 +20,7 @@ const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
 const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
+const textReplayUtilsSource = fs.readFileSync(textReplayUtilsPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
@@ -42,6 +44,7 @@ const canvaskitSourceFiles = [
     source: fs.readFileSync(filePath, 'utf8'),
   })),
   { label: path.relative(studioRoot, imageEffectPixelsPath), source: imageEffectPixelsSource },
+  { label: path.relative(studioRoot, textReplayUtilsPath), source: textReplayUtilsSource },
 ];
 const forbiddenCanvas2dApiPatterns = [
   [/document\s*\.\s*createElement\b/, 'document.createElement'],
@@ -297,6 +300,27 @@ assert.equal(
   canvaskitSource.includes("from './image-effect-pixels'"),
   true,
   'CanvasKit renderer must import shared image helpers from the native-ready module',
+);
+for (const textHelperName of [
+  'allowsTextControlMark',
+  'decodePuaOverlapNumber',
+  'estimateDisplayTextPositions',
+  'isHalfwidthScaledCluster',
+  'mapPuaDisplayText',
+  'puaToDisplayText',
+  'splitIntoClusters',
+  'startsWithInvalidControl',
+]) {
+  assert.equal(
+    canvaskitLayerCanvasUtilsImport.includes(textHelperName),
+    false,
+    `CanvasKit renderer must import ${textHelperName} from native-ready text helpers`,
+  );
+}
+assert.equal(
+  canvaskitSource.includes("from './text-replay-utils'"),
+  true,
+  'CanvasKit renderer must import shared text replay helpers from the native-ready module',
 );
 
 const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(

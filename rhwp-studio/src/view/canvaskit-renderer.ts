@@ -66,24 +66,26 @@ import type {
   PageLayerTree,
 } from '@/core/types';
 import {
-  allowsTextControlMark,
   angleToCanvasCoords,
   calculateArrowDimensions,
   computePathPaintBounds,
-  decodePuaOverlapNumber,
-  estimateDisplayTextPositions,
-  isHalfwidthScaledCluster,
-  mapPuaDisplayText,
   parseStaticSvgPathLayers,
-  puaToDisplayText,
-  splitIntoClusters,
-  startsWithInvalidControl,
 } from './layer-canvas-utils';
 import {
   canPreprocessCroppedLayerImageEffect,
   resolveLayerImageCropSource,
   type LayerImageEffectDiagnostics,
 } from './image-effect-pixels';
+import {
+  allowsTextControlMark,
+  decodePuaOverlapNumber,
+  estimateDisplayTextPositions,
+  isHalfwidthScaledCluster,
+  mapPuaDisplayText,
+  puaToDisplayText,
+  splitIntoClusters,
+  startsWithInvalidControl,
+} from './text-replay-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
 import { clampCanvasKitUnit, parseCanvasKitCssColor } from './canvaskit/css-color';
