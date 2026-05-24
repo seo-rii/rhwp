@@ -197,9 +197,8 @@ old consumers.
 
 ## CanvasKit GlyphRun Gate
 
-CanvasKit is treated as a Skia-capable backend, but its `GlyphRun` path is more
-conservative than native Skia until the browser adapter proves exact font
-instantiation for the exported face:
+CanvasKit is treated as a Skia-capable backend, but its browser adapter keeps
+explicit gates for exact font instantiation before selecting a `GlyphRun`:
 
 - A `GlyphRun` is selectable only when diagnostics mark it `Exact` or gated
   `PositionAdjusted`, `strictVisualEligible=true`, and it has no missing glyphs,
@@ -480,8 +479,9 @@ fixtures:
   backend instantiates.
 - Variant selection suppresses the `TextRun` fallback only when the selected
   `GlyphRun` variant set is complete and supported.
-- CanvasKit remains more conservative than native Skia and falls back whenever
-  exact font, glyph id, or paint-effect eligibility is not proven.
+- CanvasKit and native Skia both fall back whenever exact font, face-instance,
+  glyph id, or paint-effect eligibility is not proven. CanvasKit may keep
+  additional adapter-specific gates such as its current glyph-id range guard.
 - Unsafe cases do not silently draw a wrong glyph stream; they keep `TextRun`
   fallback and expose deterministic diagnostics or selection state.
 - Variant grouping is tested as a set-level rule: one `variantId` is selected
@@ -526,9 +526,9 @@ expansion:
 - duplicate variant part rejection: a `variantId` with repeated `partIndex`
   values is incomplete/invalid even when `partCount` would otherwise look
   satisfied.
-- CanvasKit unsupported capability fallback: variation instances and non-zero
-  `faceIndex` font faces keep `TextRun` fallback until the adapter proves exact
-  variation/collection-face construction.
+- CanvasKit and native Skia unsupported capability fallback: variation
+  instances and non-zero `faceIndex` font faces keep `TextRun` fallback until
+  the backend proves exact variation/collection-face construction.
 - `PositionAdjusted` negative fixture: residuals above the strict page-space
   tolerance keep `TextRun` fallback.
 
@@ -554,10 +554,10 @@ System fonts installed by CI are not portable fixture inputs. They may be used
 only for negative or diagnostic cases where the expected result is `TextRun`
 fallback.
 
-P0 must not use TTC/OTC collections or variable fonts for CanvasKit strict
+P0 must not use TTC/OTC collections or variable fonts for backend strict
 replay. Even `faceIndex == 0` TTC/OTC data remains ineligible until the
-CanvasKit adapter proves explicit face selection. Variable font instances are
-also ineligible until the adapter proves exact variation construction.
+backend proves explicit face selection. Variable font instances are also
+ineligible until the backend proves exact variation construction.
 
 ### Parity And Tolerance Policy
 
@@ -874,10 +874,10 @@ implicitly change schema authority:
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
   stroke subset; unsupported stroke styles such as invalid dash arrays or
   non-numeric dash offsets remain deterministic fallback cases.
-- CanvasKit variation, TTC, and OTC strict replay are backend capability
-  additions. Until exact construction fixtures pass, CanvasKit must keep
-  reporting `variationUnsupported` or `faceIndexUnsupported` and select the
-  fallback variant, even if native Skia can already replay the same export.
+- CanvasKit and native Skia variation, TTC, and OTC strict replay are backend
+  capability additions. Until each backend has exact construction fixtures, it
+  must keep reporting `variationUnsupported` or `faceIndexUnsupported` and
+  select the fallback variant.
   The negative fixture matrix treats every explicit variation tuple as
   unsupported for now, including unsupported axis tags, out-of-range axis
   values, explicit default-axis tuples, and alternate axis tuples; omission of
@@ -960,12 +960,12 @@ therefore expose a report separate from the immutable layer export:
 - optional font verification and outline eligibility details when a backend
   evaluated `GlyphRun` or `GlyphOutline` candidates.
 
-CanvasKit also reports the eligibility gates that matter for portable glyph
-replay: digest match, exact face instantiation, face-index support, variation
-support, and effect support. These are render diagnostics, not schema fields,
-because `ExternalVerified` fonts and backend capabilities are resolved at render
-time. Unsupported CanvasKit runs must select the `TextRun` fallback instead of
-painting an approximate glyph stream.
+Backends that evaluate `GlyphRun` also report the eligibility gates that matter
+for portable glyph replay: digest match, exact face instantiation, face-index
+support, variation support, and effect support. These are render diagnostics,
+not schema fields, because `ExternalVerified` fonts and backend capabilities
+are resolved at render time. Unsupported runs must select the `TextRun`
+fallback instead of painting an approximate glyph stream.
 
 The Studio selector uses the same report shape for CanvasKit and Canvas2D strict
 outline replay. Canvas2D reports `GlyphRun` rejection as
@@ -1204,8 +1204,8 @@ at a time. The preferred order is:
 - `SvgGlyph` strict replay for sanitized static path-vector resources across
   SVG, Canvas2D, CanvasKit, and native Skia;
 - small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
-- CanvasKit variation/TTC support remains fallback-only until exact
-  construction proof fixtures pass;
+- CanvasKit and native Skia variation/TTC support remains fallback-only until
+  exact construction proof fixtures pass;
 - cross-scope variants and public `MixedPerGlyph` remain writer-blocked until
   actual use cases and vertical/transform semantics are stable;
 - shapedModern layout work as a separate opt-in layout migration milestone.

@@ -251,29 +251,32 @@ widened, add more negative fixtures for unsafe flags, missing `viewBox`, raw SVG
 replay attempts, external resource references, unsupported vector primitives,
 and resource identity cache reuse.
 
-### 4. CanvasKit Variation And TTC Proof Fixtures
+### 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 
-Purpose: keep CanvasKit exact-font replay conservative until exact face and
+Purpose: keep exact-font replay conservative until backend-specific face and
 instance construction is proven.
 
 Current policy stays unchanged:
 
-- variation-required `GlyphRun` rejected by CanvasKit reports
+- variation-required `GlyphRun` rejected by CanvasKit and native Skia reports
   `variationUnsupported`;
-- TTC/OTC non-zero `faceIndex` rejected by CanvasKit reports
+- TTC/OTC non-zero `faceIndex` rejected by CanvasKit and native Skia reports
   `faceIndexUnsupported`;
-- native Skia may select `GlyphRun` while CanvasKit selects `TextRun` fallback;
-  the backend divergence is explained by `VariantSelectionReport`.
+- neither backend may select the strict `GlyphRun` variant for these font
+  instances until proof fixtures demonstrate exact construction. Backend
+  divergence remains possible later, and must be explained by
+  `VariantSelectionReport`.
 
-The proof fixtures required before enabling CanvasKit strict replay are:
+The proof fixtures required before enabling backend strict replay are:
 
 | Capability | Positive proof | Negative proof |
 | --- | --- | --- |
 | variation font | same variable font blob, canonical axis tuple, expected glyph ids, expected advances/bounds, stable native-vs-CanvasKit fuzzy output | unsupported axis, out-of-range axis, same font with different axis tuple, default-axis omission policy |
 | TTC/OTC face index | same collection blob, explicit non-zero `faceIndex`, expected face metadata, expected glyph id mapping | wrong-face index and ambiguous metadata diagnostics |
 
-CanvasKit glyph id replay must keep the adapter range guard for public `u32`
-glyph ids because the browser binding currently uses a 16-bit glyph id path.
+CanvasKit glyph id replay must also keep the adapter range guard for public
+`u32` glyph ids because the browser binding currently uses a 16-bit glyph id
+path.
 
 ### 5. Layout, Scope, And Vertical Writer Gates
 
@@ -397,19 +400,20 @@ Definition of done:
 - unsafe vector resources choose compatibility fallback or strict rejection;
 - no DOM parser, object URL, browser SVG element, or Canvas2D overlay is added.
 
-### Batch 4. CanvasKit Variation And TTC Proof Fixtures
+### Batch 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 
 Goal: keep exact-font replay conservative while adding proof fixtures that can
-eventually unlock CanvasKit support.
+eventually unlock backend support.
 
 Expected code shape:
 
-- CanvasKit continues to reject required variation instances with
-  `variationUnsupported`;
-- CanvasKit continues to reject unsupported TTC/OTC face indices with
-  `faceIndexUnsupported`;
-- native Skia may select `GlyphRun` while CanvasKit selects `TextRun`
-  fallback, with the divergence recorded in `VariantSelectionReport`;
+- CanvasKit and native Skia continue to reject required variation instances
+  with `variationUnsupported`;
+- CanvasKit and native Skia continue to reject unsupported TTC/OTC face indices
+  with `faceIndexUnsupported`;
+- either backend may diverge only after its own proof fixtures pass; until then
+  both keep `TextRun` fallback and record the rejected `GlyphRun` reason in
+  `VariantSelectionReport`;
 - proof fixtures record the exact blob, face, axis tuple, glyph ids, advances,
   bounds, and negative mismatch cases.
 
