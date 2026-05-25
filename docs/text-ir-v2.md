@@ -891,9 +891,10 @@ implicitly change schema authority:
   values, explicit default-axis tuples, and alternate axis tuples; omission of
   the variation tuple is the only CanvasKit strict path until exact
   construction is proven.
-  Face-index fixtures likewise keep non-zero wrong-face, high-index, and
-  ambiguous metadata cases fallback-only with `faceIndexUnsupported` until a
-  backend proves exact collection-face construction.
+  Native Skia renderer coverage follows the same matrix, and face-index
+  fixtures likewise keep non-zero wrong-face, high-index, and ambiguous metadata
+  cases fallback-only with `faceIndexUnsupported` until a backend proves exact
+  collection-face construction.
 
 The current validator keeps this conservative:
 
