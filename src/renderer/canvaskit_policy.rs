@@ -1303,14 +1303,14 @@ mod tests {
         ColorPaintSolidPathNode, ColorPaintTransformNode, FontBlobKey, FontBlobResource,
         FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId,
         FontInstanceKey, FontPortability, FontResourceSource, GlyphOutlineFillRule, GlyphRange,
-        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, ImageResourceId,
-        LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint,
-        LayerImagePaint, LayerNode, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-        LayerPoint, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp, PaintTextStyle,
-        PaintVariantMeta, ResolvedColor, ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload,
-        SvgGlyphSecurityMode, SvgGlyphViewBox, TextDirection, TextRunPlacement, TextSourceId,
-        TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue,
-        WritingMode,
+        GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, GlyphTransform,
+        ImageResourceId, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
+        LayerGlyphRunPaint, LayerImagePaint, LayerNode, LayerPageBackgroundImagePaint,
+        LayerPageBackgroundPaint, LayerPoint, LayerTextRunPaint, LocalizedName, PageLayerTree,
+        PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena, ShapeKey,
+        ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextDirection,
+        TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantKind,
+        TextVariantQuality, VariationAxisValue, WritingMode,
     };
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
     use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
@@ -1926,7 +1926,11 @@ mod tests {
                 Some(VariantRejectReason::FaceIndexUnsupported),
                 "{case_name}"
             );
-            assert_eq!(font_report.blob_key.as_deref(), Some("test-blob"), "{case_name}");
+            assert_eq!(
+                font_report.blob_key.as_deref(),
+                Some("test-blob"),
+                "{case_name}"
+            );
             assert_eq!(font_report.blob_resolved, Some(true), "{case_name}");
             assert_eq!(
                 font_report.exact_face_instantiated,
@@ -1935,6 +1939,41 @@ mod tests {
             );
             assert_eq!(font_report.face_index_supported, Some(false), "{case_name}");
             assert!(!font_report.replay_eligible, "{case_name}");
+        }
+    }
+
+    #[test]
+    fn canvaskit_rejects_mixed_per_glyph_and_glyph_transforms_until_writer_gate() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let mut mixed_orientation = glyph_run(face_key.clone(), Vec::new());
+        mixed_orientation.orientation = GlyphRunOrientation::MixedPerGlyph;
+        let mut transformed_glyphs = glyph_run(face_key, Vec::new());
+        transformed_glyphs.glyph_transforms = Some(vec![GlyphTransform {
+            xx: 1.0,
+            xy: 0.0,
+            yx: 0.0,
+            yy: 1.0,
+            tx: 3.0,
+            ty: 4.0,
+        }]);
+
+        for (case_name, run) in [
+            ("mixed-per-glyph-orientation", mixed_orientation),
+            ("glyph-transform-run", transformed_glyphs),
+        ] {
+            let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+            assert!(!status.replayable, "{case_name}");
+            assert_eq!(
+                status.reason,
+                Some(VariantRejectReason::VariantUnsupported),
+                "{case_name}"
+            );
+            assert!(
+                status.font_verification.is_none(),
+                "pre-font writer-gated transform policy should not look like a font verification failure for {case_name}"
+            );
         }
     }
 
