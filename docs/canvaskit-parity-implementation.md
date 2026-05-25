@@ -587,15 +587,11 @@ layout, or scope changes.
 
 Implementation-ready lanes:
 
-1. Native Skia variation proof: add a checked-in variable-font fixture,
-   canonical axis ordering, supported/out-of-range/unsupported/default-axis
-   cases, and glyph id/advance/bounds proof before enabling strict variation
-   replay.
-2. Strict `BitmapGlyph` and `SvgGlyph` writer widening: keep the existing
+1. Strict `BitmapGlyph` and `SvgGlyph` writer widening: keep the existing
    payload contracts, then add only one exporter family at a time
    (`BitmapGlyph` through Canvas2D/SVG first, `SvgGlyph` through SVG exporter
    first) with resource-cache and negative validation coverage.
-3. Strict payload validation hardening: widen malformed-payload, missing
+2. Strict payload validation hardening: widen malformed-payload, missing
    resource, missing deterministic field, unsafe static-vector, and unsupported
    graph-node fixtures without changing layout authority or paint order.
 
@@ -604,15 +600,20 @@ Proof-gated lanes:
 1. CanvasKit variation/TTC exact replay: keep the conservative fallback until a
    CanvasKit-specific public API path proves exact variation tuple or collection
    `faceIndex` construction and preserves the `u32` glyph id range guard.
-2. Native Skia TTC/OTC corpus widening: native Skia now has a synthetic
+2. Native Skia variation corpus widening: native Skia now has checked-in
+   variable-font replay proof with exact axis tuple construction,
+   glyph/advance/bounds smoke, and invalid-axis fallback. Add broader
+   variable-font corpus and default-axis/alternate-tuple controls before
+   calling variation replay broadly covered.
+3. Native Skia TTC/OTC corpus widening: native Skia now has a synthetic
    exact-face replay path for non-zero `faceIndex`; add wrong-face/high-index,
    ambiguous metadata, real collection fixtures, and digest-pinned corpus cases
    before treating TTC/OTC replay as broad native coverage.
-3. COLRv1 follow-up primitives: keep additional blend/composite modes, reusable
+4. COLRv1 follow-up primitives: keep additional blend/composite modes, reusable
    graph memoization, and extra clip primitives rejected unless a concrete
    document requires them and the graph primitive remains inside the glyph
    payload.
-4. Native/CanvasKit real collection and variable-font corpus: add real-world
+5. Native/CanvasKit real collection and variable-font corpus: add real-world
    fixtures only after the synthetic/direct proof path is stable, so fixture
    licensing, digest pinning, and expected metadata do not obscure replay
    semantics.
@@ -647,7 +648,7 @@ Non-goals for the remaining CanvasKit parity work:
 | COLRv1 stage 5 follow-up | run-local `clip` graph nodes and reusable DAG child refs validate and replay where supported | decide whether reusable-node memoization or additional clip primitives are needed; otherwise keep remaining unsupported graph nodes as deterministic fallback/reject cases | any new graph primitive must stay inside the glyph payload and must not introduce page/layer clip scopes or cross-scope variants |
 | BitmapGlyph writer widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, and strict export feature metadata exist | expand Canvas2D/SVG strict writer coverage first, then native/CanvasKit parity fixtures and real-document cases | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
 | SvgGlyph writer widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, and strict export feature metadata exist | enable SVG exporter writer first, then Canvas2D/native lowering for sanitized vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
-| Variation font strict replay | variation tuples are represented and rejected with deterministic diagnostics; default no-variation positive control exists | add checked-in variable font fixture, exact axis tuple construction, glyph id/advance/bounds proof, native Skia replay path | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
+| Variation font strict replay | variation tuples are represented; native Skia has checked-in variable-font proof for exact axis construction, glyph id, advance/bounds smoke, and invalid-axis fallback | widen native coverage with default-axis, alternate-tuple, and real variable-font corpus cases; keep CanvasKit fallback until its exact instance construction is proven | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
 | TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate checked-in proof bytes as direct TTF and synthetic TTC faces, and exact synthetic non-zero `faceIndex` replay is connected to native `GlyphRun` selection/drawing | widen native coverage with wrong-face/high-index/ambiguous metadata negatives and real collection fixtures; keep CanvasKit fallback until its exact face construction is proven | wrong-face/high-index/ambiguous metadata negatives pass and renderer draws with the requested face, not a family fallback |
 | CanvasKit variation/TTC | conservative fallback remains in place | add CanvasKit-specific exact construction proof before enabling strict replay | public API path proves exact variation tuple or faceIndex construction and keeps `u32` glyph id range guard |
 | shapedModern width input | v2 metadata and report-only `lineBreakRisk` exist | collect representative HWP corpus, calibrate width deltas, then add opt-in width input | hwpCompat remains default; shaping/measurement failure falls back to legacy HWP-compatible width |
@@ -662,8 +663,9 @@ Recommended implementation order from this point:
    contract;
 2. widen strict `SvgGlyph` writer coverage through the SVG exporter first, then
    add Canvas2D/native lowering only for sanitized static vector resources;
-3. add native variation-font proof fixtures and connect exact native Skia
-   instance construction before considering CanvasKit variation replay;
+3. widen native variation replay only with default-axis, alternate-tuple, and
+   real variable-font corpus fixtures before considering CanvasKit variation
+   replay;
 4. widen native TTC/OTC replay only with negative and real collection fixtures,
    keeping CanvasKit fallback until its exact face construction is proven;
 5. leave additional COLRv1 blend modes, reusable-node memoization, shapedModern
@@ -693,10 +695,11 @@ Implementation-ready tracks:
 
 Proof-gated tracks:
 
-- native variation-font strict replay: add a checked-in variable font fixture,
-  canonical axis ordering, supported/out-of-range/unsupported/default-axis
-  cases, and glyph id/advance/bounds proof before native Skia stops rejecting
-  variation tuples.
+- native variation-font strict replay widening: native Skia exact variable-font
+  replay is connected for a checked-in fixture, including exact axis tuple,
+  glyph id, advance/bounds smoke, and invalid-axis fallback. Add default-axis,
+  alternate-tuple, and real variable-font corpus cases before calling native
+  variation strict replay broadly covered.
 - native TTC/OTC strict replay widening: native Skia exact synthetic non-zero
   `faceIndex` replay is connected. Add wrong-face, high-index, ambiguous
   metadata, real collection, and direct-TTF controls before calling native

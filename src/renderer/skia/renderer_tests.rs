@@ -5227,6 +5227,260 @@ fn native_skia_replays_nonzero_face_index_when_exact_ttc_face_instantiates() {
 }
 
 #[test]
+fn native_skia_replays_variation_glyph_run_when_exact_instance_instantiates() {
+    let renderer = SkiaLayerRenderer::new();
+    let font_data = include_bytes!("../../../web/fonts/HappinessSansVF.woff2");
+    let typeface = renderer
+        .font_mgr
+        .new_from_data(font_data.as_slice(), Some(0))
+        .expect("checked-in variable font should instantiate");
+    let parameters = typeface
+        .variation_design_parameters()
+        .expect("checked-in variable font should expose variation axes");
+    let parameter = parameters
+        .iter()
+        .find(|parameter| {
+            let tag = [
+                parameter.tag.a(),
+                parameter.tag.b(),
+                parameter.tag.c(),
+                parameter.tag.d(),
+            ];
+            tag == *b"wght"
+        })
+        .or_else(|| parameters.first())
+        .expect("checked-in variable font should have at least one variation axis");
+    let axis_tag = String::from_utf8(vec![
+        parameter.tag.a(),
+        parameter.tag.b(),
+        parameter.tag.c(),
+        parameter.tag.d(),
+    ])
+    .expect("variation axis tag should be ASCII");
+    let axis_value = if parameter.max > parameter.def {
+        parameter.max
+    } else if parameter.min < parameter.def {
+        parameter.min
+    } else {
+        parameter.def
+    };
+    let coordinates = [skia_safe::font_arguments::variation_position::Coordinate {
+        axis: parameter.tag,
+        value: axis_value,
+    }];
+    let arguments = skia_safe::FontArguments::new().set_variation_design_position(
+        skia_safe::font_arguments::VariationPosition {
+            coordinates: &coordinates,
+        },
+    );
+    let instance = typeface
+        .clone_with_arguments(&arguments)
+        .expect("checked-in variable font should instantiate exact axis tuple");
+    let instance_font = skia_safe::Font::from_typeface(instance, Some(32.0));
+    let glyph_id = instance_font
+        .text_to_glyphs_vec("H")
+        .into_iter()
+        .next()
+        .expect("checked-in variable font should map H to a glyph");
+    assert_ne!(glyph_id, 0);
+    let (advance, bounds) = instance_font.measure_str("H", None);
+    assert!(advance.is_finite() && advance > 0.0);
+    assert!(bounds.width().is_finite() && bounds.height().is_finite());
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    let digest = crate::paint::resource_digest_hex(font_data);
+    let data_ref = BinaryResourceRef {
+        kind: BinaryResourceKind::FontBlob,
+        id: crate::paint::font_blob_resource_key(font_data.len(), &digest),
+    };
+    let digest = FontDigest {
+        algorithm: "blake3".to_string(),
+        value: digest,
+    };
+    tree.resources.intern_font_blob_bytes(font_data);
+    let blob = &mut tree.resources.font_resources_mut().blobs[0];
+    blob.digest = Some(digest.clone());
+    blob.data_ref = Some(data_ref.clone());
+    blob.portability = FontPortability::PortableBlob {
+        digest: digest.clone(),
+        data_ref,
+    };
+    let face = &mut tree.resources.font_resources_mut().faces[0];
+    face.postscript_name = Some("HappinessSansVF".to_string());
+    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.shape_key.font_instance.variations = vec![VariationAxisValue {
+                    tag: axis_tag.clone(),
+                    value: axis_value,
+                }];
+            }
+        }
+    }
+
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("exact variable font glyph run render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("glyph run ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia exact variation report");
+
+    assert!(
+        bounds.max_x < 100,
+        "native Skia should draw the exact variable-font GlyphRun and suppress the right-side TextRun fallback, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphRunStrictEligible
+    );
+    let font_report = report
+        .font_verification
+        .as_ref()
+        .expect("exact variation selection should carry font verification");
+    assert_eq!(font_report.blob_resolved, Some(true));
+    assert_eq!(font_report.exact_face_instantiated, Some(true));
+    assert_eq!(font_report.variation_supported, Some(true));
+    assert!(report.rejected_variants.iter().all(|variant| {
+        variant.variant_id != "glyphRun"
+            || !variant
+                .reasons
+                .contains(&VariantRejectReason::VariationUnsupported)
+    }));
+}
+
+#[test]
+fn native_skia_rejects_invalid_variation_axes_with_exact_variable_font() {
+    let renderer = SkiaLayerRenderer::new();
+    let font_data = include_bytes!("../../../web/fonts/HappinessSansVF.woff2");
+    let typeface = renderer
+        .font_mgr
+        .new_from_data(font_data.as_slice(), Some(0))
+        .expect("checked-in variable font should instantiate");
+    let parameters = typeface
+        .variation_design_parameters()
+        .expect("checked-in variable font should expose variation axes");
+    let parameter = parameters
+        .iter()
+        .find(|parameter| {
+            let tag = [
+                parameter.tag.a(),
+                parameter.tag.b(),
+                parameter.tag.c(),
+                parameter.tag.d(),
+            ];
+            tag == *b"wght"
+        })
+        .or_else(|| parameters.first())
+        .expect("checked-in variable font should have at least one variation axis");
+    let axis_tag = String::from_utf8(vec![
+        parameter.tag.a(),
+        parameter.tag.b(),
+        parameter.tag.c(),
+        parameter.tag.d(),
+    ])
+    .expect("variation axis tag should be ASCII");
+    let glyph_id = skia_safe::Font::from_typeface(typeface, Some(32.0))
+        .text_to_glyphs_vec("H")
+        .into_iter()
+        .next()
+        .expect("checked-in variable font should map H to a glyph");
+    assert_ne!(glyph_id, 0);
+
+    let cases = [
+        (
+            "unsupported-axis",
+            vec![VariationAxisValue {
+                tag: "XXXX".to_string(),
+                value: parameter.def,
+            }],
+        ),
+        (
+            "out-of-range-axis",
+            vec![VariationAxisValue {
+                tag: axis_tag,
+                value: parameter.max.max(parameter.def) + 10_000.0,
+            }],
+        ),
+    ];
+
+    for (case_name, variations) in cases {
+        let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+        let digest = crate::paint::resource_digest_hex(font_data);
+        let data_ref = BinaryResourceRef {
+            kind: BinaryResourceKind::FontBlob,
+            id: crate::paint::font_blob_resource_key(font_data.len(), &digest),
+        };
+        let digest = FontDigest {
+            algorithm: "blake3".to_string(),
+            value: digest,
+        };
+        tree.resources.intern_font_blob_bytes(font_data);
+        let blob = &mut tree.resources.font_resources_mut().blobs[0];
+        blob.digest = Some(digest.clone());
+        blob.data_ref = Some(data_ref.clone());
+        blob.portability = FontPortability::PortableBlob {
+            digest: digest.clone(),
+            data_ref,
+        };
+        tree.resources.font_resources_mut().faces[0].postscript_name =
+            Some("HappinessSansVF".to_string());
+        if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+            for op in ops {
+                if let PaintOp::GlyphRun { run, .. } = op {
+                    run.shape_key.font_instance.variations = variations.clone();
+                }
+            }
+        }
+
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("invalid variable axis glyph run fallback render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+        let report = output
+            .diagnostics
+            .variant_selections
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("native Skia invalid variation report");
+
+        assert!(
+            bounds.min_x > 95,
+            "native Skia must keep TextRun fallback for invalid exact variation case {case_name}, got {bounds:?}"
+        );
+        assert_eq!(report.selected_variant_id, "textRun", "{case_name}");
+        assert_eq!(
+            report.selected_reason,
+            VariantSelectedReason::DefaultTextRunFallback,
+            "{case_name}"
+        );
+        assert!(
+            report.rejected_variants.iter().any(|variant| {
+                variant.variant_id == "glyphRun"
+                    && variant
+                        .reasons
+                        .contains(&VariantRejectReason::VariationUnsupported)
+            }),
+            "{case_name}"
+        );
+        assert_eq!(
+            report
+                .font_verification
+                .as_ref()
+                .and_then(|verification| verification.variation_supported),
+            Some(false),
+            "{case_name}"
+        );
+    }
+}
+
+#[test]
 fn native_skia_keeps_text_fallback_for_variation_glyph_run_until_exact_construction() {
     let renderer = SkiaLayerRenderer::new();
     let style = TextStyle {
