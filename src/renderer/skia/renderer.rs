@@ -1098,11 +1098,36 @@ impl SkiaLayerRenderer {
                 let Some(gradient_path) = node.linear_gradient_path.as_ref() else {
                     return;
                 };
-                let Some(shader_gradient) =
-                    Self::glyph_outline_gradient(&gradient_path.gradient.stops)
-                else {
+                if gradient_path.gradient.stops.len() < 2 {
                     return;
-                };
+                }
+                let shader_colors: Vec<Color4f> = gradient_path
+                    .gradient
+                    .stops
+                    .iter()
+                    .map(|stop| {
+                        Color4f::new(
+                            stop.color.rgba[0],
+                            stop.color.rgba[1],
+                            stop.color.rgba[2],
+                            stop.color.rgba[3],
+                        )
+                    })
+                    .collect();
+                let shader_positions: Vec<f32> = gradient_path
+                    .gradient
+                    .stops
+                    .iter()
+                    .map(|stop| stop.offset as f32)
+                    .collect();
+                let shader_gradient_colors = GradientColors::new(
+                    &shader_colors,
+                    Some(&shader_positions),
+                    TileMode::Clamp,
+                    None,
+                );
+                let shader_gradient =
+                    Gradient::new(shader_gradient_colors, GradientInterpolation::default());
                 let Some(shader) = shaders::linear_gradient(
                     (
                         Point::new(
@@ -1135,11 +1160,36 @@ impl SkiaLayerRenderer {
                 let Some(gradient_path) = node.radial_gradient_path.as_ref() else {
                     return;
                 };
-                let Some(shader_gradient) =
-                    Self::glyph_outline_gradient(&gradient_path.gradient.stops)
-                else {
+                if gradient_path.gradient.stops.len() < 2 {
                     return;
-                };
+                }
+                let shader_colors: Vec<Color4f> = gradient_path
+                    .gradient
+                    .stops
+                    .iter()
+                    .map(|stop| {
+                        Color4f::new(
+                            stop.color.rgba[0],
+                            stop.color.rgba[1],
+                            stop.color.rgba[2],
+                            stop.color.rgba[3],
+                        )
+                    })
+                    .collect();
+                let shader_positions: Vec<f32> = gradient_path
+                    .gradient
+                    .stops
+                    .iter()
+                    .map(|stop| stop.offset as f32)
+                    .collect();
+                let shader_gradient_colors = GradientColors::new(
+                    &shader_colors,
+                    Some(&shader_positions),
+                    TileMode::Clamp,
+                    None,
+                );
+                let shader_gradient =
+                    Gradient::new(shader_gradient_colors, GradientInterpolation::default());
                 let Some(shader) = shaders::radial_gradient(
                     (
                         Point::new(
@@ -1181,26 +1231,6 @@ impl SkiaLayerRenderer {
                 canvas.restore();
             }
         }
-    }
-
-    fn glyph_outline_gradient(stops: &[crate::paint::ColorGradientStop]) -> Option<Gradient> {
-        if stops.len() < 2 {
-            return None;
-        }
-        let colors: Vec<Color4f> = stops
-            .iter()
-            .map(|stop| {
-                Color4f::new(
-                    stop.color.rgba[0],
-                    stop.color.rgba[1],
-                    stop.color.rgba[2],
-                    stop.color.rgba[3],
-                )
-            })
-            .collect();
-        let positions: Vec<f32> = stops.iter().map(|stop| stop.offset as f32).collect();
-        let colors = GradientColors::new(&colors, Some(&positions), TileMode::Clamp, None);
-        Some(Gradient::new(colors, GradientInterpolation::default()))
     }
 
     fn render_glyph_outline(

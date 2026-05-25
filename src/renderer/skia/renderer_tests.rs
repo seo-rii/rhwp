@@ -7,12 +7,13 @@ use crate::model::style::UnderlineType;
 use crate::paint::{
     BinaryResourceKind, BinaryResourceRef, BitmapAlphaMode, BitmapGlyphFiltering,
     BitmapGlyphPayload, BitmapGlyphScalingPolicy, BitmapStrikeSelection, CacheHint, ClipKind,
-    ColorGlyphFormat, ColorLayerNode, ColorLayersPayload, ColorPaintGraphNode,
-    ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintSolidPathNode,
-    ColorPaintTransformNode, FontBlobKey, FontBlobResource, FontColorGlyphRef, FontDigest,
-    FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey, FontPortability,
-    FontResourceSource, GlyphCluster, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
-    GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    ColorGlyphFormat, ColorGradientStop, ColorLayerNode, ColorLayersPayload, ColorLinearGradient,
+    ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
+    ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode,
+    ColorPaintTransformNode, ColorRadialGradient, FontBlobKey, FontBlobResource, FontColorGlyphRef,
+    FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey,
+    FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
+    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
     GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerBuilder,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
@@ -3465,6 +3466,177 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
     assert_eq!(report.selected_variant_id, "glyphOutline");
     assert_eq!(
         report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+}
+
+#[test]
+fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
+    let renderer = SkiaLayerRenderer::new();
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("test-face".to_string()),
+        glyph_id: Some(7),
+        palette_index: Some(2),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let color_stops = vec![
+        ColorGradientStop {
+            offset: 0.0,
+            color: ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba: [1.0, 0.0, 0.0, 1.0],
+            },
+        },
+        ColorGradientStop {
+            offset: 1.0,
+            color: ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba: [0.0, 0.0, 1.0, 1.0],
+            },
+        },
+    ];
+    let linear_color_layers = ColorLayersPayload {
+        color_format: ColorGlyphFormat::ColrV1,
+        source_font_ref: Some(source_font_ref.clone()),
+        palette_ref: None,
+        layers: Vec::new(),
+        paint_graph: Some(ColorPaintGraphPayload {
+            root_node_id: 1,
+            nodes: vec![ColorPaintGraphNode {
+                node_id: 1,
+                kind: ColorPaintGraphNodeKind::LinearGradientPath,
+                solid_path: None,
+                linear_gradient_path: Some(ColorPaintLinearGradientPathNode {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(32.0, 0.0),
+                        PathCommand::LineTo(32.0, 28.0),
+                        PathCommand::LineTo(0.0, 28.0),
+                        PathCommand::ClosePath,
+                    ],
+                    gradient: ColorLinearGradient {
+                        x0: 0.0,
+                        y0: 0.0,
+                        x1: 32.0,
+                        y1: 0.0,
+                        stops: color_stops.clone(),
+                    },
+                    fill_rule: GlyphOutlineFillRule::NonZero,
+                    source_glyph_id: Some(7),
+                    palette_index: Some(2),
+                }),
+                radial_gradient_path: None,
+                transform: None,
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                glyph_range: Some(GlyphRange::new(0, 1)),
+                source_font_ref: Some(source_font_ref.clone()),
+            }],
+        }),
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+    };
+    let linear_outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Some(linear_color_layers),
+    );
+    let linear_tree = glyph_outline_variant_test_tree(linear_outline, true);
+    let linear_output = renderer
+        .render_raster_with_options(&linear_tree, RasterRenderOptions::default())
+        .expect("COLRv1 linear gradient glyph outline variant render");
+    let linear_pixmap = tiny_skia::Pixmap::decode_png(&linear_output.bytes).expect("png decode");
+    let linear_red_pixels = count_pixels_matching(&linear_pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 180 && pixel.blue() < 90
+    });
+    let linear_blue_pixels = count_pixels_matching(&linear_pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.blue() > 180 && pixel.red() < 90
+    });
+    let linear_report = linear_output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia COLRv1 linear gradient selection report");
+
+    assert!(
+        linear_red_pixels > 80 && linear_blue_pixels > 80,
+        "COLRv1 linear gradient should paint red and blue ends, red={linear_red_pixels}, blue={linear_blue_pixels}"
+    );
+    assert_eq!(linear_report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        linear_report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+
+    let radial_color_layers = ColorLayersPayload {
+        color_format: ColorGlyphFormat::ColrV1,
+        source_font_ref: Some(source_font_ref.clone()),
+        palette_ref: None,
+        layers: Vec::new(),
+        paint_graph: Some(ColorPaintGraphPayload {
+            root_node_id: 2,
+            nodes: vec![ColorPaintGraphNode {
+                node_id: 2,
+                kind: ColorPaintGraphNodeKind::RadialGradientPath,
+                solid_path: None,
+                linear_gradient_path: None,
+                radial_gradient_path: Some(ColorPaintRadialGradientPathNode {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(32.0, 0.0),
+                        PathCommand::LineTo(32.0, 28.0),
+                        PathCommand::LineTo(0.0, 28.0),
+                        PathCommand::ClosePath,
+                    ],
+                    gradient: ColorRadialGradient {
+                        cx: 16.0,
+                        cy: 14.0,
+                        radius: 16.0,
+                        stops: color_stops,
+                    },
+                    fill_rule: GlyphOutlineFillRule::NonZero,
+                    source_glyph_id: Some(7),
+                    palette_index: Some(2),
+                }),
+                transform: None,
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                glyph_range: Some(GlyphRange::new(0, 1)),
+                source_font_ref: Some(source_font_ref),
+            }],
+        }),
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+    };
+    let radial_outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Some(radial_color_layers),
+    );
+    let radial_tree = glyph_outline_variant_test_tree(radial_outline, true);
+    let radial_output = renderer
+        .render_raster_with_options(&radial_tree, RasterRenderOptions::default())
+        .expect("COLRv1 radial gradient glyph outline variant render");
+    let radial_pixmap = tiny_skia::Pixmap::decode_png(&radial_output.bytes).expect("png decode");
+    let radial_red_pixels = count_pixels_matching(&radial_pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 180 && pixel.blue() < 90
+    });
+    let radial_blue_pixels = count_pixels_matching(&radial_pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.blue() > 180 && pixel.red() < 90
+    });
+    let radial_report = radial_output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia COLRv1 radial gradient selection report");
+
+    assert!(
+        radial_red_pixels > 40 && radial_blue_pixels > 40,
+        "COLRv1 radial gradient should paint red center and blue rim, red={radial_red_pixels}, blue={radial_blue_pixels}"
+    );
+    assert_eq!(radial_report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        radial_report.selected_reason,
         VariantSelectedReason::GlyphOutlineStrictProfile
     );
 }
