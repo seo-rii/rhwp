@@ -491,6 +491,13 @@ Expected code shape:
   with `variationUnsupported`;
 - CanvasKit and native Skia continue to reject unsupported TTC/OTC face indices
   with `faceIndexUnsupported`;
+- CanvasKit policy keeps a positive control for the current supported default
+  face/no-variation gate, so later exact-construction changes can distinguish
+  real variation/TTC enablement from a general GlyphRun regression;
+- native Skia proof coverage includes checked-in font bytes instantiated as a
+  normal TTF face and as a synthetic two-face TTC, including the out-of-range
+  face-index negative case, without enabling strict replay for non-zero
+  `faceIndex` exports yet;
 - CanvasKit policy and native Skia renderer coverage now include explicit
   variation tuples for supported axes, unsupported axes, out-of-range values,
   alternate tuples, and explicit default-axis tuples, plus non-zero face-index
@@ -505,6 +512,9 @@ Definition of done:
 
 - no CanvasKit strict replay enablement happens without the positive and
   negative proof fixtures;
+- native Skia can instantiate the checked-in proof font as a direct TTF and as
+  a synthetic TTC face, while exported non-zero `faceIndex` replay remains
+  gated until the renderer uses that exact constructed face for drawing;
 - public `u32` glyph ids keep the CanvasKit adapter range guard;
 - backend divergence is deterministic and visible in diagnostics.
 

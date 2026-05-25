@@ -4590,6 +4590,101 @@ fn native_skia_keeps_text_fallback_for_out_of_range_glyph_id() {
     );
 }
 
+fn adjust_sfnt_table_offsets_for_ttc(font_data: &[u8], base_offset: usize) -> Vec<u8> {
+    assert!(font_data.len() >= 12, "sfnt header must exist");
+    let table_count = u16::from_be_bytes([font_data[4], font_data[5]]) as usize;
+    let records_end = 12 + table_count * 16;
+    assert!(
+        records_end <= font_data.len(),
+        "sfnt table records must fit in font data"
+    );
+    assert!(base_offset <= u32::MAX as usize, "TTC offset must fit u32");
+
+    let mut adjusted = font_data.to_vec();
+    for index in 0..table_count {
+        let offset_pos = 12 + index * 16 + 8;
+        let original_offset = u32::from_be_bytes([
+            adjusted[offset_pos],
+            adjusted[offset_pos + 1],
+            adjusted[offset_pos + 2],
+            adjusted[offset_pos + 3],
+        ]);
+        let shifted_offset = original_offset
+            .checked_add(base_offset as u32)
+            .expect("shifted table offset must fit u32");
+        adjusted[offset_pos..offset_pos + 4].copy_from_slice(&shifted_offset.to_be_bytes());
+    }
+    adjusted
+}
+
+fn synthetic_two_face_ttc_from_ttf(font_data: &[u8]) -> Vec<u8> {
+    let header_len = 20usize;
+    let first_offset = header_len;
+    let second_offset = (first_offset + font_data.len() + 3) & !3;
+    assert!(
+        second_offset <= u32::MAX as usize,
+        "TTC offset must fit u32"
+    );
+
+    let first_face = adjust_sfnt_table_offsets_for_ttc(font_data, first_offset);
+    let second_face = adjust_sfnt_table_offsets_for_ttc(font_data, second_offset);
+    let mut collection = Vec::with_capacity(second_offset + second_face.len());
+    collection.extend_from_slice(b"ttcf");
+    collection.extend_from_slice(&1u16.to_be_bytes());
+    collection.extend_from_slice(&0u16.to_be_bytes());
+    collection.extend_from_slice(&2u32.to_be_bytes());
+    collection.extend_from_slice(&(first_offset as u32).to_be_bytes());
+    collection.extend_from_slice(&(second_offset as u32).to_be_bytes());
+    collection.extend_from_slice(&first_face);
+    while collection.len() < second_offset {
+        collection.push(0);
+    }
+    collection.extend_from_slice(&second_face);
+    collection
+}
+
+#[test]
+fn native_skia_exact_font_construction_fixture_instantiates_checked_in_ttf_and_ttc_faces() {
+    let renderer = SkiaLayerRenderer::new();
+    let font_data = include_bytes!("../../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf");
+    let ttf_face = renderer
+        .font_mgr
+        .new_from_data(font_data.as_slice(), Some(0))
+        .expect("checked-in TTF face should instantiate");
+    assert!(ttf_face.count_glyphs() > 0);
+
+    let ttc_data = synthetic_two_face_ttc_from_ttf(font_data);
+    assert!(
+        ttf_parser::Face::parse(&ttc_data, 0).is_ok(),
+        "synthetic TTC face 0 should be parseable"
+    );
+    assert!(
+        ttf_parser::Face::parse(&ttc_data, 1).is_ok(),
+        "synthetic TTC face 1 should be parseable"
+    );
+    assert!(
+        ttf_parser::Face::parse(&ttc_data, 2).is_err(),
+        "synthetic TTC face 2 should be out of range"
+    );
+
+    let ttc_face_0 = renderer
+        .font_mgr
+        .new_from_data(ttc_data.as_slice(), Some(0))
+        .expect("synthetic TTC face 0 should instantiate");
+    let ttc_face_1 = renderer
+        .font_mgr
+        .new_from_data(ttc_data.as_slice(), Some(1))
+        .expect("synthetic TTC face 1 should instantiate");
+    assert_eq!(ttc_face_0.count_glyphs(), ttc_face_1.count_glyphs());
+    assert!(
+        renderer
+            .font_mgr
+            .new_from_data(ttc_data.as_slice(), Some(2))
+            .is_none(),
+        "out-of-range TTC face index should not instantiate"
+    );
+}
+
 #[test]
 fn native_skia_keeps_text_fallback_for_variation_glyph_run_until_exact_construction() {
     let renderer = SkiaLayerRenderer::new();

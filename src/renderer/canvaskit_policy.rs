@@ -1817,6 +1817,21 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_accepts_default_face_without_variation_as_proof_control() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let run = glyph_run(face_key, Vec::new());
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(status.replayable);
+        assert_eq!(status.reason, None);
+        assert!(
+            status.font_verification.is_none(),
+            "the current positive control proves the default face/no-variation gate only; exact variation/TTC diagnostics remain on rejection paths"
+        );
+    }
+
+    #[test]
     fn canvaskit_rejects_variation_instances_until_exact_construction_is_proven() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
