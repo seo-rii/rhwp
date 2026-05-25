@@ -364,6 +364,14 @@ impl SvgRenderer {
                                                 .as_ref()
                                                 .is_some_and(|payload| {
                                                     payload.has_colrv1_stage1_graph_contract()
+                                                        && payload.paint_graph.as_ref().is_some_and(
+                                                            |graph| {
+                                                                graph.nodes.iter().all(|node| {
+                                                                    node.kind
+                                                                        != crate::paint::ColorPaintGraphNodeKind::SweepGradientPath
+                                                                })
+                                                            },
+                                                        )
                                                 })
                                             {
                                                 (true, None)
@@ -2083,6 +2091,7 @@ impl SvgRenderer {
                     escape_xml(&outline.variant.variant_id),
                 ));
             }
+            crate::paint::ColorPaintGraphNodeKind::SweepGradientPath => {}
             crate::paint::ColorPaintGraphNodeKind::Transform => {
                 let Some(transform) = node.transform.as_ref() else {
                     return;

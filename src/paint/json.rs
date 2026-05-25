@@ -2008,6 +2008,10 @@ fn write_glyph_outline_color_paint_graph_node(
         buf.push_str(",\"radialGradientPath\":");
         write_glyph_outline_color_radial_gradient_path_node(buf, gradient_path);
     }
+    if let Some(gradient_path) = &node.sweep_gradient_path {
+        buf.push_str(",\"sweepGradientPath\":");
+        write_glyph_outline_color_sweep_gradient_path_node(buf, gradient_path);
+    }
     if let Some(transform) = &node.transform {
         buf.push_str(",\"transform\":");
         write_glyph_outline_color_transform_node(buf, transform);
@@ -2108,6 +2112,35 @@ fn write_glyph_outline_color_radial_gradient_path_node(
         buf,
         ",\"gradient\":{{\"cx\":{},\"cy\":{},\"radius\":{},\"stops\":",
         gradient_path.gradient.cx, gradient_path.gradient.cy, gradient_path.gradient.radius
+    );
+    write_glyph_outline_color_gradient_stops(buf, &gradient_path.gradient.stops);
+    let _ = write!(
+        buf,
+        "}},\"fillRule\":{}",
+        json_escape(gradient_path.fill_rule.as_str())
+    );
+    if let Some(source_glyph_id) = gradient_path.source_glyph_id {
+        let _ = write!(buf, ",\"sourceGlyphId\":{}", source_glyph_id);
+    }
+    if let Some(palette_index) = gradient_path.palette_index {
+        let _ = write!(buf, ",\"paletteIndex\":{}", palette_index);
+    }
+    buf.push('}');
+}
+
+fn write_glyph_outline_color_sweep_gradient_path_node(
+    buf: &mut String,
+    gradient_path: &crate::paint::ColorPaintSweepGradientPathNode,
+) {
+    buf.push_str("{\"commands\":");
+    write_path_commands(buf, &gradient_path.commands);
+    let _ = write!(
+        buf,
+        ",\"gradient\":{{\"cx\":{},\"cy\":{},\"startAngleDegrees\":{},\"endAngleDegrees\":{},\"stops\":",
+        gradient_path.gradient.cx,
+        gradient_path.gradient.cy,
+        gradient_path.gradient.start_angle_degrees,
+        gradient_path.gradient.end_angle_degrees
     );
     write_glyph_outline_color_gradient_stops(buf, &gradient_path.gradient.stops);
     let _ = write!(
@@ -4480,6 +4513,7 @@ mod tests {
                         solid_path: None,
                         linear_gradient_path: None,
                         radial_gradient_path: None,
+                        sweep_gradient_path: None,
                         transform: Some(ColorPaintTransformNode {
                             child_node_id: 2,
                             transform: LayerAffineTransform {
@@ -4533,6 +4567,7 @@ mod tests {
                             palette_index: Some(1),
                         }),
                         radial_gradient_path: None,
+                        sweep_gradient_path: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(GlyphRange::new(0, 1)),
                         source_font_ref: Some(source_font_ref),

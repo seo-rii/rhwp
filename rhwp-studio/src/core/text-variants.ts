@@ -911,6 +911,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.transform === undefined
         && node.linearGradientPath === undefined
         && node.radialGradientPath === undefined
+        && node.sweepGradientPath === undefined
         && isValidPathCommands(node.solidPath.commands)
         && isValidResolvedColor(node.solidPath.fill)
         && isSupportedFillRule(node.solidPath.fillRule)
@@ -933,6 +934,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.solidPath === undefined
         && node.transform === undefined
         && node.radialGradientPath === undefined
+        && node.sweepGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
         && isSupportedFillRule(gradientPath.fillRule)
         && gradientPath.gradient !== undefined
@@ -960,6 +962,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.solidPath === undefined
         && node.transform === undefined
         && node.linearGradientPath === undefined
+        && node.sweepGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
         && isSupportedFillRule(gradientPath.fillRule)
         && gradientPath.gradient !== undefined
@@ -967,6 +970,36 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && Number.isFinite(gradientPath.gradient.cy)
         && Number.isFinite(gradientPath.gradient.radius)
         && gradientPath.gradient.radius > 0
+        && isValidColorGradientStops(gradientPath.gradient.stops)
+        && (gradientPath.sourceGlyphId === undefined || isValidPayloadGlyphId(gradientPath.sourceGlyphId))
+        && (gradientPath.paletteIndex === undefined || isValidPayloadIndex(gradientPath.paletteIndex))
+        && isValidPayloadRange(node.sourceRangeUtf8)
+        && isValidPayloadRange(node.glyphRange)
+        && node.sourceFontRef !== undefined
+        )
+      ) {
+        return false;
+      }
+      continue;
+    }
+    if (node.kind === 'sweepGradientPath') {
+      const gradientPath = node.sweepGradientPath;
+      if (
+        !(
+          gradientPath !== undefined
+        && node.solidPath === undefined
+        && node.transform === undefined
+        && node.linearGradientPath === undefined
+        && node.radialGradientPath === undefined
+        && isValidPathCommands(gradientPath.commands)
+        && isSupportedFillRule(gradientPath.fillRule)
+        && gradientPath.gradient !== undefined
+        && Number.isFinite(gradientPath.gradient.cx)
+        && Number.isFinite(gradientPath.gradient.cy)
+        && isSupportedSweepGradientAngleRange(
+          gradientPath.gradient.startAngleDegrees,
+          gradientPath.gradient.endAngleDegrees,
+        )
         && isValidColorGradientStops(gradientPath.gradient.stops)
         && (gradientPath.sourceGlyphId === undefined || isValidPayloadGlyphId(gradientPath.sourceGlyphId))
         && (gradientPath.paletteIndex === undefined || isValidPayloadIndex(gradientPath.paletteIndex))
@@ -991,6 +1024,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
           node.solidPath === undefined
         && node.linearGradientPath === undefined
         && node.radialGradientPath === undefined
+        && node.sweepGradientPath === undefined
         && node.transform !== undefined
         && isValidPayloadGraphNodeId(node.transform.childNodeId)
         && nodeIds.has(node.transform.childNodeId)
@@ -1231,6 +1265,16 @@ function isValidColorGradientStops(
     previousOffset = stop.offset;
   }
   return true;
+}
+
+function isSupportedSweepGradientAngleRange(
+  startAngleDegrees: number,
+  endAngleDegrees: number,
+): boolean {
+  return Number.isFinite(startAngleDegrees)
+    && Number.isFinite(endAngleDegrees)
+    && startAngleDegrees < endAngleDegrees
+    && Math.abs(endAngleDegrees - startAngleDegrees - 360) <= 1e-9;
 }
 
 function isSupportedFillRule(fillRule: CanvasFillRule | undefined): boolean {

@@ -9517,6 +9517,62 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     });
+    const colorV1SweepGradientOutline = outlineBase('outline-parity-colrv1-sweep', 224, {
+      payloadKind: 'colorLayers',
+      variant: variantFor('outline-parity-colrv1-sweep', [
+        'text.outlineGlyph',
+        'text.glyphOutline.colorLayers',
+        'text.glyphOutline.colorLayers.colrV1',
+      ]),
+      paths: [],
+      colorLayers: {
+        colorFormat: 'colrV1',
+        sourceFontRef: { faceKey: 'fixture-face', glyphId: 45, colorFormat: 'colrV1' },
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        layers: [],
+        paintGraph: {
+          rootNodeId: 1,
+          nodes: [
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 2,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 45, colorFormat: 'colrV1' },
+            },
+            {
+              nodeId: 2,
+              kind: 'sweepGradientPath',
+              sweepGradientPath: {
+                commands: squarePath.commands,
+                gradient: {
+                  cx: 7,
+                  cy: 7,
+                  startAngleDegrees: 0,
+                  endAngleDegrees: 360,
+                  stops: [
+                    { offset: 0, color: { rgba: [1, 0, 0, 1] } },
+                    { offset: 0.5, color: { rgba: [0, 1, 0, 1] } },
+                    { offset: 1, color: { rgba: [0, 0, 1, 1] } },
+                  ],
+                },
+                fillRule: 'nonzero',
+                sourceGlyphId: 45,
+                paletteIndex: 3,
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 45, paletteIndex: 3, colorFormat: 'colrV1' },
+            },
+          ],
+        },
+      },
+    });
     const bitmapOutline = outlineBase('outline-parity-bitmap', 62, {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('outline-parity-bitmap', ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph']),
@@ -9604,13 +9660,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       colorV1Outline,
       colorV1HardStopGradientOutline,
       colorV1RadialGradientOutline,
+      colorV1SweepGradientOutline,
       bitmapOutline,
       svgOutline,
       transformedBitmapOutline,
       transformedSvgOutline,
     ];
     const tree = {
-      pageWidth: 224,
+      pageWidth: 256,
       pageHeight: 32,
       profile: 'screen',
       outputOptions: {
@@ -9645,10 +9702,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1902,
-        bounds: { x: 0, y: 0, width: 224, height: 32 },
+        bounds: { x: 0, y: 0, width: 256, height: 32 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 224, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 256, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
           ...outlines.flatMap((outline) => [
             textRunFor(outline.variant.equivalenceGroup, outline.bbox.x),
             outline,
@@ -9779,6 +9836,26 @@ runTest('Renderer lifecycle', async ({ page }) => {
     (pixel) => pixel.x >= 198 && pixel.x < 212 && pixel.y >= 8 && pixel.y < 22
       && pixel.alpha > 32 && pixel.blue > 150 && pixel.green < 100 && pixel.red < 120,
   );
+  const sweepGradientCanvas2dRedPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvas2d.png,
+    (pixel) => pixel.x >= 224 && pixel.x < 238 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red > 150 && pixel.green < 130 && pixel.blue < 130,
+  );
+  const sweepGradientCanvas2dBluePixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvas2d.png,
+    (pixel) => pixel.x >= 224 && pixel.x < 238 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.blue > 150 && pixel.green < 130 && pixel.red < 130,
+  );
+  const sweepGradientCanvasKitRedPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvaskit.png,
+    (pixel) => pixel.x >= 224 && pixel.x < 238 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red > 150 && pixel.green < 130 && pixel.blue < 130,
+  );
+  const sweepGradientCanvasKitBluePixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvaskit.png,
+    (pixel) => pixel.x >= 224 && pixel.x < 238 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.blue > 150 && pixel.green < 130 && pixel.red < 130,
+  );
   assert(
     hardStopGradientCanvas2dRedPixels > 40
       && hardStopGradientCanvas2dBluePixels > 40
@@ -9792,6 +9869,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && radialGradientCanvasKitRedPixels > 10
       && radialGradientCanvasKitBluePixels > 40,
     `COLRv1 radial gradient paints red center and blue rim canvas2dRed=${radialGradientCanvas2dRedPixels}, canvas2dBlue=${radialGradientCanvas2dBluePixels}, canvaskitRed=${radialGradientCanvasKitRedPixels}, canvaskitBlue=${radialGradientCanvasKitBluePixels}`,
+  );
+  assert(
+    sweepGradientCanvas2dRedPixels > 10
+      && sweepGradientCanvas2dBluePixels > 10
+      && sweepGradientCanvasKitRedPixels > 10
+      && sweepGradientCanvasKitBluePixels > 10,
+    `COLRv1 sweep gradient paints red/blue angular sectors canvas2dRed=${sweepGradientCanvas2dRedPixels}, canvas2dBlue=${sweepGradientCanvas2dBluePixels}, canvaskitRed=${sweepGradientCanvasKitRedPixels}, canvaskitBlue=${sweepGradientCanvasKitBluePixels}`,
   );
   assert(
     transformedBitmapCanvas2dBlackPixels > 120 && transformedBitmapCanvasKitBlackPixels > 120,

@@ -1268,6 +1268,42 @@ export class CanvasKitLayerRenderer {
               path.delete();
               return;
             }
+            if (node.kind === 'sweepGradientPath') {
+              const gradientPath = node.sweepGradientPath;
+              if (!gradientPath) {
+                return;
+              }
+              const path = this.makePath(gradientPath.commands);
+              this.applyPathFillRule(path, gradientPath.fillRule);
+              const paint = new this.canvasKit.Paint();
+              paint.setAntiAlias(true);
+              paint.setStyle(this.canvasKit.PaintStyle.Fill);
+              const shader = this.canvasKit.Shader.MakeSweepGradient(
+                gradientPath.gradient.cx,
+                gradientPath.gradient.cy,
+                gradientPath.gradient.stops.map((stop) => {
+                  const [r, g, b, a] = stop.color.rgba;
+                  return [
+                    clampCanvasKitUnit(r),
+                    clampCanvasKitUnit(g),
+                    clampCanvasKitUnit(b),
+                    clampCanvasKitUnit(a),
+                  ] as any;
+                }),
+                gradientPath.gradient.stops.map((stop) => stop.offset),
+                this.canvasKit.TileMode.Clamp,
+                null,
+                0,
+                gradientPath.gradient.startAngleDegrees,
+                gradientPath.gradient.endAngleDegrees,
+              );
+              paint.setShader(shader);
+              canvas.drawPath(path, paint);
+              shader.delete();
+              paint.delete();
+              path.delete();
+              return;
+            }
             if (node.kind === 'transform') {
               const transformNode = node.transform;
               if (!transformNode) {

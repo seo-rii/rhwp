@@ -570,6 +570,26 @@ export class Canvas2DLayerRenderer {
                   ctx.fill(gradientPath.fillRule);
                   return;
                 }
+                if (node.kind === 'sweepGradientPath') {
+                  const gradientPath = node.sweepGradientPath;
+                  if (!gradientPath) {
+                    return;
+                  }
+                  const gradient = gradientPath.gradient;
+                  const fill = ctx.createConicGradient(
+                    gradient.startAngleDegrees * Math.PI / 180,
+                    gradient.cx,
+                    gradient.cy,
+                  );
+                  for (const stop of gradient.stops) {
+                    fill.addColorStop(stop.offset, resolvedColorToCss(stop.color));
+                  }
+                  ctx.beginPath();
+                  appendPathCommands(ctx, gradientPath.commands);
+                  ctx.fillStyle = fill;
+                  ctx.fill(gradientPath.fillRule);
+                  return;
+                }
                 if (node.kind === 'transform') {
                   const transformNode = node.transform;
                   if (!transformNode) {

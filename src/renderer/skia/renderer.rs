@@ -1215,6 +1215,66 @@ impl SkiaLayerRenderer {
                     None,
                 );
             }
+            crate::paint::ColorPaintGraphNodeKind::SweepGradientPath => {
+                let Some(gradient_path) = node.sweep_gradient_path.as_ref() else {
+                    return;
+                };
+                if gradient_path.gradient.stops.len() < 2 {
+                    return;
+                }
+                let shader_colors: Vec<Color4f> = gradient_path
+                    .gradient
+                    .stops
+                    .iter()
+                    .map(|stop| {
+                        Color4f::new(
+                            stop.color.rgba[0],
+                            stop.color.rgba[1],
+                            stop.color.rgba[2],
+                            stop.color.rgba[3],
+                        )
+                    })
+                    .collect();
+                let shader_positions: Vec<f32> = gradient_path
+                    .gradient
+                    .stops
+                    .iter()
+                    .map(|stop| stop.offset as f32)
+                    .collect();
+                let shader_gradient_colors = GradientColors::new(
+                    &shader_colors,
+                    Some(&shader_positions),
+                    TileMode::Clamp,
+                    None,
+                );
+                let shader_gradient =
+                    Gradient::new(shader_gradient_colors, GradientInterpolation::default());
+                let Some(shader) = shaders::sweep_gradient(
+                    Point::new(
+                        gradient_path.gradient.cx as f32,
+                        gradient_path.gradient.cy as f32,
+                    ),
+                    (
+                        gradient_path.gradient.start_angle_degrees as f32,
+                        gradient_path.gradient.end_angle_degrees as f32,
+                    ),
+                    &shader_gradient,
+                    None,
+                ) else {
+                    return;
+                };
+                let mut fill_paint = Paint::default();
+                fill_paint.set_anti_alias(replay.vector_antialias());
+                fill_paint.set_style(skia_safe::paint::Style::Fill);
+                fill_paint.set_shader(shader);
+                Self::render_glyph_outline_path(
+                    canvas,
+                    &gradient_path.commands,
+                    gradient_path.fill_rule,
+                    &fill_paint,
+                    None,
+                );
+            }
             crate::paint::ColorPaintGraphNodeKind::Transform => {
                 let Some(transform) = node.transform.as_ref() else {
                     return;

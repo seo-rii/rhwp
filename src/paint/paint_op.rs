@@ -267,6 +267,7 @@ pub enum ColorPaintGraphNodeKind {
     SolidPath,
     LinearGradientPath,
     RadialGradientPath,
+    SweepGradientPath,
     Transform,
 }
 
@@ -276,6 +277,7 @@ impl ColorPaintGraphNodeKind {
             Self::SolidPath => "solidPath",
             Self::LinearGradientPath => "linearGradientPath",
             Self::RadialGradientPath => "radialGradientPath",
+            Self::SweepGradientPath => "sweepGradientPath",
             Self::Transform => "transform",
         }
     }
@@ -314,6 +316,15 @@ pub struct ColorRadialGradient {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ColorSweepGradient {
+    pub cx: f64,
+    pub cy: f64,
+    pub start_angle_degrees: f64,
+    pub end_angle_degrees: f64,
+    pub stops: Vec<ColorGradientStop>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ColorPaintLinearGradientPathNode {
     pub commands: Vec<PathCommand>,
     pub gradient: ColorLinearGradient,
@@ -332,6 +343,15 @@ pub struct ColorPaintRadialGradientPathNode {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ColorPaintSweepGradientPathNode {
+    pub commands: Vec<PathCommand>,
+    pub gradient: ColorSweepGradient,
+    pub fill_rule: GlyphOutlineFillRule,
+    pub source_glyph_id: Option<u32>,
+    pub palette_index: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ColorPaintTransformNode {
     pub child_node_id: u32,
     pub transform: LayerAffineTransform,
@@ -344,6 +364,7 @@ pub struct ColorPaintGraphNode {
     pub solid_path: Option<ColorPaintSolidPathNode>,
     pub linear_gradient_path: Option<ColorPaintLinearGradientPathNode>,
     pub radial_gradient_path: Option<ColorPaintRadialGradientPathNode>,
+    pub sweep_gradient_path: Option<ColorPaintSweepGradientPathNode>,
     pub transform: Option<ColorPaintTransformNode>,
     pub source_range_utf8: Option<TextSourceRange>,
     pub glyph_range: Option<GlyphRange>,
@@ -420,6 +441,13 @@ fn color_gradient_stops_are_valid(stops: &[ColorGradientStop]) -> bool {
     })
 }
 
+fn color_sweep_angles_are_supported(start_angle_degrees: f64, end_angle_degrees: f64) -> bool {
+    start_angle_degrees.is_finite()
+        && end_angle_degrees.is_finite()
+        && start_angle_degrees < end_angle_degrees
+        && (end_angle_degrees - start_angle_degrees - 360.0).abs() <= 1e-9
+}
+
 fn graph_leaf_metadata_is_valid(node: &ColorPaintGraphNode) -> bool {
     node.source_range_utf8
         .is_some_and(text_source_range_is_valid)
@@ -465,6 +493,7 @@ impl ColorPaintGraphPayload {
                         || node.transform.is_some()
                         || node.linear_gradient_path.is_some()
                         || node.radial_gradient_path.is_some()
+                        || node.sweep_gradient_path.is_some()
                         || !graph_leaf_metadata_is_valid(node)
                     {
                         return false;
@@ -484,6 +513,7 @@ impl ColorPaintGraphPayload {
                         || node.solid_path.is_some()
                         || node.transform.is_some()
                         || node.radial_gradient_path.is_some()
+                        || node.sweep_gradient_path.is_some()
                         || !graph_leaf_metadata_is_valid(node)
                     {
                         return false;
@@ -507,6 +537,7 @@ impl ColorPaintGraphPayload {
                         || node.solid_path.is_some()
                         || node.transform.is_some()
                         || node.linear_gradient_path.is_some()
+                        || node.sweep_gradient_path.is_some()
                         || !graph_leaf_metadata_is_valid(node)
                     {
                         return false;
@@ -525,10 +556,37 @@ impl ColorPaintGraphPayload {
                     }
                     return true;
                 }
+                ColorPaintGraphNodeKind::SweepGradientPath => {
+                    if visited.len() != self.nodes.len()
+                        || node.solid_path.is_some()
+                        || node.transform.is_some()
+                        || node.linear_gradient_path.is_some()
+                        || node.radial_gradient_path.is_some()
+                        || !graph_leaf_metadata_is_valid(node)
+                    {
+                        return false;
+                    }
+                    let Some(gradient_path) = node.sweep_gradient_path.as_ref() else {
+                        return false;
+                    };
+                    if !path_commands_are_finite(&gradient_path.commands)
+                        || !gradient_path.gradient.cx.is_finite()
+                        || !gradient_path.gradient.cy.is_finite()
+                        || !color_sweep_angles_are_supported(
+                            gradient_path.gradient.start_angle_degrees,
+                            gradient_path.gradient.end_angle_degrees,
+                        )
+                        || !color_gradient_stops_are_valid(&gradient_path.gradient.stops)
+                    {
+                        return false;
+                    }
+                    return true;
+                }
                 ColorPaintGraphNodeKind::Transform => {
                     if node.solid_path.is_some()
                         || node.linear_gradient_path.is_some()
                         || node.radial_gradient_path.is_some()
+                        || node.sweep_gradient_path.is_some()
                     {
                         return false;
                     }
@@ -583,6 +641,7 @@ impl ColorPaintGraphPayload {
                         || node.transform.is_some()
                         || node.linear_gradient_path.is_some()
                         || node.radial_gradient_path.is_some()
+                        || node.sweep_gradient_path.is_some()
                         || !graph_leaf_metadata_is_valid(node)
                     {
                         return None;
@@ -613,6 +672,7 @@ impl ColorPaintGraphPayload {
                     if node.solid_path.is_some()
                         || node.linear_gradient_path.is_some()
                         || node.radial_gradient_path.is_some()
+                        || node.sweep_gradient_path.is_some()
                     {
                         return None;
                     }
@@ -637,7 +697,8 @@ impl ColorPaintGraphPayload {
                     depth += 1;
                 }
                 ColorPaintGraphNodeKind::LinearGradientPath
-                | ColorPaintGraphNodeKind::RadialGradientPath => return None,
+                | ColorPaintGraphNodeKind::RadialGradientPath
+                | ColorPaintGraphNodeKind::SweepGradientPath => return None,
             }
         }
     }
@@ -2090,6 +2151,10 @@ mod tests {
             ColorPaintGraphNodeKind::RadialGradientPath.as_str(),
             "radialGradientPath"
         );
+        assert_eq!(
+            ColorPaintGraphNodeKind::SweepGradientPath.as_str(),
+            "sweepGradientPath"
+        );
         assert_eq!(ColorPaintGraphNodeKind::Transform.as_str(), "transform");
         assert_eq!(
             BitmapStrikeSelection::ProducerResolved.as_str(),
@@ -2147,6 +2212,7 @@ mod tests {
             }),
             linear_gradient_path: None,
             radial_gradient_path: None,
+            sweep_gradient_path: None,
             transform: None,
             source_range_utf8: Some(TextSourceRange::new(0, 1)),
             glyph_range: Some(GlyphRange::new(0, 1)),
@@ -2170,6 +2236,7 @@ mod tests {
             solid_path: None,
             linear_gradient_path: None,
             radial_gradient_path: None,
+            sweep_gradient_path: None,
             transform: Some(ColorPaintTransformNode {
                 child_node_id,
                 transform,
@@ -2341,6 +2408,7 @@ mod tests {
                         palette_index: Some(1),
                     }),
                     radial_gradient_path: None,
+                    sweep_gradient_path: None,
                     transform: None,
                     source_range_utf8: Some(source_range),
                     glyph_range: Some(glyph_range),
@@ -2380,6 +2448,40 @@ mod tests {
                         cx: 5.0,
                         cy: 5.0,
                         radius: 8.0,
+                        stops: gradient_stops.clone(),
+                    },
+                    fill_rule: GlyphOutlineFillRule::EvenOdd,
+                    source_glyph_id: Some(77),
+                    palette_index: Some(1),
+                }),
+                sweep_gradient_path: None,
+                transform: None,
+                source_range_utf8: Some(source_range),
+                glyph_range: Some(glyph_range),
+                source_font_ref: Some(source_font_ref.clone()),
+            }],
+        };
+        assert!(radial_graph.has_colrv1_stage1_contract());
+
+        let sweep_graph = ColorPaintGraphPayload {
+            root_node_id: 0,
+            nodes: vec![ColorPaintGraphNode {
+                node_id: 0,
+                kind: ColorPaintGraphNodeKind::SweepGradientPath,
+                solid_path: None,
+                linear_gradient_path: None,
+                radial_gradient_path: None,
+                sweep_gradient_path: Some(ColorPaintSweepGradientPathNode {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(10.0, 0.0),
+                        PathCommand::ClosePath,
+                    ],
+                    gradient: ColorSweepGradient {
+                        cx: 5.0,
+                        cy: 5.0,
+                        start_angle_degrees: 0.0,
+                        end_angle_degrees: 360.0,
                         stops: gradient_stops,
                     },
                     fill_rule: GlyphOutlineFillRule::EvenOdd,
@@ -2392,7 +2494,7 @@ mod tests {
                 source_font_ref: Some(source_font_ref),
             }],
         };
-        assert!(radial_graph.has_colrv1_stage1_contract());
+        assert!(sweep_graph.has_colrv1_stage1_contract());
 
         let mut decreasing_stops = linear_graph.clone();
         decreasing_stops.nodes[0]
@@ -2429,6 +2531,15 @@ mod tests {
             .gradient
             .radius = 0.0;
         assert!(!invalid_radius.has_colrv1_stage1_contract());
+
+        let mut partial_sweep = sweep_graph;
+        partial_sweep.nodes[0]
+            .sweep_gradient_path
+            .as_mut()
+            .unwrap()
+            .gradient
+            .end_angle_degrees = 180.0;
+        assert!(!partial_sweep.has_colrv1_stage1_contract());
     }
 
     #[test]
@@ -2513,6 +2624,7 @@ mod tests {
                     }),
                     linear_gradient_path: None,
                     radial_gradient_path: None,
+                    sweep_gradient_path: None,
                     transform: None,
                     source_range_utf8: Some(source_range),
                     glyph_range: Some(glyph_range),
@@ -2529,6 +2641,7 @@ mod tests {
                     solid_path: None,
                     linear_gradient_path: None,
                     radial_gradient_path: None,
+                    sweep_gradient_path: None,
                     transform: Some(ColorPaintTransformNode {
                         child_node_id: 0,
                         transform: identity,
@@ -2720,6 +2833,7 @@ mod tests {
                 }),
                 linear_gradient_path: None,
                 radial_gradient_path: None,
+                sweep_gradient_path: None,
                 transform: None,
                 source_range_utf8: Some(source_range),
                 glyph_range: Some(glyph_range),

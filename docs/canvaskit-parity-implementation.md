@@ -73,10 +73,13 @@ feature-gated direct replay contracts. The current baseline covers
 with a sanitized static vector resource. Studio Canvas2D/CanvasKit, Rust SVG,
 and native Skia now replay the first COLRv1 stage-2 subset:
 `linearGradientPath` and `radialGradientPath` leaf nodes with resolved color
-stops. Studio Canvas2D/CanvasKit, Rust JSON/JS bridges, Rust SVG eligibility
-and output, native Skia, and the Rust CanvasKit replay plan share the same
-payload eligibility vocabulary and deterministic fallback/reject reasons for
-those subsets.
+stops. Studio Canvas2D/CanvasKit and native Skia also replay the stage-3
+`sweepGradientPath` subset for full 360-degree run-local sweep gradients; Rust
+SVG keeps this subset in deterministic fallback/reject because SVG has no
+portable native conic-gradient primitive. Studio Canvas2D/CanvasKit, Rust
+JSON/JS bridges, Rust SVG eligibility and output, native Skia, and the Rust
+CanvasKit replay plan share the same payload eligibility vocabulary and
+deterministic fallback/reject reasons for those subsets.
 
 ## Architecture
 
@@ -202,6 +205,9 @@ Implementation shape:
   graph leaves; their gradients carry producer-resolved color stops and
   remain inside the glyph payload's run-local coordinate space; non-finite,
   out-of-range, or unordered stop offsets are invalid;
+- treat `sweepGradientPath` as the stage-3 graph leaf for full 360-degree
+  run-local sweep gradients only; partial-angle sweeps remain invalid until a
+  portable Canvas2D/SVG/native contract is fixed;
 - keep COLRv1 graph payloads exclusive from legacy `layers`; a payload that
   carries both the normalized graph and resolved layer list is invalid because
   it gives renderers two canonical paint descriptions;
@@ -221,7 +227,7 @@ Later COLRv1 additions should be staged as independent v2 feature additions:
 | --- | --- | --- |
 | 1 | solid color plus transform | implemented baseline; continue fixture hardening |
 | 2 | linear and radial gradients | browser Canvas2D/CanvasKit, Rust SVG, and native Skia implemented for resolved gradient path leaves; malformed stop offsets now reject deterministically; Canvas2D-vs-CanvasKit parity now covers duplicate-stop linear hard edges and radial red-center/blue-rim coverage |
-| 3 | sweep gradients | writer still blocked until gradient coordinate semantics are fixed; strict v2 payload validation now rejects `sweepGradientPath` deterministically as an unsupported COLRv1 node |
+| 3 | sweep gradients | browser Canvas2D/CanvasKit and native Skia implemented for full 360-degree run-local `sweepGradientPath` leaves; malformed or partial-angle sweeps reject deterministically; Rust SVG continues to reject/select fallback because the SVG backend has no portable native conic-gradient primitive |
 | 4 | composite and blend | writer still blocked until reference compositing semantics are fixed; strict v2 payload validation now rejects composite/blend-style graph nodes deterministically as unsupported COLRv1 nodes |
 | 5 | clip and reusable graph nodes | writer still blocked until DAG, cycle, depth, and reuse rules are fixed; strict v2 payload validation rejects clipPath-style nodes and shared-child reusable graphs deterministically |
 
@@ -350,27 +356,30 @@ batch discovers that it needs browser-only parsing, hidden Canvas2D drawing, or
 backend-dependent semantics, stop the writer work and add a validator,
 diagnostic, or resource contract instead.
 
-### Batch 1. COLRv1 Stage-1 Graph Hardening
+### Batch 1. COLRv1 Stage-1/2/3 Graph Hardening
 
-Goal: harden the current COLRv1 stage-1 graph vocabulary and validation without
-enabling a broad writer path.
+Goal: harden the current COLRv1 stage-1 through stage-3 graph vocabulary and
+validation without enabling a broad writer path.
 
 Expected code shape:
 
 - schema/type vocabulary keeps `ColorLayers.ColrV1` stage-1 nodes as the
-  cross-backend baseline and admits stage-2 gradient path leaves;
+  cross-backend baseline and admits stage-2/3 gradient path leaves;
 - stage-1 nodes are tree-only `solidPath` and local affine `transform`;
 - stage-2 nodes are tree-only `linearGradientPath` and
   `radialGradientPath` leaves with finite coordinates, ordered stop offsets, and
   resolved RGBA colors;
+- stage-3 nodes are tree-only `sweepGradientPath` leaves with finite center
+  coordinates, ordered stop offsets, resolved RGBA colors, and a full
+  360-degree angle range;
 - each `solidPath` contains producer-resolved path commands, resolved RGBA,
   `fillRule`, layer/source glyph provenance, palette provenance, and source
   range metadata;
 - graph validation rejects cycles, unreachable nodes, unknown nodes,
-  malformed gradients, unsupported blends/clips, scope-changing transforms,
-  excessive depth, and excessive node count;
+  malformed gradients, partial-angle sweeps, unsupported blends/clips,
+  scope-changing transforms, excessive depth, and excessive node count;
 - fixtures continue to use deterministic internal/native reference behavior
-  before any SVG/Canvas2D exporter widening beyond stage 1.
+  before any exporter widening beyond the currently validated stage subset.
 
 Likely touchpoints:
 
@@ -382,10 +391,11 @@ Likely touchpoints:
 Definition of done:
 
 - COLRv1 stage-1 payloads continue to validate when they contain only solid
-  color and local transform nodes, and stage-2 gradient path leaves validate
-  only with finite coordinates and ordered resolved-color stops;
-- unsupported COLRv1 nodes and malformed stage-2 gradients produce deterministic
-  payload-contract diagnostics;
+  color and local transform nodes, stage-2 gradient path leaves validate only
+  with finite coordinates and ordered resolved-color stops, and stage-3 sweep
+  leaves validate only for full 360-degree ranges;
+- unsupported COLRv1 nodes, malformed stage-2 gradients, and partial-angle
+  stage-3 sweeps produce deterministic payload-contract diagnostics;
 - no CanvasKit writer starts relying on font-native COLR table interpretation;
 - no paint-order, clip, effect, cache, or cross-scope semantics change.
 

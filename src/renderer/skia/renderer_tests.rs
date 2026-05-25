@@ -10,19 +10,20 @@ use crate::paint::{
     ColorGlyphFormat, ColorGradientStop, ColorLayerNode, ColorLayersPayload, ColorLinearGradient,
     ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
     ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode,
-    ColorPaintTransformNode, ColorRadialGradient, FontBlobKey, FontBlobResource, FontColorGlyphRef,
-    FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey,
-    FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
-    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
-    GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
-    GlyphRunReplayEligibility, GlyphTransform, ImageResourceId, LayerAffineTransform, LayerBuilder,
-    LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
-    LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
-    LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, LocalizedName,
-    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor,
-    ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
-    SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
-    TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
+    ColorPaintSweepGradientPathNode, ColorPaintTransformNode, ColorRadialGradient,
+    ColorSweepGradient, FontBlobKey, FontBlobResource, FontColorGlyphRef, FontDigest, FontFaceKey,
+    FontFaceResource, FontFallbackPolicyId, FontInstanceKey, FontPortability, FontResourceSource,
+    GlyphCluster, GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
+    GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
+    GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, GlyphTransform,
+    ImageResourceId, LayerAffineTransform, LayerBuilder, LayerGlyphOutlinePaint,
+    LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode,
+    LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint, LayerRectanglePaint,
+    LayerSemantic, LayerTextOrientation, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp,
+    PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena, ShapeKey,
+    ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, SvgResourceId,
+    TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
+    TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -3388,6 +3389,7 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
                     solid_path: None,
                     linear_gradient_path: None,
                     radial_gradient_path: None,
+                    sweep_gradient_path: None,
                     transform: Some(ColorPaintTransformNode {
                         child_node_id: 20,
                         transform: LayerAffineTransform {
@@ -3424,6 +3426,7 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
                     }),
                     linear_gradient_path: None,
                     radial_gradient_path: None,
+                    sweep_gradient_path: None,
                     source_range_utf8: Some(TextSourceRange::new(0, 1)),
                     glyph_range: Some(GlyphRange::new(0, 1)),
                     source_font_ref: Some(source_font_ref),
@@ -3526,6 +3529,7 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
                     palette_index: Some(2),
                 }),
                 radial_gradient_path: None,
+                sweep_gradient_path: None,
                 transform: None,
                 source_range_utf8: Some(TextSourceRange::new(0, 1)),
                 glyph_range: Some(GlyphRange::new(0, 1)),
@@ -3592,16 +3596,17 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
                         cx: 16.0,
                         cy: 14.0,
                         radius: 16.0,
-                        stops: color_stops,
+                        stops: color_stops.clone(),
                     },
                     fill_rule: GlyphOutlineFillRule::NonZero,
                     source_glyph_id: Some(7),
                     palette_index: Some(2),
                 }),
+                sweep_gradient_path: None,
                 transform: None,
                 source_range_utf8: Some(TextSourceRange::new(0, 1)),
                 glyph_range: Some(GlyphRange::new(0, 1)),
-                source_font_ref: Some(source_font_ref),
+                source_font_ref: Some(source_font_ref.clone()),
             }],
         }),
         source_range_utf8: Some(TextSourceRange::new(0, 1)),
@@ -3637,6 +3642,80 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
     assert_eq!(radial_report.selected_variant_id, "glyphOutline");
     assert_eq!(
         radial_report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+
+    let sweep_color_layers = ColorLayersPayload {
+        color_format: ColorGlyphFormat::ColrV1,
+        source_font_ref: Some(source_font_ref.clone()),
+        palette_ref: None,
+        layers: Vec::new(),
+        paint_graph: Some(ColorPaintGraphPayload {
+            root_node_id: 3,
+            nodes: vec![ColorPaintGraphNode {
+                node_id: 3,
+                kind: ColorPaintGraphNodeKind::SweepGradientPath,
+                solid_path: None,
+                linear_gradient_path: None,
+                radial_gradient_path: None,
+                sweep_gradient_path: Some(ColorPaintSweepGradientPathNode {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(32.0, 0.0),
+                        PathCommand::LineTo(32.0, 28.0),
+                        PathCommand::LineTo(0.0, 28.0),
+                        PathCommand::ClosePath,
+                    ],
+                    gradient: ColorSweepGradient {
+                        cx: 16.0,
+                        cy: 14.0,
+                        start_angle_degrees: 0.0,
+                        end_angle_degrees: 360.0,
+                        stops: color_stops,
+                    },
+                    fill_rule: GlyphOutlineFillRule::NonZero,
+                    source_glyph_id: Some(7),
+                    palette_index: Some(2),
+                }),
+                transform: None,
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                glyph_range: Some(GlyphRange::new(0, 1)),
+                source_font_ref: Some(source_font_ref),
+            }],
+        }),
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+    };
+    let sweep_outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Some(sweep_color_layers),
+    );
+    let sweep_tree = glyph_outline_variant_test_tree(sweep_outline, true);
+    let sweep_output = renderer
+        .render_raster_with_options(&sweep_tree, RasterRenderOptions::default())
+        .expect("COLRv1 sweep gradient glyph outline variant render");
+    let sweep_pixmap = tiny_skia::Pixmap::decode_png(&sweep_output.bytes).expect("png decode");
+    let sweep_red_pixels = count_pixels_matching(&sweep_pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 160 && pixel.green() < 140 && pixel.blue() < 140
+    });
+    let sweep_blue_pixels = count_pixels_matching(&sweep_pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.blue() > 160 && pixel.green() < 140 && pixel.red() < 140
+    });
+    let sweep_report = sweep_output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia COLRv1 sweep gradient selection report");
+
+    assert!(
+        sweep_red_pixels > 20 && sweep_blue_pixels > 20,
+        "COLRv1 sweep gradient should paint red and blue angular sectors, red={sweep_red_pixels}, blue={sweep_blue_pixels}"
+    );
+    assert_eq!(sweep_report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        sweep_report.selected_reason,
         VariantSelectedReason::GlyphOutlineStrictProfile
     );
 }
@@ -3687,6 +3766,7 @@ fn native_skia_keeps_text_fallback_for_invalid_colrv1_gradient_graph() {
                     palette_index: Some(1),
                 }),
                 radial_gradient_path: None,
+                sweep_gradient_path: None,
                 transform: None,
                 source_range_utf8: Some(TextSourceRange::new(0, 1)),
                 glyph_range: Some(GlyphRange::new(0, 1)),

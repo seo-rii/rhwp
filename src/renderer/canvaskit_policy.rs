@@ -1538,6 +1538,7 @@ mod tests {
                         }),
                         linear_gradient_path: None,
                         radial_gradient_path: None,
+                        sweep_gradient_path: None,
                         transform: None,
                         source_range_utf8: Some(source_range),
                         glyph_range: Some(glyph_range),
@@ -1549,6 +1550,7 @@ mod tests {
                         solid_path: None,
                         linear_gradient_path: None,
                         radial_gradient_path: None,
+                        sweep_gradient_path: None,
                         transform: Some(ColorPaintTransformNode {
                             child_node_id: 0,
                             transform: identity(),
@@ -2043,6 +2045,7 @@ mod tests {
                         palette_index: Some(0),
                     }),
                     radial_gradient_path: None,
+                    sweep_gradient_path: None,
                     transform: None,
                     source_range_utf8: Some(source_range),
                     glyph_range: Some(glyph_range),

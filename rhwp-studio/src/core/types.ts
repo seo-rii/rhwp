@@ -910,6 +910,7 @@ export type LayerGlyphOutlineColorPaintGraphNodeKind =
   | 'solidPath'
   | 'linearGradientPath'
   | 'radialGradientPath'
+  | 'sweepGradientPath'
   | 'transform';
 
 export interface LayerGlyphOutlineColorSolidPathNode {
@@ -940,6 +941,14 @@ export interface LayerGlyphOutlineColorRadialGradient {
   stops: LayerGlyphOutlineColorGradientStop[];
 }
 
+export interface LayerGlyphOutlineColorSweepGradient {
+  cx: number;
+  cy: number;
+  startAngleDegrees: number;
+  endAngleDegrees: number;
+  stops: LayerGlyphOutlineColorGradientStop[];
+}
+
 export interface LayerGlyphOutlineColorLinearGradientPathNode {
   commands: LayerPathCommand[];
   gradient: LayerGlyphOutlineColorLinearGradient;
@@ -956,6 +965,14 @@ export interface LayerGlyphOutlineColorRadialGradientPathNode {
   paletteIndex?: number;
 }
 
+export interface LayerGlyphOutlineColorSweepGradientPathNode {
+  commands: LayerPathCommand[];
+  gradient: LayerGlyphOutlineColorSweepGradient;
+  fillRule: CanvasFillRule;
+  sourceGlyphId?: number;
+  paletteIndex?: number;
+}
+
 export interface LayerGlyphOutlineColorTransformNode {
   childNodeId: number;
   transform: LayerAffineTransform;
@@ -967,6 +984,7 @@ export interface LayerGlyphOutlineColorPaintGraphNode {
   solidPath?: LayerGlyphOutlineColorSolidPathNode;
   linearGradientPath?: LayerGlyphOutlineColorLinearGradientPathNode;
   radialGradientPath?: LayerGlyphOutlineColorRadialGradientPathNode;
+  sweepGradientPath?: LayerGlyphOutlineColorSweepGradientPathNode;
   transform?: LayerGlyphOutlineColorTransformNode;
   sourceRangeUtf8?: LayerTextSourceRange;
   glyphRange?: { start: number; end: number };

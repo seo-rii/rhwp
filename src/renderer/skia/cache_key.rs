@@ -992,7 +992,8 @@ impl StaticSubtreeCacheKey {
                     crate::paint::ColorPaintGraphNodeKind::SolidPath => 0,
                     crate::paint::ColorPaintGraphNodeKind::LinearGradientPath => 1,
                     crate::paint::ColorPaintGraphNodeKind::RadialGradientPath => 2,
-                    crate::paint::ColorPaintGraphNodeKind::Transform => 3,
+                    crate::paint::ColorPaintGraphNodeKind::SweepGradientPath => 3,
+                    crate::paint::ColorPaintGraphNodeKind::Transform => 4,
                 });
                 if let Some(solid) = &node.solid_path {
                     self.mix_bool(true);
@@ -1042,6 +1043,26 @@ impl StaticSubtreeCacheKey {
                     self.mix_f64(gradient_path.gradient.cx);
                     self.mix_f64(gradient_path.gradient.cy);
                     self.mix_f64(gradient_path.gradient.radius);
+                    self.mix_color_gradient_stops(&gradient_path.gradient.stops);
+                    self.mix_u8(match gradient_path.fill_rule {
+                        crate::paint::GlyphOutlineFillRule::NonZero => 0,
+                        crate::paint::GlyphOutlineFillRule::EvenOdd => 1,
+                    });
+                    self.mix_option_u32(gradient_path.source_glyph_id);
+                    self.mix_option_u16(gradient_path.palette_index);
+                } else {
+                    self.mix_bool(false);
+                }
+                if let Some(gradient_path) = &node.sweep_gradient_path {
+                    self.mix_bool(true);
+                    self.mix_usize(gradient_path.commands.len());
+                    for command in &gradient_path.commands {
+                        self.mix_path_command(command);
+                    }
+                    self.mix_f64(gradient_path.gradient.cx);
+                    self.mix_f64(gradient_path.gradient.cy);
+                    self.mix_f64(gradient_path.gradient.start_angle_degrees);
+                    self.mix_f64(gradient_path.gradient.end_angle_degrees);
                     self.mix_color_gradient_stops(&gradient_path.gradient.stops);
                     self.mix_u8(match gradient_path.fill_rule {
                         crate::paint::GlyphOutlineFillRule::NonZero => 0,
