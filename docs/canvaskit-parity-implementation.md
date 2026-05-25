@@ -419,6 +419,9 @@ Expected code shape:
   scaling/filtering;
 - missing color space maps to explicit sRGB default plus a
   `colorSpaceDefaulted` diagnostic.
+- native Skia corpus coverage includes a checked-in PNG resource loaded through
+  `ResourceArena`, so the strict path is exercised with stable repository bytes
+  instead of only generated in-test pixels.
 
 Likely touchpoints:
 
@@ -431,6 +434,8 @@ Definition of done:
 
 - compatibility export can still fall back to `TextRun` or `GlyphRun`;
 - strictVisual without a valid image-strike payload hard rejects;
+- checked-in resource corpus coverage continues to select the strict
+  `BitmapGlyph` variant and keeps its ink inside payload placement and bbox;
 - Canvas2D/SVG writer work remains blocked until the validator and negative
   fixtures are stable.
 
@@ -452,6 +457,9 @@ Expected code shape:
   `interactivityAllowed=false`;
 - `viewBox` is required and `intrinsicSize` remains optional;
 - raw SVG-in-font direct replay remains unsupported.
+- native Skia corpus coverage includes a checked-in sanitized static SVG
+  fragment loaded through `ResourceArena`, so resource lookup, static safety,
+  viewBox normalization, and strict variant selection are covered together.
 
 Likely touchpoints:
 
@@ -468,6 +476,8 @@ Definition of done:
 - strict SVG/native Skia/CanvasKit eligibility all agree on the same sanitized
   static-vector contract;
 - unsafe vector resources choose compatibility fallback or strict rejection;
+- checked-in resource corpus coverage continues to select the strict `SvgGlyph`
+  variant and replay visible static vector geometry;
 - no DOM parser, object URL, browser SVG element, or Canvas2D overlay is added.
 
 ### Batch 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures

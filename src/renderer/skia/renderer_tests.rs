@@ -3921,6 +3921,147 @@ fn native_skia_replays_static_svg_glyph_resource_variant() {
 }
 
 #[test]
+fn native_skia_replays_checked_in_bitmap_glyph_resource_corpus() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut resources = ResourceArena::default();
+    let image_resource_id =
+        resources.intern_image_bytes(include_bytes!("../../../assets/logo/logo-32.png"));
+    assert_eq!(resources.image_count(), 1);
+
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
+    outline.bitmap_glyph = Some(BitmapGlyphPayload {
+        image_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(TextRunPlacement {
+            run_to_page: LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 10.0,
+                f: 9.0,
+            },
+            baseline_y: 0.0,
+        }),
+        transform_to_run: None,
+        strike_ppem: Some((32, 32)),
+        strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+        pixel_format: Some("rgba8".to_string()),
+        color_space: Some("srgb".to_string()),
+        alpha_mode: Some(BitmapAlphaMode::Straight),
+        scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+        filtering: Some(BitmapGlyphFiltering::Linear),
+    });
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        false,
+        resources,
+        BoundingBox::new(0.0, 0.0, 32.0, 32.0),
+        64.0,
+        56.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("checked-in BitmapGlyph resource corpus render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("checked-in BitmapGlyph resource ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("checked-in BitmapGlyph resource corpus selection report");
+
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+    assert!(
+        bounds.min_x >= 10
+            && bounds.min_y >= 9
+            && bounds.width() >= 12
+            && bounds.height() >= 12
+            && bounds.max_x <= 42
+            && bounds.max_y <= 41,
+        "checked-in BitmapGlyph resource should replay inside placement and bbox, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_replays_checked_in_static_svg_glyph_resource_corpus() {
+    let renderer = SkiaLayerRenderer::new();
+    let mut resources = ResourceArena::default();
+    let svg_resource_id = resources.intern_svg_fragment(include_str!(
+        "../../../tests/fixtures/glyph_outline_payloads/static_vector_glyph.svg"
+    ));
+    assert_eq!(resources.svg_count(), 1);
+
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::SvgGlyph, None, None);
+    outline.svg_glyph = Some(SvgGlyphPayload {
+        vector_resource_id: svg_resource_id,
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+        placement: Some(TextRunPlacement {
+            run_to_page: LayerAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 12.0,
+                f: 7.0,
+            },
+            baseline_y: 0.0,
+        }),
+        transform_to_run: None,
+        view_box: Some(SvgGlyphViewBox {
+            x: 0.0,
+            y: 0.0,
+            width: 24.0,
+            height: 20.0,
+        }),
+        intrinsic_size: None,
+        security_mode: SvgGlyphSecurityMode::StaticSanitized,
+        script_allowed: false,
+        animation_allowed: false,
+        external_resources_allowed: false,
+        interactivity_allowed: false,
+    });
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        false,
+        resources,
+        BoundingBox::new(0.0, 0.0, 36.0, 30.0),
+        72.0,
+        54.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("checked-in SvgGlyph resource corpus render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let cyan_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.green() > 180 && pixel.blue() > 180 && pixel.red() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("checked-in SvgGlyph resource corpus selection report");
+
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+    assert!(
+        cyan_pixels > 80,
+        "checked-in SvgGlyph resource should replay static sanitized cyan geometry, cyan={cyan_pixels}"
+    );
+}
+
+#[test]
 fn native_skia_applies_bitmap_glyph_payload_transform() {
     let renderer = SkiaLayerRenderer::new();
     let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("bitmap glyph pixmap");
