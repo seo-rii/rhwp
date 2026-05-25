@@ -9074,6 +9074,63 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     });
+    const colorV1HardStopGradientOutline = outlineBase('outline-parity-colrv1-hard-stop', 172, {
+      payloadKind: 'colorLayers',
+      variant: variantFor('outline-parity-colrv1-hard-stop', [
+        'text.outlineGlyph',
+        'text.glyphOutline.colorLayers',
+        'text.glyphOutline.colorLayers.colrV1',
+      ]),
+      paths: [],
+      colorLayers: {
+        colorFormat: 'colrV1',
+        sourceFontRef: { faceKey: 'fixture-face', glyphId: 43, colorFormat: 'colrV1' },
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        layers: [],
+        paintGraph: {
+          rootNodeId: 1,
+          nodes: [
+            {
+              nodeId: 1,
+              kind: 'transform',
+              transform: {
+                childNodeId: 2,
+                transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 43, colorFormat: 'colrV1' },
+            },
+            {
+              nodeId: 2,
+              kind: 'linearGradientPath',
+              linearGradientPath: {
+                commands: squarePath.commands,
+                gradient: {
+                  x0: 0,
+                  y0: 0,
+                  x1: 14,
+                  y1: 0,
+                  stops: [
+                    { offset: 0, color: { rgba: [1, 0, 0, 1] } },
+                    { offset: 0.5, color: { rgba: [1, 0, 0, 1] } },
+                    { offset: 0.5, color: { rgba: [0, 0, 1, 1] } },
+                    { offset: 1, color: { rgba: [0, 0, 1, 1] } },
+                  ],
+                },
+                fillRule: 'nonzero',
+                sourceGlyphId: 43,
+                paletteIndex: 1,
+              },
+              sourceRangeUtf8: { start: 0, end: 1 },
+              glyphRange: { start: 0, end: 1 },
+              sourceFontRef: { faceKey: 'fixture-face', glyphId: 43, paletteIndex: 1, colorFormat: 'colrV1' },
+            },
+          ],
+        },
+      },
+    });
     const bitmapOutline = outlineBase('outline-parity-bitmap', 62, {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('outline-parity-bitmap', ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph']),
@@ -9159,13 +9216,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const outlines = [
       colorV0Outline,
       colorV1Outline,
+      colorV1HardStopGradientOutline,
       bitmapOutline,
       svgOutline,
       transformedBitmapOutline,
       transformedSvgOutline,
     ];
     const tree = {
-      pageWidth: 172,
+      pageWidth: 198,
       pageHeight: 32,
       profile: 'screen',
       outputOptions: {
@@ -9200,10 +9258,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1902,
-        bounds: { x: 0, y: 0, width: 172, height: 32 },
+        bounds: { x: 0, y: 0, width: 198, height: 32 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 172, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 198, height: 32 }, backgroundColor: '#ffffff', borderWidth: 0 },
           ...outlines.flatMap((outline) => [
             textRunFor(outline.variant.equivalenceGroup, outline.bbox.x),
             outline,
@@ -9294,6 +9352,33 @@ runTest('Renderer lifecycle', async ({ page }) => {
     (pixel) => pixel.x >= 149 && pixel.x < 167 && pixel.y >= 10 && pixel.y < 22
       && pixel.alpha > 32 && pixel.red > 200 && pixel.blue > 180 && pixel.green < 80,
   );
+  const hardStopGradientCanvas2dRedPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvas2d.png,
+    (pixel) => pixel.x >= 172 && pixel.x < 179 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red > 150 && pixel.green < 100 && pixel.blue < 120,
+  );
+  const hardStopGradientCanvas2dBluePixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvas2d.png,
+    (pixel) => pixel.x >= 179 && pixel.x < 188 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.blue > 150 && pixel.green < 100 && pixel.red < 120,
+  );
+  const hardStopGradientCanvasKitRedPixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvaskit.png,
+    (pixel) => pixel.x >= 172 && pixel.x < 179 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.red > 150 && pixel.green < 100 && pixel.blue < 120,
+  );
+  const hardStopGradientCanvasKitBluePixels = countPixels(
+    glyphOutlinePayloadParityProbe.canvaskit.png,
+    (pixel) => pixel.x >= 179 && pixel.x < 188 && pixel.y >= 8 && pixel.y < 22
+      && pixel.alpha > 32 && pixel.blue > 150 && pixel.green < 100 && pixel.red < 120,
+  );
+  assert(
+    hardStopGradientCanvas2dRedPixels > 40
+      && hardStopGradientCanvas2dBluePixels > 40
+      && hardStopGradientCanvasKitRedPixels > 40
+      && hardStopGradientCanvasKitBluePixels > 40,
+    `COLRv1 duplicate-stop gradient paints hard red/blue edge canvas2dRed=${hardStopGradientCanvas2dRedPixels}, canvas2dBlue=${hardStopGradientCanvas2dBluePixels}, canvaskitRed=${hardStopGradientCanvasKitRedPixels}, canvaskitBlue=${hardStopGradientCanvasKitBluePixels}`,
+  );
   assert(
     transformedBitmapCanvas2dBlackPixels > 120 && transformedBitmapCanvasKitBlackPixels > 120,
     `transformed BitmapGlyph payload painted expected region canvas2d=${transformedBitmapCanvas2dBlackPixels}, canvaskit=${transformedBitmapCanvasKitBlackPixels}`,
@@ -9319,7 +9404,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   }
   assert(
     glyphOutlinePayloadDiff.passed,
-    `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}, canvas2dMagenta=${glyphOutlinePayloadCanvas2dMagentaPixels}, canvaskitMagenta=${glyphOutlinePayloadCanvasKitMagentaPixels}, transformedBitmapCanvas2d=${transformedBitmapCanvas2dBlackPixels}, transformedBitmapCanvaskit=${transformedBitmapCanvasKitBlackPixels}, transformedSvgCanvas2d=${transformedSvgCanvas2dMagentaPixels}, transformedSvgCanvaskit=${transformedSvgCanvasKitMagentaPixels}`,
+    `glyph outline payload parity exact=${glyphOutlinePayloadDiff.exactDiffPixels}, tolerant=${glyphOutlinePayloadDiff.rawTolerantDiffPixels}, ink=${glyphOutlinePayloadDiff.rawInkMaskDiffPixels}, max_channel_delta=${glyphOutlinePayloadDiff.maxChannelDelta}, canvas2dMagenta=${glyphOutlinePayloadCanvas2dMagentaPixels}, canvaskitMagenta=${glyphOutlinePayloadCanvasKitMagentaPixels}, hardStopCanvas2dRed=${hardStopGradientCanvas2dRedPixels}, hardStopCanvas2dBlue=${hardStopGradientCanvas2dBluePixels}, hardStopCanvaskitRed=${hardStopGradientCanvasKitRedPixels}, hardStopCanvaskitBlue=${hardStopGradientCanvasKitBluePixels}, transformedBitmapCanvas2d=${transformedBitmapCanvas2dBlackPixels}, transformedBitmapCanvaskit=${transformedBitmapCanvasKitBlackPixels}, transformedSvgCanvas2d=${transformedSvgCanvas2dMagentaPixels}, transformedSvgCanvaskit=${transformedSvgCanvasKitMagentaPixels}`,
   );
 
   setTestCase('canvas-layer-form-object-parity');
