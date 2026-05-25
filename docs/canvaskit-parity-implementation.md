@@ -545,6 +545,36 @@ Definition of done:
 - no hwpCompat measurement, line breaking, pagination, or layout authority
   changes occur in CanvasKit parity batches.
 
+## Remaining Backlog
+
+The current `skia` branch has closed the v2 envelope, the CanvasKit parity
+baseline, COLRv1 stage 1/2 plus full-360 sweep gradients, strict
+`BitmapGlyph`/`SvgGlyph` resource corpus coverage, and font-construction proof
+controls. The remaining work should keep that compatibility model intact: add
+one v2 feature at a time, keep v1 compatibility export available, and avoid
+layout or cross-scope authority changes unless explicitly gated.
+
+| Area | Current status | Remaining implementation | Gate before writer emission |
+| --- | --- | --- | --- |
+| COLRv1 stage 4 | stage 1/2/3 payloads validate and replay where supported | add composite/blend graph nodes, deterministic native/internal reference, cache-key coverage, SVG/Canvas2D/CanvasKit lowering where portable | blend/composite semantics fixed without changing text variant selection or global paint order |
+| COLRv1 stage 5 | tree-only graph and full-360 sweep leaves are supported | add clip/reusable graph nodes, DAG validation, cycle detection, depth/node limits, and reusable-node cache semantics | reusable graph semantics stay inside the glyph payload and do not introduce cross-scope variants |
+| BitmapGlyph writer widening | strict contract, negative validation, native/CanvasKit replay, and checked-in PNG corpus exist | expand Canvas2D/SVG strict writer coverage first, then native/CanvasKit parity fixtures and real-document cases | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
+| SvgGlyph writer widening | sanitized static vector contract, negative validation, native/CanvasKit replay, and checked-in SVG corpus exist | enable SVG exporter writer first, then Canvas2D/native lowering for sanitized vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
+| Variation font strict replay | variation tuples are represented and rejected with deterministic diagnostics; default no-variation positive control exists | add checked-in variable font fixture, exact axis tuple construction, glyph id/advance/bounds proof, native Skia replay path | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
+| TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate checked-in proof bytes as direct TTF and synthetic TTC faces; exported non-zero faceIndex still falls back | connect exact constructed non-zero faceIndex face to native GlyphRun replay; keep CanvasKit fallback until its exact face construction is proven | wrong-face/high-index/ambiguous metadata negatives pass and renderer draws with the requested face, not a family fallback |
+| CanvasKit variation/TTC | conservative fallback remains in place | add CanvasKit-specific exact construction proof before enabling strict replay | public API path proves exact variation tuple or faceIndex construction and keeps `u32` glyph id range guard |
+| shapedModern width input | v2 metadata and report-only `lineBreakRisk` exist | collect representative HWP corpus, calibrate width deltas, then add opt-in width input | hwpCompat remains default; shaping/measurement failure falls back to legacy HWP-compatible width |
+| shapedModern line breaking | blocked behind width-input stage | add opt-in line-breaking profile and calibrated thresholds | line-level corpus diff, table/cell review, fallback font split, cluster mapping, and vertical metrics are stable |
+| cross-scope variants | schema vocabulary and `text.crossScopeVariants` gate exist; writer emits same-scope variants | add first concrete use case only when same-scope fallback is insufficient | `paintOrderSlotId + scopeRef` semantics remain sufficient; unsupported compatibility profile can choose same-scope fallback; strict fallback-free rejects |
+| MixedPerGlyph writer | vocabulary and gate exist; default writer uses homogeneous run split | add cluster/grapheme orientation mapping, `GlyphTransformRun`, GlyphRun/GlyphOutline transform replay, fixtures | shaped/vertical semantics are stable and unsupported backends have explicit fallback/reject policy |
+
+The next code work should start with COLRv1 stage 4 or with one of the
+writer-widening tracks (`BitmapGlyph` Canvas2D/SVG or `SvgGlyph` SVG exporter).
+Variation/TTC support is larger because it must change renderer font
+construction, not just validation. shapedModern, cross-scope variants, and
+MixedPerGlyph remain authority-changing tracks and should not be mixed into
+CanvasKit parity commits.
+
 ## Commit Shape
 
 Keep commits small and coherent:
