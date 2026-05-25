@@ -5287,71 +5287,81 @@ fn native_skia_replays_variation_glyph_run_when_exact_instance_instantiates() {
     assert!(advance.is_finite() && advance > 0.0);
     assert!(bounds.width().is_finite() && bounds.height().is_finite());
 
-    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
-    let digest = crate::paint::resource_digest_hex(font_data);
-    let data_ref = BinaryResourceRef {
-        kind: BinaryResourceKind::FontBlob,
-        id: crate::paint::font_blob_resource_key(font_data.len(), &digest),
-    };
-    let digest = FontDigest {
-        algorithm: "blake3".to_string(),
-        value: digest,
-    };
-    tree.resources.intern_font_blob_bytes(font_data);
-    let blob = &mut tree.resources.font_resources_mut().blobs[0];
-    blob.digest = Some(digest.clone());
-    blob.data_ref = Some(data_ref.clone());
-    blob.portability = FontPortability::PortableBlob {
-        digest: digest.clone(),
-        data_ref,
-    };
-    let face = &mut tree.resources.font_resources_mut().faces[0];
-    face.postscript_name = Some("HappinessSansVF".to_string());
-    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
-        for op in ops {
-            if let PaintOp::GlyphRun { run, .. } = op {
-                run.shape_key.font_instance.variations = vec![VariationAxisValue {
-                    tag: axis_tag.clone(),
-                    value: axis_value,
-                }];
+    for (case_name, selected_axis_value) in [
+        ("non-default-axis", axis_value),
+        ("explicit-default-axis", parameter.def),
+    ] {
+        let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+        let digest = crate::paint::resource_digest_hex(font_data);
+        let data_ref = BinaryResourceRef {
+            kind: BinaryResourceKind::FontBlob,
+            id: crate::paint::font_blob_resource_key(font_data.len(), &digest),
+        };
+        let digest = FontDigest {
+            algorithm: "blake3".to_string(),
+            value: digest,
+        };
+        tree.resources.intern_font_blob_bytes(font_data);
+        let blob = &mut tree.resources.font_resources_mut().blobs[0];
+        blob.digest = Some(digest.clone());
+        blob.data_ref = Some(data_ref.clone());
+        blob.portability = FontPortability::PortableBlob {
+            digest: digest.clone(),
+            data_ref,
+        };
+        let face = &mut tree.resources.font_resources_mut().faces[0];
+        face.postscript_name = Some("HappinessSansVF".to_string());
+        if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+            for op in ops {
+                if let PaintOp::GlyphRun { run, .. } = op {
+                    run.shape_key.font_instance.variations = vec![VariationAxisValue {
+                        tag: axis_tag.clone(),
+                        value: selected_axis_value,
+                    }];
+                }
             }
         }
+
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("exact variable font glyph run render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("glyph run ink");
+        let report = output
+            .diagnostics
+            .variant_selections
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("native Skia exact variation report");
+
+        assert!(
+            bounds.max_x < 100,
+            "native Skia should draw the exact variable-font GlyphRun and suppress the right-side TextRun fallback for {case_name}, got {bounds:?}"
+        );
+        assert_eq!(report.selected_variant_id, "glyphRun", "{case_name}");
+        assert_eq!(
+            report.selected_reason,
+            VariantSelectedReason::GlyphRunStrictEligible,
+            "{case_name}"
+        );
+        let font_report = report
+            .font_verification
+            .as_ref()
+            .expect("exact variation selection should carry font verification");
+        assert_eq!(font_report.blob_resolved, Some(true), "{case_name}");
+        assert_eq!(
+            font_report.exact_face_instantiated,
+            Some(true),
+            "{case_name}"
+        );
+        assert_eq!(font_report.variation_supported, Some(true), "{case_name}");
+        assert!(report.rejected_variants.iter().all(|variant| {
+            variant.variant_id != "glyphRun"
+                || !variant
+                    .reasons
+                    .contains(&VariantRejectReason::VariationUnsupported)
+        }));
     }
-
-    let output = renderer
-        .render_raster_with_options(&tree, RasterRenderOptions::default())
-        .expect("exact variable font glyph run render");
-    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
-    let bounds = alpha_bounds(&pixmap).expect("glyph run ink");
-    let report = output
-        .diagnostics
-        .variant_selections
-        .iter()
-        .find(|report| report.equivalence_group == "text-0")
-        .expect("native Skia exact variation report");
-
-    assert!(
-        bounds.max_x < 100,
-        "native Skia should draw the exact variable-font GlyphRun and suppress the right-side TextRun fallback, got {bounds:?}"
-    );
-    assert_eq!(report.selected_variant_id, "glyphRun");
-    assert_eq!(
-        report.selected_reason,
-        VariantSelectedReason::GlyphRunStrictEligible
-    );
-    let font_report = report
-        .font_verification
-        .as_ref()
-        .expect("exact variation selection should carry font verification");
-    assert_eq!(font_report.blob_resolved, Some(true));
-    assert_eq!(font_report.exact_face_instantiated, Some(true));
-    assert_eq!(font_report.variation_supported, Some(true));
-    assert!(report.rejected_variants.iter().all(|variant| {
-        variant.variant_id != "glyphRun"
-            || !variant
-                .reasons
-                .contains(&VariantRejectReason::VariationUnsupported)
-    }));
 }
 
 #[test]
