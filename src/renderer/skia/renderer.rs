@@ -1,7 +1,9 @@
 use skia_safe::{
+    font_arguments::{variation_position, VariationPosition},
     gradient_shader::{Gradient, GradientColors, Interpolation as GradientInterpolation},
-    shaders, surfaces, Canvas, Color, Color4f, EncodedImageFormat, FontMgr, Matrix, Paint,
-    PathBuilder, PictureRecorder, Point, Rect, Shaper, TileMode,
+    shaders, surfaces, Canvas, Color, Color4f, EncodedImageFormat, Font, FontArguments, FontMgr,
+    FourByteTag, Matrix, Paint, PathBuilder, PictureRecorder, Point, Rect, Shaper, TileMode,
+    Typeface,
 };
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
@@ -96,6 +98,7 @@ fn duration_ns(duration: Duration) -> u64 {
 fn native_skia_glyph_run_replay_status(
     run: &LayerGlyphRunPaint,
     resources: &ResourceArena,
+    font_mgr: &FontMgr,
 ) -> VariantReplayStatus {
     if run.glyph_ids.is_empty()
         || run.glyph_ids.len() != run.positions.len()
@@ -152,14 +155,6 @@ fn native_skia_glyph_run_replay_status(
     {
         return VariantReplayStatus::rejected(VariantRejectReason::UnsupportedPaintEffect);
     }
-    if !run.shape_key.font_instance.variations.is_empty() {
-        let mut status =
-            native_skia_glyph_run_font_rejection(run, VariantRejectReason::VariationUnsupported);
-        if let Some(report) = status.font_verification.as_mut() {
-            report.variation_supported = Some(false);
-        }
-        return status;
-    }
     let font_resources = resources.font_resources();
     let Some(face) = font_resources
         .faces
@@ -175,20 +170,11 @@ fn native_skia_glyph_run_replay_status(
     else {
         return VariantReplayStatus::rejected(VariantRejectReason::ExactFaceUnavailable);
     };
-    if face.face_index != 0 {
-        let mut status =
-            native_skia_glyph_run_font_rejection(run, VariantRejectReason::FaceIndexUnsupported);
-        if let Some(report) = status.font_verification.as_mut() {
-            report.blob_key = Some(face.blob_key.0.clone());
-            report.portability = Some(blob.portability.kind().as_str().to_string());
-            report.blob_resolved = Some(true);
-            report.exact_face_instantiated = Some(false);
-            report.face_index_supported = Some(false);
-        }
-        return status;
-    }
     if !blob.portability.is_self_contained_replayable() {
         return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
+    }
+    if face.face_index != 0 || !run.shape_key.font_instance.variations.is_empty() {
+        return native_skia_exact_typeface_replay_status(run, resources, font_mgr, face, blob);
     }
     let transform = run.placement.run_to_page;
     if ![
@@ -219,6 +205,255 @@ fn native_skia_glyph_run_replay_status(
     VariantReplayStatus::replayable()
 }
 
+fn native_skia_exact_typeface_replay_status(
+    run: &LayerGlyphRunPaint,
+    resources: &ResourceArena,
+    font_mgr: &FontMgr,
+    face: &crate::paint::FontFaceResource,
+    blob: &crate::paint::FontBlobResource,
+) -> VariantReplayStatus {
+    match native_skia_exact_typeface_for_glyph_run(run, resources, font_mgr, face, blob) {
+        Ok(_) => {
+            let mut status = VariantReplayStatus::replayable();
+            status.font_verification = Some(native_skia_font_verification_report(
+                run,
+                face,
+                blob,
+                true,
+                Some(true),
+                if run.shape_key.font_instance.variations.is_empty() {
+                    None
+                } else {
+                    Some(true)
+                },
+                true,
+                None,
+            ));
+            status
+        }
+        Err(status) => status,
+    }
+}
+
+fn native_skia_exact_typeface_for_glyph_run(
+    run: &LayerGlyphRunPaint,
+    resources: &ResourceArena,
+    font_mgr: &FontMgr,
+    face: &crate::paint::FontFaceResource,
+    blob: &crate::paint::FontBlobResource,
+) -> Result<Typeface, VariantReplayStatus> {
+    let Some(bytes) = native_skia_font_blob_bytes(resources, blob) else {
+        let reason = if !run.shape_key.font_instance.variations.is_empty() {
+            VariantRejectReason::VariationUnsupported
+        } else if face.face_index != 0 {
+            VariantRejectReason::FaceIndexUnsupported
+        } else {
+            VariantRejectReason::ExactFaceUnavailable
+        };
+        return Err(native_skia_exact_font_rejection(
+            run,
+            face,
+            blob,
+            reason,
+            if !run.shape_key.font_instance.variations.is_empty() {
+                Some(false)
+            } else {
+                None
+            },
+            if face.face_index != 0 {
+                Some(false)
+            } else {
+                None
+            },
+            blob.data_ref.is_some(),
+        ));
+    };
+    let Some(mut typeface) = font_mgr.new_from_data(bytes, Some(face.face_index as usize)) else {
+        let reason = if face.face_index != 0 {
+            VariantRejectReason::FaceIndexUnsupported
+        } else if !run.shape_key.font_instance.variations.is_empty() {
+            VariantRejectReason::VariationUnsupported
+        } else {
+            VariantRejectReason::ExactFaceUnavailable
+        };
+        return Err(native_skia_exact_font_rejection(
+            run,
+            face,
+            blob,
+            reason,
+            if !run.shape_key.font_instance.variations.is_empty() {
+                Some(false)
+            } else {
+                None
+            },
+            if face.face_index != 0 {
+                Some(false)
+            } else {
+                None
+            },
+            true,
+        ));
+    };
+    if run.shape_key.font_instance.variations.is_empty() {
+        return Ok(typeface);
+    }
+
+    let Some(parameters) = typeface.variation_design_parameters() else {
+        return Err(native_skia_exact_font_rejection(
+            run,
+            face,
+            blob,
+            VariantRejectReason::VariationUnsupported,
+            Some(false),
+            Some(true),
+            true,
+        ));
+    };
+    let mut coordinates = Vec::with_capacity(run.shape_key.font_instance.variations.len());
+    for variation in &run.shape_key.font_instance.variations {
+        let Some(axis) = four_byte_tag_from_str(&variation.tag) else {
+            return Err(native_skia_exact_font_rejection(
+                run,
+                face,
+                blob,
+                VariantRejectReason::VariationUnsupported,
+                Some(false),
+                Some(true),
+                true,
+            ));
+        };
+        let Some(parameter) = parameters.iter().find(|parameter| parameter.tag == axis) else {
+            return Err(native_skia_exact_font_rejection(
+                run,
+                face,
+                blob,
+                VariantRejectReason::VariationUnsupported,
+                Some(false),
+                Some(true),
+                true,
+            ));
+        };
+        if !variation.value.is_finite()
+            || variation.value < parameter.min
+            || variation.value > parameter.max
+        {
+            return Err(native_skia_exact_font_rejection(
+                run,
+                face,
+                blob,
+                VariantRejectReason::VariationUnsupported,
+                Some(false),
+                Some(true),
+                true,
+            ));
+        }
+        coordinates.push(variation_position::Coordinate {
+            axis,
+            value: variation.value,
+        });
+    }
+    let arguments = FontArguments::new().set_variation_design_position(VariationPosition {
+        coordinates: coordinates.as_slice(),
+    });
+    typeface = typeface.clone_with_arguments(&arguments).ok_or_else(|| {
+        native_skia_exact_font_rejection(
+            run,
+            face,
+            blob,
+            VariantRejectReason::VariationUnsupported,
+            Some(false),
+            Some(true),
+            true,
+        )
+    })?;
+    Ok(typeface)
+}
+
+fn native_skia_font_blob_bytes<'a>(
+    resources: &'a ResourceArena,
+    blob: &crate::paint::FontBlobResource,
+) -> Option<&'a [u8]> {
+    let data_ref = blob.data_ref.as_ref()?;
+    if data_ref.kind != crate::paint::BinaryResourceKind::FontBlob {
+        return None;
+    }
+    for (id, bytes) in resources.font_blob_resources() {
+        if data_ref.id == blob.id.0 || data_ref.id == format!("font-blob-{}", id.0) {
+            return Some(bytes);
+        }
+        let digest = crate::paint::resource_digest_hex(bytes);
+        if data_ref.id == crate::paint::font_blob_resource_key(bytes.len(), &digest) {
+            return Some(bytes);
+        }
+        if blob
+            .digest
+            .as_ref()
+            .is_some_and(|expected| expected.value == digest)
+        {
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+fn four_byte_tag_from_str(tag: &str) -> Option<FourByteTag> {
+    let bytes: [u8; 4] = tag.as_bytes().try_into().ok()?;
+    if bytes.iter().all(|byte| byte.is_ascii()) {
+        Some(FourByteTag::new(u32::from_be_bytes(bytes)))
+    } else {
+        None
+    }
+}
+
+fn native_skia_exact_font_rejection(
+    run: &LayerGlyphRunPaint,
+    face: &crate::paint::FontFaceResource,
+    blob: &crate::paint::FontBlobResource,
+    reason: VariantRejectReason,
+    variation_supported: Option<bool>,
+    face_index_supported: Option<bool>,
+    blob_resolved: bool,
+) -> VariantReplayStatus {
+    let mut status = VariantReplayStatus::rejected(reason);
+    status.font_verification = Some(native_skia_font_verification_report(
+        run,
+        face,
+        blob,
+        blob_resolved,
+        face_index_supported,
+        variation_supported,
+        false,
+        Some(reason),
+    ));
+    status
+}
+
+fn native_skia_font_verification_report(
+    run: &LayerGlyphRunPaint,
+    face: &crate::paint::FontFaceResource,
+    blob: &crate::paint::FontBlobResource,
+    blob_resolved: bool,
+    face_index_supported: Option<bool>,
+    variation_supported: Option<bool>,
+    replay_eligible: bool,
+    reason: Option<VariantRejectReason>,
+) -> VariantFontVerificationReport {
+    VariantFontVerificationReport {
+        face_key: Some(run.shape_key.font_instance.face_key.0.clone()),
+        blob_key: Some(face.blob_key.0.clone()),
+        portability: Some(blob.portability.kind().as_str().to_string()),
+        expected_digest: blob.digest.as_ref().map(|digest| digest.value.clone()),
+        blob_resolved: Some(blob_resolved),
+        digest_matched: None,
+        exact_face_instantiated: Some(replay_eligible),
+        face_index_supported,
+        variation_supported,
+        effect_supported: None,
+        replay_eligible,
+        reason,
+    }
+}
+
 fn native_skia_glyph_run_font_rejection(
     run: &LayerGlyphRunPaint,
     reason: VariantRejectReason,
@@ -241,8 +476,48 @@ fn native_skia_glyph_run_font_rejection(
     status
 }
 
-fn native_skia_can_replay_glyph_run(run: &LayerGlyphRunPaint, resources: &ResourceArena) -> bool {
-    native_skia_glyph_run_replay_status(run, resources).replayable
+fn native_skia_can_replay_glyph_run(
+    run: &LayerGlyphRunPaint,
+    resources: &ResourceArena,
+    font_mgr: &FontMgr,
+) -> bool {
+    native_skia_glyph_run_replay_status(run, resources, font_mgr).replayable
+}
+
+fn native_skia_glyph_run_font(
+    run: &LayerGlyphRunPaint,
+    resources: &ResourceArena,
+    font_mgr: &FontMgr,
+) -> Option<Font> {
+    let font_resources = resources.font_resources();
+    let face = font_resources
+        .faces
+        .iter()
+        .find(|face| face.id == run.shape_key.font_instance.face_key)?;
+    if face.face_index == 0 && run.shape_key.font_instance.variations.is_empty() {
+        let font_style = crate::renderer::TextStyle {
+            font_family: run.paint_style.font_family.clone(),
+            font_size: run.paint_style.font_size,
+            color: run.paint_style.color,
+            bold: run.paint_style.bold,
+            italic: run.paint_style.italic,
+            ..Default::default()
+        };
+        return Some(make_font(&font_style, font_mgr, "A"));
+    }
+
+    let blob = font_resources
+        .blobs
+        .iter()
+        .find(|blob| blob.id == face.blob_key)?;
+    let typeface =
+        native_skia_exact_typeface_for_glyph_run(run, resources, font_mgr, face, blob).ok()?;
+    let font_size = if run.paint_style.font_size > 0.0 {
+        run.paint_style.font_size as f32
+    } else {
+        12.0
+    };
+    Some(Font::from_typeface(typeface, Some(font_size)))
 }
 
 fn affine_is_finite(transform: &LayerAffineTransform) -> bool {
@@ -906,7 +1181,7 @@ impl SkiaLayerRenderer {
                     &selection_ops,
                     |op| match op {
                         PaintOp::GlyphRun { run, .. } => {
-                            native_skia_glyph_run_replay_status(run, resources)
+                            native_skia_glyph_run_replay_status(run, resources, &self.font_mgr)
                         }
                         _ => VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported),
                     },
@@ -1640,18 +1915,12 @@ impl SkiaLayerRenderer {
                 }
             }
             PaintOp::GlyphRun { run, .. } => {
-                if !native_skia_can_replay_glyph_run(run, resources) {
+                if !native_skia_can_replay_glyph_run(run, resources, &self.font_mgr) {
                     return;
                 }
-                let font_style = crate::renderer::TextStyle {
-                    font_family: run.paint_style.font_family.clone(),
-                    font_size: run.paint_style.font_size,
-                    color: run.paint_style.color,
-                    bold: run.paint_style.bold,
-                    italic: run.paint_style.italic,
-                    ..Default::default()
+                let Some(font) = native_skia_glyph_run_font(run, resources, &self.font_mgr) else {
+                    return;
                 };
-                let font = make_font(&font_style, &self.font_mgr, "A");
                 let transform = run.placement.run_to_page;
                 let matrix = Matrix::from_affine(&[
                     transform.a as f32,
