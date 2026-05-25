@@ -1818,30 +1818,71 @@ mod tests {
     fn canvaskit_rejects_variation_instances_until_exact_construction_is_proven() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
-        let run = glyph_run(
-            face_key,
-            vec![VariationAxisValue {
-                tag: "wght".to_string(),
-                value: 700.0,
-            }],
-        );
+        let cases = [
+            (
+                "supported-axis-instance",
+                vec![VariationAxisValue {
+                    tag: "wght".to_string(),
+                    value: 700.0,
+                }],
+            ),
+            (
+                "unsupported-axis",
+                vec![VariationAxisValue {
+                    tag: "XXXX".to_string(),
+                    value: 1.0,
+                }],
+            ),
+            (
+                "out-of-range-axis",
+                vec![VariationAxisValue {
+                    tag: "wght".to_string(),
+                    value: 10_000.0,
+                }],
+            ),
+            (
+                "different-axis-tuple",
+                vec![
+                    VariationAxisValue {
+                        tag: "wdth".to_string(),
+                        value: 75.0,
+                    },
+                    VariationAxisValue {
+                        tag: "wght".to_string(),
+                        value: 700.0,
+                    },
+                ],
+            ),
+            (
+                "explicit-default-axis",
+                vec![VariationAxisValue {
+                    tag: "wght".to_string(),
+                    value: 400.0,
+                }],
+            ),
+        ];
 
-        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+        for (case_name, variations) in cases {
+            let run = glyph_run(face_key.clone(), variations);
+            let status = canvaskit_glyph_run_replay_status(&run, &resources);
 
-        assert!(!status.replayable);
-        assert_eq!(
-            status.reason,
-            Some(VariantRejectReason::VariationUnsupported)
-        );
-        let font_report = status
-            .font_verification
-            .expect("variation rejection should carry font verification");
-        assert_eq!(
-            font_report.reason,
-            Some(VariantRejectReason::VariationUnsupported)
-        );
-        assert_eq!(font_report.variation_supported, Some(false));
-        assert!(!font_report.replay_eligible);
+            assert!(!status.replayable, "{case_name}");
+            assert_eq!(
+                status.reason,
+                Some(VariantRejectReason::VariationUnsupported),
+                "{case_name}"
+            );
+            let font_report = status
+                .font_verification
+                .expect("variation rejection should carry font verification");
+            assert_eq!(
+                font_report.reason,
+                Some(VariantRejectReason::VariationUnsupported),
+                "{case_name}"
+            );
+            assert_eq!(font_report.variation_supported, Some(false), "{case_name}");
+            assert!(!font_report.replay_eligible, "{case_name}");
+        }
     }
 
     #[test]
