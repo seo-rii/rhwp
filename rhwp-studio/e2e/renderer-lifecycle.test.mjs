@@ -4260,6 +4260,44 @@ runTest('Renderer lifecycle', async ({ page }) => {
         unsupportedNodeReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const unsupportedSweepNodeReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      const unsupportedSweepNodeV2ColorGraphNode = unsupportedSweepNodeReservedV2ColorPayloadColrV1Tree
+        .root
+        .ops[0]
+        .variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph
+        .nodes
+        .find((node) => node.kind === 'solidPath');
+      unsupportedSweepNodeV2ColorGraphNode.kind = 'sweepGradientPath';
+      delete unsupportedSweepNodeV2ColorGraphNode.solidPath;
+      unsupportedSweepNodeV2ColorGraphNode.sweepGradientPath = {
+        commands: [
+          { type: 'moveTo', x: 0, y: 0 },
+          { type: 'lineTo', x: 10, y: 0 },
+          { type: 'lineTo', x: 10, y: 10 },
+          { type: 'closePath' },
+        ],
+        gradient: {
+          cx: 5,
+          cy: 5,
+          startAngleRad: 0,
+          stops: [
+            { offset: 0, color: { rgba: [1, 0, 0, 1] } },
+            { offset: 1, color: { rgba: [0, 0, 1, 1] } },
+          ],
+        },
+        fillRule: 'nonzero',
+        sourceGlyphId: 42,
+        paletteIndex: 0,
+      };
+      const unsupportedSweepNodeReservedV2ColorPayloadColrV1 = render(
+        unsupportedSweepNodeReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const invalidTransformReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
       invalidTransformReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
         .find((variant) => variant.variantId === 'glyphOutline')
@@ -4773,6 +4811,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         oversizedReservedV2ColorPayloadColrV1,
         invalidNodeIdReservedV2ColorPayloadColrV1,
         unsupportedNodeReservedV2ColorPayloadColrV1,
+        unsupportedSweepNodeReservedV2ColorPayloadColrV1,
         invalidTransformReservedV2ColorPayloadColrV1,
         invalidCommandReservedV2ColorPayloadColrV1,
         invalidProvenanceReservedV2ColorPayloadColrV1,
@@ -5104,6 +5143,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsupportedNodeReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const unsupportedSweepNodeReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .unsupportedSweepNodeReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidTransformReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
     .invalidTransformReservedV2ColorPayloadColrV1
     ?.textV2Validation
@@ -5196,7 +5239,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     cyclicReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && oversizedReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && invalidNodeIdReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
-      && unsupportedNodeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
+      && unsupportedNodeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && unsupportedSweepNodeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid'),
     `Canvas2D strict profile rejects invalid COLRv1 color graph payload=${JSON.stringify({
       cyclicV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .cyclicReservedV2ColorPayloadColrV1
@@ -5209,6 +5253,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ?.textV2Validation,
       unsupportedNodeV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .unsupportedNodeReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      unsupportedSweepNodeV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .unsupportedSweepNodeReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );
