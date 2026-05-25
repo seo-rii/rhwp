@@ -1066,7 +1066,10 @@ For `MixedPerGlyph`, source orientation semantics are cluster/grapheme-based;
 glyph transforms are a materialized replay detail that can later use
 `sourceRangeUtf8`, `glyphRange`, and an affine `transformToRun`. Compatibility
 writers keep homogeneous run splitting; fallback-free strict writers must reject
-unsupported mixed-per-glyph replay rather than silently skipping it.
+unsupported mixed-per-glyph replay rather than silently skipping it. CanvasKit
+and native Skia currently keep public `MixedPerGlyph` and explicit
+glyph-transform runs writer-gated, rejecting the strict `GlyphRun` as
+`variantUnsupported` and selecting the `TextRun` fallback when available.
 
 ## Schema v1 Closure Criteria
 

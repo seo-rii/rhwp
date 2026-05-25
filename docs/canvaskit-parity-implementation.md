@@ -336,6 +336,12 @@ homogeneous run splitting when those fallbacks are available. Fallback-free
 strict writers must reject unsupported scope or mixed-orientation replay rather
 than silently skipping it.
 
+CanvasKit policy and native Skia renderer tests now keep both
+`MixedPerGlyph` orientation and explicit glyph-transform runs behind that writer
+gate: they reject the strict `GlyphRun` with `variantUnsupported`, select the
+`TextRun` fallback, and do not misreport the case as a font verification
+failure.
+
 ## Implementation-Ready Backlog
 
 This backlog turns the design choices above into code-sized batches. Each batch
