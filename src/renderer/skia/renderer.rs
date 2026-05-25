@@ -1290,6 +1290,29 @@ impl SkiaLayerRenderer {
                 );
                 canvas.restore();
             }
+            crate::paint::ColorPaintGraphNodeKind::Composite => {
+                let Some(composite) = node.composite.as_ref() else {
+                    return;
+                };
+                match composite.mode {
+                    crate::paint::ColorPaintCompositeMode::SourceOver => {
+                        self.render_glyph_outline_color_graph_node(
+                            canvas,
+                            graph,
+                            composite.backdrop_node_id,
+                            replay,
+                            depth + 1,
+                        );
+                        self.render_glyph_outline_color_graph_node(
+                            canvas,
+                            graph,
+                            composite.source_node_id,
+                            replay,
+                            depth + 1,
+                        );
+                    }
+                }
+            }
         }
     }
 

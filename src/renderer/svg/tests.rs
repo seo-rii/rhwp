@@ -2,10 +2,11 @@ use super::*;
 use crate::paint::{
     BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
     BitmapStrikeSelection, ColorGlyphFormat, ColorGradientStop, ColorLayerNode, ColorLayersPayload,
-    ColorLinearGradient, ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
-    ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode,
-    ColorPaintTransformNode, ColorRadialGradient, FontColorGlyphRef, GlyphOutlineFillRule,
-    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    ColorLinearGradient, ColorPaintCompositeMode, ColorPaintCompositeNode, ColorPaintGraphNode,
+    ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintLinearGradientPathNode,
+    ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode, ColorPaintTransformNode,
+    ColorRadialGradient, FontColorGlyphRef, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
+    GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
     LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
     LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
@@ -852,6 +853,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
                         radial_gradient_path: None,
                         sweep_gradient_path: None,
                         transform: None,
+                        composite: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(GlyphRange { start: 0, end: 1 }),
                         source_font_ref: Some(source_font_ref),
@@ -874,6 +876,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
                                 f: 0.0,
                             },
                         }),
+                        composite: None,
                         source_range_utf8: None,
                         glyph_range: None,
                         source_font_ref: None,
@@ -984,6 +987,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_gradient_graph_leaves() {
         radial_gradient_path: None,
         sweep_gradient_path: None,
         transform: None,
+        composite: None,
         source_range_utf8: Some(TextSourceRange::new(0, 1)),
         glyph_range: Some(GlyphRange { start: 0, end: 1 }),
         source_font_ref: Some(source_font_ref.clone()),
@@ -1012,6 +1016,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_gradient_graph_leaves() {
         }),
         sweep_gradient_path: None,
         transform: None,
+        composite: None,
         source_range_utf8: Some(TextSourceRange::new(0, 1)),
         glyph_range: Some(GlyphRange { start: 0, end: 1 }),
         source_font_ref: Some(source_font_ref.clone()),
@@ -1043,6 +1048,102 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_gradient_graph_leaves() {
     assert!(radial_output.contains("fill-rule=\"evenodd\""));
     assert!(radial_output.contains("data-rhwp-color-graph-node-kind=\"radialGradientPath\""));
     assert!(radial_output.contains("source-backed COLRv1 glyph color graph radial gradient path"));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_replays_colrv1_source_over_composite_graph() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("fixture-face".to_string()),
+        glyph_id: Some(42),
+        palette_index: Some(3),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let solid_node = |node_id: u32, color: [f32; 4], x0: f64, x1: f64| ColorPaintGraphNode {
+        node_id,
+        kind: ColorPaintGraphNodeKind::SolidPath,
+        solid_path: Some(ColorPaintSolidPathNode {
+            commands: vec![
+                PathCommand::MoveTo(x0, 0.0),
+                PathCommand::LineTo(x1, 0.0),
+                PathCommand::LineTo(x1, 8.0),
+                PathCommand::LineTo(x0, 8.0),
+                PathCommand::ClosePath,
+            ],
+            fill: ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba: color,
+            },
+            fill_rule: GlyphOutlineFillRule::NonZero,
+            source_glyph_id: Some(42 + node_id),
+            palette_index: Some(3),
+        }),
+        linear_gradient_path: None,
+        radial_gradient_path: None,
+        sweep_gradient_path: None,
+        transform: None,
+        composite: None,
+        source_range_utf8: Some(TextSourceRange::new(node_id, node_id + 1)),
+        glyph_range: Some(GlyphRange {
+            start: node_id,
+            end: node_id + 1,
+        }),
+        source_font_ref: Some(source_font_ref.clone()),
+    };
+    let tree = glyph_outline_fixture_tree_with_color_layers(
+        PaintTextStyle::from(&text_style),
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            source_range_utf8: Some(TextSourceRange::new(0, 2)),
+            glyph_range: Some(GlyphRange { start: 0, end: 2 }),
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 9,
+                nodes: vec![
+                    solid_node(1, [0.0, 0.0, 1.0, 1.0], 0.0, 8.0),
+                    solid_node(2, [1.0, 0.0, 0.0, 1.0], 4.0, 12.0),
+                    ColorPaintGraphNode {
+                        node_id: 9,
+                        kind: ColorPaintGraphNodeKind::Composite,
+                        solid_path: None,
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
+                        sweep_gradient_path: None,
+                        transform: None,
+                        composite: Some(ColorPaintCompositeNode {
+                            backdrop_node_id: 1,
+                            source_node_id: 2,
+                            mode: ColorPaintCompositeMode::SourceOver,
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                ],
+            }),
+        },
+    );
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(!output.contains(">A</text>"));
+    let blue_index = output
+        .find("fill=\"#0000ff\"")
+        .expect("source-over backdrop path");
+    let red_index = output
+        .find("fill=\"#ff0000\"")
+        .expect("source-over source path");
+    assert!(
+        blue_index < red_index,
+        "source-over SVG lowering must emit backdrop before source"
+    );
+    assert!(output.contains("data-rhwp-color-graph-node-kind=\"solidPath\""));
 }
 
 #[test]
@@ -1103,6 +1204,7 @@ fn test_layer_svg_strict_glyph_outline_rejects_invalid_colrv1_gradient_graph() {
                     radial_gradient_path: None,
                     sweep_gradient_path: None,
                     transform: None,
+                    composite: None,
                     source_range_utf8: Some(TextSourceRange::new(0, 1)),
                     glyph_range: Some(GlyphRange { start: 0, end: 1 }),
                     source_font_ref: Some(source_font_ref),

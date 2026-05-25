@@ -612,6 +612,26 @@ export class Canvas2DLayerRenderer {
                     stack.delete(nodeId);
                     ctx.restore();
                   }
+                  return;
+                }
+                if (node.kind === 'composite') {
+                  const composite = node.composite;
+                  if (!composite || composite.mode !== 'sourceOver') {
+                    return;
+                  }
+                  stack.add(nodeId);
+                  try {
+                    renderNode(composite.backdropNodeId, stack);
+                    const previousOperation = ctx.globalCompositeOperation;
+                    try {
+                      ctx.globalCompositeOperation = 'source-over';
+                      renderNode(composite.sourceNodeId, stack);
+                    } finally {
+                      ctx.globalCompositeOperation = previousOperation;
+                    }
+                  } finally {
+                    stack.delete(nodeId);
+                  }
                 }
               };
               renderNode(graph.rootNodeId, new Set());

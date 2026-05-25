@@ -4402,7 +4402,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           composite: {
             sourceNodeId: 0,
             backdropNodeId: 1,
-            blendMode: 'sourceOver',
+            mode: 'sourceOver',
           },
           sourceRangeUtf8: { start: 0, end: 1 },
           glyphRange: { start: 0, end: 1 },
@@ -5496,7 +5496,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       )
       && unsupportedNodeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && unsupportedSweepNodeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
-      && unsupportedCompositeNodeReservedV2ColorPayloadColrV1IssueCodes.includes(
+      && !unsupportedCompositeNodeReservedV2ColorPayloadColrV1IssueCodes.includes(
         'glyphOutlinePayloadContractInvalid',
       )
       && unsupportedClipNodeReservedV2ColorPayloadColrV1IssueCodes.includes(

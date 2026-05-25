@@ -2016,6 +2016,10 @@ fn write_glyph_outline_color_paint_graph_node(
         buf.push_str(",\"transform\":");
         write_glyph_outline_color_transform_node(buf, transform);
     }
+    if let Some(composite) = &node.composite {
+        buf.push_str(",\"composite\":");
+        write_glyph_outline_color_composite_node(buf, composite);
+    }
     if let Some(range) = node.source_range_utf8 {
         buf.push_str(",\"sourceRangeUtf8\":");
         write_text_source_range(buf, range);
@@ -2165,6 +2169,19 @@ fn write_glyph_outline_color_transform_node(
     buf.push_str(",\"transform\":");
     write_affine_transform(buf, transform.transform);
     buf.push('}');
+}
+
+fn write_glyph_outline_color_composite_node(
+    buf: &mut String,
+    composite: &crate::paint::ColorPaintCompositeNode,
+) {
+    let _ = write!(
+        buf,
+        "{{\"sourceNodeId\":{},\"backdropNodeId\":{},\"mode\":{}}}",
+        composite.source_node_id,
+        composite.backdrop_node_id,
+        json_escape(composite.mode.as_str())
+    );
 }
 
 fn write_glyph_outline_font_color_glyph_ref(
@@ -4525,6 +4542,7 @@ mod tests {
                                 f: 0.0,
                             },
                         }),
+                        composite: None,
                         source_range_utf8: None,
                         glyph_range: None,
                         source_font_ref: None,
@@ -4568,6 +4586,7 @@ mod tests {
                         }),
                         radial_gradient_path: None,
                         sweep_gradient_path: None,
+                        composite: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(GlyphRange::new(0, 1)),
                         source_font_ref: Some(source_font_ref),

@@ -8,22 +8,22 @@ use crate::paint::{
     BinaryResourceKind, BinaryResourceRef, BitmapAlphaMode, BitmapGlyphFiltering,
     BitmapGlyphPayload, BitmapGlyphScalingPolicy, BitmapStrikeSelection, CacheHint, ClipKind,
     ColorGlyphFormat, ColorGradientStop, ColorLayerNode, ColorLayersPayload, ColorLinearGradient,
-    ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
-    ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode,
-    ColorPaintSweepGradientPathNode, ColorPaintTransformNode, ColorRadialGradient,
-    ColorSweepGradient, FontBlobKey, FontBlobResource, FontColorGlyphRef, FontDigest, FontFaceKey,
-    FontFaceResource, FontFallbackPolicyId, FontInstanceKey, FontPortability, FontResourceSource,
-    GlyphCluster, GlyphOutlineFillRule, GlyphOutlinePaintOrder, GlyphOutlinePayloadKind,
-    GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange,
-    GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, GlyphTransform,
-    ImageResourceId, LayerAffineTransform, LayerBuilder, LayerGlyphOutlinePaint,
-    LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint, LayerLinePaint, LayerNode,
-    LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint, LayerRectanglePaint,
-    LayerSemantic, LayerTextOrientation, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp,
-    PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena, ShapeKey,
-    ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, SvgResourceId,
-    TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
-    TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
+    ColorPaintCompositeMode, ColorPaintCompositeNode, ColorPaintGraphNode, ColorPaintGraphNodeKind,
+    ColorPaintGraphPayload, ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode,
+    ColorPaintSolidPathNode, ColorPaintSweepGradientPathNode, ColorPaintTransformNode,
+    ColorRadialGradient, ColorSweepGradient, FontBlobKey, FontBlobResource, FontColorGlyphRef,
+    FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId, FontInstanceKey,
+    FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
+    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
+    GlyphRunReplayEligibility, GlyphTransform, ImageResourceId, LayerAffineTransform, LayerBuilder,
+    LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
+    LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
+    LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, LocalizedName,
+    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor,
+    ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
+    SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
+    TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -1829,6 +1829,111 @@ fn static_subtree_cache_key_includes_color_layers_payload_contents() {
 }
 
 #[test]
+fn static_subtree_cache_key_includes_colrv1_composite_graph_edges() {
+    let bbox = BoundingBox::new(2.0, 2.0, 24.0, 24.0);
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("test-face".to_string()),
+        glyph_id: Some(1),
+        palette_index: Some(2),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let solid_node = |node_id: u32, rgba: [f32; 4], glyph_id: u32| ColorPaintGraphNode {
+        node_id,
+        kind: ColorPaintGraphNodeKind::SolidPath,
+        solid_path: Some(ColorPaintSolidPathNode {
+            commands: vec![
+                PathCommand::MoveTo(0.0, 0.0),
+                PathCommand::LineTo(12.0, 0.0),
+                PathCommand::LineTo(12.0, 12.0),
+                PathCommand::ClosePath,
+            ],
+            fill: ResolvedColor {
+                color_space: Some("srgb".to_string()),
+                rgba,
+            },
+            fill_rule: GlyphOutlineFillRule::NonZero,
+            source_glyph_id: Some(glyph_id),
+            palette_index: Some(2),
+        }),
+        linear_gradient_path: None,
+        radial_gradient_path: None,
+        sweep_gradient_path: None,
+        transform: None,
+        composite: None,
+        source_range_utf8: Some(TextSourceRange::new(glyph_id, glyph_id + 1)),
+        glyph_range: Some(GlyphRange::new(glyph_id, glyph_id + 1)),
+        source_font_ref: Some(source_font_ref.clone()),
+    };
+    let make_tree = |backdrop_node_id: u32, source_node_id: u32| {
+        let color_layers = ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 9,
+                nodes: vec![
+                    solid_node(1, [0.0, 0.0, 1.0, 1.0], 1),
+                    solid_node(2, [1.0, 0.0, 0.0, 0.5], 2),
+                    ColorPaintGraphNode {
+                        node_id: 9,
+                        kind: ColorPaintGraphNodeKind::Composite,
+                        solid_path: None,
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
+                        sweep_gradient_path: None,
+                        transform: None,
+                        composite: Some(ColorPaintCompositeNode {
+                            backdrop_node_id,
+                            source_node_id,
+                            mode: ColorPaintCompositeMode::SourceOver,
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                ],
+            }),
+            source_range_utf8: Some(TextSourceRange::new(0, 2)),
+            glyph_range: Some(GlyphRange::new(0, 2)),
+        };
+        let outline = glyph_outline_test_paint(
+            GlyphOutlinePayloadKind::ColorLayers,
+            None,
+            Some(color_layers),
+        );
+        let leaf = LayerNode::leaf_with_hint(
+            bbox,
+            Some(316),
+            vec![PaintOp::GlyphOutline {
+                bbox,
+                outline: Box::new(outline),
+            }],
+            CacheHint::StaticSubtree,
+        );
+        PageLayerTree::with_resources(32.0, 32.0, leaf, ResourceArena::default())
+    };
+    let cache_key = |tree: &PageLayerTree| {
+        let mut cache_key = StaticSubtreeCacheKey::new();
+        cache_key.mix_layer_node(&tree.root, &tree.resources);
+        cache_key.finish()
+    };
+
+    let source_over_key = cache_key(&make_tree(1, 2));
+    let source_over_key_again = cache_key(&make_tree(1, 2));
+    let swapped_key = cache_key(&make_tree(2, 1));
+
+    assert_eq!(
+        source_over_key, source_over_key_again,
+        "equal COLRv1 composite graphs should produce stable static subtree keys"
+    );
+    assert_ne!(
+        source_over_key, swapped_key,
+        "COLRv1 composite source/backdrop edges must affect static subtree cache keys"
+    );
+}
+
+#[test]
 fn static_subtree_cache_key_includes_text_variant_metadata() {
     let tree_a = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
     let mut tree_b = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
@@ -3401,6 +3506,7 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
                             f: 0.0,
                         },
                     }),
+                    composite: None,
                     source_range_utf8: None,
                     glyph_range: None,
                     source_font_ref: None,
@@ -3427,6 +3533,7 @@ fn native_skia_replays_colrv1_stage1_solid_transform_graph() {
                     linear_gradient_path: None,
                     radial_gradient_path: None,
                     sweep_gradient_path: None,
+                    composite: None,
                     source_range_utf8: Some(TextSourceRange::new(0, 1)),
                     glyph_range: Some(GlyphRange::new(0, 1)),
                     source_font_ref: Some(source_font_ref),
@@ -3531,6 +3638,7 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
                 radial_gradient_path: None,
                 sweep_gradient_path: None,
                 transform: None,
+                composite: None,
                 source_range_utf8: Some(TextSourceRange::new(0, 1)),
                 glyph_range: Some(GlyphRange::new(0, 1)),
                 source_font_ref: Some(source_font_ref.clone()),
@@ -3604,6 +3712,7 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
                 }),
                 sweep_gradient_path: None,
                 transform: None,
+                composite: None,
                 source_range_utf8: Some(TextSourceRange::new(0, 1)),
                 glyph_range: Some(GlyphRange::new(0, 1)),
                 source_font_ref: Some(source_font_ref.clone()),
@@ -3678,6 +3787,7 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
                     palette_index: Some(2),
                 }),
                 transform: None,
+                composite: None,
                 source_range_utf8: Some(TextSourceRange::new(0, 1)),
                 glyph_range: Some(GlyphRange::new(0, 1)),
                 source_font_ref: Some(source_font_ref),
@@ -3716,6 +3826,116 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
     assert_eq!(sweep_report.selected_variant_id, "glyphOutline");
     assert_eq!(
         sweep_report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+}
+
+#[test]
+fn native_skia_replays_colrv1_stage4_source_over_composite_graph() {
+    let renderer = SkiaLayerRenderer::new();
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("test-face".to_string()),
+        glyph_id: Some(9),
+        palette_index: Some(4),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let solid_node = |node_id: u32,
+                      rgba: [f32; 4],
+                      x0: f64,
+                      x1: f64,
+                      source_start: u32|
+     -> ColorPaintGraphNode {
+        ColorPaintGraphNode {
+            node_id,
+            kind: ColorPaintGraphNodeKind::SolidPath,
+            solid_path: Some(ColorPaintSolidPathNode {
+                commands: vec![
+                    PathCommand::MoveTo(x0, 0.0),
+                    PathCommand::LineTo(x1, 0.0),
+                    PathCommand::LineTo(x1, 28.0),
+                    PathCommand::LineTo(x0, 28.0),
+                    PathCommand::ClosePath,
+                ],
+                fill: ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba,
+                },
+                fill_rule: GlyphOutlineFillRule::NonZero,
+                source_glyph_id: Some(node_id),
+                palette_index: Some(4),
+            }),
+            linear_gradient_path: None,
+            radial_gradient_path: None,
+            sweep_gradient_path: None,
+            transform: None,
+            composite: None,
+            source_range_utf8: Some(TextSourceRange::new(source_start, source_start + 1)),
+            glyph_range: Some(GlyphRange::new(source_start, source_start + 1)),
+            source_font_ref: Some(source_font_ref.clone()),
+        }
+    };
+    let color_layers = ColorLayersPayload {
+        color_format: ColorGlyphFormat::ColrV1,
+        source_font_ref: Some(source_font_ref.clone()),
+        palette_ref: None,
+        layers: Vec::new(),
+        paint_graph: Some(ColorPaintGraphPayload {
+            root_node_id: 3,
+            nodes: vec![
+                solid_node(1, [0.0, 0.0, 1.0, 1.0], 0.0, 32.0, 0),
+                solid_node(2, [1.0, 0.0, 0.0, 1.0], 8.0, 24.0, 1),
+                ColorPaintGraphNode {
+                    node_id: 3,
+                    kind: ColorPaintGraphNodeKind::Composite,
+                    solid_path: None,
+                    linear_gradient_path: None,
+                    radial_gradient_path: None,
+                    sweep_gradient_path: None,
+                    transform: None,
+                    composite: Some(ColorPaintCompositeNode {
+                        backdrop_node_id: 1,
+                        source_node_id: 2,
+                        mode: ColorPaintCompositeMode::SourceOver,
+                    }),
+                    source_range_utf8: None,
+                    glyph_range: None,
+                    source_font_ref: None,
+                },
+            ],
+        }),
+        source_range_utf8: Some(TextSourceRange::new(0, 2)),
+        glyph_range: Some(GlyphRange::new(0, 2)),
+    };
+    let outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Some(color_layers),
+    );
+    let tree = glyph_outline_variant_test_tree(outline, true);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("COLRv1 source-over composite glyph outline variant render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let red_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.red() > 180 && pixel.blue() < 80 && pixel.green() < 80
+    });
+    let blue_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.blue() > 180 && pixel.red() < 80 && pixel.green() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia COLRv1 source-over composite selection report");
+
+    assert!(
+        red_pixels > 150 && blue_pixels > 150,
+        "COLRv1 source-over composite should paint backdrop and source, red={red_pixels}, blue={blue_pixels}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
         VariantSelectedReason::GlyphOutlineStrictProfile
     );
 }
@@ -3768,6 +3988,7 @@ fn native_skia_keeps_text_fallback_for_invalid_colrv1_gradient_graph() {
                 radial_gradient_path: None,
                 sweep_gradient_path: None,
                 transform: None,
+                composite: None,
                 source_range_utf8: Some(TextSourceRange::new(0, 1)),
                 glyph_range: Some(GlyphRange::new(0, 1)),
                 source_font_ref: Some(source_font_ref),

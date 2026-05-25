@@ -909,6 +909,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         !(
           node.solidPath !== undefined
         && node.transform === undefined
+        && node.composite === undefined
         && node.linearGradientPath === undefined
         && node.radialGradientPath === undefined
         && node.sweepGradientPath === undefined
@@ -933,6 +934,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
           gradientPath !== undefined
         && node.solidPath === undefined
         && node.transform === undefined
+        && node.composite === undefined
         && node.radialGradientPath === undefined
         && node.sweepGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
@@ -961,6 +963,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
           gradientPath !== undefined
         && node.solidPath === undefined
         && node.transform === undefined
+        && node.composite === undefined
         && node.linearGradientPath === undefined
         && node.sweepGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
@@ -989,6 +992,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
           gradientPath !== undefined
         && node.solidPath === undefined
         && node.transform === undefined
+        && node.composite === undefined
         && node.linearGradientPath === undefined
         && node.radialGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
@@ -1025,6 +1029,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.linearGradientPath === undefined
         && node.radialGradientPath === undefined
         && node.sweepGradientPath === undefined
+        && node.composite === undefined
         && node.transform !== undefined
         && isValidPayloadGraphNodeId(node.transform.childNodeId)
         && nodeIds.has(node.transform.childNodeId)
@@ -1037,6 +1042,37 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
       childRefCounts.set(
         node.transform.childNodeId,
         (childRefCounts.get(node.transform.childNodeId) ?? 0) + 1,
+      );
+      continue;
+    }
+    if (node.kind === 'composite') {
+      if (
+        !(
+          node.solidPath === undefined
+        && node.linearGradientPath === undefined
+        && node.radialGradientPath === undefined
+        && node.sweepGradientPath === undefined
+        && node.transform === undefined
+        && node.composite !== undefined
+        && node.composite.mode === 'sourceOver'
+        && isValidPayloadGraphNodeId(node.composite.sourceNodeId)
+        && isValidPayloadGraphNodeId(node.composite.backdropNodeId)
+        && nodeIds.has(node.composite.sourceNodeId)
+        && nodeIds.has(node.composite.backdropNodeId)
+        && node.composite.sourceNodeId !== node.nodeId
+        && node.composite.backdropNodeId !== node.nodeId
+        && node.composite.sourceNodeId !== node.composite.backdropNodeId
+        )
+      ) {
+        return false;
+      }
+      childRefCounts.set(
+        node.composite.backdropNodeId,
+        (childRefCounts.get(node.composite.backdropNodeId) ?? 0) + 1,
+      );
+      childRefCounts.set(
+        node.composite.sourceNodeId,
+        (childRefCounts.get(node.composite.sourceNodeId) ?? 0) + 1,
       );
       continue;
     }
@@ -1067,6 +1103,15 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     visiting.add(nodeId);
     if (node.kind === 'transform') {
       if (!node.transform || !visit(node.transform.childNodeId, depth + 1)) {
+        return false;
+      }
+    }
+    if (node.kind === 'composite') {
+      if (
+        !node.composite
+        || !visit(node.composite.backdropNodeId, depth + 1)
+        || !visit(node.composite.sourceNodeId, depth + 1)
+      ) {
         return false;
       }
     }

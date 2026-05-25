@@ -1329,6 +1329,20 @@ export class CanvasKitLayerRenderer {
                 stack.delete(nodeId);
                 canvas.restore();
               }
+              return;
+            }
+            if (node.kind === 'composite') {
+              const composite = node.composite;
+              if (!composite || composite.mode !== 'sourceOver') {
+                return;
+              }
+              stack.add(nodeId);
+              try {
+                renderNode(composite.backdropNodeId, stack);
+                renderNode(composite.sourceNodeId, stack);
+              } finally {
+                stack.delete(nodeId);
+              }
             }
           };
           renderNode(graph.rootNodeId, new Set());

@@ -2107,6 +2107,29 @@ impl SvgRenderer {
                     depth + 1,
                 );
             }
+            crate::paint::ColorPaintGraphNodeKind::Composite => {
+                let Some(composite) = node.composite.as_ref() else {
+                    return;
+                };
+                match composite.mode {
+                    crate::paint::ColorPaintCompositeMode::SourceOver => {
+                        self.render_glyph_outline_colrv1_graph_node(
+                            outline,
+                            graph,
+                            composite.backdrop_node_id,
+                            transform_to_run,
+                            depth + 1,
+                        );
+                        self.render_glyph_outline_colrv1_graph_node(
+                            outline,
+                            graph,
+                            composite.source_node_id,
+                            transform_to_run,
+                            depth + 1,
+                        );
+                    }
+                }
+            }
         }
     }
 

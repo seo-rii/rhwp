@@ -994,6 +994,7 @@ impl StaticSubtreeCacheKey {
                     crate::paint::ColorPaintGraphNodeKind::RadialGradientPath => 2,
                     crate::paint::ColorPaintGraphNodeKind::SweepGradientPath => 3,
                     crate::paint::ColorPaintGraphNodeKind::Transform => 4,
+                    crate::paint::ColorPaintGraphNodeKind::Composite => 5,
                 });
                 if let Some(solid) = &node.solid_path {
                     self.mix_bool(true);
@@ -1077,6 +1078,16 @@ impl StaticSubtreeCacheKey {
                     self.mix_bool(true);
                     self.mix_u32(transform.child_node_id);
                     self.mix_layer_affine_transform_option(Some(transform.transform));
+                } else {
+                    self.mix_bool(false);
+                }
+                if let Some(composite) = &node.composite {
+                    self.mix_bool(true);
+                    self.mix_u32(composite.backdrop_node_id);
+                    self.mix_u32(composite.source_node_id);
+                    self.mix_u8(match composite.mode {
+                        crate::paint::ColorPaintCompositeMode::SourceOver => 0,
+                    });
                 } else {
                     self.mix_bool(false);
                 }
