@@ -3642,6 +3642,92 @@ fn native_skia_replays_colrv1_stage2_gradient_graph_leaves() {
 }
 
 #[test]
+fn native_skia_keeps_text_fallback_for_invalid_colrv1_gradient_graph() {
+    let renderer = SkiaLayerRenderer::new();
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("test-face".to_string()),
+        glyph_id: Some(8),
+        palette_index: Some(1),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let invalid_color_layers = ColorLayersPayload {
+        color_format: ColorGlyphFormat::ColrV1,
+        source_font_ref: Some(source_font_ref.clone()),
+        palette_ref: None,
+        layers: Vec::new(),
+        paint_graph: Some(ColorPaintGraphPayload {
+            root_node_id: 1,
+            nodes: vec![ColorPaintGraphNode {
+                node_id: 1,
+                kind: ColorPaintGraphNodeKind::LinearGradientPath,
+                solid_path: None,
+                linear_gradient_path: Some(ColorPaintLinearGradientPathNode {
+                    commands: vec![
+                        PathCommand::MoveTo(0.0, 0.0),
+                        PathCommand::LineTo(32.0, 0.0),
+                        PathCommand::LineTo(32.0, 28.0),
+                        PathCommand::LineTo(0.0, 28.0),
+                        PathCommand::ClosePath,
+                    ],
+                    gradient: ColorLinearGradient {
+                        x0: 0.0,
+                        y0: 0.0,
+                        x1: 32.0,
+                        y1: 0.0,
+                        stops: vec![ColorGradientStop {
+                            offset: 0.0,
+                            color: ResolvedColor {
+                                color_space: Some("srgb".to_string()),
+                                rgba: [1.0, 0.0, 0.0, 1.0],
+                            },
+                        }],
+                    },
+                    fill_rule: GlyphOutlineFillRule::NonZero,
+                    source_glyph_id: Some(8),
+                    palette_index: Some(1),
+                }),
+                radial_gradient_path: None,
+                transform: None,
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                glyph_range: Some(GlyphRange::new(0, 1)),
+                source_font_ref: Some(source_font_ref),
+            }],
+        }),
+        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+        glyph_range: Some(GlyphRange::new(0, 1)),
+    };
+    let outline = glyph_outline_test_paint(
+        GlyphOutlinePayloadKind::ColorLayers,
+        None,
+        Some(invalid_color_layers),
+    );
+    let tree = glyph_outline_variant_test_tree(outline, true);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("invalid COLRv1 gradient fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia invalid COLRv1 gradient fallback selection report");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when COLRv1 gradient graph is invalid, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedColorGlyph)
+    }));
+}
+
+#[test]
 fn native_skia_replays_bitmap_glyph_resource_variant() {
     let renderer = SkiaLayerRenderer::new();
     let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("bitmap glyph pixmap");
