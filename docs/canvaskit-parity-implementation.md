@@ -220,7 +220,7 @@ Later COLRv1 additions should be staged as independent v2 feature additions:
 | Stage | New graph capability | Writer status |
 | --- | --- | --- |
 | 1 | solid color plus transform | implemented baseline; continue fixture hardening |
-| 2 | linear and radial gradients | browser Canvas2D/CanvasKit, Rust SVG, and native Skia implemented for resolved gradient path leaves; malformed stop offsets now reject deterministically; Canvas2D-vs-CanvasKit parity now covers duplicate-stop hard edges; wider pixel parity fixture hardening remains follow-up work |
+| 2 | linear and radial gradients | browser Canvas2D/CanvasKit, Rust SVG, and native Skia implemented for resolved gradient path leaves; malformed stop offsets now reject deterministically; Canvas2D-vs-CanvasKit parity now covers duplicate-stop linear hard edges and radial red-center/blue-rim coverage |
 | 3 | sweep gradients | writer still blocked until gradient coordinate semantics are fixed; strict v2 payload validation now rejects `sweepGradientPath` deterministically as an unsupported COLRv1 node |
 | 4 | composite and blend | writer still blocked until reference compositing semantics are fixed; strict v2 payload validation now rejects composite/blend-style graph nodes deterministically as unsupported COLRv1 nodes |
 | 5 | clip and reusable graph nodes | writer still blocked until DAG, cycle, depth, and reuse rules are fixed; strict v2 payload validation rejects clipPath-style nodes and shared-child reusable graphs deterministically |
