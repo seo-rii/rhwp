@@ -2130,6 +2130,34 @@ impl SvgRenderer {
                     }
                 }
             }
+            crate::paint::ColorPaintGraphNodeKind::Clip => {
+                let Some(clip) = node.clip.as_ref() else {
+                    return;
+                };
+                let clip_id = format!("colrv1-clip-{}", self.next_clip_id());
+                self.defs.push(format!(
+                    "<clipPath id=\"{}\"><path d=\"{}\" clip-rule=\"{}\"{}/></clipPath>\n",
+                    clip_id,
+                    svg_path_data(&clip.clip_commands).trim(),
+                    clip.fill_rule.as_str(),
+                    transform_to_run
+                        .map(|transform| format!(
+                            " transform=\"{}\"",
+                            svg_affine_matrix_transform(transform)
+                        ))
+                        .unwrap_or_default()
+                ));
+                self.output
+                    .push_str(&format!("<g clip-path=\"url(#{})\">", clip_id));
+                self.render_glyph_outline_colrv1_graph_node(
+                    outline,
+                    graph,
+                    clip.child_node_id,
+                    transform_to_run,
+                    depth + 1,
+                );
+                self.output.push_str("</g>\n");
+            }
         }
     }
 

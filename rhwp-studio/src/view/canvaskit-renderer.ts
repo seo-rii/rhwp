@@ -1343,6 +1343,25 @@ export class CanvasKitLayerRenderer {
               } finally {
                 stack.delete(nodeId);
               }
+              return;
+            }
+            if (node.kind === 'clip') {
+              const clip = node.clip;
+              if (!clip) {
+                return;
+              }
+              const path = this.makePath(clip.clipCommands);
+              this.applyPathFillRule(path, clip.fillRule);
+              canvas.save();
+              canvas.clipPath(path, this.canvasKit.ClipOp.Intersect, true);
+              stack.add(nodeId);
+              try {
+                renderNode(clip.childNodeId, stack);
+              } finally {
+                stack.delete(nodeId);
+                canvas.restore();
+                path.delete();
+              }
             }
           };
           renderNode(graph.rootNodeId, new Set());

@@ -2020,6 +2020,10 @@ fn write_glyph_outline_color_paint_graph_node(
         buf.push_str(",\"composite\":");
         write_glyph_outline_color_composite_node(buf, composite);
     }
+    if let Some(clip) = &node.clip {
+        buf.push_str(",\"clip\":");
+        write_glyph_outline_color_clip_node(buf, clip);
+    }
     if let Some(range) = node.source_range_utf8 {
         buf.push_str(",\"sourceRangeUtf8\":");
         write_text_source_range(buf, range);
@@ -2181,6 +2185,17 @@ fn write_glyph_outline_color_composite_node(
         composite.source_node_id,
         composite.backdrop_node_id,
         json_escape(composite.mode.as_str())
+    );
+}
+
+fn write_glyph_outline_color_clip_node(buf: &mut String, clip: &crate::paint::ColorPaintClipNode) {
+    let _ = write!(buf, "{{\"childNodeId\":{}", clip.child_node_id);
+    buf.push_str(",\"clipCommands\":");
+    write_path_commands(buf, &clip.clip_commands);
+    let _ = write!(
+        buf,
+        ",\"fillRule\":{}}}",
+        json_escape(clip.fill_rule.as_str())
     );
 }
 
@@ -4543,6 +4558,7 @@ mod tests {
                             },
                         }),
                         composite: None,
+                        clip: None,
                         source_range_utf8: None,
                         glyph_range: None,
                         source_font_ref: None,
@@ -4587,6 +4603,7 @@ mod tests {
                         radial_gradient_path: None,
                         sweep_gradient_path: None,
                         composite: None,
+                        clip: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(GlyphRange::new(0, 1)),
                         source_font_ref: Some(source_font_ref),

@@ -995,6 +995,7 @@ impl StaticSubtreeCacheKey {
                     crate::paint::ColorPaintGraphNodeKind::SweepGradientPath => 3,
                     crate::paint::ColorPaintGraphNodeKind::Transform => 4,
                     crate::paint::ColorPaintGraphNodeKind::Composite => 5,
+                    crate::paint::ColorPaintGraphNodeKind::Clip => 6,
                 });
                 if let Some(solid) = &node.solid_path {
                     self.mix_bool(true);
@@ -1087,6 +1088,20 @@ impl StaticSubtreeCacheKey {
                     self.mix_u32(composite.source_node_id);
                     self.mix_u8(match composite.mode {
                         crate::paint::ColorPaintCompositeMode::SourceOver => 0,
+                    });
+                } else {
+                    self.mix_bool(false);
+                }
+                if let Some(clip) = &node.clip {
+                    self.mix_bool(true);
+                    self.mix_u32(clip.child_node_id);
+                    self.mix_usize(clip.clip_commands.len());
+                    for command in &clip.clip_commands {
+                        self.mix_path_command(command);
+                    }
+                    self.mix_u8(match clip.fill_rule {
+                        crate::paint::GlyphOutlineFillRule::NonZero => 0,
+                        crate::paint::GlyphOutlineFillRule::EvenOdd => 1,
                     });
                 } else {
                     self.mix_bool(false);

@@ -1313,6 +1313,22 @@ impl SkiaLayerRenderer {
                     }
                 }
             }
+            crate::paint::ColorPaintGraphNodeKind::Clip => {
+                let Some(clip) = node.clip.as_ref() else {
+                    return;
+                };
+                let clip_path = Self::glyph_outline_path(&clip.clip_commands, clip.fill_rule);
+                canvas.save();
+                canvas.clip_path(&clip_path, None, Some(replay.clip_antialias()));
+                self.render_glyph_outline_color_graph_node(
+                    canvas,
+                    graph,
+                    clip.child_node_id,
+                    replay,
+                    depth + 1,
+                );
+                canvas.restore();
+            }
         }
     }
 

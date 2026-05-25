@@ -912,7 +912,8 @@ export type LayerGlyphOutlineColorPaintGraphNodeKind =
   | 'radialGradientPath'
   | 'sweepGradientPath'
   | 'transform'
-  | 'composite';
+  | 'composite'
+  | 'clip';
 
 export interface LayerGlyphOutlineColorSolidPathNode {
   commands: LayerPathCommand[];
@@ -987,6 +988,12 @@ export interface LayerGlyphOutlineColorCompositeNode {
   mode: LayerGlyphOutlineColorCompositeMode;
 }
 
+export interface LayerGlyphOutlineColorClipNode {
+  childNodeId: number;
+  clipCommands: LayerPathCommand[];
+  fillRule: CanvasFillRule;
+}
+
 export interface LayerGlyphOutlineColorPaintGraphNode {
   nodeId: number;
   kind: LayerGlyphOutlineColorPaintGraphNodeKind;
@@ -996,6 +1003,7 @@ export interface LayerGlyphOutlineColorPaintGraphNode {
   sweepGradientPath?: LayerGlyphOutlineColorSweepGradientPathNode;
   transform?: LayerGlyphOutlineColorTransformNode;
   composite?: LayerGlyphOutlineColorCompositeNode;
+  clip?: LayerGlyphOutlineColorClipNode;
   sourceRangeUtf8?: LayerTextSourceRange;
   glyphRange?: { start: number; end: number };
   sourceFontRef?: LayerGlyphOutlineFontColorGlyphRef;

@@ -2,11 +2,11 @@ use super::*;
 use crate::paint::{
     BitmapAlphaMode, BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy,
     BitmapStrikeSelection, ColorGlyphFormat, ColorGradientStop, ColorLayerNode, ColorLayersPayload,
-    ColorLinearGradient, ColorPaintCompositeMode, ColorPaintCompositeNode, ColorPaintGraphNode,
-    ColorPaintGraphNodeKind, ColorPaintGraphPayload, ColorPaintLinearGradientPathNode,
-    ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode, ColorPaintTransformNode,
-    ColorRadialGradient, FontColorGlyphRef, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
-    GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    ColorLinearGradient, ColorPaintClipNode, ColorPaintCompositeMode, ColorPaintCompositeNode,
+    ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
+    ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode,
+    ColorPaintTransformNode, ColorRadialGradient, FontColorGlyphRef, GlyphOutlineFillRule,
+    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
     LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
     LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
@@ -854,6 +854,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
                         sweep_gradient_path: None,
                         transform: None,
                         composite: None,
+                        clip: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(GlyphRange { start: 0, end: 1 }),
                         source_font_ref: Some(source_font_ref),
@@ -877,6 +878,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_stage1_graph() {
                             },
                         }),
                         composite: None,
+                        clip: None,
                         source_range_utf8: None,
                         glyph_range: None,
                         source_font_ref: None,
@@ -988,6 +990,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_gradient_graph_leaves() {
         sweep_gradient_path: None,
         transform: None,
         composite: None,
+        clip: None,
         source_range_utf8: Some(TextSourceRange::new(0, 1)),
         glyph_range: Some(GlyphRange { start: 0, end: 1 }),
         source_font_ref: Some(source_font_ref.clone()),
@@ -1017,6 +1020,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_gradient_graph_leaves() {
         sweep_gradient_path: None,
         transform: None,
         composite: None,
+        clip: None,
         source_range_utf8: Some(TextSourceRange::new(0, 1)),
         glyph_range: Some(GlyphRange { start: 0, end: 1 }),
         source_font_ref: Some(source_font_ref.clone()),
@@ -1086,6 +1090,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_source_over_composite_grap
         sweep_gradient_path: None,
         transform: None,
         composite: None,
+        clip: None,
         source_range_utf8: Some(TextSourceRange::new(node_id, node_id + 1)),
         glyph_range: Some(GlyphRange {
             start: node_id,
@@ -1120,6 +1125,7 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_source_over_composite_grap
                             source_node_id: 2,
                             mode: ColorPaintCompositeMode::SourceOver,
                         }),
+                        clip: None,
                         source_range_utf8: None,
                         glyph_range: None,
                         source_font_ref: None,
@@ -1144,6 +1150,99 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_source_over_composite_grap
         "source-over SVG lowering must emit backdrop before source"
     );
     assert!(output.contains("data-rhwp-color-graph-node-kind=\"solidPath\""));
+}
+
+#[test]
+fn test_layer_svg_strict_glyph_outline_replays_colrv1_clip_graph() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("fixture-face".to_string()),
+        glyph_id: Some(42),
+        palette_index: Some(3),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let tree = glyph_outline_fixture_tree_with_color_layers(
+        PaintTextStyle::from(&text_style),
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 9,
+                nodes: vec![
+                    ColorPaintGraphNode {
+                        node_id: 1,
+                        kind: ColorPaintGraphNodeKind::SolidPath,
+                        solid_path: Some(ColorPaintSolidPathNode {
+                            commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(12.0, 0.0),
+                                PathCommand::LineTo(12.0, 8.0),
+                                PathCommand::LineTo(0.0, 8.0),
+                                PathCommand::ClosePath,
+                            ],
+                            fill: ResolvedColor {
+                                color_space: Some("srgb".to_string()),
+                                rgba: [1.0, 0.0, 0.0, 1.0],
+                            },
+                            fill_rule: GlyphOutlineFillRule::NonZero,
+                            source_glyph_id: Some(42),
+                            palette_index: Some(3),
+                        }),
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
+                        sweep_gradient_path: None,
+                        transform: None,
+                        composite: None,
+                        clip: None,
+                        source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                        glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+                        source_font_ref: Some(source_font_ref.clone()),
+                    },
+                    ColorPaintGraphNode {
+                        node_id: 9,
+                        kind: ColorPaintGraphNodeKind::Clip,
+                        solid_path: None,
+                        linear_gradient_path: None,
+                        radial_gradient_path: None,
+                        sweep_gradient_path: None,
+                        transform: None,
+                        composite: None,
+                        clip: Some(ColorPaintClipNode {
+                            child_node_id: 1,
+                            clip_commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(6.0, 0.0),
+                                PathCommand::LineTo(6.0, 8.0),
+                                PathCommand::LineTo(0.0, 8.0),
+                                PathCommand::ClosePath,
+                            ],
+                            fill_rule: GlyphOutlineFillRule::EvenOdd,
+                        }),
+                        source_range_utf8: None,
+                        glyph_range: None,
+                        source_font_ref: None,
+                    },
+                ],
+            }),
+        },
+    );
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+
+    assert!(!output.contains(">A</text>"));
+    assert!(output.contains("<clipPath id=\"colrv1-clip-"));
+    assert!(output.contains("clip-rule=\"evenodd\""));
+    assert!(output.contains("<g clip-path=\"url(#colrv1-clip-"));
+    assert!(output.contains("source-backed COLRv1 glyph color graph solid path"));
 }
 
 #[test]
@@ -1205,6 +1304,7 @@ fn test_layer_svg_strict_glyph_outline_rejects_invalid_colrv1_gradient_graph() {
                     sweep_gradient_path: None,
                     transform: None,
                     composite: None,
+                    clip: None,
                     source_range_utf8: Some(TextSourceRange::new(0, 1)),
                     glyph_range: Some(GlyphRange { start: 0, end: 1 }),
                     source_font_ref: Some(source_font_ref),

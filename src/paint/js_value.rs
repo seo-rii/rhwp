@@ -2143,6 +2143,9 @@ fn glyph_outline_color_paint_graph_node_to_value(
             glyph_outline_color_composite_node_to_value(composite),
         );
     }
+    if let Some(clip) = &node.clip {
+        set_value(&value, "clip", glyph_outline_color_clip_node_to_value(clip));
+    }
     if let Some(range) = node.source_range_utf8 {
         set_value(&value, "sourceRangeUtf8", text_source_range_to_value(range));
     }
@@ -2306,6 +2309,18 @@ fn glyph_outline_color_composite_node_to_value(
     set_number(&value, "sourceNodeId", composite.source_node_id as f64);
     set_number(&value, "backdropNodeId", composite.backdrop_node_id as f64);
     set_string(&value, "mode", composite.mode.as_str());
+    value.into()
+}
+
+fn glyph_outline_color_clip_node_to_value(clip: &crate::paint::ColorPaintClipNode) -> JsValue {
+    let value = Object::new();
+    set_number(&value, "childNodeId", clip.child_node_id as f64);
+    set_value(
+        &value,
+        "clipCommands",
+        path_commands_to_value(&clip.clip_commands),
+    );
+    set_string(&value, "fillRule", clip.fill_rule.as_str());
     value.into()
 }
 
@@ -4371,6 +4386,7 @@ mod tests {
                             },
                         }),
                         composite: None,
+                        clip: None,
                         source_range_utf8: None,
                         glyph_range: None,
                         source_font_ref: None,
@@ -4398,6 +4414,7 @@ mod tests {
                         sweep_gradient_path: None,
                         transform: None,
                         composite: None,
+                        clip: None,
                         source_range_utf8: Some(TextSourceRange::new(0, 1)),
                         glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
                         source_font_ref: Some(colrv1_source_font_ref),

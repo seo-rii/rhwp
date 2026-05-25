@@ -910,6 +910,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
           node.solidPath !== undefined
         && node.transform === undefined
         && node.composite === undefined
+        && node.clip === undefined
         && node.linearGradientPath === undefined
         && node.radialGradientPath === undefined
         && node.sweepGradientPath === undefined
@@ -935,6 +936,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.solidPath === undefined
         && node.transform === undefined
         && node.composite === undefined
+        && node.clip === undefined
         && node.radialGradientPath === undefined
         && node.sweepGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
@@ -964,6 +966,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.solidPath === undefined
         && node.transform === undefined
         && node.composite === undefined
+        && node.clip === undefined
         && node.linearGradientPath === undefined
         && node.sweepGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
@@ -993,6 +996,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.solidPath === undefined
         && node.transform === undefined
         && node.composite === undefined
+        && node.clip === undefined
         && node.linearGradientPath === undefined
         && node.radialGradientPath === undefined
         && isValidPathCommands(gradientPath.commands)
@@ -1030,6 +1034,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.radialGradientPath === undefined
         && node.sweepGradientPath === undefined
         && node.composite === undefined
+        && node.clip === undefined
         && node.transform !== undefined
         && isValidPayloadGraphNodeId(node.transform.childNodeId)
         && nodeIds.has(node.transform.childNodeId)
@@ -1054,6 +1059,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && node.sweepGradientPath === undefined
         && node.transform === undefined
         && node.composite !== undefined
+        && node.clip === undefined
         && node.composite.mode === 'sourceOver'
         && isValidPayloadGraphNodeId(node.composite.sourceNodeId)
         && isValidPayloadGraphNodeId(node.composite.backdropNodeId)
@@ -1076,12 +1082,36 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
       );
       continue;
     }
+    if (node.kind === 'clip') {
+      if (
+        !(
+          node.solidPath === undefined
+        && node.linearGradientPath === undefined
+        && node.radialGradientPath === undefined
+        && node.sweepGradientPath === undefined
+        && node.transform === undefined
+        && node.composite === undefined
+        && node.clip !== undefined
+        && isValidPayloadGraphNodeId(node.clip.childNodeId)
+        && nodeIds.has(node.clip.childNodeId)
+        && node.clip.childNodeId !== node.nodeId
+        && isValidPathCommands(node.clip.clipCommands)
+        && isSupportedFillRule(node.clip.fillRule)
+        )
+      ) {
+        return false;
+      }
+      childRefCounts.set(
+        node.clip.childNodeId,
+        (childRefCounts.get(node.clip.childNodeId) ?? 0) + 1,
+      );
+      continue;
+    }
     return false;
   }
 
-  if ([...childRefCounts.values()].some((count) => count > 1)) {
-    return false;
-  }
+  // Stage 5 allows reusable DAG subgraphs. Cycles, unreachable nodes, and
+  // depth limits are still rejected by the DFS below.
 
   const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
   const visited = new Set<number>();
@@ -1112,6 +1142,11 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         || !visit(node.composite.backdropNodeId, depth + 1)
         || !visit(node.composite.sourceNodeId, depth + 1)
       ) {
+        return false;
+      }
+    }
+    if (node.kind === 'clip') {
+      if (!node.clip || !visit(node.clip.childNodeId, depth + 1)) {
         return false;
       }
     }

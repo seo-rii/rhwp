@@ -79,12 +79,15 @@ SVG keeps this subset in deterministic fallback/reject because SVG has no
 portable native conic-gradient primitive. The stage-4 `sourceOver` composite
 subset is now implemented as local glyph-payload composition: native Skia,
 Rust SVG, Studio Canvas2D/CanvasKit, JSON/JS bridges, cache keys, and the Rust
-CanvasKit replay plan all replay or validate the same tree-only source/backdrop
-edges. Blend modes beyond `sourceOver` remain blocked behind explicit graph
-semantics. Studio Canvas2D/CanvasKit, Rust JSON/JS bridges, Rust SVG
-eligibility and output, native Skia, and the Rust CanvasKit replay plan share
-the same payload eligibility vocabulary and deterministic fallback/reject
-reasons for those subsets.
+CanvasKit replay plan all replay or validate the same source/backdrop edges.
+Blend modes beyond `sourceOver` remain blocked behind explicit graph
+semantics. The first stage-5 subset is also implemented: `clip` graph nodes
+apply a run-local path clip to their child, and reusable DAG subgraphs are
+accepted as long as graph traversal remains acyclic, reachable from the root,
+and inside the graph size/depth limits. Studio Canvas2D/CanvasKit, Rust JSON/JS
+bridges, Rust SVG eligibility and output, native Skia, and the Rust CanvasKit
+replay plan share the same payload eligibility vocabulary and deterministic
+fallback/reject reasons for those subsets.
 
 ## Architecture
 
@@ -215,8 +218,14 @@ Implementation shape:
   portable Canvas2D/SVG/native contract is fixed;
 - treat `composite` with `sourceOver` as the first stage-4 graph node; it paints
   the backdrop child first and then the source child inside the glyph payload,
-  keeps both child refs tree-only, and does not introduce global blend modes,
+  validates both child refs, and does not introduce global blend modes,
   paint-order changes, or scope changes;
+- treat `clip` as the first stage-5 graph node; its clip path is a run-local
+  path inside the glyph payload, clips only its child subgraph, and does not
+  create a page/layer `ClipRect` scope or a cross-scope variant;
+- allow reusable DAG subgraphs after stage 5; shared child refs are valid, but
+  cycles, unreachable nodes, graph sizes over the stage limit, and depth over
+  the stage limit remain invalid;
 - keep COLRv1 graph payloads exclusive from legacy `layers`; a payload that
   carries both the normalized graph and resolved layer list is invalid because
   it gives renderers two canonical paint descriptions;
@@ -237,8 +246,8 @@ Later COLRv1 additions should be staged as independent v2 feature additions:
 | 1 | solid color plus transform | implemented baseline; continue fixture hardening |
 | 2 | linear and radial gradients | browser Canvas2D/CanvasKit, Rust SVG, and native Skia implemented for resolved gradient path leaves; malformed stop offsets now reject deterministically; Canvas2D-vs-CanvasKit parity now covers duplicate-stop linear hard edges and radial red-center/blue-rim coverage |
 | 3 | sweep gradients | browser Canvas2D/CanvasKit and native Skia implemented for full 360-degree run-local `sweepGradientPath` leaves; malformed or partial-angle sweeps reject deterministically; Rust SVG continues to reject/select fallback because the SVG backend has no portable native conic-gradient primitive |
-| 4 | source-over composite | implemented for tree-only `sourceOver` source/backdrop graph nodes in browser Canvas2D/CanvasKit, Rust SVG, native Skia, JSON/JS bridges, and native cache keys; non-`sourceOver` blend/composite modes remain blocked |
-| 5 | clip and reusable graph nodes | writer still blocked until DAG, cycle, depth, and reuse rules are fixed; strict v2 payload validation rejects clipPath-style nodes and shared-child reusable graphs deterministically |
+| 4 | source-over composite | implemented for `sourceOver` source/backdrop graph nodes in browser Canvas2D/CanvasKit, Rust SVG, native Skia, JSON/JS bridges, and native cache keys; non-`sourceOver` blend/composite modes remain blocked |
+| 5 | clip and reusable graph nodes | implemented for run-local `clip` child nodes and reusable DAG child refs in browser Canvas2D/CanvasKit, Rust SVG, native Skia, JSON/JS bridges, and native cache keys; reusable node memoization remains an optimization, not a schema requirement |
 
 ### 2. BitmapGlyph Strict Replay Hardening
 
@@ -558,16 +567,17 @@ Definition of done:
 
 The current `skia` branch has closed the v2 envelope, the CanvasKit parity
 baseline, COLRv1 stage 1/2 plus full-360 sweep gradients, the first stage-4
-`sourceOver` composite subset, strict `BitmapGlyph`/`SvgGlyph` resource corpus
-coverage, and font-construction proof controls. The remaining work should keep
-that compatibility model intact: add one v2 feature at a time, keep v1
-compatibility export available, and avoid layout or cross-scope authority
-changes unless explicitly gated.
+`sourceOver` composite subset, the first stage-5 run-local clip/reusable-DAG
+subset, strict `BitmapGlyph`/`SvgGlyph` resource corpus coverage, and
+font-construction proof controls. The remaining work should keep that
+compatibility model intact: add one v2 feature at a time, keep v1 compatibility
+export available, and avoid layout or cross-scope authority changes unless
+explicitly gated.
 
 | Area | Current status | Remaining implementation | Gate before writer emission |
 | --- | --- | --- | --- |
-| COLRv1 stage 4 follow-up | tree-only `sourceOver` composite payloads validate and replay where supported | decide whether any additional blend/composite modes are worth enabling; otherwise keep unsupported modes as deterministic fallback/reject cases | any new mode must stay inside glyph-payload composition and must not change text variant selection, global paint order, or scope semantics |
-| COLRv1 stage 5 | tree-only graph and full-360 sweep leaves are supported | add clip/reusable graph nodes, DAG validation, cycle detection, depth/node limits, and reusable-node cache semantics | reusable graph semantics stay inside the glyph payload and do not introduce cross-scope variants |
+| COLRv1 stage 4 follow-up | `sourceOver` composite payloads validate and replay where supported | decide whether any additional blend/composite modes are worth enabling; otherwise keep unsupported modes as deterministic fallback/reject cases | any new mode must stay inside glyph-payload composition and must not change text variant selection, global paint order, or scope semantics |
+| COLRv1 stage 5 follow-up | run-local `clip` graph nodes and reusable DAG child refs validate and replay where supported | decide whether reusable-node memoization or additional clip primitives are needed; otherwise keep remaining unsupported graph nodes as deterministic fallback/reject cases | any new graph primitive must stay inside the glyph payload and must not introduce page/layer clip scopes or cross-scope variants |
 | BitmapGlyph writer widening | strict contract, negative validation, native/CanvasKit replay, and checked-in PNG corpus exist | expand Canvas2D/SVG strict writer coverage first, then native/CanvasKit parity fixtures and real-document cases | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
 | SvgGlyph writer widening | sanitized static vector contract, negative validation, native/CanvasKit replay, and checked-in SVG corpus exist | enable SVG exporter writer first, then Canvas2D/native lowering for sanitized vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
 | Variation font strict replay | variation tuples are represented and rejected with deterministic diagnostics; default no-variation positive control exists | add checked-in variable font fixture, exact axis tuple construction, glyph id/advance/bounds proof, native Skia replay path | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
@@ -578,13 +588,29 @@ changes unless explicitly gated.
 | cross-scope variants | schema vocabulary and `text.crossScopeVariants` gate exist; writer emits same-scope variants | add first concrete use case only when same-scope fallback is insufficient | `paintOrderSlotId + scopeRef` semantics remain sufficient; unsupported compatibility profile can choose same-scope fallback; strict fallback-free rejects |
 | MixedPerGlyph writer | vocabulary and gate exist; default writer uses homogeneous run split | add cluster/grapheme orientation mapping, `GlyphTransformRun`, GlyphRun/GlyphOutline transform replay, fixtures | shaped/vertical semantics are stable and unsupported backends have explicit fallback/reject policy |
 
-The next code work should start with COLRv1 stage 5 or with one of the
-writer-widening tracks (`BitmapGlyph` Canvas2D/SVG or `SvgGlyph` SVG exporter).
-Additional stage-4 blend modes should remain deferred unless a concrete
-document requires them. Variation/TTC support is larger because it must change
-renderer font construction, not just validation. shapedModern, cross-scope
-variants, and MixedPerGlyph remain authority-changing tracks and should not be
-mixed into
+Recommended implementation order from this point:
+
+1. widen strict `BitmapGlyph` writer coverage through Canvas2D/SVG first, then
+   add native/CanvasKit parity fixtures for the same one-strike resource
+   contract;
+2. widen strict `SvgGlyph` writer coverage through the SVG exporter first, then
+   add Canvas2D/native lowering only for sanitized static vector resources;
+3. add native variation-font proof fixtures and connect exact native Skia
+   instance construction before considering CanvasKit variation replay;
+4. connect exact native TTC/OTC `faceIndex` construction to native GlyphRun
+   replay, keeping CanvasKit fallback until its exact face construction is
+   proven;
+5. leave additional COLRv1 blend modes, reusable-node memoization, shapedModern
+   layout mutation, cross-scope writer emission, and public `MixedPerGlyph`
+   writer emission blocked until their explicit gates are satisfied.
+
+The next code work should start with one of the writer-widening tracks
+(`BitmapGlyph` Canvas2D/SVG or `SvgGlyph` SVG exporter). Additional stage-4
+blend modes or stage-5 reusable-node memoization should remain deferred unless a
+concrete document requires them. Variation/TTC support is larger because it must
+change renderer font construction, not just validation. shapedModern,
+cross-scope variants, and MixedPerGlyph remain authority-changing tracks and
+should not be mixed into
 CanvasKit parity commits.
 
 ## Commit Shape

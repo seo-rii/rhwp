@@ -805,13 +805,13 @@ The reserved families are intentionally separate payload families:
   producer-resolved color stops, finite run-local coordinates, and the same
   source/glyph provenance requirements. Stage 3 admits full 360-degree
   `sweepGradientPath` leaves where the backend has a portable conic-gradient
-  primitive, and stage 4 admits tree-only `sourceOver` composite nodes that
-  paint backdrop then source inside the glyph payload. Other blend modes, clips,
-  and reusable graph nodes stay behind later feature additions. Graph validation
-  is tree-only for stages 1 through 4: the root must reach every node, cycles
-  are rejected, the current Studio validator bounds the graph to 64 nodes and
-  depth 64, and shared child subgraphs remain reserved for the later reusable
-  graph stage. The feature vocabulary is split as
+  primitive, stage 4 admits `sourceOver` composite nodes that paint backdrop
+  then source inside the glyph payload, and stage 5 admits run-local `clip`
+  nodes plus reusable DAG child refs. Other blend modes and future graph
+  primitives stay behind later feature additions. Graph validation requires the
+  root to reach every node, rejects cycles, bounds the graph to 64 nodes and
+  depth 64, and keeps graph-local clips inside the glyph payload rather than
+  promoting them to page/layer clip scopes. The feature vocabulary is split as
   `text.glyphOutline.colorLayers`, `text.glyphOutline.colorLayers.colrV0`, and
   `text.glyphOutline.colorLayers.colrV1` so the solid-layer subset can stabilize
   before the full paint graph is writer-enabled.
@@ -861,11 +861,11 @@ implicitly change schema authority:
   the stage-3 full-360 sweep gradient subset, with Rust SVG retaining
   deterministic fallback/reject because SVG has no portable native conic-gradient
   primitive. Browser Canvas2D/CanvasKit, Rust SVG, and native Skia replay the
-  first stage-4 subset: tree-only `sourceOver` composite nodes that render
-  backdrop then source inside the glyph payload. Other blend modes remain
-  blocked. The graph can then continue to grow to clip or reusable graph nodes.
-  Reusable graph/DAG behavior belongs to the later
-  clip/reusable-graph stage, with cycle detection and node/depth limits.
+  first stage-4 subset: `sourceOver` composite nodes that render backdrop then
+  source inside the glyph payload. Browser Canvas2D/CanvasKit, Rust SVG, and
+  native Skia also replay the first stage-5 subset: run-local `clip` graph
+  nodes and reusable DAG child refs with cycle detection and node/depth limits.
+  Other blend modes and reusable-node memoization remain blocked.
   It becomes a v3 concern only if it forces a new text variant selection model,
   paint-order/compositing semantics, or source/cluster identity model.
 - `BitmapGlyph` writer emission starts with one producer-selected image strike.
@@ -1166,7 +1166,7 @@ that every reserved writer is enabled:
 | `GlyphOutline` `monochromeFill` and gated `monochromeFillStroke` | Required before v2 closeout |
 | `GlyphOutline` `colorLayers.colrV0` | V2 feature addition; strict export supports resolved-layer payloads, and native producer-side COLR/CPAL decoding can generate the resolved layers |
 | `GlyphOutline` `bitmapGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support one producer-selected image strike |
-| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset, stage-2 linear/radial gradient path leaves, and the stage-4 `sourceOver` composite subset; Canvas2D/CanvasKit and native Skia additionally support stage-3 full-360 sweep gradient leaves |
+| `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset, stage-2 linear/radial gradient path leaves, stage-4 `sourceOver` composite subset, and stage-5 run-local clip/reusable DAG subset; Canvas2D/CanvasKit and native Skia additionally support stage-3 full-360 sweep gradient leaves |
 | `GlyphOutline` `svgGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support sanitized static path-vector resources |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
 | CanvasKit and native Skia variation/TTC strict replay | Blocked until exact construction fixtures pass |
@@ -1313,9 +1313,10 @@ slot still has the required `TextRun` fallback and current v1 payload kinds.
 feature-gated `monochromeFillStroke` subset, the feature-gated
 `ColorLayers.ColrV0` resolved-layer subset, and the SVG/CanvasKit/Canvas2D/native
 Skia `ColorLayers.ColrV1` stage-1 solid-path + transform graph subset plus
-SVG/Canvas2D/CanvasKit/native Skia stage-2 linear/radial gradient leaves and
-stage-4 `sourceOver` composite nodes; Canvas2D/CanvasKit/native Skia also
-implement stage-3 full-360 sweep gradient leaves. The field also implements the
+SVG/Canvas2D/CanvasKit/native Skia stage-2 linear/radial gradient leaves,
+stage-4 `sourceOver` composite nodes, and stage-5 run-local clip/reusable DAG
+nodes; Canvas2D/CanvasKit/native Skia also implement stage-3 full-360 sweep
+gradient leaves. The field also implements the
 feature-gated `BitmapGlyph` image-strike subset for CanvasKit and SVG/Canvas2D
 strict replay.
 The field exists so later COLRv1 graph stages or SVG glyph payloads can be

@@ -632,6 +632,24 @@ export class Canvas2DLayerRenderer {
                   } finally {
                     stack.delete(nodeId);
                   }
+                  return;
+                }
+                if (node.kind === 'clip') {
+                  const clip = node.clip;
+                  if (!clip) {
+                    return;
+                  }
+                  ctx.save();
+                  ctx.beginPath();
+                  appendPathCommands(ctx, clip.clipCommands);
+                  ctx.clip(clip.fillRule);
+                  stack.add(nodeId);
+                  try {
+                    renderNode(clip.childNodeId, stack);
+                  } finally {
+                    stack.delete(nodeId);
+                    ctx.restore();
+                  }
                 }
               };
               renderNode(graph.rootNodeId, new Set());
