@@ -1306,8 +1306,8 @@ mod tests {
         GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, ImageResourceId,
         LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint,
         LayerImagePaint, LayerNode, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
-        LayerPoint, LayerTextRunPaint, PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta,
-        ResolvedColor, ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload,
+        LayerPoint, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp, PaintTextStyle,
+        PaintVariantMeta, ResolvedColor, ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload,
         SvgGlyphSecurityMode, SvgGlyphViewBox, TextDirection, TextRunPlacement, TextSourceId,
         TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue,
         WritingMode,
@@ -1887,29 +1887,55 @@ mod tests {
 
     #[test]
     fn canvaskit_rejects_nonzero_face_index_until_exact_construction_is_proven() {
-        let mut resources = ResourceArena::default();
-        let face_key = add_portable_test_font(&mut resources, 1);
-        let run = glyph_run(face_key, Vec::new());
+        let cases = [
+            ("wrong-face-index", 1, false),
+            ("high-face-index", 7, false),
+            ("ambiguous-metadata-face-index", 2, true),
+        ];
 
-        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+        for (case_name, face_index, ambiguous_metadata) in cases {
+            let mut resources = ResourceArena::default();
+            let face_key = add_portable_test_font(&mut resources, face_index);
+            if ambiguous_metadata {
+                resources.font_resources_mut().faces[0].postscript_name = None;
+                resources.font_resources_mut().faces[0].family_names = vec![
+                    LocalizedName {
+                        locale: None,
+                        value: "TestFace".to_string(),
+                    },
+                    LocalizedName {
+                        locale: Some("ko-KR".to_string()),
+                        value: "TestFace".to_string(),
+                    },
+                ];
+            }
+            let run = glyph_run(face_key, Vec::new());
+            let status = canvaskit_glyph_run_replay_status(&run, &resources);
 
-        assert!(!status.replayable);
-        assert_eq!(
-            status.reason,
-            Some(VariantRejectReason::FaceIndexUnsupported)
-        );
-        let font_report = status
-            .font_verification
-            .expect("face-index rejection should carry font verification");
-        assert_eq!(
-            font_report.reason,
-            Some(VariantRejectReason::FaceIndexUnsupported)
-        );
-        assert_eq!(font_report.blob_key.as_deref(), Some("test-blob"));
-        assert_eq!(font_report.blob_resolved, Some(true));
-        assert_eq!(font_report.exact_face_instantiated, Some(false));
-        assert_eq!(font_report.face_index_supported, Some(false));
-        assert!(!font_report.replay_eligible);
+            assert!(!status.replayable, "{case_name}");
+            assert_eq!(
+                status.reason,
+                Some(VariantRejectReason::FaceIndexUnsupported),
+                "{case_name}"
+            );
+            let font_report = status
+                .font_verification
+                .expect("face-index rejection should carry font verification");
+            assert_eq!(
+                font_report.reason,
+                Some(VariantRejectReason::FaceIndexUnsupported),
+                "{case_name}"
+            );
+            assert_eq!(font_report.blob_key.as_deref(), Some("test-blob"), "{case_name}");
+            assert_eq!(font_report.blob_resolved, Some(true), "{case_name}");
+            assert_eq!(
+                font_report.exact_face_instantiated,
+                Some(false),
+                "{case_name}"
+            );
+            assert_eq!(font_report.face_index_supported, Some(false), "{case_name}");
+            assert!(!font_report.replay_eligible, "{case_name}");
+        }
     }
 
     #[test]
