@@ -4366,6 +4366,76 @@ runTest('Renderer lifecycle', async ({ page }) => {
         unsupportedCompositeNodeReservedV2ColorPayloadColrV1Tree,
         true,
       );
+      const unsupportedClipNodeReservedV2ColorPayloadColrV1Tree =
+        makeReservedV2ColorPayloadColrV1Tree();
+      const unsupportedClipNodeV2ColorGraph = unsupportedClipNodeReservedV2ColorPayloadColrV1Tree
+        .root
+        .ops[0]
+        .variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph;
+      unsupportedClipNodeV2ColorGraph.rootNodeId = 1;
+      unsupportedClipNodeV2ColorGraph.nodes = [
+        unsupportedClipNodeV2ColorGraph.nodes.find((node) => node.kind === 'solidPath'),
+        {
+          nodeId: 1,
+          kind: 'clipPath',
+          clipPath: {
+            childNodeId: 0,
+            commands: [
+              { type: 'moveTo', x: 0, y: 0 },
+              { type: 'lineTo', x: 8, y: 0 },
+              { type: 'lineTo', x: 8, y: 8 },
+              { type: 'closePath' },
+            ],
+            fillRule: 'nonzero',
+          },
+          sourceRangeUtf8: { start: 0, end: 1 },
+          glyphRange: { start: 0, end: 1 },
+          sourceFontRef: { faceKey: 'fixture-face', glyphId: 42 },
+        },
+      ];
+      const unsupportedClipNodeReservedV2ColorPayloadColrV1 = render(
+        unsupportedClipNodeReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
+      const sharedChildReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
+      const sharedChildV2ColorGraph = sharedChildReservedV2ColorPayloadColrV1Tree
+        .root
+        .ops[0]
+        .variants
+        .find((variant) => variant.variantId === 'glyphOutline')
+        .parts[0]
+        .payload
+        .colorLayers
+        .paintGraph;
+      sharedChildV2ColorGraph.rootNodeId = 2;
+      sharedChildV2ColorGraph.nodes = [
+        sharedChildV2ColorGraph.nodes.find((node) => node.kind === 'solidPath'),
+        {
+          nodeId: 1,
+          kind: 'transform',
+          transform: {
+            childNodeId: 0,
+            transform: { a: 1, b: 0, c: 0, d: 1, e: 2, f: 0 },
+          },
+        },
+        {
+          nodeId: 2,
+          kind: 'transform',
+          transform: {
+            childNodeId: 0,
+            transform: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 2 },
+          },
+        },
+      ];
+      const sharedChildReservedV2ColorPayloadColrV1 = render(
+        sharedChildReservedV2ColorPayloadColrV1Tree,
+        true,
+      );
       const invalidTransformReservedV2ColorPayloadColrV1Tree = makeReservedV2ColorPayloadColrV1Tree();
       invalidTransformReservedV2ColorPayloadColrV1Tree.root.ops[0].variants
         .find((variant) => variant.variantId === 'glyphOutline')
@@ -4881,6 +4951,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
         unsupportedNodeReservedV2ColorPayloadColrV1,
         unsupportedSweepNodeReservedV2ColorPayloadColrV1,
         unsupportedCompositeNodeReservedV2ColorPayloadColrV1,
+        unsupportedClipNodeReservedV2ColorPayloadColrV1,
+        sharedChildReservedV2ColorPayloadColrV1,
         invalidTransformReservedV2ColorPayloadColrV1,
         invalidCommandReservedV2ColorPayloadColrV1,
         invalidProvenanceReservedV2ColorPayloadColrV1,
@@ -5220,6 +5292,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsupportedCompositeNodeReservedV2ColorPayloadColrV1
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const unsupportedClipNodeReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .unsupportedClipNodeReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  const sharedChildReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
+    .sharedChildReservedV2ColorPayloadColrV1
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidTransformReservedV2ColorPayloadColrV1IssueCodes = canvas2dGlyphOutlineProbe
     .invalidTransformReservedV2ColorPayloadColrV1
     ?.textV2Validation
@@ -5316,6 +5396,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && unsupportedSweepNodeReservedV2ColorPayloadColrV1IssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && unsupportedCompositeNodeReservedV2ColorPayloadColrV1IssueCodes.includes(
         'glyphOutlinePayloadContractInvalid',
+      )
+      && unsupportedClipNodeReservedV2ColorPayloadColrV1IssueCodes.includes(
+        'glyphOutlinePayloadContractInvalid',
+      )
+      && sharedChildReservedV2ColorPayloadColrV1IssueCodes.includes(
+        'glyphOutlinePayloadContractInvalid',
       ),
     `Canvas2D strict profile rejects invalid COLRv1 color graph payload=${JSON.stringify({
       cyclicV2ColrV1Validation: canvas2dGlyphOutlineProbe
@@ -5335,6 +5421,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ?.textV2Validation,
       unsupportedCompositeNodeV2ColrV1Validation: canvas2dGlyphOutlineProbe
         .unsupportedCompositeNodeReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      unsupportedClipNodeV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .unsupportedClipNodeReservedV2ColorPayloadColrV1
+        ?.textV2Validation,
+      sharedChildV2ColrV1Validation: canvas2dGlyphOutlineProbe
+        .sharedChildReservedV2ColorPayloadColrV1
         ?.textV2Validation,
     })}`,
   );
