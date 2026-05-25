@@ -8,8 +8,9 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_colrv1_stage1,
-    has_supported_strict_glyph_outline_stroke, CacheHint, ClipKind, GlyphCluster,
+    has_supported_strict_glyph_outline_bitmap, has_supported_strict_glyph_outline_colrv0,
+    has_supported_strict_glyph_outline_colrv1_stage1, has_supported_strict_glyph_outline_stroke,
+    has_supported_strict_glyph_outline_svg, CacheHint, ClipKind, GlyphCluster,
     GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
     LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextRunPaint,
     LayerTextVariantPart, LayerTextVariantPayload, LayerTextVariantSet, LayerVector, PageLayerTree,
@@ -399,6 +400,8 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
     let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1_stage1(root);
+    let has_bitmap_glyph = has_supported_strict_glyph_outline_bitmap(root);
+    let has_svg_glyph = has_supported_strict_glyph_outline_svg(root);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");
     if has_outline_stroke {
         buf.push_str(",\"text.glyphOutline.monochromeFillStroke\"");
@@ -411,6 +414,12 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     }
     if has_colrv1_color_layers {
         buf.push_str(",\"text.glyphOutline.colorLayers.colrV1\"");
+    }
+    if has_bitmap_glyph {
+        buf.push_str(",\"text.glyphOutline.bitmapGlyph\"");
+    }
+    if has_svg_glyph {
+        buf.push_str(",\"text.glyphOutline.svgGlyph\"");
     }
     if externalized_visuals.contains(&"charOverlap") {
         buf.push_str(",\"text.charOverlapOp\"");
@@ -436,6 +445,12 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     }
     if has_colrv1_color_layers {
         buf.push_str(",\"text.glyphOutline.colorLayers.colrV1\"");
+    }
+    if has_bitmap_glyph {
+        buf.push_str(",\"text.glyphOutline.bitmapGlyph\"");
+    }
+    if has_svg_glyph {
+        buf.push_str(",\"text.glyphOutline.svgGlyph\"");
     }
     buf.push_str("],\"text\":{\"defaultVariant\":\"glyphOutline\",\"variants\":[\"glyphOutline\"],\"variantSelection\":\"exclusiveVariantSet\",\"sourceTextPreserved\":true,\"clusterEncoding\":[\"utf8\",\"utf16\"],\"fallbackRequired\":false,\"placementAuthority\":\"strictVisual\",\"externalizedVisuals\":[");
     for (idx, visual) in externalized_visuals.iter().enumerate() {
@@ -4618,7 +4633,7 @@ mod tests {
             LayerNode::leaf(
                 BoundingBox::new(0.0, 0.0, 40.0, 40.0),
                 None,
-                vec![text_run, colrv1_glyph_outline],
+                vec![text_run.clone(), colrv1_glyph_outline],
             ),
         );
         let colrv1_json = colrv1_tree
@@ -4634,6 +4649,103 @@ mod tests {
         assert!(colrv1_json.contains("\"linearGradientPath\":{\"commands\""));
         assert!(colrv1_json.contains("\"gradient\":{\"x0\":0,\"y0\":0,\"x1\":8,\"y1\":0"));
         assert!(colrv1_json.contains("\"stops\":[{\"offset\":0,\"color\":{\"colorSpace\":\"srgb\",\"rgba\":[1.000000,0.000000,0.000000,1.000000]}}"));
+
+        let mut bitmap_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut bitmap_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::BitmapGlyph;
+        outline.variant.requires = vec!["text.glyphOutline.bitmapGlyph".to_string()];
+        outline.bitmap_glyph = Some(crate::paint::BitmapGlyphPayload {
+            image_resource_id: crate::paint::ImageResourceId(7),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 12.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: None,
+            strike_ppem: Some((16, 16)),
+            strike_selection: Some(crate::paint::BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: Some("srgb".to_string()),
+            alpha_mode: Some(crate::paint::BitmapAlphaMode::Premultiplied),
+            scaling_policy: Some(crate::paint::BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(crate::paint::BitmapGlyphFiltering::Linear),
+        });
+        let bitmap_tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run.clone(), bitmap_glyph_outline],
+            ),
+        );
+        let bitmap_json = bitmap_tree
+            .to_json_v2_strict_glyph_outline()
+            .expect("valid strict BitmapGlyph outline export");
+        assert!(bitmap_json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.bitmapGlyph\"]"));
+        assert!(bitmap_json.contains("\"payloadKind\":\"bitmapGlyph\""));
+        assert!(bitmap_json.contains("\"bitmapGlyph\":{\"imageResourceId\":7"));
+
+        let mut svg_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut svg_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::SvgGlyph;
+        outline.variant.requires = vec!["text.glyphOutline.svgGlyph".to_string()];
+        outline.svg_glyph = Some(crate::paint::SvgGlyphPayload {
+            vector_resource_id: crate::paint::SvgResourceId(3),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 12.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: None,
+            view_box: Some(crate::paint::SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+            intrinsic_size: None,
+            security_mode: crate::paint::SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        });
+        let svg_tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, svg_glyph_outline],
+            ),
+        );
+        let svg_json = svg_tree
+            .to_json_v2_strict_glyph_outline()
+            .expect("valid strict SvgGlyph outline export");
+        assert!(svg_json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.svgGlyph\"]"));
+        assert!(svg_json.contains("\"payloadKind\":\"svgGlyph\""));
+        assert!(svg_json.contains("\"svgGlyph\":{\"vectorResourceId\":3"));
     }
 
     #[test]

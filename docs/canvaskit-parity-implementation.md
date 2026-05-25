@@ -274,7 +274,11 @@ survive a same-key vector payload change. CanvasKit lifecycle also rejects
 `BitmapGlyph` payloads with missing required strict fields or backend strike
 reselection, missing image resources, and ambiguous resource keys before replay.
 The Rust renderer path also rejects mixed bitmap/color/SVG payload families
-through the same `GlyphOutline` exclusivity guard before replay.
+through the same `GlyphOutline` exclusivity guard before replay. Schema-v2
+strict GlyphOutline JSON and JS exports now declare
+`text.glyphOutline.bitmapGlyph` whenever the selected strict payload uses the
+one-strike bitmap contract, so strict consumers can gate the writer widening at
+the export metadata layer instead of inferring it from the payload body.
 Before writer emission is widened, add broader real-document resource corpus
 coverage.
 
@@ -303,8 +307,10 @@ plus unsupported vector primitives such as `foreignObject`, `filter`, `mask`,
 and `clipPath`, as `unsupportedSvgGlyph` in both DOMParser and no-DOMParser
 paths. CanvasKit lifecycle also rejects strict `SvgGlyph` payloads with missing
 `viewBox`, unsafe static-vector flags, or raw inline SVG replay fields before
-replay, and rejects missing or ambiguous vector resources. Before writer
-emission is widened, add broader real-document resource corpus coverage. The
+replay, and rejects missing or ambiguous vector resources. Schema-v2 strict
+GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
+the selected strict payload uses the static sanitized vector contract. Before
+writer emission is widened, add broader real-document resource corpus coverage. The
 same exclusivity guard prevents sanitized SVG payloads from being replayed when
 bitmap, color, or stroke sibling fields are present.
 
@@ -578,8 +584,8 @@ explicitly gated.
 | --- | --- | --- | --- |
 | COLRv1 stage 4 follow-up | `sourceOver` composite payloads validate and replay where supported | decide whether any additional blend/composite modes are worth enabling; otherwise keep unsupported modes as deterministic fallback/reject cases | any new mode must stay inside glyph-payload composition and must not change text variant selection, global paint order, or scope semantics |
 | COLRv1 stage 5 follow-up | run-local `clip` graph nodes and reusable DAG child refs validate and replay where supported | decide whether reusable-node memoization or additional clip primitives are needed; otherwise keep remaining unsupported graph nodes as deterministic fallback/reject cases | any new graph primitive must stay inside the glyph payload and must not introduce page/layer clip scopes or cross-scope variants |
-| BitmapGlyph writer widening | strict contract, negative validation, native/CanvasKit replay, and checked-in PNG corpus exist | expand Canvas2D/SVG strict writer coverage first, then native/CanvasKit parity fixtures and real-document cases | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
-| SvgGlyph writer widening | sanitized static vector contract, negative validation, native/CanvasKit replay, and checked-in SVG corpus exist | enable SVG exporter writer first, then Canvas2D/native lowering for sanitized vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
+| BitmapGlyph writer widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, and strict export feature metadata exist | expand Canvas2D/SVG strict writer coverage first, then native/CanvasKit parity fixtures and real-document cases | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
+| SvgGlyph writer widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, and strict export feature metadata exist | enable SVG exporter writer first, then Canvas2D/native lowering for sanitized vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
 | Variation font strict replay | variation tuples are represented and rejected with deterministic diagnostics; default no-variation positive control exists | add checked-in variable font fixture, exact axis tuple construction, glyph id/advance/bounds proof, native Skia replay path | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
 | TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate checked-in proof bytes as direct TTF and synthetic TTC faces; exported non-zero faceIndex still falls back | connect exact constructed non-zero faceIndex face to native GlyphRun replay; keep CanvasKit fallback until its exact face construction is proven | wrong-face/high-index/ambiguous metadata negatives pass and renderer draws with the requested face, not a family fallback |
 | CanvasKit variation/TTC | conservative fallback remains in place | add CanvasKit-specific exact construction proof before enabling strict replay | public API path proves exact variation tuple or faceIndex construction and keeps `u32` glyph id range guard |

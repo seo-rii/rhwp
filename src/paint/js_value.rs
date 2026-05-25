@@ -8,8 +8,9 @@ use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    font_blob_resource_key, has_supported_strict_glyph_outline_colrv0,
-    has_supported_strict_glyph_outline_colrv1_stage1, has_supported_strict_glyph_outline_stroke,
+    font_blob_resource_key, has_supported_strict_glyph_outline_bitmap,
+    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_colrv1_stage1,
+    has_supported_strict_glyph_outline_stroke, has_supported_strict_glyph_outline_svg,
     image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, GlyphCluster,
     GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
     LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextVariantPart,
@@ -663,6 +664,8 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
     let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1_stage1(root);
+    let has_bitmap_glyph = has_supported_strict_glyph_outline_bitmap(root);
+    let has_svg_glyph = has_supported_strict_glyph_outline_svg(root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -688,6 +691,12 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     }
     if has_colrv1_color_layers {
         used_features.push("text.glyphOutline.colorLayers.colrV1");
+    }
+    if has_bitmap_glyph {
+        used_features.push("text.glyphOutline.bitmapGlyph");
+    }
+    if has_svg_glyph {
+        used_features.push("text.glyphOutline.svgGlyph");
     }
     if externalized_visuals
         .iter()
@@ -732,6 +741,12 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     }
     if has_colrv1_color_layers {
         required_features.push("text.glyphOutline.colorLayers.colrV1");
+    }
+    if has_bitmap_glyph {
+        required_features.push("text.glyphOutline.bitmapGlyph");
+    }
+    if has_svg_glyph {
+        required_features.push("text.glyphOutline.svgGlyph");
     }
     set_value(
         value,
@@ -4247,8 +4262,12 @@ mod tests {
                     js_variant_features.get(index).as_string().as_deref() == Some(*expected_feature)
                 });
                 assert!(
-                    top_level_has_feature || variant_has_feature,
-                    "missing required feature {expected_feature}"
+                    top_level_has_feature,
+                    "missing top-level required feature {expected_feature}"
+                );
+                assert!(
+                    variant_has_feature,
+                    "missing variant required feature {expected_feature}"
                 );
             }
             let json_part = Array::from(&prop(&json_variant, "parts")).get(0);

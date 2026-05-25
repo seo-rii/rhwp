@@ -663,6 +663,20 @@ pub fn has_supported_strict_glyph_outline_colrv1_stage1(root: &LayerNode) -> boo
     })
 }
 
+pub fn has_supported_strict_glyph_outline_bitmap(root: &LayerNode) -> bool {
+    has_supported_strict_glyph_outline_payload(root, |outline| {
+        outline.payload_kind == GlyphOutlinePayloadKind::BitmapGlyph
+            && strict_glyph_outline_paint_eligible(outline)
+    })
+}
+
+pub fn has_supported_strict_glyph_outline_svg(root: &LayerNode) -> bool {
+    has_supported_strict_glyph_outline_payload(root, |outline| {
+        outline.payload_kind == GlyphOutlinePayloadKind::SvgGlyph
+            && strict_glyph_outline_paint_eligible(outline)
+    })
+}
+
 fn has_supported_strict_glyph_outline_payload(
     root: &LayerNode,
     supported: impl Fn(&LayerGlyphOutlinePaint) -> bool,
