@@ -311,6 +311,14 @@ CanvasKit glyph id replay must also keep the adapter range guard for public
 `u32` glyph ids because the browser binding currently uses a 16-bit glyph id
 path.
 
+Current unit and lifecycle coverage intentionally stops before positive proof:
+explicit variation tuples are rejected for supported-axis instances,
+unsupported-axis tags, out-of-range values, alternate axis tuples, and explicit
+default-axis tuples. Non-zero face-index fixtures also cover wrong-face,
+high-index, and ambiguous metadata cases. All of those cases must keep selecting
+the `TextRun` fallback and reporting `variationUnsupported` or
+`faceIndexUnsupported` until exact construction is proven.
+
 ### 5. Layout, Scope, And Vertical Writer Gates
 
 These features remain vocabulary/validator work until their authority gates are
@@ -457,6 +465,10 @@ Expected code shape:
   with `variationUnsupported`;
 - CanvasKit and native Skia continue to reject unsupported TTC/OTC face indices
   with `faceIndexUnsupported`;
+- CanvasKit unit coverage now includes explicit variation tuples for supported
+  axes, unsupported axes, out-of-range values, alternate tuples, and explicit
+  default-axis tuples, plus non-zero face-index wrong-face, high-index, and
+  ambiguous metadata cases;
 - either backend may diverge only after its own proof fixtures pass; until then
   both keep `TextRun` fallback and record the rejected `GlyphRun` reason in
   `VariantSelectionReport`;
