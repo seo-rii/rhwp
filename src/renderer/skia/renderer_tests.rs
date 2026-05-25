@@ -18,11 +18,11 @@ use crate::paint::{
     GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerBuilder,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
     LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
-    LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, PageLayerTree,
-    PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena,
-    ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
-    SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
-    TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
+    LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, LocalizedName,
+    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor,
+    ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
+    SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
+    TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -4382,56 +4382,100 @@ fn native_skia_keeps_text_fallback_for_variation_glyph_run_until_exact_construct
         .into_iter()
         .next()
         .expect("test font should map A to a glyph");
+    let cases = [
+        (
+            "supported-axis-instance",
+            vec![VariationAxisValue {
+                tag: "wght".to_string(),
+                value: 700.0,
+            }],
+        ),
+        (
+            "unsupported-axis",
+            vec![VariationAxisValue {
+                tag: "XXXX".to_string(),
+                value: 1.0,
+            }],
+        ),
+        (
+            "out-of-range-axis",
+            vec![VariationAxisValue {
+                tag: "wght".to_string(),
+                value: 10_000.0,
+            }],
+        ),
+        (
+            "different-axis-tuple",
+            vec![
+                VariationAxisValue {
+                    tag: "wdth".to_string(),
+                    value: 75.0,
+                },
+                VariationAxisValue {
+                    tag: "wght".to_string(),
+                    value: 700.0,
+                },
+            ],
+        ),
+        (
+            "explicit-default-axis",
+            vec![VariationAxisValue {
+                tag: "wght".to_string(),
+                value: 400.0,
+            }],
+        ),
+    ];
 
-    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
-    if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
-        for op in ops {
-            if let PaintOp::GlyphRun { run, .. } = op {
-                run.shape_key
-                    .font_instance
-                    .variations
-                    .push(VariationAxisValue {
-                        tag: "wght".to_string(),
-                        value: 700.0,
-                    });
+    for (case_name, variations) in cases {
+        let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+        if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+            for op in ops {
+                if let PaintOp::GlyphRun { run, .. } = op {
+                    run.shape_key.font_instance.variations = variations.clone();
+                }
             }
         }
+
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("variation glyph run fallback render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+        let report = output
+            .diagnostics
+            .variant_selections
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("native Skia variation fallback report");
+
+        assert!(
+            bounds.min_x > 95,
+            "native Skia must keep TextRun fallback when GlyphRun has unresolved variation axes for {case_name}, got {bounds:?}"
+        );
+        assert_eq!(report.selected_variant_id, "textRun", "{case_name}");
+        assert_eq!(
+            report.selected_reason,
+            VariantSelectedReason::DefaultTextRunFallback,
+            "{case_name}"
+        );
+        assert!(
+            report.rejected_variants.iter().any(|variant| {
+                variant.variant_id == "glyphRun"
+                    && variant
+                        .reasons
+                        .contains(&VariantRejectReason::VariationUnsupported)
+            }),
+            "{case_name}"
+        );
+        assert_eq!(
+            report
+                .font_verification
+                .as_ref()
+                .and_then(|verification| verification.variation_supported),
+            Some(false),
+            "{case_name}"
+        );
     }
-
-    let output = renderer
-        .render_raster_with_options(&tree, RasterRenderOptions::default())
-        .expect("variation glyph run fallback render");
-    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
-    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
-    let report = output
-        .diagnostics
-        .variant_selections
-        .iter()
-        .find(|report| report.equivalence_group == "text-0")
-        .expect("native Skia variation fallback report");
-
-    assert!(
-        bounds.min_x > 95,
-        "native Skia must keep TextRun fallback when GlyphRun has unresolved variation axes, got {bounds:?}"
-    );
-    assert_eq!(report.selected_variant_id, "textRun");
-    assert_eq!(
-        report.selected_reason,
-        VariantSelectedReason::DefaultTextRunFallback
-    );
-    assert!(report.rejected_variants.iter().any(|variant| {
-        variant.variant_id == "glyphRun"
-            && variant
-                .reasons
-                .contains(&VariantRejectReason::VariationUnsupported)
-    }));
-    assert_eq!(
-        report
-            .font_verification
-            .as_ref()
-            .and_then(|verification| verification.variation_supported),
-        Some(false)
-    );
 }
 
 #[test]
@@ -4447,45 +4491,78 @@ fn native_skia_keeps_text_fallback_for_nonzero_face_index_until_exact_constructi
         .into_iter()
         .next()
         .expect("test font should map A to a glyph");
+    let cases = [
+        ("wrong-face-index", 1, false),
+        ("high-face-index", 7, false),
+        ("ambiguous-metadata-face-index", 2, true),
+    ];
 
-    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
-    tree.resources.font_resources_mut().faces[0].face_index = 1;
+    for (case_name, face_index, ambiguous_metadata) in cases {
+        let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+        let face = &mut tree.resources.font_resources_mut().faces[0];
+        face.face_index = face_index;
+        if ambiguous_metadata {
+            face.postscript_name = None;
+            face.family_names = vec![
+                LocalizedName {
+                    locale: None,
+                    value: "TestFace".to_string(),
+                },
+                LocalizedName {
+                    locale: Some("ko-KR".to_string()),
+                    value: "TestFace".to_string(),
+                },
+            ];
+        }
 
-    let output = renderer
-        .render_raster_with_options(&tree, RasterRenderOptions::default())
-        .expect("face-index glyph run fallback render");
-    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
-    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
-    let report = output
-        .diagnostics
-        .variant_selections
-        .iter()
-        .find(|report| report.equivalence_group == "text-0")
-        .expect("native Skia face-index fallback report");
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("face-index glyph run fallback render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+        let report = output
+            .diagnostics
+            .variant_selections
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("native Skia face-index fallback report");
 
-    assert!(
-        bounds.min_x > 95,
-        "native Skia must keep TextRun fallback when GlyphRun has unresolved face index, got {bounds:?}"
-    );
-    assert_eq!(report.selected_variant_id, "textRun");
-    assert_eq!(
-        report.selected_reason,
-        VariantSelectedReason::DefaultTextRunFallback
-    );
-    assert!(report.rejected_variants.iter().any(|variant| {
-        variant.variant_id == "glyphRun"
-            && variant
-                .reasons
-                .contains(&VariantRejectReason::FaceIndexUnsupported)
-    }));
-    let font_report = report
-        .font_verification
-        .as_ref()
-        .expect("face-index rejection should carry font verification");
-    assert_eq!(font_report.blob_key.as_deref(), Some("font-blob-0"));
-    assert_eq!(font_report.blob_resolved, Some(true));
-    assert_eq!(font_report.exact_face_instantiated, Some(false));
-    assert_eq!(font_report.face_index_supported, Some(false));
+        assert!(
+            bounds.min_x > 95,
+            "native Skia must keep TextRun fallback when GlyphRun has unresolved face index for {case_name}, got {bounds:?}"
+        );
+        assert_eq!(report.selected_variant_id, "textRun", "{case_name}");
+        assert_eq!(
+            report.selected_reason,
+            VariantSelectedReason::DefaultTextRunFallback,
+            "{case_name}"
+        );
+        assert!(
+            report.rejected_variants.iter().any(|variant| {
+                variant.variant_id == "glyphRun"
+                    && variant
+                        .reasons
+                        .contains(&VariantRejectReason::FaceIndexUnsupported)
+            }),
+            "{case_name}"
+        );
+        let font_report = report
+            .font_verification
+            .as_ref()
+            .expect("face-index rejection should carry font verification");
+        assert_eq!(
+            font_report.blob_key.as_deref(),
+            Some("font-blob-0"),
+            "{case_name}"
+        );
+        assert_eq!(font_report.blob_resolved, Some(true), "{case_name}");
+        assert_eq!(
+            font_report.exact_face_instantiated,
+            Some(false),
+            "{case_name}"
+        );
+        assert_eq!(font_report.face_index_supported, Some(false), "{case_name}");
+    }
 }
 
 #[test]
