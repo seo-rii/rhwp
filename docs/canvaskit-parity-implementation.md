@@ -610,14 +610,68 @@ Recommended implementation order from this point:
    layout mutation, cross-scope writer emission, and public `MixedPerGlyph`
    writer emission blocked until their explicit gates are satisfied.
 
-The next code work should start with one of the writer-widening tracks
-(`BitmapGlyph` Canvas2D/SVG or `SvgGlyph` SVG exporter). Additional stage-4
-blend modes or stage-5 reusable-node memoization should remain deferred unless a
-concrete document requires them. Variation/TTC support is larger because it must
-change renderer font construction, not just validation. shapedModern,
-cross-scope variants, and MixedPerGlyph remain authority-changing tracks and
-should not be mixed into
-CanvasKit parity commits.
+### Remaining Work Register
+
+Use this register to keep the remaining work split by implementation risk. A
+track may move from "blocked" to "implementation-ready" only after its gate is
+satisfied and documented in this file or in the fixture that proves it.
+
+Implementation-ready tracks:
+
+- `BitmapGlyph` writer widening: add Canvas2D/SVG strict writer coverage for
+  the existing one-strike payload contract. Keep the strict gate unchanged:
+  one producer-selected image strike, deterministic alpha/scaling/filtering,
+  no `backendDefault`, resource bytes included in cache keys, and
+  `colorSpaceDefaulted` diagnostics when sRGB is assumed.
+- `SvgGlyph` writer widening: enable SVG exporter output for sanitized static
+  `VectorResourceId` resources. Keep `viewBox` required, keep script,
+  animation, external resources, and interactivity hard false, and keep raw
+  SVG-in-font direct replay rejected.
+- strict payload validation hardening: add or widen negative fixtures for
+  unsupported `BitmapGlyph`, `SvgGlyph`, and already-declared COLRv1 graph
+  cases without opening new writer authority.
+
+Proof-gated tracks:
+
+- native variation-font strict replay: add a checked-in variable font fixture,
+  canonical axis ordering, supported/out-of-range/unsupported/default-axis
+  cases, and glyph id/advance/bounds proof before native Skia stops rejecting
+  variation tuples.
+- native TTC/OTC strict replay: connect exact constructed non-zero
+  `faceIndex` faces to native GlyphRun drawing only after wrong-face,
+  high-index, ambiguous metadata, and direct-TTF controls prove the renderer is
+  not using family fallback.
+- CanvasKit variation/TTC strict replay: keep rejecting with
+  `variationUnsupported` or `faceIndexUnsupported` until the public CanvasKit
+  path proves exact variation tuple or exact collection face construction.
+  The `u32` glyph id range guard remains mandatory even after enablement.
+- COLRv1 follow-up primitives: keep unsupported blend/composite modes,
+  additional clip primitives, and reusable-node memoization rejected unless a
+  concrete document requires them and the new primitive remains entirely inside
+  the glyph payload.
+
+Authority-gated tracks:
+
+- shapedModern width input: collect a representative HWP corpus, understand
+  width-delta distribution, stabilize fallback font splits, cluster mapping,
+  and vertical metrics, and review table/cell constrained documents before
+  enabling opt-in width input. `hwpCompat` remains the default authority.
+- shapedModern line breaking: wait until opt-in width input is stable, line
+  risk thresholds are calibrated, expected pagination differences are
+  documented, and line-level corpus diffs are reviewed.
+- cross-scope variants: do not emit cross-scope writer output until a concrete
+  use case proves same-scope fallback is insufficient. Until then,
+  `paintOrderSlotId + scopeRef` is vocabulary only and compatibility renderers
+  may choose same-scope fallback.
+- public `MixedPerGlyph` writer: keep homogeneous run splitting as the default
+  until cluster/grapheme orientation semantics, `GlyphTransformRun`, transformed
+  GlyphRun/GlyphOutline replay, vertical fixtures, and backend fallback/reject
+  policy are stable.
+
+Do not mix authority-gated work into CanvasKit parity commits. The current
+CanvasKit parity target is direct replay of Canvas2D-visible behavior without
+hidden Canvas2D overlays, not a change to HWP-compatible layout authority,
+global paint ordering, or text variant selection semantics.
 
 ## Commit Shape
 
