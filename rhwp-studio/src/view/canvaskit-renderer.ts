@@ -75,7 +75,7 @@ import {
   angleToCanvasCoords,
   calculateArrowDimensions,
   computePathPaintBounds,
-  gradientStopPositions,
+  gradientColorStops,
 } from './layer-geometry-utils';
 import {
   allowsTextControlMark,
@@ -2995,8 +2995,9 @@ export class CanvasKitLayerRenderer {
       return null;
     }
 
-    const colors = gradient.colors.map((color) => parseCanvasKitCssColor(this.canvasKit, color));
-    const positions = gradientStopPositions(gradient.colors.length, gradient.positions);
+    const stops = gradientColorStops(gradient.colors, gradient.positions);
+    const colors = stops.map((stop) => parseCanvasKitCssColor(this.canvasKit, stop.color));
+    const positions = stops.map((stop) => stop.position);
     if (gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4) {
       const cx = bounds.x + bounds.width * (gradient.centerX / 100);
       const cy = bounds.y + bounds.height * (gradient.centerY / 100);

@@ -11504,6 +11504,142 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `gradient/pattern parity exact=${gradientPatternDiff.exactDiffPixels}, tolerant=${gradientPatternDiff.rawTolerantDiffPixels}, ink=${gradientPatternDiff.rawInkMaskDiffPixels}, max_channel_delta=${gradientPatternDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-sparse-gradient-stop-parity');
+  const sparseGradientStopParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 72,
+      pageHeight: 40,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1911,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1911,
+        bounds: { x: 0, y: 0, width: 72, height: 40 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 72, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'rectangle',
+            bbox: { x: 6, y: 6, width: 60, height: 12 },
+            cornerRadius: 0,
+            style: {
+              fillColor: null,
+              strokeColor: '#202020',
+              strokeWidth: 1,
+              strokeDash: 'solid',
+              opacity: 1,
+              pattern: null,
+              shadow: null,
+            },
+            gradient: {
+              gradientType: 0,
+              angle: 90,
+              centerX: 50,
+              centerY: 50,
+              colors: ['#ee3333', '#33aa55', '#3344ee'],
+              positions: [0, 1],
+            },
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          },
+          {
+            type: 'ellipse',
+            bbox: { x: 20, y: 23, width: 32, height: 10 },
+            style: {
+              fillColor: null,
+              strokeColor: '#202020',
+              strokeWidth: 1,
+              strokeDash: 'solid',
+              opacity: 1,
+              pattern: null,
+              shadow: null,
+            },
+            gradient: {
+              gradientType: 2,
+              angle: 0,
+              centerX: 50,
+              centerY: 50,
+              colors: ['#fff0f0', '#ffaa33', '#2255dd'],
+              positions: [0, 1],
+            },
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !sparseGradientStopParityProbe.error,
+    sparseGradientStopParityProbe.error || 'sparse gradient stop parity probe available',
+  );
+  const sparseGradientStopCanvas2dBluePixels = countPixels(
+    sparseGradientStopParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 120 && pixel.red < 120,
+  );
+  const sparseGradientStopCanvaskitBluePixels = countPixels(
+    sparseGradientStopParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 120 && pixel.red < 120,
+  );
+  assert(
+    sparseGradientStopCanvas2dBluePixels > 60 && sparseGradientStopCanvaskitBluePixels > 60,
+    `sparse gradient stops materialize missing stop positions canvas2d=${sparseGradientStopCanvas2dBluePixels}, canvaskit=${sparseGradientStopCanvaskitBluePixels}`,
+  );
+  const sparseGradientStopDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(sparseGradientStopParityProbe.canvas2d),
+    pngBufferFromDataUrl(sparseGradientStopParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-sparse-gradient-stop-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.12,
+      inkMaskMaxDiffRatio: 0.08,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    sparseGradientStopDiff.passed,
+    `sparse gradient stop parity exact=${sparseGradientStopDiff.exactDiffPixels}, tolerant=${sparseGradientStopDiff.rawTolerantDiffPixels}, ink=${sparseGradientStopDiff.rawInkMaskDiffPixels}, max_channel_delta=${sparseGradientStopDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-page-background-parity');
   const pageBackgroundParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

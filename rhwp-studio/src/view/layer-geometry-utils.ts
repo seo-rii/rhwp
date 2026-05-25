@@ -60,6 +60,21 @@ export function gradientStopPositions(
   return Array.from({ length: colorCount }, (_, index) => index / (colorCount - 1));
 }
 
+export function gradientColorStops<T>(
+  colors: readonly T[],
+  positions: readonly number[],
+): Array<{ color: T; position: number }> {
+  const stopPositions = gradientStopPositions(colors.length, positions);
+  return colors
+    .map((color, index) => ({
+      color,
+      position: stopPositions[index],
+      index,
+    }))
+    .sort((left, right) => left.position - right.position || left.index - right.index)
+    .map(({ color, position }) => ({ color, position }));
+}
+
 export function computePathPaintBounds(
   commands: LayerPathCommand[],
   fallback: LayerBounds,
