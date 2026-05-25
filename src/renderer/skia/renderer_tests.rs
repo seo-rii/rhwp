@@ -15,7 +15,7 @@ use crate::paint::{
     FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
     GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
-    GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerBuilder,
+    GlyphRunReplayEligibility, GlyphTransform, ImageResourceId, LayerAffineTransform, LayerBuilder,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
     LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
     LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, LocalizedName,
@@ -4562,6 +4562,84 @@ fn native_skia_keeps_text_fallback_for_nonzero_face_index_until_exact_constructi
             "{case_name}"
         );
         assert_eq!(font_report.face_index_supported, Some(false), "{case_name}");
+    }
+}
+
+#[test]
+fn native_skia_keeps_text_fallback_for_mixed_per_glyph_and_glyph_transforms_until_writer_gate() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+
+    let mut mixed_orientation_tree =
+        glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut mixed_orientation_tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.orientation = GlyphRunOrientation::MixedPerGlyph;
+            }
+        }
+    }
+    let mut transformed_glyph_tree =
+        glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    if let LayerNodeKind::Leaf { ops, .. } = &mut transformed_glyph_tree.root.kind {
+        for op in ops {
+            if let PaintOp::GlyphRun { run, .. } = op {
+                run.glyph_transforms = Some(vec![GlyphTransform {
+                    xx: 1.0,
+                    xy: 0.0,
+                    yx: 0.0,
+                    yy: 1.0,
+                    tx: 3.0,
+                    ty: 4.0,
+                }]);
+            }
+        }
+    }
+
+    for (case_name, tree) in [
+        ("mixed-per-glyph-orientation", mixed_orientation_tree),
+        ("glyph-transform-run", transformed_glyph_tree),
+    ] {
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("mixed glyph transform fallback render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+        let report = output
+            .diagnostics
+            .variant_selections
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("native Skia mixed glyph fallback report");
+
+        assert!(
+            bounds.min_x > 95,
+            "native Skia must keep TextRun fallback for writer-gated {case_name}, got {bounds:?}"
+        );
+        assert_eq!(report.selected_variant_id, "textRun", "{case_name}");
+        assert_eq!(
+            report.selected_reason,
+            VariantSelectedReason::DefaultTextRunFallback,
+            "{case_name}"
+        );
+        assert!(
+            report.rejected_variants.iter().any(|variant| {
+                variant.variant_id == "glyphRun"
+                    && variant
+                        .reasons
+                        .contains(&VariantRejectReason::VariantUnsupported)
+            }),
+            "{case_name}"
+        );
     }
 }
 
