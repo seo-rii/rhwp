@@ -1042,6 +1042,98 @@ fn test_layer_svg_strict_glyph_outline_replays_colrv1_gradient_graph_leaves() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_rejects_invalid_colrv1_gradient_graph() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    let source_font_ref = FontColorGlyphRef {
+        face_key: Some("fixture-face".to_string()),
+        glyph_id: Some(42),
+        palette_index: Some(3),
+        color_format: Some(ColorGlyphFormat::ColrV1),
+    };
+    let tree = glyph_outline_fixture_tree_with_color_layers(
+        PaintTextStyle::from(&text_style),
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: Some(PaletteRef {
+                id: Some("fixture-palette".to_string()),
+                index: Some(0),
+                cpal_digest: Some("blake3:fixture-cpal".to_string()),
+            }),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 0,
+                nodes: vec![ColorPaintGraphNode {
+                    node_id: 0,
+                    kind: ColorPaintGraphNodeKind::LinearGradientPath,
+                    solid_path: None,
+                    linear_gradient_path: Some(ColorPaintLinearGradientPathNode {
+                        commands: vec![
+                            PathCommand::MoveTo(0.0, 0.0),
+                            PathCommand::LineTo(8.0, 0.0),
+                            PathCommand::LineTo(8.0, 8.0),
+                            PathCommand::ClosePath,
+                        ],
+                        gradient: ColorLinearGradient {
+                            x0: 0.0,
+                            y0: 0.0,
+                            x1: 8.0,
+                            y1: 0.0,
+                            stops: vec![ColorGradientStop {
+                                offset: 0.0,
+                                color: ResolvedColor {
+                                    color_space: Some("srgb".to_string()),
+                                    rgba: [1.0, 0.0, 0.0, 1.0],
+                                },
+                            }],
+                        },
+                        fill_rule: GlyphOutlineFillRule::NonZero,
+                        source_glyph_id: Some(42),
+                        palette_index: Some(3),
+                    }),
+                    radial_gradient_path: None,
+                    transform: None,
+                    source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                    glyph_range: Some(GlyphRange { start: 0, end: 1 }),
+                    source_font_ref: Some(source_font_ref),
+                }],
+            }),
+        },
+    );
+    let mut renderer = SvgRenderer::new();
+    renderer.set_strict_glyph_outline_replay(true);
+    renderer.render_layer_tree(&tree);
+    let output = renderer.output();
+    assert!(output.contains(">A</text>"));
+    assert!(!output.contains("data-rhwp-color-graph-node-kind=\"linearGradientPath\""));
+    let report = renderer
+        .text_variant_selection_diagnostics()
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("svg strict invalid COLRv1 gradient graph report");
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphOutline"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::UnsupportedColorGlyph)
+    }));
+    assert!(report
+        .outline_eligibility
+        .as_ref()
+        .is_some_and(|eligibility| {
+            !eligibility.payload_supported
+                && !eligibility.replay_eligible
+                && eligibility.reason == Some(VariantRejectReason::UnsupportedColorGlyph)
+        }));
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_rejects_invalid_colrv0_color_layers() {
     let text_style = TextStyle {
         font_size: 12.0,
