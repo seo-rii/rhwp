@@ -5227,6 +5227,90 @@ fn native_skia_replays_nonzero_face_index_when_exact_ttc_face_instantiates() {
 }
 
 #[test]
+fn native_skia_rejects_out_of_range_face_index_with_exact_ttc_blob() {
+    let renderer = SkiaLayerRenderer::new();
+    let font_data = include_bytes!("../../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf");
+    let ttc_data = synthetic_two_face_ttc_from_ttf(font_data);
+    let color_glyph_id = u32::from(
+        ttf_parser::Face::parse(font_data, 0)
+            .expect("fixture font parses")
+            .glyph_index('\u{E000}')
+            .expect("fixture color glyph")
+            .0,
+    );
+    let payload = decode_colrv0_color_layers_payload(
+        font_data,
+        0,
+        color_glyph_id,
+        &Colrv0ColorLayersDecodeOptions::new(TextSourceRange::new(0, 1), GlyphRange::new(0, 1)),
+    )
+    .expect("fixture COLRv0 payload decodes");
+    let glyph_id = payload
+        .layers
+        .iter()
+        .find_map(|layer| layer.glyph_id)
+        .and_then(|glyph_id| u16::try_from(glyph_id).ok())
+        .expect("fixture color glyph should expose a path layer glyph id");
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    let digest = crate::paint::resource_digest_hex(&ttc_data);
+    let data_ref = BinaryResourceRef {
+        kind: BinaryResourceKind::FontBlob,
+        id: crate::paint::font_blob_resource_key(ttc_data.len(), &digest),
+    };
+    let digest = FontDigest {
+        algorithm: "blake3".to_string(),
+        value: digest,
+    };
+    tree.resources.intern_font_blob_bytes(&ttc_data);
+    let blob = &mut tree.resources.font_resources_mut().blobs[0];
+    blob.digest = Some(digest.clone());
+    blob.data_ref = Some(data_ref.clone());
+    blob.portability = FontPortability::PortableBlob {
+        digest: digest.clone(),
+        data_ref,
+    };
+    let face = &mut tree.resources.font_resources_mut().faces[0];
+    face.face_index = 2;
+    face.postscript_name = Some("SyntheticTtcOutOfRangeFace".to_string());
+
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("out-of-range TTC face-index fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia exact TTC high-index report");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback for out-of-range exact TTC faceIndex, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphRun"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::FaceIndexUnsupported)
+    }));
+    let font_report = report
+        .font_verification
+        .as_ref()
+        .expect("out-of-range TTC face rejection should carry font verification");
+    assert_eq!(font_report.blob_resolved, Some(true));
+    assert_eq!(font_report.exact_face_instantiated, Some(false));
+    assert_eq!(font_report.face_index_supported, Some(false));
+}
+
+#[test]
 fn native_skia_replays_variation_glyph_run_when_exact_instance_instantiates() {
     let renderer = SkiaLayerRenderer::new();
     let font_data = include_bytes!("../../../web/fonts/HappinessSansVF.woff2");
