@@ -2888,36 +2888,38 @@ export class CanvasKitLayerRenderer {
     const { x, y } = this.resolveImagePlacement(fillMode, bbox, imageWidth, imageHeight);
 
     canvas.save();
-    canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
+    try {
+      canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
 
-    if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
-      const maxTileDraws = CanvasKitLayerRenderer.MAX_IMAGE_TILE_DRAWS;
-      let tileDraws = 0;
-      if (fillMode === 'tileAll') {
-        for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
+      if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
+        const maxTileDraws = CanvasKitLayerRenderer.MAX_IMAGE_TILE_DRAWS;
+        let tileDraws = 0;
+        if (fillMode === 'tileAll') {
+          for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
+            for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
+              drawImage(tx, ty, imageWidth, imageHeight);
+              tileDraws += 1;
+            }
+          }
+        } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
+          const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - imageHeight;
           for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
             drawImage(tx, ty, imageWidth, imageHeight);
             tileDraws += 1;
           }
-        }
-      } else if (fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom') {
-        const ty = fillMode === 'tileHorzTop' ? bbox.y : bbox.y + bbox.height - imageHeight;
-        for (let tx = bbox.x; tx < bbox.x + bbox.width && tileDraws < maxTileDraws; tx += imageWidth) {
-          drawImage(tx, ty, imageWidth, imageHeight);
-          tileDraws += 1;
+        } else {
+          const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - imageWidth;
+          for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
+            drawImage(tx, ty, imageWidth, imageHeight);
+            tileDraws += 1;
+          }
         }
       } else {
-        const tx = fillMode === 'tileVertLeft' ? bbox.x : bbox.x + bbox.width - imageWidth;
-        for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
-          drawImage(tx, ty, imageWidth, imageHeight);
-          tileDraws += 1;
-        }
+        drawImage(x, y, imageWidth, imageHeight);
       }
-    } else {
-      drawImage(x, y, imageWidth, imageHeight);
+    } finally {
+      canvas.restore();
     }
-
-    canvas.restore();
   }
 
   private resolveImagePlacement(fillMode: string, bbox: LayerBounds, imageWidth: number, imageHeight: number): { x: number; y: number } {
