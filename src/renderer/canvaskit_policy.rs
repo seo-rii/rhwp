@@ -1306,11 +1306,11 @@ mod tests {
         GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, GlyphTransform,
         ImageResourceId, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
         LayerGlyphRunPaint, LayerImagePaint, LayerNode, LayerPageBackgroundImagePaint,
-        LayerPageBackgroundPaint, LayerPoint, LayerTextRunPaint, LocalizedName, PageLayerTree,
-        PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena, ShapeKey,
-        ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextDirection,
-        TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantKind,
-        TextVariantQuality, VariationAxisValue, WritingMode,
+        LayerPageBackgroundPaint, LayerPoint, LayerTextRunPaint, LayerVector, LocalizedName,
+        PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena,
+        ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
+        TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
+        TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
     };
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
     use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
@@ -1978,6 +1978,49 @@ mod tests {
             status.font_verification.is_none(),
             "the glyph id range guard should reject before backend font construction"
         );
+    }
+
+    #[test]
+    fn canvaskit_rejects_malformed_glyph_run_geometry_before_replay() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let mut empty_glyphs = glyph_run(face_key.clone(), Vec::new());
+        empty_glyphs.glyph_ids.clear();
+        let mut mismatched_positions = glyph_run(face_key.clone(), Vec::new());
+        mismatched_positions.positions.clear();
+        let mut mismatched_advances = glyph_run(face_key.clone(), Vec::new());
+        mismatched_advances.advances = Some(vec![
+            LayerVector { dx: 1.0, dy: 0.0 },
+            LayerVector { dx: 2.0, dy: 0.0 },
+        ]);
+        let mut nonfinite_transform = glyph_run(face_key.clone(), Vec::new());
+        nonfinite_transform.placement.run_to_page.a = f64::NAN;
+        let mut nonfinite_baseline = glyph_run(face_key.clone(), Vec::new());
+        nonfinite_baseline.placement.baseline_y = f64::INFINITY;
+        let mut nonfinite_position = glyph_run(face_key, Vec::new());
+        nonfinite_position.positions[0].x = f64::NEG_INFINITY;
+
+        for (case_name, run) in [
+            ("empty-glyphs", empty_glyphs),
+            ("mismatched-positions", mismatched_positions),
+            ("mismatched-advances", mismatched_advances),
+            ("nonfinite-transform", nonfinite_transform),
+            ("nonfinite-baseline", nonfinite_baseline),
+            ("nonfinite-position", nonfinite_position),
+        ] {
+            let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+            assert!(!status.replayable, "{case_name}");
+            assert_eq!(
+                status.reason,
+                Some(VariantRejectReason::VariantUnsupported),
+                "{case_name}"
+            );
+            assert!(
+                status.font_verification.is_none(),
+                "malformed geometry should not look like a font verification failure for {case_name}"
+            );
+        }
     }
 
     #[test]
