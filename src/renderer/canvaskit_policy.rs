@@ -2024,6 +2024,76 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_rejects_glyph_run_diagnostic_gate_failures() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let mut nonportable = glyph_run(face_key.clone(), Vec::new());
+        nonportable.diagnostics.replay_eligibility = GlyphRunReplayEligibility::NotReplayable;
+        let mut not_strict_visual = glyph_run(face_key.clone(), Vec::new());
+        not_strict_visual.diagnostics.strict_visual_eligible = false;
+        let mut missing_glyph = glyph_run(face_key.clone(), Vec::new());
+        missing_glyph.diagnostics.missing_glyph_count = 1;
+        let mut cluster_mismatch = glyph_run(face_key.clone(), Vec::new());
+        cluster_mismatch.diagnostics.cluster_mismatch_count = 1;
+        let mut approximate_quality = glyph_run(face_key.clone(), Vec::new());
+        approximate_quality.diagnostics.quality = TextVariantQuality::Approximate;
+        let mut residual_too_large = glyph_run(face_key.clone(), Vec::new());
+        residual_too_large.diagnostics.quality = TextVariantQuality::PositionAdjusted;
+        residual_too_large
+            .diagnostics
+            .max_residual_after_adjustment_px = 10.0;
+        let mut unsupported_paint = glyph_run(face_key, Vec::new());
+        unsupported_paint.paint_style.shadow_type = 1;
+
+        for (case_name, run, reason) in [
+            (
+                "nonportable",
+                nonportable,
+                VariantRejectReason::FontNotPortable,
+            ),
+            (
+                "not-strict-visual",
+                not_strict_visual,
+                VariantRejectReason::VariantUnsupported,
+            ),
+            (
+                "missing-glyph",
+                missing_glyph,
+                VariantRejectReason::MissingGlyph,
+            ),
+            (
+                "cluster-mismatch",
+                cluster_mismatch,
+                VariantRejectReason::ClusterMismatch,
+            ),
+            (
+                "approximate-quality",
+                approximate_quality,
+                VariantRejectReason::VariantUnsupported,
+            ),
+            (
+                "residual-too-large",
+                residual_too_large,
+                VariantRejectReason::PositionAdjustedResidualTooLarge,
+            ),
+            (
+                "unsupported-paint",
+                unsupported_paint,
+                VariantRejectReason::UnsupportedPaintEffect,
+            ),
+        ] {
+            let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+            assert!(!status.replayable, "{case_name}");
+            assert_eq!(status.reason, Some(reason), "{case_name}");
+            assert!(
+                status.font_verification.is_none(),
+                "diagnostic gate failure should not look like a font verification failure for {case_name}"
+            );
+        }
+    }
+
+    #[test]
     fn canvaskit_rejects_mixed_per_glyph_and_glyph_transforms_until_writer_gate() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
