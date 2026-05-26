@@ -44,6 +44,8 @@ export type LayerTextVariantRejectReason =
   | 'incompleteVariantSet'
   | 'unsupportedPaintEffect'
   | 'unsupportedOutlinePayload'
+  | 'mixedGlyphOutlinePayload'
+  | 'emptyGlyphOutlinePayload'
   | 'glyphOutlineStrokeStyleUnsupported'
   | 'unsupportedColorGlyph'
   | 'unsupportedBitmapGlyph'
@@ -878,7 +880,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     || !Array.isArray(colorLayers.layers)
     || colorLayers.layers.length !== 0
     || !isValidPayloadRange(colorLayers.sourceRangeUtf8)
-    || !isValidPayloadRange(colorLayers.glyphRange)
+    || !isNonEmptyPayloadRange(colorLayers.glyphRange)
     || graph === undefined
     || !isValidPayloadGraphNodeId(graph.rootNodeId)
     || !Array.isArray(graph.nodes)
@@ -920,7 +922,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && (node.solidPath.sourceGlyphId === undefined || isValidPayloadGlyphId(node.solidPath.sourceGlyphId))
         && (node.solidPath.paletteIndex === undefined || isValidPayloadIndex(node.solidPath.paletteIndex))
         && isValidPayloadRange(node.sourceRangeUtf8)
-        && isValidPayloadRange(node.glyphRange)
+        && isNonEmptyPayloadRange(node.glyphRange)
           && node.sourceFontRef !== undefined
         )
       ) {
@@ -950,7 +952,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && (gradientPath.sourceGlyphId === undefined || isValidPayloadGlyphId(gradientPath.sourceGlyphId))
         && (gradientPath.paletteIndex === undefined || isValidPayloadIndex(gradientPath.paletteIndex))
         && isValidPayloadRange(node.sourceRangeUtf8)
-        && isValidPayloadRange(node.glyphRange)
+        && isNonEmptyPayloadRange(node.glyphRange)
         && node.sourceFontRef !== undefined
         )
       ) {
@@ -980,7 +982,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && (gradientPath.sourceGlyphId === undefined || isValidPayloadGlyphId(gradientPath.sourceGlyphId))
         && (gradientPath.paletteIndex === undefined || isValidPayloadIndex(gradientPath.paletteIndex))
         && isValidPayloadRange(node.sourceRangeUtf8)
-        && isValidPayloadRange(node.glyphRange)
+        && isNonEmptyPayloadRange(node.glyphRange)
         && node.sourceFontRef !== undefined
         )
       ) {
@@ -1012,7 +1014,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
         && (gradientPath.sourceGlyphId === undefined || isValidPayloadGlyphId(gradientPath.sourceGlyphId))
         && (gradientPath.paletteIndex === undefined || isValidPayloadIndex(gradientPath.paletteIndex))
         && isValidPayloadRange(node.sourceRangeUtf8)
-        && isValidPayloadRange(node.glyphRange)
+        && isNonEmptyPayloadRange(node.glyphRange)
         && node.sourceFontRef !== undefined
         )
       ) {
@@ -1231,6 +1233,10 @@ function isValidPayloadRange(range: { start: number; end: number } | undefined):
     && Number.isInteger(range.end)
     && range.start >= 0
     && range.end >= range.start;
+}
+
+function isNonEmptyPayloadRange(range: { start: number; end: number } | undefined): boolean {
+  return range !== undefined && isValidPayloadRange(range) && range.end > range.start;
 }
 
 function isValidPayloadGraphNodeId(nodeId: number | undefined): boolean {

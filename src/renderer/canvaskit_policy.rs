@@ -1015,18 +1015,7 @@ fn canvaskit_glyph_outline_payload_status(
     resources: &ResourceArena,
 ) -> (bool, Option<VariantRejectReason>) {
     if !outline.has_exclusive_payload_family() {
-        return (
-            false,
-            Some(match outline.payload_kind {
-                GlyphOutlinePayloadKind::ColorLayers => VariantRejectReason::UnsupportedColorGlyph,
-                GlyphOutlinePayloadKind::BitmapGlyph => VariantRejectReason::UnsupportedBitmapGlyph,
-                GlyphOutlinePayloadKind::SvgGlyph => VariantRejectReason::UnsupportedSvgGlyph,
-                GlyphOutlinePayloadKind::MonochromeFill
-                | GlyphOutlinePayloadKind::MonochromeFillStroke => {
-                    VariantRejectReason::UnsupportedOutlinePayload
-                }
-            }),
-        );
+        return (false, Some(VariantRejectReason::MixedGlyphOutlinePayload));
     }
     if outline.paths.iter().any(|path| {
         path.commands.is_empty()
@@ -1040,14 +1029,14 @@ fn canvaskit_glyph_outline_payload_status(
     match outline.payload_kind {
         GlyphOutlinePayloadKind::MonochromeFill => {
             if outline.paths.is_empty() {
-                (false, Some(VariantRejectReason::UnsupportedOutlinePayload))
+                (false, Some(VariantRejectReason::EmptyGlyphOutlinePayload))
             } else {
                 (true, None)
             }
         }
         GlyphOutlinePayloadKind::MonochromeFillStroke => {
             if outline.paths.is_empty() {
-                return (false, Some(VariantRejectReason::UnsupportedOutlinePayload));
+                return (false, Some(VariantRejectReason::EmptyGlyphOutlinePayload));
             }
             if !outline
                 .stroke
@@ -2248,7 +2237,7 @@ mod tests {
                 Some(valid_bbox()),
                 &ResourceArena::default(),
             ),
-            (false, Some(VariantRejectReason::UnsupportedOutlinePayload))
+            (false, Some(VariantRejectReason::MixedGlyphOutlinePayload))
         );
 
         let mut color = outline(GlyphOutlinePayloadKind::ColorLayers);
@@ -2256,7 +2245,7 @@ mod tests {
         color.bitmap_glyph = Some(bitmap_payload(image_id));
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&color, Some(valid_bbox()), &resources),
-            (false, Some(VariantRejectReason::UnsupportedColorGlyph))
+            (false, Some(VariantRejectReason::MixedGlyphOutlinePayload))
         );
 
         let mut bitmap = outline(GlyphOutlinePayloadKind::BitmapGlyph);
@@ -2264,7 +2253,7 @@ mod tests {
         bitmap.svg_glyph = Some(svg_payload(svg_id));
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&bitmap, Some(valid_bbox()), &resources),
-            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+            (false, Some(VariantRejectReason::MixedGlyphOutlinePayload))
         );
 
         let mut svg = outline(GlyphOutlinePayloadKind::SvgGlyph);
@@ -2272,7 +2261,7 @@ mod tests {
         svg.bitmap_glyph = Some(bitmap_payload(image_id));
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&svg, Some(valid_bbox()), &resources),
-            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+            (false, Some(VariantRejectReason::MixedGlyphOutlinePayload))
         );
     }
 

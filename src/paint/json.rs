@@ -2088,7 +2088,7 @@ fn write_glyph_outline_color_gradient_stops(
         if idx > 0 {
             buf.push(',');
         }
-        let _ = write!(buf, "{{\"offset\":{}", stop.offset);
+        let _ = write!(buf, "{{\"offset\":{:.6}", stop.offset);
         buf.push_str(",\"color\":");
         write_resolved_color(buf, &stop.color);
         buf.push('}');
@@ -2104,7 +2104,7 @@ fn write_glyph_outline_color_linear_gradient_path_node(
     write_path_commands(buf, &gradient_path.commands);
     let _ = write!(
         buf,
-        ",\"gradient\":{{\"x0\":{},\"y0\":{},\"x1\":{},\"y1\":{},\"stops\":",
+        ",\"gradient\":{{\"x0\":{:.6},\"y0\":{:.6},\"x1\":{:.6},\"y1\":{:.6},\"stops\":",
         gradient_path.gradient.x0,
         gradient_path.gradient.y0,
         gradient_path.gradient.x1,
@@ -2133,7 +2133,7 @@ fn write_glyph_outline_color_radial_gradient_path_node(
     write_path_commands(buf, &gradient_path.commands);
     let _ = write!(
         buf,
-        ",\"gradient\":{{\"cx\":{},\"cy\":{},\"radius\":{},\"stops\":",
+        ",\"gradient\":{{\"cx\":{:.6},\"cy\":{:.6},\"radius\":{:.6},\"stops\":",
         gradient_path.gradient.cx, gradient_path.gradient.cy, gradient_path.gradient.radius
     );
     write_glyph_outline_color_gradient_stops(buf, &gradient_path.gradient.stops);
@@ -2159,7 +2159,7 @@ fn write_glyph_outline_color_sweep_gradient_path_node(
     write_path_commands(buf, &gradient_path.commands);
     let _ = write!(
         buf,
-        ",\"gradient\":{{\"cx\":{},\"cy\":{},\"startAngleDegrees\":{},\"endAngleDegrees\":{},\"stops\":",
+        ",\"gradient\":{{\"cx\":{:.6},\"cy\":{:.6},\"startAngleDegrees\":{:.6},\"endAngleDegrees\":{:.6},\"stops\":",
         gradient_path.gradient.cx,
         gradient_path.gradient.cy,
         gradient_path.gradient.start_angle_degrees,
@@ -4647,8 +4647,10 @@ mod tests {
         assert!(colrv1_json.contains("\"paintGraph\":{\"rootNodeId\":1"));
         assert!(colrv1_json.contains("\"kind\":\"linearGradientPath\""));
         assert!(colrv1_json.contains("\"linearGradientPath\":{\"commands\""));
-        assert!(colrv1_json.contains("\"gradient\":{\"x0\":0,\"y0\":0,\"x1\":8,\"y1\":0"));
-        assert!(colrv1_json.contains("\"stops\":[{\"offset\":0,\"color\":{\"colorSpace\":\"srgb\",\"rgba\":[1.000000,0.000000,0.000000,1.000000]}}"));
+        assert!(colrv1_json.contains(
+            "\"gradient\":{\"x0\":0.000000,\"y0\":0.000000,\"x1\":8.000000,\"y1\":0.000000"
+        ));
+        assert!(colrv1_json.contains("\"stops\":[{\"offset\":0.000000,\"color\":{\"colorSpace\":\"srgb\",\"rgba\":[1.000000,0.000000,0.000000,1.000000]}}"));
 
         let mut bitmap_glyph_outline = glyph_outline.clone();
         let PaintOp::GlyphOutline { outline, .. } = &mut bitmap_glyph_outline else {

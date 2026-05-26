@@ -272,21 +272,7 @@ impl SvgRenderer {
                                 } else if !outline.has_exclusive_payload_family() {
                                     (
                                         false,
-                                        Some(match outline.payload_kind {
-                                            GlyphOutlinePayloadKind::ColorLayers => {
-                                                VariantRejectReason::UnsupportedColorGlyph
-                                            }
-                                            GlyphOutlinePayloadKind::BitmapGlyph => {
-                                                VariantRejectReason::UnsupportedBitmapGlyph
-                                            }
-                                            GlyphOutlinePayloadKind::SvgGlyph => {
-                                                VariantRejectReason::UnsupportedSvgGlyph
-                                            }
-                                            GlyphOutlinePayloadKind::MonochromeFill
-                                            | GlyphOutlinePayloadKind::MonochromeFillStroke => {
-                                                VariantRejectReason::UnsupportedOutlinePayload
-                                            }
-                                        }),
+                                        Some(VariantRejectReason::MixedGlyphOutlinePayload),
                                         false,
                                         outline.paint_style.is_fill_only_glyph_replay(),
                                     )
@@ -295,7 +281,14 @@ impl SvgRenderer {
                                         .payload_kind
                                     {
                                         GlyphOutlinePayloadKind::MonochromeFill => {
-                                            if !glyph_outline_paths_are_replayable(outline) {
+                                            if outline.paths.is_empty() {
+                                                (
+                                                    false,
+                                                    Some(
+                                                        VariantRejectReason::EmptyGlyphOutlinePayload,
+                                                    ),
+                                                )
+                                            } else if !glyph_outline_paths_are_replayable(outline) {
                                                 (
                                                     false,
                                                     Some(
@@ -312,7 +305,14 @@ impl SvgRenderer {
                                             }
                                         }
                                         GlyphOutlinePayloadKind::MonochromeFillStroke => {
-                                            if !glyph_outline_paths_are_replayable(outline) {
+                                            if outline.paths.is_empty() {
+                                                (
+                                                    false,
+                                                    Some(
+                                                        VariantRejectReason::EmptyGlyphOutlinePayload,
+                                                    ),
+                                                )
+                                            } else if !glyph_outline_paths_are_replayable(outline) {
                                                 (
                                                     false,
                                                     Some(

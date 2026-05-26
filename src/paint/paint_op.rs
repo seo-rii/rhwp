@@ -418,7 +418,11 @@ fn text_source_range_is_valid(range: TextSourceRange) -> bool {
 }
 
 fn glyph_range_is_valid(range: GlyphRange) -> bool {
-    range.end >= range.start
+    range.is_valid()
+}
+
+fn glyph_range_is_non_empty(range: GlyphRange) -> bool {
+    range.is_non_empty()
 }
 
 fn affine_transform_is_finite(transform: LayerAffineTransform) -> bool {
@@ -484,7 +488,7 @@ fn color_sweep_angles_are_supported(start_angle_degrees: f64, end_angle_degrees:
 fn graph_leaf_metadata_is_valid(node: &ColorPaintGraphNode) -> bool {
     node.source_range_utf8
         .is_some_and(text_source_range_is_valid)
-        && node.glyph_range.is_some_and(glyph_range_is_valid)
+        && node.glyph_range.is_some_and(glyph_range_is_non_empty)
         && node.source_font_ref.is_some()
 }
 
@@ -954,7 +958,7 @@ impl ColorLayersPayload {
             && self
                 .source_range_utf8
                 .is_some_and(text_source_range_is_valid)
-            && self.glyph_range.is_some_and(glyph_range_is_valid)
+            && self.glyph_range.is_some_and(glyph_range_is_non_empty)
     }
 
     pub fn colrv1_stage1_reference_layers(&self) -> Option<Vec<ColorLayerNode>> {
@@ -963,7 +967,7 @@ impl ColorLayersPayload {
             || !self
                 .source_range_utf8
                 .is_some_and(text_source_range_is_valid)
-            || !self.glyph_range.is_some_and(glyph_range_is_valid)
+            || !self.glyph_range.is_some_and(glyph_range_is_non_empty)
         {
             return None;
         }
@@ -1567,6 +1571,14 @@ pub struct GlyphRange {
 impl GlyphRange {
     pub fn new(start: u32, end: u32) -> Self {
         Self { start, end }
+    }
+
+    pub fn is_valid(self) -> bool {
+        self.end >= self.start
+    }
+
+    pub fn is_non_empty(self) -> bool {
+        self.end > self.start
     }
 }
 
