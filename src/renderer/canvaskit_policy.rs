@@ -1836,6 +1836,21 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_accepts_position_adjusted_glyph_run_within_residual_tolerance() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let mut run = glyph_run(face_key, Vec::new());
+        run.diagnostics.quality = TextVariantQuality::PositionAdjusted;
+        run.diagnostics.max_residual_after_adjustment_px = 0.001;
+
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(status.replayable);
+        assert_eq!(status.reason, None);
+        assert!(status.font_verification.is_none());
+    }
+
+    #[test]
     fn canvaskit_rejects_variation_instances_until_exact_construction_is_proven() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
