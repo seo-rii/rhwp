@@ -586,13 +586,14 @@ layout, or scope changes.
 
 Implementation-ready lanes:
 
-1. Strict `BitmapGlyph` and `SvgGlyph` writer widening: keep the existing
-   payload contracts, then add only one exporter family at a time
-   (`BitmapGlyph` through Canvas2D/SVG first, `SvgGlyph` through SVG exporter
-   first) with resource-cache and negative validation coverage.
-2. Strict payload validation hardening: widen malformed-payload, missing
-   resource, missing deterministic field, unsafe static-vector, and unsupported
-   graph-node fixtures without changing layout authority or paint order.
+1. Strict `BitmapGlyph` and `SvgGlyph` corpus widening: the core strict payload
+   contracts, SVG/native/CanvasKit negative gates, resource cache keys, and
+   checked-in PNG/SVG corpus fixtures are in place. Add real-document fixtures
+   one payload family at a time, without changing the strict payload contract.
+2. Strict payload validation hardening: add only targeted malformed-payload or
+   unsupported graph-node fixtures that exercise already-declared v2
+   vocabulary. Do not open new layout authority, paint order, or cross-scope
+   behavior in these commits.
 
 Proof-gated lanes:
 
@@ -646,8 +647,8 @@ Non-goals for the remaining CanvasKit parity work:
 | --- | --- | --- | --- |
 | COLRv1 stage 4 follow-up | `sourceOver` composite payloads validate and replay where supported | decide whether any additional blend/composite modes are worth enabling; otherwise keep unsupported modes as deterministic fallback/reject cases | any new mode must stay inside glyph-payload composition and must not change text variant selection, global paint order, or scope semantics |
 | COLRv1 stage 5 follow-up | run-local `clip` graph nodes and reusable DAG child refs validate and replay where supported | decide whether reusable-node memoization or additional clip primitives are needed; otherwise keep remaining unsupported graph nodes as deterministic fallback/reject cases | any new graph primitive must stay inside the glyph payload and must not introduce page/layer clip scopes or cross-scope variants |
-| BitmapGlyph writer widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, strict export feature metadata, and SVG/native/CanvasKit deterministic-field rejection coverage exist | expand Canvas2D/SVG strict writer coverage first, then native/CanvasKit parity fixtures and real-document cases | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
-| SvgGlyph writer widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, strict export feature metadata, and SVG/native/CanvasKit static-contract rejection coverage exist | enable SVG exporter writer first, then Canvas2D/native lowering for sanitized vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
+| BitmapGlyph corpus widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, strict export feature metadata, SVG/native/CanvasKit deterministic-field rejection coverage, and resource-cache key coverage exist | add real-document or producer-output fixtures that use the existing one-strike payload contract | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
+| SvgGlyph corpus widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, strict export feature metadata, SVG/native/CanvasKit static-contract rejection coverage, and resource-cache key coverage exist | add real-document or producer-output fixtures for sanitized static vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
 | Variation font strict replay | variation tuples are represented; native Skia has checked-in variable-font proof for exact axis construction, explicit default-axis replay, alternate valid axis-bound replay, glyph id, advance/bounds smoke, and invalid-axis fallback | widen native coverage with real variable-font corpus cases; keep CanvasKit fallback until its exact instance construction is proven | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
 | TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate and replay checked-in proof bytes as direct TTF and synthetic TTC faces, exact synthetic non-zero `faceIndex` replay is connected to native `GlyphRun` selection/drawing, exact-byte out-of-range `faceIndex` falls back deterministically, and the exact-font path keeps the `u32` glyph id guard | widen native coverage with wrong-face/ambiguous metadata negatives and real collection fixtures; keep CanvasKit fallback until its exact face construction is proven | wrong-face/ambiguous metadata negatives pass and renderer draws with the requested face, not a family fallback |
 | CanvasKit variation/TTC | conservative fallback remains in place | add CanvasKit-specific exact construction proof before enabling strict replay | public API path proves exact variation tuple or faceIndex construction and keeps `u32` glyph id range guard |
@@ -658,11 +659,10 @@ Non-goals for the remaining CanvasKit parity work:
 
 Recommended implementation order from this point:
 
-1. widen strict `BitmapGlyph` writer coverage through Canvas2D/SVG first, then
-   add native/CanvasKit parity fixtures for the same one-strike resource
-   contract;
-2. widen strict `SvgGlyph` writer coverage through the SVG exporter first, then
-   add Canvas2D/native lowering only for sanitized static vector resources;
+1. widen strict `BitmapGlyph` only with real-document or producer-output
+   fixtures that keep the existing one-strike resource contract;
+2. widen strict `SvgGlyph` only with real-document or producer-output fixtures
+   that keep the sanitized static vector contract;
 3. widen native variation replay only with real variable-font corpus fixtures
    before considering CanvasKit variation replay;
 4. widen native TTC/OTC replay only with the remaining wrong-face/ambiguous
@@ -680,8 +680,8 @@ satisfied and documented in this file or in the fixture that proves it.
 
 Implementation-ready tracks:
 
-- `BitmapGlyph` writer widening: add Canvas2D/SVG strict writer coverage for
-  the existing one-strike payload contract. Keep the strict gate unchanged:
+- `BitmapGlyph` corpus widening: add real-document or producer-output fixtures
+  for the existing one-strike payload contract. Keep the strict gate unchanged:
   one producer-selected image strike, deterministic alpha/scaling/filtering,
   no `backendDefault`, resource bytes included in cache keys, and
   `colorSpaceDefaulted` diagnostics when sRGB is assumed. SVG strict replay now
@@ -689,17 +689,18 @@ Implementation-ready tracks:
   renderer selection tests; native Skia mirrors those deterministic-contract
   negatives in strict variant selection, and CanvasKit policy covers both
   backend-default filtering and scaling.
-- `SvgGlyph` writer widening: enable SVG exporter output for sanitized static
-  `VectorResourceId` resources. Keep `viewBox` required, keep script,
-  animation, external resources, and interactivity hard false, and keep raw
-  SVG-in-font direct replay rejected. SVG strict replay now rejects missing
+- `SvgGlyph` corpus widening: add real-document or producer-output fixtures for
+  sanitized static `VectorResourceId` resources. Keep `viewBox` required, keep
+  script, animation, external resources, and interactivity hard false, and keep
+  raw SVG-in-font direct replay rejected. SVG strict replay now rejects missing
   `viewBox` and unsafe payload flags directly in renderer selection tests;
   native Skia mirrors the same static-sanitized contract negatives, and
   CanvasKit policy covers script, animation, external-resource, interactivity,
   and viewBox rejection.
-- strict payload validation hardening: add or widen negative fixtures for
-  unsupported `BitmapGlyph`, `SvgGlyph`, and already-declared COLRv1 graph
-  cases without opening new writer authority.
+- strict payload validation hardening: add or widen negative fixtures only for
+  unsupported already-declared COLRv1 graph cases or newly found malformed
+  strict payloads. The current Bitmap/Svg deterministic and static-sanitized
+  negative gates are covered across SVG, native Skia, and CanvasKit policy.
 
 Proof-gated tracks:
 
