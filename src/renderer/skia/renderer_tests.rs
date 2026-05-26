@@ -5571,10 +5571,24 @@ fn native_skia_replays_variation_glyph_run_when_exact_instance_instantiates() {
     assert!(advance.is_finite() && advance > 0.0);
     assert!(bounds.width().is_finite() && bounds.height().is_finite());
 
-    for (case_name, selected_axis_value) in [
+    let alternate_axis_value = if (axis_value - parameter.max).abs() < f32::EPSILON
+        && parameter.min < parameter.def
+    {
+        Some(parameter.min)
+    } else if (axis_value - parameter.min).abs() < f32::EPSILON && parameter.max > parameter.def {
+        Some(parameter.max)
+    } else {
+        None
+    };
+    let mut variation_cases = vec![
         ("non-default-axis", axis_value),
         ("explicit-default-axis", parameter.def),
-    ] {
+    ];
+    if let Some(alternate_axis_value) = alternate_axis_value {
+        variation_cases.push(("alternate-axis-bound", alternate_axis_value));
+    }
+
+    for (case_name, selected_axis_value) in variation_cases {
         let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
         let digest = crate::paint::resource_digest_hex(font_data);
         let data_ref = BinaryResourceRef {
