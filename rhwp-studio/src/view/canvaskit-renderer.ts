@@ -106,6 +106,9 @@ type CanvasKitClipState = {
 };
 
 export class CanvasKitLayerRenderer {
+  // Prevent pathological tiled fills from monopolizing the render loop.
+  private static readonly MAX_IMAGE_TILE_DRAWS = 4096;
+
   private readonly resourceCache: CanvasKitResourceCache;
   private readonly surfaceCache: CanvasKitSurfaceCache;
   private readonly fontRegistry: CanvasKitFontRegistry;
@@ -2750,12 +2753,43 @@ export class CanvasKitLayerRenderer {
     crop?: { left: number; top: number; right: number; bottom: number },
     effect: LayerImageOp['effect'] = 'realPic',
   ): void {
+    const imageDimension = (source: Image, dimension: 'width' | 'height'): number | null => {
+      const value = (source as Image & { width?: unknown; height?: unknown })[dimension];
+      if (typeof value === 'function') {
+        return (value as () => number).call(source);
+      }
+      return typeof value === 'number' ? value : null;
+    };
     const usesImageEffect = !!effect && effect !== 'realPic';
     const baseImage = this.resourceCache.image(resourceId, base64);
     if (!baseImage) return;
+    if (
+      !Number.isFinite(bbox.x)
+      || !Number.isFinite(bbox.y)
+      || !Number.isFinite(bbox.width)
+      || !Number.isFinite(bbox.height)
+      || bbox.width <= 0
+      || bbox.height <= 0
+    ) {
+      return;
+    }
 
-    const baseWidth = baseImage.width();
-    const baseHeight = baseImage.height();
+    const baseWidth = imageDimension(baseImage, 'width');
+    const baseHeight = imageDimension(baseImage, 'height');
+    if (
+      baseWidth === null
+      || baseHeight === null
+      || !Number.isFinite(baseWidth)
+      || !Number.isFinite(baseHeight)
+      || baseWidth <= 0
+      || baseHeight <= 0
+    ) {
+      const paint = new this.canvasKit.Paint();
+      paint.setAntiAlias?.(true);
+      canvas.drawImage(baseImage, bbox.x, bbox.y, paint);
+      paint.delete();
+      return;
+    }
     const effectCropSource = usesImageEffect && canPreprocessCroppedLayerImageEffect(fillMode)
       ? resolveLayerImageCropSource(baseWidth, baseHeight, crop)
       : null;
@@ -2763,19 +2797,15 @@ export class CanvasKitLayerRenderer {
       ? this.resourceCache.imageWithEffect(resourceId, base64, effect, effectCropSource)
       : baseImage;
     const image = effectImage ?? baseImage;
-    const sourceWidth = image.width();
-    const sourceHeight = image.height();
+    const sourceWidth = imageDimension(image, 'width');
+    const sourceHeight = imageDimension(image, 'height');
     if (
-      !Number.isFinite(sourceWidth)
+      sourceWidth === null
+      || sourceHeight === null
+      || !Number.isFinite(sourceWidth)
       || !Number.isFinite(sourceHeight)
       || sourceWidth <= 0
       || sourceHeight <= 0
-      || !Number.isFinite(bbox.x)
-      || !Number.isFinite(bbox.y)
-      || !Number.isFinite(bbox.width)
-      || !Number.isFinite(bbox.height)
-      || bbox.width <= 0
-      || bbox.height <= 0
     ) {
       return;
     }
@@ -2861,7 +2891,7 @@ export class CanvasKitLayerRenderer {
     canvas.clipRect(this.toRect(bbox), this.canvasKit.ClipOp.Intersect, true);
 
     if (fillMode === 'tileAll' || fillMode === 'tileHorzTop' || fillMode === 'tileHorzBottom' || fillMode === 'tileVertLeft' || fillMode === 'tileVertRight') {
-      const maxTileDraws = 4096;
+      const maxTileDraws = CanvasKitLayerRenderer.MAX_IMAGE_TILE_DRAWS;
       let tileDraws = 0;
       if (fillMode === 'tileAll') {
         for (let ty = bbox.y; ty < bbox.y + bbox.height && tileDraws < maxTileDraws; ty += imageHeight) {
