@@ -1688,6 +1688,76 @@ fn test_layer_svg_strict_glyph_outline_rejects_svg_glyph_nonpositive_bbox() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_rejects_svg_glyph_without_static_sanitized_contract() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    for case_name in [
+        "missing-viewbox",
+        "script-allowed",
+        "animation-allowed",
+        "external-resources-allowed",
+        "interactivity-allowed",
+    ] {
+        let mut tree =
+            glyph_outline_fixture_tree_with_svg_glyph(PaintTextStyle::from(&text_style), true);
+        if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+            let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
+                panic!("expected glyph outline");
+            };
+            let svg = outline.svg_glyph.as_mut().expect("svg glyph payload");
+            match case_name {
+                "missing-viewbox" => {
+                    svg.view_box = None;
+                }
+                "script-allowed" => {
+                    svg.script_allowed = true;
+                }
+                "animation-allowed" => {
+                    svg.animation_allowed = true;
+                }
+                "external-resources-allowed" => {
+                    svg.external_resources_allowed = true;
+                }
+                "interactivity-allowed" => {
+                    svg.interactivity_allowed = true;
+                }
+                _ => unreachable!("covered static sanitized SvgGlyph negative case"),
+            }
+        }
+
+        let mut renderer = SvgRenderer::new();
+        renderer.set_strict_glyph_outline_replay(true);
+        renderer.render_layer_tree(&tree);
+        let output = renderer.output();
+        assert!(
+            output.contains(">A</text>"),
+            "{case_name}: fallback TextRun should remain visible"
+        );
+        assert!(
+            !output.contains("source-backed static sanitized SVG glyph"),
+            "{case_name}: strict SvgGlyph should not be emitted"
+        );
+        let report = renderer
+            .text_variant_selection_diagnostics()
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("svg strict svg glyph static-contract report");
+        assert_eq!(report.selected_variant_id, "textRun", "{case_name}");
+        assert!(
+            report.rejected_variants.iter().any(|variant| {
+                variant.variant_id == "glyphOutline"
+                    && variant
+                        .reasons
+                        .contains(&VariantRejectReason::UnsupportedSvgGlyph)
+            }),
+            "{case_name}"
+        );
+    }
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_applies_bitmap_glyph_payload_transform() {
     let text_style = TextStyle {
         font_size: 12.0,
