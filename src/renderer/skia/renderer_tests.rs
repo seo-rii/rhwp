@@ -5274,6 +5274,66 @@ fn native_skia_replays_direct_ttf_when_exact_font_bytes_are_available() {
 }
 
 #[test]
+fn native_skia_rejects_invalid_direct_ttf_bytes_without_system_fallback() {
+    let renderer = SkiaLayerRenderer::new();
+    let invalid_font_data = b"not-a-font";
+    let mut tree = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let digest = crate::paint::resource_digest_hex(invalid_font_data);
+    let data_ref = BinaryResourceRef {
+        kind: BinaryResourceKind::FontBlob,
+        id: crate::paint::font_blob_resource_key(invalid_font_data.len(), &digest),
+    };
+    let digest = FontDigest {
+        algorithm: "blake3".to_string(),
+        value: digest,
+    };
+    tree.resources.intern_font_blob_bytes(invalid_font_data);
+    let blob = &mut tree.resources.font_resources_mut().blobs[0];
+    blob.digest = Some(digest.clone());
+    blob.data_ref = Some(data_ref.clone());
+    blob.portability = FontPortability::PortableBlob { digest, data_ref };
+    let face = &mut tree.resources.font_resources_mut().faces[0];
+    face.face_index = 0;
+    face.postscript_name = Some("InvalidDirectTtf".to_string());
+
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("invalid exact direct TTF bytes should still render fallback");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("native Skia invalid exact direct TTF report");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback when embedded exact TTF bytes do not instantiate, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphRun"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::ExactFaceUnavailable)
+    }));
+    let font_report = report
+        .font_verification
+        .as_ref()
+        .expect("invalid exact TTF rejection should carry font verification");
+    assert_eq!(font_report.blob_resolved, Some(true));
+    assert_eq!(font_report.exact_face_instantiated, Some(false));
+    assert_eq!(font_report.face_index_supported, None);
+    assert_eq!(font_report.variation_supported, None);
+}
+
+#[test]
 fn native_skia_rejects_out_of_range_glyph_id_before_exact_ttf_replay() {
     let renderer = SkiaLayerRenderer::new();
     let font_data = include_bytes!("../../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf");
