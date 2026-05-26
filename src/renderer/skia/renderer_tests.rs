@@ -4656,54 +4656,77 @@ fn native_skia_applies_static_svg_glyph_payload_transform() {
 }
 
 #[test]
-fn native_skia_keeps_text_fallback_for_backend_default_bitmap_glyph() {
+fn native_skia_keeps_text_fallback_for_nondeterministic_bitmap_glyph_contract() {
     let renderer = SkiaLayerRenderer::new();
     let mut pixmap = tiny_skia::Pixmap::new(4, 4).expect("bitmap glyph pixmap");
     for pixel in pixmap.pixels_mut() {
         *pixel = tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 255, 255).unwrap();
     }
     let image_bytes = pixmap.encode_png().expect("bitmap glyph png");
-    let mut resources = ResourceArena::default();
-    let image_resource_id = resources.intern_image_bytes(&image_bytes);
-    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
-    outline.bitmap_glyph = Some(BitmapGlyphPayload {
-        image_resource_id,
-        source_range_utf8: Some(TextSourceRange::new(0, 1)),
-        glyph_range: Some(GlyphRange::new(0, 1)),
-        placement: Some(outline.placement),
-        transform_to_run: None,
-        strike_ppem: Some((4, 4)),
-        strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
-        pixel_format: Some("rgba8".to_string()),
-        color_space: None,
-        alpha_mode: Some(BitmapAlphaMode::Straight),
-        scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
-        filtering: Some(BitmapGlyphFiltering::BackendDefault),
-    });
-    let tree = glyph_outline_variant_test_tree_with_resources(outline, true, resources);
-    let output = renderer
-        .render_raster_with_options(&tree, RasterRenderOptions::default())
-        .expect("backend-default bitmap glyph fallback render");
-    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
-    let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
-    let report = output
-        .diagnostics
-        .variant_selections
-        .iter()
-        .find(|report| report.equivalence_group == "text-0")
-        .expect("native Skia BitmapGlyph fallback selection report");
+    for case_name in [
+        "backend-default-filtering",
+        "backend-default-scaling",
+        "missing-alpha-mode",
+    ] {
+        let mut resources = ResourceArena::default();
+        let image_resource_id = resources.intern_image_bytes(&image_bytes);
+        let mut outline =
+            glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
+        let mut payload = BitmapGlyphPayload {
+            image_resource_id,
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(outline.placement),
+            transform_to_run: None,
+            strike_ppem: Some((4, 4)),
+            strike_selection: Some(BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: None,
+            alpha_mode: Some(BitmapAlphaMode::Straight),
+            scaling_policy: Some(BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(BitmapGlyphFiltering::Nearest),
+        };
+        match case_name {
+            "backend-default-filtering" => {
+                payload.filtering = Some(BitmapGlyphFiltering::BackendDefault);
+            }
+            "backend-default-scaling" => {
+                payload.scaling_policy = Some(BitmapGlyphScalingPolicy::BackendDefault);
+            }
+            "missing-alpha-mode" => {
+                payload.alpha_mode = None;
+            }
+            _ => unreachable!("covered deterministic BitmapGlyph negative case"),
+        }
+        outline.bitmap_glyph = Some(payload);
+        let tree = glyph_outline_variant_test_tree_with_resources(outline, true, resources);
+        let output = renderer
+            .render_raster_with_options(&tree, RasterRenderOptions::default())
+            .expect("nondeterministic bitmap glyph fallback render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+        let bounds = alpha_bounds(&pixmap).expect("text fallback ink");
+        let report = output
+            .diagnostics
+            .variant_selections
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("native Skia BitmapGlyph fallback selection report");
 
-    assert!(
-        bounds.min_x > 95,
-        "native Skia must keep TextRun fallback when BitmapGlyph has backend-default filtering, got {bounds:?}"
-    );
-    assert_eq!(report.selected_variant_id, "textRun");
-    assert!(report.rejected_variants.iter().any(|variant| {
-        variant.variant_id == "glyphOutline"
-            && variant
-                .reasons
-                .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
-    }));
+        assert!(
+            bounds.min_x > 95,
+            "native Skia must keep TextRun fallback when BitmapGlyph has nondeterministic strict contract {case_name}, got {bounds:?}"
+        );
+        assert_eq!(report.selected_variant_id, "textRun", "{case_name}");
+        assert!(
+            report.rejected_variants.iter().any(|variant| {
+                variant.variant_id == "glyphOutline"
+                    && variant
+                        .reasons
+                        .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
+            }),
+            "{case_name}"
+        );
+    }
 }
 
 #[test]
