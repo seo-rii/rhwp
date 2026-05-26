@@ -2146,6 +2146,14 @@ mod tests {
         );
 
         let mut payload = bitmap_payload(image_id);
+        payload.scaling_policy = Some(BitmapGlyphScalingPolicy::BackendDefault);
+        outline.bitmap_glyph = Some(payload);
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
+
+        let mut payload = bitmap_payload(image_id);
         payload.strike_selection = Some(BitmapStrikeSelection::DiagnosticOnly);
         outline.bitmap_glyph = Some(payload);
         assert_eq!(
@@ -2217,6 +2225,22 @@ mod tests {
 
         let mut payload = svg_payload(path_svg_id);
         payload.animation_allowed = true;
+        outline.svg_glyph = Some(payload);
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+
+        let mut payload = svg_payload(path_svg_id);
+        payload.external_resources_allowed = true;
+        outline.svg_glyph = Some(payload);
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+
+        let mut payload = svg_payload(path_svg_id);
+        payload.interactivity_allowed = true;
         outline.svg_glyph = Some(payload);
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
