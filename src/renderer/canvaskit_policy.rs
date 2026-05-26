@@ -1964,6 +1964,23 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_rejects_out_of_range_glyph_ids_before_replay() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let mut run = glyph_run(face_key, Vec::new());
+        run.glyph_ids[0] = u32::from(u16::MAX) + 1;
+
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(!status.replayable);
+        assert_eq!(status.reason, Some(VariantRejectReason::GlyphIdOutOfRange));
+        assert!(
+            status.font_verification.is_none(),
+            "the glyph id range guard should reject before backend font construction"
+        );
+    }
+
+    #[test]
     fn canvaskit_rejects_mixed_per_glyph_and_glyph_transforms_until_writer_gate() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
