@@ -1501,6 +1501,68 @@ fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_nonpositive_bbox() {
 }
 
 #[test]
+fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_without_deterministic_contract() {
+    let text_style = TextStyle {
+        font_size: 12.0,
+        ..Default::default()
+    };
+    for case_name in [
+        "backend-default-filtering",
+        "backend-default-scaling",
+        "missing-alpha-mode",
+    ] {
+        let mut tree =
+            glyph_outline_fixture_tree_with_bitmap_glyph(PaintTextStyle::from(&text_style), true);
+        if let crate::paint::LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+            let PaintOp::GlyphOutline { outline, .. } = &mut ops[1] else {
+                panic!("expected glyph outline");
+            };
+            let bitmap = outline.bitmap_glyph.as_mut().expect("bitmap glyph payload");
+            match case_name {
+                "backend-default-filtering" => {
+                    bitmap.filtering = Some(BitmapGlyphFiltering::BackendDefault);
+                }
+                "backend-default-scaling" => {
+                    bitmap.scaling_policy = Some(BitmapGlyphScalingPolicy::BackendDefault);
+                }
+                "missing-alpha-mode" => {
+                    bitmap.alpha_mode = None;
+                }
+                _ => unreachable!("covered deterministic BitmapGlyph negative case"),
+            }
+        }
+
+        let mut renderer = SvgRenderer::new();
+        renderer.set_strict_glyph_outline_replay(true);
+        renderer.render_layer_tree(&tree);
+        let output = renderer.output();
+        assert!(
+            output.contains(">A</text>"),
+            "{case_name}: fallback TextRun should remain visible"
+        );
+        assert!(
+            !output.contains("source-backed bitmap glyph"),
+            "{case_name}: strict BitmapGlyph should not be emitted"
+        );
+        let report = renderer
+            .text_variant_selection_diagnostics()
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("svg strict bitmap glyph deterministic-contract report");
+        assert_eq!(report.selected_variant_id, "textRun", "{case_name}");
+        assert!(
+            report.rejected_variants.iter().any(|variant| {
+                variant.variant_id == "glyphOutline"
+                    && variant
+                        .reasons
+                        .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
+            }),
+            "{case_name}"
+        );
+    }
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_rejects_mixed_payload_family() {
     let text_style = TextStyle {
         font_size: 12.0,
