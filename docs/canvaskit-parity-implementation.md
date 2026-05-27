@@ -149,7 +149,7 @@ explicit unsupported diagnostic, and a targeted lifecycle/parity fixture.
 | traversal and clips | save/restore and clip semantics match Canvas2D ordering | dispatch case parity and clip lifecycle fixture |
 | paths, strokes, arrows, line styles | CanvasKit `Path` / `Paint` replay covers Canvas2D path commands and line style branches | command and style case parity plus visual fixture |
 | gradients and patterns | CanvasKit shaders or offscreen CanvasKit picture/image resources | shared stop-position normalization plus no CSS or Canvas2D pattern object dependency |
-| images and image fills | encoded resource bytes decoded into CanvasKit images | deterministic resource key and cache diagnostics |
+| images and image fills | encoded resource bytes decoded into CanvasKit images | deterministic resource key, cache diagnostics, and shared effective bbox correction for 90/270 degree image rotations |
 | image effects and shadows | CanvasKit image filters, paints, or native-ready pixel preprocessing | no hidden browser pre-pass without a resource contract |
 | form and equation objects | direct CanvasKit geometry and text/path drawing | branch parity and fixture for geometry bounds |
 | text visual ops | CanvasKit text/path primitives using HWP-compatible positions | no CanvasKit text measurement authority in `hwpCompat` |
@@ -167,7 +167,11 @@ families now fall back or hard-reject before any backend tries to replay them.
 Canvas2D and CanvasKit gradient replay also share the same stop normalization
 helper, including the Canvas2D behavior where missing explicit stops are
 materialized as `0` and stop pairs are ordered by offset before CanvasKit sees
-the Skia positions array.
+the Skia positions array. Image replay also shares the image-only effective
+bbox helper for perpendicular rotations: Canvas2D, CanvasKit, Rust SVG, native
+Skia, and legacy Rust canvas paths swap image bbox extents around the same
+center before applying the authored 90/270 degree rotation, while non-image
+shapes keep their authored bbox.
 
 ### P3. Native-Ready Strict Payloads
 
