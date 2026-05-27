@@ -246,6 +246,11 @@ assert.deepEqual(
   stringEqualityLiterals(extractMethodBody(canvaskitSource, 'drawEncodedImage'), 'fillMode'),
   'image fill-mode replay branches must stay aligned between Canvas2D and CanvasKit',
 );
+assert(
+  extractMethodBody(canvas2dSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)')
+    && extractMethodBody(canvaskitSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)'),
+  'Canvas2D and CanvasKit image replay must share rotated image effective bbox correction',
+);
 compareCaseLabels(
   caseLabels(extractFunctionBody(canvas2dSource, 'appendPathCommands')),
   caseLabels(extractMethodBody(canvaskitSource, 'makePath')),
@@ -389,6 +394,7 @@ for (const geometryHelperName of [
   'angleToCanvasCoords',
   'calculateArrowDimensions',
   'computePathPaintBounds',
+  'effectiveLayerImageBounds',
 ]) {
   assert.equal(
     canvaskitLayerCanvasUtilsImportBody.includes(geometryHelperName),
