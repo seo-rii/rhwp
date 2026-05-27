@@ -2427,64 +2427,75 @@ impl SkiaLayerRenderer {
                 });
             }
             PaintOp::Image { bbox, image } => {
-                self.with_shape_transform(canvas, image.transform, Some(*bbox), |canvas| {
-                    if let Some(resource_id) = image.resource_id {
-                        if let Some(data) = resources.image_bytes(resource_id) {
-                            if let Some(decoded) = replay.image_for_resource(resource_id, data) {
-                                let binary_effect_image = replay.binary_effect_image_for_resource(
-                                    resource_id,
-                                    &decoded,
-                                    image.effect,
-                                );
-                                let (draw_image, effect, sampling) = if let Some(effect_image) =
-                                    binary_effect_image.as_ref()
+                let effective_bbox = image.transform.effective_image_bbox(bbox);
+                self.with_shape_transform(
+                    canvas,
+                    image.transform,
+                    Some(effective_bbox),
+                    |canvas| {
+                        if let Some(resource_id) = image.resource_id {
+                            if let Some(data) = resources.image_bytes(resource_id) {
+                                if let Some(decoded) = replay.image_for_resource(resource_id, data)
                                 {
-                                    (effect_image, ImageEffect::RealPic, ImageSampling::nearest())
+                                    let binary_effect_image = replay
+                                        .binary_effect_image_for_resource(
+                                            resource_id,
+                                            &decoded,
+                                            image.effect,
+                                        );
+                                    let (draw_image, effect, sampling) =
+                                        if let Some(effect_image) = binary_effect_image.as_ref() {
+                                            (
+                                                effect_image,
+                                                ImageEffect::RealPic,
+                                                ImageSampling::nearest(),
+                                            )
+                                        } else {
+                                            (&decoded, image.effect, replay.image_sampling())
+                                        };
+                                    let diagnostics = draw_decoded_image(
+                                        canvas,
+                                        draw_image,
+                                        effective_bbox.x as f32,
+                                        effective_bbox.y as f32,
+                                        effective_bbox.width as f32,
+                                        effective_bbox.height as f32,
+                                        image.fill_mode,
+                                        image.original_size,
+                                        image.crop,
+                                        effect,
+                                        sampling,
+                                    );
+                                    replay.record_image_draw(diagnostics);
                                 } else {
-                                    (&decoded, image.effect, replay.image_sampling())
-                                };
-                                let diagnostics = draw_decoded_image(
-                                    canvas,
-                                    draw_image,
-                                    bbox.x as f32,
-                                    bbox.y as f32,
-                                    bbox.width as f32,
-                                    bbox.height as f32,
-                                    image.fill_mode,
-                                    image.original_size,
-                                    image.crop,
-                                    effect,
-                                    sampling,
-                                );
-                                replay.record_image_draw(diagnostics);
+                                    draw_missing_image_placeholder(
+                                        canvas,
+                                        effective_bbox.x as f32,
+                                        effective_bbox.y as f32,
+                                        effective_bbox.width as f32,
+                                        effective_bbox.height as f32,
+                                    );
+                                }
                             } else {
                                 draw_missing_image_placeholder(
                                     canvas,
-                                    bbox.x as f32,
-                                    bbox.y as f32,
-                                    bbox.width as f32,
-                                    bbox.height as f32,
+                                    effective_bbox.x as f32,
+                                    effective_bbox.y as f32,
+                                    effective_bbox.width as f32,
+                                    effective_bbox.height as f32,
                                 );
                             }
                         } else {
                             draw_missing_image_placeholder(
                                 canvas,
-                                bbox.x as f32,
-                                bbox.y as f32,
-                                bbox.width as f32,
-                                bbox.height as f32,
+                                effective_bbox.x as f32,
+                                effective_bbox.y as f32,
+                                effective_bbox.width as f32,
+                                effective_bbox.height as f32,
                             );
                         }
-                    } else {
-                        draw_missing_image_placeholder(
-                            canvas,
-                            bbox.x as f32,
-                            bbox.y as f32,
-                            bbox.width as f32,
-                            bbox.height as f32,
-                        );
-                    }
-                });
+                    },
+                );
             }
             PaintOp::Equation { bbox, equation } => {
                 let mut rendered = false;

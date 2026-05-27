@@ -252,12 +252,13 @@ impl WebCanvasRenderer {
                             continue;
                         }
                         PaintOp::Image { bbox, image } => {
-                            self.open_shape_transform(&image.transform, bbox);
+                            let effective_bbox = image.transform.effective_image_bbox(bbox);
+                            self.open_shape_transform(&image.transform, &effective_bbox);
                             if let Some(id) = image.resource_id {
                                 if let Some(bytes) = resources.image_bytes(id) {
                                     self.draw_image_with_fill_mode(
                                         bytes,
-                                        bbox,
+                                        &effective_bbox,
                                         image.fill_mode,
                                         image.original_size,
                                         image.crop,
@@ -851,11 +852,12 @@ impl WebCanvasRenderer {
                 );
             }
             RenderNodeType::Image(img) => {
-                self.open_shape_transform(&img.transform, &node.bbox);
+                let effective_bbox = img.transform.effective_image_bbox(&node.bbox);
+                self.open_shape_transform(&img.transform, &effective_bbox);
                 if let Some(ref data) = img.data {
                     self.draw_image_with_fill_mode(
                         data,
-                        &node.bbox,
+                        &effective_bbox,
                         img.fill_mode,
                         img.original_size,
                         img.crop,

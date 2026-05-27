@@ -54,6 +54,7 @@ import {
   drawCanvas2DCharOverlap,
   encodeBase64,
   estimateDisplayTextPositions,
+  effectiveLayerImageBounds,
   inferImageMime,
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
@@ -1422,7 +1423,8 @@ export class Canvas2DLayerRenderer {
       return;
     }
 
-    this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
+    const bbox = effectiveLayerImageBounds(op.bbox, op.transform);
+    this.withCanvasTransform(ctx, bbox, op.transform, () => {
       const { width: imageWidth, height: imageHeight } = layerCanvasImageSourceSize(image);
       const effectCropSource = canPreprocessCroppedLayerImageEffect(op.fillMode)
         ? resolveLayerImageCropSource(imageWidth, imageHeight, op.crop)
@@ -1437,7 +1439,7 @@ export class Canvas2DLayerRenderer {
       this.drawDomImage(
         ctx,
         source,
-        op.bbox,
+        bbox,
         op.fillMode,
         op.originalSize,
         source !== image && effectCropSource ? undefined : op.crop,

@@ -529,6 +529,29 @@ impl ShapeTransform {
     pub fn has_transform(&self) -> bool {
         self.rotation != 0.0 || self.horz_flip || self.vert_flip
     }
+
+    /// Image-only bbox correction for perpendicular rotations.
+    ///
+    /// Some HWPX image sizes are stored as the post-rotation outer bounds. If a
+    /// renderer then applies the image rotation around that already-rotated box,
+    /// the image is effectively rotated twice and can overflow the page. For
+    /// 90/270 degree image rotations, swap only the bbox extents while keeping
+    /// the center fixed; non-image shapes keep their authored bbox.
+    pub fn effective_image_bbox(&self, bbox: &BoundingBox) -> BoundingBox {
+        let rotation = self.rotation.rem_euclid(360.0);
+        let is_perpendicular = (rotation - 90.0).abs() < 1.0 || (rotation - 270.0).abs() < 1.0;
+        if !is_perpendicular {
+            return *bbox;
+        }
+        let cx = bbox.x + bbox.width / 2.0;
+        let cy = bbox.y + bbox.height / 2.0;
+        BoundingBox::new(
+            cx - bbox.height / 2.0,
+            cy - bbox.width / 2.0,
+            bbox.height,
+            bbox.width,
+        )
+    }
 }
 
 /// 직선 노드
@@ -910,5 +933,38 @@ mod tests {
         let bbox = BoundingBox::from_hwpunit_rect(&rect, 96.0);
         assert!((bbox.width - 96.0).abs() < 0.01);
         assert!((bbox.height - 96.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn image_bbox_swaps_extent_for_perpendicular_rotation() {
+        let bbox = BoundingBox::new(10.0, 20.0, 120.0, 40.0);
+        let transform = ShapeTransform {
+            rotation: 90.0,
+            horz_flip: false,
+            vert_flip: false,
+        };
+
+        let effective = transform.effective_image_bbox(&bbox);
+
+        assert!((effective.x - 50.0).abs() < 1e-9);
+        assert!((effective.y + 20.0).abs() < 1e-9);
+        assert!((effective.width - 40.0).abs() < 1e-9);
+        assert!((effective.height - 120.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn image_bbox_keeps_extent_for_non_perpendicular_rotation() {
+        let bbox = BoundingBox::new(10.0, 20.0, 120.0, 40.0);
+        let transform = ShapeTransform {
+            rotation: 45.0,
+            horz_flip: false,
+            vert_flip: false,
+        };
+
+        let effective = transform.effective_image_bbox(&bbox);
+        assert!((effective.x - bbox.x).abs() < 1e-9);
+        assert!((effective.y - bbox.y).abs() < 1e-9);
+        assert!((effective.width - bbox.width).abs() < 1e-9);
+        assert!((effective.height - bbox.height).abs() < 1e-9);
     }
 }

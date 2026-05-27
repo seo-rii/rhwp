@@ -1,4 +1,4 @@
-import type { LayerBounds, LayerPathCommand } from '@/core/types';
+import type { LayerBounds, LayerPathCommand, LayerTransform } from '@/core/types';
 
 export function angleToCanvasCoords(
   angle: number,
@@ -73,6 +73,25 @@ export function gradientColorStops<T>(
     }))
     .sort((left, right) => left.position - right.position || left.index - right.index)
     .map(({ color, position }) => ({ color, position }));
+}
+
+export function effectiveLayerImageBounds(
+  bbox: LayerBounds,
+  transform: LayerTransform,
+): LayerBounds {
+  const rotation = ((transform.rotation % 360) + 360) % 360;
+  const isPerpendicular = Math.abs(rotation - 90) < 1 || Math.abs(rotation - 270) < 1;
+  if (!isPerpendicular) {
+    return bbox;
+  }
+  const cx = bbox.x + bbox.width / 2;
+  const cy = bbox.y + bbox.height / 2;
+  return {
+    x: cx - bbox.height / 2,
+    y: cy - bbox.width / 2,
+    width: bbox.height,
+    height: bbox.width,
+  };
 }
 
 export function computePathPaintBounds(

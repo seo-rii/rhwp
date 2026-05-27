@@ -139,14 +139,15 @@ impl CanvasRenderer {
                 );
             }
             RenderNodeType::Image(img) => {
-                self.open_shape_transform(&img.transform, &node.bbox);
+                let effective_bbox = img.transform.effective_image_bbox(&node.bbox);
+                self.open_shape_transform(&img.transform, &effective_bbox);
                 if let Some(ref data) = img.data {
                     self.draw_image(
                         data,
-                        node.bbox.x,
-                        node.bbox.y,
-                        node.bbox.width,
-                        node.bbox.height,
+                        effective_bbox.x,
+                        effective_bbox.y,
+                        effective_bbox.width,
+                        effective_bbox.height,
                     );
                 }
             }

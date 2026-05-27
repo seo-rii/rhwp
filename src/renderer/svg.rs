@@ -1404,8 +1404,9 @@ impl SvgRenderer {
                 );
             }
             RenderNodeType::Image(img) => {
-                self.open_shape_transform(&img.transform, &node.bbox);
-                self.render_image_node(img, &node.bbox);
+                let effective_bbox = img.transform.effective_image_bbox(&node.bbox);
+                self.open_shape_transform(&img.transform, &effective_bbox);
+                self.render_image_node(img, &effective_bbox);
             }
             RenderNodeType::Path(path) => {
                 self.open_shape_transform(&path.transform, &node.bbox);
@@ -1957,8 +1958,9 @@ impl SvgRenderer {
         temp.transform = image.transform;
         temp.crop = image.crop;
         temp.effect = image.effect;
-        self.open_shape_transform(&temp.transform, &bbox);
-        self.render_image_node(&temp, &bbox);
+        let effective_bbox = temp.transform.effective_image_bbox(&bbox);
+        self.open_shape_transform(&temp.transform, &effective_bbox);
+        self.render_image_node(&temp, &effective_bbox);
         if temp.transform.has_transform() {
             self.output.push_str("</g>\n");
         }

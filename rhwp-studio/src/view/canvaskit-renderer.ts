@@ -75,6 +75,7 @@ import {
   angleToCanvasCoords,
   calculateArrowDimensions,
   computePathPaintBounds,
+  effectiveLayerImageBounds,
   gradientColorStops,
 } from './layer-geometry-utils';
 import {
@@ -2116,8 +2117,9 @@ export class CanvasKitLayerRenderer {
   }
 
   private renderImage(canvas: ReturnType<Surface['getCanvas']>, op: LayerImageOp): void {
-    this.withTransform(canvas, op.bbox, op.transform, () => {
-      this.drawEncodedImage(canvas, op.resourceId, op.base64, op.bbox, op.fillMode, op.originalSize, op.crop, op.effect);
+    const bbox = effectiveLayerImageBounds(op.bbox, op.transform);
+    this.withTransform(canvas, bbox, op.transform, () => {
+      this.drawEncodedImage(canvas, op.resourceId, op.base64, bbox, op.fillMode, op.originalSize, op.crop, op.effect);
     });
   }
 

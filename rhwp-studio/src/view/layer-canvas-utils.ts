@@ -35,6 +35,7 @@ export {
   angleToCanvasCoords,
   calculateArrowDimensions,
   computePathPaintBounds,
+  effectiveLayerImageBounds,
 } from './layer-geometry-utils';
 export {
   allowsTextControlMark,
