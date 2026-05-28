@@ -5007,6 +5007,36 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2BitmapStrikePpemPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              strikePpem: [0, 16],
+            },
+          },
+          true,
+        ),
+        true,
+      );
+      const invalidReservedV2BitmapDiagnosticStrikePayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              strikeSelection: 'diagnosticOnly',
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const invalidReservedV2BitmapStrikeReselectionPayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -5251,6 +5281,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2BitmapScalingFilterValuePayload,
         invalidReservedV2BitmapFilteringPayload,
         invalidReservedV2BitmapMissingFilteringPayload,
+        invalidReservedV2BitmapStrikePpemPayload,
+        invalidReservedV2BitmapDiagnosticStrikePayload,
         invalidReservedV2BitmapStrikeReselectionPayload,
         mixedReservedV2BitmapPayload,
         reservedV2SvgPayload,
@@ -5840,6 +5872,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2BitmapMissingFilteringPayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapStrikePpemIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapStrikePpemPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapDiagnosticStrikeIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapDiagnosticStrikePayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidReservedV2BitmapStrikeReselectionIssueCodes = canvas2dGlyphOutlineProbe
     .invalidReservedV2BitmapStrikeReselectionPayload
     ?.textV2Validation
@@ -5871,6 +5911,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidReservedV2BitmapFilteringIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapMissingFilteringIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapMissingFilteringIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapStrikePpemIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapStrikePpemIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapDiagnosticStrikeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapDiagnosticStrikeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapStrikeReselectionIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapStrikeReselectionIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && mixedReservedV2BitmapIssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -5902,6 +5946,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ?.textV2Validation,
       invalidV2BitmapMissingFilteringValidation: canvas2dGlyphOutlineProbe
         .invalidReservedV2BitmapMissingFilteringPayload
+        ?.textV2Validation,
+      invalidV2BitmapStrikePpemValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2BitmapStrikePpemPayload
+        ?.textV2Validation,
+      invalidV2BitmapDiagnosticStrikeValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2BitmapDiagnosticStrikePayload
         ?.textV2Validation,
       invalidV2BitmapStrikeReselectionValidation: canvas2dGlyphOutlineProbe
         .invalidReservedV2BitmapStrikeReselectionPayload
