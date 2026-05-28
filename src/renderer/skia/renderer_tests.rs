@@ -19,12 +19,13 @@ use crate::paint::{
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
     GlyphRunReplayEligibility, GlyphTransform, ImageResourceId, LayerAffineTransform, LayerBuilder,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
-    LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPathPaint, LayerPoint,
-    LayerRectanglePaint, LayerSemantic, LayerTextOrientation, LayerTextRunPaint, LocalizedName,
-    PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor,
-    ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
-    SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
-    TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
+    LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPageBackgroundImagePaint,
+    LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerSemantic,
+    LayerTextOrientation, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp, PaintTextStyle,
+    PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena, ShapeKey, ShapingEngineId,
+    SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, SvgResourceId, TextDirection,
+    TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantKind,
+    TextVariantQuality, VariationAxisValue, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -645,6 +646,53 @@ fn raster_output_accumulates_binary_image_effect_cache_diagnostics() {
     );
     assert_eq!(
         output.diagnostics.image_effect_cache_approx_bytes,
+        8 * 8 * 4
+    );
+}
+
+#[test]
+fn raster_output_applies_page_background_binary_image_effect() {
+    use crate::model::style::ImageFillMode;
+
+    let mut pixmap = tiny_skia::Pixmap::new(8, 8).expect("source pixmap");
+    for pixel in pixmap.pixels_mut() {
+        *pixel = tiny_skia::PremultipliedColorU8::from_rgba(126, 126, 126, 255).unwrap();
+    }
+    let image_bytes = pixmap.encode_png().expect("source png");
+    let mut resources = ResourceArena::default();
+    let resource_id = resources.intern_image_bytes(&image_bytes);
+    let tree = PageLayerTree::with_resources(
+        8.0,
+        8.0,
+        LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 8.0, 8.0),
+            None,
+            vec![PaintOp::PageBackground {
+                bbox: BoundingBox::new(0.0, 0.0, 8.0, 8.0),
+                background: LayerPageBackgroundPaint {
+                    background_color: None,
+                    border_color: None,
+                    border_width: 0.0,
+                    gradient: None,
+                    image: Some(LayerPageBackgroundImagePaint {
+                        resource_id,
+                        fill_mode: ImageFillMode::FitToSize,
+                        effect: ImageEffect::Pattern8x8,
+                    }),
+                },
+            }],
+        ),
+        resources,
+    );
+    let renderer = SkiaLayerRenderer::new();
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("render raster");
+
+    assert_eq!(output.diagnostics.image_effect_cache_misses, 1);
+    assert_eq!(output.diagnostics.image_effect_cache_hits, 0);
+    assert_eq!(
+        output.diagnostics.image_effect_preprocessed_bytes,
         8 * 8 * 4
     );
 }

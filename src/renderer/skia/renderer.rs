@@ -1894,9 +1894,20 @@ impl SkiaLayerRenderer {
                 if let Some(image) = &background.image {
                     if let Some(bytes) = resources.image_bytes(image.resource_id) {
                         if let Some(decoded) = replay.image_for_resource(image.resource_id, bytes) {
+                            let binary_effect_image = replay.binary_effect_image_for_resource(
+                                image.resource_id,
+                                &decoded,
+                                image.effect,
+                            );
+                            let (draw_image, effect, sampling) =
+                                if let Some(effect_image) = binary_effect_image.as_ref() {
+                                    (effect_image, ImageEffect::RealPic, ImageSampling::nearest())
+                                } else {
+                                    (&decoded, image.effect, replay.image_sampling())
+                                };
                             let diagnostics = draw_decoded_image(
                                 canvas,
-                                &decoded,
+                                draw_image,
                                 bbox.x as f32,
                                 bbox.y as f32,
                                 bbox.width as f32,
@@ -1904,8 +1915,8 @@ impl SkiaLayerRenderer {
                                 Some(image.fill_mode),
                                 None,
                                 None,
-                                crate::model::image::ImageEffect::RealPic,
-                                replay.image_sampling(),
+                                effect,
+                                sampling,
                             );
                             replay.record_image_draw(diagnostics);
                         } else {

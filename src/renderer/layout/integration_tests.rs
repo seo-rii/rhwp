@@ -1673,6 +1673,7 @@ mod tests {
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
     #[test]
     fn test_skia_screenshot_matches_layer_svg_for_synthetic_page_background_image() {
+        use crate::model::image::ImageEffect;
         use crate::model::style::ImageFillMode;
         use crate::paint::{LayerBuilder, RenderProfile};
         use crate::renderer::render_tree::{
