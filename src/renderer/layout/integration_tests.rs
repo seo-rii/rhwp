@@ -1698,6 +1698,8 @@ mod tests {
                 image: Some(PageBackgroundImage {
                     data: synthetic_png_bytes(),
                     fill_mode: ImageFillMode::FitToSize,
+                    brightness: 0,
+                    contrast: 0,
                     effect: ImageEffect::RealPic,
                 }),
             }),

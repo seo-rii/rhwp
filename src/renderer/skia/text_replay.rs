@@ -367,6 +367,8 @@ impl SkiaLayerRenderer {
                             None,
                             None,
                             crate::model::image::ImageEffect::RealPic,
+                            0,
+                            0,
                             ImageSampling::linear(),
                         );
                         replay.record_image_draw(diagnostics);

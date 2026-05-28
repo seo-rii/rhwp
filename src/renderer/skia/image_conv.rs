@@ -91,6 +91,8 @@ pub fn draw_image_bytes(
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
     effect: ImageEffect,
+    brightness: i8,
+    contrast: i8,
     sampling: ImageSampling,
 ) -> ImageDrawDiagnostics {
     if !is_valid_destination_rect(x, y, width, height) {
@@ -111,6 +113,8 @@ pub fn draw_image_bytes(
         original_size,
         crop,
         effect,
+        brightness,
+        contrast,
         sampling,
     )
 }
@@ -126,6 +130,8 @@ pub fn draw_decoded_image(
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
     effect: ImageEffect,
+    brightness: i8,
+    contrast: i8,
     sampling: ImageSampling,
 ) -> ImageDrawDiagnostics {
     draw_decoded_image_impl(
@@ -139,6 +145,8 @@ pub fn draw_decoded_image(
         original_size,
         crop,
         effect,
+        brightness,
+        contrast,
         sampling,
         true,
     )
@@ -161,6 +169,8 @@ fn draw_decoded_image_impl(
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
     effect: ImageEffect,
+    brightness: i8,
+    contrast: i8,
     sampling: ImageSampling,
     allow_shader_tiling: bool,
 ) -> ImageDrawDiagnostics {
@@ -200,7 +210,7 @@ fn draw_decoded_image_impl(
     let dst = Rect::from_xywh(x, y, width, height);
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
-    if let Some(color_filter) = image_effect_filter(filter_effect) {
+    if let Some(color_filter) = image_effect_filter(filter_effect, brightness, contrast) {
         paint.set_color_filter(color_filter);
     }
     let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
@@ -486,6 +496,8 @@ fn draw_decoded_image_without_shader_for_test(
         original_size,
         crop,
         effect,
+        0,
+        0,
         sampling,
         false,
     )
@@ -500,12 +512,53 @@ fn is_valid_destination_rect(x: f32, y: f32, width: f32, height: f32) -> bool {
         && height > 0.0
 }
 
-fn image_effect_filter(effect: ImageEffect) -> Option<skia_safe::ColorFilter> {
+fn image_effect_filter(
+    effect: ImageEffect,
+    brightness: i8,
+    contrast: i8,
+) -> Option<skia_safe::ColorFilter> {
+    if matches!(effect, ImageEffect::RealPic) && brightness == 0 && contrast == 0 {
+        return None;
+    }
+    let brightness_scale = (100.0 + brightness as f32) / 100.0;
+    let contrast_scale = (100.0 + contrast as f32) / 100.0;
     match effect {
-        ImageEffect::RealPic => None,
-        ImageEffect::GrayScale => Some(grayscale_filter(1.0, 0.0)),
-        ImageEffect::BlackWhite => Some(grayscale_filter(255.0, -127.5)),
-        ImageEffect::Pattern8x8 => Some(grayscale_filter(1.0, 0.0)),
+        ImageEffect::RealPic => Some(grayscale_filter_with_tone(
+            1.0,
+            0.0,
+            brightness_scale,
+            contrast_scale,
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        )),
+        ImageEffect::GrayScale => Some(grayscale_filter_with_tone(
+            1.0,
+            0.0,
+            brightness_scale,
+            contrast_scale,
+            [0.299, 0.587, 0.114],
+            [0.299, 0.587, 0.114],
+            [0.299, 0.587, 0.114],
+        )),
+        ImageEffect::BlackWhite => Some(grayscale_filter_with_tone(
+            255.0,
+            -127.5,
+            brightness_scale,
+            contrast_scale,
+            [0.299, 0.587, 0.114],
+            [0.299, 0.587, 0.114],
+            [0.299, 0.587, 0.114],
+        )),
+        ImageEffect::Pattern8x8 => Some(grayscale_filter_with_tone(
+            1.0,
+            0.0,
+            brightness_scale,
+            contrast_scale,
+            [0.299, 0.587, 0.114],
+            [0.299, 0.587, 0.114],
+            [0.299, 0.587, 0.114],
+        )),
     }
 }
 
@@ -570,14 +623,40 @@ fn luma_preprocessed_image(
     Image::from_encoded(Data::new_copy(&png))
 }
 
-fn grayscale_filter(scale: f32, translate: f32) -> skia_safe::ColorFilter {
-    let r = 0.299 * scale;
-    let g = 0.587 * scale;
-    let b = 0.114 * scale;
+fn grayscale_filter_with_tone(
+    scale: f32,
+    translate: f32,
+    brightness_scale: f32,
+    contrast_scale: f32,
+    red_row: [f32; 3],
+    green_row: [f32; 3],
+    blue_row: [f32; 3],
+) -> skia_safe::ColorFilter {
+    let channel_scale = scale * brightness_scale * contrast_scale;
+    let channel_translate =
+        translate * brightness_scale * contrast_scale + 128.0 * (1.0 - contrast_scale);
     color_filters::matrix_row_major(
         &[
-            r, g, b, 0.0, translate, r, g, b, 0.0, translate, r, g, b, 0.0, translate, 0.0, 0.0,
-            0.0, 1.0, 0.0,
+            red_row[0] * channel_scale,
+            red_row[1] * channel_scale,
+            red_row[2] * channel_scale,
+            0.0,
+            channel_translate,
+            green_row[0] * channel_scale,
+            green_row[1] * channel_scale,
+            green_row[2] * channel_scale,
+            0.0,
+            channel_translate,
+            blue_row[0] * channel_scale,
+            blue_row[1] * channel_scale,
+            blue_row[2] * channel_scale,
+            0.0,
+            channel_translate,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
         ],
         None,
     )
@@ -607,6 +686,8 @@ pub fn draw_svg_fragment(
         None,
         None,
         ImageEffect::RealPic,
+        0,
+        0,
         sampling,
     );
     true
@@ -816,6 +897,8 @@ mod tests {
             Some((4.0, 4.0)),
             Some((0, 1, 2, 2)),
             ImageEffect::RealPic,
+            0,
+            0,
             ImageSampling::nearest(),
         );
         let rendered = surface
@@ -863,6 +946,8 @@ mod tests {
             Some((1.0, 1.0)),
             None,
             ImageEffect::RealPic,
+            0,
+            0,
             ImageSampling::nearest(),
         );
         let rendered = surface
@@ -931,6 +1016,8 @@ mod tests {
             Some((8.0, 8.0)),
             None,
             ImageEffect::Pattern8x8,
+            0,
+            0,
             ImageSampling::nearest(),
         );
 
@@ -1046,6 +1133,8 @@ mod tests {
             Some((8.0, 8.0)),
             None,
             ImageEffect::Pattern8x8,
+            0,
+            0,
             ImageSampling::linear(),
         );
 
@@ -1097,6 +1186,8 @@ mod tests {
             Some((4.0, 4.0)),
             None,
             ImageEffect::Pattern8x8,
+            0,
+            0,
             ImageSampling::linear(),
         );
 
@@ -1147,6 +1238,8 @@ mod tests {
             Some((2.0, 1.0)),
             None,
             ImageEffect::BlackWhite,
+            0,
+            0,
             ImageSampling::nearest(),
         );
 
@@ -1188,6 +1281,8 @@ mod tests {
             Some((2.0, 1.0)),
             None,
             ImageEffect::BlackWhite,
+            0,
+            0,
             ImageSampling::linear(),
         );
 
@@ -1228,6 +1323,8 @@ mod tests {
             Some((4.0, 4.0)),
             None,
             ImageEffect::RealPic,
+            0,
+            0,
             ImageSampling::nearest(),
         );
         let rendered = surface

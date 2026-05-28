@@ -1397,12 +1397,21 @@ export function layerCanvasImageSourceSize(image: LayerCanvasImageSource): { wid
   };
 }
 
-function imageEffectCacheKey(effect: NonNullable<LayerImageOp['effect']>, sourceRect?: LayerImageEffectSourceRect | null): string {
+function imageEffectCacheKey(
+  effect: NonNullable<LayerImageOp['effect']>,
+  sourceRect?: LayerImageEffectSourceRect | null,
+  brightness = 0,
+  contrast = 0,
+): string {
+  const toneKey = brightness !== 0 || contrast !== 0
+    ? `:tone:${brightness}:${contrast}`
+    : '';
   if (!sourceRect) {
-    return effect;
+    return `${effect}${toneKey}`;
   }
   return [
     effect,
+    toneKey,
     'src',
     sourceRect.x.toFixed(3),
     sourceRect.y.toFixed(3),
@@ -1417,8 +1426,12 @@ export function applyLayerImageEffect(
   cache?: LayerImageEffectCache,
   diagnostics?: LayerImageEffectDiagnostics,
   sourceRect?: LayerImageEffectSourceRect | null,
+  brightness = 0,
+  contrast = 0,
 ): LayerCanvasImageSource {
-  if (!effect || effect === 'realPic') {
+  const hasEffect = !!effect && effect !== 'realPic';
+  const hasTone = brightness !== 0 || contrast !== 0;
+  if (!hasEffect && !hasTone) {
     return image;
   }
 
@@ -1459,7 +1472,7 @@ export function applyLayerImageEffect(
   const canvasHeight = Math.max(1, Math.round(sh));
   const patternPhaseX = Math.floor(sx);
   const patternPhaseY = Math.floor(sy);
-  const cacheKey = imageEffectCacheKey(effect, sourceRect);
+  const cacheKey = imageEffectCacheKey(effect ?? 'realPic', sourceRect, brightness, contrast);
   const cachedByEffect = cache?.get(image);
   const cached = cachedByEffect?.get(cacheKey);
   if (cached && cached.width === canvasWidth && cached.height === canvasHeight) {
@@ -1504,7 +1517,15 @@ export function applyLayerImageEffect(
     return image;
   }
 
-  applyLayerImageEffectPixels(pixels.data, canvasWidth, effect, patternPhaseX, patternPhaseY);
+  applyLayerImageEffectPixels(
+    pixels.data,
+    canvasWidth,
+    effect,
+    patternPhaseX,
+    patternPhaseY,
+    brightness,
+    contrast,
+  );
   ctx.putImageData(pixels, 0, 0);
   if (diagnostics) {
     const elapsedMs = typeof performance !== 'undefined'

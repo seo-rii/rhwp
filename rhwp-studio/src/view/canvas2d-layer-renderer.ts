@@ -805,6 +805,9 @@ export class Canvas2DLayerRenderer {
           op.image.effect ?? 'realPic',
           this.imageEffectCache,
           this.imageEffectDiagnostics,
+          undefined,
+          op.image.brightness ?? 0,
+          op.image.contrast ?? 0,
         );
         this.drawDomImage(
           ctx,
@@ -1449,6 +1452,8 @@ export class Canvas2DLayerRenderer {
         this.imageEffectCache,
         this.imageEffectDiagnostics,
         effectCropSource,
+        op.brightness ?? 0,
+        op.contrast ?? 0,
       );
       this.drawDomImage(
         ctx,

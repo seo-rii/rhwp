@@ -255,6 +255,8 @@ impl WebCanvasRenderer {
                                         None,
                                         None,
                                         image.effect,
+                                        image.brightness,
+                                        image.contrast,
                                     );
                                 }
                             }
@@ -272,6 +274,8 @@ impl WebCanvasRenderer {
                                         image.original_size,
                                         image.crop,
                                         image.effect,
+                                        image.brightness,
+                                        image.contrast,
                                     );
                                 }
                             }
@@ -737,12 +741,15 @@ impl WebCanvasRenderer {
                 }
                 // 이미지 배경
                 if let Some(img) = &bg.image {
-                    self.draw_image(
+                    self.draw_image_with_fill_mode(
                         &img.data,
-                        node.bbox.x,
-                        node.bbox.y,
-                        node.bbox.width,
-                        node.bbox.height,
+                        &node.bbox,
+                        Some(img.fill_mode),
+                        None,
+                        None,
+                        img.effect,
+                        img.brightness,
+                        img.contrast,
                     );
                 }
             }
@@ -871,6 +878,8 @@ impl WebCanvasRenderer {
                         img.original_size,
                         img.crop,
                         img.effect,
+                        img.brightness,
+                        img.contrast,
                     );
                 }
             }
@@ -2881,13 +2890,34 @@ impl WebCanvasRenderer {
         original_size: Option<(f64, f64)>,
         crop: Option<(i32, i32, i32, i32)>,
         effect: ImageEffect,
+        brightness: i8,
+        contrast: i8,
     ) {
-        let filter = match effect {
-            ImageEffect::GrayScale | ImageEffect::Pattern8x8 => Some("grayscale(1)"),
-            ImageEffect::BlackWhite => Some("grayscale(1) contrast(3200%)"),
-            ImageEffect::RealPic => None,
-        };
-        let previous_filter = filter.and_then(|filter| {
+        let mut filter_parts = Vec::new();
+        match effect {
+            ImageEffect::GrayScale | ImageEffect::Pattern8x8 => {
+                filter_parts.push("grayscale(1)".to_string());
+            }
+            ImageEffect::BlackWhite => {
+                filter_parts.push("grayscale(1)".to_string());
+                filter_parts.push("contrast(3200%)".to_string());
+            }
+            ImageEffect::RealPic => {}
+        }
+        if brightness != 0 {
+            filter_parts.push(format!(
+                "brightness({:.4})",
+                (100.0 + brightness as f64) / 100.0
+            ));
+        }
+        if contrast != 0 {
+            filter_parts.push(format!(
+                "contrast({:.4})",
+                (100.0 + contrast as f64) / 100.0
+            ));
+        }
+        let filter = (!filter_parts.is_empty()).then(|| filter_parts.join(" "));
+        let previous_filter = filter.as_ref().and_then(|filter| {
             let previous = js_sys::Reflect::get(&self.ctx, &JsValue::from_str("filter")).ok();
             let _ = js_sys::Reflect::set(
                 &self.ctx,

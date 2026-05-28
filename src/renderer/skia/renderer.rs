@@ -1805,6 +1805,8 @@ impl SkiaLayerRenderer {
             None,
             None,
             ImageEffect::RealPic,
+            0,
+            0,
             Self::glyph_outline_image_sampling(payload.filtering, replay.image_sampling()),
         );
         canvas.restore();
@@ -1863,6 +1865,8 @@ impl SkiaLayerRenderer {
             None,
             None,
             ImageEffect::RealPic,
+            0,
+            0,
             replay.image_sampling(),
         );
         canvas.restore();
@@ -1916,6 +1920,8 @@ impl SkiaLayerRenderer {
                                 None,
                                 None,
                                 effect,
+                                image.brightness,
+                                image.contrast,
                                 sampling,
                             );
                             replay.record_image_draw(diagnostics);
@@ -2475,6 +2481,8 @@ impl SkiaLayerRenderer {
                                         image.original_size,
                                         image.crop,
                                         effect,
+                                        image.brightness,
+                                        image.contrast,
                                         sampling,
                                     );
                                     replay.record_image_draw(diagnostics);
@@ -2528,6 +2536,8 @@ impl SkiaLayerRenderer {
                             None,
                             None,
                             crate::model::image::ImageEffect::RealPic,
+                            0,
+                            0,
                             replay.image_sampling(),
                         );
                         replay.record_image_draw(diagnostics);

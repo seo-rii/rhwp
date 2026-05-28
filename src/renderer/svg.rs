@@ -1252,13 +1252,12 @@ impl SvgRenderer {
                 }
                 // 이미지 (최상위)
                 if let Some(img) = &bg.image {
-                    let data_uri = svg_image_data_uri(&img.data);
-                    self.output.push_str(&format!(
-                        "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
-                        node.bbox.x, node.bbox.y,
-                        node.bbox.width, node.bbox.height,
-                        data_uri,
-                    ));
+                    let mut temp = ImageNode::new(0, Some(img.data.clone()));
+                    temp.fill_mode = Some(img.fill_mode);
+                    temp.effect = img.effect;
+                    temp.brightness = img.brightness;
+                    temp.contrast = img.contrast;
+                    self.render_image_node(&temp, &node.bbox);
                 }
             }
             RenderNodeType::TextRun(run) => {
@@ -1653,7 +1652,13 @@ impl SvgRenderer {
         if let Some(image) = &background.image {
             if let Some(bytes) = resources.image_bytes(image.resource_id) {
                 let data_uri = svg_image_data_uri(bytes);
+                let tone_filter_id =
+                    self.ensure_brightness_contrast_filter(image.brightness, image.contrast);
                 let effect_filter_id = self.ensure_image_effect_filter(image.effect);
+                if let Some(ref fid) = tone_filter_id {
+                    self.output
+                        .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
+                }
                 if let Some(ref fid) = effect_filter_id {
                     self.output
                         .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
@@ -1686,6 +1691,9 @@ impl SvgRenderer {
                     }
                 }
                 if effect_filter_id.is_some() {
+                    self.output.push_str("</g>\n");
+                }
+                if tone_filter_id.is_some() {
                     self.output.push_str("</g>\n");
                 }
             }
@@ -1991,6 +1999,8 @@ impl SvgRenderer {
         temp.transform = image.transform;
         temp.crop = image.crop;
         temp.effect = image.effect;
+        temp.brightness = image.brightness;
+        temp.contrast = image.contrast;
         let effective_bbox = temp.transform.effective_image_bbox(&bbox);
         self.open_shape_transform(&temp.transform, &effective_bbox);
         self.render_image_node(&temp, &effective_bbox);
@@ -2983,8 +2993,12 @@ impl SvgRenderer {
             }
         };
 
-        // 그림 효과(그레이스케일/흑백) → SVG 필터 래핑
+        let tone_filter_id = self.ensure_brightness_contrast_filter(img.brightness, img.contrast);
         let effect_filter_id = self.ensure_image_effect_filter(img.effect);
+        if let Some(ref fid) = tone_filter_id {
+            self.output
+                .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
+        }
         if let Some(ref fid) = effect_filter_id {
             self.output
                 .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
@@ -3091,6 +3105,35 @@ impl SvgRenderer {
         if effect_filter_id.is_some() {
             self.output.push_str("</g>\n");
         }
+        if tone_filter_id.is_some() {
+            self.output.push_str("</g>\n");
+        }
+    }
+
+    fn ensure_brightness_contrast_filter(
+        &mut self,
+        brightness: i8,
+        contrast: i8,
+    ) -> Option<String> {
+        if brightness == 0 && contrast == 0 {
+            return None;
+        }
+        let brightness_scale = (100.0 + brightness as f64) / 100.0;
+        let contrast_scale = (100.0 + contrast as f64) / 100.0;
+        let slope = brightness_scale * contrast_scale;
+        let intercept = 128.0 * (1.0 - contrast_scale) / 255.0;
+        let id = format!("rhwp-img-tone-b{brightness}-c{contrast}").replace('-', "m");
+        let def = format!(
+            "<filter id=\"{id}\"><feComponentTransfer>\
+                <feFuncR type=\"linear\" slope=\"{slope:.6}\" intercept=\"{intercept:.6}\"/>\
+                <feFuncG type=\"linear\" slope=\"{slope:.6}\" intercept=\"{intercept:.6}\"/>\
+                <feFuncB type=\"linear\" slope=\"{slope:.6}\" intercept=\"{intercept:.6}\"/>\
+            </feComponentTransfer></filter>\n"
+        );
+        if !self.defs.iter().any(|d| d == &def) {
+            self.defs.push(def);
+        }
+        Some(id)
     }
 
     /// 그림 효과(ImageEffect)에 해당하는 SVG 필터를 defs에 보장하고 ID를 반환한다.

@@ -705,6 +705,8 @@ export class CanvasKitLayerRenderer {
         undefined,
         undefined,
         op.image.effect,
+        op.image.brightness ?? 0,
+        op.image.contrast ?? 0,
       );
     }
 
@@ -2131,7 +2133,18 @@ export class CanvasKitLayerRenderer {
   private renderImage(canvas: ReturnType<Surface['getCanvas']>, op: LayerImageOp): void {
     const bbox = effectiveLayerImageBounds(op.bbox, op.transform);
     this.withTransform(canvas, bbox, op.transform, () => {
-      this.drawEncodedImage(canvas, op.resourceId, op.base64, bbox, op.fillMode, op.originalSize, op.crop, op.effect);
+      this.drawEncodedImage(
+        canvas,
+        op.resourceId,
+        op.base64,
+        bbox,
+        op.fillMode,
+        op.originalSize,
+        op.crop,
+        op.effect,
+        op.brightness ?? 0,
+        op.contrast ?? 0,
+      );
     });
   }
 
@@ -2766,6 +2779,8 @@ export class CanvasKitLayerRenderer {
     originalSize?: { width: number; height: number },
     crop?: { left: number; top: number; right: number; bottom: number },
     effect: LayerImageOp['effect'] = 'realPic',
+    brightness = 0,
+    contrast = 0,
   ): void {
     const imageDimension = (source: Image, dimension: 'width' | 'height'): number | null => {
       const value = (source as Image & { width?: unknown; height?: unknown })[dimension];
@@ -2775,6 +2790,7 @@ export class CanvasKitLayerRenderer {
       return typeof value === 'number' ? value : null;
     };
     const usesImageEffect = !!effect && effect !== 'realPic';
+    const usesImageTone = brightness !== 0 || contrast !== 0;
     const baseImage = this.resourceCache.image(resourceId, base64);
     if (!baseImage) return;
     if (
@@ -2804,11 +2820,11 @@ export class CanvasKitLayerRenderer {
       paint.delete();
       return;
     }
-    const effectCropSource = usesImageEffect && canPreprocessCroppedLayerImageEffect(fillMode)
+    const effectCropSource = (usesImageEffect || usesImageTone) && canPreprocessCroppedLayerImageEffect(fillMode)
       ? resolveLayerImageCropSource(baseWidth, baseHeight, crop)
       : null;
-    const effectImage = usesImageEffect
-      ? this.resourceCache.imageWithEffect(resourceId, base64, effect, effectCropSource)
+    const effectImage = usesImageEffect || usesImageTone
+      ? this.resourceCache.imageWithEffect(resourceId, base64, effect, effectCropSource, brightness, contrast)
       : baseImage;
     const image = effectImage ?? baseImage;
     const sourceWidth = imageDimension(image, 'width');
@@ -2855,6 +2871,7 @@ export class CanvasKitLayerRenderer {
       }
       const useMipmaps =
         !usesImageEffect
+        && !usesImageTone
         && this.currentProfile !== 'fast-preview'
         && !this.hasActiveCacheHint('preferRaster')
         && (
@@ -2869,7 +2886,7 @@ export class CanvasKitLayerRenderer {
         sampledImage,
         this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
         this.canvasKit.XYWHRect(dstX, dstY, dstW, dstH),
-        usesImageEffect ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
+        (usesImageEffect || usesImageTone) ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
         useMipmaps ? this.canvasKit.MipmapMode.Linear : this.canvasKit.MipmapMode.None,
         paint,
       );

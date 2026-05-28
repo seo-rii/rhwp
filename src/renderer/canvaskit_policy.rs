@@ -718,6 +718,8 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                     image.original_size,
                     image.crop,
                     Some(image.effect),
+                    image.brightness,
+                    image.contrast,
                     Some(image.transform),
                 )),
             ),
@@ -1159,6 +1161,8 @@ fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -
         None,
         None,
         Some(image.effect),
+        image.brightness,
+        image.contrast,
         None,
     ))
 }
@@ -1168,6 +1172,8 @@ fn image_replay_detail(
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
     effect: Option<ImageEffect>,
+    brightness: i8,
+    contrast: i8,
     transform: Option<crate::renderer::render_tree::ShapeTransform>,
 ) -> String {
     let mut detail = String::new();
@@ -1189,6 +1195,9 @@ fn image_replay_detail(
     if let Some(effect) = effect {
         detail.push_str(";effect=");
         detail.push_str(image_effect_detail(effect));
+    }
+    if brightness != 0 || contrast != 0 {
+        let _ = write!(detail, ";tone=brightness:{brightness},contrast:{contrast}");
     }
 
     if let Some(transform) = transform {
@@ -1730,8 +1739,8 @@ mod tests {
                             image: Some(LayerPageBackgroundImagePaint {
                                 resource_id: ImageResourceId(7),
                                 fill_mode: ImageFillMode::TileHorzBottom,
-                                brightness: 0,
-                                contrast: 0,
+                                brightness: -10,
+                                contrast: 20,
                                 effect: ImageEffect::Pattern8x8,
                             }),
                         },
@@ -1743,8 +1752,8 @@ mod tests {
                             fill_mode: Some(ImageFillMode::CenterBottom),
                             original_size: Some((40.0, 30.0)),
                             crop: Some((75, 150, 225, 300)),
-                            brightness: 0,
-                            contrast: 0,
+                            brightness: 15,
+                            contrast: -5,
                             effect: ImageEffect::Pattern8x8,
                             transform: ShapeTransform {
                                 rotation: 12.5,
@@ -1774,6 +1783,7 @@ mod tests {
         assert!(page_background_detail.contains("originalSize=source"));
         assert!(page_background_detail.contains("crop=none"));
         assert!(page_background_detail.contains("effect=pattern8x8"));
+        assert!(page_background_detail.contains("tone=brightness:-10,contrast:20"));
 
         let image_detail = plan
             .items
@@ -1785,6 +1795,7 @@ mod tests {
         assert!(image_detail.contains("originalSize=40.000x30.000"));
         assert!(image_detail.contains("crop=75,150,225,300"));
         assert!(image_detail.contains("effect=pattern8x8"));
+        assert!(image_detail.contains("tone=brightness:15,contrast:-5"));
         assert!(image_detail.contains("transform=rotation:12.500,horzFlip:true,vertFlip:false"));
 
         let json = plan.to_json();

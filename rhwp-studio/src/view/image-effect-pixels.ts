@@ -143,27 +143,41 @@ export function applyLayerImageEffectPixels(
   effect: LayerImageOp['effect'] | undefined,
   patternPhaseX = 0,
   patternPhaseY = 0,
+  brightness = 0,
+  contrast = 0,
 ): boolean {
-  if (!effect || effect === 'realPic' || !Number.isFinite(width) || width <= 0) {
+  const hasEffect = !!effect && effect !== 'realPic';
+  const hasTone = brightness !== 0 || contrast !== 0;
+  if ((!hasEffect && !hasTone) || !Number.isFinite(width) || width <= 0) {
     return false;
   }
 
+  const brightnessScale = (100 + brightness) / 100;
+  const contrastScale = (100 + contrast) / 100;
   for (let index = 0; index < data.length; index += 4) {
-    const luma = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
-    let value = luma;
-    if (effect === 'blackWhite') {
-      value = luma >= 128 ? 255 : 0;
-    } else if (effect === 'pattern8x8') {
-      const pixel = index / 4;
-      const x = pixel % width;
-      const y = Math.floor(pixel / width);
-      const matrix = ORDERED_DITHER_8X8[((y + patternPhaseY) & 7) * 8 + ((x + patternPhaseX) & 7)];
-      const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
-      value = luma > threshold ? 255 : 0;
+    if (hasEffect) {
+      const luma = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+      let value = luma;
+      if (effect === 'blackWhite') {
+        value = luma >= 128 ? 255 : 0;
+      } else if (effect === 'pattern8x8') {
+        const pixel = index / 4;
+        const x = pixel % width;
+        const y = Math.floor(pixel / width);
+        const matrix = ORDERED_DITHER_8X8[((y + patternPhaseY) & 7) * 8 + ((x + patternPhaseX) & 7)];
+        const threshold = Math.floor(((matrix * 2 + 1) * 255) / 128);
+        value = luma > threshold ? 255 : 0;
+      }
+      data[index] = value;
+      data[index + 1] = value;
+      data[index + 2] = value;
     }
-    data[index] = value;
-    data[index + 1] = value;
-    data[index + 2] = value;
+    if (hasTone) {
+      for (let channel = 0; channel < 3; channel += 1) {
+        const adjusted = (data[index + channel] * brightnessScale - 128) * contrastScale + 128;
+        data[index + channel] = Math.max(0, Math.min(255, Math.round(adjusted)));
+      }
+    }
   }
   return true;
 }

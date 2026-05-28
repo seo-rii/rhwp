@@ -97,8 +97,12 @@ export class CanvasKitResourceCache {
     base64?: string,
     effect: LayerImageOp['effect'] = 'realPic',
     sourceRect?: LayerImageEffectSourceRect | null,
+    brightness = 0,
+    contrast = 0,
   ): CanvasKitImage | null {
-    if (!effect || effect === 'realPic') {
+    const hasEffect = !!effect && effect !== 'realPic';
+    const hasTone = brightness !== 0 || contrast !== 0;
+    if (!hasEffect && !hasTone) {
       return this.image(resourceId, base64);
     }
 
@@ -110,7 +114,8 @@ export class CanvasKitResourceCache {
     const sourceRectKey = sourceRect
       ? `:src:${sourceRect.x.toFixed(3)}:${sourceRect.y.toFixed(3)}:${sourceRect.width.toFixed(3)}:${sourceRect.height.toFixed(3)}`
       : '';
-    const effectCacheKey = `${cacheKey}:effect:${effect}${sourceRectKey}`;
+    const toneKey = hasTone ? `:tone:${brightness}:${contrast}` : '';
+    const effectCacheKey = `${cacheKey}:effect:${effect ?? 'realPic'}${toneKey}${sourceRectKey}`;
     const cached = this.imageEffectCache.get(effectCacheKey);
     if (cached) {
       this.imageEffectDiagnostics.cacheHits += 1;
@@ -181,7 +186,15 @@ export class CanvasKitResourceCache {
       return original;
     }
 
-    applyLayerImageEffectPixels(pixels, outputWidth, effect, Math.floor(sx), Math.floor(sy));
+    applyLayerImageEffectPixels(
+      pixels,
+      outputWidth,
+      effect,
+      Math.floor(sx),
+      Math.floor(sy),
+      brightness,
+      contrast,
+    );
     const image = this.canvasKit.MakeImage(imageInfo, pixels, outputWidth * 4);
     if (!image) {
       this.imageEffectDiagnostics.preprocessFailures += 1;
