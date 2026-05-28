@@ -2919,6 +2919,7 @@ fn parse_compose(
                     _ => 0, // SPREAD
                 };
             }
+            b"composeText" => co.chars = attr_str(&attr).chars().collect(),
             _ => {}
         }
     }
@@ -3957,6 +3958,27 @@ mod tests {
 
         assert_eq!(fill.fill_type, crate::model::style::FillType::Gradient);
         assert_eq!(grad.colors, vec![0x0033_2211, 0x0066_5544]);
+    }
+
+    #[test]
+    fn test_parse_compose_text_attribute_form() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:compose circleType="SHAPE_CIRCLE" composeType="OVERLAP" charSz="-1" composeText="가"></hp:compose>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let Control::CharOverlap(overlap) = &section.paragraphs[0].controls[0] else {
+            panic!("expected char overlap control");
+        };
+
+        assert_eq!(overlap.chars, vec!['가']);
+        assert_eq!(overlap.border_type, 1);
+        assert_eq!(overlap.expansion, 1);
+        assert_eq!(overlap.inner_char_size, -1);
     }
 
     #[test]
