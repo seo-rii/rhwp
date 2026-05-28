@@ -248,7 +248,14 @@ impl WebCanvasRenderer {
                             }
                             if let Some(image) = &background.image {
                                 if let Some(bytes) = resources.image_bytes(image.resource_id) {
-                                    self.draw_image(bytes, bbox.x, bbox.y, bbox.width, bbox.height);
+                                    self.draw_image_with_fill_mode(
+                                        bytes,
+                                        bbox,
+                                        Some(image.fill_mode),
+                                        None,
+                                        None,
+                                        image.effect,
+                                    );
                                 }
                             }
                             continue;
