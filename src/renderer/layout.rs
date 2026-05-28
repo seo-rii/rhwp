@@ -265,7 +265,7 @@ pub(crate) use text_measurement::{
 };
 pub(crate) use utils::{
     drawing_to_line_style, drawing_to_shape_style, find_bin_data, format_page_number,
-    layout_rect_to_bbox, resolve_numbering_id,
+    layout_rect_to_bbox, picture_display_size_hu, resolve_numbering_id,
 };
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -3114,7 +3114,8 @@ impl LayoutEngine {
                                 control_index,
                             );
                             if matches!(pic.common.horz_rel_to, HorzRelTo::Column) {
-                                let pic_width_px = hwpunit_to_px(pic.common.width as i32, self.dpi);
+                                let (pic_width_hu, _) = picture_display_size_hu(pic);
+                                let pic_width_px = hwpunit_to_px(pic_width_hu, self.dpi);
                                 let h_offset_px =
                                     hwpunit_to_px(pic.common.horizontal_offset as i32, self.dpi);
                                 let pic_emit_x = match pic.common.horz_align {
