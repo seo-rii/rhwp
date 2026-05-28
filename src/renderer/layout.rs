@@ -3113,6 +3113,15 @@ impl LayoutEngine {
                                 para_index,
                                 control_index,
                             );
+                            // layout_body_picture needs the host paragraph y for Para-relative
+                            // positioning, but InFront pictures must not rewind the already
+                            // advanced text flow cursor back to that paragraph y.
+                            if matches!(
+                                pic.common.text_wrap,
+                                crate::model::shape::TextWrap::InFrontOfText
+                            ) {
+                                result_y = saved_y_offset;
+                            }
                             if matches!(pic.common.horz_rel_to, HorzRelTo::Column) {
                                 let (pic_width_hu, _) = picture_display_size_hu(pic);
                                 let pic_width_px = hwpunit_to_px(pic_width_hu, self.dpi);
