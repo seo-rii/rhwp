@@ -1653,10 +1653,41 @@ impl SvgRenderer {
         if let Some(image) = &background.image {
             if let Some(bytes) = resources.image_bytes(image.resource_id) {
                 let data_uri = svg_image_data_uri(bytes);
-                self.output.push_str(&format!(
-                    "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
-                    bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
-                ));
+                let effect_filter_id = self.ensure_image_effect_filter(image.effect);
+                if let Some(ref fid) = effect_filter_id {
+                    self.output
+                        .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
+                }
+                match image.fill_mode {
+                    ImageFillMode::FitToSize | ImageFillMode::None => {
+                        self.output.push_str(&format!(
+                            "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
+                            bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
+                        ));
+                    }
+                    ImageFillMode::TileAll => {
+                        self.render_tiled_image(bytes, &data_uri, &bbox, true, true, None, None);
+                    }
+                    ImageFillMode::TileHorzTop | ImageFillMode::TileHorzBottom => {
+                        self.render_tiled_image(bytes, &data_uri, &bbox, true, false, None, None);
+                    }
+                    ImageFillMode::TileVertLeft | ImageFillMode::TileVertRight => {
+                        self.render_tiled_image(bytes, &data_uri, &bbox, false, true, None, None);
+                    }
+                    _ => {
+                        self.render_positioned_image(
+                            bytes,
+                            &data_uri,
+                            &bbox,
+                            image.fill_mode,
+                            None,
+                            None,
+                        );
+                    }
+                }
+                if effect_filter_id.is_some() {
+                    self.output.push_str("</g>\n");
+                }
             }
         }
         if let Some(color) = background.border_color {

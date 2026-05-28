@@ -9,8 +9,9 @@ use crate::paint::{
     GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
     LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
-    LayerRectanglePaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation,
-    PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor, ResourceArena, SvgGlyphPayload,
+    LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerRectanglePaint,
+    LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, PaintTextStyle,
+    PaintVariantMeta, PaletteRef, ResolvedColor, ResourceArena, SvgGlyphPayload,
     SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceEntry, TextSourceId,
     TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
 };
@@ -325,6 +326,43 @@ fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
     );
     assert!(output.contains(">세</text>"));
     assert!(output.contains(">로</text>"));
+}
+
+#[test]
+fn test_svg_layer_page_background_image_uses_fill_mode_and_effect() {
+    let mut resources = ResourceArena::default();
+    let resource_id = resources.intern_image_bytes(FIXTURE_PNG_1X1);
+    let root = LayerNode::leaf(
+        BoundingBox::new(0.0, 0.0, 80.0, 60.0),
+        None,
+        vec![PaintOp::PageBackground {
+            bbox: BoundingBox::new(0.0, 0.0, 80.0, 60.0),
+            background: LayerPageBackgroundPaint {
+                background_color: None,
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: Some(LayerPageBackgroundImagePaint {
+                    resource_id,
+                    fill_mode: ImageFillMode::TileAll,
+                    effect: crate::model::image::ImageEffect::GrayScale,
+                }),
+            },
+        }],
+    );
+    let tree = PageLayerTree::with_resources(80.0, 60.0, root, resources);
+    let mut renderer = SvgRenderer::new();
+    renderer.render_layer_tree(&tree);
+
+    let output = renderer.output();
+    assert!(
+        output.contains("filter=\"url(#rhwp-img-grayscale)\""),
+        "page background image effect should wrap the rendered image:\n{output}"
+    );
+    assert!(
+        output.contains("<pattern id=\"tile-pat-"),
+        "page background fillMode should use the layer image tiling path:\n{output}"
+    );
 }
 
 #[test]
