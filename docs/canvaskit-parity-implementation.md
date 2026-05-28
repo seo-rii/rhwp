@@ -172,6 +172,10 @@ bbox helper for perpendicular rotations: Canvas2D, CanvasKit, Rust SVG, native
 Skia, and legacy Rust canvas paths swap image bbox extents around the same
 center before applying the authored 90/270 degree rotation, while non-image
 shapes keep their authored bbox.
+HWPX shape-local `<gradation><color .../>` stops must be materialized by the
+section parser before this replay layer sees the shape fill; otherwise all
+backends receive an empty gradient color list and can only fall back or paint a
+backend default.
 
 ### P3. Native-Ready Strict Payloads
 
