@@ -1587,7 +1587,12 @@ export function drawCanvas2DCharOverlap(
   const bboxY = originY - op.baseline;
   const cy = bboxY + op.bbox.height - boxSize / 2;
 
-  const drawOverlapCell = (display: string, cx: number, targetTextWidth?: number) => {
+  const drawOverlapCell = (
+    display: string,
+    cx: number,
+    targetTextWidth?: number,
+    drawShape = true,
+  ) => {
     const borderType = targetTextWidth !== undefined && op.charOverlap?.borderType === 0
       ? 1
       : op.charOverlap?.borderType ?? 0;
@@ -1596,7 +1601,7 @@ export function drawCanvas2DCharOverlap(
     const isRect = borderType === 3 || borderType === 4;
     const strokeColor = isReversed ? '#000000' : op.style.color;
 
-    if (isCircle) {
+    if (drawShape && isCircle) {
       ctx.beginPath();
       const ry = boxSize / 2;
       const rx = ry * 0.85;
@@ -1608,7 +1613,7 @@ export function drawCanvas2DCharOverlap(
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 0.8;
       ctx.stroke();
-    } else if (isRect) {
+    } else if (drawShape && isRect) {
       const rx = cx - boxSize / 2;
       const ry = cy - boxSize / 2;
       if (isReversed) {
@@ -1643,13 +1648,13 @@ export function drawCanvas2DCharOverlap(
   if (decodedNumber !== null) {
     drawOverlapCell(decodedNumber, originX + boxSize / 2, boxSize * 0.9);
   } else {
-    const charAdvance = chars.length > 1 ? op.bbox.width / chars.length : boxSize;
+    const cx = chars.length > 1 ? originX + op.bbox.width / 2 : originX + boxSize / 2;
     chars.forEach((ch, index) => {
       const cp = ch.codePointAt(0) ?? 0;
       const display = cp >= 0x2460 && cp <= 0x2473
         ? String(cp - 0x2460 + 1)
         : puaToDisplayText(ch) ?? ch;
-      drawOverlapCell(display, originX + index * charAdvance + boxSize / 2);
+      drawOverlapCell(display, cx, undefined, index === 0);
     });
   }
   ctx.restore();

@@ -11,13 +11,11 @@ use crate::model::paragraph::Paragraph;
 use crate::model::path::PathSegment;
 use crate::renderer::render_tree::TextRunNode;
 
-/// PUA 다자리 글자겹침 TextRun의 논리적 char_count (1) 반환, 아니면 실제 글자 수 반환
+/// 글자겹침 TextRun의 논리적 char_count (1) 반환, 아니면 실제 글자 수 반환.
 fn effective_char_count(text_run: &TextRunNode) -> usize {
     if text_run.char_overlap.is_some() {
         let chars: Vec<char> = text_run.text.chars().collect();
-        if crate::renderer::composer::decode_pua_overlap_number(&chars).is_some() {
-            return 1;
-        }
+        return crate::renderer::composer::char_overlap_advance_units(&chars);
     }
     text_run.text.chars().count()
 }
@@ -1368,9 +1366,13 @@ impl DocumentCore {
                 });
                 if matches {
                     let cs = tr.char_start.unwrap_or(0);
-                    let cc = tr.text.chars().count();
+                    let cc = effective_char_count(tr);
                     if offset >= cs && offset <= cs + cc {
-                        let positions = compute_char_positions(&tr.text, &tr.style);
+                        let positions = if tr.char_overlap.is_some() && cc == 1 {
+                            vec![0.0, node.bbox.width]
+                        } else {
+                            compute_char_positions(&tr.text, &tr.style)
+                        };
                         let lo = offset - cs;
                         let xr = if lo < positions.len() {
                             positions[lo]
@@ -2719,10 +2721,15 @@ impl DocumentCore {
             if let RenderNodeType::TextRun(ref tr) = node.node_type {
                 if tr.section_index == Some(target_section) && tr.para_index == Some(target_para) {
                     if let Some(cs) = tr.char_start {
-                        let positions = compute_char_positions(&tr.text, &tr.style);
+                        let char_count = effective_char_count(tr);
+                        let positions = if tr.char_overlap.is_some() && char_count == 1 {
+                            vec![0.0, node.bbox.width]
+                        } else {
+                            compute_char_positions(&tr.text, &tr.style)
+                        };
                         runs.push(FnCursorRun {
                             char_start: cs,
-                            char_count: tr.text.chars().count(),
+                            char_count,
                             char_positions: positions,
                             bbox_x: node.bbox.x,
                             bbox_y: node.bbox.y,

@@ -396,6 +396,11 @@ assert(
     && canvaskitSource.includes('canvas.drawOval(oval'),
   'Canvas2D and CanvasKit char overlap circle replay must use Hancom-compatible ellipse geometry',
 );
+assert(
+  !layerCanvasUtilsSource.includes('op.bbox.width / chars.length')
+    && !canvaskitSource.includes('op.bbox.width / chars.length'),
+  'Canvas2D and CanvasKit must not spread multi-component CharOverlap payloads across the bbox',
+);
 assert.equal(
   canvaskitSource.includes("from './text-replay-utils'"),
   true,

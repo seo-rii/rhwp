@@ -165,6 +165,13 @@ fn test_compose_empty_paragraph() {
     assert!(composed.inline_controls.is_empty());
 }
 
+#[test]
+fn test_char_overlap_multi_component_is_single_advance() {
+    let chars = vec!['\u{F02BA}', '\u{F02C3}'];
+    assert_eq!(decode_pua_overlap_number(&chars), None);
+    assert_eq!(char_overlap_advance_units(&chars), 1);
+}
+
 /// LineSeg 없는 텍스트 문단
 #[test]
 fn test_compose_no_line_segs() {

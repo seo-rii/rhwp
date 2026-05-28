@@ -49,101 +49,103 @@ impl SkiaLayerRenderer {
             overlap_style.font_size = (render_style.font_size * size_ratio).max(1.0);
             let inner_font_size = overlap_style.font_size as f32;
 
-            let draw_overlap_cell =
-                |display: &str, cx: f32, cy: f32, target_text_width: Option<f32>| {
-                    let effective_border =
-                        if target_text_width.is_some() && overlap.border_type == 0 {
-                            1
-                        } else {
-                            overlap.border_type
-                        };
-                    let is_reversed = effective_border == 2 || effective_border == 4;
-                    let is_circle = effective_border == 1 || effective_border == 2;
-                    let is_rect = effective_border == 3 || effective_border == 4;
-
-                    let mut fill = Paint::default();
-                    fill.set_anti_alias(true);
-                    fill.set_style(skia_safe::paint::Style::Fill);
-                    fill.set_color(Color::BLACK);
-
-                    let mut stroke = Paint::default();
-                    stroke.set_anti_alias(true);
-                    stroke.set_style(skia_safe::paint::Style::Stroke);
-                    stroke.set_stroke_width(0.8);
-                    let glyph_color = colorref_to_skia(run.style.color, 1.0);
-                    stroke.set_color(if is_reversed {
-                        Color::BLACK
-                    } else {
-                        glyph_color
-                    });
-
-                    if is_circle {
-                        let ry = box_size / 2.0;
-                        let rx = ry * 0.85;
-                        let oval = Rect::from_xywh(cx - rx, cy - ry, rx * 2.0, ry * 2.0);
-                        if is_reversed {
-                            canvas.draw_oval(oval, &fill);
-                        }
-                        canvas.draw_oval(oval, &stroke);
-                    } else if is_rect {
-                        let rect = Rect::from_xywh(
-                            cx - box_size / 2.0,
-                            cy - box_size / 2.0,
-                            box_size,
-                            box_size,
-                        );
-                        if is_reversed {
-                            canvas.draw_rect(rect, &fill);
-                        }
-                        canvas.draw_rect(rect, &stroke);
-                    }
-
-                    let mut text_paint = Paint::default();
-                    text_paint.set_anti_alias(true);
-                    text_paint.set_style(skia_safe::paint::Style::Fill);
-                    text_paint.set_color(if is_reversed {
-                        Color::WHITE
-                    } else {
-                        colorref_to_skia(run.style.color, 1.0)
-                    });
-                    let font = make_font(&overlap_style, &self.font_mgr, display);
-                    let (measured_width, _) = font.measure_str(display, Some(&text_paint));
-                    let measured_width = measured_width.max(1.0);
-                    let baseline_y = inner_font_size * 0.35;
-
-                    if let Some(target_width) = target_text_width {
-                        let scale_x = (target_width / measured_width).min(1.0);
-                        canvas.save();
-                        canvas.translate((cx, cy));
-                        canvas.scale((scale_x, 1.0));
-                        canvas.draw_str(
-                            display,
-                            (-measured_width / 2.0, baseline_y),
-                            &font,
-                            &text_paint,
-                        );
-                        canvas.restore();
-                    } else {
-                        canvas.draw_str(
-                            display,
-                            (cx - measured_width / 2.0, cy + baseline_y),
-                            &font,
-                            &text_paint,
-                        );
-                    }
+            let draw_overlap_cell = |display: &str,
+                                     cx: f32,
+                                     cy: f32,
+                                     target_text_width: Option<f32>,
+                                     draw_shape: bool| {
+                let effective_border = if target_text_width.is_some() && overlap.border_type == 0 {
+                    1
+                } else {
+                    overlap.border_type
                 };
+                let is_reversed = effective_border == 2 || effective_border == 4;
+                let is_circle = effective_border == 1 || effective_border == 2;
+                let is_rect = effective_border == 3 || effective_border == 4;
+
+                let mut fill = Paint::default();
+                fill.set_anti_alias(true);
+                fill.set_style(skia_safe::paint::Style::Fill);
+                fill.set_color(Color::BLACK);
+
+                let mut stroke = Paint::default();
+                stroke.set_anti_alias(true);
+                stroke.set_style(skia_safe::paint::Style::Stroke);
+                stroke.set_stroke_width(0.8);
+                let glyph_color = colorref_to_skia(run.style.color, 1.0);
+                stroke.set_color(if is_reversed {
+                    Color::BLACK
+                } else {
+                    glyph_color
+                });
+
+                if draw_shape && is_circle {
+                    let ry = box_size / 2.0;
+                    let rx = ry * 0.85;
+                    let oval = Rect::from_xywh(cx - rx, cy - ry, rx * 2.0, ry * 2.0);
+                    if is_reversed {
+                        canvas.draw_oval(oval, &fill);
+                    }
+                    canvas.draw_oval(oval, &stroke);
+                } else if draw_shape && is_rect {
+                    let rect = Rect::from_xywh(
+                        cx - box_size / 2.0,
+                        cy - box_size / 2.0,
+                        box_size,
+                        box_size,
+                    );
+                    if is_reversed {
+                        canvas.draw_rect(rect, &fill);
+                    }
+                    canvas.draw_rect(rect, &stroke);
+                }
+
+                let mut text_paint = Paint::default();
+                text_paint.set_anti_alias(true);
+                text_paint.set_style(skia_safe::paint::Style::Fill);
+                text_paint.set_color(if is_reversed {
+                    Color::WHITE
+                } else {
+                    colorref_to_skia(run.style.color, 1.0)
+                });
+                let font = make_font(&overlap_style, &self.font_mgr, display);
+                let (measured_width, _) = font.measure_str(display, Some(&text_paint));
+                let measured_width = measured_width.max(1.0);
+                let baseline_y = inner_font_size * 0.35;
+
+                if let Some(target_width) = target_text_width {
+                    let scale_x = (target_width / measured_width).min(1.0);
+                    canvas.save();
+                    canvas.translate((cx, cy));
+                    canvas.scale((scale_x, 1.0));
+                    canvas.draw_str(
+                        display,
+                        (-measured_width / 2.0, baseline_y),
+                        &font,
+                        &text_paint,
+                    );
+                    canvas.restore();
+                } else {
+                    canvas.draw_str(
+                        display,
+                        (cx - measured_width / 2.0, cy + baseline_y),
+                        &font,
+                        &text_paint,
+                    );
+                }
+            };
 
             if let Some(number_str) = decode_pua_overlap_number(&chars) {
                 let cx = bbox.x as f32 + box_size / 2.0;
                 let cy = bbox.y as f32 + bbox.height as f32 / 2.0;
-                draw_overlap_cell(&number_str, cx, cy, Some(box_size * 0.7));
+                draw_overlap_cell(&number_str, cx, cy, Some(box_size * 0.7), true);
                 return;
             }
 
-            let char_advance = if chars.len() > 1 {
-                bbox.width as f32 / chars.len() as f32
+            let cx = if chars.len() > 1 {
+                bbox.x as f32 + bbox.width as f32 / 2.0
             } else {
-                box_size
+                bbox.x as f32 + box_size / 2.0
             };
             for (index, ch) in chars.iter().enumerate() {
                 let display = {
@@ -156,9 +158,8 @@ impl SkiaLayerRenderer {
                         ch.to_string()
                     }
                 };
-                let cx = bbox.x as f32 + index as f32 * char_advance + box_size / 2.0;
                 let cy = bbox.y as f32 + bbox.height as f32 / 2.0;
-                draw_overlap_cell(&display, cx, cy, None);
+                draw_overlap_cell(&display, cx, cy, None, index == 0);
             }
             return;
         }

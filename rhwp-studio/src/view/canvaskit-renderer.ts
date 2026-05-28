@@ -838,6 +838,7 @@ export class CanvasKitLayerRenderer {
             display: string,
             cx: number,
             targetTextWidth?: number,
+            drawShape = true,
           ) => {
             const borderType = targetTextWidth !== undefined && op.charOverlap?.borderType === 0
               ? 1
@@ -846,7 +847,7 @@ export class CanvasKitLayerRenderer {
             const isCircle = borderType === 1 || borderType === 2;
             const isRect = borderType === 3 || borderType === 4;
 
-            if (isCircle || isRect) {
+            if (drawShape && (isCircle || isRect)) {
               const fillPaint = isReversed ? this.makePaint('#000000', 'fill') : null;
               const strokePaint = this.makePaint(isReversed ? '#000000' : op.style.color, 'stroke');
               strokePaint.setStrokeWidth(0.8);
@@ -907,13 +908,13 @@ export class CanvasKitLayerRenderer {
           if (decodedNumber !== null) {
             drawOverlapCell(decodedNumber, originX + boxSize / 2, boxSize * 0.9);
           } else {
-            const charAdvance = chars.length > 1 ? op.bbox.width / chars.length : boxSize;
+            const cx = chars.length > 1 ? originX + op.bbox.width / 2 : originX + boxSize / 2;
             chars.forEach((ch, index) => {
               const cp = ch.codePointAt(0) ?? 0;
               const display = cp >= 0x2460 && cp <= 0x2473
                 ? String(cp - 0x2460 + 1)
                 : puaToDisplayText(ch) ?? ch;
-              drawOverlapCell(display, originX + index * charAdvance + boxSize / 2);
+              drawOverlapCell(display, cx, undefined, index === 0);
             });
           }
         }

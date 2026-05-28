@@ -1113,6 +1113,12 @@ pub fn decode_pua_overlap_number(chars: &[char]) -> Option<String> {
     Some(s)
 }
 
+/// CharOverlap controls occupy one text-flow position even when their payload
+/// contains multiple glyph components.
+pub fn char_overlap_advance_units(chars: &[char]) -> usize {
+    usize::from(!chars.is_empty())
+}
+
 fn pua_enclosed_border_type(ch: char) -> Option<u8> {
     let cp = ch as u32;
     // 사각형 안의 숫자: U+F02B1(1) ~ U+F02C4(20)
