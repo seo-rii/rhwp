@@ -634,7 +634,7 @@ fn grayscale_filter_with_tone(
 ) -> skia_safe::ColorFilter {
     let channel_scale = scale * brightness_scale * contrast_scale;
     let channel_translate =
-        translate * brightness_scale * contrast_scale + 128.0 * (1.0 - contrast_scale);
+        translate * brightness_scale * contrast_scale + 0.5 * (1.0 - contrast_scale);
     color_filters::matrix_row_major(
         &[
             red_row[0] * channel_scale,
@@ -1257,6 +1257,92 @@ mod tests {
             pixmap.pixels()[1].red() > 223,
             "luma at 128 should become white"
         );
+    }
+
+    #[test]
+    fn realpic_effect_applies_brightness_contrast_tone() {
+        let mut source = tiny_skia::Pixmap::new(1, 1).expect("source pixmap");
+        source.pixels_mut()[0] =
+            tiny_skia::PremultipliedColorU8::from_rgba(100, 120, 140, 255).unwrap();
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((1, 1)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            Some(ImageFillMode::FitToSize),
+            Some((1.0, 1.0)),
+            None,
+            ImageEffect::RealPic,
+            20,
+            50,
+            ImageSampling::nearest(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let pixel = pixmap.pixels()[0];
+        assert!(
+            pixel.red().abs_diff(116) <= 2,
+            "red tone channel, got {}",
+            pixel.red()
+        );
+        assert!(
+            pixel.green().abs_diff(152) <= 2,
+            "green tone channel, got {}",
+            pixel.green()
+        );
+        assert!(
+            pixel.blue().abs_diff(188) <= 2,
+            "blue tone channel, got {}",
+            pixel.blue()
+        );
+        assert_eq!(pixel.alpha(), 255);
+    }
+
+    #[test]
+    fn blackwhite_preprocess_keeps_brightness_tone() {
+        let mut source = tiny_skia::Pixmap::new(1, 1).expect("source pixmap");
+        source.pixels_mut()[0] =
+            tiny_skia::PremultipliedColorU8::from_rgba(128, 128, 128, 255).unwrap();
+        let png = source.encode_png().expect("source png");
+
+        let mut surface = surfaces::raster_n32_premul((1, 1)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+        draw_image_bytes(
+            surface.canvas(),
+            &png,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            Some(ImageFillMode::FitToSize),
+            Some((1.0, 1.0)),
+            None,
+            ImageEffect::BlackWhite,
+            -20,
+            0,
+            ImageSampling::nearest(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let pixel = pixmap.pixels()[0];
+        assert!(pixel.red().abs_diff(204) <= 2, "blackWhite red tone");
+        assert!(pixel.green().abs_diff(204) <= 2, "blackWhite green tone");
+        assert!(pixel.blue().abs_diff(204) <= 2, "blackWhite blue tone");
+        assert_eq!(pixel.alpha(), 255);
     }
 
     #[test]
