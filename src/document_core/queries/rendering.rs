@@ -2044,6 +2044,10 @@ impl DocumentCore {
         self.layout_engine
             .set_show_transparent_borders(self.show_transparent_borders);
         self.layout_engine.set_clip_enabled(self.clip_enabled);
+        self.layout_engine.set_hwpx_source(matches!(
+            self.source_format,
+            crate::parser::FileFormat::Hwpx
+        ));
         self.layout_engine
             .set_show_control_codes(self.show_control_codes);
         // 활성 필드 정보를 레이아웃 엔진에 전달 (안내문 숨김용)

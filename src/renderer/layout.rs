@@ -242,6 +242,8 @@ pub struct LayoutEngine {
     show_control_codes: std::cell::Cell<bool>,
     /// 현재 페이지 용지 너비 (표 HorzRelTo::Paper 위치 계산용)
     current_paper_width: std::cell::Cell<f64>,
+    /// HWPX 원본 여부. 빈 앵커 TopAndBottom 비-TAC 표의 렌더 gap 보정에 사용한다.
+    is_hwpx_source: std::cell::Cell<bool>,
 }
 
 mod border_rendering;
@@ -289,6 +291,7 @@ impl LayoutEngine {
             active_field: std::cell::RefCell::new(None),
             show_control_codes: std::cell::Cell::new(false),
             current_paper_width: std::cell::Cell::new(0.0),
+            is_hwpx_source: std::cell::Cell::new(false),
         }
     }
 
@@ -347,6 +350,11 @@ impl LayoutEngine {
     /// 잘림 보기 여부를 설정한다.
     pub fn set_clip_enabled(&self, enabled: bool) {
         self.clip_enabled.set(enabled);
+    }
+
+    /// HWPX 원본 소스 여부를 설정한다.
+    pub fn set_hwpx_source(&self, enabled: bool) {
+        self.is_hwpx_source.set(enabled);
     }
 
     /// 투명선 표시 여부를 설정한다.
@@ -2604,6 +2612,17 @@ impl LayoutEngine {
                 false
             };
             if !tac_seg_applied && !is_above_body {
+                let is_topbottom_empty_anchor_hwpx = matches!(
+                    para.controls.get(control_index),
+                    Some(Control::Table(t))
+                        if self.is_hwpx_source.get()
+                            && !t.common.treat_as_char
+                            && matches!(
+                                t.common.text_wrap,
+                                crate::model::shape::TextWrap::TopAndBottom
+                            )
+                            && para.text.is_empty()
+                );
                 let comp = composed.get(para_index);
                 let para_style_id = comp
                     .map(|c| c.para_style_id as usize)
@@ -2614,7 +2633,9 @@ impl LayoutEngine {
                     }
                 }
                 if let Some(seg) = para.line_segs.last() {
-                    let gap = if seg.line_spacing > 0 {
+                    let gap = if is_topbottom_empty_anchor_hwpx {
+                        0
+                    } else if seg.line_spacing > 0 {
                         seg.line_spacing
                     } else {
                         seg.line_height
