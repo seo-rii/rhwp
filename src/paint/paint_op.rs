@@ -1895,6 +1895,8 @@ pub struct LayerPageBackgroundPaint {
 pub struct LayerPageBackgroundImagePaint {
     pub resource_id: ImageResourceId,
     pub fill_mode: ImageFillMode,
+    pub brightness: i8,
+    pub contrast: i8,
     pub effect: ImageEffect,
 }
 
@@ -1904,6 +1906,8 @@ pub struct LayerImagePaint {
     pub fill_mode: Option<ImageFillMode>,
     pub original_size: Option<(f64, f64)>,
     pub crop: Option<(i32, i32, i32, i32)>,
+    pub brightness: i8,
+    pub contrast: i8,
     pub effect: ImageEffect,
     pub transform: ShapeTransform,
 }

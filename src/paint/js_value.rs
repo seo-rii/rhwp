@@ -1611,6 +1611,12 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                     "fillMode",
                     image_fill_mode_str(image.fill_mode),
                 );
+                if image.brightness != 0 {
+                    set_number(&image_value, "brightness", image.brightness as f64);
+                }
+                if image.contrast != 0 {
+                    set_number(&image_value, "contrast", image.contrast as f64);
+                }
                 set_string(&image_value, "effect", image_effect_str(image.effect));
                 set_value(&value, "image", image_value.into());
             }
@@ -1958,6 +1964,12 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 set_number(&crop, "right", right as f64);
                 set_number(&crop, "bottom", bottom as f64);
                 set_value(&value, "crop", crop.into());
+            }
+            if image.brightness != 0 {
+                set_number(&value, "brightness", image.brightness as f64);
+            }
+            if image.contrast != 0 {
+                set_number(&value, "contrast", image.contrast as f64);
             }
             set_string(&value, "effect", image_effect_str(image.effect));
             set_value(&value, "transform", transform_to_value(image.transform));
@@ -4938,6 +4950,8 @@ mod tests {
                             fill_mode: Some(ImageFillMode::Center),
                             original_size: Some((32.0, 24.0)),
                             crop: Some((1, 2, 31, 22)),
+                            brightness: 0,
+                            contrast: 0,
                             effect: ImageEffect::BlackWhite,
                             transform: ShapeTransform::default(),
                         },

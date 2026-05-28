@@ -250,6 +250,10 @@ pub struct ResolvedImageFill {
     pub bin_data_id: u16,
     /// 이미지 채우기 모드
     pub fill_mode: ImageFillMode,
+    /// 밝기
+    pub brightness: i8,
+    /// 명암
+    pub contrast: i8,
     /// 그림 효과
     pub effect: ImageEffect,
 }
@@ -789,6 +793,8 @@ fn resolve_single_border_style(bf: &BorderFill) -> ResolvedBorderStyle {
         FillType::Image => bf.fill.image.as_ref().map(|img| ResolvedImageFill {
             bin_data_id: img.bin_data_id,
             fill_mode: img.fill_mode,
+            brightness: img.brightness,
+            contrast: img.contrast,
             effect: match img.effect {
                 1 => ImageEffect::GrayScale,
                 2 => ImageEffect::BlackWhite,

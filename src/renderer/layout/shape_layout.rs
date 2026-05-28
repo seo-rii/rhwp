@@ -1325,6 +1325,8 @@ impl LayoutEngine {
                     RenderNodeType::Image(ImageNode {
                         transform,
                         effect: pic.image_attr.effect,
+                        brightness: pic.image_attr.brightness,
+                        contrast: pic.image_attr.contrast,
                         ..ImageNode::new(bin_data_id, image_data)
                     }),
                     BoundingBox::new(render_x, render_y, render_w, render_h),
@@ -1526,6 +1528,14 @@ impl LayoutEngine {
                     RenderNodeType::Image(ImageNode {
                         fill_mode: Some(img_fill.fill_mode),
                         original_size,
+                        brightness: img_fill.brightness,
+                        contrast: img_fill.contrast,
+                        effect: match img_fill.effect {
+                            1 => crate::model::image::ImageEffect::GrayScale,
+                            2 => crate::model::image::ImageEffect::BlackWhite,
+                            3 => crate::model::image::ImageEffect::Pattern8x8,
+                            _ => crate::model::image::ImageEffect::RealPic,
+                        },
                         ..ImageNode::new(bin_data_id, image_data)
                     }),
                     BoundingBox::new(base_x, base_y, w, h),

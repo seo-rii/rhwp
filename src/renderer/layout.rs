@@ -766,6 +766,8 @@ impl LayoutEngine {
                             PageBackgroundImage {
                                 data: c.data.clone(),
                                 fill_mode: img_fill.fill_mode,
+                                brightness: img_fill.brightness,
+                                contrast: img_fill.contrast,
                                 effect: img_fill.effect,
                             }
                         })

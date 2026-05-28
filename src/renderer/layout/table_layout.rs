@@ -421,6 +421,9 @@ impl LayoutEngine {
                                 img_id,
                                 RenderNodeType::Image(ImageNode {
                                     fill_mode: Some(img_fill.fill_mode),
+                                    brightness: img_fill.brightness,
+                                    contrast: img_fill.contrast,
+                                    effect: img_fill.effect,
                                     ..ImageNode::new(
                                         img_fill.bin_data_id,
                                         Some(img_content.data.clone()),

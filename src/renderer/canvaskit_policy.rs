@@ -1730,6 +1730,8 @@ mod tests {
                             image: Some(LayerPageBackgroundImagePaint {
                                 resource_id: ImageResourceId(7),
                                 fill_mode: ImageFillMode::TileHorzBottom,
+                                brightness: 0,
+                                contrast: 0,
                                 effect: ImageEffect::Pattern8x8,
                             }),
                         },
@@ -1741,6 +1743,8 @@ mod tests {
                             fill_mode: Some(ImageFillMode::CenterBottom),
                             original_size: Some((40.0, 30.0)),
                             crop: Some((75, 150, 225, 300)),
+                            brightness: 0,
+                            contrast: 0,
                             effect: ImageEffect::Pattern8x8,
                             transform: ShapeTransform {
                                 rotation: 12.5,

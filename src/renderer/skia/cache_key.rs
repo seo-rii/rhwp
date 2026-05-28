@@ -55,6 +55,10 @@ impl StaticSubtreeCacheKey {
         self.mix_bytes(&[value]);
     }
 
+    fn mix_i8(&mut self, value: i8) {
+        self.mix_bytes(&value.to_le_bytes());
+    }
+
     fn mix_u16(&mut self, value: u16) {
         self.mix_bytes(&value.to_le_bytes());
     }
@@ -260,6 +264,8 @@ impl StaticSubtreeCacheKey {
                     Some(image) => {
                         self.mix_bool(true);
                         self.mix_image_fill_mode(image.fill_mode);
+                        self.mix_i8(image.brightness);
+                        self.mix_i8(image.contrast);
                         self.mix_image_effect(image.effect);
                         self.mix_image_resource(resources, Some(image.resource_id));
                     }
@@ -464,6 +470,8 @@ impl StaticSubtreeCacheKey {
                     }
                     None => self.mix_bool(false),
                 }
+                self.mix_i8(image.brightness);
+                self.mix_i8(image.contrast);
                 self.mix_image_effect(image.effect);
                 self.mix_transform(&image.transform);
             }

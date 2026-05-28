@@ -345,6 +345,8 @@ fn test_svg_layer_page_background_image_uses_fill_mode_and_effect() {
                 image: Some(LayerPageBackgroundImagePaint {
                     resource_id,
                     fill_mode: ImageFillMode::TileAll,
+                    brightness: 0,
+                    contrast: 0,
                     effect: crate::model::image::ImageEffect::GrayScale,
                 }),
             },

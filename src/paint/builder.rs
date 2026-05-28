@@ -650,6 +650,8 @@ impl LayerBuilder {
                 .map(|image| LayerPageBackgroundImagePaint {
                     resource_id: self.resources.intern_image_bytes(&image.data),
                     fill_mode: image.fill_mode,
+                    brightness: image.brightness,
+                    contrast: image.contrast,
                     effect: image.effect,
                 }),
         }
@@ -724,6 +726,8 @@ impl LayerBuilder {
             fill_mode: image.fill_mode,
             original_size: image.original_size,
             crop: image.crop,
+            brightness: image.brightness,
+            contrast: image.contrast,
             effect: image.effect,
             transform: image.transform,
         }
@@ -2189,6 +2193,8 @@ mod tests {
                 image: Some(crate::renderer::render_tree::PageBackgroundImage {
                     data: image_bytes.clone(),
                     fill_mode: crate::model::style::ImageFillMode::FitToSize,
+                    brightness: 0,
+                    contrast: 0,
                     effect: crate::model::image::ImageEffect::RealPic,
                 }),
             }),

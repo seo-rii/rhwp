@@ -759,6 +759,8 @@ export interface LayerPageBackgroundOp {
   image?: {
     fillMode: string;
     effect?: LayerImageOp['effect'];
+    brightness?: number;
+    contrast?: number;
     resourceId?: number;
     base64?: string;
   };
@@ -1230,6 +1232,8 @@ export interface LayerImageOp {
   base64?: string;
   fillMode?: string;
   effect?: 'realPic' | 'grayScale' | 'blackWhite' | 'pattern8x8';
+  brightness?: number;
+  contrast?: number;
   originalSize?: {
     width: number;
     height: number;
