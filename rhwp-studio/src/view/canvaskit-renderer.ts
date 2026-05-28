@@ -696,7 +696,16 @@ export class CanvasKitLayerRenderer {
     }
 
     if (op.image) {
-      this.drawEncodedImage(canvas, op.image.resourceId, op.image.base64, op.bbox, op.image.fillMode);
+      this.drawEncodedImage(
+        canvas,
+        op.image.resourceId,
+        op.image.base64,
+        op.bbox,
+        op.image.fillMode,
+        undefined,
+        undefined,
+        op.image.effect,
+      );
     }
 
     if (op.borderColor && op.borderWidth > 0) {

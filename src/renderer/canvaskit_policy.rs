@@ -1158,7 +1158,7 @@ fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -
         Some(image.fill_mode),
         None,
         None,
-        None,
+        Some(image.effect),
         None,
     ))
 }
@@ -1730,6 +1730,7 @@ mod tests {
                             image: Some(LayerPageBackgroundImagePaint {
                                 resource_id: ImageResourceId(7),
                                 fill_mode: ImageFillMode::TileHorzBottom,
+                                effect: ImageEffect::Pattern8x8,
                             }),
                         },
                     },
@@ -1768,6 +1769,7 @@ mod tests {
         assert!(page_background_detail.contains("fillMode=tileHorzBottom"));
         assert!(page_background_detail.contains("originalSize=source"));
         assert!(page_background_detail.contains("crop=none"));
+        assert!(page_background_detail.contains("effect=pattern8x8"));
 
         let image_detail = plan
             .items

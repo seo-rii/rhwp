@@ -758,6 +758,7 @@ export interface LayerPageBackgroundOp {
   gradient?: LayerGradient;
   image?: {
     fillMode: string;
+    effect?: LayerImageOp['effect'];
     resourceId?: number;
     base64?: string;
   };

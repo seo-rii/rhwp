@@ -650,6 +650,7 @@ impl LayerBuilder {
                 .map(|image| LayerPageBackgroundImagePaint {
                     resource_id: self.resources.intern_image_bytes(&image.data),
                     fill_mode: image.fill_mode,
+                    effect: image.effect,
                 }),
         }
     }
@@ -2188,6 +2189,7 @@ mod tests {
                 image: Some(crate::renderer::render_tree::PageBackgroundImage {
                     data: image_bytes.clone(),
                     fill_mode: crate::model::style::ImageFillMode::FitToSize,
+                    effect: crate::model::image::ImageEffect::RealPic,
                 }),
             }),
             BoundingBox::new(0.0, 0.0, 800.0, 600.0),

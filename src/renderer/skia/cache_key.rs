@@ -260,6 +260,7 @@ impl StaticSubtreeCacheKey {
                     Some(image) => {
                         self.mix_bool(true);
                         self.mix_image_fill_mode(image.fill_mode);
+                        self.mix_image_effect(image.effect);
                         self.mix_image_resource(resources, Some(image.resource_id));
                     }
                     None => self.mix_bool(false),

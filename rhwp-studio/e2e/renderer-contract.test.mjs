@@ -401,6 +401,11 @@ assert(
     && !canvaskitSource.includes('op.bbox.width / chars.length'),
   'Canvas2D and CanvasKit must not spread multi-component CharOverlap payloads across the bbox',
 );
+assert(
+  canvaskitSource.includes('op.image.effect')
+    && canvas2dSource.includes("op.image.effect ?? 'realPic'"),
+  'Canvas2D and CanvasKit page background image replay must consume layer image effect metadata',
+);
 assert.equal(
   canvaskitSource.includes("from './text-replay-utils'"),
   true,

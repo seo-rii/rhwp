@@ -1611,6 +1611,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                     "fillMode",
                     image_fill_mode_str(image.fill_mode),
                 );
+                set_string(&image_value, "effect", image_effect_str(image.effect));
                 set_value(&value, "image", image_value.into());
             }
         }

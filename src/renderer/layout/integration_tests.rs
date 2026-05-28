@@ -1697,6 +1697,7 @@ mod tests {
                 image: Some(PageBackgroundImage {
                     data: synthetic_png_bytes(),
                     fill_mode: ImageFillMode::FitToSize,
+                    effect: ImageEffect::RealPic,
                 }),
             }),
             BoundingBox::new(0.0, 0.0, 160.0, 120.0),

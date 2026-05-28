@@ -1174,7 +1174,7 @@ impl PaintOp {
                         Some(image.fill_mode),
                         None,
                         None,
-                        None,
+                        Some(image.effect),
                         false,
                     );
                     buf.push('}');

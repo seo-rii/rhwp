@@ -1895,6 +1895,7 @@ pub struct LayerPageBackgroundPaint {
 pub struct LayerPageBackgroundImagePaint {
     pub resource_id: ImageResourceId,
     pub fill_mode: ImageFillMode,
+    pub effect: ImageEffect,
 }
 
 #[derive(Debug, Clone)]

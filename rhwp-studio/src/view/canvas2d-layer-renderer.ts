@@ -800,7 +800,21 @@ export class Canvas2DLayerRenderer {
     if (op.image) {
       const image = this.getDomImage(op.image.resourceId, op.image.base64);
       if (image) {
-        this.drawDomImage(ctx, image, op.bbox, op.image.fillMode);
+        const source = applyLayerImageEffect(
+          image,
+          op.image.effect ?? 'realPic',
+          this.imageEffectCache,
+          this.imageEffectDiagnostics,
+        );
+        this.drawDomImage(
+          ctx,
+          source,
+          op.bbox,
+          op.image.fillMode,
+          undefined,
+          undefined,
+          source !== image,
+        );
       }
     }
 

@@ -5,6 +5,7 @@
 
 use super::{hwpunit_to_px, GradientFillInfo, PatternFillInfo, TabStop};
 use crate::model::document::DocInfo;
+use crate::model::image::ImageEffect;
 use crate::model::style::{
     Alignment, BorderFill, BorderLine, Bullet, CharShape, DiagonalLine, FillType, HeadType,
     ImageFillMode, LineSpacingType, Numbering, ParaShape, TabDef, UnderlineType,
@@ -249,6 +250,8 @@ pub struct ResolvedImageFill {
     pub bin_data_id: u16,
     /// 이미지 채우기 모드
     pub fill_mode: ImageFillMode,
+    /// 그림 효과
+    pub effect: ImageEffect,
 }
 
 impl Default for ResolvedBorderStyle {
@@ -786,6 +789,12 @@ fn resolve_single_border_style(bf: &BorderFill) -> ResolvedBorderStyle {
         FillType::Image => bf.fill.image.as_ref().map(|img| ResolvedImageFill {
             bin_data_id: img.bin_data_id,
             fill_mode: img.fill_mode,
+            effect: match img.effect {
+                1 => ImageEffect::GrayScale,
+                2 => ImageEffect::BlackWhite,
+                3 => ImageEffect::Pattern8x8,
+                _ => ImageEffect::RealPic,
+            },
         }),
         _ => None,
     };
@@ -1067,6 +1076,31 @@ mod tests {
         };
         let styles = resolve_styles(&doc_info, DEFAULT_DPI);
         assert_eq!(styles.border_styles[0].fill_color, None);
+    }
+
+    #[test]
+    fn test_resolve_border_image_fill_preserves_effect() {
+        let mut fill = Fill::default();
+        fill.fill_type = FillType::Image;
+        fill.image = Some(ImageFill {
+            fill_mode: ImageFillMode::Center,
+            effect: 3,
+            bin_data_id: 7,
+            ..Default::default()
+        });
+        let doc_info = DocInfo {
+            border_fills: vec![BorderFill {
+                fill,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let styles = resolve_styles(&doc_info, DEFAULT_DPI);
+        let image_fill = styles.border_styles[0].image_fill.as_ref().unwrap();
+        assert_eq!(image_fill.bin_data_id, 7);
+        assert_eq!(image_fill.fill_mode, ImageFillMode::Center);
+        assert_eq!(image_fill.effect, ImageEffect::Pattern8x8);
     }
 
     // === 언어 판별 테스트 ===

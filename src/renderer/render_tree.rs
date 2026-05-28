@@ -381,6 +381,8 @@ pub struct PageBackgroundImage {
     pub data: Vec<u8>,
     /// 이미지 채우기 모드
     pub fill_mode: super::super::model::style::ImageFillMode,
+    /// 그림 효과 (실사/그레이스케일/흑백/패턴)
+    pub effect: ImageEffect,
 }
 
 /// 텍스트 줄 노드
