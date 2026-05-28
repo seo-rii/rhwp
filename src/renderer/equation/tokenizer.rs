@@ -87,6 +87,19 @@ impl Tokenizer {
     /// 명령어/식별자 읽기 (영문자+숫자)
     fn read_command(&mut self) -> Token {
         let start = self.pos;
+        for kw in ["over", "atop"] {
+            let matches_kw = self.pos + kw.len() <= self.chars.len()
+                && kw
+                    .chars()
+                    .enumerate()
+                    .all(|(idx, ch)| self.chars[self.pos + idx].eq_ignore_ascii_case(&ch));
+            if matches_kw && matches!(self.peek(kw.len()), Some(ch) if ch.is_ascii_digit()) {
+                let value: String = self.chars[start..start + kw.len()].iter().collect();
+                self.pos += kw.len();
+                return Token::new(TokenType::Command, value, start);
+            }
+        }
+
         let mut value = String::new();
         while let Some(ch) = self.current() {
             if ch.is_ascii_alphanumeric() {
@@ -329,6 +342,35 @@ mod tests {
             types(&tokens),
             vec![TokenType::Number, TokenType::Command, TokenType::Number]
         );
+    }
+
+    #[test]
+    fn test_over_atop_followed_by_number_splits() {
+        let tokens = tokenize("11 over20");
+        assert_eq!(values(&tokens), vec!["11", "over", "20"]);
+        assert_eq!(
+            types(&tokens),
+            vec![TokenType::Number, TokenType::Command, TokenType::Number]
+        );
+
+        let tokens = tokenize("7 OVER10");
+        assert_eq!(values(&tokens), vec!["7", "OVER", "10"]);
+        assert_eq!(
+            types(&tokens),
+            vec![TokenType::Number, TokenType::Command, TokenType::Number]
+        );
+
+        let tokens = tokenize("a atop2");
+        assert_eq!(values(&tokens), vec!["a", "atop", "2"]);
+    }
+
+    #[test]
+    fn test_over_prefix_non_numeric_identifiers_stay_intact() {
+        let tokens = tokenize("overlap overline overset");
+        assert_eq!(values(&tokens), vec!["overlap", "overline", "overset"]);
+
+        let tokens = tokenize("overline{AB}");
+        assert_eq!(values(&tokens), vec!["overline", "{", "AB", "}"]);
     }
 
     #[test]
