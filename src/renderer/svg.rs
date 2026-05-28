@@ -3,7 +3,9 @@
 //! 렌더 트리를 SVG 문자열로 변환한다.
 //! 정적 출력(인쇄, PDF 변환 등)에 적합하다.
 
-use super::composer::{decode_pua_overlap_number, pua_to_display_text, CharOverlapInfo};
+use super::composer::{
+    char_overlap_inner_size_ratio, decode_pua_overlap_number, pua_to_display_text, CharOverlapInfo,
+};
 use super::layout::{compute_char_positions, split_into_clusters};
 use super::render_tree::{
     BoundingBox, FormObjectNode, ImageNode, PageRenderTree, RenderNode, RenderNodeType,
@@ -3312,19 +3314,20 @@ impl SvgRenderer {
         let is_circle = overlap.border_type == 1 || overlap.border_type == 2;
         let is_rect = overlap.border_type == 3 || overlap.border_type == 4;
 
-        let size_ratio = if overlap.inner_char_size > 0 {
-            overlap.inner_char_size as f64 / 100.0
-        } else {
-            1.0
-        };
+        let size_ratio = char_overlap_inner_size_ratio(overlap.inner_char_size);
         let inner_font_size = font_size * size_ratio;
 
+        let glyph_color = color_to_svg(style.color);
         let fill_color = if is_reversed { "#000000" } else { "none" };
-        let stroke_color = "#000000";
+        let stroke_color = if is_reversed {
+            "#000000"
+        } else {
+            glyph_color.as_str()
+        };
         let text_color = if is_reversed {
             "#FFFFFF"
         } else {
-            &color_to_svg(style.color)
+            glyph_color.as_str()
         };
 
         let font_family_str = Self::font_family_with_svg_fallbacks(&style.font_family);
@@ -3356,10 +3359,11 @@ impl SvgRenderer {
             let cy = bbox_y + bbox_h / 2.0;
 
             if is_circle {
-                let r = box_size / 2.0;
+                let ry = box_size / 2.0;
+                let rx = ry * 0.85;
                 self.output.push_str(&format!(
-                    "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
-                    cx, cy, r, fill_color, stroke_color,
+                    "<ellipse cx=\"{:.2}\" cy=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                    cx, cy, rx, ry, fill_color, stroke_color,
                 ));
             } else if is_rect {
                 let rx = cx - box_size / 2.0;
@@ -3408,19 +3412,20 @@ impl SvgRenderer {
         let is_circle = effective_border == 1 || effective_border == 2;
         let is_rect = effective_border == 3 || effective_border == 4;
 
-        let size_ratio = if overlap.inner_char_size > 0 {
-            overlap.inner_char_size as f64 / 100.0
-        } else {
-            1.0
-        };
+        let size_ratio = char_overlap_inner_size_ratio(overlap.inner_char_size);
         let inner_font_size = font_size * size_ratio;
 
+        let glyph_color = color_to_svg(style.color);
         let fill_color = if is_reversed { "#000000" } else { "none" };
-        let stroke_color = "#000000";
+        let stroke_color = if is_reversed {
+            "#000000"
+        } else {
+            glyph_color.as_str()
+        };
         let text_color = if is_reversed {
             "#FFFFFF"
         } else {
-            &color_to_svg(style.color)
+            glyph_color.as_str()
         };
 
         let font_family_str = Self::font_family_with_svg_fallbacks(&style.font_family);
@@ -3439,12 +3444,12 @@ impl SvgRenderer {
         let cx = bbox_x + box_size / 2.0;
         let cy = bbox_y + bbox_h / 2.0;
 
-        // 도형 렌더링
         if is_circle {
-            let r = box_size / 2.0;
+            let ry = box_size / 2.0;
+            let rx = ry * 0.85;
             self.output.push_str(&format!(
-                "<circle cx=\"{:.2}\" cy=\"{:.2}\" r=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
-                cx, cy, r, fill_color, stroke_color,
+                "<ellipse cx=\"{:.2}\" cy=\"{:.2}\" rx=\"{:.2}\" ry=\"{:.2}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"0.8\"/>\n",
+                cx, cy, rx, ry, fill_color, stroke_color,
             ));
         } else if is_rect {
             let rx = cx - box_size / 2.0;

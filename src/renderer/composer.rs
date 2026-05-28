@@ -20,6 +20,16 @@ pub struct CharOverlapInfo {
     pub inner_char_size: i8,
 }
 
+pub fn char_overlap_inner_size_ratio(inner_char_size: i8) -> f64 {
+    if inner_char_size > 0 {
+        f64::from(inner_char_size) / 100.0
+    } else if inner_char_size < 0 {
+        1.0 + f64::from(inner_char_size) * 0.10
+    } else {
+        1.0
+    }
+}
+
 /// 구성된 텍스트 런 (줄 내 동일 스타일 + 동일 언어 구간)
 #[derive(Debug, Clone, Default)]
 pub struct ComposedTextRun {

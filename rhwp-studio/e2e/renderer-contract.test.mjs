@@ -371,6 +371,7 @@ assert.equal(
 );
 for (const textHelperName of [
   'allowsTextControlMark',
+  'charOverlapInnerSizeRatio',
   'decodePuaOverlapNumber',
   'estimateDisplayTextPositions',
   'isHalfwidthScaledCluster',
@@ -385,6 +386,16 @@ for (const textHelperName of [
     `CanvasKit renderer must import ${textHelperName} from native-ready text helpers`,
   );
 }
+assert(
+  layerCanvasUtilsSource.includes('charOverlapInnerSizeRatio(op.charOverlap.innerCharSize)')
+    && canvaskitSource.includes('charOverlapInnerSizeRatio(op.charOverlap.innerCharSize)'),
+  'Canvas2D and CanvasKit char overlap replay must share inner size ratio interpretation',
+);
+assert(
+  layerCanvasUtilsSource.includes('ctx.ellipse(cx, cy, rx, ry')
+    && canvaskitSource.includes('canvas.drawOval(oval'),
+  'Canvas2D and CanvasKit char overlap circle replay must use Hancom-compatible ellipse geometry',
+);
 assert.equal(
   canvaskitSource.includes("from './text-replay-utils'"),
   true,

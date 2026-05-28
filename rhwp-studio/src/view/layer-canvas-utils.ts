@@ -16,6 +16,7 @@ import {
   type LayerImageEffectSourceRect,
 } from './image-effect-pixels';
 import {
+  charOverlapInnerSizeRatio,
   decodePuaOverlapNumber,
   puaToDisplayText,
 } from './text-replay-utils';
@@ -39,6 +40,7 @@ export {
 } from './layer-geometry-utils';
 export {
   allowsTextControlMark,
+  charOverlapInnerSizeRatio,
   decodePuaOverlapNumber,
   estimateDisplayTextPositions,
   isHalfwidthScaledCluster,
@@ -1573,9 +1575,7 @@ export function drawCanvas2DCharOverlap(
 
   const fontSize = op.style.fontSize || 12;
   const decodedNumber = decodePuaOverlapNumber(chars);
-  const sizeRatio = op.charOverlap.innerCharSize > 0
-    ? op.charOverlap.innerCharSize / 100
-    : 1;
+  const sizeRatio = charOverlapInnerSizeRatio(op.charOverlap.innerCharSize);
   const innerFontSize = fontSize * sizeRatio;
   const font = buildCanvasTextFont(
     op.style.fontFamily,
@@ -1594,15 +1594,18 @@ export function drawCanvas2DCharOverlap(
     const isReversed = borderType === 2 || borderType === 4;
     const isCircle = borderType === 1 || borderType === 2;
     const isRect = borderType === 3 || borderType === 4;
+    const strokeColor = isReversed ? '#000000' : op.style.color;
 
     if (isCircle) {
       ctx.beginPath();
-      ctx.arc(cx, cy, boxSize / 2, 0, Math.PI * 2);
+      const ry = boxSize / 2;
+      const rx = ry * 0.85;
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
       if (isReversed) {
         ctx.fillStyle = '#000000';
         ctx.fill();
       }
-      ctx.strokeStyle = '#000000';
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 0.8;
       ctx.stroke();
     } else if (isRect) {
@@ -1612,7 +1615,7 @@ export function drawCanvas2DCharOverlap(
         ctx.fillStyle = '#000000';
         ctx.fillRect(rx, ry, boxSize, boxSize);
       }
-      ctx.strokeStyle = '#000000';
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 0.8;
       ctx.strokeRect(rx, ry, boxSize, boxSize);
     }

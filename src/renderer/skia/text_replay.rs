@@ -2,7 +2,8 @@ use skia_safe::{paint::Cap, Canvas, Color, Paint, PathBuilder, Point, Rect};
 
 use crate::paint::{LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint};
 use crate::renderer::composer::{
-    decode_pua_overlap_number, expand_pua_display_text, pua_to_display_text,
+    char_overlap_inner_size_ratio, decode_pua_overlap_number, expand_pua_display_text,
+    pua_to_display_text,
 };
 use crate::renderer::layout::split_into_clusters;
 use crate::renderer::render_tree::BoundingBox;
@@ -43,11 +44,7 @@ impl SkiaLayerRenderer {
             }
 
             let box_size = render_style.font_size.max(1.0) as f32;
-            let size_ratio = if overlap.inner_char_size > 0 {
-                f64::from(overlap.inner_char_size) / 100.0
-            } else {
-                1.0
-            };
+            let size_ratio = char_overlap_inner_size_ratio(overlap.inner_char_size);
             let mut overlap_style = render_style.clone();
             overlap_style.font_size = (render_style.font_size * size_ratio).max(1.0);
             let inner_font_size = overlap_style.font_size as f32;
@@ -73,14 +70,21 @@ impl SkiaLayerRenderer {
                     stroke.set_anti_alias(true);
                     stroke.set_style(skia_safe::paint::Style::Stroke);
                     stroke.set_stroke_width(0.8);
-                    stroke.set_color(Color::BLACK);
+                    let glyph_color = colorref_to_skia(run.style.color, 1.0);
+                    stroke.set_color(if is_reversed {
+                        Color::BLACK
+                    } else {
+                        glyph_color
+                    });
 
                     if is_circle {
-                        let radius = box_size / 2.0;
+                        let ry = box_size / 2.0;
+                        let rx = ry * 0.85;
+                        let oval = Rect::from_xywh(cx - rx, cy - ry, rx * 2.0, ry * 2.0);
                         if is_reversed {
-                            canvas.draw_circle((cx, cy), radius, &fill);
+                            canvas.draw_oval(oval, &fill);
                         }
-                        canvas.draw_circle((cx, cy), radius, &stroke);
+                        canvas.draw_oval(oval, &stroke);
                     } else if is_rect {
                         let rect = Rect::from_xywh(
                             cx - box_size / 2.0,

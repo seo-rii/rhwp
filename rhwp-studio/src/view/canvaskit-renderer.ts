@@ -80,6 +80,7 @@ import {
 } from './layer-geometry-utils';
 import {
   allowsTextControlMark,
+  charOverlapInnerSizeRatio,
   decodePuaOverlapNumber,
   estimateDisplayTextPositions,
   isHalfwidthScaledCluster,
@@ -828,9 +829,7 @@ export class CanvasKitLayerRenderer {
         if (chars.length) {
           const decodedNumber = decodePuaOverlapNumber(chars);
           const fontSize = op.style.fontSize || 12;
-          const sizeRatio = op.charOverlap.innerCharSize > 0
-            ? op.charOverlap.innerCharSize / 100
-            : 1;
+          const sizeRatio = charOverlapInnerSizeRatio(op.charOverlap.innerCharSize);
           const innerFontSize = fontSize * sizeRatio;
           const boxSize = fontSize;
           const bboxY = originY - op.baseline;
@@ -849,13 +848,16 @@ export class CanvasKitLayerRenderer {
 
             if (isCircle || isRect) {
               const fillPaint = isReversed ? this.makePaint('#000000', 'fill') : null;
-              const strokePaint = this.makePaint('#000000', 'stroke');
+              const strokePaint = this.makePaint(isReversed ? '#000000' : op.style.color, 'stroke');
               strokePaint.setStrokeWidth(0.8);
               if (isCircle) {
+                const ry = boxSize / 2;
+                const rx = ry * 0.85;
+                const oval = this.canvasKit.XYWHRect(cx - rx, cy - ry, rx * 2, ry * 2);
                 if (fillPaint) {
-                  canvas.drawCircle(cx, cy, boxSize / 2, fillPaint);
+                  canvas.drawOval(oval, fillPaint);
                 }
-                canvas.drawCircle(cx, cy, boxSize / 2, strokePaint);
+                canvas.drawOval(oval, strokePaint);
               } else {
                 const rect = this.canvasKit.XYWHRect(
                   cx - boxSize / 2,

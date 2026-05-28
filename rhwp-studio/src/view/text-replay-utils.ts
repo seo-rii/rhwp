@@ -64,6 +64,16 @@ export function decodePuaOverlapNumber(chars: string[]): string | null {
   return groups.map(([, digit]) => String.fromCharCode(0x30 + digit)).join('');
 }
 
+export function charOverlapInnerSizeRatio(innerCharSize: number): number {
+  if (innerCharSize > 0) {
+    return innerCharSize / 100;
+  }
+  if (innerCharSize < 0) {
+    return 1 + innerCharSize * 0.10;
+  }
+  return 1;
+}
+
 export function puaToDisplayText(ch: string): string | null {
   const cp = ch.codePointAt(0) ?? 0;
   if (cp === 0xF012B) {
