@@ -402,7 +402,7 @@ fn parse_sec_pr_children(
                     b"pagePr" => parse_page_pr(e, &mut sec_def.page_def),
                     b"margin" => parse_page_margin(e, &mut sec_def.page_def),
                     b"colPr" => {
-                        col_def = Some(parse_col_pr(e));
+                        col_def = Some(parse_col_pr_with_children(e, reader)?);
                     }
                     b"startNum" => parse_start_num(e, sec_def),
                     b"visibility" => parse_visibility(e, sec_def),
@@ -492,6 +492,111 @@ fn parse_col_pr(e: &quick_xml::events::BytesStart) -> ColumnDef {
         }
     }
     cd
+}
+
+fn parse_col_pr_with_children(
+    e: &quick_xml::events::BytesStart,
+    reader: &mut Reader<&[u8]>,
+) -> Result<ColumnDef, HwpxError> {
+    let mut cd = parse_col_pr(e);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref ce)) => {
+                if local_name(ce.name().as_ref()) == b"colLine" {
+                    parse_col_line(ce, &mut cd);
+                }
+            }
+            Ok(Event::Start(ref ce)) => {
+                let cname = ce.name();
+                let local = local_name(cname.as_ref());
+                if local == b"colLine" {
+                    parse_col_line(ce, &mut cd);
+                    skip_element(reader, b"colLine")?;
+                } else {
+                    let tag = local.to_vec();
+                    skip_element(reader, &tag)?;
+                }
+            }
+            Ok(Event::End(ref ee)) => {
+                if local_name(ee.name().as_ref()) == b"colPr" {
+                    break;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(HwpxError::XmlError(format!("colPr: {}", e))),
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(cd)
+}
+
+fn parse_col_line(e: &quick_xml::events::BytesStart, cd: &mut ColumnDef) {
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"type" => cd.separator_type = parse_hwpx_line_type(&attr_str(&attr)),
+            b"width" => cd.separator_width = parse_hwpx_line_width(&attr_str(&attr)),
+            b"color" => cd.separator_color = parse_color(&attr),
+            _ => {}
+        }
+    }
+}
+
+fn parse_hwpx_line_type(value: &str) -> u8 {
+    match value {
+        "NONE" => 0,
+        "SOLID" => 1,
+        "DASH" => 2,
+        "DOT" => 3,
+        "DASH_DOT" => 4,
+        "DASH_DOT_DOT" => 5,
+        "LONG_DASH" => 6,
+        "CIRCLE" => 7,
+        _ => 1,
+    }
+}
+
+fn parse_hwpx_line_width(value: &str) -> u8 {
+    let mm = value
+        .split_whitespace()
+        .next()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.12);
+
+    if mm <= 0.10 {
+        0
+    } else if mm <= 0.12 {
+        1
+    } else if mm <= 0.15 {
+        2
+    } else if mm <= 0.20 {
+        3
+    } else if mm <= 0.25 {
+        4
+    } else if mm <= 0.30 {
+        5
+    } else if mm <= 0.40 {
+        6
+    } else if mm <= 0.50 {
+        7
+    } else if mm <= 0.60 {
+        8
+    } else if mm <= 0.70 {
+        9
+    } else if mm <= 1.00 {
+        10
+    } else if mm <= 1.50 {
+        11
+    } else if mm <= 2.00 {
+        12
+    } else if mm <= 3.00 {
+        13
+    } else if mm <= 4.00 {
+        14
+    } else {
+        15
+    }
 }
 
 /// <hp:linesegarray> 내부의 <hp:lineseg> 요소들을 파싱한다.
@@ -2368,10 +2473,9 @@ fn parse_ctrl(
                 let local = local_name(cname.as_ref());
                 match local {
                     b"colPr" => {
-                        let cd = parse_col_pr(ce);
+                        let cd = parse_col_pr_with_children(ce, reader)?;
                         controls.push(Control::ColumnDef(cd));
                         text_parts.push("\u{0002}".to_string());
-                        skip_element(reader, b"colPr")?;
                     }
                     b"header" => {
                         let ctrl = parse_ctrl_header(ce, reader)?;
@@ -3787,6 +3891,55 @@ mod tests {
         assert_eq!(para.char_offsets, vec![0, 9]);
         assert_eq!(para.char_shapes[1].start_pos, 9);
         assert!(matches!(para.controls[0], Control::ColumnDef(_)));
+    }
+
+    #[test]
+    fn test_parse_ctrl_column_def_preserves_col_line() {
+        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0">
+      <hp:ctrl>
+        <hp:colPr type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="850">
+          <hp:colLine type="DASH_DOT" width="0.4 mm" color="#112233"/>
+        </hp:colPr>
+      </hp:ctrl>
+      <hp:t>A</hp:t>
+    </hp:run>
+  </hp:p>
+</hs:sec>"##;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let para = &section.paragraphs[0];
+        let Control::ColumnDef(col_def) = &para.controls[0] else {
+            panic!("expected ColumnDef control");
+        };
+
+        assert_eq!(para.text, "A");
+        assert_eq!(col_def.column_count, 2);
+        assert!(col_def.same_width);
+        assert_eq!(col_def.spacing, 850);
+        assert_eq!(col_def.separator_type, 4);
+        assert_eq!(col_def.separator_width, 6);
+        assert_eq!(col_def.separator_color, 0x0033_2211);
+    }
+
+    #[test]
+    fn test_parse_hwpx_line_type_and_width_mapping() {
+        assert_eq!(parse_hwpx_line_type("NONE"), 0);
+        assert_eq!(parse_hwpx_line_type("SOLID"), 1);
+        assert_eq!(parse_hwpx_line_type("DASH"), 2);
+        assert_eq!(parse_hwpx_line_type("DOT"), 3);
+        assert_eq!(parse_hwpx_line_type("DASH_DOT"), 4);
+        assert_eq!(parse_hwpx_line_type("DASH_DOT_DOT"), 5);
+        assert_eq!(parse_hwpx_line_type("LONG_DASH"), 6);
+        assert_eq!(parse_hwpx_line_type("CIRCLE"), 7);
+
+        assert_eq!(parse_hwpx_line_width("0.1 mm"), 0);
+        assert_eq!(parse_hwpx_line_width("0.12 mm"), 1);
+        assert_eq!(parse_hwpx_line_width("0.4 mm"), 6);
+        assert_eq!(parse_hwpx_line_width("5.0 mm"), 15);
     }
 
     #[test]
