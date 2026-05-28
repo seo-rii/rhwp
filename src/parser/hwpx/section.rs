@@ -1929,6 +1929,15 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                         }
                         fill.gradient = Some(grad);
                     }
+                    b"color" => {
+                        if let Some(ref mut grad) = fill.gradient {
+                            for attr in ce.attributes().flatten() {
+                                if attr.key.as_ref() == b"value" {
+                                    grad.colors.push(parse_color(&attr));
+                                }
+                            }
+                        }
+                    }
                     b"imgBrush" => {
                         fill.fill_type = FillType::Image;
                         let mut img = ImageFill::default();
@@ -3918,6 +3927,36 @@ mod tests {
         assert_eq!(grad.center_y, 60);
         assert_eq!(grad.blur, 35);
         assert_eq!(grad.step_center, 45);
+    }
+
+    #[test]
+    fn test_parse_shape_gradient_color_stops() {
+        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:rect id="7" zOrder="0">
+      <hp:sz width="1000" height="1000"/>
+      <hp:fillBrush>
+        <hp:gradation type="LINEAR" angle="0">
+          <hc:color value="#112233"/>
+          <hc:color value="#445566"/>
+        </hp:gradation>
+      </hp:fillBrush>
+    </hp:rect>
+  </hp:p>
+</hs:sec>"##;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let Control::Shape(shape) = &section.paragraphs[0].controls[0] else {
+            panic!("expected shape control");
+        };
+        let fill = &shape.drawing().expect("shape drawing").fill;
+        let grad = fill.gradient.as_ref().expect("gradient fill");
+
+        assert_eq!(fill.fill_type, crate::model::style::FillType::Gradient);
+        assert_eq!(grad.colors, vec![0x0033_2211, 0x0066_5544]);
     }
 
     #[test]
