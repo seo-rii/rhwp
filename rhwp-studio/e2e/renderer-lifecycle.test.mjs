@@ -6867,6 +6867,34 @@ runTest('Renderer lifecycle', async ({ page }) => {
         viewBox: undefined,
       },
     });
+    const invalidTransformSvgOutline = outlineFor('canvaskit-outline-svg-invalid-transform', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-invalid-transform', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-invalid-transform',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        transformToRun: { a: Number.NaN, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
+      },
+    });
+    const invalidSecurityModeSvgOutline = outlineFor('canvaskit-outline-svg-invalid-security-mode', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-invalid-security-mode', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-invalid-security-mode',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        securityMode: 'raw',
+      },
+    });
     const unsafeFlagsSvgOutline = outlineFor('canvaskit-outline-svg-unsafe-flags', {
       payloadKind: 'svgGlyph',
       variant: variantFor('canvaskit-outline-svg-unsafe-flags', 'glyphOutline', {
@@ -7475,6 +7503,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       missingResourceSvgGlyph: await render(treeFor(missingResourceSvgOutline)),
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
       missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
+      invalidTransformSvgGlyph: await render(treeFor(invalidTransformSvgOutline)),
+      invalidSecurityModeSvgGlyph: await render(treeFor(invalidSecurityModeSvgOutline)),
       unsafeFlagsSvgGlyph: await render(treeFor(unsafeFlagsSvgOutline)),
       rawInlineSvgGlyph: await render(treeFor(rawInlineSvgOutline)),
       noDomParserSvgGlyph,
@@ -7796,8 +7826,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitMissingViewBoxSvgReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
-      ),
+    ),
     `CanvasKit rejects SvgGlyph with missing viewBox=${JSON.stringify(canvaskitMissingViewBoxSvgReport)}`,
+  );
+  const canvaskitInvalidTransformSvgReport = canvaskitGlyphOutlineProbe
+    .invalidTransformSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-invalid-transform');
+  assert(
+    canvaskitInvalidTransformSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidTransformSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with non-finite transform=${JSON.stringify(canvaskitInvalidTransformSvgReport)}`,
+  );
+  const canvaskitInvalidSecurityModeSvgReport = canvaskitGlyphOutlineProbe
+    .invalidSecurityModeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-invalid-security-mode');
+  assert(
+    canvaskitInvalidSecurityModeSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidSecurityModeSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with invalid security mode=${JSON.stringify(canvaskitInvalidSecurityModeSvgReport)}`,
   );
   const canvaskitUnsafeFlagsSvgReport = canvaskitGlyphOutlineProbe
     .unsafeFlagsSvgGlyph
