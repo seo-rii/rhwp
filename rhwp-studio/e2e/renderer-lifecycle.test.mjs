@@ -6748,6 +6748,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
         filtering: undefined,
       },
     });
+    const invalidStrikePpemBitmapOutline = outlineFor('canvaskit-outline-bitmap-invalid-strike-ppem', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-invalid-strike-ppem', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-invalid-strike-ppem',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        strikePpem: [0, 16],
+      },
+    });
+    const diagnosticStrikeBitmapOutline = outlineFor('canvaskit-outline-bitmap-diagnostic-strike', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-diagnostic-strike', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-diagnostic-strike',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        strikeSelection: 'diagnosticOnly',
+      },
+    });
     const strikeReselectionBitmapOutline = outlineFor('canvaskit-outline-bitmap-strike-reselection', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap-strike-reselection', 'glyphOutline', {
@@ -7440,6 +7466,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       bitmapGlyph: await render(treeFor(bitmapOutline)),
       nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
       missingFilteringBitmapGlyph: await render(treeFor(missingFilteringBitmapOutline)),
+      invalidStrikePpemBitmapGlyph: await render(treeFor(invalidStrikePpemBitmapOutline)),
+      diagnosticStrikeBitmapGlyph: await render(treeFor(diagnosticStrikeBitmapOutline)),
       strikeReselectionBitmapGlyph: await render(treeFor(strikeReselectionBitmapOutline)),
       missingResourceBitmapGlyph: await render(treeFor(missingResourceBitmapOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
@@ -7664,8 +7692,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitMissingFilteringBitmapReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedBitmapGlyph'),
-      ),
+    ),
     `CanvasKit rejects BitmapGlyph with missing strict filtering=${JSON.stringify(canvaskitMissingFilteringBitmapReport)}`,
+  );
+  const canvaskitInvalidStrikePpemBitmapReport = canvaskitGlyphOutlineProbe
+    .invalidStrikePpemBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-invalid-strike-ppem');
+  assert(
+    canvaskitInvalidStrikePpemBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidStrikePpemBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph non-positive strike ppem=${JSON.stringify(canvaskitInvalidStrikePpemBitmapReport)}`,
+  );
+  const canvaskitDiagnosticStrikeBitmapReport = canvaskitGlyphOutlineProbe
+    .diagnosticStrikeBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-diagnostic-strike');
+  assert(
+    canvaskitDiagnosticStrikeBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitDiagnosticStrikeBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects diagnostic-only BitmapGlyph strike=${JSON.stringify(canvaskitDiagnosticStrikeBitmapReport)}`,
   );
   const canvaskitStrikeReselectionBitmapReport = canvaskitGlyphOutlineProbe
     .strikeReselectionBitmapGlyph
