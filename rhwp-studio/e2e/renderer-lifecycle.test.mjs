@@ -5180,6 +5180,36 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2SvgTransformPayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              transformToRun: { a: 1, b: 0, c: 0, d: Number.NEGATIVE_INFINITY, e: 0, f: 0 },
+            },
+          },
+          true,
+        ),
+        true,
+      );
+      const invalidReservedV2SvgSecurityModePayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              securityMode: 'raw',
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const validReservedV2SvgTransformPayload = render(
         makeReservedV2OutlinePayloadTree(
           'svgGlyph',
@@ -5293,6 +5323,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2SvgRangePayload,
         invalidReservedV2SvgResourcePayload,
         invalidReservedV2SvgRawInlinePayload,
+        invalidReservedV2SvgTransformPayload,
+        invalidReservedV2SvgSecurityModePayload,
         validReservedV2SvgTransformPayload,
         mixedReservedV2SvgPayload,
         unsupported,
@@ -5984,6 +6016,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2SvgRawInlinePayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2SvgTransformIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgTransformPayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2SvgSecurityModeIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgSecurityModePayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const validReservedV2SvgTransformIssueCodes = canvas2dGlyphOutlineProbe
     .validReservedV2SvgTransformPayload
     ?.textV2Validation
@@ -6005,6 +6045,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgRawInlineIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgRawInlineIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2SvgSecurityModeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgSecurityModeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && !validReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !validReservedV2SvgTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && mixedReservedV2SvgIssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -6022,6 +6066,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidV2SvgResourceValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgResourcePayload
         ?.textV2Validation,
       invalidV2SvgRawInlineValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgRawInlinePayload
+        ?.textV2Validation,
+      invalidV2SvgTransformValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgTransformPayload
+        ?.textV2Validation,
+      invalidV2SvgSecurityModeValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2SvgSecurityModePayload
         ?.textV2Validation,
       validV2SvgTransformValidation: canvas2dGlyphOutlineProbe.validReservedV2SvgTransformPayload
         ?.textV2Validation,
