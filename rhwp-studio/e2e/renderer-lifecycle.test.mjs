@@ -6748,6 +6748,58 @@ runTest('Renderer lifecycle', async ({ page }) => {
         filtering: undefined,
       },
     });
+    const invalidTransformBitmapOutline = outlineFor('canvaskit-outline-bitmap-invalid-transform', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-invalid-transform', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-invalid-transform',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        transformToRun: { a: 1, b: 0, c: 0, d: Number.POSITIVE_INFINITY, e: 0, f: 0 },
+      },
+    });
+    const missingAlphaBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-alpha', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-missing-alpha', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-missing-alpha',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        alphaMode: undefined,
+      },
+    });
+    const backendDefaultScalingBitmapOutline = outlineFor('canvaskit-outline-bitmap-backend-default-scaling', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-backend-default-scaling', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-backend-default-scaling',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        scalingPolicy: 'backendDefault',
+      },
+    });
+    const backendDefaultFilteringBitmapOutline = outlineFor('canvaskit-outline-bitmap-backend-default-filtering', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-backend-default-filtering', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-backend-default-filtering',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        filtering: 'backendDefault',
+      },
+    });
     const invalidStrikePpemBitmapOutline = outlineFor('canvaskit-outline-bitmap-invalid-strike-ppem', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap-invalid-strike-ppem', 'glyphOutline', {
@@ -6893,6 +6945,37 @@ runTest('Renderer lifecycle', async ({ page }) => {
       svgGlyph: {
         ...svgOutline.svgGlyph,
         securityMode: 'raw',
+      },
+    });
+    const invalidIntrinsicSizeSvgOutline = outlineFor('canvaskit-outline-svg-invalid-intrinsic-size', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-invalid-intrinsic-size', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-invalid-intrinsic-size',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        intrinsicSize: { width: 18, height: 0 },
+      },
+    });
+    const invalidPlacementSvgOutline = outlineFor('canvaskit-outline-svg-invalid-placement', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-invalid-placement', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-invalid-placement',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        placement: {
+          ...svgOutline.svgGlyph.placement,
+          baselineY: Number.POSITIVE_INFINITY,
+        },
       },
     });
     const unsafeFlagsSvgOutline = outlineFor('canvaskit-outline-svg-unsafe-flags', {
@@ -7494,6 +7577,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       bitmapGlyph: await render(treeFor(bitmapOutline)),
       nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
       missingFilteringBitmapGlyph: await render(treeFor(missingFilteringBitmapOutline)),
+      invalidTransformBitmapGlyph: await render(treeFor(invalidTransformBitmapOutline)),
+      missingAlphaBitmapGlyph: await render(treeFor(missingAlphaBitmapOutline)),
+      backendDefaultScalingBitmapGlyph: await render(treeFor(backendDefaultScalingBitmapOutline)),
+      backendDefaultFilteringBitmapGlyph: await render(treeFor(backendDefaultFilteringBitmapOutline)),
       invalidStrikePpemBitmapGlyph: await render(treeFor(invalidStrikePpemBitmapOutline)),
       diagnosticStrikeBitmapGlyph: await render(treeFor(diagnosticStrikeBitmapOutline)),
       strikeReselectionBitmapGlyph: await render(treeFor(strikeReselectionBitmapOutline)),
@@ -7505,6 +7592,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
       invalidTransformSvgGlyph: await render(treeFor(invalidTransformSvgOutline)),
       invalidSecurityModeSvgGlyph: await render(treeFor(invalidSecurityModeSvgOutline)),
+      invalidIntrinsicSizeSvgGlyph: await render(treeFor(invalidIntrinsicSizeSvgOutline)),
+      invalidPlacementSvgGlyph: await render(treeFor(invalidPlacementSvgOutline)),
       unsafeFlagsSvgGlyph: await render(treeFor(unsafeFlagsSvgOutline)),
       rawInlineSvgGlyph: await render(treeFor(rawInlineSvgOutline)),
       noDomParserSvgGlyph,
@@ -7725,6 +7814,54 @@ runTest('Renderer lifecycle', async ({ page }) => {
     ),
     `CanvasKit rejects BitmapGlyph with missing strict filtering=${JSON.stringify(canvaskitMissingFilteringBitmapReport)}`,
   );
+  const canvaskitInvalidTransformBitmapReport = canvaskitGlyphOutlineProbe
+    .invalidTransformBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-invalid-transform');
+  assert(
+    canvaskitInvalidTransformBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidTransformBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with non-finite transform=${JSON.stringify(canvaskitInvalidTransformBitmapReport)}`,
+  );
+  const canvaskitMissingAlphaBitmapReport = canvaskitGlyphOutlineProbe
+    .missingAlphaBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-missing-alpha');
+  assert(
+    canvaskitMissingAlphaBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingAlphaBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with missing alpha mode=${JSON.stringify(canvaskitMissingAlphaBitmapReport)}`,
+  );
+  const canvaskitBackendDefaultScalingBitmapReport = canvaskitGlyphOutlineProbe
+    .backendDefaultScalingBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-backend-default-scaling');
+  assert(
+    canvaskitBackendDefaultScalingBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitBackendDefaultScalingBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph backend-default scaling=${JSON.stringify(canvaskitBackendDefaultScalingBitmapReport)}`,
+  );
+  const canvaskitBackendDefaultFilteringBitmapReport = canvaskitGlyphOutlineProbe
+    .backendDefaultFilteringBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-backend-default-filtering');
+  assert(
+    canvaskitBackendDefaultFilteringBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitBackendDefaultFilteringBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph backend-default filtering=${JSON.stringify(canvaskitBackendDefaultFilteringBitmapReport)}`,
+  );
   const canvaskitInvalidStrikePpemBitmapReport = canvaskitGlyphOutlineProbe
     .invalidStrikePpemBitmapGlyph
     ?.diagnostics
@@ -7850,8 +7987,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && canvaskitInvalidSecurityModeSvgReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
-      ),
+    ),
     `CanvasKit rejects SvgGlyph with invalid security mode=${JSON.stringify(canvaskitInvalidSecurityModeSvgReport)}`,
+  );
+  const canvaskitInvalidIntrinsicSizeSvgReport = canvaskitGlyphOutlineProbe
+    .invalidIntrinsicSizeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-invalid-intrinsic-size');
+  assert(
+    canvaskitInvalidIntrinsicSizeSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidIntrinsicSizeSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with non-positive intrinsic size=${JSON.stringify(canvaskitInvalidIntrinsicSizeSvgReport)}`,
+  );
+  const canvaskitInvalidPlacementSvgReport = canvaskitGlyphOutlineProbe
+    .invalidPlacementSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-invalid-placement');
+  assert(
+    canvaskitInvalidPlacementSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidPlacementSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with non-finite placement=${JSON.stringify(canvaskitInvalidPlacementSvgReport)}`,
   );
   const canvaskitUnsafeFlagsSvgReport = canvaskitGlyphOutlineProbe
     .unsafeFlagsSvgGlyph

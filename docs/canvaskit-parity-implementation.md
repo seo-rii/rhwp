@@ -287,6 +287,9 @@ strict GlyphOutline JSON and JS exports now declare
 `text.glyphOutline.bitmapGlyph` whenever the selected strict payload uses the
 one-strike bitmap contract, so strict consumers can gate the writer widening at
 the export metadata layer instead of inferring it from the payload body.
+CanvasKit lifecycle coverage now also rejects non-finite payload transforms,
+missing alpha mode, backend-default scaling/filtering, non-positive strike
+ppem, and diagnostic-only strikes before replay.
 Before writer emission is widened, add broader real-document resource corpus
 coverage.
 
@@ -315,7 +318,9 @@ plus unsupported vector primitives such as `foreignObject`, `filter`, `mask`,
 and `clipPath`, as `unsupportedSvgGlyph` in both DOMParser and no-DOMParser
 paths. CanvasKit lifecycle also rejects strict `SvgGlyph` payloads with missing
 `viewBox`, unsafe static-vector flags, or raw inline SVG replay fields before
-replay, and rejects missing or ambiguous vector resources. Schema-v2 strict
+replay, rejects non-finite transforms and placements, rejects non-positive
+intrinsic sizes and non-static security modes, and rejects missing or ambiguous
+vector resources. Schema-v2 strict
 GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
 the selected strict payload uses the static sanitized vector contract. Before
 writer emission is widened, add broader real-document resource corpus coverage. The
@@ -697,8 +702,9 @@ Implementation-ready tracks:
   `colorSpaceDefaulted` diagnostics when sRGB is assumed. SVG strict replay now
   rejects backend-default filtering/scaling and missing alpha mode directly in
   renderer selection tests; native Skia mirrors those deterministic-contract
-  negatives in strict variant selection, and CanvasKit policy covers both
-  backend-default filtering and scaling.
+  negatives in strict variant selection, and CanvasKit policy covers non-finite
+  transforms, missing alpha mode, backend-default filtering/scaling,
+  non-positive strike ppem, and non-producer-selected strikes.
 - `SvgGlyph` corpus widening: add real-document or producer-output fixtures for
   sanitized static `VectorResourceId` resources. Keep `viewBox` required, keep
   script, animation, external resources, and interactivity hard false, and keep
@@ -706,7 +712,7 @@ Implementation-ready tracks:
   `viewBox` and unsafe payload flags directly in renderer selection tests;
   native Skia mirrors the same static-sanitized contract negatives, and
   CanvasKit policy covers script, animation, external-resource, interactivity,
-  and viewBox rejection.
+  viewBox, transform, placement, intrinsic-size, and security-mode rejection.
 - strict payload validation hardening: add or widen negative fixtures only for
   unsupported already-declared COLRv1 graph cases or newly found malformed
   strict payloads. The current Bitmap/Svg deterministic and static-sanitized
