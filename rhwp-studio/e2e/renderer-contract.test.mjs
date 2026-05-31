@@ -361,6 +361,12 @@ assert.equal(
   'CanvasKit static picture cache keys must include schema-v1 variantOps sidecar payloads',
 );
 assert.equal(
+  fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
+    .includes('stableValueFingerprint(tree.outputOptions ?? null)'),
+  true,
+  'CanvasKit static picture cache keys must include output options that affect direct replay',
+);
+assert.equal(
   canvaskitFontsSource.includes("from '../layer-canvas-utils'"),
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',

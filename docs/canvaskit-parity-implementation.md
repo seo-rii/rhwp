@@ -64,7 +64,9 @@ CanvasKit replay plan all merge sidecars into the same leaf-local text variant
 selection set as their anchored `TextRun` fallback. Native Skia static subtree
 cache keys and CanvasKit static picture cache keys include those sidecar
 payloads as well, so cached pictures cannot be reused across different strict
-text alternatives.
+text alternatives. CanvasKit static picture cache keys also include replay
+`outputOptions`, because `clipEnabled`, paragraph marks, and control-code
+visibility change direct replay without changing node identity.
 
 The first strict `GlyphOutline` payload subsets are also implemented as
 feature-gated direct replay contracts. The current baseline covers

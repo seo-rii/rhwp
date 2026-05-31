@@ -29,6 +29,7 @@ export class CanvasKitStaticPictureCache {
       stableValueFingerprint(tree.resources ?? null),
       stableValueFingerprint(tree.fontResources ?? null),
       stableValueFingerprint(tree.variantOps ?? null),
+      stableValueFingerprint(tree.outputOptions ?? null),
     ].join(':');
   }
 
