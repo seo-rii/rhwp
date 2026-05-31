@@ -2321,6 +2321,9 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
   ): void {
+    if (this.renderEquationSvgResource(canvas, op)) {
+      return;
+    }
     this.renderEquationBox(
       canvas,
       op.layoutBox,
@@ -2331,6 +2334,87 @@ export class CanvasKitLayerRenderer {
       false,
       false,
     );
+  }
+
+  private renderEquationSvgResource(
+    canvas: ReturnType<Surface['getCanvas']>,
+    op: LayerEquationOp,
+  ): boolean {
+    const svgResourceId = op.svgResourceId;
+    const fragment = typeof svgResourceId === 'number'
+      ? this.lastRenderedTree?.resources?.svgFragments?.[svgResourceId]
+      : op.svgContent;
+    if (typeof fragment !== 'string') {
+      return false;
+    }
+    const pathLayers = parseStaticSvgPathLayers(fragment);
+    if (pathLayers.length === 0) {
+      return false;
+    }
+    const { x, y, width, height } = op.bbox;
+    if (
+      !Number.isFinite(x)
+      || !Number.isFinite(y)
+      || !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width <= 0
+      || height <= 0
+    ) {
+      return false;
+    }
+
+    canvas.save();
+    try {
+      canvas.translate(x, y);
+      for (const layer of pathLayers) {
+        canvas.save();
+        try {
+          if (layer.transform) {
+            canvas.concat([
+              layer.transform.a,
+              layer.transform.c,
+              layer.transform.e,
+              layer.transform.b,
+              layer.transform.d,
+              layer.transform.f,
+              0,
+              0,
+              1,
+            ]);
+          }
+          const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+          if (!path) {
+            continue;
+          }
+          this.applyPathFillRule(path, layer.fillRule);
+          if (layer.fill !== null) {
+            const paint = this.makePaint(layer.fill, 'fill', layer.opacity);
+            canvas.drawPath(path, paint);
+            paint.delete();
+          }
+          if (layer.stroke) {
+            const strokePaint = this.makePaint(layer.stroke.color, 'stroke', layer.stroke.opacity);
+            strokePaint.setStrokeWidth(layer.stroke.width);
+            strokePaint.setStrokeJoin(this.canvasKitStrokeJoin(layer.stroke.lineJoin));
+            strokePaint.setStrokeCap(this.canvasKitStrokeCap(layer.stroke.lineCap));
+            strokePaint.setStrokeMiter(layer.stroke.miterLimit);
+            if (layer.stroke.dashArray) {
+              const effect = this.canvasKit.PathEffect.MakeDash(layer.stroke.dashArray, layer.stroke.dashOffset);
+              strokePaint.setPathEffect(effect);
+              effect.delete();
+            }
+            canvas.drawPath(path, strokePaint);
+            strokePaint.delete();
+          }
+          path.delete();
+        } finally {
+          canvas.restore();
+        }
+      }
+    } finally {
+      canvas.restore();
+    }
+    return true;
   }
 
   private renderEquationBox(

@@ -19,6 +19,7 @@ import type {
   LayerCharOverlapOp,
   LayerClipNode,
   LayerEllipseOp,
+  LayerEquationOp,
   LayerFootnoteMarkerOp,
   LayerFormObjectOp,
   LayerGradient,
@@ -759,6 +760,9 @@ export class Canvas2DLayerRenderer {
         return;
       case 'equation':
         this.withCurrentOverlayClip(ctx, 0, () => {
+          if (this.renderEquationSvgResource(ctx, op)) {
+            return;
+          }
           renderEquationLayoutBox(
             ctx,
             op.layoutBox,
@@ -1465,6 +1469,75 @@ export class Canvas2DLayerRenderer {
         source !== image,
       );
     });
+  }
+
+  private renderEquationSvgResource(ctx: CanvasRenderingContext2D, op: LayerEquationOp): boolean {
+    const svgResourceId = op.svgResourceId;
+    const fragment = typeof svgResourceId === 'number'
+      ? this.currentResources?.svgFragments?.[svgResourceId]
+      : op.svgContent;
+    if (typeof fragment !== 'string') {
+      return false;
+    }
+    const pathLayers = parseStaticSvgPathLayers(fragment);
+    if (pathLayers.length === 0) {
+      return false;
+    }
+    const { x, y, width, height } = op.bbox;
+    if (
+      !Number.isFinite(x)
+      || !Number.isFinite(y)
+      || !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width <= 0
+      || height <= 0
+    ) {
+      return false;
+    }
+
+    ctx.save();
+    try {
+      ctx.translate(x, y);
+      for (const layer of pathLayers) {
+        ctx.save();
+        try {
+          if (layer.transform) {
+            ctx.transform(
+              layer.transform.a,
+              layer.transform.b,
+              layer.transform.c,
+              layer.transform.d,
+              layer.transform.e,
+              layer.transform.f,
+            );
+          }
+          const path = new Path2D(layer.pathData);
+          const previousAlpha = ctx.globalAlpha;
+          if (layer.fill !== null) {
+            ctx.fillStyle = layer.fill;
+            ctx.globalAlpha = previousAlpha * layer.opacity;
+            ctx.fill(path, layer.fillRule ?? 'nonzero');
+          }
+          if (layer.stroke) {
+            ctx.strokeStyle = layer.stroke.color;
+            ctx.lineWidth = layer.stroke.width;
+            ctx.lineJoin = layer.stroke.lineJoin;
+            ctx.lineCap = layer.stroke.lineCap;
+            ctx.miterLimit = layer.stroke.miterLimit;
+            ctx.setLineDash(layer.stroke.dashArray ?? []);
+            ctx.lineDashOffset = layer.stroke.dashOffset;
+            ctx.globalAlpha = previousAlpha * layer.stroke.opacity;
+            ctx.stroke(path);
+          }
+          ctx.globalAlpha = previousAlpha;
+        } finally {
+          ctx.restore();
+        }
+      }
+    } finally {
+      ctx.restore();
+    }
+    return true;
   }
 
   private renderFormObject(ctx: CanvasRenderingContext2D, op: LayerFormObjectOp): void {

@@ -271,6 +271,18 @@ compareCaseLabels(
   caseLabels(extractMethodBody(canvaskitSource, 'renderEquationBox')),
   'equation layout replay',
 );
+assert(
+  extractMethodBody(canvas2dSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)')
+    && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)'),
+  'Canvas2D and CanvasKit equation SVG resource replay must use the same static path parser',
+);
+assert(
+  extractSwitchCaseBlock(extractMethodBody(canvas2dSource, 'renderOp'), 'equation')
+    .includes('this.renderEquationSvgResource(ctx, op)')
+    && extractMethodBody(canvaskitSource, 'renderEquation')
+      .includes('this.renderEquationSvgResource(canvas, op)'),
+  'Canvas2D and CanvasKit equation replay must prefer direct SVG resources before layout fallback',
+);
 
 for (const { docToken, filePath, kind } of implementationPlanTouchpoints) {
   assert.equal(

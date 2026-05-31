@@ -13969,6 +13969,107 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation geometry parity exact=${equationGeometryDiff.exactDiffPixels}, tolerant=${equationGeometryDiff.rawTolerantDiffPixels}, ink=${equationGeometryDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationGeometryDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-equation-svg-resource-parity');
+  const equationSvgResourceParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 80,
+      pageHeight: 54,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1971,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [
+          '<path d="M4 4H52V30H4Z" fill="#ff00ff"/><path d="M10 38H70" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>',
+        ],
+        svgHashes: ['fixture-equation-svg-resource'],
+        svgKeys: ['svg:fixture-equation-svg-resource'],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1971,
+        bounds: { x: 0, y: 0, width: 80, height: 54 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 80, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'equation',
+            bbox: { x: 8, y: 7, width: 64, height: 42 },
+            color: '#111111',
+            fontSize: 16,
+            svgResourceId: 0,
+            layoutBox: { x: 0, y: 0, width: 64, height: 42, baseline: 0, kind: { type: 'empty' } },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !equationSvgResourceParityProbe.error,
+    equationSvgResourceParityProbe.error || 'equation SVG resource parity probe available',
+  );
+  const equationSvgCanvas2dMagenta = countPixels(
+    equationSvgResourceParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.red > 180 && pixel.blue > 180 && pixel.green < 80,
+  );
+  const equationSvgCanvaskitMagenta = countPixels(
+    equationSvgResourceParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.red > 180 && pixel.blue > 180 && pixel.green < 80,
+  );
+  assert(
+    equationSvgCanvas2dMagenta > 900 && equationSvgCanvaskitMagenta > 900,
+    `equation SVG resource replay draws direct paths canvas2d=${equationSvgCanvas2dMagenta}, canvaskit=${equationSvgCanvaskitMagenta}`,
+  );
+  const equationSvgResourceDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(equationSvgResourceParityProbe.canvas2d),
+    pngBufferFromDataUrl(equationSvgResourceParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-equation-svg-resource-parity',
+      ignoreChannelDelta: 18,
+      maxDiffRatio: 0.02,
+      inkMaskMaxDiffRatio: 0.02,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    equationSvgResourceDiff.passed,
+    `equation SVG resource parity exact=${equationSvgResourceDiff.exactDiffPixels}, tolerant=${equationSvgResourceDiff.rawTolerantDiffPixels}, ink=${equationSvgResourceDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationSvgResourceDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-equation-advanced-layout-parity');
   const equationAdvancedLayoutParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
