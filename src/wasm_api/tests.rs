@@ -4,6 +4,7 @@ use crate::model::control::Control;
 use crate::model::document::{Document, Section};
 use crate::model::image::{ImageAttr, ImageEffect, Picture};
 use crate::model::paragraph::{LineSeg, Paragraph};
+use crate::model::shape::ShapeObject;
 use crate::paint::RenderProfile;
 
 fn external_image_test_doc() -> HwpDocument {
@@ -249,6 +250,51 @@ fn test_external_image_injection_invalidates_cached_page_layer_tree() {
         doc.page_layer_tree_cache.borrow().is_empty(),
         "external image injection must clear cached PageLayerTrees so resource payloads refresh"
     );
+}
+
+#[test]
+fn test_shape_picture_external_image_reference_uses_same_injection_contract() {
+    let mut doc = HwpDocument::create_empty();
+    let mut document = Document::default();
+    document.sections.push(Section {
+        paragraphs: vec![Paragraph {
+            controls: vec![Control::Shape(Box::new(ShapeObject::Picture(Box::new(
+                Picture {
+                    image_attr: ImageAttr {
+                        bin_data_id: 3,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        external_path: Some("C:\\samples\\shape-linked.png".to_string()),
+                    },
+                    ..Default::default()
+                },
+            ))))],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    doc.set_document(document);
+
+    let refs = doc.get_external_image_references();
+    assert!(refs.contains("\"key\":\"binData:3\""));
+    assert!(refs.contains("\"basename\":\"shape-linked.png\""));
+    assert!(refs.contains("\"extension\":\"png\""));
+    assert!(refs.contains("\"loaded\":false"));
+
+    assert_eq!(
+        doc.inject_external_image_by_key("binData:3", b"\x89PNG\r\n\x1A\n", ""),
+        1
+    );
+    assert_eq!(doc.document().bin_data_content.len(), 3);
+    assert_eq!(doc.document().bin_data_content[2].id, 3);
+    assert_eq!(doc.document().bin_data_content[2].extension, "png");
+    assert_eq!(
+        doc.document().bin_data_content[2].data,
+        b"\x89PNG\r\n\x1A\n"
+    );
+    assert!(external_image_ref_loaded(&doc, "binData:3"));
+    assert_eq!(doc.get_external_image_basenames(), "[]");
 }
 
 #[test]
