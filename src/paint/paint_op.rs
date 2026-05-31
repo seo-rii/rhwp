@@ -1075,7 +1075,7 @@ impl BitmapGlyphPayload {
     pub fn has_strict_visual_contract(&self) -> bool {
         self.source_range_utf8
             .is_some_and(text_source_range_is_valid)
-            && self.glyph_range.is_some_and(glyph_range_is_valid)
+            && self.glyph_range.is_some_and(glyph_range_is_non_empty)
             && self.placement.is_some_and(|placement| {
                 affine_transform_is_finite(placement.run_to_page)
                     && placement.baseline_y.is_finite()
@@ -1146,7 +1146,7 @@ impl SvgGlyphPayload {
     pub fn has_static_sanitized_contract(&self) -> bool {
         self.source_range_utf8
             .is_some_and(text_source_range_is_valid)
-            && self.glyph_range.is_some_and(glyph_range_is_valid)
+            && self.glyph_range.is_some_and(glyph_range_is_non_empty)
             && self.placement.is_some_and(|placement| {
                 affine_transform_is_finite(placement.run_to_page)
                     && placement.baseline_y.is_finite()
@@ -3247,6 +3247,10 @@ mod tests {
         invalid_range_bitmap.source_range_utf8 = Some(TextSourceRange { start: 2, end: 1 });
         assert!(!invalid_range_bitmap.has_strict_visual_contract());
 
+        let mut empty_glyph_range_bitmap = bitmap_glyph.clone();
+        empty_glyph_range_bitmap.glyph_range = Some(GlyphRange { start: 1, end: 1 });
+        assert!(!empty_glyph_range_bitmap.has_strict_visual_contract());
+
         let mut invalid_transform_bitmap = bitmap_glyph.clone();
         invalid_transform_bitmap.transform_to_run = Some(LayerAffineTransform {
             a: f64::NAN,
@@ -3305,6 +3309,10 @@ mod tests {
         let mut invalid_glyph_range_svg = svg_glyph.clone();
         invalid_glyph_range_svg.glyph_range = Some(GlyphRange { start: 3, end: 2 });
         assert!(!invalid_glyph_range_svg.has_static_sanitized_contract());
+
+        let mut empty_glyph_range_svg = svg_glyph.clone();
+        empty_glyph_range_svg.glyph_range = Some(GlyphRange { start: 1, end: 1 });
+        assert!(!empty_glyph_range_svg.has_static_sanitized_contract());
 
         let mut missing_placement_svg = svg_glyph.clone();
         missing_placement_svg.placement = None;

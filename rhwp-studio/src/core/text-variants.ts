@@ -1169,7 +1169,7 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
     && bitmapGlyph !== undefined
     && isValidResourceId(bitmapGlyph.imageResourceId)
     && isValidPayloadRange(bitmapGlyph.sourceRangeUtf8)
-    && isValidPayloadRange(bitmapGlyph.glyphRange)
+    && isNonEmptyPayloadRange(bitmapGlyph.glyphRange)
     && isValidTextRunPlacement(bitmapGlyph.placement)
     && (bitmapGlyph.transformToRun === undefined || isFiniteAffineTransform(bitmapGlyph.transformToRun))
     && (bitmapGlyph.strikePpem === undefined || isValidBitmapStrikePpem(bitmapGlyph.strikePpem))
@@ -1205,7 +1205,7 @@ export function hasStaticSanitizedSvgGlyphContract(payload: LayerGlyphOutlineOp)
     && !hasRawInlineSvgGlyphReplayField(svgGlyph)
     && isValidResourceId(svgGlyph.vectorResourceId)
     && isValidPayloadRange(svgGlyph.sourceRangeUtf8)
-    && isValidPayloadRange(svgGlyph.glyphRange)
+    && isNonEmptyPayloadRange(svgGlyph.glyphRange)
     && isValidTextRunPlacement(svgGlyph.placement)
     && (svgGlyph.transformToRun === undefined || isFiniteAffineTransform(svgGlyph.transformToRun))
     && viewBox !== undefined

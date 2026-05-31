@@ -277,7 +277,7 @@ Implementation shape:
   diagnostics/provenance only;
 - strict replay must not let the backend select a different strike;
 - strict replay requires explicit `alphaMode`, `scalingPolicy`, `filtering`,
-  placement, `sourceRangeUtf8`, and `glyphRange`;
+  placement, `sourceRangeUtf8`, and a non-empty `glyphRange`;
 - strict replay rejects `backendDefault` scaling or filtering;
 - missing color space defaults to sRGB only when the diagnostic records
   `colorSpaceDefaulted`.
@@ -315,6 +315,8 @@ Implementation shape:
   `externalResourcesAllowed=false`, and `interactivityAllowed=false`;
 - `viewBox` is required because mapping into glyph/run coordinates is part of
   strict replay;
+- `glyphRange` must be non-empty so strict vector glyph replay remains anchored
+  to an actual source glyph span;
 - `intrinsicSize` is optional and diagnostic/layout-aid only.
 
 The current baseline replays static path-layer fragments without DOM parsing in

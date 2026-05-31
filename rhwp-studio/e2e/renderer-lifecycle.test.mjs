@@ -4899,6 +4899,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2BitmapEmptyGlyphRangePayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'bitmapGlyph',
+          'text.glyphOutline.bitmapGlyph',
+          {
+            ...reservedPayloadEnvelopes.bitmapGlyph,
+            bitmapGlyph: {
+              ...reservedPayloadEnvelopes.bitmapGlyph.bitmapGlyph,
+              glyphRange: { start: 1, end: 1 },
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const invalidReservedV2BitmapResourcePayload = render(
         makeReservedV2OutlinePayloadTree(
           'bitmapGlyph',
@@ -5150,6 +5165,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
         true,
       );
+      const invalidReservedV2SvgEmptyGlyphRangePayload = render(
+        makeReservedV2OutlinePayloadTree(
+          'svgGlyph',
+          'text.glyphOutline.svgGlyph',
+          {
+            ...reservedPayloadEnvelopes.svgGlyph,
+            svgGlyph: {
+              ...reservedPayloadEnvelopes.svgGlyph.svgGlyph,
+              glyphRange: { start: 1, end: 1 },
+            },
+          },
+          true,
+        ),
+        true,
+      );
       const invalidReservedV2SvgResourcePayload = render(
         makeReservedV2OutlinePayloadTree(
           'svgGlyph',
@@ -5304,6 +5334,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2BitmapTransformPayload,
         validReservedV2BitmapOffsetTransformPayload,
         invalidReservedV2BitmapRangePayload,
+        invalidReservedV2BitmapEmptyGlyphRangePayload,
         invalidReservedV2BitmapResourcePayload,
         invalidReservedV2BitmapPlacementPayload,
         invalidReservedV2BitmapAlphaPayload,
@@ -5321,6 +5352,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         invalidReservedV2SvgViewBoxPayload,
         invalidReservedV2SvgIntrinsicSizePayload,
         invalidReservedV2SvgRangePayload,
+        invalidReservedV2SvgEmptyGlyphRangePayload,
         invalidReservedV2SvgResourcePayload,
         invalidReservedV2SvgRawInlinePayload,
         invalidReservedV2SvgTransformPayload,
@@ -5876,6 +5908,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2BitmapRangePayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2BitmapEmptyGlyphRangeIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2BitmapEmptyGlyphRangePayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidReservedV2BitmapResourceIssueCodes = canvas2dGlyphOutlineProbe
     .invalidReservedV2BitmapResourcePayload
     ?.textV2Validation
@@ -5929,6 +5965,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !validReservedV2BitmapOffsetTransformIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapRangeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2BitmapEmptyGlyphRangeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2BitmapEmptyGlyphRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapResourceIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2BitmapResourceIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2BitmapPlacementIssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -5961,6 +5999,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         .validReservedV2BitmapOffsetTransformPayload
         ?.textV2Validation,
       invalidV2BitmapRangeValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapRangePayload
+        ?.textV2Validation,
+      invalidV2BitmapEmptyGlyphRangeValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2BitmapEmptyGlyphRangePayload
         ?.textV2Validation,
       invalidV2BitmapResourceValidation: canvas2dGlyphOutlineProbe.invalidReservedV2BitmapResourcePayload
         ?.textV2Validation,
@@ -6008,6 +6049,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .invalidReservedV2SvgRangePayload
     ?.textV2Validation
     ?.map((issue) => issue.code) ?? [];
+  const invalidReservedV2SvgEmptyGlyphRangeIssueCodes = canvas2dGlyphOutlineProbe
+    .invalidReservedV2SvgEmptyGlyphRangePayload
+    ?.textV2Validation
+    ?.map((issue) => issue.code) ?? [];
   const invalidReservedV2SvgResourceIssueCodes = canvas2dGlyphOutlineProbe
     .invalidReservedV2SvgResourcePayload
     ?.textV2Validation
@@ -6041,6 +6086,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && !invalidReservedV2SvgIntrinsicSizeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgRangeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
+      && invalidReservedV2SvgEmptyGlyphRangeIssueCodes.includes('glyphOutlinePayloadContractInvalid')
+      && !invalidReservedV2SvgEmptyGlyphRangeIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadContractInvalid')
       && !invalidReservedV2SvgResourceIssueCodes.includes('glyphOutlinePayloadKindFeatureMissing')
       && invalidReservedV2SvgRawInlineIssueCodes.includes('glyphOutlinePayloadContractInvalid')
@@ -6062,6 +6109,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         .invalidReservedV2SvgIntrinsicSizePayload
         ?.textV2Validation,
       invalidV2SvgRangeValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgRangePayload
+        ?.textV2Validation,
+      invalidV2SvgEmptyGlyphRangeValidation: canvas2dGlyphOutlineProbe
+        .invalidReservedV2SvgEmptyGlyphRangePayload
         ?.textV2Validation,
       invalidV2SvgResourceValidation: canvas2dGlyphOutlineProbe.invalidReservedV2SvgResourcePayload
         ?.textV2Validation,
