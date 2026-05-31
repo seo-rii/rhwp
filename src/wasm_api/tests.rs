@@ -1,9 +1,57 @@
 use super::*;
+use crate::model::bin_data::BinDataContent;
 use crate::model::control::Control;
 use crate::model::document::{Document, Section};
 use crate::model::image::{ImageAttr, ImageEffect, Picture};
 use crate::model::paragraph::{LineSeg, Paragraph};
 use crate::paint::RenderProfile;
+
+fn external_image_test_doc() -> HwpDocument {
+    let mut doc = HwpDocument::create_empty();
+    let mut document = Document::default();
+    document.sections.push(Section {
+        paragraphs: vec![Paragraph {
+            controls: vec![
+                Control::Picture(Box::new(Picture {
+                    image_attr: ImageAttr {
+                        bin_data_id: 1,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        external_path: Some("C:\\samples\\linked.gif".to_string()),
+                    },
+                    ..Default::default()
+                })),
+                Control::Picture(Box::new(Picture {
+                    image_attr: ImageAttr {
+                        bin_data_id: 2,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        external_path: Some("C:\\samples\\linked.gif".to_string()),
+                    },
+                    ..Default::default()
+                })),
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    doc.set_document(document);
+    doc
+}
+
+fn external_image_ref_loaded(doc: &HwpDocument, key: &str) -> bool {
+    let refs = doc.get_external_image_references();
+    let marker = format!("\"key\":\"{key}\"");
+    let start = refs
+        .find(&marker)
+        .unwrap_or_else(|| panic!("missing external image reference {key}: {refs}"));
+    let end = refs[start..]
+        .find('}')
+        .unwrap_or_else(|| panic!("unterminated external image reference {key}: {refs}"));
+    refs[start..start + end].contains("\"loaded\":true")
+}
 
 #[test]
 fn test_create_empty_document() {
@@ -105,6 +153,101 @@ fn test_external_image_reference_discovery_and_injection_use_bin_data_index() {
     assert_eq!(
         doc.inject_external_image_by_key("binData:2", b"again", "/tmp/again.gif"),
         0
+    );
+}
+
+#[test]
+fn test_external_image_key_injection_targets_only_requested_reference() {
+    let mut doc = external_image_test_doc();
+
+    assert_eq!(
+        doc.inject_external_image_by_key("binData:2", b"GIF89a", "/tmp/linked.gif"),
+        1
+    );
+
+    assert_eq!(doc.document().bin_data_content.len(), 2);
+    assert!(
+        doc.document().bin_data_content[0].data.is_empty(),
+        "key injection must not fall back to basename matching"
+    );
+    assert_eq!(doc.document().bin_data_content[1].data, b"GIF89a");
+    assert_eq!(doc.document().bin_data_content[1].extension, "gif");
+    assert!(!external_image_ref_loaded(&doc, "binData:1"));
+    assert!(external_image_ref_loaded(&doc, "binData:2"));
+}
+
+#[test]
+fn test_external_image_key_injection_rejects_invalid_or_unknown_keys() {
+    let mut doc = external_image_test_doc();
+
+    for key in [
+        "",
+        "linked.gif",
+        "binData:",
+        "binData:0",
+        "binData:not-a-number",
+        "binData:999",
+    ] {
+        assert_eq!(
+            doc.inject_external_image_by_key(key, b"GIF89a", ""),
+            0,
+            "invalid or unknown key should not mutate external image state: {key}"
+        );
+    }
+
+    assert!(
+        doc.document().bin_data_content.is_empty(),
+        "invalid key attempts must not allocate image payload storage"
+    );
+    assert!(!external_image_ref_loaded(&doc, "binData:1"));
+    assert!(!external_image_ref_loaded(&doc, "binData:2"));
+}
+
+#[test]
+fn test_external_image_basename_injection_respects_index_first_loaded_state() {
+    let mut doc = external_image_test_doc();
+    doc.document_mut().bin_data_content.push(BinDataContent {
+        id: 99,
+        data: b"GIF".to_vec(),
+        extension: "gif".to_string(),
+    });
+    let before = doc.document().bin_data_content[0].clone();
+
+    assert_eq!(
+        doc.inject_external_image("linked.gif", b"GIF89a", "/tmp/linked.gif"),
+        1,
+        "basename injection should skip the already-loaded index-1 slot and still load binData:2"
+    );
+    assert_eq!(doc.document().bin_data_content[0].id, before.id);
+    assert_eq!(doc.document().bin_data_content[0].data, before.data);
+    assert_eq!(
+        doc.document().bin_data_content[0].extension,
+        before.extension
+    );
+    assert_eq!(doc.document().bin_data_content[1].id, 2);
+    assert_eq!(doc.document().bin_data_content[1].data, b"GIF89a");
+    assert!(external_image_ref_loaded(&doc, "binData:1"));
+    assert!(external_image_ref_loaded(&doc, "binData:2"));
+}
+
+#[test]
+fn test_external_image_injection_invalidates_cached_page_layer_tree() {
+    let mut doc = external_image_test_doc();
+
+    doc.get_page_layer_tree_native(0)
+        .expect("initial layer tree should render");
+    assert!(
+        !doc.page_layer_tree_cache.borrow().is_empty(),
+        "initial layer tree render should populate the layer cache"
+    );
+
+    assert_eq!(
+        doc.inject_external_image_by_key("binData:1", b"GIF89a", "/tmp/linked.gif"),
+        1
+    );
+    assert!(
+        doc.page_layer_tree_cache.borrow().is_empty(),
+        "external image injection must clear cached PageLayerTrees so resource payloads refresh"
     );
 }
 
