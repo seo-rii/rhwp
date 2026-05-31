@@ -2239,6 +2239,78 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_rejects_colrv1_malformed_stage1_graphs() {
+        let assert_rejected = |payload: ColorLayersPayload| {
+            let mut outline = outline(GlyphOutlinePayloadKind::ColorLayers);
+            outline.color_layers = Some(payload);
+
+            assert_eq!(
+                canvaskit_glyph_outline_payload_status(
+                    &outline,
+                    Some(valid_bbox()),
+                    &ResourceArena::default(),
+                ),
+                (false, Some(VariantRejectReason::UnsupportedColorGlyph))
+            );
+        };
+
+        let mut missing_leaf_metadata = colrv1_stage1_payload();
+        missing_leaf_metadata.paint_graph.as_mut().unwrap().nodes[0].source_range_utf8 = None;
+        assert_rejected(missing_leaf_metadata);
+
+        let mut invalid_transform = colrv1_stage1_payload();
+        invalid_transform.paint_graph.as_mut().unwrap().nodes[1]
+            .transform
+            .as_mut()
+            .unwrap()
+            .transform
+            .a = f64::NAN;
+        assert_rejected(invalid_transform);
+
+        let mut graph_with_unreachable_node = colrv1_stage1_payload();
+        graph_with_unreachable_node
+            .paint_graph
+            .as_mut()
+            .unwrap()
+            .nodes
+            .push(ColorPaintGraphNode {
+                node_id: 2,
+                kind: ColorPaintGraphNodeKind::SolidPath,
+                solid_path: Some(ColorPaintSolidPathNode {
+                    commands: vec![PathCommand::MoveTo(20.0, 20.0)],
+                    fill: ResolvedColor {
+                        color_space: Some("srgb".to_string()),
+                        rgba: [1.0, 0.0, 0.0, 1.0],
+                    },
+                    fill_rule: GlyphOutlineFillRule::NonZero,
+                    source_glyph_id: Some(43),
+                    palette_index: Some(1),
+                }),
+                linear_gradient_path: None,
+                radial_gradient_path: None,
+                sweep_gradient_path: None,
+                transform: None,
+                composite: None,
+                clip: None,
+                source_range_utf8: Some(TextSourceRange::new(0, 1)),
+                glyph_range: Some(GlyphRange::new(0, 1)),
+                source_font_ref: Some(source_font_ref(ColorGlyphFormat::ColrV1)),
+            });
+        assert_rejected(graph_with_unreachable_node);
+
+        let mut cyclic_graph = colrv1_stage1_payload();
+        cyclic_graph.paint_graph.as_mut().unwrap().nodes[0].kind =
+            ColorPaintGraphNodeKind::Transform;
+        cyclic_graph.paint_graph.as_mut().unwrap().nodes[0].solid_path = None;
+        cyclic_graph.paint_graph.as_mut().unwrap().nodes[0].transform =
+            Some(ColorPaintTransformNode {
+                child_node_id: 1,
+                transform: identity(),
+            });
+        assert_rejected(cyclic_graph);
+    }
+
+    #[test]
     fn canvaskit_rejects_mixed_glyph_outline_payload_families() {
         let mut resources = ResourceArena::default();
         let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
