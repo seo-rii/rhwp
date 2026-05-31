@@ -2356,6 +2356,7 @@ mod tests {
                         let mut payload = bitmap_glyph_payload();
                         if !valid_contract {
                             payload.filtering = Some(BitmapGlyphFiltering::BackendDefault);
+                            payload.color_space = Some(String::new());
                         }
                         outline.bitmap_glyph = Some(payload);
                     }
