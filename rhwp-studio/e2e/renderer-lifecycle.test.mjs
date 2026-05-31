@@ -10788,6 +10788,113 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `form object text parity exact=${formObjectTextDiff.exactDiffPixels}, tolerant=${formObjectTextDiff.rawTolerantDiffPixels}, ink=${formObjectTextDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectTextDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-form-object-cjk-text-parity');
+  const formObjectCjkTextParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const makeForm = (formType, bbox, overrides = {}) => ({
+      type: 'formObject',
+      bbox,
+      formType,
+      caption: '',
+      text: '',
+      foreColor: '#0040cc',
+      backColor: '#f7f7f7',
+      value: 0,
+      enabled: true,
+      ...overrides,
+    });
+    const tree = {
+      pageWidth: 178,
+      pageHeight: 54,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 19131,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 19131,
+        bounds: { x: 0, y: 0, width: 178, height: 54 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 178, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          makeForm('pushButton', { x: 2, y: 4, width: 44, height: 16 }, { caption: '확인' }),
+          makeForm('checkBox', { x: 52, y: 4, width: 54, height: 16 }, { caption: '선택', value: 1 }),
+          makeForm('radioButton', { x: 112, y: 4, width: 58, height: 16 }, { caption: '항목', value: 1 }),
+          makeForm('comboBox', { x: 2, y: 28, width: 80, height: 16 }, { text: '가나다' }),
+          makeForm('edit', { x: 92, y: 28, width: 78, height: 16 }, { text: '테스트' }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !formObjectCjkTextParityProbe.error,
+    formObjectCjkTextParityProbe.error || 'form object CJK text parity probe available',
+  );
+  const formObjectCjkTextCanvas2dBluePixels = countPixels(
+    formObjectCjkTextParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 120 && pixel.red < 120 && pixel.green < 150,
+  );
+  const formObjectCjkTextCanvaskitBluePixels = countPixels(
+    formObjectCjkTextParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.blue > 120 && pixel.red < 120 && pixel.green < 150,
+  );
+  assert(
+    formObjectCjkTextCanvas2dBluePixels > 20 && formObjectCjkTextCanvaskitBluePixels > 20,
+    `form object CJK replay draws caption/text pixels canvas2d=${formObjectCjkTextCanvas2dBluePixels}, canvaskit=${formObjectCjkTextCanvaskitBluePixels}`,
+  );
+  const formObjectCjkTextDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(formObjectCjkTextParityProbe.canvas2d),
+    pngBufferFromDataUrl(formObjectCjkTextParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-form-object-cjk-text-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.2,
+      inkMaskMaxDiffRatio: 0.14,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    formObjectCjkTextDiff.passed,
+    `form object CJK text parity exact=${formObjectCjkTextDiff.exactDiffPixels}, tolerant=${formObjectCjkTextDiff.rawTolerantDiffPixels}, ink=${formObjectCjkTextDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectCjkTextDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvaskit-form-caption-direct-measurement');
   const formCaptionDirectMeasurementProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
