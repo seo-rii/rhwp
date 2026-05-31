@@ -60,7 +60,6 @@ import {
   isHalfwidthScaledCluster,
   layerCanvasImageSourceSize,
   mapPuaDisplayText,
-  parseStaticSvgPathLayers,
   resetLayerImageEffectDiagnostics,
   resolveLayerImageCropSource,
   type LayerCanvasImageSource,
@@ -71,6 +70,11 @@ import {
   startsWithInvalidControl,
 } from './layer-canvas-utils';
 import { gradientColorStops } from './layer-geometry-utils';
+import {
+  parseStaticSvgPathLayers,
+  parseStaticSvgTextLayers,
+  type StaticSvgTextLayer,
+} from './static-svg-path-layers';
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -1480,7 +1484,8 @@ export class Canvas2DLayerRenderer {
       return false;
     }
     const pathLayers = parseStaticSvgPathLayers(fragment);
-    if (pathLayers.length === 0) {
+    const textLayers = parseStaticSvgTextLayers(fragment);
+    if (pathLayers.length === 0 && textLayers.length === 0) {
       return false;
     }
     const { x, y, width, height } = op.bbox;
@@ -1534,10 +1539,42 @@ export class Canvas2DLayerRenderer {
           ctx.restore();
         }
       }
+      for (const layer of textLayers) {
+        this.renderStaticSvgTextLayer(ctx, layer);
+      }
     } finally {
       ctx.restore();
     }
     return true;
+  }
+
+  private renderStaticSvgTextLayer(ctx: CanvasRenderingContext2D, layer: StaticSvgTextLayer): void {
+    ctx.save();
+    try {
+      if (layer.transform) {
+        ctx.transform(
+          layer.transform.a,
+          layer.transform.b,
+          layer.transform.c,
+          layer.transform.d,
+          layer.transform.e,
+          layer.transform.f,
+        );
+      }
+      const previousAlpha = ctx.globalAlpha;
+      const family = /^(serif|sans-serif|monospace|cursive|fantasy)$/i.test(layer.fontFamily)
+        ? layer.fontFamily
+        : `"${layer.fontFamily.replace(/["\\]/g, '')}"`;
+      ctx.font = `${layer.fontStyle === 'italic' ? 'italic ' : ''}${layer.fontWeight === 'bold' ? '700 ' : ''}${layer.fontSize}px ${family}`;
+      ctx.textAlign = layer.textAnchor === 'middle' ? 'center' : layer.textAnchor === 'end' ? 'right' : 'left';
+      ctx.textBaseline = layer.dominantBaseline === 'middle' ? 'middle' : 'alphabetic';
+      ctx.fillStyle = layer.fill;
+      ctx.globalAlpha = previousAlpha * layer.opacity;
+      ctx.fillText(layer.text, layer.x, layer.y);
+      ctx.globalAlpha = previousAlpha;
+    } finally {
+      ctx.restore();
+    }
   }
 
   private renderFormObject(ctx: CanvasRenderingContext2D, op: LayerFormObjectOp): void {

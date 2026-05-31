@@ -273,8 +273,10 @@ compareCaseLabels(
 );
 assert(
   extractMethodBody(canvas2dSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)')
-    && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)'),
-  'Canvas2D and CanvasKit equation SVG resource replay must use the same static path parser',
+    && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)')
+    && extractMethodBody(canvas2dSource, 'renderEquationSvgResource').includes('parseStaticSvgTextLayers(fragment)')
+    && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgTextLayers(fragment)'),
+  'Canvas2D and CanvasKit equation SVG resource replay must use the same static path/text parser',
 );
 assert(
   extractSwitchCaseBlock(extractMethodBody(canvas2dSource, 'renderOp'), 'equation')

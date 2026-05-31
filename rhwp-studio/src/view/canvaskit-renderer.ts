@@ -65,7 +65,11 @@ import type {
   LayerTextControlMarkOp,
   PageLayerTree,
 } from '@/core/types';
-import { parseStaticSvgPathLayers } from './static-svg-path-layers';
+import {
+  parseStaticSvgPathLayers,
+  parseStaticSvgTextLayers,
+  type StaticSvgTextLayer,
+} from './static-svg-path-layers';
 import {
   canPreprocessCroppedLayerImageEffect,
   resolveLayerImageCropSource,
@@ -2348,7 +2352,8 @@ export class CanvasKitLayerRenderer {
       return false;
     }
     const pathLayers = parseStaticSvgPathLayers(fragment);
-    if (pathLayers.length === 0) {
+    const textLayers = parseStaticSvgTextLayers(fragment);
+    if (pathLayers.length === 0 && textLayers.length === 0) {
       return false;
     }
     const { x, y, width, height } = op.bbox;
@@ -2411,10 +2416,62 @@ export class CanvasKitLayerRenderer {
           canvas.restore();
         }
       }
+      for (const layer of textLayers) {
+        this.renderStaticSvgTextLayer(canvas, layer);
+      }
     } finally {
       canvas.restore();
     }
     return true;
+  }
+
+  private renderStaticSvgTextLayer(
+    canvas: ReturnType<Surface['getCanvas']>,
+    layer: StaticSvgTextLayer,
+  ): void {
+    canvas.save();
+    try {
+      if (layer.transform) {
+        canvas.concat([
+          layer.transform.a,
+          layer.transform.c,
+          layer.transform.e,
+          layer.transform.b,
+          layer.transform.d,
+          layer.transform.f,
+          0,
+          0,
+          1,
+        ]);
+      }
+      const { font, paint, typeface } = this.makeTextObjects(
+        layer.fontFamily,
+        layer.fontSize,
+        layer.fontWeight === 'bold',
+        layer.fontStyle === 'italic',
+        layer.fill,
+      );
+      const glyphIds = font.getGlyphIDs(layer.text);
+      const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
+      const textWidth = glyphWidths.reduce((sum, width) => sum + width, 0);
+      const drawX = layer.textAnchor === 'middle'
+        ? layer.x - textWidth / 2
+        : layer.textAnchor === 'end'
+          ? layer.x - textWidth
+          : layer.x;
+      const baselineY = layer.dominantBaseline === 'middle'
+        ? layer.y + layer.fontSize * 0.35
+        : layer.y;
+      if (layer.opacity < 1) {
+        paint.setColor(parseCanvasKitCssColor(this.canvasKit, layer.fill, layer.opacity));
+      }
+      canvas.drawText(layer.text, drawX, baselineY, paint, font);
+      paint.delete();
+      font.delete();
+      typeface.delete();
+    } finally {
+      canvas.restore();
+    }
   }
 
   private renderEquationBox(

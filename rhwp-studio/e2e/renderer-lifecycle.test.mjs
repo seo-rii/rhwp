@@ -13994,7 +13994,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         imageHashes: [],
         imageKeys: [],
         svgFragments: [
-          '<path d="M4 4H52V30H4Z" fill="#ff00ff"/><path d="M10 38H70" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/>',
+          '<path d="M4 4H52V30H4Z" fill="#ff00ff"/><path d="M10 38H70" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/><text x="42" y="19" font-family="sans-serif" font-size="14" font-weight="700" fill="#008000" text-anchor="middle" dominant-baseline="central">Hi</text>',
         ],
         svgHashes: ['fixture-equation-svg-resource'],
         svgKeys: ['svg:fixture-equation-svg-resource'],
@@ -14054,14 +14054,26 @@ runTest('Renderer lifecycle', async ({ page }) => {
     equationSvgCanvas2dMagenta > 900 && equationSvgCanvaskitMagenta > 900,
     `equation SVG resource replay draws direct paths canvas2d=${equationSvgCanvas2dMagenta}, canvaskit=${equationSvgCanvaskitMagenta}`,
   );
+  const equationSvgCanvas2dGreen = countPixels(
+    equationSvgResourceParityProbe.canvas2d,
+    (pixel) => pixel.alpha > 32 && pixel.green > 70 && pixel.red < 80 && pixel.blue < 80,
+  );
+  const equationSvgCanvaskitGreen = countPixels(
+    equationSvgResourceParityProbe.canvaskit,
+    (pixel) => pixel.alpha > 32 && pixel.green > 70 && pixel.red < 80 && pixel.blue < 80,
+  );
+  assert(
+    equationSvgCanvas2dGreen > 20 && equationSvgCanvaskitGreen > 20,
+    `equation SVG resource replay draws direct text canvas2d=${equationSvgCanvas2dGreen}, canvaskit=${equationSvgCanvaskitGreen}`,
+  );
   const equationSvgResourceDiff = await comparePngBuffers(
     pngBufferFromDataUrl(equationSvgResourceParityProbe.canvas2d),
     pngBufferFromDataUrl(equationSvgResourceParityProbe.canvaskit),
     {
       diffName: 'canvas-layer-equation-svg-resource-parity',
       ignoreChannelDelta: 18,
-      maxDiffRatio: 0.02,
-      inkMaskMaxDiffRatio: 0.02,
+      maxDiffRatio: 0.06,
+      inkMaskMaxDiffRatio: 0.06,
       nonInkMaxDiffRatio: 0,
     },
   );

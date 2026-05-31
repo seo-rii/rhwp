@@ -25,6 +25,21 @@ export type StaticSvgStrokeLayer = {
   dashOffset: number;
 };
 
+export type StaticSvgTextLayer = {
+  text: string;
+  x: number;
+  y: number;
+  fill: string;
+  opacity: number;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: 'normal' | 'bold';
+  fontStyle: 'normal' | 'italic';
+  textAnchor: 'start' | 'middle' | 'end';
+  dominantBaseline: 'alphabetic' | 'middle';
+  transform?: LayerAffineTransform;
+};
+
 type StaticSvgPaintState = {
   color: string;
   fill: string | null;
@@ -38,6 +53,12 @@ type StaticSvgPaintState = {
   strokeMiterLimit: number;
   strokeDashArray: number[] | null;
   strokeDashOffset: number;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: 'normal' | 'bold';
+  fontStyle: 'normal' | 'italic';
+  textAnchor: 'start' | 'middle' | 'end';
+  dominantBaseline: 'alphabetic' | 'middle';
   transform?: LayerAffineTransform;
 };
 
@@ -52,12 +73,24 @@ const STATIC_SVG_UNSUPPORTED_INDIRECT_PAINT_VALUES = new Set([
 ]);
 
 export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[] {
+  return parseStaticSvgFragmentLayers(fragment).paths;
+}
+
+export function parseStaticSvgTextLayers(fragment: string): StaticSvgTextLayer[] {
+  return parseStaticSvgFragmentLayers(fragment).texts;
+}
+
+function parseStaticSvgFragmentLayers(fragment: string): {
+  paths: StaticSvgPathLayer[];
+  texts: StaticSvgTextLayer[];
+} {
   const parserFragment = staticSvgMarkupWithoutComments(fragment);
   if (parserFragment === null || hasStaticSvgUnsupportedMarkup(parserFragment)) {
-    return [];
+    return { paths: [], texts: [] };
   }
 
-  const layers: StaticSvgPathLayer[] = [];
+  const paths: StaticSvgPathLayer[] = [];
+  const texts: StaticSvgTextLayer[] = [];
   const paintStateStack: StaticSvgPaintState[] = [{
     color: '#000000',
     fill: null,
@@ -71,14 +104,41 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     strokeMiterLimit: 4,
     strokeDashArray: null,
     strokeDashOffset: 0,
+    fontFamily: 'sans-serif',
+    fontSize: 12,
+    fontWeight: 'normal',
+    fontStyle: 'normal',
+    textAnchor: 'start',
+    dominantBaseline: 'alphabetic',
   }];
   const tagPattern = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9:-]*)\b([^>]*)>/g;
   let ignoredElementDepth = 0;
+  let openText: {
+    attributes: Map<string, string>;
+    state: StaticSvgPaintState;
+    contentStart: number;
+  } | null = null;
   for (const match of parserFragment.matchAll(tagPattern)) {
     const isClosingTag = match[1] === '/';
     const elementName = match[2].toLowerCase();
     const rawAttributes = match[3] ?? '';
     if (isClosingTag) {
+      if (openText) {
+        if (elementName !== 'text') {
+          return { paths: [], texts: [] };
+        }
+        const content = parserFragment.slice(openText.contentStart, match.index);
+        const textLayer = staticSvgTextLayer(
+          content,
+          openText.attributes,
+          openText.state,
+        );
+        if (textLayer) {
+          texts.push(textLayer);
+        }
+        openText = null;
+        continue;
+      }
       if (ignoredElementDepth > 0) {
         ignoredElementDepth -= 1;
         continue;
@@ -88,9 +148,12 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       }
       continue;
     }
+    if (openText) {
+      return { paths: [], texts: [] };
+    }
     const supportedAttributes = staticSvgSupportedAttributes(elementName);
     if (!supportedAttributes) {
-      return [];
+      return { paths: [], texts: [] };
     }
     const isSelfClosing = /\/\s*$/.test(rawAttributes);
 
@@ -100,23 +163,23 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
     for (const attributeMatch of rawAttributes.matchAll(attributePattern)) {
       const rawName = attributeMatch[1].trim().toLowerCase();
       if (attributes.has(rawName)) {
-        return [];
+        return { paths: [], texts: [] };
       }
       const value = attributeMatch[2] ?? attributeMatch[3] ?? attributeMatch[4] ?? '';
       const decodedValue = decodeStaticSvgXmlEntities(value);
       if (decodedValue === null) {
-        return [];
+        return { paths: [], texts: [] };
       }
       attributes.set(rawName, decodedValue.trim());
       remainingAttributes = remainingAttributes.replace(attributeMatch[0], '');
     }
     if (remainingAttributes.replace(/\/\s*$/, '').trim().length > 0) {
-      return [];
+      return { paths: [], texts: [] };
     }
 
     for (const [name, value] of attributes) {
       if (!isStaticSvgAttributeSupported(elementName, supportedAttributes, name, value)) {
-        return [];
+        return { paths: [], texts: [] };
       }
     }
     if (
@@ -139,6 +202,17 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
           true,
         ));
       }
+      continue;
+    }
+    if (elementName === 'text') {
+      if (isSelfClosing) {
+        continue;
+      }
+      openText = {
+        attributes,
+        state: paintStateStack[paintStateStack.length - 1],
+        contentStart: (match.index ?? 0) + match[0].length,
+      };
       continue;
     }
 
@@ -221,7 +295,7 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       currentState.transform,
       parseStaticSvgTransform(attributes.get('transform')),
     );
-    layers.push({
+    paths.push({
       pathData,
       fill: shouldFill ? resolvedFill : null,
       fillRule: svgFillRule(fillRuleValue),
@@ -230,7 +304,10 @@ export function parseStaticSvgPathLayers(fragment: string): StaticSvgPathLayer[]
       transform,
     });
   }
-  return layers;
+  if (openText) {
+    return { paths: [], texts: [] };
+  }
+  return { paths, texts };
 }
 
 function staticSvgMarkupWithoutComments(fragment: string): string | null {
@@ -414,9 +491,58 @@ function staticSvgPaintStateFromMap(
       ?? parent.strokeMiterLimit,
     strokeDashArray: strokeDashArray === undefined ? parent.strokeDashArray : strokeDashArray,
     strokeDashOffset: strokeDashOffset === undefined ? parent.strokeDashOffset : strokeDashOffset,
+    fontFamily: svgFontFamily(staticSvgMapPresentationAttribute(attributes, 'font-family')) ?? parent.fontFamily,
+    fontSize: svgPositiveNumber(staticSvgMapPresentationAttribute(attributes, 'font-size')) ?? parent.fontSize,
+    fontWeight: svgFontWeight(staticSvgMapPresentationAttribute(attributes, 'font-weight')) ?? parent.fontWeight,
+    fontStyle: svgFontStyle(staticSvgMapPresentationAttribute(attributes, 'font-style')) ?? parent.fontStyle,
+    textAnchor: svgTextAnchor(staticSvgMapPresentationAttribute(attributes, 'text-anchor')) ?? parent.textAnchor,
+    dominantBaseline: svgDominantBaseline(staticSvgMapPresentationAttribute(attributes, 'dominant-baseline'))
+      ?? parent.dominantBaseline,
     transform: allowTransform
       ? staticSvgComposeTransforms(parent.transform, parseStaticSvgTransform(attributes.get('transform')))
       : parent.transform,
+  };
+}
+
+function staticSvgTextLayer(
+  rawText: string,
+  attributes: Map<string, string>,
+  parentState: StaticSvgPaintState,
+): StaticSvgTextLayer | null {
+  const decodedText = decodeStaticSvgXmlEntities(rawText);
+  if (decodedText === null) {
+    return null;
+  }
+  const text = decodedText.replace(/\s+/g, ' ').trim();
+  if (text.length === 0) {
+    return null;
+  }
+  const state = staticSvgPaintStateFromMap(parentState, attributes, true);
+  const x = svgNumber(attributes.get('x') ?? '0') ?? 0;
+  const y = svgNumber(attributes.get('y') ?? '0') ?? 0;
+  const opacity = svgOpacity(staticSvgMapPresentationAttribute(attributes, 'opacity'))
+    * svgOpacity(staticSvgMapPresentationAttribute(attributes, 'fill-opacity'));
+  if (!(opacity > 0)) {
+    return null;
+  }
+  const fillValue = staticSvgMapPresentationAttribute(attributes, 'fill') ?? state.fill ?? '#000000';
+  const fill = resolveStaticSvgPaintValue(fillValue, state.color);
+  if (fill.trim().toLowerCase() === 'none') {
+    return null;
+  }
+  return {
+    text,
+    x,
+    y,
+    fill,
+    opacity,
+    fontFamily: state.fontFamily,
+    fontSize: state.fontSize,
+    fontWeight: state.fontWeight,
+    fontStyle: state.fontStyle,
+    textAnchor: state.textAnchor,
+    dominantBaseline: state.dominantBaseline,
+    transform: state.transform,
   };
 }
 
@@ -536,6 +662,21 @@ function staticSvgSupportedAttributes(elementName: string): Set<string> | null {
   if (elementName === 'line') {
     return new Set(['id', 'class', 'x1', 'y1', 'x2', 'y2', ...paintAttributes]);
   }
+  if (elementName === 'text') {
+    return new Set([
+      'id',
+      'class',
+      'x',
+      'y',
+      'font-family',
+      'font-size',
+      'font-weight',
+      'font-style',
+      'text-anchor',
+      'dominant-baseline',
+      ...paintAttributes,
+    ]);
+  }
   if (elementName === 'svg') {
     return new Set([
       'id',
@@ -622,6 +763,24 @@ function isStaticSvgAttributeSupported(
   }
   if (name === 'stroke-linecap') {
     return svgStrokeLineCap(value) !== null;
+  }
+  if (name === 'font-family') {
+    return svgFontFamily(value) !== null;
+  }
+  if (name === 'font-size') {
+    return isStaticSvgPositiveNumericValueSupported(value);
+  }
+  if (name === 'font-weight') {
+    return svgFontWeight(value) !== null;
+  }
+  if (name === 'font-style') {
+    return svgFontStyle(value) !== null;
+  }
+  if (name === 'text-anchor') {
+    return svgTextAnchor(value) !== null;
+  }
+  if (name === 'dominant-baseline') {
+    return svgDominantBaseline(value) !== null;
   }
   if (name === 'opacity') {
     return elementName === 'svg' || elementName === 'g'
@@ -823,6 +982,12 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowId
     'stroke-miterlimit',
     'stroke-dasharray',
     'stroke-dashoffset',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'font-style',
+    'text-anchor',
+    'dominant-baseline',
   ]);
   if (allowOpacity || allowIdentityOpacity) {
     supportedProperties.add('opacity');
@@ -877,6 +1042,24 @@ function isStaticSvgStyleSupported(style: string, allowOpacity: boolean, allowId
       return false;
     }
     if (property === 'fill-rule' && !isStaticSvgFillRuleValueSupported(value)) {
+      return false;
+    }
+    if (property === 'font-family' && svgFontFamily(value) === null) {
+      return false;
+    }
+    if (property === 'font-size' && !isStaticSvgPositiveNumericValueSupported(value)) {
+      return false;
+    }
+    if (property === 'font-weight' && svgFontWeight(value) === null) {
+      return false;
+    }
+    if (property === 'font-style' && svgFontStyle(value) === null) {
+      return false;
+    }
+    if (property === 'text-anchor' && svgTextAnchor(value) === null) {
+      return false;
+    }
+    if (property === 'dominant-baseline' && svgDominantBaseline(value) === null) {
       return false;
     }
   }
@@ -990,6 +1173,81 @@ function svgStrokeLineCap(value: string | null): StaticSvgLineCap | null {
   const normalized = value?.trim().toLowerCase();
   if (normalized === 'butt' || normalized === 'round' || normalized === 'square') {
     return normalized;
+  }
+  return null;
+}
+
+function svgFontFamily(value: string | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || /[<>`]/.test(trimmed)) {
+    return null;
+  }
+  return trimmed.split(',')[0].trim().replace(/^['"]|['"]$/g, '') || null;
+}
+
+function svgFontWeight(value: string | null): 'normal' | 'bold' | null {
+  if (value === null) {
+    return null;
+  }
+  const normalized = value?.trim().toLowerCase();
+  if (
+    normalized === ''
+    || normalized === 'normal'
+    || normalized === '400'
+  ) {
+    return 'normal';
+  }
+  if (normalized === 'bold' || normalized === '700' || normalized === '600') {
+    return 'bold';
+  }
+  return null;
+}
+
+function svgFontStyle(value: string | null): 'normal' | 'italic' | null {
+  if (value === null) {
+    return null;
+  }
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === '' || normalized === 'normal') {
+    return 'normal';
+  }
+  if (normalized === 'italic' || normalized === 'oblique') {
+    return 'italic';
+  }
+  return null;
+}
+
+function svgTextAnchor(value: string | null): 'start' | 'middle' | 'end' | null {
+  if (value === null) {
+    return null;
+  }
+  const normalized = value?.trim().toLowerCase();
+  if (
+    normalized === ''
+    || normalized === 'start'
+    || normalized === 'middle'
+    || normalized === 'end'
+  ) {
+    return (normalized || 'start') as 'start' | 'middle' | 'end';
+  }
+  return null;
+}
+
+function svgDominantBaseline(value: string | null): 'alphabetic' | 'middle' | null {
+  if (value === null) {
+    return null;
+  }
+  const normalized = value?.trim().toLowerCase();
+  if (
+    normalized === ''
+    || normalized === 'auto'
+    || normalized === 'alphabetic'
+    || normalized === 'baseline'
+  ) {
+    return 'alphabetic';
+  }
+  if (normalized === 'middle' || normalized === 'central') {
+    return 'middle';
   }
   return null;
 }
