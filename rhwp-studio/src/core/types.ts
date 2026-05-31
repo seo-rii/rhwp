@@ -1025,6 +1025,9 @@ export interface LayerGlyphOutlineColorLayersPayload {
   paintGraph?: LayerGlyphOutlineColorPaintGraphPayload;
   sourceRangeUtf8?: LayerTextSourceRange;
   glyphRange?: { start: number; end: number };
+  colrv0ResolvedLayerContract?: boolean;
+  colrv1Stage1GraphContract?: boolean;
+  colrv1SupportedGraphContract?: boolean;
 }
 
 export type LayerBitmapStrikeSelection =

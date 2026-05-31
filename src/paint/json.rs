@@ -2005,6 +2005,13 @@ fn write_glyph_outline_color_layers_payload(
         buf.push_str(",\"paintGraph\":");
         write_glyph_outline_color_paint_graph(buf, graph);
     }
+    let _ = write!(
+        buf,
+        ",\"colrv0ResolvedLayerContract\":{},\"colrv1Stage1GraphContract\":{},\"colrv1SupportedGraphContract\":{}",
+        payload.has_colrv0_resolved_layer_contract(),
+        payload.has_colrv1_supported_graph_contract(),
+        payload.has_colrv1_supported_graph_contract(),
+    );
     buf.push('}');
 }
 
@@ -4551,6 +4558,8 @@ mod tests {
         ));
         assert!(color_json.contains("\"payloadKind\":\"colorLayers\""));
         assert!(color_json.contains("\"colorLayers\":{\"colorFormat\":\"colrV0\""));
+        assert!(color_json.contains("\"colrv0ResolvedLayerContract\":true"));
+        assert!(color_json.contains("\"colrv1SupportedGraphContract\":false"));
         assert!(color_json.contains(
             "\"fill\":{\"colorSpace\":\"srgb\",\"rgba\":[0.000000,0.000000,1.000000,1.000000]}"
         ));
@@ -4670,6 +4679,9 @@ mod tests {
         ));
         assert!(colrv1_json.contains("\"payloadKind\":\"colorLayers\""));
         assert!(colrv1_json.contains("\"colorLayers\":{\"colorFormat\":\"colrV1\""));
+        assert!(colrv1_json.contains("\"colrv0ResolvedLayerContract\":false"));
+        assert!(colrv1_json.contains("\"colrv1Stage1GraphContract\":true"));
+        assert!(colrv1_json.contains("\"colrv1SupportedGraphContract\":true"));
         assert!(colrv1_json.contains("\"paintGraph\":{\"rootNodeId\":1"));
         assert!(colrv1_json.contains("\"kind\":\"linearGradientPath\""));
         assert!(colrv1_json.contains("\"linearGradientPath\":{\"commands\""));

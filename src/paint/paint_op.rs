@@ -954,6 +954,10 @@ impl ColorLayersPayload {
     }
 
     pub fn has_colrv1_stage1_graph_contract(&self) -> bool {
+        self.has_colrv1_supported_graph_contract()
+    }
+
+    pub fn has_colrv1_supported_graph_contract(&self) -> bool {
         self.color_format == ColorGlyphFormat::ColrV1
             && self.layers.is_empty()
             && self
