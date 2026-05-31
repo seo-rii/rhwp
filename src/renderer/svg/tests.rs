@@ -1550,6 +1550,7 @@ fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_without_deterministi
         "backend-default-filtering",
         "backend-default-scaling",
         "missing-alpha-mode",
+        "empty-color-space",
     ] {
         let mut tree =
             glyph_outline_fixture_tree_with_bitmap_glyph(PaintTextStyle::from(&text_style), true);
@@ -1567,6 +1568,9 @@ fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_without_deterministi
                 }
                 "missing-alpha-mode" => {
                     bitmap.alpha_mode = None;
+                }
+                "empty-color-space" => {
+                    bitmap.color_space = Some(String::new());
                 }
                 _ => unreachable!("covered deterministic BitmapGlyph negative case"),
             }

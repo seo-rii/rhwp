@@ -4732,6 +4732,7 @@ fn native_skia_keeps_text_fallback_for_nondeterministic_bitmap_glyph_contract() 
         "backend-default-filtering",
         "backend-default-scaling",
         "missing-alpha-mode",
+        "empty-color-space",
     ] {
         let mut resources = ResourceArena::default();
         let image_resource_id = resources.intern_image_bytes(&image_bytes);
@@ -4760,6 +4761,9 @@ fn native_skia_keeps_text_fallback_for_nondeterministic_bitmap_glyph_contract() 
             }
             "missing-alpha-mode" => {
                 payload.alpha_mode = None;
+            }
+            "empty-color-space" => {
+                payload.color_space = Some(String::new());
             }
             _ => unreachable!("covered deterministic BitmapGlyph negative case"),
         }

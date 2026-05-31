@@ -3248,6 +3248,10 @@ mod tests {
         zero_strike_bitmap.strike_ppem = Some((0, 16));
         assert!(!zero_strike_bitmap.has_strict_visual_contract());
 
+        let mut empty_color_space_bitmap = bitmap_glyph.clone();
+        empty_color_space_bitmap.color_space = Some(String::new());
+        assert!(!empty_color_space_bitmap.has_strict_visual_contract());
+
         let mut invalid_range_bitmap = bitmap_glyph.clone();
         invalid_range_bitmap.source_range_utf8 = Some(TextSourceRange { start: 2, end: 1 });
         assert!(!invalid_range_bitmap.has_strict_visual_contract());
