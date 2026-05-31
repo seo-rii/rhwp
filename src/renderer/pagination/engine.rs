@@ -159,11 +159,34 @@ impl Paginator {
 
             // tac 표: 표 실측 높이 + 텍스트 줄 높이(th)로 판단 (Task #19)
             let para_height_for_fit = if has_table {
-                let has_tac = para
-                    .controls
-                    .iter()
-                    .any(|c| matches!(c, Control::Table(t) if t.common.treat_as_char));
+                let mp = measured.get_measured_paragraph(para_idx);
+                let has_tac = para.controls.iter().any(|c| {
+                    matches!(
+                        c,
+                        Control::Table(t)
+                            if mp
+                                .map(|m| self.is_effective_tac_table(para, t, m))
+                                .unwrap_or(t.common.treat_as_char || t.attr & 0x01 != 0)
+                    )
+                });
                 if has_tac {
+                    if let Some(line0_tac_height) = mp.and_then(|m| {
+                        let tac_table_count = para
+                            .controls
+                            .iter()
+                            .filter(|c| {
+                                matches!(c, Control::Table(t) if self.is_effective_tac_table(para, t, m))
+                            })
+                            .count();
+                        para.controls.iter().find_map(|ctrl| match ctrl {
+                            Control::Table(t) => {
+                                self.line0_tac_table_height(para, t, m, tac_table_count)
+                            }
+                            _ => None,
+                        })
+                    }) {
+                        line0_tac_height
+                    } else {
                     // 표 실측 높이 합산 (outer_top 포함, outer_bottom 제외)
                     // 캡션은 paginate_table_control에서 별도 처리하므로 여기서는 제외
                     // 표 실측 높이 합산 (outer_top + line_spacing 포함, outer_bottom 제외)
@@ -234,10 +257,10 @@ impl Paginator {
                         })
                         .sum();
                     // host spacing (sb + sa)
-                    let mp = measured.get_measured_paragraph(para_idx);
                     let sb = mp.map(|m| m.spacing_before).unwrap_or(0.0);
                     let sa = mp.map(|m| m.spacing_after).unwrap_or(0.0);
                     tac_h + text_h + sb + sa
+                    }
                 } else {
                     para_height
                 }
@@ -1274,7 +1297,10 @@ impl Paginator {
         }
 
         // 호스트 문단 간격 계산
-        let is_tac_table = table.common.treat_as_char;
+        let measured_para = measured.get_measured_paragraph(para_idx);
+        let is_tac_table = measured_para
+            .map(|mp| self.is_effective_tac_table(para, table, mp))
+            .unwrap_or(table.common.treat_as_char || table.attr & 0x01 != 0);
         // Some HWP files encode an intra-paragraph page reset for TAC tables as a
         // zero-vpos line segment mapped 1:1 to the current control. Honor it
         // before the normal fit check, otherwise the box can incorrectly stay at
@@ -1368,7 +1394,16 @@ impl Paginator {
             .iter()
             .filter(|c| matches!(c, Control::Table(t) if t.common.treat_as_char))
             .count();
-        let table_total_height = if is_tac_table && para_height > 0.0 && tac_table_count <= 1 {
+        let line0_tac_table_height = measured_para
+            .and_then(|mp| self.line0_tac_table_height(para, table, mp, tac_table_count));
+
+        let table_total_height = if let Some(line_height) = line0_tac_table_height {
+            // Some HWPX files encode a line-0 TAC table and following text as
+            // separate lineSeg rows in one paragraph. The table-fit decision
+            // must use only the table line height; trailing line_spacing and
+            // post-text can spill to the next page without pushing the table.
+            line_height
+        } else if is_tac_table && para_height > 0.0 && tac_table_count <= 1 {
             // TAC 표: 실측 높이 + 호스트 간격
             // trailing ls: 이 표가 페이지 마지막 항목이 될 수 있으면 제외
             // (다음 문단이 없거나, trailing ls 제거 시에만 들어가는 경우)
@@ -1579,7 +1614,7 @@ impl Paginator {
     ) {
         let vertical_offset = Self::get_table_vertical_offset(table);
         // 어울림 표(text_wrap=0)는 호스트 텍스트를 wrap 영역에서 처리
-        let is_wrap_around_table = !table.common.treat_as_char
+        let is_wrap_around_table = !is_tac_table
             && matches!(
                 table.common.text_wrap,
                 crate::model::shape::TextWrap::Square
@@ -1669,7 +1704,9 @@ impl Paginator {
             let tac_table_count = para
                 .controls
                 .iter()
-                .filter(|c| matches!(c, Control::Table(t) if t.common.treat_as_char))
+                .filter(
+                    |c| matches!(c, Control::Table(t) if self.is_effective_tac_table(para, t, mp)),
+                )
                 .count();
             // 현재 표가 문단 내 마지막 표인지 확인 (중복 텍스트 방지)
             let is_last_table = !para
@@ -1680,7 +1717,7 @@ impl Paginator {
             let post_table_start = if has_forced_linebreak && pre_table_end_line > 0 {
                 // 강제 줄넘김 후 TAC 표: 표 이후 post-text 없음 (Task #19)
                 total_lines
-            } else if table.common.treat_as_char {
+            } else if is_tac_table {
                 pre_table_end_line.max(1)
             } else if is_last_table && !is_first_table {
                 // 다중 표 문단의 마지막 표: pre-table 텍스트는 첫 표에서 처리했으므로
@@ -1703,6 +1740,12 @@ impl Paginator {
                 && !pre_text_exists
             {
                 let post_height: f64 = mp.line_advances_sum(post_table_start..total_lines);
+                if self.tac_table_line_index(para, table, mp) == Some(0)
+                    && st.current_height + post_height > st.available_height() + 0.5
+                    && !st.current_items.is_empty()
+                {
+                    st.advance_column_or_new_page();
+                }
                 st.current_items.push(PageItem::PartialParagraph {
                     para_index: para_idx,
                     start_line: post_table_start,
@@ -2250,5 +2293,54 @@ impl Paginator {
     /// 표의 세로 오프셋 추출
     fn get_table_vertical_offset(table: &crate::model::table::Table) -> u32 {
         table.common.vertical_offset as u32
+    }
+
+    fn tac_table_line_index(
+        &self,
+        para: &Paragraph,
+        table: &crate::model::table::Table,
+        measured_para: &crate::renderer::height_measurer::MeasuredParagraph,
+    ) -> Option<usize> {
+        if !table.common.treat_as_char || measured_para.line_heights.len() <= 1 {
+            return None;
+        }
+
+        let outer_top = crate::renderer::hwpunit_to_px(table.outer_margin_top as i32, self.dpi);
+        let outer_bottom =
+            crate::renderer::hwpunit_to_px(table.outer_margin_bottom as i32, self.dpi);
+        let table_line_height =
+            crate::renderer::hwpunit_to_px(table.common.height as i32, self.dpi)
+                + outer_top
+                + outer_bottom;
+
+        para.line_segs.iter().enumerate().find_map(|(idx, seg)| {
+            let line_height = crate::renderer::hwpunit_to_px(seg.line_height, self.dpi);
+            ((line_height - table_line_height).abs() < 1.0).then_some(idx)
+        })
+    }
+
+    fn is_effective_tac_table(
+        &self,
+        para: &Paragraph,
+        table: &crate::model::table::Table,
+        measured_para: &crate::renderer::height_measurer::MeasuredParagraph,
+    ) -> bool {
+        table.common.treat_as_char
+            || table.attr & 0x01 != 0
+            || self.tac_table_line_index(para, table, measured_para) == Some(0)
+    }
+
+    fn line0_tac_table_height(
+        &self,
+        para: &Paragraph,
+        table: &crate::model::table::Table,
+        measured_para: &crate::renderer::height_measurer::MeasuredParagraph,
+        tac_table_count: usize,
+    ) -> Option<f64> {
+        (tac_table_count <= 1
+            && measured_para.line_heights.len() > 1
+            && self.is_effective_tac_table(para, table, measured_para)
+            && self.tac_table_line_index(para, table, measured_para) == Some(0))
+        .then(|| measured_para.line_heights[0])
     }
 }

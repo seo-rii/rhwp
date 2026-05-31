@@ -27,6 +27,21 @@ fn make_paragraph_with_height(line_height: i32) -> Paragraph {
     }
 }
 
+fn compact_page_def(body_height: u32) -> PageDef {
+    PageDef {
+        width: 30000,
+        height: body_height,
+        margin_left: 0,
+        margin_right: 0,
+        margin_top: 0,
+        margin_bottom: 0,
+        margin_header: 0,
+        margin_footer: 0,
+        margin_gutter: 0,
+        ..Default::default()
+    }
+}
+
 #[test]
 fn test_empty_paragraphs() {
     let paginator = Paginator::with_default_dpi();
@@ -284,6 +299,94 @@ fn test_table_fits_single_page() {
     assert!(
         matches!(items[0], PageItem::Table { .. }),
         "작은 표는 Table로 배치되어야 함"
+    );
+}
+
+#[test]
+fn line0_tac_table_uses_line_height_for_fit_and_splits_post_text() {
+    use crate::model::control::Control;
+    use crate::model::table::{Cell, Table};
+
+    let paginator = Paginator::with_default_dpi();
+    let styles = ResolvedStyleSet::default();
+
+    let lead_para = make_paragraph_with_height(18000);
+    let mut table_para = Paragraph {
+        text: "post".to_string(),
+        line_segs: vec![
+            LineSeg {
+                line_height: 9000,
+                line_spacing: 6000,
+                ..Default::default()
+            },
+            LineSeg {
+                line_height: 9000,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    table_para.controls.push(Control::Table(Box::new(Table {
+        row_count: 1,
+        col_count: 1,
+        common: crate::model::shape::CommonObjAttr {
+            treat_as_char: true,
+            height: 9000,
+            ..Default::default()
+        },
+        cells: vec![Cell {
+            row: 0,
+            col: 0,
+            row_span: 1,
+            col_span: 1,
+            height: 9000,
+            width: 10000,
+            ..Default::default()
+        }],
+        ..Default::default()
+    })));
+
+    let paras = vec![lead_para, table_para];
+    let (result, _measured) = paginator.paginate(
+        &paras,
+        &[],
+        &styles,
+        &compact_page_def(30000),
+        &ColumnDef::default(),
+        0,
+    );
+
+    assert!(
+        result.pages.len() >= 2,
+        "post-text should continue on the following page: {:#?}",
+        result.pages
+    );
+
+    let first_page_items = &result.pages[0].column_contents[0].items;
+    assert!(
+        first_page_items.iter().any(|item| matches!(
+            item,
+            PageItem::Table {
+                para_index: 1,
+                control_index: 0
+            }
+        )),
+        "line-0 TAC table should stay on page 1 when its line_height fits: {first_page_items:#?}"
+    );
+
+    let second_page_items = &result.pages[1].column_contents[0].items;
+    assert!(
+        second_page_items.iter().any(|item| {
+            matches!(
+                item,
+                PageItem::PartialParagraph {
+                    para_index: 1,
+                    start_line: 1,
+                    end_line: 2,
+                }
+            )
+        }),
+        "post-text should move separately to page 2: {second_page_items:#?}"
     );
 }
 
