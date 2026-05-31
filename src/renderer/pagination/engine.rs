@@ -1273,6 +1273,27 @@ impl Paginator {
             }
         }
 
+        // 호스트 문단 간격 계산
+        let is_tac_table = table.common.treat_as_char;
+        // Some HWP files encode an intra-paragraph page reset for TAC tables as a
+        // zero-vpos line segment mapped 1:1 to the current control. Honor it
+        // before the normal fit check, otherwise the box can incorrectly stay at
+        // the bottom of the previous page.
+        if is_tac_table
+            && !st.current_items.is_empty()
+            && ctrl_idx > 0
+            && para.text.is_empty()
+            && para.line_segs.len() == para.controls.len()
+            && para
+                .line_segs
+                .get(ctrl_idx)
+                .map(|seg| seg.vertical_pos)
+                .unwrap_or(-1)
+                == 0
+        {
+            st.advance_column_or_new_page();
+        }
+
         // 현재 사용 가능한 높이
         let total_footnote = st.current_footnote_height + table_footnote_height;
         let table_margin = if total_footnote > 0.0 {
@@ -1284,8 +1305,6 @@ impl Paginator {
             (base_available_height - total_footnote - table_margin - st.current_zone_y_offset)
                 .max(0.0);
 
-        // 호스트 문단 간격 계산
-        let is_tac_table = table.common.treat_as_char;
         let table_text_wrap = table.common.text_wrap;
         let (host_spacing, host_line_spacing, spacing_before_px) = {
             let mp = measured.get_measured_paragraph(para_idx);

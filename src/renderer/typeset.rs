@@ -1033,6 +1033,24 @@ impl TypesetEngine {
         fmt: &FormattedParagraph,
         tac_count: usize,
     ) {
+        // Some HWP files encode an intra-paragraph page reset for TAC tables as a
+        // zero-vpos line segment mapped 1:1 to the current control. Honor it
+        // before the normal fit check, otherwise the box can incorrectly stay at
+        // the bottom of the previous page.
+        if !st.current_items.is_empty()
+            && ctrl_idx > 0
+            && para.text.is_empty()
+            && para.line_segs.len() == para.controls.len()
+            && para
+                .line_segs
+                .get(ctrl_idx)
+                .map(|seg| seg.vertical_pos)
+                .unwrap_or(-1)
+                == 0
+        {
+            st.advance_column_or_new_page();
+        }
+
         // 다중 TAC 표: LINE_SEG 기반 개별 높이 계산
         let table_height = if tac_count > 1 {
             let tac_idx = para
