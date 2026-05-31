@@ -495,6 +495,176 @@ fn test_numbering_marker_uses_numbering_head_char_shape_style() {
 }
 
 #[test]
+fn test_table_cell_paragraph_numbering_marker_is_rendered() {
+    use crate::model::control::Control;
+    use crate::model::table::{Cell, Table};
+
+    let engine = LayoutEngine::with_default_dpi();
+    let layout = PageLayoutInfo::from_page_def_default(&a4_page_def(), &ColumnDef::default());
+
+    let table = Table {
+        row_count: 1,
+        col_count: 1,
+        row_sizes: vec![1],
+        cells: vec![Cell {
+            col: 0,
+            row: 0,
+            col_span: 1,
+            row_span: 1,
+            width: 3600,
+            height: 1200,
+            paragraphs: vec![Paragraph {
+                text: "Cell".to_string(),
+                char_offsets: vec![0, 1, 2, 3],
+                char_count: 4,
+                char_shapes: vec![CharShapeRef {
+                    start_pos: 0,
+                    char_shape_id: 0,
+                }],
+                line_segs: vec![LineSeg {
+                    line_height: 800,
+                    baseline_distance: 640,
+                    ..Default::default()
+                }],
+                para_shape_id: 0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let paragraphs = vec![Paragraph {
+        text: String::new(),
+        controls: vec![Control::Table(Box::new(table))],
+        line_segs: vec![LineSeg {
+            line_height: 800,
+            baseline_distance: 640,
+            ..Default::default()
+        }],
+        para_shape_id: 1,
+        ..Default::default()
+    }];
+    let composed: Vec<_> = paragraphs.iter().map(compose_paragraph).collect();
+
+    let mut heads = [NumberingHead::default(); 7];
+    heads[0].char_shape_id = 1;
+    heads[0].text_distance = 100;
+    let mut level_formats = std::array::from_fn(|_| String::new());
+    level_formats[0] = "^1.".to_string();
+    let styles = ResolvedStyleSet {
+        char_styles: vec![
+            ResolvedCharStyle {
+                font_family: "BodyFont".to_string(),
+                font_size: 12.0,
+                ..Default::default()
+            },
+            ResolvedCharStyle {
+                font_family: "MarkerFont".to_string(),
+                font_size: 14.0,
+                ..Default::default()
+            },
+        ],
+        para_styles: vec![
+            ResolvedParaStyle {
+                head_type: HeadType::Number,
+                numbering_id: 1,
+                ..Default::default()
+            },
+            ResolvedParaStyle {
+                head_type: HeadType::None,
+                ..Default::default()
+            },
+        ],
+        numberings: vec![Numbering {
+            heads,
+            level_formats,
+            start_number: 1,
+            level_start_numbers: [1; 7],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let page_content = PageContent {
+        page_index: 0,
+        page_number: 0,
+        section_index: 0,
+        layout,
+        column_contents: vec![ColumnContent {
+            column_index: 0,
+            items: vec![PageItem::Table {
+                para_index: 0,
+                control_index: 0,
+            }],
+            zone_layout: None,
+            zone_y_offset: 0.0,
+            wrap_around_paras: Vec::new(),
+        }],
+        active_header: None,
+        active_footer: None,
+        page_number_pos: None,
+        page_hide: None,
+        footnotes: Vec::new(),
+        active_master_page: None,
+        extra_master_pages: Vec::new(),
+    };
+
+    let tree = engine.build_render_tree(
+        &page_content,
+        &paragraphs,
+        &paragraphs,
+        &paragraphs,
+        &composed,
+        &styles,
+        &FootnoteShape::default(),
+        &[],
+        None,
+        &[],
+        None,
+        0,
+        &[],
+    );
+
+    let body = tree
+        .root
+        .children
+        .iter()
+        .find(|node| matches!(node.node_type, RenderNodeType::Body { .. }))
+        .unwrap();
+    let table_node = body.children[0]
+        .children
+        .iter()
+        .find(|node| matches!(node.node_type, RenderNodeType::Table(_)))
+        .expect("table node");
+    let mut text_runs = Vec::new();
+    let mut stack = vec![table_node];
+    while let Some(node) = stack.pop() {
+        if let RenderNodeType::TextRun(run) = &node.node_type {
+            text_runs.push((
+                run.text.clone(),
+                run.char_shape_id,
+                run.style.font_family.clone(),
+            ));
+        }
+        stack.extend(node.children.iter());
+    }
+
+    assert!(
+        text_runs.iter().any(|(text, char_shape_id, font_family)| {
+            text == "1. " && *char_shape_id == Some(1) && font_family == "MarkerFont"
+        }),
+        "table-cell paragraph number marker should render with numbering head style: {text_runs:?}"
+    );
+    assert!(
+        text_runs.iter().any(|(text, char_shape_id, font_family)| {
+            text == "Cell" && *char_shape_id == Some(0) && font_family == "BodyFont"
+        }),
+        "table-cell body text should render after number marker: {text_runs:?}"
+    );
+}
+
+#[test]
 fn test_layout_multi_run_x_position() {
     use crate::renderer::style_resolver::ResolvedCharStyle;
 

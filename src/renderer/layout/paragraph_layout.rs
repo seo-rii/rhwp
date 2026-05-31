@@ -613,6 +613,7 @@ impl LayoutEngine {
                     tbl,
                     section_index,
                     styles,
+                    0,
                     col_area,
                     tbl_y,
                     bin_data_content,
@@ -655,6 +656,7 @@ impl LayoutEngine {
                 tbl,
                 section_index,
                 styles,
+                0,
                 col_area,
                 tbl_y,
                 bin_data_content,
@@ -2089,6 +2091,7 @@ impl LayoutEngine {
                                         t,
                                         section_index,
                                         styles,
+                                        0,
                                         col_area,
                                         table_y,
                                         bdc,
@@ -2995,8 +2998,17 @@ impl LayoutEngine {
                 if text.is_empty() {
                     return None;
                 }
+                let has_distance = numbering
+                    .heads
+                    .get(level_idx)
+                    .map(|head| head.text_distance > 0)
+                    .unwrap_or(false);
                 (
-                    text,
+                    if has_distance {
+                        format!("{} ", text)
+                    } else {
+                        text
+                    },
                     (numbering.heads[level_idx].char_shape_id > 0)
                         .then_some(numbering.heads[level_idx].char_shape_id),
                 )

@@ -36,6 +36,7 @@ impl LayoutEngine {
         control_index: usize,
         section_index: usize,
         styles: &ResolvedStyleSet,
+        outline_numbering_id: u16,
         col_area: &LayoutRect,
         y_start: f64,
         bin_data_content: &[BinDataContent],
@@ -809,10 +810,21 @@ impl LayoutEngine {
                 // 표 컨트롤이 있는 문단: 문단 앞 간격 적용 → 표 먼저 배치 → 텍스트(엔터 등) 나중
                 if !has_table_ctrl {
                     let is_last_para = cp_idx == last_rendered_para_idx;
+                    let numbered_comp = if start_line == 0 {
+                        self.apply_paragraph_numbering(
+                            Some(composed),
+                            para,
+                            styles,
+                            outline_numbering_id,
+                        )
+                    } else {
+                        None
+                    };
+                    let composed_for_layout = numbered_comp.as_ref().unwrap_or(composed);
                     para_y = self.layout_composed_paragraph(
                         tree,
                         &mut cell_node,
-                        composed,
+                        composed_for_layout,
                         styles,
                         &inner_area,
                         para_y,
@@ -1116,6 +1128,7 @@ impl LayoutEngine {
                                         nested_table,
                                         section_index,
                                         styles,
+                                        outline_numbering_id,
                                         &ctrl_area,
                                         nested_y,
                                         bin_data_content,
@@ -1216,6 +1229,7 @@ impl LayoutEngine {
                                         nested_table,
                                         section_index,
                                         styles,
+                                        outline_numbering_id,
                                         &ctrl_area,
                                         nested_y,
                                         bin_data_content,

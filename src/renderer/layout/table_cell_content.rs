@@ -637,10 +637,12 @@ impl LayoutEngine {
                     Some((s, p, c)) => (s, pidx, Some(c)),
                     None => (0, 0, None),
                 };
+                let numbered_comp = self.apply_paragraph_numbering(Some(composed), para, styles, 0);
+                let composed_for_layout = numbered_comp.as_ref().unwrap_or(composed);
                 para_y = self.layout_composed_paragraph(
                     tree,
                     &mut cell_node,
-                    composed,
+                    composed_for_layout,
                     styles,
                     &inner_area,
                     para_y,

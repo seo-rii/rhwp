@@ -19,6 +19,16 @@ to keep selected tests available while preserving the layered renderer work.
   the correct leading/trailing TextRun when a line boundary offset appears in
   adjacent runs.
 
+## Ported Renderer Behaviors
+
+- Upstream `a24a6b43` table-cell paragraph numbering: the `skia` branch ports
+  the renderer behavior directly into the current layout pipeline instead of
+  copying the sample-dependent upstream test. Cell paragraphs with
+  `head_type=Number` now pass through the same numbering marker path as body
+  paragraphs, including numbering-head character style and `text_distance`
+  spacing. The local synthetic guard is
+  `renderer::layout::tests::test_table_cell_paragraph_numbering_marker_is_rendered`.
+
 ## Imported Browser Fixtures
 
 The following Studio E2E files are present as manually runnable upstream
