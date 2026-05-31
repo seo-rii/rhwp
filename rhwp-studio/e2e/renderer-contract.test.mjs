@@ -353,6 +353,12 @@ assert.equal(
   'CanvasKit resource cache must not collapse missing resource hashes into a shared unknown cache key',
 );
 assert.equal(
+  fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
+    .includes('stableValueFingerprint(tree.variantOps ?? null)'),
+  true,
+  'CanvasKit static picture cache keys must include schema-v1 variantOps sidecar payloads',
+);
+assert.equal(
   canvaskitFontsSource.includes("from '../layer-canvas-utils'"),
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',

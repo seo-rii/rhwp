@@ -62,8 +62,9 @@ Schema-v1 `variantOps` sidecar payloads are now part of the native-ready replay
 baseline. Studio Canvas2D/CanvasKit, Rust SVG, native Skia, and the Rust
 CanvasKit replay plan all merge sidecars into the same leaf-local text variant
 selection set as their anchored `TextRun` fallback. Native Skia static subtree
-cache keys include those sidecar payloads as well, so cached pictures cannot be
-reused across different strict text alternatives.
+cache keys and CanvasKit static picture cache keys include those sidecar
+payloads as well, so cached pictures cannot be reused across different strict
+text alternatives.
 
 The first strict `GlyphOutline` payload subsets are also implemented as
 feature-gated direct replay contracts. The current baseline covers
