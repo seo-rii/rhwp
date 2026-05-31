@@ -5,7 +5,8 @@ export function startsWithInvalidControl(text: string): boolean {
     return false;
   }
   const code = text.codePointAt(0) ?? 0;
-  return code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d;
+  return code === 0xfffc
+    || (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d);
 }
 
 export function isHalfwidthScaledCluster(text: string): boolean {

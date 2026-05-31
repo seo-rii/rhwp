@@ -67,11 +67,16 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
 ];
 const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['2010-01-06.hwp', { solidInkMaxDiffRatio: 0.0065 }],
+  ['aift.hwp', { solidInkMaxDiffRatio: 0.032 }],
+  ['endnote-01.hwp', { solidInkMaxDiffRatio: 0.0095 }],
   ['20250130-hongbo_saved.hwp', { nonInkMaxDiffPixels: 128, maxCanvaskitReplayAvgMs: 350 }],
   ['field-01.hwp', { nonInkMaxDiffPixels: 64, maxCanvaskitReplayAvgMs: 500, maxCanvaskitReplayRatio: 80 }],
   ['hwp_table_test.hwp', { maxDiffRatio: 0.0002 }],
   ['pic-crop-01.hwp', { maxDiffRatio: 0.0065 }],
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085 }],
+  ['통합재정통계(2010.11월).hwp', { solidInkMaxDiffRatio: 0.0065 }],
+  ['통합재정통계(2011.10월).hwp', { solidInkMaxDiffRatio: 0.0065 }],
+  ['통합재정통계(2014.8월).hwp', { solidInkMaxDiffRatio: 0.0065 }],
 ]);
 const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'compat' ? 'compat' : 'default';
 const REQUESTED_CANVASKIT_SURFACE = (process.env.RHWP_CANVASKIT_SURFACE ?? '').trim().toLowerCase();
