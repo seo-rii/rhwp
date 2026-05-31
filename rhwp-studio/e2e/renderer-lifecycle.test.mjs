@@ -15457,6 +15457,38 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       },
     };
+    const bodyDefaultSlopTree = {
+      ...bodySlopTree,
+      resources: {
+        ...bodySlopTree.resources,
+        tableId: 1004,
+      },
+      root: {
+        ...bodySlopTree.root,
+        sourceNodeId: 15,
+        clipPolicy: undefined,
+        child: {
+          ...bodySlopTree.root.child,
+          sourceNodeId: 16,
+        },
+      },
+    };
+    const tableCellDefaultSlopTree = {
+      ...tableCellSlopTree,
+      resources: {
+        ...tableCellSlopTree.resources,
+        tableId: 1005,
+      },
+      root: {
+        ...tableCellSlopTree.root,
+        sourceNodeId: 17,
+        clipPolicy: undefined,
+        child: {
+          ...tableCellSlopTree.root.child,
+          sourceNodeId: 18,
+        },
+      },
+    };
     const nestedClipTree = {
       pageWidth: 16,
       pageHeight: 10,
@@ -15620,6 +15652,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
         canvas2d: render(canvas2dRenderer, tableCellSlopTree),
         canvaskit: render(canvaskitRenderer, tableCellSlopTree),
       },
+      bodyDefaultSlop: {
+        canvas2d: render(canvas2dRenderer, bodyDefaultSlopTree),
+        canvaskit: render(canvaskitRenderer, bodyDefaultSlopTree),
+      },
+      tableCellDefaultSlop: {
+        canvas2d: render(canvas2dRenderer, tableCellDefaultSlopTree),
+        canvaskit: render(canvaskitRenderer, tableCellDefaultSlopTree),
+      },
       nestedClip: {
         canvas2d: render(canvas2dRenderer, nestedClipTree),
         canvaskit: render(canvaskitRenderer, nestedClipTree),
@@ -15712,6 +15752,42 @@ runTest('Renderer lifecycle', async ({ page }) => {
     isOpaqueRed(pixelAt(clipScopeProbe.tableCellSlop.canvas2d, 11, 4))
       && isTransparent(pixelAt(clipScopeProbe.tableCellSlop.canvas2d, 13, 4)),
     'Canvas2D table cell clip applies rightOverflowSlop and still clips past the slop',
+  );
+  const bodyDefaultSlopDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.bodyDefaultSlop.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.bodyDefaultSlop.canvaskit),
+    {
+      diffName: 'canvas-layer-body-default-slop-clip-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    bodyDefaultSlopDiff.passed,
+    `body default slop clip parity exact=${bodyDefaultSlopDiff.exactDiffPixels}, tolerant=${bodyDefaultSlopDiff.rawTolerantDiffPixels}, max_channel_delta=${bodyDefaultSlopDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.bodyDefaultSlop.canvas2d, 11, 4))
+      && isTransparent(pixelAt(clipScopeProbe.bodyDefaultSlop.canvas2d, 13, 4)),
+    'Canvas2D body clip applies default rightOverflowSlop when clipPolicy is absent',
+  );
+  const tableCellDefaultSlopDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(clipScopeProbe.tableCellDefaultSlop.canvas2d),
+    pngBufferFromDataUrl(clipScopeProbe.tableCellDefaultSlop.canvaskit),
+    {
+      diffName: 'canvas-layer-table-cell-default-slop-clip-parity',
+      ignoreChannelDelta: 1,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    tableCellDefaultSlopDiff.passed,
+    `table cell default slop clip parity exact=${tableCellDefaultSlopDiff.exactDiffPixels}, tolerant=${tableCellDefaultSlopDiff.rawTolerantDiffPixels}, max_channel_delta=${tableCellDefaultSlopDiff.maxChannelDelta}`,
+  );
+  assert(
+    isOpaqueRed(pixelAt(clipScopeProbe.tableCellDefaultSlop.canvas2d, 11, 4))
+      && isTransparent(pixelAt(clipScopeProbe.tableCellDefaultSlop.canvas2d, 13, 4)),
+    'Canvas2D table cell clip applies default rightOverflowSlop when clipPolicy is absent',
   );
   const nestedClipDiff = await comparePngBuffers(
     pngBufferFromDataUrl(clipScopeProbe.nestedClip.canvas2d),

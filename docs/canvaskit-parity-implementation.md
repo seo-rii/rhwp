@@ -164,6 +164,10 @@ The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload
 families now fall back or hard-reject before any backend tries to replay them.
+CanvasKit clip policy also mirrors Canvas2D's default right-overflow slop:
+`body` and `tableCell` clips get the same 4px right pad when `clipPolicy` does
+not explicitly provide `rightOverflowSlop`, while explicit clip policy values
+remain authoritative.
 Canvas2D and CanvasKit gradient replay also share the same stop normalization
 helper, including the Canvas2D behavior where missing explicit stops are
 materialized as `0` and stop pairs are ordered by offset before CanvasKit sees
