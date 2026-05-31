@@ -1777,8 +1777,12 @@ impl Paginator {
         } else {
             0.0
         };
+        // PartialTable layout draws host text and applies paragraph-relative
+        // vertical offset from the same starting y, so the first fragment needs
+        // the larger of those top reserves, not their sum.
+        let first_fragment_top_reserve = host_text_height.max(v_offset_px);
         let remaining_on_page =
-            table_available_height - st.current_height - host_text_height - v_offset_px;
+            table_available_height - st.current_height - first_fragment_top_reserve;
 
         let first_row_h = if row_count > 0 {
             mt.row_heights[0]
@@ -1862,21 +1866,16 @@ impl Paginator {
                 } else {
                     0.0
                 };
-            let host_extra = if !is_continuation && cursor_row == 0 && content_offset == 0.0 {
-                host_text_height
-            } else {
-                0.0
-            };
-            // 첫 분할: v_offset만큼 표가 아래로 밀리므로 가용 높이 차감
-            let v_extra = if !is_continuation && cursor_row == 0 && content_offset == 0.0 {
-                v_offset_px
-            } else {
-                0.0
-            };
+            let first_fragment_extra =
+                if !is_continuation && cursor_row == 0 && content_offset == 0.0 {
+                    first_fragment_top_reserve
+                } else {
+                    0.0
+                };
             let page_avail = if is_continuation {
                 base_available_height
             } else {
-                (table_available_height - st.current_height - caption_extra - host_extra - v_extra)
+                (table_available_height - st.current_height - caption_extra - first_fragment_extra)
                     .max(0.0)
             };
 
