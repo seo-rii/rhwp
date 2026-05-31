@@ -280,7 +280,8 @@ Implementation shape:
   placement, `sourceRangeUtf8`, and a non-empty `glyphRange`;
 - strict replay rejects `backendDefault` scaling or filtering;
 - missing color space defaults to sRGB only when the diagnostic records
-  `colorSpaceDefaulted`.
+  `colorSpaceDefaulted`; an explicitly present empty color-space value is an
+  invalid strict payload rather than the sRGB default.
 
 Canvas2D/CanvasKit, Rust SVG, and native Skia now share the single-strike strict
 payload subset. Static picture cache keys already include image and
@@ -465,7 +466,8 @@ Expected code shape:
 - strict replay rejects backend strike reselection and `backendDefault`
   scaling/filtering;
 - missing color space maps to explicit sRGB default plus a
-  `colorSpaceDefaulted` diagnostic.
+  `colorSpaceDefaulted` diagnostic, while an explicitly empty color-space value
+  rejects as malformed strict payload metadata.
 - native Skia corpus coverage includes a checked-in PNG resource loaded through
   `ResourceArena`, so the strict path is exercised with stable repository bytes
   instead of only generated in-test pixels.

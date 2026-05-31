@@ -873,8 +873,9 @@ implicitly change schema authority:
   Strict visual replay requires explicit `alphaMode`, deterministic
   `scalingPolicy`, deterministic `filtering`, and no backend strike
   reselection. Missing color space defaults to sRGB only when diagnostics or
-  replay metadata record that default. The current gated replay subset is
-  covered by SVG, Canvas2D, CanvasKit, and native Skia fixtures.
+  replay metadata record that default; an explicitly empty color-space value is
+  malformed strict payload metadata. The current gated replay subset is covered
+  by SVG, Canvas2D, CanvasKit, and native Skia fixtures.
 - `SvgGlyph` writer emission starts with the SVG exporter over a sanitized
   static vector-resource subset. The producer is responsible for sanitizing to
   `securityMode: staticSanitized`; strict validators require

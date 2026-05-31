@@ -2545,6 +2545,14 @@ mod tests {
             (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
         );
 
+        let mut payload = bitmap_payload(image_id);
+        payload.color_space = Some(String::new());
+        outline.bitmap_glyph = Some(payload);
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
+
         outline.bitmap_glyph = Some(bitmap_payload(image_id));
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),

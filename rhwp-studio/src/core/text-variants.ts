@@ -1174,6 +1174,8 @@ export function hasStrictBitmapGlyphContract(payload: LayerGlyphOutlineOp): bool
     && (bitmapGlyph.transformToRun === undefined || isFiniteAffineTransform(bitmapGlyph.transformToRun))
     && (bitmapGlyph.strikePpem === undefined || isValidBitmapStrikePpem(bitmapGlyph.strikePpem))
     && bitmapGlyph.strikeSelection === 'producerResolved'
+    && (bitmapGlyph.colorSpace === undefined
+      || (typeof bitmapGlyph.colorSpace === 'string' && bitmapGlyph.colorSpace.length > 0))
     && isSupportedBitmapAlphaMode(bitmapGlyph.alphaMode)
     && isSupportedBitmapScalingPolicy(bitmapGlyph.scalingPolicy)
     && isSupportedBitmapFiltering(bitmapGlyph.filtering);

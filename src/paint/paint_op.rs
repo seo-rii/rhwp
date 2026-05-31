@@ -1089,6 +1089,11 @@ impl BitmapGlyphPayload {
                 .map(|(x, y)| x > 0 && y > 0)
                 .unwrap_or(true)
             && self.strike_selection == Some(BitmapStrikeSelection::ProducerResolved)
+            && self
+                .color_space
+                .as_ref()
+                .map(|color_space| !color_space.is_empty())
+                .unwrap_or(true)
             && self.alpha_mode.is_some()
             && self
                 .scaling_policy
