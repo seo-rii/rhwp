@@ -181,7 +181,8 @@ impl StaticSubtreeCacheKey {
         self.mix_u8(match clip_kind {
             ClipKind::Body => 0,
             ClipKind::TableCell => 1,
-            ClipKind::Generic => 2,
+            ClipKind::TextBox => 2,
+            ClipKind::Generic => 3,
         });
     }
 

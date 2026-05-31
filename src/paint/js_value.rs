@@ -3529,6 +3529,7 @@ fn clip_kind_str(value: ClipKind) -> &'static str {
     match value {
         ClipKind::Body => "body",
         ClipKind::TableCell => "tableCell",
+        ClipKind::TextBox => "textBox",
         ClipKind::Generic => "generic",
     }
 }

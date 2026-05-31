@@ -1306,6 +1306,7 @@ fn clip_kind_detail(clip_kind: ClipKind) -> &'static str {
     match clip_kind {
         ClipKind::Body => "body",
         ClipKind::TableCell => "tableCell",
+        ClipKind::TextBox => "textBox",
         ClipKind::Generic => "generic",
     }
 }

@@ -432,6 +432,10 @@ assert(
   /export interface LayerImageOp[\s\S]*externalPath\?: string/.test(layerTypesSource),
   'Studio LayerImageOp schema must expose Rust-emitted externalPath diagnostics for linked images',
 );
+assert(
+  /clipKind: 'body' \| 'tableCell' \| 'textBox' \| 'generic'/.test(layerTypesSource),
+  'Studio LayerClipNode schema must expose textBox clips emitted by the layer builder',
+);
 assert.equal(
   canvaskitSource.includes("from './text-replay-utils'"),
   true,

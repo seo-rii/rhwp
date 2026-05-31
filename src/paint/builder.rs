@@ -606,6 +606,22 @@ impl LayerBuilder {
                     ClipKind::TableCell,
                 ))
             }
+            RenderNodeType::TextBox if self.output_options.clip_enabled => {
+                let child = LayerNode::group(
+                    node.bbox,
+                    Some(node.id),
+                    self.build_children(node),
+                    self.cache_hint_for(&node.node_type),
+                    LayerSemantic::role(LayerSemanticRole::TextBox),
+                );
+                Some(LayerNode::clip_rect(
+                    node.bbox,
+                    Some(node.id),
+                    node.bbox,
+                    child,
+                    ClipKind::TextBox,
+                ))
+            }
             _ => Some(LayerNode::group(
                 node.bbox,
                 Some(node.id),
@@ -1593,6 +1609,80 @@ mod tests {
     }
 
     #[test]
+    fn builds_textbox_clip_layer() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        let mut textbox = RenderNode::new(
+            7,
+            RenderNodeType::TextBox,
+            BoundingBox::new(50.0, 80.0, 240.0, 120.0),
+        );
+        textbox.children.push(RenderNode::new(
+            8,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "글상자".to_string(),
+                style: crate::renderer::TextStyle {
+                    font_size: 12.0,
+                    ..Default::default()
+                },
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 12.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            BoundingBox::new(60.0, 90.0, 60.0, 20.0),
+        ));
+        tree.root.children.push(textbox);
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        assert_eq!(children.len(), 1);
+
+        let LayerNodeKind::ClipRect {
+            clip,
+            clip_kind,
+            clip_policy,
+            child,
+        } = &children[0].kind
+        else {
+            panic!("expected textbox clip");
+        };
+        assert_eq!(*clip_kind, ClipKind::TextBox);
+        assert_eq!(clip.x, 50.0);
+        assert_eq!(clip.y, 80.0);
+        assert_eq!(clip.width, 240.0);
+        assert_eq!(clip.height, 120.0);
+        assert_eq!(clip_policy.right_overflow_slop, 0.0);
+        assert!(!clip_policy.allow_horizontal_overflow_controls);
+
+        let LayerNodeKind::Group {
+            children: textbox_children,
+            ..
+        } = &child.kind
+        else {
+            panic!("expected clipped textbox group");
+        };
+        assert_eq!(child.semantic.role, LayerSemanticRole::TextBox);
+        assert!(matches!(
+            &textbox_children[0].kind,
+            LayerNodeKind::Leaf { .. }
+        ));
+    }
+
+    #[test]
     fn render_node_type_lowering_is_explicit_for_all_variants() {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         enum ExpectedLowering {
@@ -1627,7 +1717,7 @@ mod tests {
                 RenderNodeType::Path(_) => ExpectedLowering::Ops(&["Path"]),
                 RenderNodeType::Image(_) => ExpectedLowering::Ops(&["Image"]),
                 RenderNodeType::Group(_) => ExpectedLowering::StructuralGroup,
-                RenderNodeType::TextBox => ExpectedLowering::StructuralGroup,
+                RenderNodeType::TextBox => ExpectedLowering::Clip(ClipKind::TextBox),
                 RenderNodeType::Equation(_) => ExpectedLowering::Ops(&["Equation"]),
                 RenderNodeType::FormObject(_) => ExpectedLowering::Ops(&["FormObject"]),
                 RenderNodeType::FootnoteMarker(_) => ExpectedLowering::Ops(&["FootnoteMarker"]),

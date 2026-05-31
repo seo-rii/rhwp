@@ -468,6 +468,7 @@ pub enum CacheHint {
 pub enum ClipKind {
     Body,
     TableCell,
+    TextBox,
     Generic,
 }
 
@@ -486,6 +487,10 @@ impl ClipPolicy {
             },
             ClipKind::TableCell => Self {
                 right_overflow_slop: 4.0,
+                allow_horizontal_overflow_controls: false,
+            },
+            ClipKind::TextBox => Self {
+                right_overflow_slop: 0.0,
                 allow_horizontal_overflow_controls: false,
             },
             ClipKind::Generic => Self {

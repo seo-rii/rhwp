@@ -3326,6 +3326,7 @@ fn clip_kind_str(value: ClipKind) -> &'static str {
     match value {
         ClipKind::Body => "body",
         ClipKind::TableCell => "tableCell",
+        ClipKind::TextBox => "textBox",
         ClipKind::Generic => "generic",
     }
 }
@@ -3978,6 +3979,26 @@ mod tests {
         assert!(json.contains("\"clipKind\":\"body\""));
         assert!(json.contains("\"rightOverflowSlop\":4"));
         assert!(json.contains("\"allowHorizontalOverflowControls\":true"));
+    }
+
+    #[test]
+    fn serializes_textbox_clip_kind_for_browser_replay() {
+        let tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::clip_rect(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                BoundingBox::new(1.0, 2.0, 30.0, 20.0),
+                LayerNode::leaf(BoundingBox::new(1.0, 2.0, 30.0, 20.0), None, vec![]),
+                ClipKind::TextBox,
+            ),
+        );
+
+        let json = tree.to_json();
+        assert!(json.contains("\"clipKind\":\"textBox\""));
+        assert!(json.contains("\"rightOverflowSlop\":0"));
+        assert!(json.contains("\"allowHorizontalOverflowControls\":false"));
     }
 
     #[test]

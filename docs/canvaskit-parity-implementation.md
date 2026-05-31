@@ -168,7 +168,9 @@ families now fall back or hard-reject before any backend tries to replay them.
 CanvasKit clip policy also mirrors Canvas2D's default right-overflow slop:
 `body` and `tableCell` clips get the same 4px right pad when `clipPolicy` does
 not explicitly provide `rightOverflowSlop`, while explicit clip policy values
-remain authoritative.
+remain authoritative. `textBox` render nodes lower to direct layer `ClipRect`
+nodes with no implicit right pad, so Canvas2D, CanvasKit, SVG, and native Skia
+can replay textbox overflow without a browser overlay.
 Canvas2D and CanvasKit gradient replay also share the same stop normalization
 helper, including the Canvas2D behavior where missing explicit stops are
 materialized as `0` and stop pairs are ordered by offset before CanvasKit sees

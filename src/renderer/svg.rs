@@ -226,6 +226,10 @@ impl SvgRenderer {
                         "cell-clip-{}",
                         node.source_node_id.unwrap_or_else(|| self.next_clip_id())
                     ),
+                    ClipKind::TextBox => format!(
+                        "textbox-clip-{}",
+                        node.source_node_id.unwrap_or_else(|| self.next_clip_id())
+                    ),
                     ClipKind::Generic => format!("layer-clip-{}", self.next_clip_id()),
                 };
                 self.defs.push(format!(

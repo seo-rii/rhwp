@@ -309,7 +309,7 @@ export interface LayerClipNode {
   sourceNodeId?: number;
   semantic?: LayerSemantic;
   clip: LayerBounds;
-  clipKind: 'body' | 'tableCell' | 'generic';
+  clipKind: 'body' | 'tableCell' | 'textBox' | 'generic';
   clipPolicy?: {
     rightOverflowSlop?: number;
     allowHorizontalOverflowControls?: boolean;
