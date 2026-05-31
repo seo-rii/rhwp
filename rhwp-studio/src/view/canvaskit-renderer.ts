@@ -2444,31 +2444,79 @@ export class CanvasKitLayerRenderer {
           1,
         ]);
       }
-      const { font, paint, typeface } = this.makeTextObjects(
+      const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
+      const makeSvgTextObjects = (fontFamily: string) => {
+        const objects = this.makeTextObjects(
+          fontFamily,
+          layer.fontSize,
+          layer.fontWeight === 'bold',
+          layer.fontStyle === 'italic',
+          layer.fill,
+        );
+        if (layer.opacity < 1) {
+          objects.paint.setColor(parseCanvasKitCssColor(this.canvasKit, layer.fill, layer.opacity));
+        }
+        return objects;
+      };
+      const primaryObjects = makeSvgTextObjects(layer.fontFamily);
+      textObjectsByFamily.set(layer.fontFamily, primaryObjects);
+      const fallbackFamilies = [
         layer.fontFamily,
-        layer.fontSize,
-        layer.fontWeight === 'bold',
-        layer.fontStyle === 'italic',
-        layer.fill,
-      );
-      const glyphIds = font.getGlyphIDs(layer.text);
-      const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
-      const textWidth = glyphWidths.reduce((sum, width) => sum + width, 0);
-      const drawX = layer.textAnchor === 'middle'
-        ? layer.x - textWidth / 2
-        : layer.textAnchor === 'end'
-          ? layer.x - textWidth
-          : layer.x;
-      const baselineY = layer.dominantBaseline === 'middle'
-        ? layer.y + layer.fontSize * 0.35
-        : layer.y;
-      if (layer.opacity < 1) {
-        paint.setColor(parseCanvasKitCssColor(this.canvasKit, layer.fill, layer.opacity));
+        'Noto Sans KR',
+        'Noto Sans CJK KR',
+        'NanumGothic',
+        'D2Coding',
+        'NanumGothicCoding',
+        'Noto Serif KR',
+        'Noto Serif CJK KR',
+      ].filter((family, index, all) => all.indexOf(family) === index);
+      try {
+        const clusters = splitIntoClusters(layer.text);
+        const clusterObjects: Array<{ typeface: Typeface; font: Font; paint: Paint }> = [];
+        const clusterWidths: number[] = [];
+        for (const cluster of clusters) {
+          let selectedObjects = primaryObjects;
+          const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
+          if (!primaryGlyphs || primaryGlyphs.some((glyphId) => glyphId === 0)) {
+            for (const family of fallbackFamilies) {
+              let candidate = textObjectsByFamily.get(family);
+              if (!candidate) {
+                candidate = makeSvgTextObjects(family);
+                textObjectsByFamily.set(family, candidate);
+              }
+              const candidateGlyphs = candidate.font.getGlyphIDs(cluster.text);
+              if (candidateGlyphs && candidateGlyphs.every((glyphId) => glyphId !== 0)) {
+                selectedObjects = candidate;
+                break;
+              }
+            }
+          }
+          const glyphIds = selectedObjects.font.getGlyphIDs(cluster.text);
+          const glyphWidths = selectedObjects.font.getGlyphWidths(glyphIds) ?? [];
+          clusterObjects.push(selectedObjects);
+          clusterWidths.push(glyphWidths.reduce((sum, width) => sum + width, 0));
+        }
+        const textWidth = clusterWidths.reduce((sum, width) => sum + width, 0);
+        const drawX = layer.textAnchor === 'middle'
+          ? layer.x - textWidth / 2
+          : layer.textAnchor === 'end'
+            ? layer.x - textWidth
+            : layer.x;
+        const baselineY = layer.dominantBaseline === 'middle'
+          ? layer.y + layer.fontSize * 0.35
+          : layer.y;
+        let clusterX = drawX;
+        for (const [index, cluster] of clusters.entries()) {
+          canvas.drawText(cluster.text, clusterX, baselineY, clusterObjects[index].paint, clusterObjects[index].font);
+          clusterX += clusterWidths[index];
+        }
+      } finally {
+        for (const { paint, font, typeface } of textObjectsByFamily.values()) {
+          paint.delete();
+          font.delete();
+          typeface.delete();
+        }
       }
-      canvas.drawText(layer.text, drawX, baselineY, paint, font);
-      paint.delete();
-      font.delete();
-      typeface.delete();
     } finally {
       canvas.restore();
     }

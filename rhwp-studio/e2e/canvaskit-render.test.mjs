@@ -1527,8 +1527,8 @@ runTest('CanvasKit 렌더 비교', async ({ page }) => {
     `equation svg CanvasKit cache removed=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
   );
   assert(
-    nativeRouting.equationSvgNativeProbe?.layoutDirectCalls > 0,
-    `equation layout direct calls=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+    nativeRouting.equationSvgNativeProbe?.layoutDirectCalls === 0,
+    `equation svg resource bypasses layout fallback=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
   );
   if (CANVASKIT_MODE === 'default') {
     assert(

@@ -13978,7 +13978,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       return { error: 'renderers unavailable' };
     }
     const tree = {
-      pageWidth: 80,
+      pageWidth: 96,
       pageHeight: 54,
       profile: 'screen',
       outputOptions: {
@@ -13994,7 +13994,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         imageHashes: [],
         imageKeys: [],
         svgFragments: [
-          '<path d="M4 4H52V30H4Z" fill="#ff00ff"/><path d="M10 38H70" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/><text x="42" y="19" font-family="sans-serif" font-size="14" font-weight="700" fill="#008000" text-anchor="middle" dominant-baseline="central">Hi</text>',
+          '<path d="M4 4H70V30H4Z" fill="#ff00ff"/><path d="M10 38H86" fill="none" stroke="#111111" stroke-width="4" stroke-linecap="round"/><text x="47" y="19" font-family="Noto Sans KR" font-size="14" font-weight="700" fill="#008000" text-anchor="middle" dominant-baseline="central">입찰</text>',
         ],
         svgHashes: ['fixture-equation-svg-resource'],
         svgKeys: ['svg:fixture-equation-svg-resource'],
@@ -14012,7 +14012,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           { type: 'pageBackground', bbox: { x: 0, y: 0, width: 80, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'equation',
-            bbox: { x: 8, y: 7, width: 64, height: 42 },
+            bbox: { x: 8, y: 7, width: 80, height: 42 },
             color: '#111111',
             fontSize: 16,
             svgResourceId: 0,
