@@ -1346,8 +1346,11 @@ mod tests {
         TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
         TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
     };
+    use crate::paint::{LayerBuilder, RenderProfile};
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
-    use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
+    use crate::renderer::render_tree::{
+        BoundingBox, PageRenderTree, RawSvgNode, RenderNode, RenderNodeType, ShapeTransform,
+    };
     use crate::renderer::{PathCommand, TextStyle};
 
     fn identity() -> LayerAffineTransform {
@@ -1913,6 +1916,44 @@ mod tests {
         let detail = injected_item.detail.as_deref().expect("image detail");
         assert!(detail.contains("externalImage"));
         assert!(detail.contains("injectedImageData"));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_sees_raw_svg_data_image_as_resource_image() {
+        let bbox = BoundingBox::new(10.0, 20.0, 120.0, 40.0);
+        let mut render_tree = PageRenderTree::new(0, 200.0, 120.0);
+        render_tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::RawSvg(RawSvgNode {
+                svg: r#"<image x="10" y="20" width="120" height="40" href="data:image/png;base64,iVBORw0KGgo="/>"#.to_string(),
+            }),
+            bbox,
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&render_tree);
+        assert_eq!(layer_tree.resources.image_count(), 1);
+        assert_eq!(layer_tree.resources.svg_count(), 0);
+
+        let plan = analyze_canvaskit_replay_plan(&layer_tree, CanvasKitReplayMode::Default);
+        let image_item = plan
+            .items
+            .iter()
+            .find(|item| item.op_type == "image")
+            .expect("RawSvg data image should lower to an image replay item");
+        assert_eq!(image_item.status, CanvasKitReplayStatus::Direct);
+        assert_eq!(
+            image_item.reason,
+            super::CanvasKitReplayReason::DirectReplaySupported
+        );
+        assert!(
+            image_item
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("injectedImageData")
+                    && !detail.contains("missingImageData")),
+            "CanvasKit plan should report replayable image data detail: {image_item:?}"
+        );
     }
 
     #[test]
