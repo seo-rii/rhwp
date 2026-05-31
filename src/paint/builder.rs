@@ -473,6 +473,32 @@ impl LayerBuilder {
                 ))
             }
             RenderNodeType::RawSvg(raw_svg) => {
+                if let Some(data_url) =
+                    crate::renderer::svg_fragment::try_parse_single_image_data_url(&raw_svg.svg)
+                {
+                    if let Some((_mime, bytes)) =
+                        crate::renderer::svg_fragment::decode_base64_data_url(data_url)
+                    {
+                        let resource_id = self.resources.intern_image_bytes(&bytes);
+                        return Some(self.build_paint_node(
+                            node,
+                            PaintOp::Image {
+                                bbox: node.bbox,
+                                image: LayerImagePaint {
+                                    resource_id: Some(resource_id),
+                                    external_path: None,
+                                    fill_mode: Some(crate::model::style::ImageFillMode::FitToSize),
+                                    original_size: None,
+                                    crop: None,
+                                    brightness: 0,
+                                    contrast: 0,
+                                    effect: crate::model::image::ImageEffect::RealPic,
+                                    transform: Default::default(),
+                                },
+                            },
+                        ));
+                    }
+                }
                 // RawSvg producers currently emit page-absolute coordinates, while the
                 // SVG-backed layer replay path draws fragments in bbox-local space.
                 let normalized_svg = format!(
@@ -1889,6 +1915,49 @@ mod tests {
                     assert_eq!(actual_ops, expected_ops, "wrong paint ops for {name}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn lowers_raw_svg_single_data_image_to_shared_image_op() {
+        let bbox = BoundingBox::new(10.0, 20.0, 120.0, 40.0);
+        let mut tree = PageRenderTree::new(0, 200.0, 120.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::RawSvg(crate::renderer::render_tree::RawSvgNode {
+                svg: r#"<image x="10" y="20" width="120" height="40" preserveAspectRatio="xMidYMid meet" xlink:href="data:image/png;base64,iVBORw0KGgo=" href="data:image/png;base64,iVBORw0KGgo="/>"#.to_string(),
+            }),
+            bbox,
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        assert_eq!(layer_tree.resources.image_count(), 1);
+        assert_eq!(layer_tree.resources.svg_count(), 0);
+        match &layer_tree.root.kind {
+            LayerNodeKind::Group { children, .. } => match &children[0].kind {
+                LayerNodeKind::Leaf { ops, .. } => match &ops[0] {
+                    PaintOp::Image {
+                        bbox: image_bbox,
+                        image,
+                    } => {
+                        assert_eq!(image_bbox.x, bbox.x);
+                        assert_eq!(image_bbox.y, bbox.y);
+                        assert_eq!(image_bbox.width, bbox.width);
+                        assert_eq!(image_bbox.height, bbox.height);
+                        assert!(image.resource_id.is_some());
+                        assert_eq!(
+                            image.fill_mode,
+                            Some(crate::model::style::ImageFillMode::FitToSize),
+                        );
+                        assert_eq!(image.effect, crate::model::image::ImageEffect::RealPic);
+                    }
+                    other => panic!("expected image op for single-image RawSvg, got {other:?}"),
+                },
+                other => panic!("expected raw svg image leaf, got {other:?}"),
+            },
+            other => panic!("expected root group, got {other:?}"),
         }
     }
 
