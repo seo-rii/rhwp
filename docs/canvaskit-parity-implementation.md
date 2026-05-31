@@ -223,6 +223,9 @@ Implementation shape:
   font-native COLR table reference;
 - keep COLR/CPAL table references, source glyph ids, palette indices, font
   digest, and face identity as provenance/debug/cache data;
+- require COLRv0 resolved-layer payloads to carry top-level source font
+  provenance, a valid source span, a non-empty glyph span, at least one resolved
+  layer, and no `paintGraph`; COLRv1 owns the graph envelope;
 - keep the tree-only stage-1 graph containing `solidPath` and local `transform`
   nodes as the cross-backend compatibility baseline;
 - treat `linearGradientPath` and `radialGradientPath` as the first stage-2

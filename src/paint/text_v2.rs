@@ -2834,6 +2834,67 @@ mod tests {
     }
 
     #[test]
+    fn rejects_colrv0_color_layers_without_top_level_resolved_layer_contract() {
+        let assert_rejected = |payload: ColorLayersPayload, case_name: &str| {
+            let text = text_op(PaintVariantMeta::text_run_default(case_name));
+            let outline = outline_op(
+                PaintVariantMeta {
+                    equivalence_group: case_name.to_string(),
+                    variant_id: "glyphOutline".to_string(),
+                    variant_kind: TextVariantKind::GlyphOutline,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec![
+                        "text.glyphOutline.colorLayers".to_string(),
+                        "text.glyphOutline.colorLayers.colrV0".to_string(),
+                    ],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: Some("text-anchor-5-colrv0-invalid".to_string()),
+                    local_paint_order: Some(0),
+                },
+                12.0,
+            );
+            let mut text_ops = lower_v1_leaf_text_variants_to_v2(&[text, outline]);
+            let LayerTextVariantPayload::GlyphOutline(outline) =
+                &mut text_ops[0].variants[1].parts[0].payload
+            else {
+                panic!("expected glyph outline payload");
+            };
+            outline.payload_kind = GlyphOutlinePayloadKind::ColorLayers;
+            outline.color_layers = Some(payload);
+
+            let mut options = TextV2ValidationOptions::default();
+            options.allow_colrv0_color_layers_payloads = true;
+            let issues = validate_text_v2_op(&text_ops[0], &options);
+            assert!(!issues.is_empty(), "{case_name}");
+            assert!(
+                strict_glyph_outline_text_v2_slots(&text_ops).is_err(),
+                "{case_name}"
+            );
+        };
+
+        let mut missing_source_font_ref = colrv0_color_layers_payload();
+        missing_source_font_ref.source_font_ref = None;
+        assert_rejected(missing_source_font_ref, "missing-source-font-ref");
+
+        let mut missing_source_range = colrv0_color_layers_payload();
+        missing_source_range.source_range_utf8 = None;
+        assert_rejected(missing_source_range, "missing-source-range");
+
+        let mut empty_glyph_range = colrv0_color_layers_payload();
+        empty_glyph_range.glyph_range = Some(GlyphRange { start: 2, end: 2 });
+        assert_rejected(empty_glyph_range, "empty-glyph-range");
+
+        let mut graph_payload = colrv0_color_layers_payload();
+        graph_payload.paint_graph = Some(ColorPaintGraphPayload {
+            root_node_id: 0,
+            nodes: Vec::new(),
+        });
+        assert_rejected(graph_payload, "graph-payload");
+    }
+
+    #[test]
     fn reports_unsupported_glyph_outline_stroke_style() {
         let text = text_op(PaintVariantMeta::text_run_default("text-5-stroke"));
         let outline = outline_op(

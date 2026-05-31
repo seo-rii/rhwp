@@ -1543,6 +1543,43 @@ mod tests {
         }
     }
 
+    fn colrv0_payload() -> ColorLayersPayload {
+        let source_range = TextSourceRange::new(0, 1);
+        let glyph_range = GlyphRange::new(0, 1);
+        let source_font_ref = source_font_ref(ColorGlyphFormat::ColrV0);
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV0,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            layers: vec![crate::paint::ColorLayerNode {
+                layer_index: Some(0),
+                glyph_id: Some(42),
+                glyph_range: Some(glyph_range),
+                source_range_utf8: Some(source_range),
+                source_font_ref: Some(source_font_ref),
+                path_index: Some(0),
+                commands: Some(vec![
+                    PathCommand::MoveTo(0.0, 0.0),
+                    PathCommand::LineTo(12.0, 0.0),
+                    PathCommand::LineTo(12.0, 12.0),
+                    PathCommand::ClosePath,
+                ]),
+                fill: Some(ResolvedColor {
+                    color_space: Some("srgb".to_string()),
+                    rgba: [0.0, 0.0, 1.0, 1.0],
+                }),
+                fill_rule: Some(GlyphOutlineFillRule::NonZero),
+                palette_index: Some(0),
+                color: Some(0x0000ff),
+                opacity: Some(1.0),
+                transform_to_run: Some(identity()),
+            }],
+            paint_graph: None,
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(glyph_range),
+        }
+    }
+
     fn colrv1_stage1_payload() -> ColorLayersPayload {
         let source_range = TextSourceRange::new(0, 1);
         let glyph_range = GlyphRange::new(0, 1);
@@ -1977,6 +2014,61 @@ mod tests {
             ),
             (false, Some(VariantRejectReason::UnsupportedColorGlyph))
         );
+    }
+
+    #[test]
+    fn canvaskit_accepts_colrv0_resolved_layer_contract() {
+        let mut outline = outline(GlyphOutlinePayloadKind::ColorLayers);
+        outline.color_layers = Some(colrv0_payload());
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(valid_bbox()),
+                &ResourceArena::default(),
+            ),
+            (true, None)
+        );
+    }
+
+    #[test]
+    fn canvaskit_rejects_malformed_colrv0_resolved_layer_contract() {
+        let assert_rejected = |payload: ColorLayersPayload| {
+            let mut outline = outline(GlyphOutlinePayloadKind::ColorLayers);
+            outline.color_layers = Some(payload);
+
+            assert_eq!(
+                canvaskit_glyph_outline_payload_status(
+                    &outline,
+                    Some(valid_bbox()),
+                    &ResourceArena::default(),
+                ),
+                (false, Some(VariantRejectReason::UnsupportedColorGlyph))
+            );
+        };
+
+        let mut missing_source_font_ref = colrv0_payload();
+        missing_source_font_ref.source_font_ref = None;
+        assert_rejected(missing_source_font_ref);
+
+        let mut missing_source_range = colrv0_payload();
+        missing_source_range.source_range_utf8 = None;
+        assert_rejected(missing_source_range);
+
+        let mut empty_glyph_range = colrv0_payload();
+        empty_glyph_range.glyph_range = Some(GlyphRange::new(2, 2));
+        assert_rejected(empty_glyph_range);
+
+        let mut graph_payload = colrv0_payload();
+        graph_payload.paint_graph = Some(ColorPaintGraphPayload {
+            root_node_id: 0,
+            nodes: Vec::new(),
+        });
+        assert_rejected(graph_payload);
+
+        let mut empty_layer_glyph_range = colrv0_payload();
+        empty_layer_glyph_range.layers[0].glyph_range = Some(GlyphRange::new(2, 2));
+        assert_rejected(empty_layer_glyph_range);
     }
 
     #[test]

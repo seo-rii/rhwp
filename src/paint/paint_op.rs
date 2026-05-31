@@ -924,6 +924,12 @@ pub struct ColorLayersPayload {
 impl ColorLayersPayload {
     pub fn has_colrv0_resolved_layer_contract(&self) -> bool {
         self.color_format == ColorGlyphFormat::ColrV0
+            && self.source_font_ref.is_some()
+            && self
+                .source_range_utf8
+                .is_some_and(text_source_range_is_valid)
+            && self.glyph_range.is_some_and(glyph_range_is_non_empty)
+            && self.paint_graph.is_none()
             && !self.layers.is_empty()
             && self.layers.iter().all(|layer| {
                 layer.layer_index.is_some()
@@ -934,7 +940,7 @@ impl ColorLayersPayload {
                     && layer.fill.as_ref().is_some_and(resolved_color_is_valid)
                     && layer.fill_rule.is_some()
                     && layer.glyph_id.is_some()
-                    && layer.glyph_range.is_some_and(glyph_range_is_valid)
+                    && layer.glyph_range.is_some_and(glyph_range_is_non_empty)
                     && layer
                         .source_range_utf8
                         .is_some_and(text_source_range_is_valid)
@@ -3115,10 +3121,34 @@ mod tests {
         incomplete_color_layers.layers[0].fill = None;
         assert!(!incomplete_color_layers.has_colrv0_resolved_layer_contract());
 
+        let mut missing_color_layers_source_font_ref = color_layers.clone();
+        missing_color_layers_source_font_ref.source_font_ref = None;
+        assert!(!missing_color_layers_source_font_ref.has_colrv0_resolved_layer_contract());
+
+        let mut missing_color_layers_source_range = color_layers.clone();
+        missing_color_layers_source_range.source_range_utf8 = None;
+        assert!(!missing_color_layers_source_range.has_colrv0_resolved_layer_contract());
+
+        let mut empty_color_layers_glyph_range = color_layers.clone();
+        empty_color_layers_glyph_range.glyph_range = Some(GlyphRange { start: 2, end: 2 });
+        assert!(!empty_color_layers_glyph_range.has_colrv0_resolved_layer_contract());
+
+        let mut graph_color_layers = color_layers.clone();
+        graph_color_layers.paint_graph = Some(ColorPaintGraphPayload {
+            root_node_id: 0,
+            nodes: Vec::new(),
+        });
+        assert!(!graph_color_layers.has_colrv0_resolved_layer_contract());
+
         let mut invalid_color_layers_range = color_layers.clone();
         invalid_color_layers_range.layers[0].source_range_utf8 =
             Some(TextSourceRange { start: 4, end: 3 });
         assert!(!invalid_color_layers_range.has_colrv0_resolved_layer_contract());
+
+        let mut empty_color_layers_layer_glyph_range = color_layers.clone();
+        empty_color_layers_layer_glyph_range.layers[0].glyph_range =
+            Some(GlyphRange { start: 2, end: 2 });
+        assert!(!empty_color_layers_layer_glyph_range.has_colrv0_resolved_layer_contract());
 
         let mut invalid_color_layers_path = color_layers.clone();
         invalid_color_layers_path.layers[0].commands =

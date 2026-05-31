@@ -849,14 +849,16 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
     && payload.bitmapGlyph === undefined
     && payload.svgGlyph === undefined
     && colorLayers?.colorFormat === 'colrV0'
+    && colorLayers.sourceFontRef !== undefined
+    && colorLayers.paintGraph === undefined
     && isValidPayloadRange(colorLayers.sourceRangeUtf8)
-    && isValidPayloadRange(colorLayers.glyphRange)
+    && isNonEmptyPayloadRange(colorLayers.glyphRange)
     && Array.isArray(colorLayers.layers)
     && colorLayers.layers.length > 0
     && colorLayers.layers.every((layer) =>
       isValidPayloadIndex(layer.layerIndex)
       && isValidPayloadGlyphId(layer.glyphId)
-      && isValidPayloadRange(layer.glyphRange)
+      && isNonEmptyPayloadRange(layer.glyphRange)
       && isValidPayloadRange(layer.sourceRangeUtf8)
       && layer.sourceFontRef !== undefined
       && isValidPathCommands(layer.commands)

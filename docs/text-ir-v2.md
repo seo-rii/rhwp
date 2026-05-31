@@ -639,13 +639,16 @@ that Phase 2 may strict-export without opening the broader color payload
 families. It remains a v2 feature addition, not a v3 trigger: strict export may
 only carry resolved COLRv0 solid palette layers with resolved path commands,
 resolved fill color, fill rule, layer index, source glyph provenance, and
-palette provenance. Consumers replay those resolved layer records instead of
-reinterpreting COLR/CPAL font tables. The native producer-side COLRv0 decoder
-can now turn a portable font blob and base glyph id into those resolved layers;
-default exports still keep emission behind explicit feature/profile gates. The
-v2 envelope, JSON/JS payload fields, validator gate, cache-key coverage, SVG and
-Canvas2D strict replay, and strict glyph-outline metadata recognize this
-resolved-layer contract when `text.glyphOutline.colorLayers` and
+palette provenance. The top-level payload also carries source font provenance,
+a valid source span, a non-empty glyph span, and no `paintGraph`; COLRv0 strict
+payloads are resolved layer stacks, while COLRv1 uses the graph envelope.
+Consumers replay those resolved layer records instead of reinterpreting
+COLR/CPAL font tables. The native producer-side COLRv0 decoder can now turn a
+portable font blob and base glyph id into those resolved layers; default exports
+still keep emission behind explicit feature/profile gates. The v2 envelope,
+JSON/JS payload fields, validator gate, cache-key coverage, SVG and Canvas2D
+strict replay, and strict glyph-outline metadata recognize this resolved-layer
+contract when `text.glyphOutline.colorLayers` and
 `text.glyphOutline.colorLayers.colrV0` are declared.
 
 ## Migration Phases
@@ -796,6 +799,9 @@ The reserved families are intentionally separate payload families:
   data (`layerIndex`, path `commands`, resolved `fill`, `fillRule`, and
   `transformToRun`) plus provenance (`glyphId`, `glyphRange`,
   `sourceRangeUtf8`, `paletteIndex`, and optional CPAL digest on `paletteRef`).
+  The COLRv0 payload itself must also have source font provenance, a valid
+  source span, a non-empty glyph span, at least one resolved layer, and no
+  `paintGraph`.
   Consumers must replay the resolved color/path data rather than re-resolving
   the font palette for strict visual output. COLRv0 can start as a solid
   palette layer stack. COLRv1 uses a separate normalized paint graph envelope:
