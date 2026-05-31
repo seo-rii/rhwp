@@ -47,7 +47,7 @@ pub struct CropInfo {
 }
 
 /// 이미지 속성
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ImageAttr {
     /// 밝기
     pub brightness: i8,
@@ -57,6 +57,11 @@ pub struct ImageAttr {
     pub effect: ImageEffect,
     /// BinData ID 참조
     pub bin_data_id: u16,
+    /// 외부 파일 참조 경로.
+    ///
+    /// `None`이면 문서 내부 BinData payload를 사용한다. `Some`이고 대응하는
+    /// `BinDataContent`가 비어 있으면 렌더러는 주입 가능한 외부 이미지로 진단한다.
+    pub external_path: Option<String>,
 }
 
 /// 이미지 효과

@@ -1,5 +1,7 @@
 use super::*;
+use crate::model::control::Control;
 use crate::model::document::{Document, Section};
+use crate::model::image::{ImageAttr, ImageEffect, Picture};
 use crate::model::paragraph::{LineSeg, Paragraph};
 use crate::paint::RenderProfile;
 
@@ -54,6 +56,56 @@ fn test_canvaskit_replay_plan_export_uses_mode_policy() {
     let message = invalid.to_string();
     assert!(message.contains("canvas2d"));
     assert!(message.contains("allowed modes: default, compat"));
+}
+
+#[test]
+fn test_external_image_reference_discovery_and_injection_use_bin_data_index() {
+    let mut doc = HwpDocument::create_empty();
+    let mut document = Document::default();
+    document.sections.push(Section {
+        paragraphs: vec![Paragraph {
+            controls: vec![Control::Picture(Box::new(Picture {
+                image_attr: ImageAttr {
+                    bin_data_id: 2,
+                    brightness: 0,
+                    contrast: 0,
+                    effect: ImageEffect::RealPic,
+                    external_path: Some("C:\\samples\\linked.gif".to_string()),
+                },
+                ..Default::default()
+            }))],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    doc.set_document(document);
+
+    let refs = doc.get_external_image_references();
+    assert!(refs.contains("\"key\":\"binData:2\""));
+    assert!(refs.contains("\"binDataId\":2"));
+    assert!(refs.contains("\"basename\":\"linked.gif\""));
+    assert!(refs.contains("\"extension\":\"gif\""));
+    assert!(refs.contains("\"loaded\":false"));
+    assert_eq!(doc.get_external_image_basenames(), "[\"linked.gif\"]");
+
+    assert_eq!(
+        doc.inject_external_image_by_key("binData:2", b"GIF89a", "/tmp/linked.gif"),
+        1
+    );
+    assert_eq!(doc.document().bin_data_content.len(), 2);
+    assert!(doc.document().bin_data_content[0].data.is_empty());
+    assert_eq!(doc.document().bin_data_content[1].id, 2);
+    assert_eq!(doc.document().bin_data_content[1].data, b"GIF89a");
+    assert_eq!(doc.document().bin_data_content[1].extension, "gif");
+    assert_eq!(doc.get_external_image_basenames(), "[]");
+
+    let refs = doc.get_external_image_references();
+    assert!(refs.contains("\"originalPath\":\"/tmp/linked.gif\""));
+    assert!(refs.contains("\"loaded\":true"));
+    assert_eq!(
+        doc.inject_external_image_by_key("binData:2", b"again", "/tmp/again.gif"),
+        0
+    );
 }
 
 #[test]

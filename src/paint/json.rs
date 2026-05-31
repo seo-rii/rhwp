@@ -1171,6 +1171,7 @@ impl PaintOp {
                         buf,
                         resources,
                         Some(image.resource_id),
+                        None,
                         Some(image.fill_mode),
                         None,
                         None,
@@ -1542,6 +1543,7 @@ impl PaintOp {
                     buf,
                     resources,
                     image.resource_id,
+                    image.external_path.as_deref(),
                     image.fill_mode,
                     image.original_size,
                     image.crop,
@@ -1597,6 +1599,7 @@ fn write_layer_image_fields(
     buf: &mut String,
     resources: &ResourceArena,
     resource_id: Option<crate::paint::ImageResourceId>,
+    external_path: Option<&str>,
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
@@ -1619,6 +1622,10 @@ fn write_layer_image_fields(
             let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
             let _ = write!(buf, "\"base64\":{}", json_escape(&base64_data));
         }
+    }
+    if let Some(external_path) = external_path {
+        push_prefix(buf);
+        let _ = write!(buf, "\"externalPath\":{}", json_escape(external_path));
     }
     if let Some(fill_mode) = fill_mode {
         push_prefix(buf);
@@ -3801,6 +3808,7 @@ mod tests {
                     bbox: BoundingBox::new(4.0, 4.0, 20.0, 20.0),
                     image: LayerImagePaint {
                         resource_id: Some(image_id),
+                        external_path: None,
                         fill_mode: Some(ImageFillMode::FitToSize),
                         original_size: Some((10.0, 10.0)),
                         crop: Some((0, 0, 10, 10)),

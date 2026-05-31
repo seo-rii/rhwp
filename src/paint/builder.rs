@@ -723,6 +723,7 @@ impl LayerBuilder {
                 .data
                 .as_deref()
                 .map(|bytes| self.resources.intern_image_bytes(bytes)),
+            external_path: image.external_path.clone(),
             fill_mode: image.fill_mode,
             original_size: image.original_size,
             crop: image.crop,

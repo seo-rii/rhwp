@@ -1903,6 +1903,7 @@ pub struct LayerPageBackgroundImagePaint {
 #[derive(Debug, Clone)]
 pub struct LayerImagePaint {
     pub resource_id: Option<ImageResourceId>,
+    pub external_path: Option<String>,
     pub fill_mode: Option<ImageFillMode>,
     pub original_size: Option<(f64, f64)>,
     pub crop: Option<(i32, i32, i32, i32)>,

@@ -580,6 +580,7 @@ fn raster_output_accumulates_tile_fallback_diagnostics() {
                 bbox: BoundingBox::new(0.0, 0.0, 5000.0, 1.0),
                 image: LayerImagePaint {
                     resource_id: Some(resource_id),
+                    external_path: None,
                     fill_mode: Some(ImageFillMode::TileAll),
                     original_size: Some((1.0, 1.0)),
                     crop: None,
@@ -617,6 +618,7 @@ fn raster_output_accumulates_binary_image_effect_cache_diagnostics() {
         bbox: BoundingBox::new(x, 0.0, 8.0, 8.0),
         image: LayerImagePaint {
             resource_id: Some(resource_id),
+            external_path: None,
             fill_mode: Some(ImageFillMode::FitToSize),
             original_size: Some((8.0, 8.0)),
             crop: None,
@@ -726,6 +728,7 @@ fn raster_output_accumulates_binary_image_effect_cache_eviction_diagnostics() {
             bbox: BoundingBox::new(x, 0.0, 1.0, 1.0),
             image: LayerImagePaint {
                 resource_id: Some(resource_id),
+                external_path: None,
                 fill_mode: Some(ImageFillMode::FitToSize),
                 original_size: Some((1.0, 1.0)),
                 crop: None,
@@ -783,6 +786,7 @@ fn raster_output_accumulates_binary_image_effect_cache_byte_budget_diagnostics()
             bbox: BoundingBox::new(index as f64 * 4.0, 0.0, 4.0, 4.0),
             image: LayerImagePaint {
                 resource_id: Some(resource_id),
+                external_path: None,
                 fill_mode: Some(ImageFillMode::FitToSize),
                 original_size: Some((4.0, 4.0)),
                 crop: None,
@@ -1422,6 +1426,7 @@ fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
                 bbox: image_bbox,
                 image: LayerImagePaint {
                     resource_id: Some(image_id),
+                    external_path: None,
                     fill_mode: Some(ImageFillMode::FitToSize),
                     original_size: Some((4.0, 4.0)),
                     crop: None,

@@ -1948,6 +1948,9 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             if let Some(resource_id) = image.resource_id {
                 set_number(&value, "resourceId", resource_id.0 as f64);
             }
+            if let Some(external_path) = &image.external_path {
+                set_string(&value, "externalPath", external_path);
+            }
             if let Some(fill_mode) = image.fill_mode {
                 set_string(&value, "fillMode", image_fill_mode_str(fill_mode));
             }
@@ -4947,6 +4950,7 @@ mod tests {
                         bbox: BoundingBox::new(12.0, 28.0, 24.0, 20.0),
                         image: LayerImagePaint {
                             resource_id: Some(image_id),
+                            external_path: None,
                             fill_mode: Some(ImageFillMode::Center),
                             original_size: Some((32.0, 24.0)),
                             crop: Some((1, 2, 31, 22)),

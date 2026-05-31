@@ -73,10 +73,16 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
     // BinData 목록을 DocInfo에 등록
     for (i, item) in package_info.bin_data_items.iter().enumerate() {
         let ext = item.href.rsplit('.').next().unwrap_or("dat").to_string();
+        let (data_type, abs_path) = if item.is_embedded {
+            (BinDataType::Embedding, None)
+        } else {
+            (BinDataType::Link, Some(item.href.clone()))
+        };
         doc_info.bin_data_list.push(BinData {
-            data_type: BinDataType::Embedding,
+            data_type,
             storage_id: (i + 1) as u16,
             extension: Some(ext),
+            abs_path,
             ..Default::default()
         });
     }
@@ -97,6 +103,9 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
     // 5. BinData 이미지 로딩
     let mut bin_data_content = Vec::new();
     for (i, item) in package_info.bin_data_items.iter().enumerate() {
+        if !item.is_embedded {
+            continue;
+        }
         match reader.read_file_bytes(&item.href) {
             Ok(data) => {
                 let ext = item.href.rsplit('.').next().unwrap_or("dat").to_string();
@@ -143,7 +152,7 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
         raw_data: None,
     };
 
-    let doc = Document {
+    let mut doc = Document {
         header: model_header,
         doc_properties,
         doc_info,
@@ -152,6 +161,7 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
         bin_data_content,
         extra_streams: Vec::new(),
     };
+    super::populate_link_image_paths(&mut doc);
 
     Ok(doc)
 }

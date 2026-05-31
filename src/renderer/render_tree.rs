@@ -714,6 +714,10 @@ pub struct ImageNode {
     pub bin_data_id: u16,
     /// 이미지 데이터 (캐시용)
     pub data: Option<Vec<u8>>,
+    /// 외부 파일 참조 경로.
+    ///
+    /// `data`가 없고 이 값이 있으면 consumer가 외부 이미지 주입을 기다리는 상태이다.
+    pub external_path: Option<String>,
     /// 소속 구역 인덱스
     pub section_index: Option<usize>,
     /// 이미지 컨트롤을 소유한 문단 인덱스
@@ -744,6 +748,7 @@ impl ImageNode {
         Self {
             bin_data_id,
             data,
+            external_path: None,
             section_index: None,
             para_index: None,
             control_index: None,

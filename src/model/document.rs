@@ -225,6 +225,138 @@ pub struct SectionDef {
 }
 
 impl Document {
+    /// 외부 이미지 binDataId가 이미 로드되었는지 확인한다.
+    ///
+    /// 렌더러의 BinData lookup은 `bin_data_id - 1` 위치를 먼저 확인하므로,
+    /// 저장소 엔트리의 `id` 필드보다 인덱스 위치를 우선한다.
+    pub(crate) fn external_image_loaded(&self, bin_data_id: u16) -> bool {
+        if bin_data_id == 0 {
+            return false;
+        }
+
+        if let Some(content) = self.bin_data_content.get((bin_data_id - 1) as usize) {
+            return !content.data.is_empty();
+        }
+
+        self.bin_data_content
+            .iter()
+            .any(|content| content.id == bin_data_id && !content.data.is_empty())
+    }
+
+    /// 외부 이미지 바이너리를 렌더러 조회 규칙에 맞는 위치에 주입한다.
+    ///
+    /// 반환값은 실제 주입 여부이다. 호출자는 true일 때 렌더 캐시를 무효화해야 한다.
+    pub(crate) fn inject_external_image_data(
+        &mut self,
+        bin_data_id: u16,
+        data: Vec<u8>,
+        extension: String,
+    ) -> bool {
+        if bin_data_id == 0 {
+            return false;
+        }
+
+        let idx = (bin_data_id as usize).saturating_sub(1);
+        while self.bin_data_content.len() <= idx {
+            let id = (self.bin_data_content.len() + 1) as u16;
+            self.bin_data_content.push(BinDataContent {
+                id,
+                data: Vec::new(),
+                extension: String::new(),
+            });
+        }
+
+        let content = &mut self.bin_data_content[idx];
+        content.id = bin_data_id;
+        content.data = data;
+        content.extension = extension;
+        true
+    }
+
+    /// 같은 binDataId를 참조하는 외부 이미지의 표시 경로를 갱신한다.
+    pub(crate) fn update_external_image_display_path(
+        &mut self,
+        bin_data_id: u16,
+        display_path: &str,
+    ) {
+        for section in &mut self.sections {
+            for para in &mut section.paragraphs {
+                for ctrl in &mut para.controls {
+                    let pic = match ctrl {
+                        crate::model::control::Control::Picture(pic) => pic,
+                        crate::model::control::Control::Shape(shape) => match shape.as_mut() {
+                            crate::model::shape::ShapeObject::Picture(pic) => pic,
+                            _ => continue,
+                        },
+                        _ => continue,
+                    };
+                    if pic.image_attr.bin_data_id == bin_data_id
+                        && pic.image_attr.external_path.is_some()
+                    {
+                        pic.image_attr.external_path = Some(display_path.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    /// 외부 file path 그림의 binary 데이터를 base_dir에서 자동 로드한다.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn populate_external_images_from_dir(&mut self, base_dir: &std::path::Path) -> usize {
+        use crate::model::control::Control;
+        use crate::model::shape::ShapeObject;
+        use std::collections::BTreeMap;
+
+        let mut to_load: BTreeMap<u16, (String, String)> = BTreeMap::new();
+        for section in &self.sections {
+            for para in &section.paragraphs {
+                for ctrl in &para.controls {
+                    let pic = match ctrl {
+                        Control::Picture(pic) => pic,
+                        Control::Shape(shape) => match shape.as_ref() {
+                            ShapeObject::Picture(pic) => pic,
+                            _ => continue,
+                        },
+                        _ => continue,
+                    };
+                    let Some(path) = pic.image_attr.external_path.as_ref() else {
+                        continue;
+                    };
+                    let id = pic.image_attr.bin_data_id;
+                    if self.external_image_loaded(id) {
+                        continue;
+                    }
+                    let basename = path
+                        .rsplit(|c| c == '/' || c == '\\')
+                        .find(|part| !part.is_empty())
+                        .unwrap_or(path);
+                    let extension = std::path::Path::new(basename)
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    to_load
+                        .entry(id)
+                        .or_insert((basename.to_string(), extension));
+                }
+            }
+        }
+
+        let mut loaded = 0;
+        for (id, (basename, extension)) in to_load {
+            let full_path = base_dir.join(&basename);
+            let Ok(data) = std::fs::read(&full_path) else {
+                continue;
+            };
+            if !self.inject_external_image_data(id, data, extension) {
+                continue;
+            }
+            loaded += 1;
+            self.update_external_image_display_path(id, &full_path.to_string_lossy());
+        }
+        loaded
+    }
+
     /// 배포용(읽기전용) 문서를 편집 가능한 일반 문서로 변환한다.
     ///
     /// 변환 내용:

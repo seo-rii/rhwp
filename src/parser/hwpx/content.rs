@@ -17,6 +17,8 @@ pub struct PackageItem {
     pub media_type: String,
     /// 항목 ID
     pub id: String,
+    /// `isEmbeded="0"`이면 ZIP 내부 payload가 아니라 외부 파일 참조이다.
+    pub is_embedded: bool,
 }
 
 /// content.hpf 파싱 결과
@@ -35,7 +37,7 @@ pub fn parse_content_hpf(xml: &str) -> Result<PackageInfo, HwpxError> {
     let mut buf = Vec::new();
 
     // 임시 저장: 모든 item을 수집 후 섹션은 spine 순서로 정렬
-    let mut all_items: Vec<(String, String, String)> = Vec::new(); // (id, href, media_type)
+    let mut all_items: Vec<(String, String, String, bool)> = Vec::new(); // (id, href, media_type, is_embedded)
     let mut spine_order: Vec<String> = Vec::new(); // idref 순서
 
     loop {
@@ -48,16 +50,18 @@ pub fn parse_content_hpf(xml: &str) -> Result<PackageInfo, HwpxError> {
                         let mut id = String::new();
                         let mut href = String::new();
                         let mut media_type = String::new();
+                        let mut is_embedded = true;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"id" => id = attr_value(&attr),
                                 b"href" => href = attr_value(&attr),
                                 b"media-type" => media_type = attr_value(&attr),
+                                b"isEmbeded" => is_embedded = attr_value(&attr) != "0",
                                 _ => {}
                             }
                         }
                         if !id.is_empty() && !href.is_empty() {
-                            all_items.push((id, href, media_type));
+                            all_items.push((id, href, media_type, is_embedded));
                         }
                     }
                     b"itemref" => {
@@ -79,7 +83,7 @@ pub fn parse_content_hpf(xml: &str) -> Result<PackageInfo, HwpxError> {
 
     // spine 순서대로 섹션 파일 추출
     for idref in &spine_order {
-        if let Some((_, href, media_type)) = all_items.iter().find(|(id, _, _)| id == idref) {
+        if let Some((_, href, media_type, _)) = all_items.iter().find(|(id, _, _, _)| id == idref) {
             if media_type == "application/xml" && href.contains("section") {
                 info.section_files.push(href.clone());
             }
@@ -90,22 +94,25 @@ pub fn parse_content_hpf(xml: &str) -> Result<PackageInfo, HwpxError> {
     if info.section_files.is_empty() {
         let mut section_items: Vec<_> = all_items
             .iter()
-            .filter(|(_, href, mt)| mt == "application/xml" && href.contains("section"))
+            .filter(|(_, href, mt, _)| mt == "application/xml" && href.contains("section"))
             .collect();
         section_items.sort_by(|a, b| a.1.cmp(&b.1));
         info.section_files = section_items
             .into_iter()
-            .map(|(_, href, _)| href.clone())
+            .map(|(_, href, _, _)| href.clone())
             .collect();
     }
 
     // BinData 항목 추출
-    for (id, href, media_type) in &all_items {
-        if href.starts_with("BinData/") || href.contains("/BinData/") {
+    for (id, href, media_type, is_embedded) in &all_items {
+        let is_image = media_type.starts_with("image/");
+        let is_bin_data_path = href.starts_with("BinData/") || href.contains("/BinData/");
+        if is_bin_data_path || is_image {
             info.bin_data_items.push(PackageItem {
                 href: href.clone(),
                 media_type: media_type.clone(),
                 id: id.clone(),
+                is_embedded: *is_embedded,
             });
         }
     }

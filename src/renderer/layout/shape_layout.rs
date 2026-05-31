@@ -1327,6 +1327,7 @@ impl LayoutEngine {
                         effect: pic.image_attr.effect,
                         brightness: pic.image_attr.brightness,
                         contrast: pic.image_attr.contrast,
+                        external_path: pic.image_attr.external_path.clone(),
                         ..ImageNode::new(bin_data_id, image_data)
                     }),
                     BoundingBox::new(render_x, render_y, render_w, render_h),

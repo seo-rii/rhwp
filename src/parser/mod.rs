@@ -177,6 +177,7 @@ fn parse_hwp_with_cfb(
 
     // 자동 번호 할당 (문서 전체에서 순차적으로)
     assign_auto_numbers(&mut doc);
+    populate_link_image_paths(&mut doc);
 
     Ok(doc)
 }
@@ -300,8 +301,50 @@ fn parse_hwp_with_lenient(
     };
 
     assign_auto_numbers(&mut doc);
+    populate_link_image_paths(&mut doc);
 
     Ok(doc)
+}
+
+/// BinData Link 타입의 외부 file path를 Picture.image_attr.external_path로 전달한다.
+pub(crate) fn populate_link_image_paths(doc: &mut Document) {
+    use crate::model::bin_data::BinDataType;
+    use crate::model::control::Control;
+    use crate::model::shape::ShapeObject;
+
+    let bin_data = doc.doc_info.bin_data_list.clone();
+    for section in &mut doc.sections {
+        for para in &mut section.paragraphs {
+            for ctrl in &mut para.controls {
+                let pic = match ctrl {
+                    Control::Picture(pic) => pic,
+                    Control::Shape(shape) => match shape.as_mut() {
+                        ShapeObject::Picture(pic) => pic,
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+                if pic.image_attr.external_path.is_some() {
+                    continue;
+                }
+                let bin_idx = (pic.image_attr.bin_data_id as usize).saturating_sub(1);
+                let Some(bin) = bin_data.get(bin_idx) else {
+                    continue;
+                };
+                if !matches!(bin.data_type, BinDataType::Link) {
+                    continue;
+                }
+                let path = bin
+                    .abs_path
+                    .clone()
+                    .filter(|path| !path.is_empty())
+                    .or_else(|| bin.rel_path.clone().filter(|path| !path.is_empty()));
+                if let Some(path) = path {
+                    pic.image_attr.external_path = Some(path);
+                }
+            }
+        }
+    }
 }
 
 /// LenientCfbReader로 BinData 로드

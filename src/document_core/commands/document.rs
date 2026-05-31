@@ -583,6 +583,21 @@ impl DocumentCore {
         &self.document
     }
 
+    /// 문서의 IR mutable 참조를 반환한다 (테스트/네이티브 전용).
+    pub fn document_mut(&mut self) -> &mut Document {
+        &mut self.document
+    }
+
+    /// 외부 file path 그림의 binary 데이터를 base_dir에서 자동 로드한다.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn populate_external_images_from_dir(&mut self, base_dir: &std::path::Path) -> usize {
+        let loaded = self.document.populate_external_images_from_dir(base_dir);
+        if loaded > 0 {
+            self.invalidate_page_tree_cache();
+        }
+        loaded
+    }
+
     /// 문서 IR을 직접 설정한다 (테스트/네이티브 전용).
     pub fn set_document(&mut self, doc: Document) {
         self.document = doc;

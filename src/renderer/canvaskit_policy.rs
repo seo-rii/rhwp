@@ -709,20 +709,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             | PaintOp::Path { .. } => {
                 direct_item(path, paint_op_type(op), CanvasKitReplayFeature::VectorShape)
             }
-            PaintOp::Image { image, .. } => direct_item_with_detail(
-                path,
-                "image",
-                CanvasKitReplayFeature::RasterImage,
-                Some(image_replay_detail(
-                    image.fill_mode,
-                    image.original_size,
-                    image.crop,
-                    Some(image.effect),
-                    image.brightness,
-                    image.contrast,
-                    Some(image.transform),
-                )),
-            ),
+            PaintOp::Image { image, .. } => image_item(path, image),
             PaintOp::Equation { .. } => {
                 direct_item(path, "equation", CanvasKitReplayFeature::Equation)
             }
@@ -1154,6 +1141,43 @@ fn direct_item_with_detail(
     }
 }
 
+fn direct_required_item_with_detail(
+    path: String,
+    op_type: &'static str,
+    feature: CanvasKitReplayFeature,
+    detail: Option<String>,
+) -> CanvasKitReplayItem {
+    CanvasKitReplayItem {
+        path,
+        op_type,
+        feature,
+        status: CanvasKitReplayStatus::DirectRequired,
+        reason: CanvasKitReplayReason::DirectReplayRequired,
+        compat_overlay_allowed: false,
+        detail,
+    }
+}
+
+fn image_item(path: String, image: &crate::paint::LayerImagePaint) -> CanvasKitReplayItem {
+    let detail = Some(image_replay_detail(
+        image.fill_mode,
+        image.original_size,
+        image.crop,
+        Some(image.effect),
+        image.brightness,
+        image.contrast,
+        Some(image.transform),
+        image.external_path.as_deref(),
+        image.resource_id.is_some(),
+    ));
+
+    if image.resource_id.is_some() {
+        direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
+    } else {
+        direct_required_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
+    }
+}
+
 fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -> Option<String> {
     let image = background.image.as_ref()?;
     Some(image_replay_detail(
@@ -1164,6 +1188,8 @@ fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -
         image.brightness,
         image.contrast,
         None,
+        None,
+        true,
     ))
 }
 
@@ -1175,6 +1201,8 @@ fn image_replay_detail(
     brightness: i8,
     contrast: i8,
     transform: Option<crate::renderer::render_tree::ShapeTransform>,
+    external_path: Option<&str>,
+    has_payload: bool,
 ) -> String {
     let mut detail = String::new();
     detail.push_str("fillMode=");
@@ -1206,6 +1234,14 @@ fn image_replay_detail(
             ";transform=rotation:{:.3},horzFlip:{},vertFlip:{}",
             transform.rotation, transform.horz_flip, transform.vert_flip
         );
+    }
+    if external_path.is_some() {
+        detail.push_str(";externalImage");
+    }
+    if has_payload {
+        detail.push_str(";injectedImageData");
+    } else {
+        detail.push_str(";missingImageData");
     }
 
     detail
@@ -1749,6 +1785,7 @@ mod tests {
                         bbox: valid_bbox(),
                         image: LayerImagePaint {
                             resource_id: None,
+                            external_path: None,
                             fill_mode: Some(ImageFillMode::CenterBottom),
                             original_size: Some((40.0, 30.0)),
                             crop: Some((75, 150, 225, 300)),
@@ -1771,7 +1808,8 @@ mod tests {
 
         assert_eq!(plan.items.len(), 2);
         assert_eq!(plan.summary.total_items, plan.items.len() as u32);
-        assert_eq!(plan.summary.direct_items, plan.items.len() as u32);
+        assert_eq!(plan.summary.direct_items, 1);
+        assert_eq!(plan.summary.direct_required_items, 1);
 
         let page_background_detail = plan
             .items
@@ -1797,10 +1835,84 @@ mod tests {
         assert!(image_detail.contains("effect=pattern8x8"));
         assert!(image_detail.contains("tone=brightness:15,contrast:-5"));
         assert!(image_detail.contains("transform=rotation:12.500,horzFlip:true,vertFlip:false"));
+        assert!(image_detail.contains("missingImageData"));
 
         let json = plan.to_json();
         assert!(json.contains("\"detail\":\"fillMode=tileHorzBottom"));
         assert!(json.contains("effect=pattern8x8"));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_reports_external_image_missing_and_injected_data() {
+        let missing_tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![PaintOp::Image {
+                    bbox: valid_bbox(),
+                    image: LayerImagePaint {
+                        resource_id: None,
+                        external_path: Some("C:\\samples\\linked.gif".to_string()),
+                        fill_mode: None,
+                        original_size: None,
+                        crop: None,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        transform: ShapeTransform::default(),
+                    },
+                }],
+            ),
+        )
+        .build();
+        let missing_plan =
+            analyze_canvaskit_replay_plan(&missing_tree, CanvasKitReplayMode::Default);
+        let missing_item = missing_plan
+            .items
+            .iter()
+            .find(|item| item.op_type == "image")
+            .expect("missing external image item");
+        assert_eq!(missing_item.status, CanvasKitReplayStatus::DirectRequired);
+        let detail = missing_item.detail.as_deref().expect("image detail");
+        assert!(detail.contains("externalImage"));
+        assert!(detail.contains("missingImageData"));
+
+        let injected_tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![PaintOp::Image {
+                    bbox: valid_bbox(),
+                    image: LayerImagePaint {
+                        resource_id: Some(ImageResourceId(3)),
+                        external_path: Some("/tmp/linked.gif".to_string()),
+                        fill_mode: None,
+                        original_size: None,
+                        crop: None,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        transform: ShapeTransform::default(),
+                    },
+                }],
+            ),
+        )
+        .build();
+        let injected_plan =
+            analyze_canvaskit_replay_plan(&injected_tree, CanvasKitReplayMode::Default);
+        let injected_item = injected_plan
+            .items
+            .iter()
+            .find(|item| item.op_type == "image")
+            .expect("injected external image item");
+        assert_eq!(injected_item.status, CanvasKitReplayStatus::Direct);
+        let detail = injected_item.detail.as_deref().expect("image detail");
+        assert!(detail.contains("externalImage"));
+        assert!(detail.contains("injectedImageData"));
     }
 
     #[test]

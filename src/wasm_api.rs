@@ -19,6 +19,7 @@ use crate::model::document::{Document, Section};
 use crate::model::page::ColumnDef;
 use crate::model::paragraph::Paragraph;
 use crate::model::path::{path_from_flat, DocumentPath, PathSegment};
+use crate::model::shape::ShapeObject;
 use crate::paint::RenderProfile;
 use crate::renderer::composer::{
     compose_paragraph, compose_section, reflow_line_segs, ComposedParagraph,
@@ -35,6 +36,98 @@ use crate::renderer::style_resolver::{
 };
 use crate::renderer::svg::SvgRenderer;
 use crate::renderer::DEFAULT_DPI;
+
+#[derive(Debug, Clone)]
+struct ExternalImageReference {
+    key: String,
+    bin_data_id: u16,
+    original_path: String,
+    basename: String,
+    extension: String,
+    loaded: bool,
+}
+
+fn external_image_references_json(references: &[ExternalImageReference]) -> String {
+    let mut out = String::from("[");
+    for (index, reference) in references.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push('{');
+        out.push_str("\"key\":\"");
+        out.push_str(&json_escape(&reference.key));
+        out.push_str("\",\"binDataId\":");
+        out.push_str(&reference.bin_data_id.to_string());
+        out.push_str(",\"originalPath\":\"");
+        out.push_str(&json_escape(&reference.original_path));
+        out.push_str("\",\"basename\":\"");
+        out.push_str(&json_escape(&reference.basename));
+        out.push_str("\",\"extension\":\"");
+        out.push_str(&json_escape(&reference.extension));
+        out.push_str("\",\"loaded\":");
+        out.push_str(if reference.loaded { "true" } else { "false" });
+        out.push('}');
+    }
+    out.push(']');
+    out
+}
+
+fn external_path_basename(path: &str) -> &str {
+    path.rsplit(|c| c == '/' || c == '\\')
+        .find(|part| !part.is_empty())
+        .unwrap_or(path)
+}
+
+fn external_path_extension(basename: &str) -> String {
+    std::path::Path::new(basename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn parse_external_image_key(key: &str) -> Option<u16> {
+    let bin_data_id = key.strip_prefix("binData:")?.parse::<u16>().ok()?;
+    (bin_data_id != 0).then_some(bin_data_id)
+}
+
+fn collect_external_image_references(document: &Document) -> Vec<ExternalImageReference> {
+    let mut references = std::collections::BTreeMap::new();
+
+    for section in &document.sections {
+        for para in &section.paragraphs {
+            for ctrl in &para.controls {
+                let pic = match ctrl {
+                    Control::Picture(pic) => pic,
+                    Control::Shape(shape) => match shape.as_ref() {
+                        ShapeObject::Picture(pic) => pic,
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+
+                let Some(original_path) = pic.image_attr.external_path.as_ref() else {
+                    continue;
+                };
+
+                let bin_data_id = pic.image_attr.bin_data_id;
+                references.entry(bin_data_id).or_insert_with(|| {
+                    let basename = external_path_basename(original_path).to_string();
+                    ExternalImageReference {
+                        key: format!("binData:{bin_data_id}"),
+                        bin_data_id,
+                        extension: external_path_extension(&basename),
+                        basename,
+                        original_path: original_path.clone(),
+                        loaded: document.external_image_loaded(bin_data_id),
+                    }
+                });
+            }
+        }
+    }
+
+    references.into_values().collect()
+}
 
 impl From<HwpError> for JsValue {
     fn from(err: HwpError) -> Self {
@@ -94,6 +187,44 @@ impl HwpDocument {
                 profile_name
             ))
         })
+    }
+
+    fn inject_external_image_by_bin_data_id(
+        &mut self,
+        bin_data_id: u16,
+        data: &[u8],
+        display_path: &str,
+        fallback_basename: Option<&str>,
+    ) -> u32 {
+        let Some(reference) = collect_external_image_references(self.document())
+            .into_iter()
+            .find(|reference| reference.bin_data_id == bin_data_id)
+        else {
+            return 0;
+        };
+
+        if reference.loaded {
+            return 0;
+        }
+
+        if !self.document_mut().inject_external_image_data(
+            bin_data_id,
+            data.to_vec(),
+            reference.extension.clone(),
+        ) {
+            return 0;
+        }
+
+        let basename = fallback_basename.unwrap_or(&reference.basename);
+        let resolved = if display_path.is_empty() {
+            format!("/samples/{basename}")
+        } else {
+            display_path.to_string()
+        };
+        self.document_mut()
+            .update_external_image_display_path(bin_data_id, &resolved);
+
+        1
     }
 }
 
@@ -212,6 +343,84 @@ impl HwpDocument {
     #[wasm_bindgen(js_name = getDocumentInfo)]
     pub fn get_document_info(&self) -> String {
         self.core.get_document_info()
+    }
+
+    /// 외부 file path 그림 reference 목록을 구조화된 JSON 배열로 반환한다.
+    #[wasm_bindgen(js_name = getExternalImageReferences)]
+    pub fn get_external_image_references(&self) -> String {
+        external_image_references_json(&collect_external_image_references(self.document()))
+    }
+
+    /// 아직 주입되지 않은 외부 file path 그림 basename 목록을 반환한다.
+    #[wasm_bindgen(js_name = getExternalImageBasenames)]
+    pub fn get_external_image_basenames(&self) -> String {
+        let mut names = std::collections::BTreeSet::new();
+        for reference in collect_external_image_references(self.document()) {
+            if !reference.loaded {
+                names.insert(reference.basename);
+            }
+        }
+        let mut out = String::from("[");
+        for (index, name) in names.into_iter().enumerate() {
+            if index > 0 {
+                out.push(',');
+            }
+            out.push('"');
+            out.push_str(&json_escape(&name));
+            out.push('"');
+        }
+        out.push(']');
+        out
+    }
+
+    /// basename과 일치하는 외부 이미지 bytes를 주입한다.
+    #[wasm_bindgen(js_name = injectExternalImage)]
+    pub fn inject_external_image(
+        &mut self,
+        basename: &str,
+        data: &[u8],
+        display_path: &str,
+    ) -> u32 {
+        let mut targets = std::collections::BTreeSet::new();
+        for reference in collect_external_image_references(self.document()) {
+            if reference.basename == basename && !reference.loaded {
+                targets.insert(reference.bin_data_id);
+            }
+        }
+
+        let mut injected = 0;
+        for bin_data_id in targets {
+            injected += self.inject_external_image_by_bin_data_id(
+                bin_data_id,
+                data,
+                display_path,
+                Some(basename),
+            );
+        }
+        if injected > 0 {
+            self.invalidate_page_tree_cache();
+        }
+        injected
+    }
+
+    /// `getExternalImageReferences()`의 key로 외부 이미지 bytes를 주입한다.
+    #[wasm_bindgen(js_name = injectExternalImageByKey)]
+    pub fn inject_external_image_by_key(
+        &mut self,
+        key: &str,
+        data: &[u8],
+        display_path: &str,
+    ) -> u32 {
+        let Some(bin_data_id) = parse_external_image_key(key) else {
+            return 0;
+        };
+
+        let injected =
+            self.inject_external_image_by_bin_data_id(bin_data_id, data, display_path, None);
+        if injected > 0 {
+            self.invalidate_page_tree_cache();
+        }
+        injected
     }
 
     /// DPI를 설정한다.
