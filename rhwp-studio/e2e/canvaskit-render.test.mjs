@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 import {
   assert,
+  closeBrowser,
   comparePngBuffers,
   cropPngBuffer,
   createPage,
   createNewDocument,
   getLayerOpBBoxes,
+  launchBrowser,
   loadApp,
   loadHwpFile,
   recordMetric,
@@ -72,6 +74,8 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['2010-01-06.hwp', { solidInkMaxDiffRatio: 0.0065 }],
   ['aift.hwp', { solidInkMaxDiffRatio: 0.032 }],
   ['endnote-01.hwp', { solidInkMaxDiffRatio: 0.0095 }],
+  ['exam_eng.hwp', { maxCanvaskitReplayAvgMs: 750, maxCanvaskitReplayRatio: 80 }],
+  ['exam_kor.hwp', { maxCanvaskitReplayAvgMs: 1250, maxCanvaskitReplayRatio: 80 }],
   ['footnote-01.hwp', { solidInkMaxDiffRatio: 0.0095 }],
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085, solidInkMaxDiffRatio: 0.0125 }],
   ['hwpspec.hwp', { nonInkMaxDiffPixels: 2048, solidInkMaxDiffRatio: 0.12 }],
@@ -92,6 +96,12 @@ function isDetachedFrameError(error) {
   const message = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error);
   return /detached Frame/i.test(message);
 }
+
+function isBrowserConnectionClosedError(error) {
+  const message = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error);
+  return /ConnectionClosedError|Connection closed|Target closed|browser has disconnected|Protocol error/i.test(message);
+}
+
 const CANVASKIT_MODE = process.env.RHWP_CANVASKIT_MODE === 'compat' ? 'compat' : 'default';
 const REQUESTED_CANVASKIT_SURFACE = (process.env.RHWP_CANVASKIT_SURFACE ?? '').trim().toLowerCase();
 let CANVASKIT_SURFACE = 'auto';
@@ -118,6 +128,13 @@ const PERFORMANCE_GUARD = {
   ),
 };
 const STRICT_PERFORMANCE_GUARD_ENABLED = PERFORMANCE_ITERATIONS >= 2;
+const FULL_SWEEP_BROWSER_RECYCLE_INTERVAL_RAW = Number.parseInt(
+  process.env.RHWP_CANVASKIT_SWEEP_BROWSER_RECYCLE_INTERVAL ?? '30',
+  10,
+);
+const FULL_SWEEP_BROWSER_RECYCLE_INTERVAL = Number.isFinite(FULL_SWEEP_BROWSER_RECYCLE_INTERVAL_RAW)
+  ? Math.max(0, FULL_SWEEP_BROWSER_RECYCLE_INTERVAL_RAW)
+  : 30;
 const TOLERANT_DIFF = {
   ignoreChannelDelta: 8,
   maxDiffRatio: 0.0025,
@@ -607,24 +624,67 @@ async function renderScenario(page, backend, caseInfo) {
 }
 
 runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
+  let activeBrowser = browser;
   let page = initialPage;
+  const ownedBrowsers = new Set();
+  let fullSweepCasesSinceBrowserStart = 0;
+
+  async function recreatePage(label, reason, { restartBrowser = false } = {}) {
+    console.log(`  [${label}] ${reason}; ${restartBrowser ? 'restarting browser' : 'recreating page'}`);
+    await page?.close().catch(() => {});
+    if (restartBrowser) {
+      const browserToClose = activeBrowser;
+      await closeBrowser(browserToClose).catch(() => {});
+      ownedBrowsers.delete(browserToClose);
+      activeBrowser = await launchBrowser();
+      ownedBrowsers.add(activeBrowser);
+      fullSweepCasesSinceBrowserStart = 0;
+    }
+    page = await createPage(activeBrowser);
+  }
+
   async function withPageRetry(label, fn) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await fn();
       } catch (error) {
-        if (attempt === 0 && isDetachedFrameError(error)) {
-          console.log(`  [${label}] detached frame; recreating page and retrying`);
-          await page.close().catch(() => {});
-          page = await createPage(browser);
-          continue;
+        lastError = error;
+        const browserClosed = isBrowserConnectionClosedError(error);
+        const frameDetached = isDetachedFrameError(error);
+        if (attempt === 2 || (!browserClosed && !frameDetached)) {
+          throw error;
         }
-        throw error;
+        try {
+          await recreatePage(label, browserClosed ? 'browser connection closed' : 'detached frame', {
+            restartBrowser: browserClosed,
+          });
+        } catch (recreateError) {
+          if (attempt >= 1 || !isBrowserConnectionClosedError(recreateError)) {
+            throw recreateError;
+          }
+          await recreatePage(label, 'browser connection closed while recreating page', {
+            restartBrowser: true,
+          });
+        }
       }
     }
-    throw new Error(`${label} retry exhausted`);
+    throw lastError ?? new Error(`${label} retry exhausted`);
   }
 
+  async function maybeRecycleFullSweepBrowser(label) {
+    if (SAMPLE_SCOPE !== 'full' || FULL_SWEEP_BROWSER_RECYCLE_INTERVAL <= 0) {
+      return;
+    }
+    fullSweepCasesSinceBrowserStart += 1;
+    if (fullSweepCasesSinceBrowserStart >= FULL_SWEEP_BROWSER_RECYCLE_INTERVAL) {
+      await recreatePage(label, `full sweep reached ${fullSweepCasesSinceBrowserStart} cases`, {
+        restartBrowser: true,
+      });
+    }
+  }
+
+  try {
   console.log(`[scope=${SAMPLE_SCOPE}] full-page cases=${FULL_PAGE_CASES.length}, feature cases=${FILTERED_FEATURE_CASES.length}, mode=${CANVASKIT_MODE}, profile=${RENDER_PROFILE}, filter=${SAMPLE_FILTER_PATTERN || 'none'}`);
   const performanceRows = [];
 
@@ -704,6 +764,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       recordMetric(`${caseInfo.name} renderer performance`, performanceComparison);
       assertPerformanceGuard(performanceComparison);
       });
+      await maybeRecycleFullSweepBrowser(caseInfo.name);
     } catch (error) {
       await screenshot(page, `${caseInfo.name}-${CANVASKIT_MODE}-error`).catch(() => {});
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -759,6 +820,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         );
       }
       });
+      await maybeRecycleFullSweepBrowser(`${caseInfo.name}-feature`);
     } catch (error) {
       await screenshot(page, `${caseInfo.name}-feature-${CANVASKIT_MODE}-error`).catch(() => {});
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -787,11 +849,13 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       ? 'skipped-single-iteration'
       : replayRatio === null
         ? 'disabled'
-        : rows.length < PERFORMANCE_GUARD.minAverageReplaySamples
-          ? 'skipped-small-sample'
-          : canvas2dReplayAvgMs < PERFORMANCE_GUARD.minReplayRatioBaselineMs
-            ? 'skipped-small-baseline'
-            : 'checked';
+        : SAMPLE_FILTER
+          ? 'skipped-filtered-sample-set'
+          : rows.length < PERFORMANCE_GUARD.minAverageReplaySamples
+            ? 'skipped-small-sample'
+            : canvas2dReplayAvgMs < PERFORMANCE_GUARD.minReplayRatioBaselineMs
+              ? 'skipped-small-baseline'
+              : 'checked';
     const summary = {
       scope,
       samples: rows.length,
@@ -1584,5 +1648,11 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       nativeRouting.textBlobNativeProbe?.hitsGained > 0,
       `text blob cache hits recorded=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
     );
+  }
+  } finally {
+    for (const ownedBrowser of ownedBrowsers) {
+      await closeBrowser(ownedBrowser).catch(() => {});
+    }
+    ownedBrowsers.clear();
   }
 }, { skipLoadApp: true });

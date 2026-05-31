@@ -122,16 +122,24 @@ export async function closePage(page) {
 
 /** 브라우저 정리 — 테스트 탭 닫기 + CDP disconnect 또는 headless close */
 export async function closeBrowser(browser) {
-  if (browser._isRemote) {
-    if (browser._testPages) {
-      for (const p of browser._testPages) {
-        await p.close().catch(() => {});
+  if (!browser) return;
+  try {
+    if (browser._isRemote) {
+      if (browser._testPages) {
+        for (const p of browser._testPages) {
+          await p.close().catch(() => {});
+        }
+        browser._testPages = [];
       }
-      browser._testPages = [];
+      browser.disconnect();
+    } else {
+      await browser.close();
     }
-    browser.disconnect();
-  } else {
-    await browser.close();
+  } catch (error) {
+    const message = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error);
+    if (!/ConnectionClosedError|Connection closed|Target closed|browser has disconnected|Protocol error/i.test(message)) {
+      throw error;
+    }
   }
 }
 
