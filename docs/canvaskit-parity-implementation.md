@@ -176,6 +176,10 @@ bbox helper for perpendicular rotations: Canvas2D, CanvasKit, Rust SVG, native
 Skia, and legacy Rust canvas paths swap image bbox extents around the same
 center before applying the authored 90/270 degree rotation, while non-image
 shapes keep their authored bbox.
+RawSvg fragments that are exactly one embedded `data:` image are lowered to the
+same `Image` paint op and resource table path as ordinary pictures. This keeps
+OLE/chart preview images on the shared Canvas2D/CanvasKit/native image replay
+path instead of depending on an SVG or DOM image overlay.
 HWPX shape-local `<gradation><color .../>` stops must be materialized by the
 section parser before this replay layer sees the shape fill; otherwise all
 backends receive an empty gradient color list and can only fall back or paint a
