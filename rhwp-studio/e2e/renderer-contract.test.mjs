@@ -16,6 +16,7 @@ const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-ut
 const staticSvgPathLayersPath = path.join(studioRoot, 'src/view/static-svg-path-layers.ts');
 const textReplayUtilsPath = path.join(studioRoot, 'src/view/text-replay-utils.ts');
 const textVariantsPath = path.join(studioRoot, 'src/core/text-variants.ts');
+const layerTypesPath = path.join(studioRoot, 'src/core/types.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-implementation.md');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
@@ -30,6 +31,7 @@ const layerGeometryUtilsSource = fs.readFileSync(layerGeometryUtilsPath, 'utf8')
 const staticSvgPathLayersSource = fs.readFileSync(staticSvgPathLayersPath, 'utf8');
 const textReplayUtilsSource = fs.readFileSync(textReplayUtilsPath, 'utf8');
 const textVariantsSource = fs.readFileSync(textVariantsPath, 'utf8');
+const layerTypesSource = fs.readFileSync(layerTypesPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
@@ -425,6 +427,10 @@ assert(
   canvaskitSource.includes('op.image.effect')
     && canvas2dSource.includes("op.image.effect ?? 'realPic'"),
   'Canvas2D and CanvasKit page background image replay must consume layer image effect metadata',
+);
+assert(
+  /export interface LayerImageOp[\s\S]*externalPath\?: string/.test(layerTypesSource),
+  'Studio LayerImageOp schema must expose Rust-emitted externalPath diagnostics for linked images',
 );
 assert.equal(
   canvaskitSource.includes("from './text-replay-utils'"),

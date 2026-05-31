@@ -1233,6 +1233,8 @@ export interface LayerImageOp {
   bbox: LayerBounds;
   resourceId?: number;
   base64?: string;
+  /** Original linked-image path emitted for diagnostics before injected bytes are available. */
+  externalPath?: string;
   fillMode?: string;
   effect?: 'realPic' | 'grayScale' | 'blackWhite' | 'pattern8x8';
   brightness?: number;
