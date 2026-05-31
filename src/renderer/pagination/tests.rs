@@ -391,6 +391,103 @@ fn line0_tac_table_uses_line_height_for_fit_and_splits_post_text() {
 }
 
 #[test]
+fn rowbreak_keeps_small_rowspan_block_atomic_at_page_boundary() {
+    use crate::model::control::Control;
+    use crate::model::table::{Cell, Table, TablePageBreak};
+
+    let paginator = Paginator::with_default_dpi();
+    let styles = ResolvedStyleSet::default();
+
+    let lead_para = make_paragraph_with_height(16000);
+    let mut table_para = Paragraph::default();
+    table_para.controls.push(Control::Table(Box::new(Table {
+        row_count: 4,
+        col_count: 2,
+        page_break: TablePageBreak::RowBreak,
+        cells: vec![
+            Cell {
+                row: 0,
+                col: 0,
+                row_span: 2,
+                col_span: 1,
+                height: 10000,
+                width: 4000,
+                ..Default::default()
+            },
+            Cell {
+                row: 0,
+                col: 1,
+                row_span: 1,
+                col_span: 1,
+                height: 5000,
+                width: 4000,
+                ..Default::default()
+            },
+            Cell {
+                row: 1,
+                col: 1,
+                row_span: 1,
+                col_span: 1,
+                height: 5000,
+                width: 4000,
+                ..Default::default()
+            },
+            Cell {
+                row: 2,
+                col: 0,
+                row_span: 1,
+                col_span: 2,
+                height: 5000,
+                width: 8000,
+                ..Default::default()
+            },
+            Cell {
+                row: 3,
+                col: 0,
+                row_span: 1,
+                col_span: 2,
+                height: 5000,
+                width: 8000,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    })));
+
+    let paras = vec![lead_para, table_para];
+    let (result, _measured) = paginator.paginate(
+        &paras,
+        &[],
+        &styles,
+        &compact_page_def(24000),
+        &ColumnDef::default(),
+        0,
+    );
+
+    let first_page_items = &result.pages[0].column_contents[0].items;
+    assert!(
+        !first_page_items
+            .iter()
+            .any(|item| matches!(item, PageItem::PartialTable { para_index: 1, .. })),
+        "rowspan block should not be split after its first row on page 1: {first_page_items:#?}"
+    );
+
+    let second_page_items = &result.pages[1].column_contents[0].items;
+    assert!(
+        second_page_items.iter().any(|item| {
+            matches!(
+                item,
+                PageItem::Table {
+                    para_index: 1,
+                    control_index: 0
+                }
+            )
+        }),
+        "the protected rowspan block should move with the table to page 2: {second_page_items:#?}"
+    );
+}
+
+#[test]
 fn test_table_split_with_repeat_header() {
     // repeat_header=true인 표가 분할될 때 is_continuation 확인
     use crate::model::control::Control;

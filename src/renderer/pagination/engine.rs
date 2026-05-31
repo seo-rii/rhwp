@@ -1951,6 +1951,23 @@ impl Paginator {
             {
                 const MIN_SPLIT_CONTENT_PX: f64 = 10.0;
 
+                if content_offset == 0.0 {
+                    if let Some((block_start, block_end)) =
+                        self.protected_rowbreak_rowspan_block(table, cursor_row, row_count)
+                    {
+                        let block_height = mt.range_height(block_start, block_end);
+                        if block_start == cursor_row
+                            && block_height > avail_for_rows + 0.5
+                            && block_height <= base_available_height + 0.5
+                            && !is_continuation
+                            && !st.current_items.is_empty()
+                        {
+                            st.advance_column_or_new_page();
+                            continue;
+                        }
+                    }
+                }
+
                 let approx_end =
                     mt.find_break_row(avail_for_rows, cursor_row, effective_first_row_h);
 
@@ -2022,6 +2039,23 @@ impl Paginator {
                     }
                 } else {
                     end_row = row_count;
+                }
+
+                if split_end_limit == 0.0 && end_row > cursor_row && end_row < row_count {
+                    if let Some((block_start, block_end)) =
+                        self.protected_rowbreak_rowspan_block(table, end_row, row_count)
+                    {
+                        if block_start < end_row && end_row < block_end {
+                            if block_start > cursor_row {
+                                end_row = block_start;
+                            } else {
+                                let block_height = mt.range_height(block_start, block_end);
+                                if block_height <= avail_for_rows + 0.5 {
+                                    end_row = block_end;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2342,5 +2376,84 @@ impl Paginator {
             && self.is_effective_tac_table(para, table, measured_para)
             && self.tac_table_line_index(para, table, measured_para) == Some(0))
         .then(|| measured_para.line_heights[0])
+    }
+
+    fn protected_rowbreak_rowspan_block(
+        &self,
+        table: &crate::model::table::Table,
+        row: usize,
+        row_count: usize,
+    ) -> Option<(usize, usize)> {
+        if table.page_break != crate::model::table::TablePageBreak::RowBreak || row >= row_count {
+            return None;
+        }
+
+        let (start, end, touched) = self.rowspan_block_for_row(table, row, row_count);
+        let block_size = end.saturating_sub(start);
+        if !touched || !(2..=3).contains(&block_size) {
+            return None;
+        }
+        if self.rowbreak_block_has_internal_hard_break(table, start, end) {
+            return None;
+        }
+        Some((start, end))
+    }
+
+    fn rowspan_block_for_row(
+        &self,
+        table: &crate::model::table::Table,
+        row: usize,
+        row_count: usize,
+    ) -> (usize, usize, bool) {
+        let mut start = row;
+        let mut end = (row + 1).min(row_count);
+        let mut touched = false;
+
+        loop {
+            let mut changed = false;
+            for cell in &table.cells {
+                let cell_start = cell.row as usize;
+                let span = (cell.row_span as usize).max(1);
+                let cell_end = (cell_start + span).min(row_count);
+                if span <= 1 || cell_start >= cell_end {
+                    continue;
+                }
+                if cell_start < end && cell_end > start {
+                    touched = true;
+                    if cell_start < start {
+                        start = cell_start;
+                        changed = true;
+                    }
+                    if cell_end > end {
+                        end = cell_end;
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        (start, end, touched)
+    }
+
+    fn rowbreak_block_has_internal_hard_break(
+        &self,
+        table: &crate::model::table::Table,
+        start: usize,
+        end: usize,
+    ) -> bool {
+        table.cells.iter().any(|cell| {
+            let cell_start = cell.row as usize;
+            let cell_end = (cell_start + (cell.row_span as usize).max(1)).min(end);
+            cell_start < end
+                && cell_end > start
+                && cell.paragraphs.iter().any(|para| {
+                    para.line_segs
+                        .windows(2)
+                        .any(|pair| pair[1].vertical_pos < pair[0].vertical_pos)
+                })
+        })
     }
 }
