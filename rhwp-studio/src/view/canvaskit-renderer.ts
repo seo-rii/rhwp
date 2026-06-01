@@ -269,6 +269,7 @@ export class CanvasKitLayerRenderer {
       throw renderError;
     }
 
+    this.textVariantSelectionDiagnostics.length = 0;
     this.collectTextVariantSelectionDiagnostics = true;
     try {
       this.renderSurface(fallbackSurface, tree, scale);

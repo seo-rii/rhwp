@@ -177,7 +177,10 @@ function extractBlockBody(source, signatureIndex, blockName) {
 }
 
 function extractMethodBody(source, methodName) {
-  const signatureIndex = source.indexOf(`private ${methodName}(`);
+  let signatureIndex = source.indexOf(`private ${methodName}(`);
+  if (signatureIndex === -1) {
+    signatureIndex = source.indexOf(`${methodName}(`);
+  }
   assert.notEqual(signatureIndex, -1, `missing method ${methodName}`);
 
   return extractBlockBody(source, signatureIndex, methodName);
@@ -421,6 +424,15 @@ assert.equal(
   canvaskitSource.includes('this.surfaceCache.replaceWithSoftware(targetCanvas)'),
   true,
   'CanvasKit GPU render failures must fall back to a CanvasKit software surface, not a Canvas2D overlay',
+);
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'renderPage'),
+  [
+    'const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas)',
+    'this.textVariantSelectionDiagnostics.length = 0',
+    'this.renderSurface(fallbackSurface, tree, scale)',
+  ],
+  'CanvasKit software fallback rerender must replace failed-attempt text variant diagnostics',
 );
 assert.equal(
   canvaskitResourceCacheSource.includes('Canvas2DLayerRenderer')
