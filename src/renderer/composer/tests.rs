@@ -252,6 +252,37 @@ fn test_char_shape_start_pos_uses_visible_index_with_ctrl_gap() {
     assert_eq!(composed.lines[0].runs[0].char_style_id, 1);
 }
 
+#[test]
+fn test_layout_space_tac_paragraph_does_not_synthesize_markers() {
+    let para = Paragraph {
+        text: "\t \n".to_string(),
+        char_offsets: vec![16, 17, 18],
+        char_count: 24,
+        controls: vec![
+            Control::Equation(Box::default()),
+            Control::Equation(Box::default()),
+            Control::Equation(Box::default()),
+        ],
+        line_segs: vec![LineSeg {
+            text_start: 0,
+            line_height: 400,
+            baseline_distance: 320,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let composed = compose_paragraph(&para);
+    assert!(
+        composed
+            .lines
+            .iter()
+            .flat_map(|line| line.runs.iter())
+            .all(|run| !run.text.contains('\u{FFFC}')),
+        "layout-space TAC paragraphs already carry control positions in LineSeg data",
+    );
+}
+
 /// 인라인 컨트롤 식별
 #[test]
 fn test_identify_inline_controls_table() {
