@@ -77,7 +77,11 @@ import {
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
 import { formObjectPalette } from './form-replay-utils';
-import { tabLeaderDashStyle } from './text-replay-utils';
+import {
+  tabLeaderDashStyle,
+  textDecorationEmphasisMark,
+  textDecorationEmphasisPosition,
+} from './text-replay-utils';
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -990,22 +994,20 @@ export class Canvas2DLayerRenderer {
       }
 
       if (emphasisDot > 0) {
-        const dotChar =
-          emphasisDot === 1 ? '●'
-            : emphasisDot === 2 ? '○'
-              : emphasisDot === 3 ? 'ˇ'
-                : emphasisDot === 4 ? '˜'
-                  : emphasisDot === 5 ? '･'
-                    : emphasisDot === 6 ? '˸'
-                      : '';
+        const dotChar = textDecorationEmphasisMark(emphasisDot);
         if (dotChar) {
           ctx.save();
           this.setCanvasTextFont(ctx, 'Noto Sans KR', fontSize * 0.3, false, false);
           ctx.fillStyle = op.style.color;
-          const dotY = originY - fontSize * 1.05;
           for (const position of positions.slice(0, -1)) {
-            const dotX = originX + position + (fontSize * ratio * 0.5);
-            ctx.fillText(dotChar, dotX, dotY);
+            const markPosition = textDecorationEmphasisPosition(
+              originX,
+              originY,
+              position,
+              fontSize,
+              ratio,
+            );
+            ctx.fillText(dotChar, markPosition.x, markPosition.y);
           }
           ctx.restore();
         }
@@ -1105,14 +1107,7 @@ export class Canvas2DLayerRenderer {
         this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
         return;
       }
-      const dotChar =
-        op.decoration.emphasisDot === 1 ? '●'
-          : op.decoration.emphasisDot === 2 ? '○'
-            : op.decoration.emphasisDot === 3 ? 'ˇ'
-              : op.decoration.emphasisDot === 4 ? '˜'
-                : op.decoration.emphasisDot === 5 ? '･'
-                  : op.decoration.emphasisDot === 6 ? '˸'
-                    : '';
+      const dotChar = textDecorationEmphasisMark(op.decoration.emphasisDot);
       if (!dotChar) {
         return;
       }
@@ -1120,10 +1115,15 @@ export class Canvas2DLayerRenderer {
       this.setCanvasTextFont(ctx, 'Noto Sans KR', op.decoration.fontSize * 0.3, false, false);
       ctx.textAlign = 'center';
       ctx.fillStyle = op.decoration.color;
-      const dotY = baselineY - op.decoration.fontSize * 1.05;
       for (const position of op.decoration.positions.slice(0, -1)) {
-        const dotX = originX + position + op.decoration.fontSize * op.decoration.ratio * 0.5;
-        ctx.fillText(dotChar, dotX, dotY);
+        const markPosition = textDecorationEmphasisPosition(
+          originX,
+          baselineY,
+          position,
+          op.decoration.fontSize,
+          op.decoration.ratio,
+        );
+        ctx.fillText(dotChar, markPosition.x, markPosition.y);
       }
       ctx.restore();
     };

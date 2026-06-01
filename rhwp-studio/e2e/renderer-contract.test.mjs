@@ -552,6 +552,8 @@ for (const textHelperName of [
   'puaToDisplayText',
   'splitIntoClusters',
   'startsWithInvalidControl',
+  'textDecorationEmphasisMark',
+  'textDecorationEmphasisPosition',
 ]) {
   assert.equal(
     canvaskitLayerCanvasUtilsImportBody.includes(textHelperName),
@@ -613,6 +615,31 @@ assert(
   extractMethodBody(canvas2dSource, 'drawTabLeaders').includes('strokeDashPattern(tabLeaderDashStyle(leader.fillType), 1)')
     && extractMethodBody(canvaskitSource, 'drawTabLeaders').includes('tabLeaderDashStyle(leader.fillType)'),
   'Canvas2D and CanvasKit tab leader replay must share fillType-to-dash mapping',
+);
+assert.equal(
+  textReplayUtilsSource.includes('export function textDecorationEmphasisMark(')
+    && textReplayUtilsSource.includes('export function textDecorationEmphasisPosition('),
+  true,
+  'text decoration emphasis mark policy must live in shared native-ready text helpers',
+);
+assert.equal(
+  canvas2dSource.includes("emphasisDot === 3 ? 'ˇ'")
+    || canvaskitSource.includes("emphasisDot === 3 ? 'ˇ'"),
+  false,
+  'Canvas2D and CanvasKit must not carry separate emphasis mark character maps',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisMark')
+    && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisPosition')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisMark')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisPosition'),
+  true,
+  'Canvas2D and CanvasKit must import the shared text decoration emphasis helpers',
+);
+assert(
+  extractMethodBody(canvas2dSource, 'renderTextDecoration').includes('textDecorationEmphasisPosition(')
+    && extractMethodBody(canvaskitSource, 'renderTextDecoration').includes('textDecorationEmphasisPosition('),
+  'Canvas2D and CanvasKit text decoration replay must share emphasis mark positioning',
 );
 for (const geometryHelperName of [
   'angleToCanvasCoords',

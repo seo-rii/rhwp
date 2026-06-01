@@ -98,6 +98,8 @@ import {
   splitIntoClusters,
   startsWithInvalidControl,
   tabLeaderDashStyle,
+  textDecorationEmphasisMark,
+  textDecorationEmphasisPosition,
 } from './text-replay-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
@@ -1056,10 +1058,24 @@ export class CanvasKitLayerRenderer {
 
       if (emphasisDot > 0) {
         const dotSize = op.style.fontSize * 0.3;
-        const dotY = originY - op.style.fontSize * 1.05;
+        const dotChar = textDecorationEmphasisMark(emphasisDot);
         for (const position of positions.slice(0, -1)) {
-          const dotX = originX + position + (op.style.fontSize * ratio * 0.5);
-          this.drawEmphasisMark(canvas, emphasisDot, dotX, dotY, dotSize, op.style.color);
+          const markPosition = textDecorationEmphasisPosition(
+            originX,
+            originY,
+            position,
+            op.style.fontSize,
+            ratio,
+          );
+          this.drawEmphasisMark(
+            canvas,
+            emphasisDot,
+            markPosition.x,
+            markPosition.y,
+            dotSize,
+            op.style.color,
+            dotChar,
+          );
         }
       }
 
@@ -1698,23 +1714,28 @@ export class CanvasKitLayerRenderer {
         paint.delete();
         return;
       }
-      const dotChar =
-        op.decoration.emphasisDot === 1 ? '●'
-          : op.decoration.emphasisDot === 2 ? '○'
-            : op.decoration.emphasisDot === 3 ? 'ˇ'
-              : op.decoration.emphasisDot === 4 ? '˜'
-                : op.decoration.emphasisDot === 5 ? '･'
-                  : op.decoration.emphasisDot === 6 ? '˸'
-                    : '';
+      const dotChar = textDecorationEmphasisMark(op.decoration.emphasisDot);
       if (!dotChar) {
         return;
       }
       const dotSize = op.decoration.fontSize * 0.3;
-      const dotY = baselineY - op.decoration.fontSize * 1.05;
       if (op.decoration.emphasisDot === 1 || op.decoration.emphasisDot === 2) {
         for (const position of op.decoration.positions.slice(0, -1)) {
-          const dotX = originX + position + op.decoration.fontSize * op.decoration.ratio * 0.5;
-          this.drawEmphasisMark(canvas, op.decoration.emphasisDot, dotX, dotY, dotSize, op.decoration.color);
+          const markPosition = textDecorationEmphasisPosition(
+            originX,
+            baselineY,
+            position,
+            op.decoration.fontSize,
+            op.decoration.ratio,
+          );
+          this.drawEmphasisMark(
+            canvas,
+            op.decoration.emphasisDot,
+            markPosition.x,
+            markPosition.y,
+            dotSize,
+            op.decoration.color,
+          );
         }
         return;
       }
@@ -1726,12 +1747,18 @@ export class CanvasKitLayerRenderer {
         op.decoration.color,
       );
       for (const position of op.decoration.positions.slice(0, -1)) {
-        const dotX = originX + position + op.decoration.fontSize * op.decoration.ratio * 0.5;
+        const markPosition = textDecorationEmphasisPosition(
+          originX,
+          baselineY,
+          position,
+          op.decoration.fontSize,
+          op.decoration.ratio,
+        );
         this.drawEmphasisMark(
           canvas,
           op.decoration.emphasisDot,
-          dotX,
-          dotY,
+          markPosition.x,
+          markPosition.y,
           dotSize,
           op.decoration.color,
           dotChar,
@@ -1779,12 +1806,7 @@ export class CanvasKitLayerRenderer {
       return;
     }
 
-    const dotChar = fallbackChar
-      ?? (emphasisDot === 3 ? 'ˇ'
-        : emphasisDot === 4 ? '˜'
-          : emphasisDot === 5 ? '･'
-            : emphasisDot === 6 ? '˸'
-              : '');
+    const dotChar = fallbackChar ?? textDecorationEmphasisMark(emphasisDot);
     if (!dotChar) {
       return;
     }

@@ -33,6 +33,29 @@ export function tabLeaderDashStyle(fillType: number): 'solid' | 'dash' | 'dot' {
   return fillType === 2 ? 'dash' : fillType === 3 ? 'dot' : 'solid';
 }
 
+export function textDecorationEmphasisMark(emphasisDot: number): string {
+  return emphasisDot === 1 ? '●'
+    : emphasisDot === 2 ? '○'
+      : emphasisDot === 3 ? 'ˇ'
+        : emphasisDot === 4 ? '˜'
+          : emphasisDot === 5 ? '･'
+            : emphasisDot === 6 ? '˸'
+              : '';
+}
+
+export function textDecorationEmphasisPosition(
+  originX: number,
+  baselineY: number,
+  position: number,
+  fontSize: number,
+  ratio: number,
+): { x: number; y: number } {
+  return {
+    x: originX + position + fontSize * ratio * 0.5,
+    y: baselineY - fontSize * 1.05,
+  };
+}
+
 function puaOverlapDigit(ch: string): [number, number] | null {
   const cp = ch.codePointAt(0) ?? 0;
   if (cp >= 0xF0289 && cp <= 0xF0291) {
