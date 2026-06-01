@@ -218,6 +218,9 @@ impl TextMeasurer for EmbeddedTextMeasurer {
             if c == '\u{2007}' {
                 return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
             }
+            if c == '\u{FFFC}' {
+                return 0.0;
+            }
             let base_w = if let Some(w) = measure_char_width_embedded(
                 &style.font_family,
                 style.bold,
@@ -360,6 +363,9 @@ impl TextMeasurer for EmbeddedTextMeasurer {
             let c = chars[i];
             if c == '\u{2007}' {
                 return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+            }
+            if c == '\u{FFFC}' {
+                return 0.0;
             }
             let base_w = if let Some(w) = measure_char_width_embedded(
                 &style.font_family,
@@ -692,6 +698,9 @@ impl TextMeasurer for WasmTextMeasurer {
             if c == '\u{2007}' {
                 return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
             }
+            if c == '\u{FFFC}' {
+                return 0.0;
+            }
             let char_px = if cluster_len[i] > 1 {
                 hangul_hwp as f64 / 75.0
             } else {
@@ -821,6 +830,9 @@ impl TextMeasurer for WasmTextMeasurer {
             let c = chars[i];
             if c == '\u{2007}' {
                 return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+            }
+            if c == '\u{FFFC}' {
+                return 0.0;
             }
             let char_px = if cluster_len[i] > 1 {
                 hangul_hwp as f64 / 75.0
@@ -1069,6 +1081,9 @@ pub(crate) fn estimate_text_width_unrounded(text: &str, style: &TextStyle) -> f6
         let c = chars[i];
         if c == '\u{2007}' {
             return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+        }
+        if c == '\u{FFFC}' {
+            return 0.0;
         }
         let base_w = if let Some(w) =
             measure_char_width_embedded(&style.font_family, style.bold, style.italic, c, font_size)
@@ -1496,6 +1511,26 @@ mod tests {
         for (a, b) in free_fn_result.iter().zip(trait_result.iter()) {
             assert!((a - b).abs() < 0.01, "position mismatch: {} != {}", a, b);
         }
+    }
+
+    #[test]
+    fn test_inline_object_placeholder_has_zero_advance() {
+        let style = TextStyle {
+            font_family: "Haansoft Dotum".to_string(),
+            font_size: 12.0,
+            ..Default::default()
+        };
+
+        assert_eq!(estimate_text_width("\u{FFFC}", &style), 0.0);
+        assert_eq!(
+            estimate_text_width("\u{FFFC}\u{FFFC}A", &style),
+            estimate_text_width("A", &style),
+            "U+FFFC placeholder is painted by its control node, so it must not add text advance",
+        );
+
+        let positions = compute_char_positions("\u{FFFC}A", &style);
+        assert_eq!(positions[0], positions[1]);
+        assert!(positions[2] > positions[1]);
     }
 
     #[test]
