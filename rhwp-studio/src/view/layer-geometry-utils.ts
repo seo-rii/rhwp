@@ -185,6 +185,100 @@ export function calculateArrowDimensions(
   return [arrowWidth, arrowHeight];
 }
 
+export type ArrowHeadShape =
+  | { kind: 'none' }
+  | {
+    kind: 'polygon';
+    fill: 'solid' | 'open';
+    points: Array<[number, number]>;
+  }
+  | {
+    kind: 'ellipse';
+    fill: 'solid' | 'open';
+    centerX: number;
+    centerY: number;
+    radiusX: number;
+    radiusY: number;
+  };
+
+export function arrowHeadShape(
+  tipX: number,
+  tipY: number,
+  directionX: number,
+  directionY: number,
+  arrowWidth: number,
+  arrowHeight: number,
+  arrowStyle: string,
+): ArrowHeadShape {
+  if (arrowStyle === 'none') {
+    return { kind: 'none' };
+  }
+
+  const alongX = -directionX;
+  const alongY = -directionY;
+  const perpX = directionY;
+  const perpY = -directionX;
+  const halfHeight = arrowHeight / 2;
+  const toWorld = (along: number, perp: number): [number, number] => [
+    tipX + along * alongX + perp * perpX,
+    tipY + along * alongY + perp * perpY,
+  ];
+
+  if (arrowStyle === 'arrow' || arrowStyle === 'concaveArrow') {
+    const points: Array<[number, number]> = [
+      [tipX, tipY],
+      toWorld(arrowWidth, -halfHeight),
+    ];
+    if (arrowStyle === 'concaveArrow') {
+      points.push(toWorld(arrowWidth - arrowWidth * 0.3, 0));
+    }
+    points.push(toWorld(arrowWidth, halfHeight));
+    return { kind: 'polygon', fill: 'solid', points };
+  }
+
+  if (arrowStyle === 'diamond' || arrowStyle === 'openDiamond') {
+    const halfWidth = arrowWidth / 2;
+    return {
+      kind: 'polygon',
+      fill: arrowStyle === 'diamond' ? 'solid' : 'open',
+      points: [
+        toWorld(0, 0),
+        toWorld(halfWidth, -halfHeight),
+        toWorld(arrowWidth, 0),
+        toWorld(halfWidth, halfHeight),
+      ],
+    };
+  }
+
+  if (arrowStyle === 'circle' || arrowStyle === 'openCircle') {
+    const halfWidth = arrowWidth / 2;
+    const [centerX, centerY] = toWorld(halfWidth, 0);
+    return {
+      kind: 'ellipse',
+      fill: arrowStyle === 'circle' ? 'solid' : 'open',
+      centerX,
+      centerY,
+      radiusX: halfWidth * 0.8,
+      radiusY: halfHeight * 0.8,
+    };
+  }
+
+  if (arrowStyle === 'square' || arrowStyle === 'openSquare') {
+    return {
+      kind: 'polygon',
+      fill: arrowStyle === 'square' ? 'solid' : 'open',
+      points: [
+        toWorld(0, -halfHeight),
+        toWorld(arrowWidth, -halfHeight),
+        toWorld(arrowWidth, halfHeight),
+        toWorld(0, halfHeight),
+      ],
+    };
+  }
+
+  return { kind: 'none' };
+}
+
 export function strokeDashPattern(dash: string, width: number): number[] {
   const stroke = Math.max(width, 0.5);
   switch (dash) {

@@ -79,6 +79,7 @@ import {
 } from './image-effect-pixels';
 import {
   angleToCanvasCoords,
+  arrowHeadShape,
   calculateArrowDimensions,
   computePathPaintBounds,
   effectiveLayerImageBounds,
@@ -3412,21 +3413,19 @@ function drawArrowHead(
   color: string,
   strokeWidth: number,
 ): void {
-  if (arrowStyle === 'none') {
+  const shape = arrowHeadShape(
+    tipX,
+    tipY,
+    directionX,
+    directionY,
+    arrowWidth,
+    arrowHeight,
+    arrowStyle,
+  );
+  if (shape.kind === 'none') {
     return;
   }
 
-  const alongX = -directionX;
-  const alongY = -directionY;
-  const perpX = directionY;
-  const perpY = -directionX;
-  const halfHeight = arrowHeight / 2;
-  const toWorld = (along: number, perp: number): [number, number] => [
-    tipX + along * alongX + perp * perpX,
-    tipY + along * alongY + perp * perpY,
-  ];
-
-  const builder = new canvasKit.PathBuilder();
   const fillPaint = new canvasKit.Paint();
   fillPaint.setAntiAlias(true);
   fillPaint.setStyle(canvasKit.PaintStyle.Fill);
@@ -3438,39 +3437,16 @@ function drawArrowHead(
   strokePaint.setColor(parseCanvasKitCssColor(canvasKit, color));
   strokePaint.setStrokeWidth(Math.max(strokeWidth * 0.3, 0.5));
 
-  if (arrowStyle === 'arrow' || arrowStyle === 'concaveArrow') {
-    const [baseX1, baseY1] = toWorld(arrowWidth, -halfHeight);
-    const [baseX2, baseY2] = toWorld(arrowWidth, halfHeight);
-    builder.moveTo(tipX, tipY);
-    builder.lineTo(baseX1, baseY1);
-    if (arrowStyle === 'concaveArrow') {
-      const [centerX, centerY] = toWorld(arrowWidth - arrowWidth * 0.3, 0);
-      builder.lineTo(centerX, centerY);
+  if (shape.kind === 'polygon') {
+    const builder = new canvasKit.PathBuilder();
+    const [firstPoint, ...remainingPoints] = shape.points;
+    builder.moveTo(firstPoint[0], firstPoint[1]);
+    for (const [x, y] of remainingPoints) {
+      builder.lineTo(x, y);
     }
-    builder.lineTo(baseX2, baseY2);
     builder.close();
     const path = builder.detach();
-    canvas.drawPath(path, fillPaint);
-    path.delete();
-    builder.delete();
-    fillPaint.delete();
-    strokePaint.delete();
-    return;
-  }
-
-  if (arrowStyle === 'diamond' || arrowStyle === 'openDiamond') {
-    const halfWidth = arrowWidth / 2;
-    const [point1X, point1Y] = toWorld(0, 0);
-    const [point2X, point2Y] = toWorld(halfWidth, -halfHeight);
-    const [point3X, point3Y] = toWorld(arrowWidth, 0);
-    const [point4X, point4Y] = toWorld(halfWidth, halfHeight);
-    builder.moveTo(point1X, point1Y);
-    builder.lineTo(point2X, point2Y);
-    builder.lineTo(point3X, point3Y);
-    builder.lineTo(point4X, point4Y);
-    builder.close();
-    const path = builder.detach();
-    if (arrowStyle === 'diamond') {
+    if (shape.fill === 'solid') {
       canvas.drawPath(path, fillPaint);
     } else {
       const whiteFill = new canvasKit.Paint();
@@ -3488,55 +3464,31 @@ function drawArrowHead(
     return;
   }
 
-  if (arrowStyle === 'circle' || arrowStyle === 'openCircle') {
-    const halfWidth = arrowWidth / 2;
-    const [centerX, centerY] = toWorld(halfWidth, 0);
-    const radiusX = halfWidth * 0.8;
-    const radiusY = halfHeight * 0.8;
-    if (arrowStyle === 'circle') {
-      canvas.drawOval(canvasKit.LTRBRect(centerX - radiusX, centerY - radiusY, centerX + radiusX, centerY + radiusY), fillPaint);
+  if (shape.kind === 'ellipse') {
+    if (shape.fill === 'solid') {
+      canvas.drawOval(canvasKit.LTRBRect(
+        shape.centerX - shape.radiusX,
+        shape.centerY - shape.radiusY,
+        shape.centerX + shape.radiusX,
+        shape.centerY + shape.radiusY,
+      ), fillPaint);
     } else {
       const whiteFill = new canvasKit.Paint();
       whiteFill.setAntiAlias(true);
       whiteFill.setStyle(canvasKit.PaintStyle.Fill);
       whiteFill.setColor(parseCanvasKitCssColor(canvasKit, 'white'));
-      const oval = canvasKit.LTRBRect(centerX - radiusX, centerY - radiusY, centerX + radiusX, centerY + radiusY);
+      const oval = canvasKit.LTRBRect(
+        shape.centerX - shape.radiusX,
+        shape.centerY - shape.radiusY,
+        shape.centerX + shape.radiusX,
+        shape.centerY + shape.radiusY,
+      );
       canvas.drawOval(oval, whiteFill);
       canvas.drawOval(oval, strokePaint);
       whiteFill.delete();
     }
-    builder.delete();
     fillPaint.delete();
     strokePaint.delete();
     return;
   }
-
-  if (arrowStyle === 'square' || arrowStyle === 'openSquare') {
-    const [point1X, point1Y] = toWorld(0, -halfHeight);
-    const [point2X, point2Y] = toWorld(arrowWidth, -halfHeight);
-    const [point3X, point3Y] = toWorld(arrowWidth, halfHeight);
-    const [point4X, point4Y] = toWorld(0, halfHeight);
-    builder.moveTo(point1X, point1Y);
-    builder.lineTo(point2X, point2Y);
-    builder.lineTo(point3X, point3Y);
-    builder.lineTo(point4X, point4Y);
-    builder.close();
-    const path = builder.detach();
-    if (arrowStyle === 'square') {
-      canvas.drawPath(path, fillPaint);
-    } else {
-      const whiteFill = new canvasKit.Paint();
-      whiteFill.setAntiAlias(true);
-      whiteFill.setStyle(canvasKit.PaintStyle.Fill);
-      whiteFill.setColor(parseCanvasKitCssColor(canvasKit, 'white'));
-      canvas.drawPath(path, whiteFill);
-      canvas.drawPath(path, strokePaint);
-      whiteFill.delete();
-    }
-    path.delete();
-  }
-
-  builder.delete();
-  fillPaint.delete();
-  strokePaint.delete();
 }

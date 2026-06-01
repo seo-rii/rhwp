@@ -292,6 +292,28 @@ assert.equal(
 );
 compareCaseContract('renderLine', 'line style replay');
 assert.equal(
+  layerGeometryUtilsSource.includes('export function arrowHeadShape('),
+  true,
+  'arrowhead geometry must live in shared native-ready geometry helpers',
+);
+assert.equal(
+  canvas2dSource.includes('const alongX = -directionX')
+    || canvaskitSource.includes('const alongX = -directionX'),
+  false,
+  'Canvas2D and CanvasKit must not carry separate arrowhead geometry copies',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './layer-geometry-utils').includes('arrowHeadShape')
+    && importBlockFrom(canvaskitSource, './layer-geometry-utils').includes('arrowHeadShape'),
+  true,
+  'Canvas2D and CanvasKit must import the shared arrowhead geometry helper',
+);
+assert(
+  extractFunctionBody(canvas2dSource, 'drawCanvasArrowHead').includes('arrowHeadShape(')
+    && extractFunctionBody(canvaskitSource, 'drawArrowHead').includes('arrowHeadShape('),
+  'Canvas2D and CanvasKit arrowhead replay must share geometry calculation',
+);
+assert.equal(
   layerGeometryUtilsSource.includes('export function resolveImagePlacement('),
   true,
   'image fill placement must live in shared native-ready geometry helpers',
@@ -594,6 +616,7 @@ assert(
 );
 for (const geometryHelperName of [
   'angleToCanvasCoords',
+  'arrowHeadShape',
   'calculateArrowDimensions',
   'computePathPaintBounds',
   'effectiveLayerImageBounds',

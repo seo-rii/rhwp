@@ -70,7 +70,7 @@ import {
   splitIntoClusters,
   startsWithInvalidControl,
 } from './layer-canvas-utils';
-import { gradientColorStops, resolveImagePlacement, strokeDashPattern } from './layer-geometry-utils';
+import { arrowHeadShape, gradientColorStops, resolveImagePlacement, strokeDashPattern } from './layer-geometry-utils';
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
@@ -2287,55 +2287,33 @@ function drawCanvasArrowHead(
   color: string,
   strokeWidth: number,
 ): void {
-  if (arrowStyle === 'none') {
+  const shape = arrowHeadShape(
+    tipX,
+    tipY,
+    directionX,
+    directionY,
+    arrowWidth,
+    arrowHeight,
+    arrowStyle,
+  );
+  if (shape.kind === 'none') {
     return;
   }
-
-  const alongX = -directionX;
-  const alongY = -directionY;
-  const perpX = directionY;
-  const perpY = -directionX;
-  const halfHeight = arrowHeight / 2;
-  const toWorld = (along: number, perp: number): [number, number] => [
-    tipX + along * alongX + perp * perpX,
-    tipY + along * alongY + perp * perpY,
-  ];
 
   ctx.save();
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(strokeWidth * 0.3, 0.5);
 
-  if (arrowStyle === 'arrow' || arrowStyle === 'concaveArrow') {
-    const [baseX1, baseY1] = toWorld(arrowWidth, -halfHeight);
-    const [baseX2, baseY2] = toWorld(arrowWidth, halfHeight);
+  if (shape.kind === 'polygon') {
+    const [firstPoint, ...remainingPoints] = shape.points;
     ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(baseX1, baseY1);
-    if (arrowStyle === 'concaveArrow') {
-      const [centerX, centerY] = toWorld(arrowWidth - arrowWidth * 0.3, 0);
-      ctx.lineTo(centerX, centerY);
+    ctx.moveTo(firstPoint[0], firstPoint[1]);
+    for (const [x, y] of remainingPoints) {
+      ctx.lineTo(x, y);
     }
-    ctx.lineTo(baseX2, baseY2);
     ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  if (arrowStyle === 'diamond' || arrowStyle === 'openDiamond') {
-    const halfWidth = arrowWidth / 2;
-    const [point1X, point1Y] = toWorld(0, 0);
-    const [point2X, point2Y] = toWorld(halfWidth, -halfHeight);
-    const [point3X, point3Y] = toWorld(arrowWidth, 0);
-    const [point4X, point4Y] = toWorld(halfWidth, halfHeight);
-    ctx.beginPath();
-    ctx.moveTo(point1X, point1Y);
-    ctx.lineTo(point2X, point2Y);
-    ctx.lineTo(point3X, point3Y);
-    ctx.lineTo(point4X, point4Y);
-    ctx.closePath();
-    if (arrowStyle === 'diamond') {
+    if (shape.fill === 'solid') {
       ctx.fill();
     } else {
       ctx.save();
@@ -2348,14 +2326,10 @@ function drawCanvasArrowHead(
     return;
   }
 
-  if (arrowStyle === 'circle' || arrowStyle === 'openCircle') {
-    const halfWidth = arrowWidth / 2;
-    const [centerX, centerY] = toWorld(halfWidth, 0);
-    const radiusX = halfWidth * 0.8;
-    const radiusY = halfHeight * 0.8;
+  if (shape.kind === 'ellipse') {
     ctx.beginPath();
-    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
-    if (arrowStyle === 'circle') {
+    ctx.ellipse(shape.centerX, shape.centerY, shape.radiusX, shape.radiusY, 0, 0, Math.PI * 2);
+    if (shape.fill === 'solid') {
       ctx.fill();
     } else {
       ctx.save();
@@ -2367,30 +2341,6 @@ function drawCanvasArrowHead(
     ctx.restore();
     return;
   }
-
-  if (arrowStyle === 'square' || arrowStyle === 'openSquare') {
-    const [point1X, point1Y] = toWorld(0, -halfHeight);
-    const [point2X, point2Y] = toWorld(arrowWidth, -halfHeight);
-    const [point3X, point3Y] = toWorld(arrowWidth, halfHeight);
-    const [point4X, point4Y] = toWorld(0, halfHeight);
-    ctx.beginPath();
-    ctx.moveTo(point1X, point1Y);
-    ctx.lineTo(point2X, point2Y);
-    ctx.lineTo(point3X, point3Y);
-    ctx.lineTo(point4X, point4Y);
-    ctx.closePath();
-    if (arrowStyle === 'square') {
-      ctx.fill();
-    } else {
-      ctx.save();
-      ctx.fillStyle = 'white';
-      ctx.fill();
-      ctx.restore();
-      ctx.stroke();
-    }
-  }
-
-  ctx.restore();
 }
 
 function applyCssAlpha(color: string, opacity: number): string {
