@@ -291,7 +291,23 @@ assert.equal(
   'Canvas2D and CanvasKit must import the shared form object palette helper',
 );
 compareCaseContract('renderLine', 'line style replay');
-compareCaseContract('resolveImagePlacement', 'image fill placement');
+assert.equal(
+  layerGeometryUtilsSource.includes('export function resolveImagePlacement('),
+  true,
+  'image fill placement must live in shared native-ready geometry helpers',
+);
+assert.equal(
+  canvas2dSource.includes('private resolveImagePlacement(')
+    || canvaskitSource.includes('private resolveImagePlacement('),
+  false,
+  'Canvas2D and CanvasKit must not carry separate image placement copies',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './layer-geometry-utils').includes('resolveImagePlacement')
+    && importBlockFrom(canvaskitSource, './layer-geometry-utils').includes('resolveImagePlacement'),
+  true,
+  'Canvas2D and CanvasKit must import the shared image placement helper',
+);
 assert.deepEqual(
   uniqueSorted(stringEqualityLiterals(extractMethodBody(canvas2dSource, 'drawDomImage'), 'fillMode')),
   uniqueSorted(stringEqualityLiterals(extractMethodBody(canvaskitSource, 'drawEncodedImage'), 'fillMode')),
@@ -559,6 +575,7 @@ for (const geometryHelperName of [
   'calculateArrowDimensions',
   'computePathPaintBounds',
   'effectiveLayerImageBounds',
+  'resolveImagePlacement',
 ]) {
   assert.equal(
     canvaskitLayerCanvasUtilsImportBody.includes(geometryHelperName),

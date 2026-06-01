@@ -94,6 +94,36 @@ export function effectiveLayerImageBounds(
   };
 }
 
+export function resolveImagePlacement(
+  fillMode: string,
+  bbox: LayerBounds,
+  imageWidth: number,
+  imageHeight: number,
+): { x: number; y: number } {
+  switch (fillMode) {
+    case 'leftTop':
+      return { x: bbox.x, y: bbox.y };
+    case 'centerTop':
+      return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y };
+    case 'rightTop':
+      return { x: bbox.x + bbox.width - imageWidth, y: bbox.y };
+    case 'leftCenter':
+      return { x: bbox.x, y: bbox.y + (bbox.height - imageHeight) / 2 };
+    case 'center':
+      return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y + (bbox.height - imageHeight) / 2 };
+    case 'rightCenter':
+      return { x: bbox.x + bbox.width - imageWidth, y: bbox.y + (bbox.height - imageHeight) / 2 };
+    case 'leftBottom':
+      return { x: bbox.x, y: bbox.y + bbox.height - imageHeight };
+    case 'centerBottom':
+      return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y + bbox.height - imageHeight };
+    case 'rightBottom':
+      return { x: bbox.x + bbox.width - imageWidth, y: bbox.y + bbox.height - imageHeight };
+    default:
+      return { x: bbox.x, y: bbox.y };
+  }
+}
+
 export function computePathPaintBounds(
   commands: LayerPathCommand[],
   fallback: LayerBounds,

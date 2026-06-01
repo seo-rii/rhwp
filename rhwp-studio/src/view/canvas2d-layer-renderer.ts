@@ -70,7 +70,7 @@ import {
   splitIntoClusters,
   startsWithInvalidControl,
 } from './layer-canvas-utils';
-import { gradientColorStops, strokeDashPattern } from './layer-geometry-utils';
+import { gradientColorStops, resolveImagePlacement, strokeDashPattern } from './layer-geometry-utils';
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
@@ -1822,7 +1822,7 @@ export class Canvas2DLayerRenderer {
         placedWidth = imageWidth;
         placedHeight = imageHeight;
       }
-      const { x, y } = this.resolveImagePlacement(fillMode, bbox, placedWidth, placedHeight);
+      const { x, y } = resolveImagePlacement(fillMode, bbox, placedWidth, placedHeight);
 
       ctx.save();
       ctx.beginPath();
@@ -2019,36 +2019,6 @@ export class Canvas2DLayerRenderer {
     }
     draw();
     ctx.restore();
-  }
-
-  private resolveImagePlacement(
-    fillMode: string,
-    bbox: LayerBounds,
-    imageWidth: number,
-    imageHeight: number,
-  ): { x: number; y: number } {
-    switch (fillMode) {
-      case 'leftTop':
-        return { x: bbox.x, y: bbox.y };
-      case 'centerTop':
-        return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y };
-      case 'rightTop':
-        return { x: bbox.x + bbox.width - imageWidth, y: bbox.y };
-      case 'leftCenter':
-        return { x: bbox.x, y: bbox.y + (bbox.height - imageHeight) / 2 };
-      case 'center':
-        return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y + (bbox.height - imageHeight) / 2 };
-      case 'rightCenter':
-        return { x: bbox.x + bbox.width - imageWidth, y: bbox.y + (bbox.height - imageHeight) / 2 };
-      case 'leftBottom':
-        return { x: bbox.x, y: bbox.y + bbox.height - imageHeight };
-      case 'centerBottom':
-        return { x: bbox.x + (bbox.width - imageWidth) / 2, y: bbox.y + bbox.height - imageHeight };
-      case 'rightBottom':
-        return { x: bbox.x + bbox.width - imageWidth, y: bbox.y + bbox.height - imageHeight };
-      default:
-        return { x: bbox.x, y: bbox.y };
-    }
   }
 
   private makeShapeFillStyle(
