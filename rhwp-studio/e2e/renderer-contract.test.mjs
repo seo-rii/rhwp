@@ -148,7 +148,16 @@ const requiredDirectReplayForbiddenApis = [
 ];
 
 function extractBlockBody(source, signatureIndex, blockName) {
-  const bodyStart = source.indexOf('{', signatureIndex);
+  let bodyStart = -1;
+  for (let index = signatureIndex; index < source.length; index += 1) {
+    if (source[index] !== '{') {
+      continue;
+    }
+    if (/^\s*\n/.test(source.slice(index + 1, index + 8))) {
+      bodyStart = index;
+      break;
+    }
+  }
   assert.notEqual(bodyStart, -1, `missing body for ${blockName}`);
 
   let depth = 0;
@@ -213,6 +222,10 @@ function stringEqualityLiterals(body, variablePattern) {
   return [...body.matchAll(pattern)].map((match) => match[1]);
 }
 
+function uniqueSorted(values) {
+  return [...new Set(values)].sort();
+}
+
 function compareCaseContract(methodName, contractName) {
   compareCaseLabels(
     caseLabels(extractMethodBody(canvas2dSource, methodName)),
@@ -238,14 +251,27 @@ function compareCaseLabels(canvas2dLabels, canvaskitLabels, contractName) {
   );
 }
 
+function assertTokensInOrder(source, tokens, message) {
+  let cursor = -1;
+  for (const token of tokens) {
+    const next = source.indexOf(token, cursor + 1);
+    assert.notEqual(next, -1, `${message}: missing ${token}`);
+    assert(
+      next > cursor,
+      `${message}: ${token} must appear after previous token`,
+    );
+    cursor = next;
+  }
+}
+
 compareCaseContract('renderNode', 'LayerNode dispatch');
 compareCaseContract('renderOp', 'LayerPaintOp dispatch');
 compareCaseContract('renderFormObject', 'form object replay');
 compareCaseContract('renderLine', 'line style replay');
 compareCaseContract('resolveImagePlacement', 'image fill placement');
 assert.deepEqual(
-  stringEqualityLiterals(extractMethodBody(canvas2dSource, 'drawDomImage'), 'fillMode'),
-  stringEqualityLiterals(extractMethodBody(canvaskitSource, 'drawEncodedImage'), 'fillMode'),
+  uniqueSorted(stringEqualityLiterals(extractMethodBody(canvas2dSource, 'drawDomImage'), 'fillMode')),
+  uniqueSorted(stringEqualityLiterals(extractMethodBody(canvaskitSource, 'drawEncodedImage'), 'fillMode')),
   'image fill-mode replay branches must stay aligned between Canvas2D and CanvasKit',
 );
 assert(
@@ -267,6 +293,26 @@ assert(
   extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('gradientColorStops(')
     && extractMethodBody(canvaskitSource, 'makeGradientShader').includes('gradientColorStops('),
   'Canvas2D and CanvasKit gradient replay must share stop normalization',
+);
+assertTokensInOrder(
+  extractMethodBody(canvas2dSource, 'makeShapeFillStyle'),
+  ['if (gradient)', 'if (pattern)', 'if (!fillColor)'],
+  'Canvas2D shape fill precedence must stay gradient, pattern, then solid color',
+);
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'makeShapeFillPaint'),
+  ['gradient ? this.makeGradientShader', 'pattern ? this.makePatternShader', 'if (!shader && !fillColor)'],
+  'CanvasKit shape fill precedence must stay gradient, pattern, then solid color',
+);
+assert(
+  extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4')
+    && extractMethodBody(canvaskitSource, 'makeGradientShader').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4'),
+  'Canvas2D and CanvasKit radial gradient type mapping must stay aligned',
+);
+assert(
+  extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('angleToCanvasCoords(')
+    && extractMethodBody(canvaskitSource, 'makeGradientShader').includes('angleToCanvasCoords('),
+  'Canvas2D and CanvasKit linear gradient coordinates must use the same helper',
 );
 compareCaseLabels(
   caseLabels(extractFunctionBody(layerCanvasUtilsSource, 'renderEquationLayoutBox')),
