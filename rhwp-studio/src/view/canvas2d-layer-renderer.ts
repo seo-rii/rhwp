@@ -1,5 +1,6 @@
 import {
   hasGlyphOutlinePathsContract,
+  isFillOnlyGlyphOutlineStyle,
   hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
   layerTextVariantOpsForLeaf,
@@ -2308,21 +2309,6 @@ function resolvedColorToCss(fill: { colorSpace?: string; rgba: [number, number, 
   const clamp255 = (value: number) => Math.max(0, Math.min(255, Math.round(value * 255)));
   const alpha = Math.max(0, Math.min(1, a));
   return `rgba(${clamp255(r)}, ${clamp255(g)}, ${clamp255(b)}, ${alpha})`;
-}
-
-function isFillOnlyGlyphOutlineStyle(op: LayerGlyphOutlineOp): boolean {
-  const style = op.paintStyle;
-  const ratio = typeof style.ratio === 'number' && style.ratio > 0 ? style.ratio : 1;
-  const shadeColor = (typeof style.shadeColor === 'string' ? style.shadeColor : '#ffffff').toLowerCase();
-  return Math.abs(ratio - 1) <= 0.001
-    && style.underline === 'none'
-    && !style.strikethrough
-    && (style.outlineType ?? 0) === 0
-    && (style.shadowType ?? 0) === 0
-    && !style.emboss
-    && !style.engrave
-    && (style.emphasisDot ?? 0) === 0
-    && shadeColor === '#ffffff';
 }
 
 function strokeDashPattern(dash: string, width: number): number[] {

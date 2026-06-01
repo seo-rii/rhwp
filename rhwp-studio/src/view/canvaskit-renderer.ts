@@ -19,6 +19,7 @@ import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 import {
   hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
+  isFillOnlyGlyphOutlineStyle,
   layerTextVariantOpsForLeaf,
   selectLayerTextVariantSets,
   selectLayerTextVariantSetsWithReport,
@@ -3449,21 +3450,6 @@ export class CanvasKitLayerRenderer {
   private toRect(bounds: LayerBounds) {
     return this.canvasKit.XYWHRect(bounds.x, bounds.y, bounds.width, bounds.height);
   }
-}
-
-function isFillOnlyGlyphOutlineStyle(op: LayerGlyphOutlineOp): boolean {
-  const style = op.paintStyle;
-  const ratio = typeof style.ratio === 'number' && style.ratio > 0 ? style.ratio : 1;
-  const shadeColor = (typeof style.shadeColor === 'string' ? style.shadeColor : '#ffffff').toLowerCase();
-  return Math.abs(ratio - 1) <= 0.001
-    && style.underline === 'none'
-    && !style.strikethrough
-    && (style.outlineType ?? 0) === 0
-    && (style.shadowType ?? 0) === 0
-    && !style.emboss
-    && !style.engrave
-    && (style.emphasisDot ?? 0) === 0
-    && shadeColor === '#ffffff';
 }
 
 function drawArrowHead(

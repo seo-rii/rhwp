@@ -575,6 +575,23 @@ assert.deepEqual(
   stringEqualityLiterals(canvaskitGlyphOutlineReplayBlock, 'payloadKind'),
   'glyph outline payload kind replay branches must stay aligned between Canvas2D and CanvasKit',
 );
+assert.equal(
+  textVariantsSource.includes('export function isFillOnlyGlyphOutlineStyle('),
+  true,
+  'GlyphOutline strict paint-style eligibility must live in shared text variant policy',
+);
+assert.equal(
+  canvas2dSource.includes('function isFillOnlyGlyphOutlineStyle(')
+    || canvaskitSource.includes('function isFillOnlyGlyphOutlineStyle('),
+  false,
+  'Canvas2D and CanvasKit must not carry separate GlyphOutline paint-style eligibility copies',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, '@/core/text-variants').includes('isFillOnlyGlyphOutlineStyle')
+    && importBlockFrom(canvaskitSource, '@/core/text-variants').includes('isFillOnlyGlyphOutlineStyle'),
+  true,
+  'Canvas2D and CanvasKit must import the shared GlyphOutline paint-style eligibility helper',
+);
 assert.deepEqual(
   stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'colorFormat'),
   stringEqualityLiterals(canvaskitGlyphOutlineReplayBlock, 'colorFormat'),
