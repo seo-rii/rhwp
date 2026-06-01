@@ -71,6 +71,7 @@ import {
   parseStaticSvgTextLayers,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
+import { formObjectPalette } from './form-replay-utils';
 import {
   canPreprocessCroppedLayerImageEffect,
   resolveLayerImageCropSource,
@@ -676,22 +677,6 @@ export class CanvasKitLayerRenderer {
       default:
         assertNeverLayerPaintOp(op);
     }
-  }
-
-  private formPalette(op: LayerFormObjectOp): {
-    backColor: string;
-    foreColor: string;
-    borderColor: string;
-    buttonBackColor: string;
-    buttonFaceColor: string;
-  } {
-    return {
-      backColor: op.backColor || '#ffffff',
-      foreColor: op.enabled ? op.foreColor : '#808080',
-      borderColor: op.enabled ? '#808080' : '#bebebe',
-      buttonBackColor: op.backColor || (op.enabled ? '#d0d0d0' : '#e0e0e0'),
-      buttonFaceColor: op.enabled ? '#c0c0c0' : '#e0e0e0',
-    };
   }
 
   private renderPageBackground(canvas: ReturnType<Surface['getCanvas']>, op: LayerPageBackgroundOp): void {
@@ -2160,7 +2145,7 @@ export class CanvasKitLayerRenderer {
     op: LayerFormObjectOp,
   ): void {
     const { x, y, width: w, height: h } = op.bbox;
-    const palette = this.formPalette(op);
+    const palette = formObjectPalette(op);
 
     switch (op.formType) {
       case 'pushButton': {

@@ -76,6 +76,7 @@ import {
   parseStaticSvgTextLayers,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
+import { formObjectPalette } from './form-replay-utils';
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -1580,24 +1581,20 @@ export class Canvas2DLayerRenderer {
 
   private renderFormObject(ctx: CanvasRenderingContext2D, op: LayerFormObjectOp): void {
     const { x, y, width: w, height: h } = op.bbox;
-    const backColor = op.backColor || '#ffffff';
-    const foreColor = op.enabled ? op.foreColor : '#808080';
-    const borderColor = op.enabled ? '#808080' : '#bebebe';
-    const buttonBackColor = op.backColor || (op.enabled ? '#d0d0d0' : '#e0e0e0');
-    const buttonFaceColor = op.enabled ? '#c0c0c0' : '#e0e0e0';
+    const palette = formObjectPalette(op);
     ctx.save();
 
     switch (op.formType) {
       case 'pushButton': {
-        ctx.fillStyle = buttonBackColor;
+        ctx.fillStyle = palette.buttonBackColor;
         ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = borderColor;
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 0.5;
         ctx.strokeRect(x, y, w, h);
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.5, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(op.caption, x + w / 2, y + h / 2);
@@ -1607,13 +1604,13 @@ export class Canvas2DLayerRenderer {
       case 'checkBox': {
         const boxSize = Math.min(h, 14);
         const boxY = y + (h - boxSize) / 2;
-        ctx.fillStyle = backColor;
+        ctx.fillStyle = palette.backColor;
         ctx.fillRect(x, boxY, boxSize, boxSize);
-        ctx.strokeStyle = borderColor;
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.strokeRect(x, boxY, boxSize, boxSize);
         if (op.value !== 0) {
-          ctx.strokeStyle = foreColor;
+          ctx.strokeStyle = palette.foreColor;
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.moveTo(x + 2, boxY + boxSize / 2);
@@ -1624,7 +1621,7 @@ export class Canvas2DLayerRenderer {
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.caption, x + boxSize + 4, y + h / 2);
         }
@@ -1636,21 +1633,21 @@ export class Canvas2DLayerRenderer {
         const cy = y + h / 2;
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.fillStyle = backColor;
+        ctx.fillStyle = palette.backColor;
         ctx.fill();
-        ctx.strokeStyle = borderColor;
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.stroke();
         if (op.value !== 0) {
           ctx.beginPath();
           ctx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
-          ctx.fillStyle = foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.fill();
         }
         if (op.caption) {
           const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.caption, x + radius * 2 + 4, y + h / 2);
         }
@@ -1658,22 +1655,22 @@ export class Canvas2DLayerRenderer {
       }
       case 'comboBox': {
         const btnW = Math.min(h, 20);
-        ctx.fillStyle = backColor;
+        ctx.fillStyle = palette.backColor;
         ctx.fillRect(x, y, w - btnW, h);
-        ctx.strokeStyle = borderColor;
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, w - btnW, h);
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.text, x + 2, y + h / 2);
         }
         const buttonX = x + w - btnW;
-        ctx.fillStyle = buttonFaceColor;
+        ctx.fillStyle = palette.buttonFaceColor;
         ctx.fillRect(buttonX, y, btnW, h);
-        ctx.strokeStyle = borderColor;
+        ctx.strokeStyle = palette.borderColor;
         ctx.strokeRect(buttonX, y, btnW, h);
         ctx.beginPath();
         const triCx = buttonX + btnW / 2;
@@ -1683,20 +1680,20 @@ export class Canvas2DLayerRenderer {
         ctx.lineTo(triCx + triSize, triCy - triSize / 2);
         ctx.lineTo(triCx, triCy + triSize / 2);
         ctx.closePath();
-        ctx.fillStyle = foreColor;
+        ctx.fillStyle = palette.foreColor;
         ctx.fill();
         break;
       }
       case 'edit': {
-        ctx.fillStyle = backColor;
+        ctx.fillStyle = palette.backColor;
         ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = borderColor;
+        ctx.strokeStyle = palette.borderColor;
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, w, h);
         if (op.text) {
           const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = foreColor;
+          ctx.fillStyle = palette.foreColor;
           ctx.textBaseline = 'middle';
           ctx.fillText(op.text, x + 2, y + h / 2);
         }

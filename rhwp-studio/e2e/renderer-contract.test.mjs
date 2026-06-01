@@ -13,6 +13,7 @@ const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache
 const glyphOutlinePayloadStatusPath = path.join(studioRoot, 'src/view/glyph-outline-payload-status.ts');
 const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
 const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-utils.ts');
+const formReplayUtilsPath = path.join(studioRoot, 'src/view/form-replay-utils.ts');
 const staticSvgPathLayersPath = path.join(studioRoot, 'src/view/static-svg-path-layers.ts');
 const textReplayUtilsPath = path.join(studioRoot, 'src/view/text-replay-utils.ts');
 const textVariantsPath = path.join(studioRoot, 'src/core/text-variants.ts');
@@ -28,6 +29,7 @@ const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath,
 const glyphOutlinePayloadStatusSource = fs.readFileSync(glyphOutlinePayloadStatusPath, 'utf8');
 const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
 const layerGeometryUtilsSource = fs.readFileSync(layerGeometryUtilsPath, 'utf8');
+const formReplayUtilsSource = fs.readFileSync(formReplayUtilsPath, 'utf8');
 const staticSvgPathLayersSource = fs.readFileSync(staticSvgPathLayersPath, 'utf8');
 const textReplayUtilsSource = fs.readFileSync(textReplayUtilsPath, 'utf8');
 const textVariantsSource = fs.readFileSync(textVariantsPath, 'utf8');
@@ -57,6 +59,7 @@ const canvaskitSourceFiles = [
   { label: path.relative(studioRoot, glyphOutlinePayloadStatusPath), source: glyphOutlinePayloadStatusSource },
   { label: path.relative(studioRoot, imageEffectPixelsPath), source: imageEffectPixelsSource },
   { label: path.relative(studioRoot, layerGeometryUtilsPath), source: layerGeometryUtilsSource },
+  { label: path.relative(studioRoot, formReplayUtilsPath), source: formReplayUtilsSource },
   { label: path.relative(studioRoot, staticSvgPathLayersPath), source: staticSvgPathLayersSource },
   { label: path.relative(studioRoot, textReplayUtilsPath), source: textReplayUtilsSource },
 ];
@@ -270,6 +273,23 @@ function assertTokensInOrder(source, tokens, message) {
 compareCaseContract('renderNode', 'LayerNode dispatch');
 compareCaseContract('renderOp', 'LayerPaintOp dispatch');
 compareCaseContract('renderFormObject', 'form object replay');
+assert.equal(
+  formReplayUtilsSource.includes('export function formObjectPalette('),
+  true,
+  'form object replay palette must live in a shared native-ready helper',
+);
+assert.equal(
+  canvaskitSource.includes('private formPalette(')
+    || canvas2dSource.includes('const backColor = op.backColor'),
+  false,
+  'Canvas2D and CanvasKit must not carry separate form object palette copies',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './form-replay-utils').includes('formObjectPalette')
+    && importBlockFrom(canvaskitSource, './form-replay-utils').includes('formObjectPalette'),
+  true,
+  'Canvas2D and CanvasKit must import the shared form object palette helper',
+);
 compareCaseContract('renderLine', 'line style replay');
 compareCaseContract('resolveImagePlacement', 'image fill placement');
 assert.deepEqual(
