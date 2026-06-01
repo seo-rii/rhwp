@@ -154,3 +154,19 @@ export function calculateArrowDimensions(
   const arrowWidth = Math.min(arrowHeight * lengthMultiplier, lineLength * 0.3);
   return [arrowWidth, arrowHeight];
 }
+
+export function strokeDashPattern(dash: string, width: number): number[] {
+  const stroke = Math.max(width, 0.5);
+  switch (dash) {
+    case 'dash':
+      return [stroke * 4, stroke * 2];
+    case 'dot':
+      return [stroke * 1.5, stroke * 2.5];
+    case 'dashDot':
+      return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2];
+    case 'dashDotDot':
+      return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2, stroke * 1.5, stroke * 2];
+    default:
+      return [];
+  }
+}

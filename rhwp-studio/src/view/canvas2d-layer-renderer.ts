@@ -70,7 +70,7 @@ import {
   splitIntoClusters,
   startsWithInvalidControl,
 } from './layer-canvas-utils';
-import { gradientColorStops } from './layer-geometry-utils';
+import { gradientColorStops, strokeDashPattern } from './layer-geometry-utils';
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
@@ -2309,22 +2309,6 @@ function resolvedColorToCss(fill: { colorSpace?: string; rgba: [number, number, 
   const clamp255 = (value: number) => Math.max(0, Math.min(255, Math.round(value * 255)));
   const alpha = Math.max(0, Math.min(1, a));
   return `rgba(${clamp255(r)}, ${clamp255(g)}, ${clamp255(b)}, ${alpha})`;
-}
-
-function strokeDashPattern(dash: string, width: number): number[] {
-  const stroke = Math.max(width, 0.5);
-  switch (dash) {
-    case 'dash':
-      return [stroke * 4, stroke * 2];
-    case 'dot':
-      return [stroke * 1.5, stroke * 2.5];
-    case 'dashDot':
-      return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2];
-    case 'dashDotDot':
-      return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2, stroke * 1.5, stroke * 2];
-    default:
-      return [];
-  }
 }
 
 function drawCanvasArrowHead(

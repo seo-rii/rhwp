@@ -82,6 +82,7 @@ import {
   computePathPaintBounds,
   effectiveLayerImageBounds,
   gradientColorStops,
+  strokeDashPattern,
 } from './layer-geometry-utils';
 import {
   allowsTextControlMark,
@@ -2945,22 +2946,6 @@ export class CanvasKitLayerRenderer {
     return layout.height > 0 ? layout.height : baseFontSize;
   }
 
-  private strokeDashPattern(dash: string, width: number): number[] {
-    const stroke = Math.max(width, 0.5);
-    switch (dash) {
-      case 'dash':
-        return [stroke * 4, stroke * 2];
-      case 'dot':
-        return [stroke * 1.5, stroke * 2.5];
-      case 'dashDot':
-        return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2];
-      case 'dashDotDot':
-        return [stroke * 4, stroke * 2, stroke * 1.5, stroke * 2, stroke * 1.5, stroke * 2];
-      default:
-        return [];
-    }
-  }
-
   private drawEncodedImage(
     canvas: ReturnType<Surface['getCanvas']>,
     resourceId: number | undefined,
@@ -3283,7 +3268,7 @@ export class CanvasKitLayerRenderer {
     const strokeWidth = Math.max(width, 0.5);
     paint.setStrokeWidth(strokeWidth);
 
-    const intervals = this.strokeDashPattern(dash, strokeWidth);
+    const intervals = strokeDashPattern(dash, strokeWidth);
     if (intervals.length > 0) {
       const effect = this.canvasKit.PathEffect.MakeDash(intervals, 0);
       paint.setPathEffect(effect);

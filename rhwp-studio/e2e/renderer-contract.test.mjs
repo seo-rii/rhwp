@@ -287,10 +287,22 @@ compareCaseLabels(
   caseLabels(extractMethodBody(canvaskitSource, 'makePath')),
   'path command replay',
 );
-compareCaseLabels(
-  caseLabels(extractFunctionBody(canvas2dSource, 'strokeDashPattern')),
-  caseLabels(extractMethodBody(canvaskitSource, 'strokeDashPattern')),
-  'line dash replay',
+assert.equal(
+  layerGeometryUtilsSource.includes('export function strokeDashPattern('),
+  true,
+  'line dash replay must live in shared native-ready geometry helpers',
+);
+assert.equal(
+  canvas2dSource.includes('function strokeDashPattern(')
+    || canvaskitSource.includes('strokeDashPattern(dash: string, width: number)'),
+  false,
+  'Canvas2D and CanvasKit must not carry separate line dash pattern copies',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './layer-geometry-utils').includes('strokeDashPattern')
+    && importBlockFrom(canvaskitSource, './layer-geometry-utils').includes('strokeDashPattern'),
+  true,
+  'Canvas2D and CanvasKit must import the shared line dash pattern helper',
 );
 assert(
   extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('gradientColorStops(')
