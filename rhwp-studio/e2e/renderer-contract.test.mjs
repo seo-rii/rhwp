@@ -570,6 +570,28 @@ assert.equal(
   true,
   'CanvasKit renderer must import shared text replay helpers from the native-ready module',
 );
+assert.equal(
+  textReplayUtilsSource.includes('export function tabLeaderDashStyle('),
+  true,
+  'tab leader fillType mapping must live in shared native-ready text helpers',
+);
+assert.equal(
+  canvas2dSource.includes('leader.fillType === 2')
+    || canvaskitSource.includes('leader.fillType === 2'),
+  false,
+  'Canvas2D and CanvasKit must not carry separate tab leader fillType mappings',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './text-replay-utils').includes('tabLeaderDashStyle')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('tabLeaderDashStyle'),
+  true,
+  'Canvas2D and CanvasKit must import the shared tab leader dash helper',
+);
+assert(
+  extractMethodBody(canvas2dSource, 'drawTabLeaders').includes('strokeDashPattern(tabLeaderDashStyle(leader.fillType), 1)')
+    && extractMethodBody(canvaskitSource, 'drawTabLeaders').includes('tabLeaderDashStyle(leader.fillType)'),
+  'Canvas2D and CanvasKit tab leader replay must share fillType-to-dash mapping',
+);
 for (const geometryHelperName of [
   'angleToCanvasCoords',
   'calculateArrowDimensions',

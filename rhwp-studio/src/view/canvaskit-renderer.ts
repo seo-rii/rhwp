@@ -96,6 +96,7 @@ import {
   puaToDisplayText,
   splitIntoClusters,
   startsWithInvalidControl,
+  tabLeaderDashStyle,
 } from './text-replay-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
@@ -3117,7 +3118,7 @@ export class CanvasKitLayerRenderer {
 
   private drawTabLeaders(canvas: ReturnType<Surface['getCanvas']>, leaders: LayerTabLeader[], originX: number, baselineY: number, color: string): void {
     for (const leader of leaders) {
-      const dash = leader.fillType === 2 ? 'dash' : leader.fillType === 3 ? 'dot' : 'solid';
+      const dash = tabLeaderDashStyle(leader.fillType);
       const paint = this.makeLinePaint(color, 1, dash);
       const y = baselineY + 1;
       canvas.drawLine(originX + leader.startX, y, originX + leader.endX, y, paint);

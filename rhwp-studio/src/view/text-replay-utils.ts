@@ -29,6 +29,10 @@ export function allowsTextControlMark(
   }
 }
 
+export function tabLeaderDashStyle(fillType: number): 'solid' | 'dash' | 'dot' {
+  return fillType === 2 ? 'dash' : fillType === 3 ? 'dot' : 'solid';
+}
+
 function puaOverlapDigit(ch: string): [number, number] | null {
   const cp = ch.codePointAt(0) ?? 0;
   if (cp >= 0xF0289 && cp <= 0xF0291) {

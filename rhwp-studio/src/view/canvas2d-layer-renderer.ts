@@ -77,6 +77,7 @@ import {
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
 import { formObjectPalette } from './form-replay-utils';
+import { tabLeaderDashStyle } from './text-replay-utils';
 
 type OverlayClip = {
   bounds: LayerBounds;
@@ -1717,11 +1718,7 @@ export class Canvas2DLayerRenderer {
       ctx.save();
       ctx.strokeStyle = color;
       ctx.lineWidth = 1;
-      ctx.setLineDash(
-        leader.fillType === 2 ? [4, 2]
-          : leader.fillType === 3 ? [1.5, 2.5]
-            : [],
-      );
+      ctx.setLineDash(strokeDashPattern(tabLeaderDashStyle(leader.fillType), 1));
       const y = baselineY + 1;
       ctx.beginPath();
       ctx.moveTo(originX + leader.startX, y);
