@@ -371,6 +371,23 @@ assert.equal(
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',
 );
+assert.equal(
+  canvaskitSource.includes('this.surfaceCache.replaceWithSoftware(targetCanvas)'),
+  true,
+  'CanvasKit GPU render failures must fall back to a CanvasKit software surface, not a Canvas2D overlay',
+);
+assert.equal(
+  canvaskitResourceCacheSource.includes('Canvas2DLayerRenderer')
+    || fs.readFileSync(path.join(canvaskitDirectory, 'surface-cache.ts'), 'utf8').includes('Canvas2DLayerRenderer'),
+  false,
+  'CanvasKit caches and surface fallback must not instantiate the Canvas2D renderer',
+);
+assert.equal(
+  fs.readFileSync(path.join(canvaskitDirectory, 'surface-cache.ts'), 'utf8')
+    .includes('MakeSWCanvasSurface(targetCanvas)'),
+  true,
+  'CanvasKit software fallback must use CanvasKit MakeSWCanvasSurface',
+);
 const canvaskitLayerCanvasUtilsImportBody = importBlockFrom(
   canvaskitSource,
   './layer-canvas-utils',

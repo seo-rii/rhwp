@@ -112,6 +112,9 @@ The implementation should keep Canvas2D as a test oracle, not a code
 dependency. If CanvasKit behavior intentionally differs because Skia semantics
 are stricter or more native-ready, the fixture should label that difference
 instead of hiding it behind a Canvas2D overlay.
+GPU surface failures follow the same rule: CanvasKit may retry with a CanvasKit
+software surface, but it must not instantiate Canvas2D as a hidden renderer
+fallback.
 
 ## Work Phases
 
