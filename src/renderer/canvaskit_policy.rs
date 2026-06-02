@@ -1798,6 +1798,109 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_replay_plan_selects_bitmap_glyph_sidecar_with_srgb_default_detail() {
+        let text = text_run_op("text-0");
+        let anchor_op_id = match &text {
+            PaintOp::TextRun { run, .. } => run
+                .variant
+                .as_ref()
+                .expect("text fallback variant")
+                .stable_op_id(),
+            _ => unreachable!("helper returns textRun"),
+        };
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
+        let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        outline.variant.anchor_op_id = Some(anchor_op_id);
+        outline.variant.requires = vec![
+            "text.glyphOutline.bitmapGlyph".to_string(),
+            "text.strictVisualFallbackFree".to_string(),
+        ];
+        outline.bitmap_glyph = Some(bitmap_payload(image_id));
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        )
+        .resources(resources)
+        .variant_ops(vec![PaintOp::GlyphOutline {
+            bbox: valid_bbox(),
+            outline: Box::new(outline),
+        }])
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let report = plan
+            .text_variants
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("bitmap sidecar variant report");
+
+        assert_eq!(report.selected_variant_id, "glyphOutline");
+        assert!(report.parts.iter().any(|part| {
+            part.variant_id == "glyphOutline"
+                && part.replayable
+                && part.details.as_deref() == Some("colorSpaceDefaulted=srgb")
+        }));
+        assert!(plan.items.iter().any(|item| {
+            item.path == "root/leaf/variantOps/0"
+                && item.op_type == "glyphOutline"
+                && item.status == CanvasKitReplayStatus::Direct
+        }));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_selects_static_svg_glyph_sidecar_resource() {
+        let text = text_run_op("text-0");
+        let anchor_op_id = match &text {
+            PaintOp::TextRun { run, .. } => run
+                .variant
+                .as_ref()
+                .expect("text fallback variant")
+                .stable_op_id(),
+            _ => unreachable!("helper returns textRun"),
+        };
+        let mut resources = ResourceArena::default();
+        let svg_id = resources
+            .intern_svg_fragment("<path d=\"M0 0 L16 0 L16 16 L0 16 Z\" fill=\"#00ffff\"/>");
+        let mut outline = outline(GlyphOutlinePayloadKind::SvgGlyph);
+        outline.variant.anchor_op_id = Some(anchor_op_id);
+        outline.variant.requires = vec![
+            "text.glyphOutline.svgGlyph".to_string(),
+            "text.strictVisualFallbackFree".to_string(),
+        ];
+        outline.svg_glyph = Some(svg_payload(svg_id));
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        )
+        .resources(resources)
+        .variant_ops(vec![PaintOp::GlyphOutline {
+            bbox: valid_bbox(),
+            outline: Box::new(outline),
+        }])
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let report = plan
+            .text_variants
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("SvgGlyph sidecar variant report");
+
+        assert_eq!(report.selected_variant_id, "glyphOutline");
+        assert!(report.parts.iter().any(|part| {
+            part.variant_id == "glyphOutline" && part.replayable && part.reason.is_none()
+        }));
+        assert!(plan.items.iter().any(|item| {
+            item.path == "root/leaf/variantOps/0"
+                && item.op_type == "glyphOutline"
+                && item.status == CanvasKitReplayStatus::Direct
+        }));
+    }
+
+    #[test]
     fn canvaskit_replay_plan_reports_image_payload_details() {
         let tree = PageLayerTree::builder(
             100.0,
