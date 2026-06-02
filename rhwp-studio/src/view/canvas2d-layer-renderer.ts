@@ -79,8 +79,10 @@ import {
 import { formObjectPalette } from './form-replay-utils';
 import {
   tabLeaderDashStyle,
+  textDecorationEmphasisSize,
   textDecorationEmphasisMark,
   textDecorationEmphasisPosition,
+  textDecorationLineY,
 } from './text-replay-utils';
 
 type OverlayClip = {
@@ -997,7 +999,7 @@ export class Canvas2DLayerRenderer {
         const dotChar = textDecorationEmphasisMark(emphasisDot);
         if (dotChar) {
           ctx.save();
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', fontSize * 0.3, false, false);
+          this.setCanvasTextFont(ctx, 'Noto Sans KR', textDecorationEmphasisSize(fontSize), false, false);
           ctx.fillStyle = op.style.color;
           for (const position of positions.slice(0, -1)) {
             const markPosition = textDecorationEmphasisPosition(
@@ -1021,7 +1023,7 @@ export class Canvas2DLayerRenderer {
         ctx.save();
         ctx.strokeStyle = op.style.underlineColor || op.style.color;
         ctx.lineWidth = 1;
-        const y = op.style.underline === 'top' ? originY - fontSize + 1 : originY + 2;
+        const y = textDecorationLineY('underline', op.style.underline, originY, fontSize);
         ctx.beginPath();
         ctx.moveTo(originX, y);
         ctx.lineTo(originX + textWidth, y);
@@ -1033,7 +1035,7 @@ export class Canvas2DLayerRenderer {
         ctx.save();
         ctx.strokeStyle = op.style.strikeColor || op.style.color;
         ctx.lineWidth = 1;
-        const y = originY - fontSize * 0.3;
+        const y = textDecorationLineY('strikethrough', undefined, originY, fontSize);
         ctx.beginPath();
         ctx.moveTo(originX, y);
         ctx.lineTo(originX + textWidth, y);
@@ -1096,14 +1098,12 @@ export class Canvas2DLayerRenderer {
     const drawDecoration = (originX: number, baselineY: number) => {
       const textWidth = op.decoration.positions.at(-1) ?? 0;
       if (op.decoration.kind === 'underline') {
-        const y = op.decoration.underline === 'top'
-          ? baselineY - op.decoration.fontSize + 1
-          : baselineY + 2;
+        const y = textDecorationLineY('underline', op.decoration.underline, baselineY, op.decoration.fontSize);
         this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
         return;
       }
       if (op.decoration.kind === 'strikethrough') {
-        const y = baselineY - op.decoration.fontSize * 0.3;
+        const y = textDecorationLineY('strikethrough', undefined, baselineY, op.decoration.fontSize);
         this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
         return;
       }
@@ -1112,7 +1112,7 @@ export class Canvas2DLayerRenderer {
         return;
       }
       ctx.save();
-      this.setCanvasTextFont(ctx, 'Noto Sans KR', op.decoration.fontSize * 0.3, false, false);
+      this.setCanvasTextFont(ctx, 'Noto Sans KR', textDecorationEmphasisSize(op.decoration.fontSize), false, false);
       ctx.textAlign = 'center';
       ctx.fillStyle = op.decoration.color;
       for (const position of op.decoration.positions.slice(0, -1)) {

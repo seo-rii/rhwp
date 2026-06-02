@@ -43,6 +43,22 @@ export function textDecorationEmphasisMark(emphasisDot: number): string {
               : '';
 }
 
+export function textDecorationLineY(
+  kind: 'underline' | 'strikethrough',
+  underline: string | undefined,
+  baselineY: number,
+  fontSize: number,
+): number {
+  if (kind === 'underline') {
+    return underline === 'top' ? baselineY - fontSize + 1 : baselineY + 2;
+  }
+  return baselineY - fontSize * 0.3;
+}
+
+export function textDecorationEmphasisSize(fontSize: number): number {
+  return fontSize * 0.3;
+}
+
 export function textDecorationEmphasisPosition(
   originX: number,
   baselineY: number,

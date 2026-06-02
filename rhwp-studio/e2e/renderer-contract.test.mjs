@@ -554,6 +554,8 @@ for (const textHelperName of [
   'startsWithInvalidControl',
   'textDecorationEmphasisMark',
   'textDecorationEmphasisPosition',
+  'textDecorationEmphasisSize',
+  'textDecorationLineY',
 ]) {
   assert.equal(
     canvaskitLayerCanvasUtilsImportBody.includes(textHelperName),
@@ -618,9 +620,11 @@ assert(
 );
 assert.equal(
   textReplayUtilsSource.includes('export function textDecorationEmphasisMark(')
-    && textReplayUtilsSource.includes('export function textDecorationEmphasisPosition('),
+    && textReplayUtilsSource.includes('export function textDecorationEmphasisPosition(')
+    && textReplayUtilsSource.includes('export function textDecorationEmphasisSize(')
+    && textReplayUtilsSource.includes('export function textDecorationLineY('),
   true,
-  'text decoration emphasis mark policy must live in shared native-ready text helpers',
+  'text decoration visual policy must live in shared native-ready text helpers',
 );
 assert.equal(
   canvas2dSource.includes("emphasisDot === 3 ? 'ˇ'")
@@ -631,15 +635,26 @@ assert.equal(
 assert.equal(
   importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisMark')
     && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisPosition')
+    && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisSize')
+    && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationLineY')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisMark')
-    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisPosition'),
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisPosition')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisSize')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationLineY'),
   true,
-  'Canvas2D and CanvasKit must import the shared text decoration emphasis helpers',
+  'Canvas2D and CanvasKit must import the shared text decoration helpers',
 );
 assert(
   extractMethodBody(canvas2dSource, 'renderTextDecoration').includes('textDecorationEmphasisPosition(')
     && extractMethodBody(canvaskitSource, 'renderTextDecoration').includes('textDecorationEmphasisPosition('),
   'Canvas2D and CanvasKit text decoration replay must share emphasis mark positioning',
+);
+assert(
+  extractMethodBody(canvas2dSource, 'renderTextRun').includes('textDecorationLineY(')
+    && extractMethodBody(canvaskitSource, 'renderTextRun').includes('textDecorationLineY(')
+    && extractMethodBody(canvas2dSource, 'renderTextDecoration').includes('textDecorationLineY(')
+    && extractMethodBody(canvaskitSource, 'renderTextDecoration').includes('textDecorationLineY('),
+  'Canvas2D and CanvasKit text decoration replay must share underline/strike positioning',
 );
 for (const geometryHelperName of [
   'angleToCanvasCoords',

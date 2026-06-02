@@ -98,8 +98,10 @@ import {
   splitIntoClusters,
   startsWithInvalidControl,
   tabLeaderDashStyle,
+  textDecorationEmphasisSize,
   textDecorationEmphasisMark,
   textDecorationEmphasisPosition,
+  textDecorationLineY,
 } from './text-replay-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
@@ -1057,7 +1059,7 @@ export class CanvasKitLayerRenderer {
       }
 
       if (emphasisDot > 0) {
-        const dotSize = op.style.fontSize * 0.3;
+        const dotSize = textDecorationEmphasisSize(op.style.fontSize);
         const dotChar = textDecorationEmphasisMark(emphasisDot);
         for (const position of positions.slice(0, -1)) {
           const markPosition = textDecorationEmphasisPosition(
@@ -1086,14 +1088,14 @@ export class CanvasKitLayerRenderer {
       if (!decorationsAreMirrors && op.style.underline !== 'none') {
         const underlinePaint = this.makePaint(op.style.underlineColor || op.style.color, 'stroke');
         underlinePaint.setStrokeWidth(1);
-        const y = op.style.underline === 'top' ? originY - op.style.fontSize + 1 : originY + 2;
+        const y = textDecorationLineY('underline', op.style.underline, originY, op.style.fontSize);
         canvas.drawLine(originX, y, originX + textWidth, y, underlinePaint);
         underlinePaint.delete();
       }
       if (!decorationsAreMirrors && op.style.strikethrough) {
         const strikePaint = this.makePaint(op.style.strikeColor || op.style.color, 'stroke');
         strikePaint.setStrokeWidth(1);
-        const y = originY - op.style.fontSize * 0.3;
+        const y = textDecorationLineY('strikethrough', undefined, originY, op.style.fontSize);
         canvas.drawLine(originX, y, originX + textWidth, y, strikePaint);
         strikePaint.delete();
       }
@@ -1699,9 +1701,7 @@ export class CanvasKitLayerRenderer {
       if (op.decoration.kind === 'underline') {
         const paint = this.makePaint(op.decoration.color, 'stroke');
         paint.setStrokeWidth(1);
-        const y = op.decoration.underline === 'top'
-          ? baselineY - op.decoration.fontSize + 1
-          : baselineY + 2;
+        const y = textDecorationLineY('underline', op.decoration.underline, baselineY, op.decoration.fontSize);
         canvas.drawLine(originX, y, originX + textWidth, y, paint);
         paint.delete();
         return;
@@ -1709,7 +1709,7 @@ export class CanvasKitLayerRenderer {
       if (op.decoration.kind === 'strikethrough') {
         const paint = this.makePaint(op.decoration.color, 'stroke');
         paint.setStrokeWidth(1);
-        const y = baselineY - op.decoration.fontSize * 0.3;
+        const y = textDecorationLineY('strikethrough', undefined, baselineY, op.decoration.fontSize);
         canvas.drawLine(originX, y, originX + textWidth, y, paint);
         paint.delete();
         return;
@@ -1718,7 +1718,7 @@ export class CanvasKitLayerRenderer {
       if (!dotChar) {
         return;
       }
-      const dotSize = op.decoration.fontSize * 0.3;
+      const dotSize = textDecorationEmphasisSize(op.decoration.fontSize);
       if (op.decoration.emphasisDot === 1 || op.decoration.emphasisDot === 2) {
         for (const position of op.decoration.positions.slice(0, -1)) {
           const markPosition = textDecorationEmphasisPosition(
