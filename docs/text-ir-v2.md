@@ -423,8 +423,11 @@ fixture before SVG/Canvas2D exporters are widened. `BitmapGlyph` starts with a
 single producer-selected image strike and deterministic alpha, scaling, and
 filtering. `SvgGlyph` starts with a `VectorResourceId` pointing at sanitized
 static vector content and hard-false script, animation, external resource, and
-interactivity flags. CanvasKit and native Skia variation and TTC/OTC support
-remain fallback-only until exact face/instance proof fixtures pass.
+interactivity flags. CanvasKit variation and TTC/OTC replay remains
+fallback-only until a browser-side exact face/instance construction proof
+passes. Native Skia already has checked-in exact-font proof fixtures for direct
+TTF replay, selected variable-font axis tuples, and synthetic TTC face indices;
+broader real-font coverage is still corpus-gated.
 
 The main implementation touchpoints are:
 
@@ -445,8 +448,9 @@ The next implementation order is intentionally narrow:
    fixture before expanding graph nodes beyond solid color plus transform;
 3. strengthen `BitmapGlyph` and `SvgGlyph` validators and negative fixtures
    before widening writer emission;
-4. keep CanvasKit and native Skia variation and TTC/OTC strict replay
-   fallback-only until exact construction proof fixtures pass;
+4. keep CanvasKit variation and TTC/OTC strict replay fallback-only until
+   exact construction proof fixtures pass, while native Skia variation/TTC
+   support grows only through checked-in exact-font proof and corpus fixtures;
 5. keep shapedModern, cross-scope variants, and `MixedPerGlyph` writer emission
    blocked until their corpus, scope, and vertical semantics gates are met.
 
@@ -480,9 +484,11 @@ fixtures:
   backend instantiates.
 - Variant selection suppresses the `TextRun` fallback only when the selected
   `GlyphRun` variant set is complete and supported.
-- CanvasKit and native Skia both fall back whenever exact font, face-instance,
-  glyph id, or paint-effect eligibility is not proven. CanvasKit may keep
-  additional adapter-specific gates such as its current glyph-id range guard.
+- Backends fall back whenever exact font, face-instance, glyph id, or
+  paint-effect eligibility is not proven. CanvasKit still keeps the
+  adapter-specific variation/TTC gates and its current glyph-id range guard;
+  native Skia may select strict replay only for its checked-in exact-font proof
+  cases and must fall back for unproven face/instance combinations.
 - Unsafe cases do not silently draw a wrong glyph stream; they keep `TextRun`
   fallback and expose deterministic diagnostics or selection state.
 - Variant grouping is tested as a set-level rule: one `variantId` is selected
@@ -527,9 +533,11 @@ expansion:
 - duplicate variant part rejection: a `variantId` with repeated `partIndex`
   values is incomplete/invalid even when `partCount` would otherwise look
   satisfied.
-- CanvasKit and native Skia unsupported capability fallback: variation
-  instances and non-zero `faceIndex` font faces keep `TextRun` fallback until
-  the backend proves exact variation/collection-face construction.
+- Unsupported capability fallback: CanvasKit variation instances and non-zero
+  `faceIndex` font faces keep `TextRun` fallback until the browser adapter
+  proves exact variation/collection-face construction. Native Skia keeps the
+  same fallback policy for unproven combinations, while its checked-in exact
+  variation and synthetic TTC proof cases may select strict replay.
 - `PositionAdjusted` negative fixture: residuals above the strict page-space
   tolerance keep `TextRun` fallback.
 
@@ -900,19 +908,22 @@ implicitly change schema authority:
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
   stroke subset; unsupported stroke styles such as invalid dash arrays or
   non-numeric dash offsets remain deterministic fallback cases.
-- CanvasKit and native Skia variation, TTC, and OTC strict replay are backend
-  capability additions. Until each backend has exact construction fixtures, it
-  must keep reporting `variationUnsupported` or `faceIndexUnsupported` and
-  select the fallback variant.
-  The negative fixture matrix treats every explicit variation tuple as
-  unsupported for now, including unsupported axis tags, out-of-range axis
-  values, explicit default-axis tuples, and alternate axis tuples; omission of
-  the variation tuple is the only CanvasKit strict path until exact
+- Variation, TTC, and OTC strict replay are backend capability additions. A
+  backend must keep reporting `variationUnsupported` or `faceIndexUnsupported`
+  and select the fallback variant until exact construction is proven for that
+  backend and fixture class.
+  CanvasKit still treats every explicit variation tuple as unsupported,
+  including unsupported axis tags, out-of-range axis values, explicit
+  default-axis tuples, and alternate axis tuples; omission of the variation
+  tuple is the only CanvasKit strict path until browser-side exact
   construction is proven.
-  Native Skia renderer coverage follows the same matrix, and face-index
-  fixtures likewise keep non-zero wrong-face, high-index, and ambiguous metadata
-  cases fallback-only with `faceIndexUnsupported` until a backend proves exact
-  collection-face construction.
+  Native Skia has checked-in exact-font proof coverage for selected variable
+  axis tuples, explicit default-axis replay, alternate valid axis-bound replay,
+  direct TTF replay, synthetic TTC non-zero `faceIndex` replay, exact-byte
+  out-of-range fallback, invalid exact embedded font bytes, and digest-mismatch
+  rejection. Native wrong-face, high-index, ambiguous metadata, and real
+  collection corpus cases remain fallback/proof-gated until exact
+  collection-face construction is demonstrated.
 
 The current validator keeps this conservative:
 
@@ -1180,7 +1191,8 @@ that every reserved writer is enabled:
 | `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset, stage-2 linear/radial gradient path leaves, stage-4 `sourceOver` composite subset, and stage-5 run-local clip/reusable DAG subset; Canvas2D/CanvasKit and native Skia additionally support stage-3 full-360 sweep gradient leaves |
 | `GlyphOutline` `svgGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support sanitized static path-vector resources |
 | CanvasKit color glyph smoke | Report-only backend capability smoke |
-| CanvasKit and native Skia variation/TTC strict replay | Blocked until exact construction fixtures pass |
+| Native Skia variation/TTC strict replay | V2 backend feature addition; checked-in exact-font proof fixtures cover selected variation tuples, explicit default-axis replay, alternate valid axis-bound replay, direct TTF replay, synthetic TTC non-zero `faceIndex` replay, exact-byte out-of-range fallback, invalid exact embedded font bytes, and digest mismatch rejection. Broader real-font coverage remains corpus-gated. |
+| CanvasKit variation/TTC strict replay | Blocked until CanvasKit-specific exact variation tuple or collection `faceIndex` construction fixtures pass while preserving the `u32` glyph-id range guard. |
 | shaped measurement and `lineBreakRisk` telemetry | Report-only artifact outside replay schema |
 | shapedModern layout authority | Metadata reserved; opt-in layout migration only |
 | cross-scope variants and public `MixedPerGlyph` | Vocabulary and validator gate only |
@@ -1237,8 +1249,9 @@ at a time. The preferred order is:
 - `SvgGlyph` strict replay for sanitized static path-vector resources across
   SVG, Canvas2D, CanvasKit, and native Skia;
 - small CanvasKit color-glyph smoke tests that do not change `GlyphOutline`;
-- CanvasKit and native Skia variation/TTC support remains fallback-only until
-  exact construction proof fixtures pass;
+- CanvasKit variation/TTC support remains fallback-only until exact browser
+  construction proof fixtures pass, while native Skia variation/TTC support
+  expands only through exact-font proof and real-corpus fixtures;
 - cross-scope variants and public `MixedPerGlyph` remain writer-blocked until
   actual use cases and vertical/transform semantics are stable;
 - shapedModern layout work as a separate opt-in layout migration milestone.

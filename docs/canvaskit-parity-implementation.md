@@ -366,15 +366,18 @@ bitmap, color, or stroke sibling fields are present.
 Purpose: keep exact-font replay conservative until backend-specific face and
 instance construction is proven.
 
-Current policy stays unchanged:
+Current policy is split by backend:
 
-- variation-required `GlyphRun` rejected by CanvasKit and native Skia reports
-  `variationUnsupported`;
-- TTC/OTC non-zero `faceIndex` rejected by CanvasKit and native Skia reports
-  `faceIndexUnsupported`;
-- neither backend may select the strict `GlyphRun` variant for these font
-  instances until proof fixtures demonstrate exact construction. Backend
-  divergence remains possible later, and must be explained by
+- CanvasKit still rejects variation-required `GlyphRun` variants with
+  `variationUnsupported` and TTC/OTC non-zero `faceIndex` variants with
+  `faceIndexUnsupported` until browser-side exact construction proof exists.
+- Native Skia may select the strict `GlyphRun` variant only for checked-in
+  exact-font proof cases: direct TTF replay, selected variation tuples,
+  explicit default-axis replay, alternate valid axis-bound replay, synthetic
+  TTC non-zero `faceIndex` replay, exact-byte out-of-range fallback, invalid
+  exact embedded font bytes, and digest-mismatch rejection.
+- Backend divergence is expected while CanvasKit remains conservative and
+  native Skia has proof coverage. That difference must be explained by
   `VariantSelectionReport`.
 
 The proof fixtures required before enabling backend strict replay are:
@@ -388,13 +391,14 @@ CanvasKit glyph id replay must also keep the adapter range guard for public
 `u32` glyph ids because the browser binding currently uses a 16-bit glyph id
 path.
 
-Current unit, lifecycle, and native Skia renderer coverage intentionally stops
-before positive proof: explicit variation tuples are rejected for supported-axis
+Current CanvasKit unit and lifecycle coverage intentionally stops before
+positive proof: explicit variation tuples are rejected for supported-axis
 instances, unsupported-axis tags, out-of-range values, alternate axis tuples,
-and explicit default-axis tuples. Non-zero face-index fixtures also cover
-wrong-face, high-index, and ambiguous metadata cases. All of those cases must
-keep selecting the `TextRun` fallback and reporting `variationUnsupported` or
-`faceIndexUnsupported` until exact construction is proven.
+and explicit default-axis tuples. Native Skia renderer coverage keeps those
+negative cases but also includes the checked-in exact construction positives
+listed above. Non-zero native face-index coverage still needs wrong-face,
+high-index, ambiguous metadata, and real collection corpus widening before it
+counts as broad TTC/OTC coverage.
 
 ### 5. Layout, Scope, And Vertical Writer Gates
 
@@ -559,23 +563,29 @@ eventually unlock backend support.
 
 Expected code shape:
 
-- CanvasKit and native Skia continue to reject required variation instances
-  with `variationUnsupported`;
-- CanvasKit and native Skia continue to reject unsupported TTC/OTC face indices
-  with `faceIndexUnsupported`;
+- CanvasKit continues to reject required variation instances with
+  `variationUnsupported` and unsupported TTC/OTC face indices with
+  `faceIndexUnsupported`;
+- native Skia selects strict replay only for checked-in exact-font proof cases
+  and keeps deterministic fallback/reject diagnostics for unsupported or
+  unproven variation and face-index cases;
 - CanvasKit policy keeps a positive control for the current supported default
   face/no-variation gate, so later exact-construction changes can distinguish
   real variation/TTC enablement from a general GlyphRun regression;
 - native Skia proof coverage includes checked-in font bytes instantiated and
   replayed as a normal TTF face and as a synthetic two-face TTC, including the
   out-of-range face-index negative case;
-- CanvasKit policy and native Skia renderer coverage now include explicit
-  variation tuples for supported axes, unsupported axes, out-of-range values,
-  alternate tuples, and explicit default-axis tuples, plus non-zero face-index
-  wrong-face, high-index, and ambiguous metadata cases;
-- either backend may diverge only after its own proof fixtures pass; until then
-  both keep `TextRun` fallback and record the rejected `GlyphRun` reason in
-  `VariantSelectionReport`;
+- CanvasKit policy and native Skia renderer coverage both include explicit
+  variation negatives for unsupported axes, out-of-range values, and unproven
+  tuples. Native Skia additionally covers selected supported axes, alternate
+  valid axis-bound replay, explicit default-axis replay, synthetic non-zero
+  face-index positives, and exact-byte out-of-range fallback;
+- native wrong-face, ambiguous metadata, and real collection fixtures remain
+  corpus-widening follow-up work rather than broad TTC/OTC coverage;
+- either backend may diverge only after its own proof fixtures pass. CanvasKit
+  still keeps `TextRun` fallback for variation/TTC cases, while native Skia may
+  select strict replay for its proof fixtures and records fallback/reject
+  reasons for unproven cases in `VariantSelectionReport`;
 - proof fixtures record the exact blob, face, axis tuple, glyph ids, advances,
   bounds, and negative mismatch cases.
 
