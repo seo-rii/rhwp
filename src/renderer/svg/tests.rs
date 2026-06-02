@@ -579,7 +579,7 @@ fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
             variant.variant_id == "glyphOutline"
                 && variant
                     .reasons
-                    .contains(&VariantRejectReason::UnsupportedOutlinePayload)
+                    .contains(&VariantRejectReason::EmptyGlyphOutlinePayload)
         }));
     assert!(empty_payload_report
         .outline_eligibility
@@ -587,7 +587,7 @@ fn test_layer_svg_strict_glyph_outline_rejects_unsupported_payload_and_style() {
         .is_some_and(|eligibility| {
             !eligibility.payload_supported
                 && !eligibility.replay_eligible
-                && eligibility.reason == Some(VariantRejectReason::UnsupportedOutlinePayload)
+                && eligibility.reason == Some(VariantRejectReason::EmptyGlyphOutlinePayload)
         }));
 
     let mut unsupported_style = PaintTextStyle::from(&text_style);
@@ -1658,7 +1658,7 @@ fn test_layer_svg_strict_glyph_outline_rejects_mixed_payload_family() {
         variant.variant_id == "glyphOutline"
             && variant
                 .reasons
-                .contains(&VariantRejectReason::UnsupportedBitmapGlyph)
+                .contains(&VariantRejectReason::MixedGlyphOutlinePayload)
     }));
 }
 

@@ -27,17 +27,28 @@ function resolveChromePath() {
   const envPath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
   if (envPath && existsSync(envPath)) return envPath;
 
-  const cacheRoot = path.join(os.homedir(), '.cache', 'puppeteer', 'chrome');
+  const cacheRoot = path.join(os.homedir(), '.cache', 'puppeteer');
   if (!existsSync(cacheRoot)) return envPath || '';
 
-  const entries = readdirSync(cacheRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(cacheRoot, entry.name, 'chrome-linux64', 'chrome'))
-    .filter((candidate) => existsSync(candidate))
+  const stack = [cacheRoot];
+  const candidates = [];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const candidate = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(candidate);
+      } else if (entry.isFile() && (entry.name === 'chrome' || entry.name === 'chrome-headless-shell')) {
+        candidates.push(candidate);
+      }
+    }
+  }
+
+  const entries = candidates
     .sort()
     .reverse();
 
-  return entries[0] || envPath || '';
+  return entries.find((candidate) => path.basename(candidate) === 'chrome') || entries[0] || envPath || '';
 }
 
 const CHROME_PATH = resolveChromePath();
