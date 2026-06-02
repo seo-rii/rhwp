@@ -22,6 +22,8 @@ const layerTypesPath = path.join(studioRoot, 'src/core/types.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-implementation.md');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
+const rendererBaselinePath = path.join(studioRoot, 'e2e/renderer-baseline.mjs');
+const rendererBaselineManifestPath = path.join(repoRoot, 'scripts/renderer_baseline_manifest.json');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
@@ -39,6 +41,8 @@ const layerTypesSource = fs.readFileSync(layerTypesPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
+const rendererBaselineSource = fs.readFileSync(rendererBaselinePath, 'utf8');
+const rendererBaselineManifest = JSON.parse(fs.readFileSync(rendererBaselineManifestPath, 'utf8'));
 
 function tsFilesUnder(directory) {
   return fs.readdirSync(directory, { withFileTypes: true })
@@ -337,6 +341,21 @@ assert.deepEqual(
   uniqueSorted(stringEqualityLiterals(extractMethodBody(canvas2dSource, 'drawDomImage'), 'fillMode')),
   uniqueSorted(stringEqualityLiterals(extractMethodBody(canvaskitSource, 'drawEncodedImage'), 'fillMode')),
   'image fill-mode replay branches must stay aligned between Canvas2D and CanvasKit',
+);
+const imageCropBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'image-crop');
+assert.equal(
+  imageCropBaselineSample?.browserParityThresholds?.maxDiffRatio,
+  0.0065,
+  'image-crop baseline budget must stay aligned with the renderer sweep pic-crop-01 budget',
+);
+assert(
+  extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('...sample'),
+  'browser baseline sample normalization must preserve manifest extension fields such as browserParityThresholds',
+);
+assert(
+  extractFunctionBody(rendererBaselineSource, 'browserParityThresholdsForSample').includes('browserParityThresholds')
+    && extractFunctionBody(rendererBaselineSource, 'browserParityThresholdsForSample').includes('DEFAULT_BROWSER_PARITY_THRESHOLDS'),
+  'browser baseline comparisons must merge sample-specific threshold overrides with the default browser parity budget',
 );
 assert(
   extractMethodBody(canvas2dSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)')

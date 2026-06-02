@@ -12,7 +12,7 @@ import {
   loadHwpFile,
 } from './helpers.mjs';
 
-const BROWSER_PARITY_THRESHOLDS = {
+const DEFAULT_BROWSER_PARITY_THRESHOLDS = {
   ignoreChannelDelta: 8,
   maxDiffRatio: 0.005,
 };
@@ -54,6 +54,20 @@ const BACKENDS = [
   },
 ];
 const ALLOWED_PROFILES = new Set(['screen', 'print', 'high-quality', 'fast-preview']);
+
+function browserParityThresholdsForSample(sample) {
+  const sampleThresholds = sample?.browserParityThresholds;
+  if (!sampleThresholds || typeof sampleThresholds !== 'object') {
+    return { ...DEFAULT_BROWSER_PARITY_THRESHOLDS };
+  }
+  const thresholds = { ...DEFAULT_BROWSER_PARITY_THRESHOLDS };
+  for (const [key, value] of Object.entries(sampleThresholds)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      thresholds[key] = value;
+    }
+  }
+  return thresholds;
+}
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -124,6 +138,7 @@ function parseProfiles(rawProfiles) {
 function normalizeSamples(manifest, filterPattern) {
   const filter = filterPattern ? new RegExp(filterPattern, 'i') : null;
   return (manifest.samples ?? []).map((sample) => ({
+    ...sample,
     id: sample.id || path.basename(sample.file, path.extname(sample.file)),
     file: sample.file,
     category: sample.category || 'uncategorized',
@@ -266,10 +281,11 @@ for (const sample of samples) {
       }
 
       try {
+        const thresholds = browserParityThresholdsForSample(sample);
         const diff = await comparePngBuffers(
           fs.readFileSync(baseline.path),
           fs.readFileSync(target.path),
-          BROWSER_PARITY_THRESHOLDS,
+          thresholds,
         );
         browserBackendComparisons.push({
           sampleId: sample.id,
@@ -280,6 +296,7 @@ for (const sample of samples) {
           status: 'compared',
           baselinePath: baseline.path,
           targetPath: target.path,
+          thresholds,
           diff: {
             passed: diff.passed,
             passMetric: diff.passMetric,
@@ -371,7 +388,7 @@ const browserBackendParity = {
     ['canvas2d', 'canvaskit-compat'],
     ['canvas2d', 'canvaskit-default'],
   ],
-  thresholds: BROWSER_PARITY_THRESHOLDS,
+  thresholds: DEFAULT_BROWSER_PARITY_THRESHOLDS,
   summary: {
     total: browserBackendComparisons.length,
     compared: browserBackendCompared.length,

@@ -21,7 +21,10 @@
       "file": "pic-crop-01.hwp",
       "category": "image",
       "page": 0,
-      "notes": "Image crop and fill semantics."
+      "notes": "Image crop and fill semantics.",
+      "browserParityThresholds": {
+        "maxDiffRatio": 0.0065
+      }
     },
     {
       "id": "equation-inline",

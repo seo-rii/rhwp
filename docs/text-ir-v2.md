@@ -616,8 +616,9 @@ The full renderer baseline now writes a report-only
 compat/default fuzzy metrics in `browser-baseline-report.json`, and mirrors both
 summaries into `baseline-report.md`; these artifacts are observational data for
 threshold tuning, not pass/fail gates for the fast path. They record
-per-profile/per-sample summaries and the highest-delta comparisons so larger
-nightly matrices can be triaged without promoting them to PR gates.
+per-profile/per-sample summaries, per-comparison threshold overrides, and the
+highest-delta comparisons so larger nightly matrices can be triaged without
+promoting them to PR gates.
 
 CanvasKit color glyph coverage follows the same report-first rule. The checked
 in `tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf` fixture is a tiny synthetic

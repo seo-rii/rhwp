@@ -117,7 +117,8 @@ def load_manifest(manifest_path: Path, filter_pattern: str) -> dict:
             or filter_re.search(category)
         ):
             continue
-        selected.append(
+        selected_sample = dict(sample)
+        selected_sample.update(
             {
                 "id": sample_id,
                 "file": file_name,
@@ -126,6 +127,7 @@ def load_manifest(manifest_path: Path, filter_pattern: str) -> dict:
                 "notes": sample.get("notes", ""),
             }
         )
+        selected.append(selected_sample)
 
     if not selected:
         raise SystemExit("sample filter removed every manifest entry")
@@ -631,8 +633,8 @@ def write_reports(
                 "## Browser Canvas2D vs CanvasKit Fuzzy Parity",
                 "",
                 f"- mode: `{browser_backend_parity.get('mode', 'reportOnly')}`",
-                f"- ignore channel delta: {thresholds.get('ignoreChannelDelta', '-')}",
-                f"- max diff ratio: {thresholds.get('maxDiffRatio', '-')}",
+                f"- default ignore channel delta: {thresholds.get('ignoreChannelDelta', '-')}",
+                f"- default max diff ratio: {thresholds.get('maxDiffRatio', '-')}",
                 f"- compared: {summary.get('compared', 0)}",
                 f"- passed: {summary.get('passed', 0)}",
                 f"- failed: {summary.get('failed', 0)}",
@@ -726,12 +728,13 @@ def write_reports(
                 "",
                 "### Comparisons",
                 "",
-                "| Sample | Profile | Target Backend | Surface | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
-                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
+                "| Sample | Profile | Target Backend | Surface | Status | Passed | Diff Pixels | Diff Ratio | Max Diff Ratio | Max Channel Delta |",
+                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in browser_backend_parity.get("comparisons", []):
             diff = item.get("diff") or {}
+            item_thresholds = item.get("thresholds") or thresholds
             passed = "-"
             if "passed" in diff:
                 passed = "yes" if diff.get("passed") else "no"
@@ -750,6 +753,11 @@ def write_reports(
                         passed,
                         format_count(diff_pixels),
                         f"{diff_ratio:.6f}" if isinstance(diff_ratio, (int, float)) else "-",
+                        (
+                            f"{item_thresholds.get('maxDiffRatio'):.6f}"
+                            if isinstance(item_thresholds.get("maxDiffRatio"), (int, float))
+                            else "-"
+                        ),
                         format_count(max_channel_delta),
                     ]
                 )
