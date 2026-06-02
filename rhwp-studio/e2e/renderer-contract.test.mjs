@@ -450,6 +450,64 @@ assert.equal(
   true,
   'CanvasKit SvgGlyph replay must import the native-ready static SVG parser',
 );
+const strictBitmapGlyphContractBlock = extractFunctionBody(textVariantsSource, 'hasStrictBitmapGlyphContract');
+for (const requiredToken of [
+  "payload.payloadKind === 'bitmapGlyph'",
+  'payload.colorLayers === undefined',
+  'payload.svgGlyph === undefined',
+  'isValidResourceId(bitmapGlyph.imageResourceId)',
+  'isValidTextRunPlacement(bitmapGlyph.placement)',
+  'isValidBitmapStrikePpem(bitmapGlyph.strikePpem)',
+  "bitmapGlyph.strikeSelection === 'producerResolved'",
+  'isSupportedBitmapAlphaMode(bitmapGlyph.alphaMode)',
+  'isSupportedBitmapScalingPolicy(bitmapGlyph.scalingPolicy)',
+  'isSupportedBitmapFiltering(bitmapGlyph.filtering)',
+]) {
+  assert.equal(
+    strictBitmapGlyphContractBlock.includes(requiredToken),
+    true,
+    `BitmapGlyph strict payload contract must keep guard: ${requiredToken}`,
+  );
+}
+const staticSvgGlyphContractBlock = extractFunctionBody(textVariantsSource, 'hasStaticSanitizedSvgGlyphContract');
+for (const requiredToken of [
+  "payload.payloadKind === 'svgGlyph'",
+  'payload.colorLayers === undefined',
+  'payload.bitmapGlyph === undefined',
+  '!hasRawInlineSvgGlyphReplayField(svgGlyph)',
+  'isValidResourceId(svgGlyph.vectorResourceId)',
+  'viewBox !== undefined',
+  'viewBox.width > 0',
+  'viewBox.height > 0',
+  "svgGlyph.securityMode === 'staticSanitized'",
+  'svgGlyph.scriptAllowed === false',
+  'svgGlyph.animationAllowed === false',
+  'svgGlyph.externalResourcesAllowed === false',
+  'svgGlyph.interactivityAllowed === false',
+]) {
+  assert.equal(
+    staticSvgGlyphContractBlock.includes(requiredToken),
+    true,
+    `SvgGlyph static sanitized payload contract must keep guard: ${requiredToken}`,
+  );
+}
+for (const rawInlineField of ['rawSvg', 'inlineSvg', 'svgText', 'svgFragment', 'svg', 'fragment', 'markup']) {
+  assert.equal(
+    textVariantsSource.includes(`'${rawInlineField}'`),
+    true,
+    `SvgGlyph static sanitized payload contract must reject raw inline field: ${rawInlineField}`,
+  );
+}
+assert.equal(
+  extractMethodBody(canvaskitSource, 'renderBitmapGlyphOutline').includes('hasStrictBitmapGlyphContract(op)'),
+  true,
+  'CanvasKit BitmapGlyph replay must call the shared strict payload gate before drawing',
+);
+assert.equal(
+  extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline').includes('hasStaticSanitizedSvgGlyphContract(op)'),
+  true,
+  'CanvasKit SvgGlyph replay must call the shared static sanitized payload gate before drawing',
+);
 for (const [label, source] of [
   ['canvaskit renderer', canvaskitSource],
   ['glyph outline payload status', glyphOutlinePayloadStatusSource],
