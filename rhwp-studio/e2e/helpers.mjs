@@ -27,6 +27,14 @@ function resolveChromePath() {
   const envPath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
   if (envPath && existsSync(envPath)) return envPath;
 
+  const systemChrome = [
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+  ].find((candidate) => existsSync(candidate));
+  if (systemChrome) return systemChrome;
+
   const cacheRoot = path.join(os.homedir(), '.cache', 'puppeteer');
   if (!existsSync(cacheRoot)) return envPath || '';
 
