@@ -747,6 +747,12 @@ assert.equal(
   'COLRv1 color paint graph traversal must live in a shared native-ready helper',
 );
 assert.equal(
+  glyphOutlineColorGraphUtilsSource.includes('export function resolvedColorToCss(')
+    && glyphOutlineColorGraphUtilsSource.includes('export function resolvedColorUnitRgba('),
+  true,
+  'GlyphOutline resolved color conversion must live in shared native-ready helpers',
+);
+assert.equal(
   canvas2dSource.includes('const nodesById = new Map(graph.nodes.map')
     || canvaskitSource.includes('const nodesById = new Map(graph.nodes.map'),
   false,
@@ -762,6 +768,18 @@ assert(
   canvas2dGlyphOutlineReplayBlock.includes('replayColorPaintGraph(graph')
     && canvaskitGlyphOutlineReplayBlock.includes('replayColorPaintGraph(graph'),
   'Canvas2D and CanvasKit COLRv1 replay must share graph traversal',
+);
+assert.equal(
+  canvas2dSource.includes('function resolvedColorToCss(')
+    || canvaskitGlyphOutlineReplayBlock.includes('clampCanvasKitUnit('),
+  false,
+  'Canvas2D and CanvasKit must not carry separate GlyphOutline resolved color conversion copies',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './glyph-outline-color-graph-utils').includes('resolvedColorToCss')
+    && importBlockFrom(canvaskitSource, './glyph-outline-color-graph-utils').includes('resolvedColorUnitRgba'),
+  true,
+  'Canvas2D and CanvasKit must import shared GlyphOutline resolved color helpers',
 );
 
 for (const { label, source } of canvaskitSourceFiles) {

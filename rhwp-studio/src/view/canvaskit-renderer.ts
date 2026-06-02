@@ -71,7 +71,7 @@ import {
   parseStaticSvgTextLayers,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
-import { replayColorPaintGraph } from './glyph-outline-color-graph-utils';
+import { replayColorPaintGraph, resolvedColorUnitRgba } from './glyph-outline-color-graph-utils';
 import { formObjectPalette } from './form-replay-utils';
 import {
   canPreprocessCroppedLayerImageEffect,
@@ -106,7 +106,7 @@ import {
 } from './text-replay-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
-import { clampCanvasKitUnit, parseCanvasKitCssColor } from './canvaskit/css-color';
+import { parseCanvasKitCssColor } from './canvaskit/css-color';
 import { CanvasKitResourceCache, type CanvasKitPatternDiagnostics } from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
 import { CanvasKitSurfaceCache, type CanvasKitSurfaceDiagnostics } from './canvaskit/surface-cache';
@@ -1233,13 +1233,7 @@ export class CanvasKitLayerRenderer {
                 [gradientPath.gradient.x0, gradientPath.gradient.y0],
                 [gradientPath.gradient.x1, gradientPath.gradient.y1],
                 gradientPath.gradient.stops.map((stop) => {
-                  const [r, g, b, a] = stop.color.rgba;
-                  return [
-                    clampCanvasKitUnit(r),
-                    clampCanvasKitUnit(g),
-                    clampCanvasKitUnit(b),
-                    clampCanvasKitUnit(a),
-                  ] as any;
+                  return resolvedColorUnitRgba(stop.color) as any;
                 }),
                 gradientPath.gradient.stops.map((stop) => stop.offset),
                 this.canvasKit.TileMode.Clamp,
@@ -1260,13 +1254,7 @@ export class CanvasKitLayerRenderer {
                 [gradientPath.gradient.cx, gradientPath.gradient.cy],
                 gradientPath.gradient.radius,
                 gradientPath.gradient.stops.map((stop) => {
-                  const [r, g, b, a] = stop.color.rgba;
-                  return [
-                    clampCanvasKitUnit(r),
-                    clampCanvasKitUnit(g),
-                    clampCanvasKitUnit(b),
-                    clampCanvasKitUnit(a),
-                  ] as any;
+                  return resolvedColorUnitRgba(stop.color) as any;
                 }),
                 gradientPath.gradient.stops.map((stop) => stop.offset),
                 this.canvasKit.TileMode.Clamp,
@@ -1287,13 +1275,7 @@ export class CanvasKitLayerRenderer {
                 gradientPath.gradient.cx,
                 gradientPath.gradient.cy,
                 gradientPath.gradient.stops.map((stop) => {
-                  const [r, g, b, a] = stop.color.rgba;
-                  return [
-                    clampCanvasKitUnit(r),
-                    clampCanvasKitUnit(g),
-                    clampCanvasKitUnit(b),
-                    clampCanvasKitUnit(a),
-                  ] as any;
+                  return resolvedColorUnitRgba(stop.color) as any;
                 }),
                 gradientPath.gradient.stops.map((stop) => stop.offset),
                 this.canvasKit.TileMode.Clamp,
@@ -3189,13 +3171,7 @@ export class CanvasKitLayerRenderer {
     const paint = new this.canvasKit.Paint();
     paint.setAntiAlias(true);
     paint.setStyle(this.canvasKit.PaintStyle.Fill);
-    const [r, g, b, a] = fill.rgba;
-    paint.setColor([
-      clampCanvasKitUnit(r),
-      clampCanvasKitUnit(g),
-      clampCanvasKitUnit(b),
-      clampCanvasKitUnit(a),
-    ] as any);
+    paint.setColor(resolvedColorUnitRgba(fill) as any);
     return paint;
   }
 

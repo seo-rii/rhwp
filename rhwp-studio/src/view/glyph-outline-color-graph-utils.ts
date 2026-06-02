@@ -5,6 +5,7 @@ import type {
   LayerGlyphOutlineColorLinearGradientPathNode,
   LayerGlyphOutlineColorPaintGraphPayload,
   LayerGlyphOutlineColorRadialGradientPathNode,
+  LayerGlyphOutlineResolvedColor,
   LayerGlyphOutlineColorSolidPathNode,
   LayerGlyphOutlineColorSweepGradientPathNode,
 } from '@/core/types';
@@ -97,4 +98,27 @@ export function replayColorPaintGraph(
     }
   };
   renderNode(graph.rootNodeId, new Set());
+}
+
+export function resolvedColorUnitRgba(fill: LayerGlyphOutlineResolvedColor): [number, number, number, number] {
+  const [r, g, b, a] = fill.rgba;
+  return [
+    clampColorUnit(r),
+    clampColorUnit(g),
+    clampColorUnit(b),
+    clampColorUnit(a),
+  ];
+}
+
+export function resolvedColorToCss(fill: LayerGlyphOutlineResolvedColor): string {
+  const [r, g, b, a] = resolvedColorUnitRgba(fill);
+  return `rgba(${unitToCssChannel(r)}, ${unitToCssChannel(g)}, ${unitToCssChannel(b)}, ${a})`;
+}
+
+function clampColorUnit(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
+function unitToCssChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value * 255)));
 }

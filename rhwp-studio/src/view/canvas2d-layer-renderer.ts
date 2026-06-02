@@ -76,7 +76,7 @@ import {
   parseStaticSvgTextLayers,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
-import { replayColorPaintGraph } from './glyph-outline-color-graph-utils';
+import { replayColorPaintGraph, resolvedColorToCss } from './glyph-outline-color-graph-utils';
 import { formObjectPalette } from './form-replay-utils';
 import {
   tabLeaderDashStyle,
@@ -2217,13 +2217,6 @@ function appendPathCommands(
         break;
     }
   }
-}
-
-function resolvedColorToCss(fill: { colorSpace?: string; rgba: [number, number, number, number] }): string {
-  const [r, g, b, a] = fill.rgba;
-  const clamp255 = (value: number) => Math.max(0, Math.min(255, Math.round(value * 255)));
-  const alpha = Math.max(0, Math.min(1, a));
-  return `rgba(${clamp255(r)}, ${clamp255(g)}, ${clamp255(b)}, ${alpha})`;
 }
 
 function drawCanvasArrowHead(
