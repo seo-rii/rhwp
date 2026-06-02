@@ -819,8 +819,8 @@ to assign to schema, resource, adapter, or rasterization behavior.
 Every CanvasKit parity commit should run:
 
 ```bash
-node e2e/renderer-contract.test.mjs
-npm run build
+(cd rhwp-studio && node e2e/renderer-contract.test.mjs)
+(cd rhwp-studio && npm run build)
 git diff --check
 ```
 
@@ -828,7 +828,7 @@ When runtime behavior changes, also run the relevant lifecycle/parity fixture,
 usually:
 
 ```bash
-node e2e/renderer-lifecycle.test.mjs
+(cd rhwp-studio && node e2e/renderer-lifecycle.test.mjs)
 ```
 
 When a change touches strict payload semantics or native-ready Skia behavior,
