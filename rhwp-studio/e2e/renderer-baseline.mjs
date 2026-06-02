@@ -5,12 +5,17 @@ import {
   captureCanvasScreenshot,
   closeBrowser,
   closePage,
+  comparePngBuffers,
   createPage,
   launchBrowser,
   loadApp,
   loadHwpFile,
 } from './helpers.mjs';
 
+const BROWSER_PARITY_THRESHOLDS = {
+  ignoreChannelDelta: 8,
+  maxDiffRatio: 0.005,
+};
 const BACKENDS = [
   {
     key: 'canvas2d',
@@ -233,6 +238,98 @@ try {
 }
 
 const reportPath = path.join(options.output, 'browser-baseline-report.json');
+const browserBackendComparisons = [];
+for (const sample of samples) {
+  for (const profile of profiles) {
+    const baseline = results.find((entry) => (
+      entry.sampleId === sample.id
+        && entry.backend === 'canvas2d'
+        && entry.profile === profile
+    ));
+    for (const targetBackend of ['canvaskit-compat', 'canvaskit-default']) {
+      const target = results.find((entry) => (
+        entry.sampleId === sample.id
+          && entry.backend === targetBackend
+          && entry.profile === profile
+      ));
+      if (!baseline || !target) {
+        browserBackendComparisons.push({
+          sampleId: sample.id,
+          profile,
+          baselineBackend: 'canvas2d',
+          targetBackend,
+          status: 'missing',
+          baselinePath: baseline?.path ?? null,
+          targetPath: target?.path ?? null,
+        });
+        continue;
+      }
+
+      try {
+        const diff = await comparePngBuffers(
+          fs.readFileSync(baseline.path),
+          fs.readFileSync(target.path),
+          BROWSER_PARITY_THRESHOLDS,
+        );
+        browserBackendComparisons.push({
+          sampleId: sample.id,
+          profile,
+          baselineBackend: 'canvas2d',
+          targetBackend,
+          canvaskitSurface: target.canvaskitSurface ?? null,
+          status: 'compared',
+          baselinePath: baseline.path,
+          targetPath: target.path,
+          diff: {
+            passed: diff.passed,
+            passMetric: diff.passMetric,
+            width: diff.width,
+            height: diff.height,
+            exactDiffPixels: diff.exactDiffPixels,
+            exactDiffRatio: diff.exactDiffRatio,
+            tolerantDiffPixels: diff.rawTolerantDiffPixels,
+            tolerantDiffRatio: diff.rawTolerantDiffRatio,
+            selectedDiffPixels: diff.diffPixels,
+            selectedDiffRatio: diff.diffRatio,
+            maxChannelDelta: diff.maxChannelDelta,
+            meanAbsChannelDelta: diff.meanAbsChannelDelta,
+          },
+        });
+      } catch (error) {
+        browserBackendComparisons.push({
+          sampleId: sample.id,
+          profile,
+          baselineBackend: 'canvas2d',
+          targetBackend,
+          canvaskitSurface: target.canvaskitSurface ?? null,
+          status: 'error',
+          baselinePath: baseline.path,
+          targetPath: target.path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+}
+const browserBackendCompared = browserBackendComparisons.filter((item) => item.status === 'compared');
+const browserBackendParity = {
+  mode: 'reportOnly',
+  backendPairs: [
+    ['canvas2d', 'canvaskit-compat'],
+    ['canvas2d', 'canvaskit-default'],
+  ],
+  thresholds: BROWSER_PARITY_THRESHOLDS,
+  summary: {
+    total: browserBackendComparisons.length,
+    compared: browserBackendCompared.length,
+    passed: browserBackendCompared.filter((item) => item.diff?.passed).length,
+    failed: browserBackendCompared.filter((item) => !item.diff?.passed).length,
+    missing: browserBackendComparisons.filter((item) => item.status === 'missing').length,
+    errors: browserBackendComparisons.filter((item) => item.status === 'error').length,
+  },
+  comparisons: browserBackendComparisons,
+};
+
 fs.writeFileSync(
   reportPath,
   JSON.stringify(
@@ -242,6 +339,7 @@ fs.writeFileSync(
       profiles,
       canvaskitSurface: options.canvaskitSurface,
       results,
+      browserBackendParity,
     },
     null,
     2,

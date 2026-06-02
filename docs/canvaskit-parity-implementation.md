@@ -831,4 +831,7 @@ CanvasKit smoke runs for the `eq-01` fixture. The manual `Full Renderer Sweep`
 workflow captures the representative multi-profile baseline, then captures
 separate WebGPU-preferred and software CanvasKit baselines. Those wider
 surface-axis outputs are artifacts for diagnosis and threshold tuning, not
-default CI gates.
+default CI gates. The browser baseline report also compares Canvas2D against
+CanvasKit compat/default for each sampled profile with the same report-only
+fuzzy PNG metrics used by the renderer sweep, so CanvasKit parity drift can be
+triaged from the baseline artifact without adding a fast-path gate.

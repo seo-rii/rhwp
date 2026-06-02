@@ -612,11 +612,12 @@ Native Skia vs CanvasKit PNG fuzzy parity and larger matrices should start in a
 renderer sweep or nightly-style job, then move into the fast path only after
 flakiness and runtime are understood.
 The full renderer baseline now writes a report-only
-`native-canvaskit-parity-report.json` and mirrors its summary into
-`baseline-report.md`; this artifact is observational data for threshold tuning,
-not a pass/fail gate for the fast path. It records per-profile/per-sample
-summaries and the highest-delta comparisons so larger nightly matrices can be
-triaged without promoting them to PR gates.
+`native-canvaskit-parity-report.json`, embeds browser Canvas2D-vs-CanvasKit
+compat/default fuzzy metrics in `browser-baseline-report.json`, and mirrors both
+summaries into `baseline-report.md`; these artifacts are observational data for
+threshold tuning, not pass/fail gates for the fast path. They record
+per-profile/per-sample summaries and the highest-delta comparisons so larger
+nightly matrices can be triaged without promoting them to PR gates.
 
 CanvasKit color glyph coverage follows the same report-first rule. The checked
 in `tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf` fixture is a tiny synthetic

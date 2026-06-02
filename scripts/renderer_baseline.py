@@ -619,6 +619,56 @@ def write_reports(
                 + " |"
             )
 
+    browser_backend_parity = (
+        browser_data.get("browserBackendParity") if browser_data else None
+    )
+    if browser_backend_parity:
+        summary = browser_backend_parity.get("summary") or {}
+        thresholds = browser_backend_parity.get("thresholds") or {}
+        lines.extend(
+            [
+                "",
+                "## Browser Canvas2D vs CanvasKit Fuzzy Parity",
+                "",
+                f"- mode: `{browser_backend_parity.get('mode', 'reportOnly')}`",
+                f"- ignore channel delta: {thresholds.get('ignoreChannelDelta', '-')}",
+                f"- max diff ratio: {thresholds.get('maxDiffRatio', '-')}",
+                f"- compared: {summary.get('compared', 0)}",
+                f"- passed: {summary.get('passed', 0)}",
+                f"- failed: {summary.get('failed', 0)}",
+                f"- missing: {summary.get('missing', 0)}",
+                f"- errors: {summary.get('errors', 0)}",
+                "",
+                "| Sample | Profile | Target Backend | Surface | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
+                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
+            ]
+        )
+        for item in browser_backend_parity.get("comparisons", []):
+            diff = item.get("diff") or {}
+            passed = "-"
+            if "passed" in diff:
+                passed = "yes" if diff.get("passed") else "no"
+            diff_pixels = diff.get("selectedDiffPixels")
+            diff_ratio = diff.get("selectedDiffRatio")
+            max_channel_delta = diff.get("maxChannelDelta")
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("sampleId", "-"),
+                        item.get("profile", "-"),
+                        item.get("targetBackend", "-"),
+                        item.get("canvaskitSurface") or "-",
+                        item.get("status", "-"),
+                        passed,
+                        format_count(diff_pixels),
+                        f"{diff_ratio:.6f}" if isinstance(diff_ratio, (int, float)) else "-",
+                        format_count(max_channel_delta),
+                    ]
+                )
+                + " |"
+            )
+
     if parity_data:
         summary = parity_data.get("summary") or {}
         lines.extend(
