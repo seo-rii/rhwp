@@ -59,7 +59,8 @@ jobs:
       - name: Install headless Chrome
         working-directory: rhwp-studio
         run: |
-          chrome_path="$(npx @puppeteer/browsers install chrome@stable --path "$HOME/.cache/puppeteer" --format '{{path}}' | tail -n 1)"
+          chrome_install_output="$(./node_modules/.bin/browsers install chrome@stable --path "$HOME/.cache/puppeteer" --format '{{path}}')"
+          chrome_path="$(printf '%s\n' "$chrome_install_output" | tail -n 1)"
           if [ ! -f "$chrome_path" ]; then
             chrome_path="$(find "$HOME/.cache/puppeteer" -type f \( -name chrome -o -name chrome-headless-shell \) | sort | tail -n 1)"
           fi
