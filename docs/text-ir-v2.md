@@ -618,7 +618,9 @@ summaries into `baseline-report.md`; these artifacts are observational data for
 threshold tuning, not pass/fail gates for the fast path. They record
 per-profile/per-sample summaries, per-comparison threshold overrides, and the
 highest-delta comparisons so larger nightly matrices can be triaged without
-promoting them to PR gates.
+promoting them to PR gates. Text-heavy samples can disable the tolerant pixel
+budget with `maxDiffRatio: null` and use ink-mask / solid-ink budgets so report
+rows distinguish geometry drift from backend glyph rasterization differences.
 
 CanvasKit color glyph coverage follows the same report-first rule. The checked
 in `tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf` fixture is a tiny synthetic

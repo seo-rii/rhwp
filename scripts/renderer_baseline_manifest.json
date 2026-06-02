@@ -7,14 +7,28 @@
       "file": "lseg-05-tab.hwp",
       "category": "paragraph",
       "page": 0,
-      "notes": "General paragraph flow, tab stops, and inline text spacing."
+      "notes": "General paragraph flow, tab stops, and inline text spacing.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.005
+      }
     },
     {
       "id": "table-core",
       "file": "hwp_table_test.hwp",
       "category": "table",
       "page": 0,
-      "notes": "Baseline table layout, borders, and cell clipping."
+      "notes": "Baseline table layout, borders, and cell clipping.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.005
+      }
     },
     {
       "id": "image-crop",
@@ -31,28 +45,56 @@
       "file": "eq-01.hwp",
       "category": "equation",
       "page": 0,
-      "notes": "Equation layout and symbol fallback."
+      "notes": "Equation layout and symbol fallback.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.005
+      }
     },
     {
       "id": "header-image",
       "file": "pic-in-head-01.hwp",
       "category": "header-footer",
       "page": 0,
-      "notes": "Header region rendering with floating image content."
+      "notes": "Header region rendering with floating image content.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
     },
     {
       "id": "footnote",
       "file": "footnote-01.hwp",
       "category": "footnote",
       "page": 0,
-      "notes": "Footnote marker and footnote area layout."
+      "notes": "Footnote marker and footnote area layout.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0095
+      }
     },
     {
       "id": "shape-group",
       "file": "group-drawing-02.hwp",
       "category": "group-drawing",
       "page": 0,
-      "notes": "Nested group drawing replay and transform composition."
+      "notes": "Nested group drawing replay and transform composition.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
     },
     {
       "id": "form-controls",

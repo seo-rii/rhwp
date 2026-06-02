@@ -643,12 +643,13 @@ def write_reports(
                 "",
                 "### Target Backend Summary",
                 "",
-                "| Target Backend | Total | Compared | Passed | Failed | Missing | Errors | Worst Diff Ratio | Worst Channel Delta |",
-                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| Target Backend | Total | Compared | Passed | Failed | Missing | Errors | Worst Selected Diff Ratio | Worst Raw Diff Ratio | Worst Channel Delta |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in browser_backend_parity.get("summaryByTargetBackend", []):
             worst_ratio = item.get("worstSelectedDiffRatio")
+            worst_raw_ratio = item.get("worstTolerantDiffRatio")
             lines.append(
                 "| "
                 + " | ".join(
@@ -661,6 +662,7 @@ def write_reports(
                         format_count(item.get("missing")),
                         format_count(item.get("errors")),
                         f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
+                        f"{worst_raw_ratio:.6f}" if isinstance(worst_raw_ratio, (int, float)) else "-",
                         format_count(item.get("worstMaxChannelDelta")),
                     ]
                 )
@@ -671,12 +673,13 @@ def write_reports(
                 "",
                 "### Profile Summary",
                 "",
-                "| Profile | Total | Compared | Passed | Failed | Missing | Errors | Worst Diff Ratio | Worst Channel Delta |",
-                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| Profile | Total | Compared | Passed | Failed | Missing | Errors | Worst Selected Diff Ratio | Worst Raw Diff Ratio | Worst Channel Delta |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in browser_backend_parity.get("summaryByProfile", []):
             worst_ratio = item.get("worstSelectedDiffRatio")
+            worst_raw_ratio = item.get("worstTolerantDiffRatio")
             lines.append(
                 "| "
                 + " | ".join(
@@ -689,6 +692,7 @@ def write_reports(
                         format_count(item.get("missing")),
                         format_count(item.get("errors")),
                         f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
+                        f"{worst_raw_ratio:.6f}" if isinstance(worst_raw_ratio, (int, float)) else "-",
                         format_count(item.get("worstMaxChannelDelta")),
                     ]
                 )
@@ -699,12 +703,13 @@ def write_reports(
                 "",
                 "### Worst Comparisons",
                 "",
-                "| Sample | Profile | Target Backend | Surface | Passed | Diff Pixels | Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
-                "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
+                "| Sample | Profile | Target Backend | Surface | Passed | Diff Pixels | Selected Diff Ratio | Raw Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
+                "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in browser_backend_parity.get("worstComparisons", []):
             diff_ratio = item.get("selectedDiffRatio")
+            tolerant_ratio = item.get("tolerantDiffRatio")
             mean_abs = item.get("meanAbsChannelDelta")
             lines.append(
                 "| "
@@ -717,6 +722,7 @@ def write_reports(
                         "yes" if item.get("passed") else "no",
                         format_count(item.get("selectedDiffPixels")),
                         f"{diff_ratio:.6f}" if isinstance(diff_ratio, (int, float)) else "-",
+                        f"{tolerant_ratio:.6f}" if isinstance(tolerant_ratio, (int, float)) else "-",
                         format_count(item.get("maxChannelDelta")),
                         f"{mean_abs:.3f}" if isinstance(mean_abs, (int, float)) else "-",
                     ]
@@ -728,8 +734,8 @@ def write_reports(
                 "",
                 "### Comparisons",
                 "",
-                "| Sample | Profile | Target Backend | Surface | Status | Passed | Diff Pixels | Diff Ratio | Max Diff Ratio | Max Channel Delta |",
-                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
+                "| Sample | Profile | Target Backend | Surface | Status | Passed | Diff Pixels | Selected Diff Ratio | Raw Diff Ratio | Max Diff Ratio | Ink Mask Max Ratio | Non-Ink Max Pixels | Solid Ink Max Ratio | Max Channel Delta |",
+                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in browser_backend_parity.get("comparisons", []):
@@ -740,6 +746,7 @@ def write_reports(
                 passed = "yes" if diff.get("passed") else "no"
             diff_pixels = diff.get("selectedDiffPixels")
             diff_ratio = diff.get("selectedDiffRatio")
+            tolerant_ratio = diff.get("tolerantDiffRatio")
             max_channel_delta = diff.get("maxChannelDelta")
             lines.append(
                 "| "
@@ -753,9 +760,21 @@ def write_reports(
                         passed,
                         format_count(diff_pixels),
                         f"{diff_ratio:.6f}" if isinstance(diff_ratio, (int, float)) else "-",
+                        f"{tolerant_ratio:.6f}" if isinstance(tolerant_ratio, (int, float)) else "-",
                         (
                             f"{item_thresholds.get('maxDiffRatio'):.6f}"
                             if isinstance(item_thresholds.get("maxDiffRatio"), (int, float))
+                            else "-"
+                        ),
+                        (
+                            f"{item_thresholds.get('inkMaskMaxDiffRatio'):.6f}"
+                            if isinstance(item_thresholds.get("inkMaskMaxDiffRatio"), (int, float))
+                            else "-"
+                        ),
+                        format_count(item_thresholds.get("nonInkMaxDiffPixels")),
+                        (
+                            f"{item_thresholds.get('solidInkMaxDiffRatio'):.6f}"
+                            if isinstance(item_thresholds.get("solidInkMaxDiffRatio"), (int, float))
                             else "-"
                         ),
                         format_count(max_channel_delta),

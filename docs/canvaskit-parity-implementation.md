@@ -840,7 +840,10 @@ fuzzy PNG metrics used by the renderer sweep, so CanvasKit parity drift can be
 triaged from the baseline artifact without adding a fast-path gate. Manifest
 samples may carry browser parity threshold overrides when an existing
 renderer-sweep fixture already classifies the remaining delta as backend
-rasterization, such as the `pic-crop-01` crop-sampling budget. The Markdown
-report mirrors target-backend/profile summaries, applied per-comparison
-thresholds, and the worst browser comparisons so large sweeps do not require
-scanning every screenshot row first.
+rasterization, such as the `pic-crop-01` crop-sampling budget. Text-heavy
+samples may set `maxDiffRatio: null` and rely on ink-mask / solid-ink raster
+budgets instead, matching the native-text sweep behavior where geometry and
+non-ink drift are the failure signals and glyph anti-aliasing deltas are
+classified separately. The Markdown report mirrors target-backend/profile
+summaries, applied per-comparison thresholds, and the worst browser comparisons
+so large sweeps do not require scanning every screenshot row first.

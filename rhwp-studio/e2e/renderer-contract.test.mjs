@@ -343,10 +343,21 @@ assert.deepEqual(
   'image fill-mode replay branches must stay aligned between Canvas2D and CanvasKit',
 );
 const imageCropBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'image-crop');
+const paragraphBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'paragraph-basic');
 assert.equal(
   imageCropBaselineSample?.browserParityThresholds?.maxDiffRatio,
   0.0065,
   'image-crop baseline budget must stay aligned with the renderer sweep pic-crop-01 budget',
+);
+assert.equal(
+  paragraphBaselineSample?.browserParityThresholds?.maxDiffRatio,
+  null,
+  'text-heavy baseline samples must be able to use raster-only budgets instead of tolerant pixel budgets',
+);
+assert.equal(
+  paragraphBaselineSample?.browserParityThresholds?.inkMaskNeighborhoodRadius,
+  3,
+  'text-heavy baseline samples must keep the native text raster neighborhood budget',
 );
 assert(
   extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('...sample'),
@@ -356,6 +367,10 @@ assert(
   extractFunctionBody(rendererBaselineSource, 'browserParityThresholdsForSample').includes('browserParityThresholds')
     && extractFunctionBody(rendererBaselineSource, 'browserParityThresholdsForSample').includes('DEFAULT_BROWSER_PARITY_THRESHOLDS'),
   'browser baseline comparisons must merge sample-specific threshold overrides with the default browser parity budget',
+);
+assert(
+  extractFunctionBody(rendererBaselineSource, 'browserParityThresholdsForSample').includes('value === null'),
+  'browser baseline threshold overrides must preserve null to disable the tolerant pixel budget for raster-only samples',
 );
 assert(
   extractMethodBody(canvas2dSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)')

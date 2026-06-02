@@ -62,7 +62,7 @@ function browserParityThresholdsForSample(sample) {
   }
   const thresholds = { ...DEFAULT_BROWSER_PARITY_THRESHOLDS };
   for (const [key, value] of Object.entries(sampleThresholds)) {
-    if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === null || (typeof value === 'number' && Number.isFinite(value))) {
       thresholds[key] = value;
     }
   }
@@ -346,6 +346,7 @@ for (const item of browserBackendComparisons) {
         missing: 0,
         errors: 0,
         worstSelectedDiffRatio: 0,
+        worstTolerantDiffRatio: 0,
         worstMaxChannelDelta: 0,
       });
     }
@@ -372,6 +373,12 @@ for (const item of browserBackendComparisons) {
       summary.worstSelectedDiffRatio = Math.max(
         summary.worstSelectedDiffRatio,
         item.diff.selectedDiffRatio,
+      );
+    }
+    if (typeof item.diff?.tolerantDiffRatio === 'number') {
+      summary.worstTolerantDiffRatio = Math.max(
+        summary.worstTolerantDiffRatio,
+        item.diff.tolerantDiffRatio,
       );
     }
     if (typeof item.diff?.maxChannelDelta === 'number') {
@@ -410,11 +417,13 @@ const browserBackendParity = {
       passed: !!item.diff?.passed,
       selectedDiffPixels: item.diff?.selectedDiffPixels ?? 0,
       selectedDiffRatio: item.diff?.selectedDiffRatio ?? 0,
+      tolerantDiffRatio: item.diff?.tolerantDiffRatio ?? 0,
       maxChannelDelta: item.diff?.maxChannelDelta ?? 0,
       meanAbsChannelDelta: item.diff?.meanAbsChannelDelta ?? 0,
     }))
     .sort((left, right) => (
       right.selectedDiffRatio - left.selectedDiffRatio
+        || right.tolerantDiffRatio - left.tolerantDiffRatio
         || right.maxChannelDelta - left.maxChannelDelta
         || left.sampleId.localeCompare(right.sampleId)
         || left.targetBackend.localeCompare(right.targetBackend)
