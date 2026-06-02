@@ -312,6 +312,59 @@ for (const sample of samples) {
   }
 }
 const browserBackendCompared = browserBackendComparisons.filter((item) => item.status === 'compared');
+const browserBackendSummaryByTarget = new Map();
+const browserBackendSummaryByProfile = new Map();
+for (const item of browserBackendComparisons) {
+  for (const [summaryMap, keyField, keyValue] of [
+    [browserBackendSummaryByTarget, 'targetBackend', item.targetBackend],
+    [browserBackendSummaryByProfile, 'profile', item.profile],
+  ]) {
+    if (!summaryMap.has(keyValue)) {
+      summaryMap.set(keyValue, {
+        [keyField]: keyValue,
+        total: 0,
+        compared: 0,
+        passed: 0,
+        failed: 0,
+        missing: 0,
+        errors: 0,
+        worstSelectedDiffRatio: 0,
+        worstMaxChannelDelta: 0,
+      });
+    }
+    const summary = summaryMap.get(keyValue);
+    summary.total += 1;
+    if (item.status === 'missing') {
+      summary.missing += 1;
+      continue;
+    }
+    if (item.status === 'error') {
+      summary.errors += 1;
+      continue;
+    }
+    if (item.status !== 'compared') {
+      continue;
+    }
+    summary.compared += 1;
+    if (item.diff?.passed) {
+      summary.passed += 1;
+    } else {
+      summary.failed += 1;
+    }
+    if (typeof item.diff?.selectedDiffRatio === 'number') {
+      summary.worstSelectedDiffRatio = Math.max(
+        summary.worstSelectedDiffRatio,
+        item.diff.selectedDiffRatio,
+      );
+    }
+    if (typeof item.diff?.maxChannelDelta === 'number') {
+      summary.worstMaxChannelDelta = Math.max(
+        summary.worstMaxChannelDelta,
+        item.diff.maxChannelDelta,
+      );
+    }
+  }
+}
 const browserBackendParity = {
   mode: 'reportOnly',
   backendPairs: [
@@ -327,6 +380,30 @@ const browserBackendParity = {
     missing: browserBackendComparisons.filter((item) => item.status === 'missing').length,
     errors: browserBackendComparisons.filter((item) => item.status === 'error').length,
   },
+  summaryByTargetBackend: [...browserBackendSummaryByTarget.values()]
+    .sort((left, right) => left.targetBackend.localeCompare(right.targetBackend)),
+  summaryByProfile: [...browserBackendSummaryByProfile.values()]
+    .sort((left, right) => left.profile.localeCompare(right.profile)),
+  worstComparisons: browserBackendCompared
+    .map((item) => ({
+      sampleId: item.sampleId,
+      profile: item.profile,
+      targetBackend: item.targetBackend,
+      canvaskitSurface: item.canvaskitSurface ?? null,
+      passed: !!item.diff?.passed,
+      selectedDiffPixels: item.diff?.selectedDiffPixels ?? 0,
+      selectedDiffRatio: item.diff?.selectedDiffRatio ?? 0,
+      maxChannelDelta: item.diff?.maxChannelDelta ?? 0,
+      meanAbsChannelDelta: item.diff?.meanAbsChannelDelta ?? 0,
+    }))
+    .sort((left, right) => (
+      right.selectedDiffRatio - left.selectedDiffRatio
+        || right.maxChannelDelta - left.maxChannelDelta
+        || left.sampleId.localeCompare(right.sampleId)
+        || left.targetBackend.localeCompare(right.targetBackend)
+        || left.profile.localeCompare(right.profile)
+    ))
+    .slice(0, 10),
   comparisons: browserBackendComparisons,
 };
 
