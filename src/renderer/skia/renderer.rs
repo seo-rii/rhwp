@@ -254,6 +254,7 @@ fn native_skia_exact_typeface_replay_status(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn native_skia_exact_typeface_for_glyph_run(
     run: &LayerGlyphRunPaint,
     resources: &ResourceArena,
