@@ -11,9 +11,10 @@ use crate::paint::{
     LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
     LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerRectanglePaint,
     LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, PaintTextStyle,
-    PaintVariantMeta, PaletteRef, ResolvedColor, ResourceArena, SvgGlyphPayload,
-    SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceEntry, TextSourceId,
-    TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind, TextVariantQuality,
+    PaintVariantMeta, PaletteRef, ResolvedColor, ResourceArena, SvgGlyphIntrinsicSize,
+    SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceEntry,
+    TextSourceId, TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind,
+    TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
@@ -1550,6 +1551,9 @@ fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_without_deterministi
         "backend-default-filtering",
         "backend-default-scaling",
         "missing-alpha-mode",
+        "missing-strike-selection",
+        "diagnostic-only-strike-selection",
+        "nonpositive-strike-ppem",
         "empty-color-space",
     ] {
         let mut tree =
@@ -1568,6 +1572,15 @@ fn test_layer_svg_strict_glyph_outline_rejects_bitmap_glyph_without_deterministi
                 }
                 "missing-alpha-mode" => {
                     bitmap.alpha_mode = None;
+                }
+                "missing-strike-selection" => {
+                    bitmap.strike_selection = None;
+                }
+                "diagnostic-only-strike-selection" => {
+                    bitmap.strike_selection = Some(BitmapStrikeSelection::DiagnosticOnly);
+                }
+                "nonpositive-strike-ppem" => {
+                    bitmap.strike_ppem = Some((0, 12));
                 }
                 "empty-color-space" => {
                     bitmap.color_space = Some(String::new());
@@ -1739,6 +1752,9 @@ fn test_layer_svg_strict_glyph_outline_rejects_svg_glyph_without_static_sanitize
     };
     for case_name in [
         "missing-viewbox",
+        "nonpositive-viewbox-width",
+        "nonpositive-viewbox-height",
+        "nonpositive-intrinsic-size",
         "script-allowed",
         "animation-allowed",
         "external-resources-allowed",
@@ -1754,6 +1770,18 @@ fn test_layer_svg_strict_glyph_outline_rejects_svg_glyph_without_static_sanitize
             match case_name {
                 "missing-viewbox" => {
                     svg.view_box = None;
+                }
+                "nonpositive-viewbox-width" => {
+                    svg.view_box.as_mut().expect("svg viewBox").width = 0.0;
+                }
+                "nonpositive-viewbox-height" => {
+                    svg.view_box.as_mut().expect("svg viewBox").height = 0.0;
+                }
+                "nonpositive-intrinsic-size" => {
+                    svg.intrinsic_size = Some(SvgGlyphIntrinsicSize {
+                        width: 10.0,
+                        height: 0.0,
+                    });
                 }
                 "script-allowed" => {
                     svg.script_allowed = true;
