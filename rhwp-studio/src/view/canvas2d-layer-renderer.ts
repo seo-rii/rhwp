@@ -76,6 +76,7 @@ import {
   parseStaticSvgTextLayers,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
+import { replayColorPaintGraph } from './glyph-outline-color-graph-utils';
 import { formObjectPalette } from './form-replay-utils';
 import {
   tabLeaderDashStyle,
@@ -521,31 +522,14 @@ export class Canvas2DLayerRenderer {
           if (payloadKind === 'colorLayers') {
             if (op.colorLayers?.colorFormat === 'colrV1' && op.colorLayers.paintGraph) {
               const graph = op.colorLayers.paintGraph;
-              const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
-              const renderNode = (nodeId: number, stack: Set<number>): void => {
-                if (stack.has(nodeId)) {
-                  return;
-                }
-                const node = nodesById.get(nodeId);
-                if (!node) {
-                  return;
-                }
-                if (node.kind === 'solidPath') {
-                  const solidPath = node.solidPath;
-                  if (!solidPath) {
-                    return;
-                  }
+              replayColorPaintGraph(graph, {
+                renderSolidPath: (solidPath) => {
                   ctx.beginPath();
                   appendPathCommands(ctx, solidPath.commands);
                   ctx.fillStyle = resolvedColorToCss(solidPath.fill);
                   ctx.fill(solidPath.fillRule);
-                  return;
-                }
-                if (node.kind === 'linearGradientPath') {
-                  const gradientPath = node.linearGradientPath;
-                  if (!gradientPath) {
-                    return;
-                  }
+                },
+                renderLinearGradientPath: (gradientPath) => {
                   const gradient = gradientPath.gradient;
                   const fill = ctx.createLinearGradient(
                     gradient.x0,
@@ -560,13 +544,8 @@ export class Canvas2DLayerRenderer {
                   appendPathCommands(ctx, gradientPath.commands);
                   ctx.fillStyle = fill;
                   ctx.fill(gradientPath.fillRule);
-                  return;
-                }
-                if (node.kind === 'radialGradientPath') {
-                  const gradientPath = node.radialGradientPath;
-                  if (!gradientPath) {
-                    return;
-                  }
+                },
+                renderRadialGradientPath: (gradientPath) => {
                   const gradient = gradientPath.gradient;
                   const fill = ctx.createRadialGradient(
                     gradient.cx,
@@ -583,13 +562,8 @@ export class Canvas2DLayerRenderer {
                   appendPathCommands(ctx, gradientPath.commands);
                   ctx.fillStyle = fill;
                   ctx.fill(gradientPath.fillRule);
-                  return;
-                }
-                if (node.kind === 'sweepGradientPath') {
-                  const gradientPath = node.sweepGradientPath;
-                  if (!gradientPath) {
-                    return;
-                  }
+                },
+                renderSweepGradientPath: (gradientPath) => {
                   const gradient = gradientPath.gradient;
                   const fill = ctx.createConicGradient(
                     gradient.startAngleDegrees * Math.PI / 180,
@@ -603,14 +577,8 @@ export class Canvas2DLayerRenderer {
                   appendPathCommands(ctx, gradientPath.commands);
                   ctx.fillStyle = fill;
                   ctx.fill(gradientPath.fillRule);
-                  return;
-                }
-                if (node.kind === 'transform') {
-                  const transformNode = node.transform;
-                  if (!transformNode) {
-                    return;
-                  }
-                  const transform = transformNode.transform;
+                },
+                withTransform: (transform, draw) => {
                   ctx.save();
                   ctx.transform(
                     transform.a,
@@ -620,54 +588,37 @@ export class Canvas2DLayerRenderer {
                     transform.e,
                     transform.f,
                   );
-                  stack.add(nodeId);
                   try {
-                    renderNode(transformNode.childNodeId, stack);
+                    draw();
                   } finally {
-                    stack.delete(nodeId);
                     ctx.restore();
                   }
-                  return;
-                }
-                if (node.kind === 'composite') {
-                  const composite = node.composite;
-                  if (!composite || composite.mode !== 'sourceOver') {
+                },
+                renderComposite: (mode, drawBackdrop, drawSource) => {
+                  if (mode !== 'sourceOver') {
                     return;
                   }
-                  stack.add(nodeId);
+                  drawBackdrop();
+                  const previousOperation = ctx.globalCompositeOperation;
                   try {
-                    renderNode(composite.backdropNodeId, stack);
-                    const previousOperation = ctx.globalCompositeOperation;
-                    try {
-                      ctx.globalCompositeOperation = 'source-over';
-                      renderNode(composite.sourceNodeId, stack);
-                    } finally {
-                      ctx.globalCompositeOperation = previousOperation;
-                    }
+                    ctx.globalCompositeOperation = 'source-over';
+                    drawSource();
                   } finally {
-                    stack.delete(nodeId);
+                    ctx.globalCompositeOperation = previousOperation;
                   }
-                  return;
-                }
-                if (node.kind === 'clip') {
-                  const clip = node.clip;
-                  if (!clip) {
-                    return;
-                  }
+                },
+                withClip: (clip, draw) => {
                   ctx.save();
                   ctx.beginPath();
                   appendPathCommands(ctx, clip.clipCommands);
                   ctx.clip(clip.fillRule);
-                  stack.add(nodeId);
                   try {
-                    renderNode(clip.childNodeId, stack);
+                    draw();
                   } finally {
-                    stack.delete(nodeId);
                     ctx.restore();
                   }
-                }
-              };
-              renderNode(graph.rootNodeId, new Set());
+                },
+              });
               ctx.restore();
               return;
             }

@@ -71,6 +71,7 @@ import {
   parseStaticSvgTextLayers,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
+import { replayColorPaintGraph } from './glyph-outline-color-graph-utils';
 import { formObjectPalette } from './form-replay-utils';
 import {
   canPreprocessCroppedLayerImageEffect,
@@ -1213,33 +1214,16 @@ export class CanvasKitLayerRenderer {
       if (payloadKind === 'colorLayers') {
         if (op.colorLayers?.colorFormat === 'colrV1' && op.colorLayers.paintGraph) {
           const graph = op.colorLayers.paintGraph;
-          const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
-          const renderNode = (nodeId: number, stack: Set<number>): void => {
-            if (stack.has(nodeId)) {
-              return;
-            }
-            const node = nodesById.get(nodeId);
-            if (!node) {
-              return;
-            }
-            if (node.kind === 'solidPath') {
-              const solidPath = node.solidPath;
-              if (!solidPath) {
-                return;
-              }
+          replayColorPaintGraph(graph, {
+            renderSolidPath: (solidPath) => {
               const path = this.makePath(solidPath.commands);
               this.applyPathFillRule(path, solidPath.fillRule);
               const paint = this.makeResolvedColorPaint(solidPath.fill);
               canvas.drawPath(path, paint);
               paint.delete();
               path.delete();
-              return;
-            }
-            if (node.kind === 'linearGradientPath') {
-              const gradientPath = node.linearGradientPath;
-              if (!gradientPath) {
-                return;
-              }
+            },
+            renderLinearGradientPath: (gradientPath) => {
               const path = this.makePath(gradientPath.commands);
               this.applyPathFillRule(path, gradientPath.fillRule);
               const paint = new this.canvasKit.Paint();
@@ -1265,13 +1249,8 @@ export class CanvasKitLayerRenderer {
               shader.delete();
               paint.delete();
               path.delete();
-              return;
-            }
-            if (node.kind === 'radialGradientPath') {
-              const gradientPath = node.radialGradientPath;
-              if (!gradientPath) {
-                return;
-              }
+            },
+            renderRadialGradientPath: (gradientPath) => {
               const path = this.makePath(gradientPath.commands);
               this.applyPathFillRule(path, gradientPath.fillRule);
               const paint = new this.canvasKit.Paint();
@@ -1297,13 +1276,8 @@ export class CanvasKitLayerRenderer {
               shader.delete();
               paint.delete();
               path.delete();
-              return;
-            }
-            if (node.kind === 'sweepGradientPath') {
-              const gradientPath = node.sweepGradientPath;
-              if (!gradientPath) {
-                return;
-              }
+            },
+            renderSweepGradientPath: (gradientPath) => {
               const path = this.makePath(gradientPath.commands);
               this.applyPathFillRule(path, gradientPath.fillRule);
               const paint = new this.canvasKit.Paint();
@@ -1333,14 +1307,8 @@ export class CanvasKitLayerRenderer {
               shader.delete();
               paint.delete();
               path.delete();
-              return;
-            }
-            if (node.kind === 'transform') {
-              const transformNode = node.transform;
-              if (!transformNode) {
-                return;
-              }
-              const transform = transformNode.transform;
+            },
+            withTransform: (transform, draw) => {
               canvas.save();
               canvas.concat([
                 transform.a,
@@ -1353,49 +1321,32 @@ export class CanvasKitLayerRenderer {
                 0,
                 1,
               ]);
-              stack.add(nodeId);
               try {
-                renderNode(transformNode.childNodeId, stack);
+                draw();
               } finally {
-                stack.delete(nodeId);
                 canvas.restore();
               }
-              return;
-            }
-            if (node.kind === 'composite') {
-              const composite = node.composite;
-              if (!composite || composite.mode !== 'sourceOver') {
+            },
+            renderComposite: (mode, drawBackdrop, drawSource) => {
+              if (mode !== 'sourceOver') {
                 return;
               }
-              stack.add(nodeId);
-              try {
-                renderNode(composite.backdropNodeId, stack);
-                renderNode(composite.sourceNodeId, stack);
-              } finally {
-                stack.delete(nodeId);
-              }
-              return;
-            }
-            if (node.kind === 'clip') {
-              const clip = node.clip;
-              if (!clip) {
-                return;
-              }
+              drawBackdrop();
+              drawSource();
+            },
+            withClip: (clip, draw) => {
               const path = this.makePath(clip.clipCommands);
               this.applyPathFillRule(path, clip.fillRule);
               canvas.save();
               canvas.clipPath(path, this.canvasKit.ClipOp.Intersect, true);
-              stack.add(nodeId);
               try {
-                renderNode(clip.childNodeId, stack);
+                draw();
               } finally {
-                stack.delete(nodeId);
                 canvas.restore();
                 path.delete();
               }
-            }
-          };
-          renderNode(graph.rootNodeId, new Set());
+            },
+          });
           return;
         }
         for (const layer of op.colorLayers?.layers ?? []) {

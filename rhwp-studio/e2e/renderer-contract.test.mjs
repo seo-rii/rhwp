@@ -11,6 +11,7 @@ const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
 const glyphOutlinePayloadStatusPath = path.join(studioRoot, 'src/view/glyph-outline-payload-status.ts');
+const glyphOutlineColorGraphUtilsPath = path.join(studioRoot, 'src/view/glyph-outline-color-graph-utils.ts');
 const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
 const layerGeometryUtilsPath = path.join(studioRoot, 'src/view/layer-geometry-utils.ts');
 const formReplayUtilsPath = path.join(studioRoot, 'src/view/form-replay-utils.ts');
@@ -27,6 +28,7 @@ const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
 const glyphOutlinePayloadStatusSource = fs.readFileSync(glyphOutlinePayloadStatusPath, 'utf8');
+const glyphOutlineColorGraphUtilsSource = fs.readFileSync(glyphOutlineColorGraphUtilsPath, 'utf8');
 const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
 const layerGeometryUtilsSource = fs.readFileSync(layerGeometryUtilsPath, 'utf8');
 const formReplayUtilsSource = fs.readFileSync(formReplayUtilsPath, 'utf8');
@@ -57,6 +59,7 @@ const canvaskitSourceFiles = [
     source: fs.readFileSync(filePath, 'utf8'),
   })),
   { label: path.relative(studioRoot, glyphOutlinePayloadStatusPath), source: glyphOutlinePayloadStatusSource },
+  { label: path.relative(studioRoot, glyphOutlineColorGraphUtilsPath), source: glyphOutlineColorGraphUtilsSource },
   { label: path.relative(studioRoot, imageEffectPixelsPath), source: imageEffectPixelsSource },
   { label: path.relative(studioRoot, layerGeometryUtilsPath), source: layerGeometryUtilsSource },
   { label: path.relative(studioRoot, formReplayUtilsPath), source: formReplayUtilsSource },
@@ -737,6 +740,28 @@ assert.deepEqual(
   stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'node\\.kind'),
   stringEqualityLiterals(canvaskitGlyphOutlineReplayBlock, 'node\\.kind'),
   'glyph outline COLRv1 graph node replay branches must stay aligned between Canvas2D and CanvasKit',
+);
+assert.equal(
+  glyphOutlineColorGraphUtilsSource.includes('export function replayColorPaintGraph('),
+  true,
+  'COLRv1 color paint graph traversal must live in a shared native-ready helper',
+);
+assert.equal(
+  canvas2dSource.includes('const nodesById = new Map(graph.nodes.map')
+    || canvaskitSource.includes('const nodesById = new Map(graph.nodes.map'),
+  false,
+  'Canvas2D and CanvasKit must not carry separate COLRv1 graph traversal copies',
+);
+assert.equal(
+  importBlockFrom(canvas2dSource, './glyph-outline-color-graph-utils').includes('replayColorPaintGraph')
+    && importBlockFrom(canvaskitSource, './glyph-outline-color-graph-utils').includes('replayColorPaintGraph'),
+  true,
+  'Canvas2D and CanvasKit must import the shared COLRv1 graph traversal helper',
+);
+assert(
+  canvas2dGlyphOutlineReplayBlock.includes('replayColorPaintGraph(graph')
+    && canvaskitGlyphOutlineReplayBlock.includes('replayColorPaintGraph(graph'),
+  'Canvas2D and CanvasKit COLRv1 replay must share graph traversal',
 );
 
 for (const { label, source } of canvaskitSourceFiles) {
