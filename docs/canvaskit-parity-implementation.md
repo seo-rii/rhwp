@@ -723,19 +723,22 @@ Implementation-ready tracks:
   one producer-selected image strike, deterministic alpha/scaling/filtering,
   no `backendDefault`, resource bytes included in cache keys, and
   `colorSpaceDefaulted` diagnostics when sRGB is assumed. SVG strict replay now
-  rejects backend-default filtering/scaling and missing alpha mode directly in
-  renderer selection tests; native Skia mirrors those deterministic-contract
-  negatives in strict variant selection, and CanvasKit policy covers non-finite
-  transforms, missing alpha mode, backend-default filtering/scaling,
-  non-positive strike ppem, and non-producer-selected strikes.
+  rejects backend-default filtering/scaling, missing alpha mode, missing or
+  diagnostic-only strike selection, non-positive strike ppem, and empty color
+  space directly in renderer selection tests; native Skia mirrors those
+  deterministic-contract negatives in strict variant selection, and CanvasKit
+  policy covers non-finite transforms, missing alpha mode, backend-default
+  filtering/scaling, non-positive strike ppem, and non-producer-selected
+  strikes.
 - `SvgGlyph` corpus widening: add real-document or producer-output fixtures for
   sanitized static `VectorResourceId` resources. Keep `viewBox` required, keep
   script, animation, external resources, and interactivity hard false, and keep
   raw SVG-in-font direct replay rejected. SVG strict replay now rejects missing
-  `viewBox` and unsafe payload flags directly in renderer selection tests;
-  native Skia mirrors the same static-sanitized contract negatives, and
-  CanvasKit policy covers script, animation, external-resource, interactivity,
-  viewBox, transform, placement, intrinsic-size, and security-mode rejection.
+  or non-positive `viewBox`, non-positive intrinsic size, and unsafe payload
+  flags directly in renderer selection tests; native Skia mirrors the same
+  static-sanitized contract negatives, and CanvasKit policy covers script,
+  animation, external-resource, interactivity, viewBox, transform, placement,
+  intrinsic-size, and security-mode rejection.
 - strict payload validation hardening: add or widen negative fixtures only for
   unsupported already-declared COLRv1 graph cases or newly found malformed
   strict payloads. The current Bitmap/Svg deterministic and static-sanitized
