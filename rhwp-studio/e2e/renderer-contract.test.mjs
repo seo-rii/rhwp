@@ -551,6 +551,33 @@ assert.equal(
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',
 );
+const canvaskitGlyphRunReplayStatusBlock = extractMethodBody(canvaskitFontsSource, 'glyphRunReplayStatus');
+assertTokensInOrder(
+  canvaskitGlyphRunReplayStatusBlock,
+  [
+    'for (const glyphId of run.glyphIds)',
+    'glyphId > 0xffff',
+    "return this.glyphRunReplayFailure(run, 'glyphIdOutOfRange')",
+    'if (run.shapeKey.fontInstance.variations?.length)',
+    "return this.glyphRunReplayFailure(run, 'variationUnsupported'",
+    'const faceKey = run.shapeKey.fontInstance.faceKey',
+    'if (face.faceIndex !== 0)',
+    "return this.glyphRunReplayFailure(run, 'faceIndexUnsupported'",
+    "return this.glyphRunReplayFailure(run, 'fontBlobNotPortable'",
+  ],
+  'CanvasKit GlyphRun replay must keep range, variation, and face-index gates before portable replay',
+);
+for (const requiredToken of [
+  'variationSupported: false',
+  'faceIndexSupported: false',
+  'exactFaceInstantiated: false',
+]) {
+  assert.equal(
+    canvaskitGlyphRunReplayStatusBlock.includes(requiredToken),
+    true,
+    `CanvasKit GlyphRun fallback diagnostics must keep ${requiredToken}`,
+  );
+}
 assert.equal(
   canvaskitSource.includes('this.surfaceCache.replaceWithSoftware(targetCanvas)'),
   true,
