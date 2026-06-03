@@ -646,12 +646,12 @@ Implementation-ready lanes:
 
 1. Strict `BitmapGlyph` and `SvgGlyph` corpus widening: the core strict payload
    contracts, SVG/native/CanvasKit negative gates, resource cache keys, and
-   checked-in PNG/SVG corpus fixtures are in place. Existing image, equation,
-   vector, form, and mixed HWP samples are now part of the baseline manifest,
-   so Canvas2D/CanvasKit browser sweeps, and native Skia sweeps when enabled,
-   exercise real resource placement without changing the strict payload
-   contract. Add producer-output strict payload fixtures one payload family at a
-   time.
+   checked-in PNG/SVG corpus fixtures are in place. The existing CanvasKit
+   representative HWP suite, plus image, equation, vector, form, and mixed HWP
+   samples, is now part of the baseline manifest, so Canvas2D/CanvasKit browser
+   sweeps, and native Skia sweeps when enabled, exercise real resource
+   placement without changing the strict payload contract. Add producer-output
+   strict payload fixtures one payload family at a time.
 2. Strict payload validation hardening: add only targeted malformed-payload or
    unsupported graph-node fixtures that exercise already-declared v2
    vocabulary. Do not open new layout authority, paint order, or cross-scope
@@ -724,7 +724,8 @@ Non-goals for the remaining CanvasKit parity work:
 Recommended implementation order from this point:
 
 1. keep the expanded browser baseline manifest running over the checked-in
-   paragraph, table, image, field, form, equation, and mixed-document corpus;
+   CanvasKit representative suite plus paragraph, table, image, field, form,
+   equation, and mixed-document corpus;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
 3. widen strict `SvgGlyph` only with producer-output fixtures that keep the
