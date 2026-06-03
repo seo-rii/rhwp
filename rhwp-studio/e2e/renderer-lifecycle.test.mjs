@@ -7081,6 +7081,51 @@ runTest('Renderer lifecycle', async ({ page }) => {
         scriptAllowed: undefined,
       },
     });
+    const missingAnimationAllowedSvgOutline = outlineFor('canvaskit-outline-svg-missing-animation-allowed', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-missing-animation-allowed', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-missing-animation-allowed',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        animationAllowed: undefined,
+      },
+    });
+    const missingExternalResourcesAllowedSvgOutline = outlineFor(
+      'canvaskit-outline-svg-missing-external-resources-allowed',
+      {
+        payloadKind: 'svgGlyph',
+        variant: variantFor('canvaskit-outline-svg-missing-external-resources-allowed', 'glyphOutline', {
+          isDefaultFallback: false,
+          requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+          anchorOpId: 'op-text-canvaskit-outline-svg-missing-external-resources-allowed',
+          localPaintOrder: 0,
+        }),
+        paths: [],
+        svgGlyph: {
+          ...svgOutline.svgGlyph,
+          externalResourcesAllowed: undefined,
+        },
+      },
+    );
+    const missingInteractivityAllowedSvgOutline = outlineFor('canvaskit-outline-svg-missing-interactivity-allowed', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-missing-interactivity-allowed', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-missing-interactivity-allowed',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        interactivityAllowed: undefined,
+      },
+    });
     const invalidIntrinsicSizeSvgOutline = outlineFor('canvaskit-outline-svg-invalid-intrinsic-size', {
       payloadKind: 'svgGlyph',
       variant: variantFor('canvaskit-outline-svg-invalid-intrinsic-size', 'glyphOutline', {
@@ -7748,6 +7793,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidSecurityModeSvgGlyph: await render(treeFor(invalidSecurityModeSvgOutline)),
       missingSecurityModeSvgGlyph: await render(treeFor(missingSecurityModeSvgOutline)),
       missingScriptAllowedSvgGlyph: await render(treeFor(missingScriptAllowedSvgOutline)),
+      missingAnimationAllowedSvgGlyph: await render(treeFor(missingAnimationAllowedSvgOutline)),
+      missingExternalResourcesAllowedSvgGlyph: await render(treeFor(missingExternalResourcesAllowedSvgOutline)),
+      missingInteractivityAllowedSvgGlyph: await render(treeFor(missingInteractivityAllowedSvgOutline)),
       invalidIntrinsicSizeSvgGlyph: await render(treeFor(invalidIntrinsicSizeSvgOutline)),
       invalidPlacementSvgGlyph: await render(treeFor(invalidPlacementSvgOutline)),
       missingBaselineSvgGlyph: await render(treeFor(missingBaselineSvgOutline)),
@@ -8218,6 +8266,42 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
     ),
     `CanvasKit rejects SvgGlyph with missing hard-false script flag=${JSON.stringify(canvaskitMissingScriptAllowedSvgReport)}`,
+  );
+  const canvaskitMissingAnimationAllowedSvgReport = canvaskitGlyphOutlineProbe
+    .missingAnimationAllowedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-animation-allowed');
+  assert(
+    canvaskitMissingAnimationAllowedSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingAnimationAllowedSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+    ),
+    `CanvasKit rejects SvgGlyph with missing hard-false animation flag=${JSON.stringify(canvaskitMissingAnimationAllowedSvgReport)}`,
+  );
+  const canvaskitMissingExternalResourcesAllowedSvgReport = canvaskitGlyphOutlineProbe
+    .missingExternalResourcesAllowedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-external-resources-allowed');
+  assert(
+    canvaskitMissingExternalResourcesAllowedSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingExternalResourcesAllowedSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+    ),
+    `CanvasKit rejects SvgGlyph with missing hard-false external resource flag=${JSON.stringify(canvaskitMissingExternalResourcesAllowedSvgReport)}`,
+  );
+  const canvaskitMissingInteractivityAllowedSvgReport = canvaskitGlyphOutlineProbe
+    .missingInteractivityAllowedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-interactivity-allowed');
+  assert(
+    canvaskitMissingInteractivityAllowedSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingInteractivityAllowedSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+    ),
+    `CanvasKit rejects SvgGlyph with missing hard-false interactivity flag=${JSON.stringify(canvaskitMissingInteractivityAllowedSvgReport)}`,
   );
   const canvaskitInvalidIntrinsicSizeSvgReport = canvaskitGlyphOutlineProbe
     .invalidIntrinsicSizeSvgGlyph
