@@ -129,6 +129,48 @@
       }
     },
     {
+      "id": "table-vpos",
+      "file": "table-vpos-01.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Table vertical positioning sample for table placement and clipping parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "table-inner",
+      "file": "inner-table-01.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Inner table sample for nested table geometry and raster parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0065
+      }
+    },
+    {
+      "id": "table-border-style",
+      "file": "table-004.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Table border and cell style sample from the checked-in table corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0065
+      }
+    },
+    {
       "id": "image-crop",
       "file": "pic-crop-01.hwp",
       "category": "image",
@@ -325,6 +367,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.0065
+      }
+    },
+    {
+      "id": "multi-section-doc",
+      "file": "hwp-multi-001.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Multi-section mixed document sample for repeated page/document structure coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
       }
     },
     {

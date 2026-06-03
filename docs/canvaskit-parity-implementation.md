@@ -733,9 +733,10 @@ Recommended implementation order from this point:
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,
    equation, footnote, header/footer, and mixed-document corpus. The manifest
-   now includes nested table-in-textbox, image-start anchoring, and a second
-   header-image sample so resource placement regressions have more than one
-   real-document shape;
+   now includes nested table-in-textbox, vertical table positioning, inner-table
+   and border-style table samples, image-start anchoring, a second header-image
+   sample, and a multi-section document so placement regressions have more than
+   one real-document shape;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
 3. widen strict `SvgGlyph` only with producer-output fixtures that keep the
@@ -773,8 +774,8 @@ Implementation-ready tracks:
   transforms, missing alpha mode, backend-default filtering/scaling,
   non-positive strike ppem, and non-producer-selected strikes.
 - `SvgGlyph` corpus widening: keep equation, vector, form, table-in-textbox,
-  header/footer, and mixed-document HWP samples in the checked-in browser
-  baseline manifest as placement and resource regression coverage. Add
+  inner-table, header/footer, and mixed-document HWP samples in the checked-in
+  browser baseline manifest as placement and resource regression coverage. Add
   producer-output strict payload fixtures only when they keep the sanitized
   static `VectorResourceId` contract. Keep `viewBox` required, keep script,
   animation, external resources, and interactivity hard false, and keep raw

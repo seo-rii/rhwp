@@ -383,6 +383,9 @@ for (const sampleId of [
   'table-simple',
   'table-complex',
   'table-in-textbox',
+  'table-vpos',
+  'table-inner',
+  'table-border-style',
   'image-crop',
   'image-in-table',
   'image-object',
@@ -397,6 +400,7 @@ for (const sampleId of [
   'shape-group',
   'form-controls',
   'legacy-doc-2010',
+  'multi-section-doc',
   'promo-doc',
   'business-doc',
 ]) {
