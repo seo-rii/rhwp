@@ -417,8 +417,10 @@ def write_reports(
         parity_data = json.loads(parity_report.read_text(encoding="utf-8"))
 
     browser_performance_summary: list[dict] = []
+    browser_surface_diagnostics_summary: list[dict] = []
     if browser_data and browser_data.get("results"):
         summary_by_key: dict[tuple[str, str], dict] = {}
+        surface_summary_by_key: dict[tuple[str, str, str, str], dict] = {}
         for item in browser_data["results"]:
             backend = item.get("backend", "")
             profile = item.get("profile", "")
@@ -465,6 +467,65 @@ def write_reports(
             if isinstance(effect_diagnostics.get("preprocessFailures"), int):
                 summary["effectFailuresTotal"] += effect_diagnostics["preprocessFailures"]
 
+            if str(backend).startswith("canvaskit"):
+                surface_diagnostics = (item.get("diagnostics") or {}).get(
+                    "surfaceDiagnostics"
+                ) or {}
+                preference = surface_diagnostics.get("preference") or "-"
+                surface_backend = surface_diagnostics.get("backend") or "-"
+                surface_key = (
+                    backend,
+                    profile,
+                    str(preference),
+                    str(surface_backend),
+                )
+                surface_summary = surface_summary_by_key.setdefault(
+                    surface_key,
+                    {
+                        "backend": backend,
+                        "profile": profile,
+                        "preference": preference,
+                        "surfaceBackend": surface_backend,
+                        "sampleCount": 0,
+                        "usedGpuSurfaceCount": 0,
+                        "createdSurfacesTotal": 0,
+                        "reusedSurfacesTotal": 0,
+                        "webgpuAttemptsTotal": 0,
+                        "webgpuFailuresTotal": 0,
+                        "webglAttemptsTotal": 0,
+                        "webglFailuresTotal": 0,
+                        "softwareAttemptsTotal": 0,
+                        "softwareFailuresTotal": 0,
+                        "softwareFallbacksTotal": 0,
+                        "lastFailureExamples": [],
+                    },
+                )
+                surface_summary["sampleCount"] += 1
+                if surface_diagnostics.get("usedGpuSurface") is True:
+                    surface_summary["usedGpuSurfaceCount"] += 1
+                for source_field, target_field in (
+                    ("createdSurfaces", "createdSurfacesTotal"),
+                    ("reusedSurfaces", "reusedSurfacesTotal"),
+                    ("webgpuAttempts", "webgpuAttemptsTotal"),
+                    ("webgpuFailures", "webgpuFailuresTotal"),
+                    ("webglAttempts", "webglAttemptsTotal"),
+                    ("webglFailures", "webglFailuresTotal"),
+                    ("softwareAttempts", "softwareAttemptsTotal"),
+                    ("softwareFailures", "softwareFailuresTotal"),
+                    ("softwareFallbacks", "softwareFallbacksTotal"),
+                ):
+                    value = surface_diagnostics.get(source_field)
+                    if isinstance(value, int):
+                        surface_summary[target_field] += value
+                last_failure = surface_diagnostics.get("lastFailure")
+                if (
+                    isinstance(last_failure, str)
+                    and last_failure
+                    and last_failure not in surface_summary["lastFailureExamples"]
+                    and len(surface_summary["lastFailureExamples"]) < 3
+                ):
+                    surface_summary["lastFailureExamples"].append(last_failure)
+
         for summary in summary_by_key.values():
             sample_count = max(1, summary["sampleCount"])
             browser_performance_summary.append(
@@ -488,6 +549,15 @@ def write_reports(
         browser_performance_summary.sort(
             key=lambda item: (item["profile"], item["backend"])
         )
+        browser_surface_diagnostics_summary = sorted(
+            surface_summary_by_key.values(),
+            key=lambda item: (
+                item["profile"],
+                item["backend"],
+                item["preference"],
+                item["surfaceBackend"],
+            ),
+        )
 
     effective_canvaskit_surface = canvaskit_surface
     if browser_data and isinstance(browser_data.get("canvaskitSurface"), str):
@@ -496,6 +566,7 @@ def write_reports(
     performance_summary = {
         "browser": browser_performance_summary,
         "canvaskitSurface": effective_canvaskit_surface,
+        "canvaskitSurfaceDiagnostics": browser_surface_diagnostics_summary,
     }
     (output_root / "performance-summary.json").write_text(
         json.dumps(performance_summary, indent=2, ensure_ascii=False),
@@ -620,6 +691,41 @@ def write_reports(
                 )
                 + " |"
             )
+        if browser_surface_diagnostics_summary:
+            lines.extend(
+                [
+                    "",
+                    "## CanvasKit Surface Diagnostics Summary",
+                    "",
+                    "| Backend | Profile | Preference | Surface Backend | Samples | GPU Samples | Created | Reused | WebGPU Attempts | WebGPU Failures | WebGL Attempts | WebGL Failures | Software Attempts | Software Failures | Software Fallbacks | Failure Examples |",
+                    "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+                ]
+            )
+            for item in browser_surface_diagnostics_summary:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            item.get("backend", "-"),
+                            item.get("profile", "-"),
+                            item.get("preference", "-"),
+                            item.get("surfaceBackend", "-"),
+                            format_count(item.get("sampleCount")),
+                            format_count(item.get("usedGpuSurfaceCount")),
+                            format_count(item.get("createdSurfacesTotal")),
+                            format_count(item.get("reusedSurfacesTotal")),
+                            format_count(item.get("webgpuAttemptsTotal")),
+                            format_count(item.get("webgpuFailuresTotal")),
+                            format_count(item.get("webglAttemptsTotal")),
+                            format_count(item.get("webglFailuresTotal")),
+                            format_count(item.get("softwareAttemptsTotal")),
+                            format_count(item.get("softwareFailuresTotal")),
+                            format_count(item.get("softwareFallbacksTotal")),
+                            "<br>".join(item.get("lastFailureExamples") or []) or "-",
+                        ]
+                    )
+                    + " |"
+                )
 
     browser_backend_parity = (
         browser_data.get("browserBackendParity") if browser_data else None

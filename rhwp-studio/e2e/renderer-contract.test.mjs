@@ -449,6 +449,14 @@ assert(
   'renderer baseline markdown report must expose category summaries and category columns',
 );
 assert(
+  rendererBaselineDriverSource.includes('canvaskitSurfaceDiagnostics')
+    && rendererBaselineDriverSource.includes('CanvasKit Surface Diagnostics Summary')
+    && rendererBaselineDriverSource.includes('softwareFallbacksTotal')
+    && rendererBaselineDriverSource.includes('webgpuFailuresTotal')
+    && rendererBaselineDriverSource.includes('webglFailuresTotal'),
+  'renderer baseline report must summarize CanvasKit surface selection and fallback diagnostics',
+);
+assert(
   extractMethodBody(canvas2dSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)')
     && extractMethodBody(canvaskitSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)'),
   'Canvas2D and CanvasKit image replay must share rotated image effective bbox correction',
