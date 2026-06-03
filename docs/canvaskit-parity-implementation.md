@@ -732,7 +732,10 @@ Recommended implementation order from this point:
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,
-   equation, footnote, header/footer, and mixed-document corpus;
+   equation, footnote, header/footer, and mixed-document corpus. The manifest
+   now includes nested table-in-textbox, image-start anchoring, and a second
+   header-image sample so resource placement regressions have more than one
+   real-document shape;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
 3. widen strict `SvgGlyph` only with producer-output fixtures that keep the
@@ -756,28 +759,31 @@ Implementation-ready tracks:
 
 - `BitmapGlyph` corpus widening: keep image-heavy HWP samples in the
   checked-in browser baseline manifest as placement and resource regression
-  coverage. Add producer-output strict payload fixtures only when they keep the
-  existing one-strike payload contract: one producer-selected image strike,
-  deterministic alpha/scaling/filtering, no `backendDefault`, resource bytes
-  included in cache keys, and `colorSpaceDefaulted` diagnostics when sRGB is
-  assumed. SVG strict replay now rejects backend-default
+  coverage, including image-in-table, image-start anchoring, and repeated
+  header/footer image placement cases. Add producer-output strict payload
+  fixtures only when they keep the existing one-strike payload contract: one
+  producer-selected image strike, deterministic alpha/scaling/filtering, no
+  `backendDefault`, resource bytes included in cache keys, and
+  `colorSpaceDefaulted` diagnostics when sRGB is assumed. SVG strict replay now
+  rejects backend-default
   filtering/scaling, missing alpha mode, missing or diagnostic-only strike
   selection, non-positive strike ppem, and empty color space directly in
   renderer selection tests; native Skia mirrors those deterministic-contract
   negatives in strict variant selection, and CanvasKit policy covers non-finite
   transforms, missing alpha mode, backend-default filtering/scaling,
   non-positive strike ppem, and non-producer-selected strikes.
-- `SvgGlyph` corpus widening: keep equation, vector, form, and mixed-document
-  HWP samples in the checked-in browser baseline manifest as placement and
-  resource regression coverage. Add producer-output strict payload fixtures
-  only when they keep the sanitized static `VectorResourceId` contract. Keep
-  `viewBox` required, keep script, animation, external resources, and
-  interactivity hard false, and keep raw SVG-in-font direct replay rejected. SVG
-  strict replay now rejects missing or non-positive `viewBox`, non-positive
-  intrinsic size, and unsafe payload flags directly in renderer selection
-  tests; native Skia mirrors the same static-sanitized contract negatives, and
-  CanvasKit policy covers script, animation, external-resource, interactivity,
-  viewBox, transform, placement, intrinsic-size, and security-mode rejection.
+- `SvgGlyph` corpus widening: keep equation, vector, form, table-in-textbox,
+  header/footer, and mixed-document HWP samples in the checked-in browser
+  baseline manifest as placement and resource regression coverage. Add
+  producer-output strict payload fixtures only when they keep the sanitized
+  static `VectorResourceId` contract. Keep `viewBox` required, keep script,
+  animation, external resources, and interactivity hard false, and keep raw
+  SVG-in-font direct replay rejected. SVG strict replay now rejects missing or
+  non-positive `viewBox`, non-positive intrinsic size, and unsafe payload flags
+  directly in renderer selection tests; native Skia mirrors the same
+  static-sanitized contract negatives, and CanvasKit policy covers script,
+  animation, external-resource, interactivity, viewBox, transform, placement,
+  intrinsic-size, and security-mode rejection.
 - strict payload validation hardening: add or widen negative fixtures only for
   unsupported already-declared COLRv1 graph cases or newly found malformed
   strict payloads. The current Bitmap/Svg deterministic and static-sanitized

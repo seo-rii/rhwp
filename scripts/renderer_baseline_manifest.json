@@ -115,6 +115,20 @@
       }
     },
     {
+      "id": "table-in-textbox",
+      "file": "table-in-tbox.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Table inside text box sample for nested table, text box, and clip replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
       "id": "image-crop",
       "file": "pic-crop-01.hwp",
       "category": "image",
@@ -144,6 +158,20 @@
       "category": "image",
       "page": 0,
       "notes": "General embedded image object sample from the existing native Skia corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "image-start",
+      "file": "img-start-001.hwp",
+      "category": "image",
+      "page": 0,
+      "notes": "Image anchoring and start-position sample from the checked-in HWP corpus.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,
@@ -186,6 +214,20 @@
       "category": "header-footer",
       "page": 0,
       "notes": "Header region rendering with floating image content.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "header-image-alt",
+      "file": "pic-in-head-02.hwp",
+      "category": "header-footer",
+      "page": 0,
+      "notes": "Second header image sample for repeated header/footer image placement coverage.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,
