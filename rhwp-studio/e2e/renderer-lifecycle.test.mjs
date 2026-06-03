@@ -3947,6 +3947,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
             origin: { x: 0, y: 0 },
             advance: { dx: 10, dy: 0 },
             runToPage: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+            baselineY: 0,
           },
           transformToRun: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
           strikePpem: [16, 16],
@@ -3967,6 +3968,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
             origin: { x: 0, y: 0 },
             advance: { dx: 10, dy: 0 },
             runToPage: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+            baselineY: 0,
           },
           transformToRun: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
           viewBox: { x: 0, y: 0, width: 10, height: 10 },
@@ -6811,6 +6813,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
         transformToRun: { a: 1, b: 0, c: 0, d: Number.POSITIVE_INFINITY, e: 0, f: 0 },
       },
     });
+    const missingBaselineBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-baseline', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-missing-baseline', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-missing-baseline',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        placement: {
+          runToPage: { ...bitmapOutline.bitmapGlyph.placement.runToPage },
+        },
+      },
+    });
     const missingAlphaBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-alpha', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap-missing-alpha', 'glyphOutline', {
@@ -7025,6 +7042,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
         placement: {
           ...svgOutline.svgGlyph.placement,
           baselineY: Number.POSITIVE_INFINITY,
+        },
+      },
+    });
+    const missingBaselineSvgOutline = outlineFor('canvaskit-outline-svg-missing-baseline', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-missing-baseline', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-missing-baseline',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        placement: {
+          runToPage: { ...svgOutline.svgGlyph.placement.runToPage },
         },
       },
     });
@@ -7628,6 +7661,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
       missingFilteringBitmapGlyph: await render(treeFor(missingFilteringBitmapOutline)),
       invalidTransformBitmapGlyph: await render(treeFor(invalidTransformBitmapOutline)),
+      missingBaselineBitmapGlyph: await render(treeFor(missingBaselineBitmapOutline)),
       missingAlphaBitmapGlyph: await render(treeFor(missingAlphaBitmapOutline)),
       backendDefaultScalingBitmapGlyph: await render(treeFor(backendDefaultScalingBitmapOutline)),
       backendDefaultFilteringBitmapGlyph: await render(treeFor(backendDefaultFilteringBitmapOutline)),
@@ -7644,6 +7678,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidSecurityModeSvgGlyph: await render(treeFor(invalidSecurityModeSvgOutline)),
       invalidIntrinsicSizeSvgGlyph: await render(treeFor(invalidIntrinsicSizeSvgOutline)),
       invalidPlacementSvgGlyph: await render(treeFor(invalidPlacementSvgOutline)),
+      missingBaselineSvgGlyph: await render(treeFor(missingBaselineSvgOutline)),
       unsafeFlagsSvgGlyph: await render(treeFor(unsafeFlagsSvgOutline)),
       rawInlineSvgGlyph: await render(treeFor(rawInlineSvgOutline)),
       noDomParserSvgGlyph,
@@ -7876,6 +7911,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ),
     `CanvasKit rejects BitmapGlyph with non-finite transform=${JSON.stringify(canvaskitInvalidTransformBitmapReport)}`,
   );
+  const canvaskitMissingBaselineBitmapReport = canvaskitGlyphOutlineProbe
+    .missingBaselineBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-missing-baseline');
+  assert(
+    canvaskitMissingBaselineBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingBaselineBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with missing placement baseline=${JSON.stringify(canvaskitMissingBaselineBitmapReport)}`,
+  );
   const canvaskitMissingAlphaBitmapReport = canvaskitGlyphOutlineProbe
     .missingAlphaBitmapGlyph
     ?.diagnostics
@@ -8063,6 +8110,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
       ),
     `CanvasKit rejects SvgGlyph with non-finite placement=${JSON.stringify(canvaskitInvalidPlacementSvgReport)}`,
+  );
+  const canvaskitMissingBaselineSvgReport = canvaskitGlyphOutlineProbe
+    .missingBaselineSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-baseline');
+  assert(
+    canvaskitMissingBaselineSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingBaselineSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with missing placement baseline=${JSON.stringify(canvaskitMissingBaselineSvgReport)}`,
   );
   const canvaskitUnsafeFlagsSvgReport = canvaskitGlyphOutlineProbe
     .unsafeFlagsSvgGlyph
