@@ -346,6 +346,13 @@ const imageCropBaselineSample = rendererBaselineManifest.samples.find((sample) =
 const paragraphBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'paragraph-basic');
 const baselineSampleIds = new Set(rendererBaselineManifest.samples.map((sample) => sample.id));
 const baselineCategories = new Set(rendererBaselineManifest.samples.map((sample) => sample.category));
+for (const sample of rendererBaselineManifest.samples) {
+  assert.equal(
+    fs.existsSync(path.join(repoRoot, 'samples', sample.file)),
+    true,
+    `renderer baseline manifest sample must exist: ${sample.file}`,
+  );
+}
 assert.equal(
   imageCropBaselineSample?.browserParityThresholds?.maxDiffRatio,
   0.0065,
