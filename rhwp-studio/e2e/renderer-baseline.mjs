@@ -270,6 +270,7 @@ for (const sample of samples) {
       if (!baseline || !target) {
         browserBackendComparisons.push({
           sampleId: sample.id,
+          category: sample.category,
           profile,
           baselineBackend: 'canvas2d',
           targetBackend,
@@ -289,6 +290,7 @@ for (const sample of samples) {
         );
         browserBackendComparisons.push({
           sampleId: sample.id,
+          category: sample.category,
           profile,
           baselineBackend: 'canvas2d',
           targetBackend,
@@ -315,6 +317,7 @@ for (const sample of samples) {
       } catch (error) {
         browserBackendComparisons.push({
           sampleId: sample.id,
+          category: sample.category,
           profile,
           baselineBackend: 'canvas2d',
           targetBackend,
@@ -331,10 +334,12 @@ for (const sample of samples) {
 const browserBackendCompared = browserBackendComparisons.filter((item) => item.status === 'compared');
 const browserBackendSummaryByTarget = new Map();
 const browserBackendSummaryByProfile = new Map();
+const browserBackendSummaryByCategory = new Map();
 for (const item of browserBackendComparisons) {
   for (const [summaryMap, keyField, keyValue] of [
     [browserBackendSummaryByTarget, 'targetBackend', item.targetBackend],
     [browserBackendSummaryByProfile, 'profile', item.profile],
+    [browserBackendSummaryByCategory, 'category', item.category],
   ]) {
     if (!summaryMap.has(keyValue)) {
       summaryMap.set(keyValue, {
@@ -408,9 +413,12 @@ const browserBackendParity = {
     .sort((left, right) => left.targetBackend.localeCompare(right.targetBackend)),
   summaryByProfile: [...browserBackendSummaryByProfile.values()]
     .sort((left, right) => left.profile.localeCompare(right.profile)),
+  summaryByCategory: [...browserBackendSummaryByCategory.values()]
+    .sort((left, right) => String(left.category).localeCompare(String(right.category))),
   worstComparisons: browserBackendCompared
     .map((item) => ({
       sampleId: item.sampleId,
+      category: item.category,
       profile: item.profile,
       targetBackend: item.targetBackend,
       canvaskitSurface: item.canvaskitSurface ?? null,

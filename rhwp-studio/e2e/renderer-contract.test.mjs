@@ -23,6 +23,8 @@ const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.
 const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-implementation.md');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
 const rendererBaselinePath = path.join(studioRoot, 'e2e/renderer-baseline.mjs');
+const rendererBaselineNativeDiffPath = path.join(studioRoot, 'e2e/renderer-baseline-native-diff.mjs');
+const rendererBaselineDriverPath = path.join(repoRoot, 'scripts/renderer_baseline.py');
 const rendererBaselineManifestPath = path.join(repoRoot, 'scripts/renderer_baseline_manifest.json');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
@@ -42,6 +44,8 @@ const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
 const rendererBaselineSource = fs.readFileSync(rendererBaselinePath, 'utf8');
+const rendererBaselineNativeDiffSource = fs.readFileSync(rendererBaselineNativeDiffPath, 'utf8');
+const rendererBaselineDriverSource = fs.readFileSync(rendererBaselineDriverPath, 'utf8');
 const rendererBaselineManifest = JSON.parse(fs.readFileSync(rendererBaselineManifestPath, 'utf8'));
 
 function tsFilesUnder(directory) {
@@ -425,6 +429,24 @@ assert(
 assert(
   extractFunctionBody(rendererBaselineSource, 'browserParityThresholdsForSample').includes('value === null'),
   'browser baseline threshold overrides must preserve null to disable the tolerant pixel budget for raster-only samples',
+);
+assert(
+  rendererBaselineSource.includes('browserBackendSummaryByCategory')
+    && rendererBaselineSource.includes('summaryByCategory')
+    && rendererBaselineSource.includes('category: sample.category'),
+  'browser baseline report must summarize Canvas2D/CanvasKit parity by existing corpus category',
+);
+assert(
+  rendererBaselineNativeDiffSource.includes("summarizeBy(comparisons, 'category')")
+    && rendererBaselineNativeDiffSource.includes('summaryByCategory')
+    && rendererBaselineNativeDiffSource.includes('browserCategoryBySample'),
+  'native-vs-CanvasKit parity report must preserve browser corpus category summaries',
+);
+assert(
+  rendererBaselineDriverSource.includes('### Category Summary')
+    && rendererBaselineDriverSource.includes('summaryByCategory')
+    && rendererBaselineDriverSource.includes('| Sample | Category |'),
+  'renderer baseline markdown report must expose category summaries and category columns',
 );
 assert(
   extractMethodBody(canvas2dSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)')

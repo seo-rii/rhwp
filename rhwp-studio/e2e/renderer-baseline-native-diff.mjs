@@ -157,6 +157,7 @@ function worstComparisons(comparisons, limit = 10) {
     .filter((item) => item.status === 'compared')
     .map((item) => ({
       sampleId: item.sampleId,
+      category: item.category ?? null,
       profile: item.profile,
       canvaskitSurface: item.canvaskitSurface ?? null,
       passed: !!item.diff?.passed,
@@ -179,6 +180,12 @@ const rootDir = path.resolve(new URL('../..', import.meta.url).pathname);
 const nativeResults = JSON.parse(fs.readFileSync(options.native, 'utf8'));
 const browserReport = JSON.parse(fs.readFileSync(options.browser, 'utf8'));
 const browserResults = browserReport.results ?? [];
+const browserCategoryBySample = new Map();
+for (const entry of browserResults) {
+  if (entry.sampleId && entry.category && !browserCategoryBySample.has(entry.sampleId)) {
+    browserCategoryBySample.set(entry.sampleId, entry.category);
+  }
+}
 const profiles = options.profiles
   ? options.profiles.split(',').map((profile) => profile.trim()).filter(Boolean)
   : browserReport.profiles ?? [];
@@ -195,9 +202,11 @@ for (const sampleId of sampleIds) {
     const canvaskit = canvaskitDefaultResult(browserResults, sampleId, profile, rootDir);
     const canvaskitPath = canvaskit.path;
     const canvaskitSurface = canvaskit.entry?.canvaskitSurface ?? browserReport.canvaskitSurface ?? null;
+    const category = canvaskit.entry?.category ?? browserCategoryBySample.get(sampleId) ?? null;
     if (!nativePath || !canvaskitPath) {
       comparisons.push({
         sampleId,
+        category,
         profile,
         canvaskitSurface,
         status: 'missing',
@@ -210,6 +219,7 @@ for (const sampleId of sampleIds) {
     try {
       comparisons.push({
         sampleId,
+        category,
         profile,
         canvaskitSurface,
         status: 'compared',
@@ -220,6 +230,7 @@ for (const sampleId of sampleIds) {
     } catch (error) {
       comparisons.push({
         sampleId,
+        category,
         profile,
         canvaskitSurface,
         status: 'error',
@@ -238,6 +249,7 @@ const missing = comparisons.filter((item) => item.status === 'missing').length;
 const errors = comparisons.filter((item) => item.status === 'error').length;
 const summaryByProfile = summarizeBy(comparisons, 'profile');
 const summaryBySample = summarizeBy(comparisons, 'sampleId');
+const summaryByCategory = summarizeBy(comparisons, 'category');
 const summaryByCanvasKitSurface = summarizeBy(comparisons, 'canvaskitSurface');
 const worst = worstComparisons(comparisons);
 
@@ -263,6 +275,7 @@ fs.writeFileSync(
       },
       summaryByProfile,
       summaryBySample,
+      summaryByCategory,
       summaryByCanvasKitSurface,
       worstComparisons: worst,
       comparisons,

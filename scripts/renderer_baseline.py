@@ -698,13 +698,45 @@ def write_reports(
                 )
                 + " |"
             )
+        category_summary = browser_backend_parity.get("summaryByCategory") or []
+        if category_summary:
+            lines.extend(
+                [
+                    "",
+                    "### Category Summary",
+                    "",
+                    "| Category | Total | Compared | Passed | Failed | Missing | Errors | Worst Selected Diff Ratio | Worst Raw Diff Ratio | Worst Channel Delta |",
+                    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for item in category_summary:
+                worst_ratio = item.get("worstSelectedDiffRatio")
+                worst_raw_ratio = item.get("worstTolerantDiffRatio")
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            item.get("category") or "-",
+                            format_count(item.get("total")),
+                            format_count(item.get("compared")),
+                            format_count(item.get("passed")),
+                            format_count(item.get("failed")),
+                            format_count(item.get("missing")),
+                            format_count(item.get("errors")),
+                            f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
+                            f"{worst_raw_ratio:.6f}" if isinstance(worst_raw_ratio, (int, float)) else "-",
+                            format_count(item.get("worstMaxChannelDelta")),
+                        ]
+                    )
+                    + " |"
+                )
         lines.extend(
             [
                 "",
                 "### Worst Comparisons",
                 "",
-                "| Sample | Profile | Target Backend | Surface | Passed | Diff Pixels | Selected Diff Ratio | Raw Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
-                "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+                "| Sample | Category | Profile | Target Backend | Surface | Passed | Diff Pixels | Selected Diff Ratio | Raw Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
+                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in browser_backend_parity.get("worstComparisons", []):
@@ -716,6 +748,7 @@ def write_reports(
                 + " | ".join(
                     [
                         item.get("sampleId", "-"),
+                        item.get("category") or "-",
                         item.get("profile", "-"),
                         item.get("targetBackend", "-"),
                         item.get("canvaskitSurface") or "-",
@@ -734,8 +767,8 @@ def write_reports(
                 "",
                 "### Comparisons",
                 "",
-                "| Sample | Profile | Target Backend | Surface | Status | Passed | Diff Pixels | Selected Diff Ratio | Raw Diff Ratio | Max Diff Ratio | Ink Mask Max Ratio | Non-Ink Max Pixels | Solid Ink Max Ratio | Max Channel Delta |",
-                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| Sample | Category | Profile | Target Backend | Surface | Status | Passed | Diff Pixels | Selected Diff Ratio | Raw Diff Ratio | Max Diff Ratio | Ink Mask Max Ratio | Non-Ink Max Pixels | Solid Ink Max Ratio | Max Channel Delta |",
+                "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in browser_backend_parity.get("comparisons", []):
@@ -753,6 +786,7 @@ def write_reports(
                 + " | ".join(
                     [
                         item.get("sampleId", "-"),
+                        item.get("category") or "-",
                         item.get("profile", "-"),
                         item.get("targetBackend", "-"),
                         item.get("canvaskitSurface") or "-",
@@ -804,6 +838,55 @@ def write_reports(
                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
+        for item in parity_data.get("summaryByProfile", []):
+            worst_ratio = item.get("worstSelectedDiffRatio")
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("profile", "-"),
+                        format_count(item.get("total")),
+                        format_count(item.get("compared")),
+                        format_count(item.get("passed")),
+                        format_count(item.get("failed")),
+                        format_count(item.get("missing")),
+                        format_count(item.get("errors")),
+                        f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
+                        format_count(item.get("worstMaxChannelDelta")),
+                    ]
+                )
+                + " |"
+            )
+        category_summary = parity_data.get("summaryByCategory") or []
+        if category_summary:
+            lines.extend(
+                [
+                    "",
+                    "### Category Summary",
+                    "",
+                    "| Category | Total | Compared | Passed | Failed | Missing | Errors | Worst Diff Ratio | Worst Channel Delta |",
+                    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for item in category_summary:
+                worst_ratio = item.get("worstSelectedDiffRatio")
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            item.get("category") or "-",
+                            format_count(item.get("total")),
+                            format_count(item.get("compared")),
+                            format_count(item.get("passed")),
+                            format_count(item.get("failed")),
+                            format_count(item.get("missing")),
+                            format_count(item.get("errors")),
+                            f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
+                            format_count(item.get("worstMaxChannelDelta")),
+                        ]
+                    )
+                    + " |"
+                )
         surface_summary = parity_data.get("summaryByCanvasKitSurface") or []
         if surface_summary:
             lines.extend(
@@ -835,33 +918,13 @@ def write_reports(
                     + " |"
                 )
 
-        for item in parity_data.get("summaryByProfile", []):
-            worst_ratio = item.get("worstSelectedDiffRatio")
-            lines.append(
-                "| "
-                + " | ".join(
-                    [
-                        item.get("profile", "-"),
-                        format_count(item.get("total")),
-                        format_count(item.get("compared")),
-                        format_count(item.get("passed")),
-                        format_count(item.get("failed")),
-                        format_count(item.get("missing")),
-                        format_count(item.get("errors")),
-                        f"{worst_ratio:.6f}" if isinstance(worst_ratio, (int, float)) else "-",
-                        format_count(item.get("worstMaxChannelDelta")),
-                    ]
-                )
-                + " |"
-            )
-
         lines.extend(
             [
                 "",
                 "### Worst Comparisons",
                 "",
-                "| Sample | Profile | Surface | Passed | Diff Pixels | Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
-                "| --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
+                "| Sample | Category | Profile | Surface | Passed | Diff Pixels | Diff Ratio | Max Channel Delta | Mean Abs Channel Delta |",
+                "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in parity_data.get("worstComparisons", []):
@@ -872,6 +935,7 @@ def write_reports(
                 + " | ".join(
                     [
                         item.get("sampleId", "-"),
+                        item.get("category") or "-",
                         item.get("profile", "-"),
                         item.get("canvaskitSurface") or "-",
                         "yes" if item.get("passed") else "no",
@@ -889,8 +953,8 @@ def write_reports(
                 "",
                 "### Comparisons",
                 "",
-                "| Sample | Profile | Surface | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
-                "| --- | --- | --- | --- | --- | ---: | ---: | ---: |",
+                "| Sample | Category | Profile | Surface | Status | Passed | Diff Pixels | Diff Ratio | Max Channel Delta |",
+                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
             ]
         )
         for item in parity_data.get("comparisons", []):
@@ -906,6 +970,7 @@ def write_reports(
                 + " | ".join(
                     [
                         item.get("sampleId", "-"),
+                        item.get("category") or "-",
                         item.get("profile", "-"),
                         item.get("canvaskitSurface") or "-",
                         item.get("status", "-"),
