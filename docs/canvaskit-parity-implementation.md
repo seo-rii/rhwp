@@ -732,7 +732,7 @@ Recommended implementation order from this point:
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,
-   equation, and mixed-document corpus;
+   equation, footnote, header/footer, and mixed-document corpus;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
 3. widen strict `SvgGlyph` only with producer-output fixtures that keep the
