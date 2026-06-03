@@ -6841,6 +6841,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
         alphaMode: undefined,
       },
     });
+    const emptyColorSpaceBitmapOutline = outlineFor('canvaskit-outline-bitmap-empty-color-space', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-empty-color-space', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-empty-color-space',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        colorSpace: '',
+      },
+    });
     const backendDefaultScalingBitmapOutline = outlineFor('canvaskit-outline-bitmap-backend-default-scaling', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap-backend-default-scaling', 'glyphOutline', {
@@ -7663,6 +7676,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidTransformBitmapGlyph: await render(treeFor(invalidTransformBitmapOutline)),
       missingBaselineBitmapGlyph: await render(treeFor(missingBaselineBitmapOutline)),
       missingAlphaBitmapGlyph: await render(treeFor(missingAlphaBitmapOutline)),
+      emptyColorSpaceBitmapGlyph: await render(treeFor(emptyColorSpaceBitmapOutline)),
       backendDefaultScalingBitmapGlyph: await render(treeFor(backendDefaultScalingBitmapOutline)),
       backendDefaultFilteringBitmapGlyph: await render(treeFor(backendDefaultFilteringBitmapOutline)),
       invalidStrikePpemBitmapGlyph: await render(treeFor(invalidStrikePpemBitmapOutline)),
@@ -7934,6 +7948,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedBitmapGlyph'),
       ),
     `CanvasKit rejects BitmapGlyph with missing alpha mode=${JSON.stringify(canvaskitMissingAlphaBitmapReport)}`,
+  );
+  const canvaskitEmptyColorSpaceBitmapReport = canvaskitGlyphOutlineProbe
+    .emptyColorSpaceBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-empty-color-space');
+  assert(
+    canvaskitEmptyColorSpaceBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitEmptyColorSpaceBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with empty colorSpace=${JSON.stringify(canvaskitEmptyColorSpaceBitmapReport)}`,
   );
   const canvaskitBackendDefaultScalingBitmapReport = canvaskitGlyphOutlineProbe
     .backendDefaultScalingBitmapGlyph
