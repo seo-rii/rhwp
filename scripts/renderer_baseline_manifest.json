@@ -17,6 +17,48 @@
       }
     },
     {
+      "id": "paragraph-mixed-style",
+      "file": "lseg-02-mixed.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Mixed text styles and run splits from the existing line-segmentation corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.005
+      }
+    },
+    {
+      "id": "paragraph-spacing",
+      "file": "lseg-03-spacing.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Letter and paragraph spacing sample for Canvas2D/CanvasKit text-raster parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.005
+      }
+    },
+    {
+      "id": "paragraph-multisize",
+      "file": "lseg-06-multisize.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Mixed font-size line segmentation and text placement sample.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.006
+      }
+    },
+    {
       "id": "table-core",
       "file": "hwp_table_test.hwp",
       "category": "table",
@@ -31,6 +73,34 @@
       }
     },
     {
+      "id": "table-simple",
+      "file": "table-001.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Simple table sample from the native Skia representative corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.006
+      }
+    },
+    {
+      "id": "table-complex",
+      "file": "table-complex.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Complex table layout and clipping sample already present in the HWP corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
       "id": "image-crop",
       "file": "pic-crop-01.hwp",
       "category": "image",
@@ -38,6 +108,34 @@
       "notes": "Image crop and fill semantics.",
       "browserParityThresholds": {
         "maxDiffRatio": 0.0065
+      }
+    },
+    {
+      "id": "image-in-table",
+      "file": "pic-in-table-01.hwp",
+      "category": "image",
+      "page": 0,
+      "notes": "Picture-in-table sample for combined image resource, table clipping, and placement parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "image-object",
+      "file": "hwp-img-001.hwp",
+      "category": "image",
+      "page": 0,
+      "notes": "General embedded image object sample from the existing native Skia corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
       }
     },
     {
@@ -52,6 +150,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.005
+      }
+    },
+    {
+      "id": "shift-return",
+      "file": "shift-return.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Soft line break and paragraph flow sample.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.006
       }
     },
     {
@@ -83,6 +195,20 @@
       }
     },
     {
+      "id": "field-memo",
+      "file": "field-01-memo.hwp",
+      "category": "field",
+      "page": 0,
+      "notes": "Field marker, memo, and lowered visible text sample.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
       "id": "shape-group",
       "file": "group-drawing-02.hwp",
       "category": "group-drawing",
@@ -102,6 +228,20 @@
       "category": "form",
       "page": 0,
       "notes": "Form object overlays and control-state painting."
+    },
+    {
+      "id": "business-doc",
+      "file": "biz_plan.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Mixed real-document sample with text, tables, and images from the existing sample set.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
     }
   ]
 }
