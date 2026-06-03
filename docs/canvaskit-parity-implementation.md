@@ -92,17 +92,24 @@ bridges, Rust SVG eligibility and output, native Skia, and the Rust CanvasKit
 replay plan share the same payload eligibility vocabulary and deterministic
 fallback/reject reasons for those subsets.
 
-Dynamic browser verification on 2026-06-02 also completed a full CanvasKit
-default sweep against the Canvas2D reference: 137 full-page cases plus 2
-feature cases passed in the `screen` profile. The local headless environment
-could not create a WebGL surface, so CanvasKit fell back to a CanvasKit software
-surface; this is an execution-surface fallback, not a Canvas2D replay overlay.
-The sweep confirmed direct CanvasKit dispatch for text, images, equations,
-form objects, page background images, and path/shape primitives. It also
-confirmed that fallback overlay helper methods, DOM image caches, and equation
-SVG DOM caches remain removed. The run used a single replay iteration, so
-visual parity and dispatch/resource diagnostics are authoritative for that
-sweep, while performance guards were intentionally recorded as metrics only.
+Dynamic browser verification on 2026-06-03 completed the checked-in full
+CanvasKit E2E corpus through `npm run e2e:ci` with
+`RHWP_RENDER_SAMPLE_SCOPE=full` and a single replay iteration. Both `compat`
+and `default` CanvasKit modes passed against the Canvas2D reference with 137
+full-page cases plus 2 feature cases in the `screen` profile. The same run also
+completed the software smoke, WebGPU-preferred fallback smoke, and renderer
+lifecycle suite. The local headless environment could not create a WebGL
+surface and the current CanvasKit bundle reported `CanvasKit WebGPU build
+support unavailable`, so CanvasKit fell back to a CanvasKit software surface;
+this is an execution-surface fallback, not a Canvas2D replay overlay. The sweep
+confirmed direct CanvasKit dispatch for text, images, equations, form objects,
+page background images, path/shape primitives, strict color/bitmap/vector
+glyph payload probes, resource table/cache invalidation, and text variant
+selection diagnostics. It also confirmed that fallback overlay helper methods,
+DOM image caches, and equation SVG DOM caches remain removed. Because the run
+used one replay iteration, visual parity and dispatch/resource diagnostics are
+authoritative for that sweep, while performance guards were intentionally
+recorded as metrics only.
 
 ## Architecture
 
@@ -862,7 +869,18 @@ Larger native-vs-CanvasKit PNG matrices remain report-first until thresholds and
 flake rates are understood.
 
 The fast headless E2E suite keeps one-sample WebGPU-preferred and software
-CanvasKit smoke runs for the `eq-01` fixture. The manual `Full Renderer Sweep`
+CanvasKit smoke runs for the `eq-01` fixture. The branch-level full E2E check
+can also be run with:
+
+```bash
+(cd rhwp-studio && RHWP_RENDER_SAMPLE_SCOPE=full RHWP_E2E_PERF_ITERATIONS=1 npm run e2e:ci)
+```
+
+That command exercises the checked-in browser corpus in both CanvasKit
+`compat` and `default` modes plus the smoke and lifecycle suites. It is the
+strongest local software-surface parity check, but it still does not prove a
+real WebGL or WebGPU surface when the local browser/CanvasKit build falls back
+to software. The manual `Full Renderer Sweep`
 workflow captures the representative multi-profile baseline, then captures
 separate WebGPU-preferred and software CanvasKit baselines. Those wider
 surface-axis outputs are artifacts for diagnosis and threshold tuning, not
