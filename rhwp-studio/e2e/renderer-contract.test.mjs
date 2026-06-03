@@ -980,6 +980,32 @@ assert.equal(
   true,
   'COLRv1 color paint graph traversal must live in a shared native-ready helper',
 );
+for (const requiredToken of [
+  'const nodesById = new Map(graph.nodes.map((node) => [node.nodeId, node]));',
+  'const renderNode = (nodeId: number, stack: Set<number>): void => {',
+  'if (stack.has(nodeId))',
+  "node.kind === 'solidPath'",
+  'callbacks.renderSolidPath(node.solidPath)',
+  "node.kind === 'linearGradientPath'",
+  'callbacks.renderLinearGradientPath(node.linearGradientPath)',
+  "node.kind === 'radialGradientPath'",
+  'callbacks.renderRadialGradientPath(node.radialGradientPath)',
+  "node.kind === 'sweepGradientPath'",
+  'callbacks.renderSweepGradientPath(node.sweepGradientPath)',
+  "node.kind === 'transform'",
+  'callbacks.withTransform(node.transform.transform',
+  "node.kind === 'composite'",
+  'callbacks.renderComposite(',
+  "node.kind === 'clip'",
+  'callbacks.withClip(node.clip',
+  'renderNode(graph.rootNodeId, new Set())',
+]) {
+  assert.equal(
+    glyphOutlineColorGraphUtilsSource.includes(requiredToken),
+    true,
+    `COLRv1 shared graph replay helper must keep traversal guard: ${requiredToken}`,
+  );
+}
 assert.equal(
   glyphOutlineColorGraphUtilsSource.includes('export function resolvedColorToCss(')
     && glyphOutlineColorGraphUtilsSource.includes('export function resolvedColorUnitRgba('),
