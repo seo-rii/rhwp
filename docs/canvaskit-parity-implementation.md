@@ -873,14 +873,17 @@ CanvasKit smoke runs for the `eq-01` fixture. The branch-level full E2E check
 can also be run with:
 
 ```bash
-(cd rhwp-studio && RHWP_RENDER_SAMPLE_SCOPE=full RHWP_E2E_PERF_ITERATIONS=1 npm run e2e:ci)
+(cd rhwp-studio && RHWP_RENDER_SAMPLE_SCOPE=full npm run e2e:ci)
 ```
 
 That command exercises the checked-in browser corpus in both CanvasKit
-`compat` and `default` modes plus the smoke and lifecycle suites. It is the
-strongest local software-surface parity check, but it still does not prove a
-real WebGL or WebGPU surface when the local browser/CanvasKit build falls back
-to software. The manual `Full Renderer Sweep`
+`compat` and `default` modes plus the smoke and lifecycle suites. By default it
+uses the three-iteration replay performance guard from
+`canvaskit-render.test.mjs`; local one-iteration full sweeps are still useful as
+report-first triage, but they do not exercise the same CI performance guard. It
+is the strongest local software-surface parity check, but it still does not
+prove a real WebGL or WebGPU surface when the local browser/CanvasKit build
+falls back to software. The manual `Full Renderer Sweep`
 workflow captures the representative multi-profile baseline, then captures
 separate WebGPU-preferred and software CanvasKit baselines. Those wider
 surface-axis outputs are artifacts for diagnosis and threshold tuning, not
@@ -897,6 +900,10 @@ rasterization, such as the `pic-crop-01` crop-sampling budget. Text-heavy
 samples may set `maxDiffRatio: null` and rely on ink-mask / solid-ink raster
 budgets instead, matching the native-text sweep behavior where geometry and
 non-ink drift are the failure signals and glyph anti-aliasing deltas are
-classified separately. The Markdown report mirrors target-backend/profile
-summaries, applied per-comparison thresholds, and the worst browser comparisons
-so large sweeps do not require scanning every screenshot row first.
+classified separately. Samples with tiny Canvas2D replay baselines and stable
+native dispatch/pixel parity may also carry scoped replay-performance budgets
+instead of loosening the global CanvasKit guard; `hwpspec.hwp` is the current
+watch item for software-surface variance in that category. The Markdown report
+mirrors target-backend/profile summaries, applied per-comparison thresholds, and
+the worst browser comparisons so large sweeps do not require scanning every
+screenshot row first.

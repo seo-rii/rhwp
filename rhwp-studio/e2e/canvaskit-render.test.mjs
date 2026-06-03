@@ -78,7 +78,15 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['exam_kor.hwp', { maxCanvaskitReplayAvgMs: 1250, maxCanvaskitReplayRatio: 80 }],
   ['footnote-01.hwp', { solidInkMaxDiffRatio: 0.0095 }],
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085, solidInkMaxDiffRatio: 0.0125 }],
-  ['hwpspec.hwp', { nonInkMaxDiffPixels: 2048, solidInkMaxDiffRatio: 0.12 }],
+  [
+    'hwpspec.hwp',
+    {
+      nonInkMaxDiffPixels: 2048,
+      solidInkMaxDiffRatio: 0.12,
+      maxCanvaskitReplayAvgMs: 350,
+      maxCanvaskitReplayRatio: 80,
+    },
+  ],
   ['inner-table-01.hwp', { solidInkMaxDiffRatio: 0.0065 }],
   ['pic-in-head-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
   ['pic-in-table-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
