@@ -1316,7 +1316,7 @@ function isValidTextRunPlacement(
   return placement !== undefined
     && placement.runToPage !== undefined
     && isFiniteAffineTransform(placement.runToPage)
-    && (placement.baselineY === undefined || Number.isFinite(placement.baselineY));
+    && Number.isFinite(placement.baselineY);
 }
 
 function isValidBitmapStrikePpem(strikePpem: [number, number]): boolean {

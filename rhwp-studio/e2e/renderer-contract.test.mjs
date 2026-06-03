@@ -583,6 +583,7 @@ assert.equal(
   'CanvasKit SvgGlyph replay must import the native-ready static SVG parser',
 );
 const strictBitmapGlyphContractBlock = extractFunctionBody(textVariantsSource, 'hasStrictBitmapGlyphContract');
+const textRunPlacementContractBlock = extractFunctionBody(textVariantsSource, 'isValidTextRunPlacement');
 for (const requiredToken of [
   "payload.payloadKind === 'bitmapGlyph'",
   'payload.colorLayers === undefined',
@@ -601,6 +602,11 @@ for (const requiredToken of [
     `BitmapGlyph strict payload contract must keep guard: ${requiredToken}`,
   );
 }
+assert.equal(
+  textRunPlacementContractBlock.includes('Number.isFinite(placement.baselineY)'),
+  true,
+  'strict glyph payload placement must require finite baselineY',
+);
 const staticSvgGlyphContractBlock = extractFunctionBody(textVariantsSource, 'hasStaticSanitizedSvgGlyphContract');
 for (const requiredToken of [
   "payload.payloadKind === 'svgGlyph'",
