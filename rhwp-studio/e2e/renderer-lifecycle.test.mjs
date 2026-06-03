@@ -6906,6 +6906,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
         strikePpem: [0, 16],
       },
     });
+    const missingStrikeSelectionBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-strike-selection', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-missing-strike-selection', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-missing-strike-selection',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        strikeSelection: undefined,
+      },
+    });
     const diagnosticStrikeBitmapOutline = outlineFor('canvaskit-outline-bitmap-diagnostic-strike', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap-diagnostic-strike', 'glyphOutline', {
@@ -7722,6 +7735,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       backendDefaultScalingBitmapGlyph: await render(treeFor(backendDefaultScalingBitmapOutline)),
       backendDefaultFilteringBitmapGlyph: await render(treeFor(backendDefaultFilteringBitmapOutline)),
       invalidStrikePpemBitmapGlyph: await render(treeFor(invalidStrikePpemBitmapOutline)),
+      missingStrikeSelectionBitmapGlyph: await render(treeFor(missingStrikeSelectionBitmapOutline)),
       diagnosticStrikeBitmapGlyph: await render(treeFor(diagnosticStrikeBitmapOutline)),
       strikeReselectionBitmapGlyph: await render(treeFor(strikeReselectionBitmapOutline)),
       missingResourceBitmapGlyph: await render(treeFor(missingResourceBitmapOutline)),
@@ -8052,6 +8066,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedBitmapGlyph'),
       ),
     `CanvasKit rejects BitmapGlyph non-positive strike ppem=${JSON.stringify(canvaskitInvalidStrikePpemBitmapReport)}`,
+  );
+  const canvaskitMissingStrikeSelectionBitmapReport = canvaskitGlyphOutlineProbe
+    .missingStrikeSelectionBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-missing-strike-selection');
+  assert(
+    canvaskitMissingStrikeSelectionBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingStrikeSelectionBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph missing producer-resolved strike selection=${JSON.stringify(canvaskitMissingStrikeSelectionBitmapReport)}`,
   );
   const canvaskitDiagnosticStrikeBitmapReport = canvaskitGlyphOutlineProbe
     .diagnosticStrikeBitmapGlyph
