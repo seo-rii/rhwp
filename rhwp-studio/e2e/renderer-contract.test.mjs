@@ -344,6 +344,8 @@ assert.deepEqual(
 );
 const imageCropBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'image-crop');
 const paragraphBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'paragraph-basic');
+const baselineSampleIds = new Set(rendererBaselineManifest.samples.map((sample) => sample.id));
+const baselineCategories = new Set(rendererBaselineManifest.samples.map((sample) => sample.category));
 assert.equal(
   imageCropBaselineSample?.browserParityThresholds?.maxDiffRatio,
   0.0065,
@@ -359,6 +361,51 @@ assert.equal(
   3,
   'text-heavy baseline samples must keep the native text raster neighborhood budget',
 );
+for (const sampleId of [
+  'paragraph-line-basic',
+  'paragraph-basic',
+  'paragraph-mixed-style',
+  'paragraph-spacing',
+  'paragraph-multisize',
+  'table-core',
+  'table-simple',
+  'table-complex',
+  'image-crop',
+  'image-in-table',
+  'image-object',
+  'equation-inline',
+  'field-core',
+  'field-memo',
+  'shape-object',
+  'shape-group',
+  'form-controls',
+  'legacy-doc-2010',
+  'promo-doc',
+  'business-doc',
+]) {
+  assert.equal(
+    baselineSampleIds.has(sampleId),
+    true,
+    `renderer baseline manifest must keep existing representative sample '${sampleId}'`,
+  );
+}
+for (const category of [
+  'paragraph',
+  'table',
+  'image',
+  'equation',
+  'field',
+  'shape',
+  'group-drawing',
+  'form',
+  'mixed-document',
+]) {
+  assert.equal(
+    baselineCategories.has(category),
+    true,
+    `renderer baseline manifest must keep existing representative category '${category}'`,
+  );
+}
 assert(
   extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('...sample'),
   'browser baseline sample normalization must preserve manifest extension fields such as browserParityThresholds',
