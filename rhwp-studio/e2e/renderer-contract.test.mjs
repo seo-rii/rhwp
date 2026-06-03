@@ -1003,6 +1003,54 @@ assert(
     && canvaskitGlyphOutlineReplayBlock.includes('replayColorPaintGraph(graph'),
   'Canvas2D and CanvasKit COLRv1 replay must share graph traversal',
 );
+const colrv0ColorLayersContractBlock = extractFunctionBody(textVariantsSource, 'hasColrv0ColorLayersContract');
+for (const requiredToken of [
+  "payload.payloadKind === 'colorLayers'",
+  "colorLayers?.colorFormat === 'colrV0'",
+  'colorLayers.paintGraph === undefined',
+  'isValidPayloadRange(colorLayers.sourceRangeUtf8)',
+  'isNonEmptyPayloadRange(colorLayers.glyphRange)',
+  'colorLayers.layers.length > 0',
+  'isValidResolvedColor(layer.fill)',
+  'isValidPayloadIndex(layer.paletteIndex)',
+]) {
+  assert.equal(
+    colrv0ColorLayersContractBlock.includes(requiredToken),
+    true,
+    `COLRv0 resolved-layer payload contract must keep guard: ${requiredToken}`,
+  );
+}
+const colrv1ColorGraphContractBlock = extractFunctionBody(textVariantsSource, 'hasColrv1Stage1ColorGraphContract');
+for (const requiredToken of [
+  "payload.payloadKind !== 'colorLayers'",
+  "colorLayers?.colorFormat !== 'colrV1'",
+  'colorLayers.layers.length !== 0',
+  'graph.nodes.length > MAX_COLRV1_STAGE1_GRAPH_NODES',
+  'nodeIds.has(node.nodeId)',
+  '!nodeIds.has(graph.rootNodeId)',
+  "node.kind === 'solidPath'",
+  "node.kind === 'linearGradientPath'",
+  "node.kind === 'radialGradientPath'",
+  "node.kind === 'sweepGradientPath'",
+  'isSupportedSweepGradientAngleRange(',
+  'isValidColorGradientStops(',
+  "node.kind === 'transform'",
+  'node.transform.childNodeId !== node.nodeId',
+  "node.kind === 'composite'",
+  "node.composite.mode === 'sourceOver'",
+  'node.composite.sourceNodeId !== node.composite.backdropNodeId',
+  "node.kind === 'clip'",
+  'isValidPathCommands(node.clip.clipCommands)',
+  'depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH',
+  'visiting.has(nodeId)',
+  'visited.size === graph.nodes.length',
+]) {
+  assert.equal(
+    colrv1ColorGraphContractBlock.includes(requiredToken),
+    true,
+    `COLRv1 normalized graph payload contract must keep guard: ${requiredToken}`,
+  );
+}
 assert.equal(
   canvas2dSource.includes('function resolvedColorToCss(')
     || canvaskitGlyphOutlineReplayBlock.includes('clampCanvasKitUnit('),
