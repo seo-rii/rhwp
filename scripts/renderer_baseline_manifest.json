@@ -73,6 +73,62 @@
       }
     },
     {
+      "id": "font-batang-hancom",
+      "file": "re-font-batang-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "Batang/Hancom font mapping sample for CanvasKit text fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "font-gulim-hancom",
+      "file": "re-font-gulim-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "Gulim/Hancom font mapping sample for CanvasKit text fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "font-malgun-hancom",
+      "file": "re-font-malgun-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "Malgun/Hancom font mapping sample for CanvasKit text fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "font-dotumche-hancom",
+      "file": "re-font-dotumche-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "DotumChe/Hancom font mapping sample for CanvasKit text fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
       "id": "table-core",
       "file": "hwp_table_test.hwp",
       "category": "table",

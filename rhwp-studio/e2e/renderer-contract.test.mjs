@@ -379,6 +379,10 @@ for (const sampleId of [
   'paragraph-spacing',
   'paragraph-multisize',
   'shift-return',
+  'font-batang-hancom',
+  'font-gulim-hancom',
+  'font-malgun-hancom',
+  'font-dotumche-hancom',
   'table-core',
   'table-simple',
   'table-complex',
@@ -412,6 +416,7 @@ for (const sampleId of [
 }
 for (const category of [
   'paragraph',
+  'font',
   'table',
   'image',
   'equation',
