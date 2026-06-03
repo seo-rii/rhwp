@@ -732,11 +732,13 @@ Recommended implementation order from this point:
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,
-   equation, footnote, font mapping, header/footer, and mixed-document corpus.
+   equation, footnote/endnote, hwpctl control, font mapping, header/footer, and
+   mixed-document corpus.
    The manifest now includes nested table-in-textbox, vertical table
    positioning, inner-table and border-style table samples, Batang/Gulim/Malgun
    Gothic/DotumChe font-mapping samples, image-start anchoring, a second
-   header-image sample, and a multi-section document so placement and text
+   header-image sample, endnote routing, hwpctl control-reference documents,
+   blog/HWPX form samples, and a multi-section document so placement and text
    fallback regressions have more than one real-document shape;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;

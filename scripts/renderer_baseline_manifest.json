@@ -349,6 +349,20 @@
       }
     },
     {
+      "id": "endnote",
+      "file": "endnote-01.hwp",
+      "category": "endnote",
+      "page": 0,
+      "notes": "Endnote marker and endnote area layout from the existing CanvasKit sweep overrides.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0095
+      }
+    },
+    {
       "id": "field-core",
       "file": "field-01.hwp",
       "category": "field",
@@ -374,6 +388,48 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "hwpctl-api",
+      "file": "hwpctl_API_v2.4.hwp",
+      "category": "control",
+      "page": 0,
+      "notes": "HWP control API reference sample for CanvasKit control-document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpctl-action-table",
+      "file": "hwpctl_Action_Table__v1.1.hwp",
+      "category": "control",
+      "page": 0,
+      "notes": "HWP control table action sample for table/control document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpctl-parameterset-item",
+      "file": "hwpctl_ParameterSetID_Item_v1.2.hwp",
+      "category": "control",
+      "page": 0,
+      "notes": "HWP control parameter-set item sample for control-heavy document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
       }
     },
     {
@@ -410,6 +466,34 @@
       "category": "form",
       "page": 0,
       "notes": "Form object overlays and control-state painting."
+    },
+    {
+      "id": "blog-form-book-review",
+      "file": "basic/BlogForm_BookReview.hwp",
+      "category": "form",
+      "page": 0,
+      "notes": "Blog form template sample for nested form/document controls.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpx-form-controls",
+      "file": "hwpx/form-002.hwpx",
+      "category": "form",
+      "page": 0,
+      "notes": "HWPX form control sample for CanvasKit HWPX form replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
     },
     {
       "id": "legacy-doc-2010",
