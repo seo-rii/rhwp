@@ -457,6 +457,14 @@ assert(
   'renderer baseline report must summarize CanvasKit surface selection and fallback diagnostics',
 );
 assert(
+  rendererBaselineDriverSource.includes('webgpuFailureExamples')
+    && rendererBaselineDriverSource.includes('webglFailureExamples')
+    && rendererBaselineDriverSource.includes('softwareFailureExamples')
+    && rendererBaselineDriverSource.includes('WebGPU Failures Seen')
+    && rendererBaselineDriverSource.includes('WebGL Failures Seen'),
+  'renderer baseline report must preserve per-surface CanvasKit failure reasons',
+);
+assert(
   extractMethodBody(canvas2dSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)')
     && extractMethodBody(canvaskitSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)'),
   'Canvas2D and CanvasKit image replay must share rotated image effective bbox correction',

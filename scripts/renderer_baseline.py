@@ -497,6 +497,9 @@ def write_reports(
                         "softwareAttemptsTotal": 0,
                         "softwareFailuresTotal": 0,
                         "softwareFallbacksTotal": 0,
+                        "webgpuFailureExamples": [],
+                        "webglFailureExamples": [],
+                        "softwareFailureExamples": [],
                         "lastFailureExamples": [],
                     },
                 )
@@ -517,6 +520,19 @@ def write_reports(
                     value = surface_diagnostics.get(source_field)
                     if isinstance(value, int):
                         surface_summary[target_field] += value
+                for source_field, target_field in (
+                    ("webgpuLastFailure", "webgpuFailureExamples"),
+                    ("webglLastFailure", "webglFailureExamples"),
+                    ("softwareLastFailure", "softwareFailureExamples"),
+                ):
+                    failure = surface_diagnostics.get(source_field)
+                    if (
+                        isinstance(failure, str)
+                        and failure
+                        and failure not in surface_summary[target_field]
+                        and len(surface_summary[target_field]) < 3
+                    ):
+                        surface_summary[target_field].append(failure)
                 last_failure = surface_diagnostics.get("lastFailure")
                 if (
                     isinstance(last_failure, str)
@@ -697,8 +713,8 @@ def write_reports(
                     "",
                     "## CanvasKit Surface Diagnostics Summary",
                     "",
-                    "| Backend | Profile | Preference | Surface Backend | Samples | GPU Samples | Created | Reused | WebGPU Attempts | WebGPU Failures | WebGL Attempts | WebGL Failures | Software Attempts | Software Failures | Software Fallbacks | Failure Examples |",
-                    "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+                    "| Backend | Profile | Preference | Surface Backend | Samples | GPU Samples | Created | Reused | WebGPU Attempts | WebGPU Failures | WebGPU Failures Seen | WebGL Attempts | WebGL Failures | WebGL Failures Seen | Software Attempts | Software Failures | Software Fallbacks | Last Failures Seen |",
+                    "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | --- | ---: | ---: | ---: | --- |",
                 ]
             )
             for item in browser_surface_diagnostics_summary:
@@ -716,8 +732,10 @@ def write_reports(
                             format_count(item.get("reusedSurfacesTotal")),
                             format_count(item.get("webgpuAttemptsTotal")),
                             format_count(item.get("webgpuFailuresTotal")),
+                            "<br>".join(item.get("webgpuFailureExamples") or []) or "-",
                             format_count(item.get("webglAttemptsTotal")),
                             format_count(item.get("webglFailuresTotal")),
+                            "<br>".join(item.get("webglFailureExamples") or []) or "-",
                             format_count(item.get("softwareAttemptsTotal")),
                             format_count(item.get("softwareFailuresTotal")),
                             format_count(item.get("softwareFallbacksTotal")),
