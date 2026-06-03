@@ -6826,6 +6826,32 @@ runTest('Renderer lifecycle', async ({ page }) => {
         transformToRun: { a: 1, b: 0, c: 0, d: Number.POSITIVE_INFINITY, e: 0, f: 0 },
       },
     });
+    const invalidSourceRangeBitmapOutline = outlineFor('canvaskit-outline-bitmap-invalid-source-range', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-invalid-source-range', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-invalid-source-range',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        sourceRangeUtf8: { start: 2, end: 1 },
+      },
+    });
+    const emptyGlyphRangeBitmapOutline = outlineFor('canvaskit-outline-bitmap-empty-glyph-range', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-empty-glyph-range', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-empty-glyph-range',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        glyphRange: { start: 1, end: 1 },
+      },
+    });
     const missingBaselineBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-baseline', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap-missing-baseline', 'glyphOutline', {
@@ -7037,6 +7063,34 @@ runTest('Renderer lifecycle', async ({ page }) => {
       svgGlyph: {
         ...svgOutline.svgGlyph,
         transformToRun: { a: Number.NaN, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
+      },
+    });
+    const invalidSourceRangeSvgOutline = outlineFor('canvaskit-outline-svg-invalid-source-range', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-invalid-source-range', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-invalid-source-range',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        sourceRangeUtf8: { start: -1, end: 1 },
+      },
+    });
+    const emptyGlyphRangeSvgOutline = outlineFor('canvaskit-outline-svg-empty-glyph-range', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-empty-glyph-range', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-empty-glyph-range',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        glyphRange: { start: 1, end: 1 },
       },
     });
     const invalidSecurityModeSvgOutline = outlineFor('canvaskit-outline-svg-invalid-security-mode', {
@@ -7774,6 +7828,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       missingFilteringBitmapGlyph: await render(treeFor(missingFilteringBitmapOutline)),
       missingScalingBitmapGlyph: await render(treeFor(missingScalingBitmapOutline)),
       invalidTransformBitmapGlyph: await render(treeFor(invalidTransformBitmapOutline)),
+      invalidSourceRangeBitmapGlyph: await render(treeFor(invalidSourceRangeBitmapOutline)),
+      emptyGlyphRangeBitmapGlyph: await render(treeFor(emptyGlyphRangeBitmapOutline)),
       missingBaselineBitmapGlyph: await render(treeFor(missingBaselineBitmapOutline)),
       missingAlphaBitmapGlyph: await render(treeFor(missingAlphaBitmapOutline)),
       emptyColorSpaceBitmapGlyph: await render(treeFor(emptyColorSpaceBitmapOutline)),
@@ -7790,6 +7846,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
       missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
       invalidTransformSvgGlyph: await render(treeFor(invalidTransformSvgOutline)),
+      invalidSourceRangeSvgGlyph: await render(treeFor(invalidSourceRangeSvgOutline)),
+      emptyGlyphRangeSvgGlyph: await render(treeFor(emptyGlyphRangeSvgOutline)),
       invalidSecurityModeSvgGlyph: await render(treeFor(invalidSecurityModeSvgOutline)),
       missingSecurityModeSvgGlyph: await render(treeFor(missingSecurityModeSvgOutline)),
       missingScriptAllowedSvgGlyph: await render(treeFor(missingScriptAllowedSvgOutline)),
@@ -8043,6 +8101,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ),
     `CanvasKit rejects BitmapGlyph with non-finite transform=${JSON.stringify(canvaskitInvalidTransformBitmapReport)}`,
   );
+  const canvaskitInvalidSourceRangeBitmapReport = canvaskitGlyphOutlineProbe
+    .invalidSourceRangeBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-invalid-source-range');
+  assert(
+    canvaskitInvalidSourceRangeBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidSourceRangeBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with invalid source range=${JSON.stringify(canvaskitInvalidSourceRangeBitmapReport)}`,
+  );
+  const canvaskitEmptyGlyphRangeBitmapReport = canvaskitGlyphOutlineProbe
+    .emptyGlyphRangeBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-empty-glyph-range');
+  assert(
+    canvaskitEmptyGlyphRangeBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitEmptyGlyphRangeBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with empty glyph range=${JSON.stringify(canvaskitEmptyGlyphRangeBitmapReport)}`,
+  );
   const canvaskitMissingBaselineBitmapReport = canvaskitGlyphOutlineProbe
     .missingBaselineBitmapGlyph
     ?.diagnostics
@@ -8230,6 +8312,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
       ),
     `CanvasKit rejects SvgGlyph with non-finite transform=${JSON.stringify(canvaskitInvalidTransformSvgReport)}`,
+  );
+  const canvaskitInvalidSourceRangeSvgReport = canvaskitGlyphOutlineProbe
+    .invalidSourceRangeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-invalid-source-range');
+  assert(
+    canvaskitInvalidSourceRangeSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitInvalidSourceRangeSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with invalid source range=${JSON.stringify(canvaskitInvalidSourceRangeSvgReport)}`,
+  );
+  const canvaskitEmptyGlyphRangeSvgReport = canvaskitGlyphOutlineProbe
+    .emptyGlyphRangeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-empty-glyph-range');
+  assert(
+    canvaskitEmptyGlyphRangeSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitEmptyGlyphRangeSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      ),
+    `CanvasKit rejects SvgGlyph with empty glyph range=${JSON.stringify(canvaskitEmptyGlyphRangeSvgReport)}`,
   );
   const canvaskitInvalidSecurityModeSvgReport = canvaskitGlyphOutlineProbe
     .invalidSecurityModeSvgGlyph
