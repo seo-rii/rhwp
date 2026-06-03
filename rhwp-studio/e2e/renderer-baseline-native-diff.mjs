@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { comparePngBuffers } from './helpers.mjs';
+import { PNG } from 'pngjs';
+
+import { comparePngBuffers, cropPngBuffer } from './helpers.mjs';
 
 const DEFAULT_IGNORE_CHANNEL_DELTA = 8;
 const DEFAULT_MAX_DIFF_RATIO = 0.005;
+const MAX_CAPTURE_SIZE_DRIFT_PX = 1;
 
 function parseArgs() {
   const options = {
@@ -66,9 +69,38 @@ function canvaskitDefaultResult(browserResults, sampleId, profile, rootDir) {
 }
 
 async function comparePair(nativePath, canvaskitPath) {
+  let nativeBuffer = fs.readFileSync(nativePath);
+  let canvaskitBuffer = fs.readFileSync(canvaskitPath);
+  const nativeImage = PNG.sync.read(nativeBuffer);
+  const canvaskitImage = PNG.sync.read(canvaskitBuffer);
+  let sizeNormalization = null;
+
+  if (nativeImage.width !== canvaskitImage.width || nativeImage.height !== canvaskitImage.height) {
+    const widthDelta = Math.abs(nativeImage.width - canvaskitImage.width);
+    const heightDelta = Math.abs(nativeImage.height - canvaskitImage.height);
+    if (widthDelta > MAX_CAPTURE_SIZE_DRIFT_PX || heightDelta > MAX_CAPTURE_SIZE_DRIFT_PX) {
+      throw new Error(
+        `이미지 크기 불일치: ${nativeImage.width}x${nativeImage.height} `
+          + `vs ${canvaskitImage.width}x${canvaskitImage.height}`,
+      );
+    }
+
+    const width = Math.min(nativeImage.width, canvaskitImage.width);
+    const height = Math.min(nativeImage.height, canvaskitImage.height);
+    sizeNormalization = {
+      strategy: 'cropToCommonTopLeft',
+      maxCaptureSizeDriftPx: MAX_CAPTURE_SIZE_DRIFT_PX,
+      nativeSize: { width: nativeImage.width, height: nativeImage.height },
+      canvaskitSize: { width: canvaskitImage.width, height: canvaskitImage.height },
+      comparedSize: { width, height },
+    };
+    nativeBuffer = cropPngBuffer(nativeBuffer, { x: 0, y: 0, width, height });
+    canvaskitBuffer = cropPngBuffer(canvaskitBuffer, { x: 0, y: 0, width, height });
+  }
+
   const diff = await comparePngBuffers(
-    fs.readFileSync(nativePath),
-    fs.readFileSync(canvaskitPath),
+    nativeBuffer,
+    canvaskitBuffer,
     {
       ignoreChannelDelta: DEFAULT_IGNORE_CHANNEL_DELTA,
       maxDiffRatio: DEFAULT_MAX_DIFF_RATIO,
@@ -89,6 +121,7 @@ async function comparePair(nativePath, canvaskitPath) {
     meanAbsChannelDelta: diff.meanAbsChannelDelta,
     ignoreChannelDelta: diff.ignoreChannelDelta,
     maxDiffRatio: DEFAULT_MAX_DIFF_RATIO,
+    sizeNormalization,
   };
 }
 
@@ -264,6 +297,7 @@ fs.writeFileSync(
       thresholds: {
         ignoreChannelDelta: DEFAULT_IGNORE_CHANNEL_DELTA,
         maxDiffRatio: DEFAULT_MAX_DIFF_RATIO,
+        maxCaptureSizeDriftPx: MAX_CAPTURE_SIZE_DRIFT_PX,
       },
       summary: {
         total: comparisons.length,

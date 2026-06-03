@@ -443,6 +443,12 @@ assert(
   'native-vs-CanvasKit parity report must preserve browser corpus category summaries',
 );
 assert(
+  rendererBaselineNativeDiffSource.includes('MAX_CAPTURE_SIZE_DRIFT_PX')
+    && rendererBaselineNativeDiffSource.includes('sizeNormalization')
+    && rendererBaselineNativeDiffSource.includes('cropToCommonTopLeft'),
+  'native-vs-CanvasKit parity report must normalize small native/browser capture size drift explicitly',
+);
+assert(
   rendererBaselineDriverSource.includes('### Category Summary')
     && rendererBaselineDriverSource.includes('summaryByCategory')
     && rendererBaselineDriverSource.includes('| Sample | Category |'),
