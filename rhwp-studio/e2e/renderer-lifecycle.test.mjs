@@ -7054,6 +7054,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
         securityMode: undefined,
       },
     });
+    const missingScriptAllowedSvgOutline = outlineFor('canvaskit-outline-svg-missing-script-allowed', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-missing-script-allowed', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-missing-script-allowed',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        scriptAllowed: undefined,
+      },
+    });
     const invalidIntrinsicSizeSvgOutline = outlineFor('canvaskit-outline-svg-invalid-intrinsic-size', {
       payloadKind: 'svgGlyph',
       variant: variantFor('canvaskit-outline-svg-invalid-intrinsic-size', 'glyphOutline', {
@@ -7719,6 +7733,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       invalidTransformSvgGlyph: await render(treeFor(invalidTransformSvgOutline)),
       invalidSecurityModeSvgGlyph: await render(treeFor(invalidSecurityModeSvgOutline)),
       missingSecurityModeSvgGlyph: await render(treeFor(missingSecurityModeSvgOutline)),
+      missingScriptAllowedSvgGlyph: await render(treeFor(missingScriptAllowedSvgOutline)),
       invalidIntrinsicSizeSvgGlyph: await render(treeFor(invalidIntrinsicSizeSvgOutline)),
       invalidPlacementSvgGlyph: await render(treeFor(invalidPlacementSvgOutline)),
       missingBaselineSvgGlyph: await render(treeFor(missingBaselineSvgOutline)),
@@ -8165,6 +8180,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
     ),
     `CanvasKit rejects SvgGlyph with missing security mode=${JSON.stringify(canvaskitMissingSecurityModeSvgReport)}`,
+  );
+  const canvaskitMissingScriptAllowedSvgReport = canvaskitGlyphOutlineProbe
+    .missingScriptAllowedSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-script-allowed');
+  assert(
+    canvaskitMissingScriptAllowedSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingScriptAllowedSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+    ),
+    `CanvasKit rejects SvgGlyph with missing hard-false script flag=${JSON.stringify(canvaskitMissingScriptAllowedSvgReport)}`,
   );
   const canvaskitInvalidIntrinsicSizeSvgReport = canvaskitGlyphOutlineProbe
     .invalidIntrinsicSizeSvgGlyph
