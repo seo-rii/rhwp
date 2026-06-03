@@ -6800,6 +6800,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
         filtering: undefined,
       },
     });
+    const missingScalingBitmapOutline = outlineFor('canvaskit-outline-bitmap-missing-scaling', {
+      payloadKind: 'bitmapGlyph',
+      variant: variantFor('canvaskit-outline-bitmap-missing-scaling', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-bitmap-missing-scaling',
+        localPaintOrder: 0,
+      }),
+      bitmapGlyph: {
+        ...bitmapOutline.bitmapGlyph,
+        scalingPolicy: undefined,
+      },
+    });
     const invalidTransformBitmapOutline = outlineFor('canvaskit-outline-bitmap-invalid-transform', {
       payloadKind: 'bitmapGlyph',
       variant: variantFor('canvaskit-outline-bitmap-invalid-transform', 'glyphOutline', {
@@ -7673,6 +7686,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       bitmapGlyph: await render(treeFor(bitmapOutline)),
       nonpositiveBitmapBBoxGlyph: await render(treeFor(nonpositiveBitmapBBoxOutline)),
       missingFilteringBitmapGlyph: await render(treeFor(missingFilteringBitmapOutline)),
+      missingScalingBitmapGlyph: await render(treeFor(missingScalingBitmapOutline)),
       invalidTransformBitmapGlyph: await render(treeFor(invalidTransformBitmapOutline)),
       missingBaselineBitmapGlyph: await render(treeFor(missingBaselineBitmapOutline)),
       missingAlphaBitmapGlyph: await render(treeFor(missingAlphaBitmapOutline)),
@@ -7912,6 +7926,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedBitmapGlyph'),
     ),
     `CanvasKit rejects BitmapGlyph with missing strict filtering=${JSON.stringify(canvaskitMissingFilteringBitmapReport)}`,
+  );
+  const canvaskitMissingScalingBitmapReport = canvaskitGlyphOutlineProbe
+    .missingScalingBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap-missing-scaling');
+  assert(
+    canvaskitMissingScalingBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingScalingBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedBitmapGlyph'),
+      ),
+    `CanvasKit rejects BitmapGlyph with missing strict scaling policy=${JSON.stringify(canvaskitMissingScalingBitmapReport)}`,
   );
   const canvaskitInvalidTransformBitmapReport = canvaskitGlyphOutlineProbe
     .invalidTransformBitmapGlyph
