@@ -227,6 +227,48 @@
       }
     },
     {
+      "id": "multi-table-001",
+      "file": "multi-table-001.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Multiple table sample for repeated table placement and clipping parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "multi-table-002",
+      "file": "multi-table-002.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Second multiple table sample for repeated table raster parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "table-ipc",
+      "file": "table-ipc.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Table IPC sample for table rendering parity across additional table shapes.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
       "id": "image-crop",
       "file": "pic-crop-01.hwp",
       "category": "image",
@@ -270,6 +312,20 @@
       "category": "image",
       "page": 0,
       "notes": "Image anchoring and start-position sample from the checked-in HWP corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "tac-image",
+      "file": "tac-img-02.hwp",
+      "category": "image",
+      "page": 0,
+      "notes": "TAC image sample for additional image placement and raster parity.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,
@@ -447,6 +503,20 @@
       }
     },
     {
+      "id": "group-box",
+      "file": "group-box.hwp",
+      "category": "shape",
+      "page": 0,
+      "notes": "Group box sample for shape object geometry and raster parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
       "id": "shape-group",
       "file": "group-drawing-02.hwp",
       "category": "group-drawing",
@@ -458,6 +528,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "draw-group",
+      "file": "draw-group.hwp",
+      "category": "group-drawing",
+      "page": 0,
+      "notes": "Draw-group sample for grouped drawing replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
       }
     },
     {
