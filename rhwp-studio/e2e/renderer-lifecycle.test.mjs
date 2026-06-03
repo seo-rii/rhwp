@@ -7040,6 +7040,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
         securityMode: 'raw',
       },
     });
+    const missingSecurityModeSvgOutline = outlineFor('canvaskit-outline-svg-missing-security-mode', {
+      payloadKind: 'svgGlyph',
+      variant: variantFor('canvaskit-outline-svg-missing-security-mode', 'glyphOutline', {
+        isDefaultFallback: false,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: 'op-text-canvaskit-outline-svg-missing-security-mode',
+        localPaintOrder: 0,
+      }),
+      paths: [],
+      svgGlyph: {
+        ...svgOutline.svgGlyph,
+        securityMode: undefined,
+      },
+    });
     const invalidIntrinsicSizeSvgOutline = outlineFor('canvaskit-outline-svg-invalid-intrinsic-size', {
       payloadKind: 'svgGlyph',
       variant: variantFor('canvaskit-outline-svg-invalid-intrinsic-size', 'glyphOutline', {
@@ -7704,6 +7718,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
       invalidTransformSvgGlyph: await render(treeFor(invalidTransformSvgOutline)),
       invalidSecurityModeSvgGlyph: await render(treeFor(invalidSecurityModeSvgOutline)),
+      missingSecurityModeSvgGlyph: await render(treeFor(missingSecurityModeSvgOutline)),
       invalidIntrinsicSizeSvgGlyph: await render(treeFor(invalidIntrinsicSizeSvgOutline)),
       invalidPlacementSvgGlyph: await render(treeFor(invalidPlacementSvgOutline)),
       missingBaselineSvgGlyph: await render(treeFor(missingBaselineSvgOutline)),
@@ -8138,6 +8153,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
     ),
     `CanvasKit rejects SvgGlyph with invalid security mode=${JSON.stringify(canvaskitInvalidSecurityModeSvgReport)}`,
+  );
+  const canvaskitMissingSecurityModeSvgReport = canvaskitGlyphOutlineProbe
+    .missingSecurityModeSvgGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg-missing-security-mode');
+  assert(
+    canvaskitMissingSecurityModeSvgReport?.selectedVariantId === 'textRun'
+      && canvaskitMissingSecurityModeSvgReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+    ),
+    `CanvasKit rejects SvgGlyph with missing security mode=${JSON.stringify(canvaskitMissingSecurityModeSvgReport)}`,
   );
   const canvaskitInvalidIntrinsicSizeSvgReport = canvaskitGlyphOutlineProbe
     .invalidIntrinsicSizeSvgGlyph
