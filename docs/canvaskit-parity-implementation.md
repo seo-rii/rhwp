@@ -282,10 +282,13 @@ Implementation shape:
   over the stage limit.
 
 The implementation baseline now covers stage 1 through the first stage-5
-subset. Remaining COLRv1 work should preserve those fixed semantics and only
-add concrete follow-up primitives, such as additional blend/composite modes,
-extra clip primitives, or reusable-node memoization, when a real payload or
-document requires them. Unsupported graph features should otherwise keep
+subset. Contract coverage pins the shared graph traversal helper so Canvas2D
+and CanvasKit keep the same backdrop-before-source `sourceOver` ordering, the
+same run-local `clip` child traversal, and the same no-duplicate traversal
+implementation. Remaining COLRv1 work should preserve those fixed semantics
+and only add concrete follow-up primitives, such as additional blend/composite
+modes, extra clip primitives, or reusable-node memoization, when a real payload
+or document requires them. Unsupported graph features should otherwise keep
 producing deterministic fallback/reject diagnostics.
 
 Later COLRv1 additions should be staged as independent v2 feature additions:
@@ -318,9 +321,10 @@ Implementation shape:
 
 Canvas2D/CanvasKit, Rust SVG, and native Skia now share the single-strike strict
 payload subset. Static picture cache keys already include image and
-`ArrayBuffer` resource payload fingerprints; the same cache contract is now
-covered for strict `SvgGlyph` vector resources so stale static pictures cannot
-survive a same-key vector payload change. CanvasKit lifecycle also rejects
+`ArrayBuffer` resource payload fingerprints, including both plain
+`ArrayBuffer` and typed-array views; the same cache contract is now covered for
+strict `SvgGlyph` vector resources so stale static pictures cannot survive a
+same-key vector payload change. CanvasKit lifecycle also rejects
 `BitmapGlyph` payloads with missing required strict fields or backend strike
 reselection, missing image resources, and ambiguous resource keys before replay.
 The Rust renderer path also rejects mixed bitmap/color/SVG payload families
@@ -333,7 +337,9 @@ checked-in JSON payload snippet now pins the canonical `BitmapGlyph` export
 body used by that strict writer gate.
 CanvasKit lifecycle coverage now also rejects non-finite payload transforms,
 missing alpha mode, backend-default scaling/filtering, non-positive strike
-ppem, and diagnostic-only strikes before replay.
+ppem, diagnostic-only strikes, and explicitly empty color-space values before
+replay. Missing color space remains the only sRGB-default path and must record
+`colorSpaceDefaulted`.
 Before writer emission is widened, add broader real-document resource corpus
 coverage.
 
@@ -365,8 +371,8 @@ and `clipPath`, as `unsupportedSvgGlyph` in both DOMParser and no-DOMParser
 paths. CanvasKit lifecycle also rejects strict `SvgGlyph` payloads with missing
 `viewBox`, unsafe static-vector flags, or raw inline SVG replay fields before
 replay, rejects non-finite transforms and placements, rejects non-positive
-intrinsic sizes and non-static security modes, and rejects missing or ambiguous
-vector resources. Schema-v2 strict
+intrinsic sizes and non-finite `viewBox`/intrinsic geometry, rejects non-static
+security modes, and rejects missing or ambiguous vector resources. Schema-v2 strict
 GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
 the selected strict payload uses the static sanitized vector contract. A
 checked-in JSON payload snippet now pins the canonical `SvgGlyph` export body
@@ -728,7 +734,10 @@ Authority-gated lanes:
 Non-goals for the remaining CanvasKit parity work:
 
 - no hidden Canvas2D/SVG overlay fallback in the CanvasKit renderer;
-- no WebGPU dependency for correctness;
+- no WebGPU dependency for correctness; WebGPU surface creation remains behind
+  an explicit `canvaskitSurface=webgpu`/`canvaskitSurfaceBackend=gpu` request,
+  and software preference skips WebGL before replaying through CanvasKit's
+  software surface;
 - no shapedModern default-authority switch;
 - no global paint-order, variant-selection, or cross-scope semantics change;
 - no raw SVG-in-font direct replay or backend-selected bitmap strike in
