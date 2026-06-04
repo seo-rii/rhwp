@@ -706,7 +706,14 @@ Definition of done:
 The current `skia` branch has closed the v2 envelope, the CanvasKit parity
 baseline, COLRv1 stage 1 through stage 5 graph subsets, strict
 `BitmapGlyph`/`SvgGlyph` resource corpus coverage, and font-construction proof
-controls. The remaining work should keep that
+controls. The upstream/devel items audited for CanvasKit parity are already
+represented by current branch coverage: external-image injection uses the
+synthetic Wasm/API and CanvasKit policy tests instead of importing sample-only
+fixtures, textbox clip lowering is covered by `TextBox` clip support, TAC-only
+line position preservation is already represented by the current positioning
+fixes, and the strict glyph payload resource proof is represented by the
+checked-in Bitmap/Svg fixture snippets plus policy tests. The remaining work
+should keep that
 compatibility model intact: add one v2 feature at a time, keep v1 compatibility
 export available, and avoid layout or cross-scope authority changes unless
 explicitly gated.
@@ -714,9 +721,12 @@ explicitly gated.
 ### Current Remaining Work Snapshot
 
 Use this snapshot as the working order before opening any broader schema,
-layout, or scope changes.
+layout, or scope changes. The first group below is implementation-ready only
+when the next commit supplies a concrete producer-output fixture, malformed
+payload case, or renderer proof artifact. Do not invent new schema or writer
+behavior just to make progress.
 
-Implementation-ready lanes:
+Fixture-ready lanes:
 
 1. Strict `BitmapGlyph` and `SvgGlyph` corpus widening: the core strict payload
    contracts, SVG/native/CanvasKit negative gates, resource cache keys, and
@@ -727,13 +737,16 @@ Implementation-ready lanes:
    placement without changing the strict payload contract. The handcrafted
    strict payload fixture set now includes BitmapGlyph explicit-sRGB and
    sRGB-default JSON/JS/v2 validation, plus SvgGlyph minimal and
-   intrinsic-size-present JSON/v2 validation. Add only real producer-output
-   strict payload fixtures that exercise lowering paths beyond those
-   hand-authored contracts, one payload family at a time.
+   intrinsic-size-present JSON/v2 validation. No additional handwritten
+   contract fixture is needed unless it captures a newly discovered malformed
+   payload or unsupported lowering case. Add only real producer-output strict
+   payload fixtures that exercise lowering paths beyond those hand-authored
+   contracts, one payload family at a time.
 2. Strict payload validation hardening: add only targeted malformed-payload or
    unsupported graph-node fixtures that exercise already-declared v2
-   vocabulary. Do not open new layout authority, paint order, or cross-scope
-   behavior in these commits.
+   vocabulary and are backed by a concrete failing input or audit finding. Do
+   not open new layout authority, paint order, or cross-scope behavior in these
+   commits.
 
 Proof-gated lanes:
 
@@ -804,6 +817,11 @@ Non-goals for the remaining CanvasKit parity work:
 | MixedPerGlyph writer | vocabulary and gate exist; default writer uses homogeneous run split | add cluster/grapheme orientation mapping, `GlyphTransformRun`, GlyphRun/GlyphOutline transform replay, fixtures | shaped/vertical semantics are stable and unsupported backends have explicit fallback/reject policy |
 
 Recommended implementation order from this point:
+
+No generic source-only work remains ahead of the proof/corpus gates below. Each
+new implementation commit should start from a concrete fixture, corpus document,
+backend proof, or malformed payload that the current branch does not already
+cover.
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,
