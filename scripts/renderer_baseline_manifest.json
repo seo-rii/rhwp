@@ -73,6 +73,118 @@
       }
     },
     {
+      "id": "paragraph-indent",
+      "file": "lseg-04-indent.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Indented paragraph line segmentation sample for text positioning parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "text-align-left",
+      "file": "re-align-left-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Left-aligned text sample for paragraph alignment parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "text-align-center",
+      "file": "re-align-center-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Center-aligned text sample for paragraph alignment parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "text-align-right",
+      "file": "re-align-right-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Right-aligned text sample for paragraph alignment parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "text-align-justify",
+      "file": "re-align-justify-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Justified text sample for paragraph alignment and advance parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "text-mixed-koen",
+      "file": "re-05-mixed-koen-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Mixed Korean/English sample for text fallback and glyph positioning parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "text-punctuation",
+      "file": "re-06-punctuation-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Punctuation-only text sample for punctuation glyph parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "text-digit-only",
+      "file": "re-04-digit-only-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Digit-only text sample for numeric glyph positioning parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
       "id": "font-batang-hancom",
       "file": "re-font-batang-hancom.hwp",
       "category": "font",

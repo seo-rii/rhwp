@@ -734,8 +734,10 @@ Recommended implementation order from this point:
    CanvasKit representative suite plus paragraph, table, image, field, form,
    equation, footnote/endnote, hwpctl control, HWPX format, font mapping,
    header/footer, and mixed-document corpus.
-   The manifest now includes nested table-in-textbox, vertical table
-   positioning, inner-table, multi-table, IPC and border-style table samples,
+   The manifest now includes paragraph indent, left/center/right/justified
+   alignment, mixed Korean/English, punctuation and digit-only text samples,
+   nested table-in-textbox, vertical table positioning, inner-table,
+   multi-table, IPC and border-style table samples,
    Batang/Gulim/Malgun Gothic/DotumChe font-mapping samples, image-start
    anchoring, TAC image placement, a second header-image sample, group-box and
    draw-group vector samples, endnote routing, hwpctl control-reference
