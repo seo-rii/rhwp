@@ -2449,6 +2449,37 @@ mod tests {
             .bitmap_glyph
             .as_ref()
             .is_some_and(BitmapGlyphPayload::has_strict_visual_contract));
+
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.bitmap_glyph.as_mut().unwrap().color_space = None;
+        let issues = validate_text_v2_op(&text_ops[0], &options);
+        assert!(
+            issues.is_empty(),
+            "BitmapGlyph without colorSpace should remain valid and default to sRGB: {issues:?}"
+        );
+
+        let strict_slots = strict_glyph_outline_text_v2_slots(&text_ops)
+            .expect("strict bitmap outline slot with sRGB default");
+        let LayerTextVariantPayload::GlyphOutline(strict_outline) =
+            &strict_slots[0].variants[0].parts[0].payload
+        else {
+            panic!("expected strict glyph outline payload");
+        };
+        assert!(strict_outline
+            .bitmap_glyph
+            .as_ref()
+            .is_some_and(BitmapGlyphPayload::has_strict_visual_contract));
+        assert_eq!(
+            strict_outline
+                .bitmap_glyph
+                .as_ref()
+                .and_then(|payload| payload.color_space.as_deref()),
+            None
+        );
     }
 
     #[test]
