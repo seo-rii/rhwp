@@ -808,6 +808,14 @@ assert.equal(
   true,
   'CanvasKit BitmapGlyph replay must call the shared strict payload gate before drawing',
 );
+assertTokensInOrder(
+  glyphOutlinePayloadStatusSource,
+  [
+    'details: supported && op.bitmapGlyph && op.bitmapGlyph.colorSpace === undefined',
+    "'colorSpaceDefaulted=srgb'",
+  ],
+  'BitmapGlyph strict payload status must report explicit sRGB default diagnostics',
+);
 const canvaskitBitmapGlyphReplayBlock = extractMethodBody(canvaskitSource, 'renderBitmapGlyphOutline');
 for (const requiredToken of [
   'canvas.drawImageRectOptions(',
