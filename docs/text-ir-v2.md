@@ -416,17 +416,18 @@ visual approximation. `compat` mode may select a schema fallback, but it must
 not draw through an invisible Canvas2D overlay. `strictVisual` must fail closed
 when a required CanvasKit capability is missing.
 
-P3 starts only after the corresponding P2 branch is stable. COLRv1 begins with
-a tree-only solid-color-plus-transform graph and an internal/native reference
-fixture before SVG/Canvas2D exporters are widened. `BitmapGlyph` starts with a
-single producer-selected image strike and deterministic alpha, scaling, and
-filtering. `SvgGlyph` starts with a `VectorResourceId` pointing at sanitized
-static vector content and hard-false script, animation, external resource, and
-interactivity flags. CanvasKit variation and TTC/OTC replay remains
-fallback-only until a browser-side exact face/instance construction proof
-passes. Native Skia already has checked-in exact-font proof fixtures for direct
-TTF replay, selected variable-font axis tuples, and synthetic TTC face indices;
-broader real-font coverage is still corpus-gated.
+P3 starts only after the corresponding P2 branch is stable. COLRv1 now has
+stage-1 through stage-5 guarded graph subsets; later graph primitives should be
+added only when a concrete payload needs them and they remain inside the glyph
+payload's local composition semantics. `BitmapGlyph` starts with a single
+producer-selected image strike and deterministic alpha, scaling, and filtering.
+`SvgGlyph` starts with a `VectorResourceId` pointing at sanitized static vector
+content and hard-false script, animation, external resource, and interactivity
+flags. CanvasKit variation and TTC/OTC replay remains fallback-only until a
+browser-side exact face/instance construction proof passes. Native Skia already
+has checked-in exact-font proof fixtures for direct TTF replay, selected
+variable-font axis tuples, and synthetic TTC face indices; broader real-font
+coverage is still corpus-gated.
 
 The main implementation touchpoints are:
 
@@ -443,8 +444,8 @@ The next implementation order is intentionally narrow:
 
 1. keep broad CanvasKit-vs-Canvas2D parity tests as the first guard for any
    newly touched paint-op family;
-2. add the COLRv1 graph skeleton and deterministic native/internal reference
-   fixture before expanding graph nodes beyond solid color plus transform;
+2. preserve the implemented COLRv1 stage-1 through stage-5 graph guardrails and
+   add only targeted malformed-payload or concrete follow-up primitive fixtures;
 3. strengthen `BitmapGlyph` and `SvgGlyph` validators and negative fixtures
    before widening writer emission;
 4. keep CanvasKit variation and TTC/OTC strict replay fallback-only until
@@ -938,8 +939,9 @@ The current validator keeps this conservative:
   gate and must include a supported `stroke` object before a validator may treat
   it as well-formed;
 - `payloadKind: "colorLayers"` is accepted only for the resolved
-  `ColorLayers.ColrV0` contract or the `ColorLayers.ColrV1` stage-1
-  solid-path + transform graph contract behind their family-specific gates;
+  `ColorLayers.ColrV0` contract or the currently implemented
+  `ColorLayers.ColrV1` normalized graph subset behind their family-specific
+  gates;
 - `payloadKind: "bitmapGlyph"` is accepted only behind
   `text.glyphOutline.bitmapGlyph` when it carries the strict deterministic
   image-strike contract and the target backend can resolve the referenced image
@@ -955,7 +957,7 @@ The current validator keeps this conservative:
   has a strict profile. Strict replay currently accepts the
   `monochromeFill` profile, the initial `monochromeFillStroke` stroke subset,
   the gated resolved `ColorLayers.ColrV0` layer subset, the gated
-  `ColorLayers.ColrV1` stage-1 graph subset for SVG/CanvasKit/Canvas2D, and the gated
+  `ColorLayers.ColrV1` stage-1 through stage-5 graph subsets, and the gated
   BitmapGlyph image-strike subset plus static-sanitized SvgGlyph vector path
   subset for CanvasKit and SVG/Canvas2D.
   Shadow, emboss/engrave, underline/strike/emphasis, tab leaders, ratio/shade
@@ -1333,14 +1335,11 @@ flattens a validated v2 text slot back into v1 text variant ops only when the
 slot still has the required `TextRun` fallback and current v1 payload kinds.
 `GlyphOutline.payloadKind` currently implements `monochromeFill`, the
 feature-gated `monochromeFillStroke` subset, the feature-gated
-`ColorLayers.ColrV0` resolved-layer subset, and the SVG/CanvasKit/Canvas2D/native
-Skia `ColorLayers.ColrV1` stage-1 solid-path + transform graph subset plus
-SVG/Canvas2D/CanvasKit/native Skia stage-2 linear/radial gradient leaves,
-stage-4 `sourceOver` composite nodes, and stage-5 run-local clip/reusable DAG
-nodes; Canvas2D/CanvasKit/native Skia also implement stage-3 full-360 sweep
-gradient leaves. The field also implements the feature-gated `BitmapGlyph`
-image-strike subset and static-sanitized `SvgGlyph` vector subset across the
-browser and native-ready strict replay paths.
+`ColorLayers.ColrV0` resolved-layer subset, and the implemented
+`ColorLayers.ColrV1` stage-1 through stage-5 normalized graph subsets. The
+field also implements the feature-gated `BitmapGlyph` image-strike subset and
+static-sanitized `SvgGlyph` vector subset across the browser and native-ready
+strict replay paths.
 The field exists so later COLRv1 graph primitives or stricter resource-backed
 glyph payloads can be feature-gated without overloading the first fill-only path
 representation. Reserved payload kinds are defined as schema vocabulary but are

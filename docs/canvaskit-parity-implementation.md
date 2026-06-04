@@ -255,7 +255,7 @@ fixtures can isolate schema behavior from renderer gaps.
 
 | Payload or feature | First implementation gate |
 | --- | --- |
-| `ColorLayers.ColrV1` | tree-only solid color plus transform graph baseline; linear/radial gradient leaves replay in browser Canvas2D/CanvasKit and native Skia after that baseline |
+| `ColorLayers.ColrV1` | preserve implemented stage-1 through stage-5 graph guardrails; add later primitives only with concrete payload demand |
 | `BitmapGlyph` | one producer-selected image strike, deterministic alpha/scaling/filtering, no strict `backendDefault` |
 | `SvgGlyph` | `VectorResourceId` to sanitized static vector content, required `viewBox`, hard-false script/animation/external/interactivity flags |
 | CanvasKit/native Skia variation fonts | exact construction proof fixture with fixed axis tuple and negative axis cases |
@@ -277,8 +277,9 @@ compatibility export.
 
 ### 1. COLRv1 Graph Widening
 
-Purpose: extend the current COLRv1 stage-1 graph without changing text variant
-selection or paint-order semantics.
+Purpose: preserve the implemented COLRv1 stage-1 through stage-5 graph subsets
+and add future primitives only without changing text variant selection or
+paint-order semantics.
 
 Implementation shape:
 
