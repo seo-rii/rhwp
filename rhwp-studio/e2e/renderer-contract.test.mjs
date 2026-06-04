@@ -415,6 +415,12 @@ for (const sampleId of [
   'form-controls',
   'blog-form-book-review',
   'hwpx-form-controls',
+  'hwpx-basic-01',
+  'hwpx-basic-02',
+  'hwpx-ref-text',
+  'hwpx-ref-table',
+  'hwpx-table-vpos',
+  'hwpx-tac-image',
   'legacy-doc-2010',
   'multi-section-doc',
   'promo-doc',
@@ -440,6 +446,7 @@ for (const category of [
   'shape',
   'group-drawing',
   'form',
+  'hwpx',
   'mixed-document',
 ]) {
   assert.equal(

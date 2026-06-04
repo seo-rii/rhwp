@@ -580,6 +580,90 @@
       }
     },
     {
+      "id": "hwpx-basic-01",
+      "file": "hwpx/hwpx-01.hwpx",
+      "category": "hwpx",
+      "page": 0,
+      "notes": "Basic HWPX sample for format-level CanvasKit parity coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpx-basic-02",
+      "file": "hwpx/hwpx-02.hwpx",
+      "category": "hwpx",
+      "page": 0,
+      "notes": "Second basic HWPX sample for format-level renderer parity coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpx-ref-text",
+      "file": "hwpx/ref/ref_text.hwpx",
+      "category": "hwpx",
+      "page": 0,
+      "notes": "HWPX reference text sample for text-oriented format parity coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpx-ref-table",
+      "file": "hwpx/ref/ref_table.hwpx",
+      "category": "hwpx",
+      "page": 0,
+      "notes": "HWPX reference table sample for table-oriented format parity coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpx-table-vpos",
+      "file": "table-vpos-01.hwpx",
+      "category": "hwpx",
+      "page": 0,
+      "notes": "HWPX table vertical positioning sample for format and table replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "hwpx-tac-image",
+      "file": "tac-img-02.hwpx",
+      "category": "hwpx",
+      "page": 0,
+      "notes": "HWPX TAC image sample for format and image replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "legacy-doc-2010",
       "file": "2010-01-06.hwp",
       "category": "mixed-document",
