@@ -810,6 +810,18 @@ assert.equal(
 );
 assert.equal(
   fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
+    .includes('stableValueFingerprint(tree.resources ?? null)'),
+  true,
+  'CanvasKit static picture cache keys must include resource payload fingerprints for image and vector glyph resources',
+);
+assert.equal(
+  fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
+    .includes('stableValueFingerprint(tree.fontResources ?? null)'),
+  true,
+  'CanvasKit static picture cache keys must include font resource fingerprints for strict text replay',
+);
+assert.equal(
+  fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
     .includes('stableValueFingerprint(tree.variantOps ?? null)'),
   true,
   'CanvasKit static picture cache keys must include schema-v1 variantOps sidecar payloads',
