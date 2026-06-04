@@ -954,6 +954,24 @@ assertTokensInOrder(
   ],
   'CanvasKit SvgGlyph replay must release transient Path and Paint objects',
 );
+assertTokensInOrder(
+  canvaskitSvgGlyphReplayBlock,
+  [
+    'if (layer.stroke)',
+    "const strokePaint = this.makePaint(layer.stroke.color, 'stroke', layer.stroke.opacity)",
+    'strokePaint.setStrokeWidth(layer.stroke.width)',
+    'strokePaint.setStrokeJoin(this.canvasKitStrokeJoin(layer.stroke.lineJoin))',
+    'strokePaint.setStrokeCap(this.canvasKitStrokeCap(layer.stroke.lineCap))',
+    'strokePaint.setStrokeMiter(layer.stroke.miterLimit)',
+    'if (layer.stroke.dashArray)',
+    'this.canvasKit.PathEffect.MakeDash(layer.stroke.dashArray, layer.stroke.dashOffset)',
+    'strokePaint.setPathEffect(effect)',
+    'effect.delete()',
+    'canvas.drawPath(path, strokePaint)',
+    'strokePaint.delete()',
+  ],
+  'CanvasKit SvgGlyph replay must preserve stroke style and dash contracts',
+);
 for (const [label, source] of [
   ['canvaskit renderer', canvaskitSource],
   ['glyph outline payload status', glyphOutlinePayloadStatusSource],
@@ -1363,6 +1381,22 @@ assertTokensInOrder(
     'const path = new Path2D(layer.pathData)',
   ],
   'Canvas2D SvgGlyph replay must apply path-layer transforms after viewBox normalization',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
+    'if (layer.stroke)',
+    'ctx.strokeStyle = layer.stroke.color',
+    'ctx.lineWidth = layer.stroke.width',
+    'ctx.lineJoin = layer.stroke.lineJoin',
+    'ctx.lineCap = layer.stroke.lineCap',
+    'ctx.miterLimit = layer.stroke.miterLimit',
+    'ctx.setLineDash(layer.stroke.dashArray ?? [])',
+    'ctx.lineDashOffset = layer.stroke.dashOffset',
+    'ctx.globalAlpha = previousAlpha * layer.stroke.opacity',
+    'ctx.stroke(path)',
+  ],
+  'Canvas2D SvgGlyph replay must preserve stroke style and dash contracts',
 );
 assert.deepEqual(
   stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'payloadKind'),
