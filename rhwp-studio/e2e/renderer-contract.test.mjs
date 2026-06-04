@@ -872,6 +872,19 @@ for (const requiredToken of [
     `CanvasKit BitmapGlyph replay must keep deterministic image-strike sampling guard: ${requiredToken}`,
   );
 }
+assertTokensInOrder(
+  canvaskitBitmapGlyphReplayBlock,
+  [
+    'const transform = payload.placement?.runToPage',
+    'const payloadTransform = payload.transformToRun',
+    'canvas.concat([',
+    'transform.a',
+    'if (payloadTransform)',
+    'payloadTransform.a',
+    'canvas.drawImageRectOptions(',
+  ],
+  'CanvasKit BitmapGlyph replay must apply run placement before payload-local transform and drawing',
+);
 assert.equal(
   extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline').includes('hasStaticSanitizedSvgGlyphContract(op)'),
   true,
@@ -887,6 +900,20 @@ assertTokensInOrder(
     'const fragment = this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex]',
   ],
   'CanvasKit SvgGlyph replay must resolve vectors through resource ids before parsing',
+);
+assertTokensInOrder(
+  canvaskitSvgGlyphReplayBlock,
+  [
+    'const transform = payload.placement?.runToPage',
+    'const payloadTransform = payload.transformToRun',
+    'canvas.concat([',
+    'transform.a',
+    'if (payloadTransform)',
+    'payloadTransform.a',
+    'canvas.scale(width / viewBox.width, height / viewBox.height)',
+    'canvas.translate(-viewBox.x, -viewBox.y)',
+  ],
+  'CanvasKit SvgGlyph replay must apply run placement before payload-local and viewBox transforms',
 );
 for (const [label, source] of [
   ['canvaskit renderer', canvaskitSource],
@@ -1229,12 +1256,41 @@ assertTokensInOrder(
 assertTokensInOrder(
   canvas2dGlyphOutlineReplayBlock,
   [
+    'const imageIndex = resolveLayerResourceIndex(',
+    'const transform = payload.placement?.runToPage',
+    'const payloadTransform = payload.transformToRun',
+    'ctx.transform(',
+    'transform.a',
+    'if (payloadTransform)',
+    'payloadTransform.a',
+    'this.drawDomImage(',
+  ],
+  'Canvas2D BitmapGlyph replay must apply run placement before payload-local transform and drawing',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
     'const vectorIndex = resolveLayerResourceIndex(',
     'payload?.vectorResourceId',
     'this.currentResources?.svgKeys',
     'const fragment = this.currentResources?.svgFragments?.[vectorIndex]',
   ],
   'Canvas2D SvgGlyph replay must resolve vectors through resource ids before parsing',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
+    'const vectorIndex = resolveLayerResourceIndex(',
+    'const transform = payload.placement?.runToPage',
+    'const payloadTransform = payload.transformToRun',
+    'ctx.transform(',
+    'transform.a',
+    'if (payloadTransform)',
+    'payloadTransform.a',
+    'ctx.scale(width / viewBox.width, height / viewBox.height)',
+    'ctx.translate(-viewBox.x, -viewBox.y)',
+  ],
+  'Canvas2D SvgGlyph replay must apply run placement before payload-local and viewBox transforms',
 );
 assert.deepEqual(
   stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'payloadKind'),
