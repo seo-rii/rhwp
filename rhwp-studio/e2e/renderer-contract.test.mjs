@@ -684,6 +684,8 @@ assert.equal(
   'CanvasKit SvgGlyph replay must import the native-ready static SVG parser',
 );
 const strictBitmapGlyphContractBlock = extractFunctionBody(textVariantsSource, 'hasStrictBitmapGlyphContract');
+const bitmapGlyphScalingPolicyContractBlock = extractFunctionBody(textVariantsSource, 'isSupportedBitmapScalingPolicy');
+const bitmapGlyphFilteringContractBlock = extractFunctionBody(textVariantsSource, 'isSupportedBitmapFiltering');
 const textRunPlacementContractBlock = extractFunctionBody(textVariantsSource, 'isValidTextRunPlacement');
 for (const requiredToken of [
   "payload.payloadKind === 'bitmapGlyph'",
@@ -705,6 +707,16 @@ for (const requiredToken of [
     strictBitmapGlyphContractBlock.includes(requiredToken),
     true,
     `BitmapGlyph strict payload contract must keep guard: ${requiredToken}`,
+  );
+}
+for (const [label, helperBlock] of [
+  ['scalingPolicy', bitmapGlyphScalingPolicyContractBlock],
+  ['filtering', bitmapGlyphFilteringContractBlock],
+]) {
+  assert.equal(
+    helperBlock.includes("'backendDefault'"),
+    false,
+    `BitmapGlyph strict ${label} contract must reject backendDefault`,
   );
 }
 assert.equal(
@@ -753,6 +765,18 @@ assert.equal(
   true,
   'CanvasKit BitmapGlyph replay must call the shared strict payload gate before drawing',
 );
+const canvaskitBitmapGlyphReplayBlock = extractMethodBody(canvaskitSource, 'renderBitmapGlyphOutline');
+for (const requiredToken of [
+  'canvas.drawImageRectOptions(',
+  "payload.filtering === 'nearest' ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear",
+  'this.canvasKit.MipmapMode.None',
+]) {
+  assert.equal(
+    canvaskitBitmapGlyphReplayBlock.includes(requiredToken),
+    true,
+    `CanvasKit BitmapGlyph replay must keep deterministic image-strike sampling guard: ${requiredToken}`,
+  );
+}
 assert.equal(
   extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline').includes('hasStaticSanitizedSvgGlyphContract(op)'),
   true,
