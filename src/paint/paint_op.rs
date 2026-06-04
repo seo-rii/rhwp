@@ -494,6 +494,8 @@ fn graph_leaf_metadata_is_valid(node: &ColorPaintGraphNode) -> bool {
 
 impl ColorPaintGraphPayload {
     pub fn has_colrv1_stage1_contract(&self) -> bool {
+        // Compatibility alias for existing JSON/JS metadata; the supported
+        // graph contract now covers the staged v2 COLRv1 graph vocabulary.
         self.has_colrv1_supported_graph_contract()
     }
 
@@ -954,6 +956,8 @@ impl ColorLayersPayload {
     }
 
     pub fn has_colrv1_stage1_graph_contract(&self) -> bool {
+        // Compatibility alias for existing JSON/JS metadata; the supported
+        // graph contract now covers the staged v2 COLRv1 graph vocabulary.
         self.has_colrv1_supported_graph_contract()
     }
 
