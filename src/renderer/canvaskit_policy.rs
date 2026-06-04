@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::model::image::ImageEffect;
+use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    sidecars_for_leaf_ops, CacheHint, ClipKind, GlyphOutlinePayloadKind, GlyphRunOrientation,
-    GlyphRunReplayEligibility, LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode,
-    LayerNodeKind, PageLayerTree, PaintOp, ResourceArena, TextVariantKind, TextVariantQuality,
+    paint_op_replay_plane, sidecars_for_leaf_ops, CacheHint, ClipKind, GlyphOutlinePayloadKind,
+    GlyphRunOrientation, GlyphRunReplayEligibility, LayerGlyphOutlinePaint, LayerGlyphRunPaint,
+    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintReplayPlane, ResourceArena,
+    TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, VariantFontVerificationReport,
@@ -86,6 +88,7 @@ pub struct CanvasKitReplaySummary {
 pub struct CanvasKitReplayItem {
     pub path: String,
     pub op_type: &'static str,
+    pub replay_plane: Option<PaintReplayPlane>,
     pub feature: CanvasKitReplayFeature,
     pub status: CanvasKitReplayStatus,
     pub reason: CanvasKitReplayReason,
@@ -219,6 +222,10 @@ impl CanvasKitReplayItem {
         push_json_str(out, &self.path);
         out.push_str(",\"opType\":");
         push_json_str(out, self.op_type);
+        if let Some(replay_plane) = self.replay_plane {
+            out.push_str(",\"replayPlane\":");
+            push_json_str(out, replay_plane.as_str());
+        }
         out.push_str(",\"feature\":");
         push_json_str(out, self.feature.as_str());
         out.push_str(",\"status\":");
@@ -615,6 +622,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 self.push(CanvasKitReplayItem {
                     path: format!("{path}/clip"),
                     op_type: "clipRect",
+                    replay_plane: None,
                     feature: CanvasKitReplayFeature::Clip,
                     status: CanvasKitReplayStatus::Direct,
                     reason: CanvasKitReplayReason::DirectReplaySupported,
@@ -674,7 +682,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
         selected_variants: &HashMap<String, String>,
         path: String,
     ) -> CanvasKitReplayItem {
-        match op {
+        let mut item = match op {
             PaintOp::PageBackground { background, .. } => direct_item_with_detail(
                 path,
                 "pageBackground",
@@ -716,7 +724,9 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             PaintOp::FormObject { .. } => {
                 direct_item(path, "formObject", CanvasKitReplayFeature::FormObject)
             }
-        }
+        };
+        item.replay_plane = Some(paint_op_replay_plane(op));
+        item
     }
 
     fn text_variant_item(
@@ -735,6 +745,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             CanvasKitReplayItem {
                 path,
                 op_type,
+                replay_plane: None,
                 feature: CanvasKitReplayFeature::TextVariant,
                 status: CanvasKitReplayStatus::TextFallback,
                 reason: CanvasKitReplayReason::ExplicitTextRunFallback,
@@ -748,6 +759,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
         self.push(CanvasKitReplayItem {
             path: format!("{path}/cacheHint"),
             op_type: "cacheHint",
+            replay_plane: None,
             feature: CanvasKitReplayFeature::CacheHint,
             status: CanvasKitReplayStatus::Direct,
             reason: CanvasKitReplayReason::DirectReplaySupported,
@@ -1133,6 +1145,7 @@ fn direct_item_with_detail(
     CanvasKitReplayItem {
         path,
         op_type,
+        replay_plane: None,
         feature,
         status: CanvasKitReplayStatus::Direct,
         reason: CanvasKitReplayReason::DirectReplaySupported,
@@ -1150,6 +1163,7 @@ fn direct_required_item_with_detail(
     CanvasKitReplayItem {
         path,
         op_type,
+        replay_plane: None,
         feature,
         status: CanvasKitReplayStatus::DirectRequired,
         reason: CanvasKitReplayReason::DirectReplayRequired,
@@ -1169,6 +1183,7 @@ fn image_item(path: String, image: &crate::paint::LayerImagePaint) -> CanvasKitR
         Some(image.transform),
         image.external_path.as_deref(),
         image.resource_id.is_some(),
+        image.text_wrap,
     ));
 
     if image.resource_id.is_some() {
@@ -1190,6 +1205,7 @@ fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -
         None,
         None,
         true,
+        None,
     ))
 }
 
@@ -1203,6 +1219,7 @@ fn image_replay_detail(
     transform: Option<crate::renderer::render_tree::ShapeTransform>,
     external_path: Option<&str>,
     has_payload: bool,
+    text_wrap: Option<TextWrap>,
 ) -> String {
     let mut detail = String::new();
     detail.push_str("fillMode=");
@@ -1235,6 +1252,10 @@ fn image_replay_detail(
             transform.rotation, transform.horz_flip, transform.vert_flip
         );
     }
+    if let Some(text_wrap) = text_wrap {
+        detail.push_str(";wrap=");
+        detail.push_str(text_wrap_detail(text_wrap));
+    }
     if external_path.is_some() {
         detail.push_str(";externalImage");
     }
@@ -1245,6 +1266,17 @@ fn image_replay_detail(
     }
 
     detail
+}
+
+fn text_wrap_detail(value: TextWrap) -> &'static str {
+    match value {
+        TextWrap::Square => "square",
+        TextWrap::Tight => "tight",
+        TextWrap::Through => "through",
+        TextWrap::TopAndBottom => "topAndBottom",
+        TextWrap::BehindText => "behindText",
+        TextWrap::InFrontOfText => "inFrontOfText",
+    }
 }
 
 fn image_fill_mode_detail(value: ImageFillMode) -> &'static str {
@@ -1930,6 +1962,7 @@ mod tests {
                         image: LayerImagePaint {
                             resource_id: None,
                             external_path: None,
+                            text_wrap: None,
                             fill_mode: Some(ImageFillMode::CenterBottom),
                             original_size: Some((40.0, 30.0)),
                             crop: Some((75, 150, 225, 300)),
@@ -1999,6 +2032,7 @@ mod tests {
                     image: LayerImagePaint {
                         resource_id: None,
                         external_path: Some("C:\\samples\\linked.gif".to_string()),
+                        text_wrap: None,
                         fill_mode: None,
                         original_size: None,
                         crop: None,
@@ -2034,6 +2068,7 @@ mod tests {
                     image: LayerImagePaint {
                         resource_id: Some(ImageResourceId(3)),
                         external_path: Some("/tmp/linked.gif".to_string()),
+                        text_wrap: None,
                         fill_mode: None,
                         original_size: None,
                         crop: None,

@@ -581,6 +581,7 @@ fn raster_output_accumulates_tile_fallback_diagnostics() {
                 image: LayerImagePaint {
                     resource_id: Some(resource_id),
                     external_path: None,
+                    text_wrap: None,
                     fill_mode: Some(ImageFillMode::TileAll),
                     original_size: Some((1.0, 1.0)),
                     crop: None,
@@ -619,6 +620,7 @@ fn raster_output_accumulates_binary_image_effect_cache_diagnostics() {
         image: LayerImagePaint {
             resource_id: Some(resource_id),
             external_path: None,
+            text_wrap: None,
             fill_mode: Some(ImageFillMode::FitToSize),
             original_size: Some((8.0, 8.0)),
             crop: None,
@@ -729,6 +731,7 @@ fn raster_output_accumulates_binary_image_effect_cache_eviction_diagnostics() {
             image: LayerImagePaint {
                 resource_id: Some(resource_id),
                 external_path: None,
+                text_wrap: None,
                 fill_mode: Some(ImageFillMode::FitToSize),
                 original_size: Some((1.0, 1.0)),
                 crop: None,
@@ -787,6 +790,7 @@ fn raster_output_accumulates_binary_image_effect_cache_byte_budget_diagnostics()
             image: LayerImagePaint {
                 resource_id: Some(resource_id),
                 external_path: None,
+                text_wrap: None,
                 fill_mode: Some(ImageFillMode::FitToSize),
                 original_size: Some((4.0, 4.0)),
                 crop: None,
@@ -1427,6 +1431,7 @@ fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
                 image: LayerImagePaint {
                     resource_id: Some(image_id),
                     external_path: None,
+                    text_wrap: None,
                     fill_mode: Some(ImageFillMode::FitToSize),
                     original_size: Some((4.0, 4.0)),
                     crop: None,

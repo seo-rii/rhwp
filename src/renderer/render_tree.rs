@@ -7,6 +7,7 @@ use super::composer::CharOverlapInfo;
 use super::layout::CellContext;
 use super::{GradientFillInfo, LineStyle, PathCommand, ShapeStyle, TextStyle};
 use crate::model::image::ImageEffect;
+use crate::model::shape::TextWrap;
 use crate::model::style::ImageFillMode;
 use crate::model::{ColorRef, Rect};
 
@@ -724,6 +725,8 @@ pub struct ImageNode {
     pub para_index: Option<usize>,
     /// 문단 내 컨트롤 인덱스
     pub control_index: Option<usize>,
+    /// HWP text-wrap policy for z-order replay.
+    pub text_wrap: Option<TextWrap>,
     /// 이미지 채우기 모드 (채우기 이미지용, Picture 컨트롤은 None)
     pub fill_mode: Option<ImageFillMode>,
     /// 이미지 원본 크기 (HWPUNIT 기반, SVG 좌표 변환 후)
@@ -752,6 +755,7 @@ impl ImageNode {
             section_index: None,
             para_index: None,
             control_index: None,
+            text_wrap: None,
             fill_mode: None,
             original_size: None,
             transform: ShapeTransform::default(),

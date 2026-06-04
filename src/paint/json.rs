@@ -6,6 +6,7 @@ use base64::Engine;
 use crate::document_core::helpers::{color_ref_to_css, json_escape as raw_json_escape};
 use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
+use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     has_supported_strict_glyph_outline_bitmap, has_supported_strict_glyph_outline_colrv0,
@@ -1552,6 +1553,9 @@ impl PaintOp {
                     Some(image.effect),
                     true,
                 );
+                if let Some(text_wrap) = image.text_wrap {
+                    let _ = write!(buf, ",\"wrap\":{}", json_escape(text_wrap_str(text_wrap)));
+                }
                 buf.push_str(",\"transform\":");
                 write_transform(buf, image.transform);
                 buf.push('}');
@@ -3303,6 +3307,17 @@ fn image_fill_mode_str(value: ImageFillMode) -> &'static str {
     }
 }
 
+fn text_wrap_str(value: TextWrap) -> &'static str {
+    match value {
+        TextWrap::Square => "square",
+        TextWrap::Tight => "tight",
+        TextWrap::Through => "through",
+        TextWrap::TopAndBottom => "topAndBottom",
+        TextWrap::BehindText => "behindText",
+        TextWrap::InFrontOfText => "inFrontOfText",
+    }
+}
+
 fn image_effect_str(value: ImageEffect) -> &'static str {
     match value {
         ImageEffect::RealPic => "realPic",
@@ -3817,6 +3832,7 @@ mod tests {
                     image: LayerImagePaint {
                         resource_id: Some(image_id),
                         external_path: None,
+                        text_wrap: None,
                         fill_mode: Some(ImageFillMode::FitToSize),
                         original_size: Some((10.0, 10.0)),
                         crop: Some((0, 0, 10, 10)),

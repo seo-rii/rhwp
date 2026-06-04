@@ -1,0 +1,132 @@
+use crate::model::shape::TextWrap;
+use crate::paint::paint_op::PaintOp;
+
+/// Logical replay planes for PageLayerTree direct paint backends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PaintReplayPlane {
+    Background,
+    BehindText,
+    Flow,
+    InFrontOfText,
+}
+
+impl PaintReplayPlane {
+    pub const ORDERED: [Self; 4] = [
+        Self::Background,
+        Self::BehindText,
+        Self::Flow,
+        Self::InFrontOfText,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Background => "background",
+            Self::BehindText => "behindText",
+            Self::Flow => "flow",
+            Self::InFrontOfText => "inFrontOfText",
+        }
+    }
+}
+
+pub fn paint_op_replay_plane(op: &PaintOp) -> PaintReplayPlane {
+    match op {
+        PaintOp::PageBackground { .. } => PaintReplayPlane::Background,
+        PaintOp::Image { image, .. } => match image.text_wrap {
+            Some(TextWrap::BehindText) => PaintReplayPlane::BehindText,
+            Some(TextWrap::InFrontOfText) => PaintReplayPlane::InFrontOfText,
+            _ => PaintReplayPlane::Flow,
+        },
+        _ => PaintReplayPlane::Flow,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::image::ImageEffect;
+    use crate::paint::{LayerImagePaint, LayerPageBackgroundPaint, LayerRectanglePaint};
+    use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
+    use crate::renderer::ShapeStyle;
+
+    fn bbox() -> BoundingBox {
+        BoundingBox::new(0.0, 0.0, 10.0, 10.0)
+    }
+
+    fn image_with_wrap(wrap: Option<TextWrap>) -> PaintOp {
+        PaintOp::Image {
+            bbox: bbox(),
+            image: LayerImagePaint {
+                resource_id: None,
+                external_path: None,
+                text_wrap: wrap,
+                fill_mode: None,
+                original_size: None,
+                crop: None,
+                brightness: 0,
+                contrast: 0,
+                effect: ImageEffect::RealPic,
+                transform: ShapeTransform::default(),
+            },
+        }
+    }
+
+    #[test]
+    fn ordered_planes_match_hwp_z_order_contract() {
+        assert_eq!(
+            PaintReplayPlane::ORDERED.map(PaintReplayPlane::as_str),
+            ["background", "behindText", "flow", "inFrontOfText"]
+        );
+    }
+
+    #[test]
+    fn page_background_replays_on_background_plane() {
+        let op = PaintOp::PageBackground {
+            bbox: bbox(),
+            background: LayerPageBackgroundPaint {
+                background_color: None,
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: None,
+            },
+        };
+
+        assert_eq!(paint_op_replay_plane(&op), PaintReplayPlane::Background);
+    }
+
+    #[test]
+    fn behind_text_image_replays_before_flow() {
+        let op = image_with_wrap(Some(TextWrap::BehindText));
+
+        assert_eq!(paint_op_replay_plane(&op), PaintReplayPlane::BehindText);
+    }
+
+    #[test]
+    fn in_front_of_text_image_replays_after_flow() {
+        let op = image_with_wrap(Some(TextWrap::InFrontOfText));
+
+        assert_eq!(paint_op_replay_plane(&op), PaintReplayPlane::InFrontOfText);
+    }
+
+    #[test]
+    fn non_layered_ops_replay_on_flow_plane() {
+        let plain_image = image_with_wrap(None);
+        let top_and_bottom_image = image_with_wrap(Some(TextWrap::TopAndBottom));
+        let vector = PaintOp::Rectangle {
+            bbox: bbox(),
+            rect: LayerRectanglePaint {
+                corner_radius: 0.0,
+                style: ShapeStyle::default(),
+                gradient: None,
+                transform: ShapeTransform::default(),
+            },
+        };
+
+        assert_eq!(paint_op_replay_plane(&plain_image), PaintReplayPlane::Flow);
+        assert_eq!(
+            paint_op_replay_plane(&top_and_bottom_image),
+            PaintReplayPlane::Flow
+        );
+        assert_eq!(paint_op_replay_plane(&vector), PaintReplayPlane::Flow);
+    }
+}

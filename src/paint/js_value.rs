@@ -6,6 +6,7 @@ use wasm_bindgen::JsValue;
 use crate::document_core::helpers::color_ref_to_css;
 use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
+use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     font_blob_resource_key, has_supported_strict_glyph_outline_bitmap,
@@ -1954,6 +1955,9 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             if let Some(fill_mode) = image.fill_mode {
                 set_string(&value, "fillMode", image_fill_mode_str(fill_mode));
             }
+            if let Some(text_wrap) = image.text_wrap {
+                set_string(&value, "wrap", text_wrap_str(text_wrap));
+            }
             if let Some((width, height)) = image.original_size {
                 let original_size = Object::new();
                 set_number(&original_size, "width", width);
@@ -3503,6 +3507,17 @@ fn image_fill_mode_str(value: ImageFillMode) -> &'static str {
         ImageFillMode::RightTop => "rightTop",
         ImageFillMode::RightBottom => "rightBottom",
         ImageFillMode::None => "none",
+    }
+}
+
+fn text_wrap_str(value: TextWrap) -> &'static str {
+    match value {
+        TextWrap::Square => "square",
+        TextWrap::Tight => "tight",
+        TextWrap::Through => "through",
+        TextWrap::TopAndBottom => "topAndBottom",
+        TextWrap::BehindText => "behindText",
+        TextWrap::InFrontOfText => "inFrontOfText",
     }
 }
 
@@ -5135,6 +5150,7 @@ mod tests {
                         image: LayerImagePaint {
                             resource_id: Some(image_id),
                             external_path: None,
+                            text_wrap: None,
                             fill_mode: Some(ImageFillMode::Center),
                             original_size: Some((32.0, 24.0)),
                             crop: Some((1, 2, 31, 22)),

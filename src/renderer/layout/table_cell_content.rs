@@ -702,6 +702,7 @@ impl LayoutEngine {
                                     section_index: None,
                                     para_index: None,
                                     control_index: Some(ctrl_idx),
+                                    text_wrap: Some(pic.common.text_wrap),
                                     fill_mode: None,
                                     original_size: None,
                                     transform: ShapeTransform::default(),

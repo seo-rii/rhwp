@@ -487,6 +487,7 @@ impl LayerBuilder {
                                 image: LayerImagePaint {
                                     resource_id: Some(resource_id),
                                     external_path: None,
+                                    text_wrap: None,
                                     fill_mode: Some(crate::model::style::ImageFillMode::FitToSize),
                                     original_size: None,
                                     crop: None,
@@ -766,6 +767,7 @@ impl LayerBuilder {
                 .as_deref()
                 .map(|bytes| self.resources.intern_image_bytes(bytes)),
             external_path: image.external_path.clone(),
+            text_wrap: image.text_wrap,
             fill_mode: image.fill_mode,
             original_size: image.original_size,
             crop: image.crop,

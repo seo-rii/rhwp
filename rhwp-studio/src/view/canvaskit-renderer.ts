@@ -107,6 +107,11 @@ import {
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
 import { parseCanvasKitCssColor } from './canvaskit/css-color';
+import {
+  CANVASKIT_REPLAY_PLANES,
+  type CanvasKitReplayPlane,
+  layerPaintOpReplayPlane,
+} from './canvaskit/replay-plane';
 import { CanvasKitResourceCache, type CanvasKitPatternDiagnostics } from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
 import { CanvasKitSurfaceCache, type CanvasKitSurfaceDiagnostics } from './canvaskit/surface-cache';
@@ -380,7 +385,9 @@ export class CanvasKitLayerRenderer {
     canvas.clear(this.canvasKit.TRANSPARENT);
     canvas.save();
     canvas.scale(scale, scale);
-    this.renderNode(canvas, tree.root);
+    for (const replayPlane of CANVASKIT_REPLAY_PLANES) {
+      this.renderNode(canvas, tree.root, replayPlane);
+    }
     canvas.restore();
     surface.flush();
   }
@@ -420,6 +427,7 @@ export class CanvasKitLayerRenderer {
   private renderNode(
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerNode,
+    replayPlane: CanvasKitReplayPlane,
   ): void {
     switch (node.kind) {
       case 'group':
@@ -428,6 +436,7 @@ export class CanvasKitLayerRenderer {
             const cacheKey = this.staticPictureCache.keyForStaticSubtree(
               this.currentLayerTreeCacheKey,
               this.currentProfile,
+              replayPlane,
               node,
             );
             const cachedPicture = this.staticPictureCache.get(cacheKey);
@@ -440,7 +449,7 @@ export class CanvasKitLayerRenderer {
             try {
               const recordingCanvas = recorder.beginRecording(this.toRect(node.bounds), true);
               for (const child of node.children) {
-                this.renderNode(recordingCanvas, child);
+                this.renderNode(recordingCanvas, child, replayPlane);
               }
               const picture = recorder.finishRecordingAsPicture();
               this.staticPictureCache.set(cacheKey, picture);
@@ -451,16 +460,16 @@ export class CanvasKitLayerRenderer {
             return;
           }
           for (const child of node.children) {
-            this.renderNode(canvas, child);
+            this.renderNode(canvas, child, replayPlane);
           }
         });
         break;
       case 'clipRect':
-        this.renderClipNode(canvas, node);
+        this.renderClipNode(canvas, node, replayPlane);
         break;
       case 'leaf':
         this.withCacheHint(node.cacheHint, () => {
-          this.renderLeafNode(canvas, node);
+          this.renderLeafNode(canvas, node, replayPlane);
         });
         break;
     }
@@ -496,9 +505,10 @@ export class CanvasKitLayerRenderer {
   private renderClipNode(
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerClipNode,
+    replayPlane: CanvasKitReplayPlane,
   ): void {
     if (!this.currentClipEnabled) {
-      this.renderNode(canvas, node.child);
+      this.renderNode(canvas, node.child, replayPlane);
       return;
     }
     const clip = this.clipStateForNode(node);
@@ -514,7 +524,7 @@ export class CanvasKitLayerRenderer {
       this.canvasKit.ClipOp.Intersect,
       true,
     );
-    this.renderNode(canvas, node.child);
+    this.renderNode(canvas, node.child, replayPlane);
     canvas.restore();
     this.currentClipStack.pop();
   }
@@ -536,10 +546,14 @@ export class CanvasKitLayerRenderer {
   private renderLeafNode(
     canvas: ReturnType<Surface['getCanvas']>,
     node: LayerLeafNode,
+    replayPlane: CanvasKitReplayPlane,
   ): void {
     const ops = layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps);
     const selectedTextVariants = this.selectLayerTextVariantSets(ops);
     for (const op of ops) {
+      if (layerPaintOpReplayPlane(op) !== replayPlane) {
+        continue;
+      }
       if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
         continue;
       }

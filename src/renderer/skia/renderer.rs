@@ -10,10 +10,10 @@ use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
 use crate::paint::{
-    sidecars_for_leaf_ops, CacheHint, GlyphOutlineFillRule, GlyphOutlinePayloadKind,
-    GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphOutlinePaint,
-    LayerGlyphRunPaint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, ResourceArena,
-    TextRunPlacement, TextVariantQuality,
+    paint_op_replay_plane, sidecars_for_leaf_ops, CacheHint, GlyphOutlineFillRule,
+    GlyphOutlinePayloadKind, GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
+    LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp,
+    PaintReplayPlane, ResourceArena, TextRunPlacement, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant, LayerRasterRenderer,
@@ -1075,13 +1075,16 @@ impl SkiaLayerRenderer {
         let setup_time = setup_start.elapsed();
 
         let replay_start = Instant::now();
-        self.render_node(
-            canvas,
-            &tree.root,
-            &tree.resources,
-            &tree.variant_ops,
-            &mut replay,
-        );
+        for replay_plane in PaintReplayPlane::ORDERED {
+            self.render_node(
+                canvas,
+                &tree.root,
+                &tree.resources,
+                &tree.variant_ops,
+                &mut replay,
+                replay_plane,
+            );
+        }
         let replay_time = replay_start.elapsed();
 
         let encode_start = Instant::now();
@@ -1127,6 +1130,7 @@ impl SkiaLayerRenderer {
         resources: &ResourceArena,
         variant_ops: &[PaintOp],
         replay: &mut SkiaReplayContext,
+        replay_plane: PaintReplayPlane,
     ) {
         replay.record_layer_node_replay();
         match &node.kind {
@@ -1146,6 +1150,7 @@ impl SkiaLayerRenderer {
                     cache_key.mix_str(replay.profile.as_str());
                     cache_key.mix_output_options(&replay.output_options);
                     cache_key.mix_f64(replay.scale);
+                    cache_key.mix_str(replay_plane.as_str());
                     cache_key.mix_layer_node_with_sidecars(node, resources, variant_ops);
                     let cache_key = cache_key.finish();
                     let lookup = {
@@ -1188,7 +1193,14 @@ impl SkiaLayerRenderer {
                     let recording_canvas = recorder.begin_recording(cull_rect, true);
                     replay.push_cache_hint(*cache_hint);
                     for child in children {
-                        self.render_node(recording_canvas, child, resources, variant_ops, replay);
+                        self.render_node(
+                            recording_canvas,
+                            child,
+                            resources,
+                            variant_ops,
+                            replay,
+                            replay_plane,
+                        );
                     }
                     replay.pop_cache_hint();
                     if let Some(picture) = recorder.finish_recording_as_picture(Some(&cull_rect)) {
@@ -1224,7 +1236,7 @@ impl SkiaLayerRenderer {
 
                 replay.push_cache_hint(*cache_hint);
                 for child in children {
-                    self.render_node(canvas, child, resources, variant_ops, replay);
+                    self.render_node(canvas, child, resources, variant_ops, replay, replay_plane);
                 }
                 replay.pop_cache_hint();
             }
@@ -1235,7 +1247,7 @@ impl SkiaLayerRenderer {
                 ..
             } => {
                 if !replay.output_options.clip_enabled {
-                    self.render_node(canvas, child, resources, variant_ops, replay);
+                    self.render_node(canvas, child, resources, variant_ops, replay, replay_plane);
                     return;
                 }
                 canvas.save();
@@ -1249,7 +1261,7 @@ impl SkiaLayerRenderer {
                     None,
                     Some(replay.clip_antialias()),
                 );
-                self.render_node(canvas, child, resources, variant_ops, replay);
+                self.render_node(canvas, child, resources, variant_ops, replay, replay_plane);
                 canvas.restore();
             }
             LayerNodeKind::Leaf { ops, cache_hint } => {
@@ -1284,12 +1296,18 @@ impl SkiaLayerRenderer {
                     .variant_selections
                     .extend(selection.reports);
                 for op in ops {
+                    if paint_op_replay_plane(op) != replay_plane {
+                        continue;
+                    }
                     if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }
                     self.render_op(canvas, op, resources, replay);
                 }
                 for op in &sidecars {
+                    if paint_op_replay_plane(op) != replay_plane {
+                        continue;
+                    }
                     if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }

@@ -1,6 +1,7 @@
 import type { SkPicture } from 'canvaskit-wasm';
 
 import type { LayerGroupNode, LayerRenderProfile, PageLayerTree } from '@/core/types';
+import type { CanvasKitReplayPlane } from './replay-plane';
 
 export class CanvasKitStaticPictureCache {
   private readonly pictures = new Map<string, SkPicture>();
@@ -36,6 +37,7 @@ export class CanvasKitStaticPictureCache {
   keyForStaticSubtree(
     layerTreeCacheKey: string,
     profile: LayerRenderProfile,
+    replayPlane: CanvasKitReplayPlane,
     node: LayerGroupNode,
   ): string {
     let nodeId = this.nodeIds.get(node);
@@ -47,6 +49,7 @@ export class CanvasKitStaticPictureCache {
     return [
       layerTreeCacheKey,
       profile,
+      replayPlane,
       `node:${nodeId}`,
       node.sourceNodeId ?? 'anon',
       node.bounds.x.toFixed(3),

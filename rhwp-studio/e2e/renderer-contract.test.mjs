@@ -9,7 +9,9 @@ const canvas2dPath = path.join(studioRoot, 'src/view/canvas2d-layer-renderer.ts'
 const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
+const canvaskitReplayPlanePath = path.join(canvaskitDirectory, 'replay-plane.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
+const canvaskitStaticPictureCachePath = path.join(canvaskitDirectory, 'static-picture-cache.ts');
 const glyphOutlinePayloadStatusPath = path.join(studioRoot, 'src/view/glyph-outline-payload-status.ts');
 const glyphOutlineColorGraphUtilsPath = path.join(studioRoot, 'src/view/glyph-outline-color-graph-utils.ts');
 const imageEffectPixelsPath = path.join(studioRoot, 'src/view/image-effect-pixels.ts');
@@ -27,11 +29,16 @@ const rendererBaselineNativeDiffPath = path.join(studioRoot, 'e2e/renderer-basel
 const runCiPath = path.join(studioRoot, 'e2e/run-ci.mjs');
 const rendererBaselineDriverPath = path.join(repoRoot, 'scripts/renderer_baseline.py');
 const rendererBaselineManifestPath = path.join(repoRoot, 'scripts/renderer_baseline_manifest.json');
+const rustPaintReplayOrderPath = path.join(repoRoot, 'src/paint/replay_order.rs');
+const rustCanvaskitPolicyPath = path.join(repoRoot, 'src/renderer/canvaskit_policy.rs');
+const rustSkiaRendererPath = path.join(repoRoot, 'src/renderer/skia/renderer.rs');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
+const canvaskitReplayPlaneSource = fs.readFileSync(canvaskitReplayPlanePath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
+const staticPictureCacheSource = fs.readFileSync(canvaskitStaticPictureCachePath, 'utf8');
 const glyphOutlinePayloadStatusSource = fs.readFileSync(glyphOutlinePayloadStatusPath, 'utf8');
 const glyphOutlineColorGraphUtilsSource = fs.readFileSync(glyphOutlineColorGraphUtilsPath, 'utf8');
 const imageEffectPixelsSource = fs.readFileSync(imageEffectPixelsPath, 'utf8');
@@ -49,6 +56,9 @@ const rendererBaselineNativeDiffSource = fs.readFileSync(rendererBaselineNativeD
 const runCiSource = fs.readFileSync(runCiPath, 'utf8');
 const rendererBaselineDriverSource = fs.readFileSync(rendererBaselineDriverPath, 'utf8');
 const rendererBaselineManifest = JSON.parse(fs.readFileSync(rendererBaselineManifestPath, 'utf8'));
+const rustPaintReplayOrderSource = fs.readFileSync(rustPaintReplayOrderPath, 'utf8');
+const rustCanvaskitPolicySource = fs.readFileSync(rustCanvaskitPolicyPath, 'utf8');
+const rustSkiaRendererSource = fs.readFileSync(rustSkiaRendererPath, 'utf8');
 
 function tsFilesUnder(directory) {
   return fs.readdirSync(directory, { withFileTypes: true })
@@ -1061,7 +1071,6 @@ assert.equal(
   true,
   'CanvasKit static picture cache keys must include output options that affect direct replay',
 );
-const staticPictureCacheSource = fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8');
 for (const requiredToken of [
   'item instanceof ArrayBuffer',
   "appendString(`buffer:${bytes.length}:`)",
@@ -1318,6 +1327,96 @@ assert.equal(
   canvaskitSource.includes('layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps)'),
   true,
   'CanvasKit leaf replay must merge schema-v1 sidecar variantOps into text variant selection',
+);
+assert.equal(
+  importBlockFrom(canvaskitSource, './canvaskit/replay-plane').includes('CANVASKIT_REPLAY_PLANES')
+    && importBlockFrom(canvaskitSource, './canvaskit/replay-plane').includes('layerPaintOpReplayPlane'),
+  true,
+  'CanvasKit renderer must import shared replay plane ordering and op classification',
+);
+assertTokensInOrder(
+  canvaskitReplayPlaneSource,
+  [
+    "'background'",
+    "'behindText'",
+    "'flow'",
+    "'inFrontOfText'",
+    "op.type === 'pageBackground'",
+    "op.wrap === 'behindText'",
+    "op.wrap === 'inFrontOfText'",
+  ],
+  'CanvasKit replay plane helper must keep HWP z-order plane classification',
+);
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'renderSurface'),
+  [
+    'for (const replayPlane of CANVASKIT_REPLAY_PLANES)',
+    'this.renderNode(canvas, tree.root, replayPlane)',
+  ],
+  'CanvasKit renderSurface must replay the layer tree once per z-order plane',
+);
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'renderLeafNode'),
+  [
+    'layerPaintOpReplayPlane(op) !== replayPlane',
+    'continue',
+    'shouldRenderLayerTextVariant(op, selectedTextVariants)',
+    'this.renderOp(canvas, op)',
+  ],
+  'CanvasKit leaf replay must filter by replay plane before selected text variant rendering',
+);
+assert.equal(
+  staticPictureCacheSource.includes('replayPlane: CanvasKitReplayPlane')
+    && staticPictureCacheSource.includes('profile,')
+    && staticPictureCacheSource.includes('replayPlane,'),
+  true,
+  'CanvasKit static picture cache keys must separate cached pictures by replay plane',
+);
+assertTokensInOrder(
+  rustPaintReplayOrderSource,
+  [
+    'Self::Background',
+    'Self::BehindText',
+    'Self::Flow',
+    'Self::InFrontOfText',
+    'PaintOp::PageBackground',
+    'TextWrap::BehindText',
+    'TextWrap::InFrontOfText',
+  ],
+  'Rust replay order helper must keep HWP z-order plane classification',
+);
+assert.equal(
+  rustCanvaskitPolicySource.includes('replayPlane')
+    && rustCanvaskitPolicySource.includes('item.replay_plane = Some(paint_op_replay_plane(op))'),
+  true,
+  'CanvasKit replay plan diagnostics must expose each paint op replay plane',
+);
+assertTokensInOrder(
+  rustSkiaRendererSource,
+  [
+    'for replay_plane in PaintReplayPlane::ORDERED',
+    'self.render_node(',
+    'replay_plane',
+  ],
+  'native Skia renderer must replay the layer tree once per z-order plane',
+);
+assertTokensInOrder(
+  rustSkiaRendererSource,
+  [
+    'cache_key.mix_str(replay_plane.as_str())',
+    'cache_key.mix_layer_node_with_sidecars(node, resources, variant_ops)',
+  ],
+  'native Skia static picture cache key must include replay plane before subtree payload fingerprint',
+);
+assertTokensInOrder(
+  rustSkiaRendererSource,
+  [
+    'if paint_op_replay_plane(op) != replay_plane',
+    'continue;',
+    'should_render_selected_text_variant(op, &selection.selected)',
+    'self.render_op(canvas, op, resources, replay)',
+  ],
+  'native Skia leaf replay must filter by replay plane before selected text variant rendering',
 );
 const sidecarTextVariantMergeBlock = extractFunctionBody(textVariantsSource, 'layerTextVariantOpsForLeaf');
 for (const requiredToken of [

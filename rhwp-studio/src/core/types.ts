@@ -1235,6 +1235,7 @@ export interface LayerImageOp {
   base64?: string;
   /** Original linked-image path emitted for diagnostics before injected bytes are available. */
   externalPath?: string;
+  wrap?: 'square' | 'tight' | 'through' | 'topAndBottom' | 'behindText' | 'inFrontOfText';
   fillMode?: string;
   effect?: 'realPic' | 'grayScale' | 'blackWhite' | 'pattern8x8';
   brightness?: number;

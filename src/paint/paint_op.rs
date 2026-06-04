@@ -1,5 +1,6 @@
 use crate::model::control::FormType;
 use crate::model::image::ImageEffect;
+use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::model::ColorRef;
 use crate::paint::font::{GlyphRunReplayEligibility, ShapeKey, TextDirection, WritingMode};
@@ -1914,6 +1915,7 @@ pub struct LayerPageBackgroundImagePaint {
 pub struct LayerImagePaint {
     pub resource_id: Option<ImageResourceId>,
     pub external_path: Option<String>,
+    pub text_wrap: Option<TextWrap>,
     pub fill_mode: Option<ImageFillMode>,
     pub original_size: Option<(f64, f64)>,
     pub crop: Option<(i32, i32, i32, i32)>,
