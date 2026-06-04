@@ -157,6 +157,48 @@
       }
     },
     {
+      "id": "text-hangul-only",
+      "file": "re-01-hangul-only-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Hangul-only text sample for direct text placement parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "text-space-count",
+      "file": "re-02-space-count-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Space-count text sample for spacing parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "text-latin-only",
+      "file": "re-03-latin-only-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Latin-only text sample for fallback and positioning parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "text-punctuation",
       "file": "re-06-punctuation-hancom.hwp",
       "category": "paragraph",
@@ -185,6 +227,20 @@
       }
     },
     {
+      "id": "text-mixed-malgun-times",
+      "file": "re-mixed-malgun-timesnew-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Mixed Malgun/Times New Roman text sample for fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "font-batang-hancom",
       "file": "re-font-batang-hancom.hwp",
       "category": "font",
@@ -196,6 +252,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "font-batangche-hancom",
+      "file": "re-font-batangche-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "BatangChe/Hancom font mapping sample for CanvasKit text fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
       }
     },
     {
@@ -213,6 +283,20 @@
       }
     },
     {
+      "id": "font-gulimche-hancom",
+      "file": "re-font-gulimche-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "GulimChe/Hancom font mapping sample for CanvasKit text fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "font-malgun-hancom",
       "file": "re-font-malgun-hancom.hwp",
       "category": "font",
@@ -224,6 +308,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "font-dotum-hancom",
+      "file": "re-font-dotum-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "Dotum/Hancom font mapping sample for CanvasKit text fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
       }
     },
     {
@@ -755,6 +853,20 @@
       }
     },
     {
+      "id": "exam-math-no",
+      "file": "exam_math_no.hwp",
+      "category": "exam",
+      "page": 0,
+      "notes": "Math exam no-suffix companion for exam document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "exam-science",
       "file": "exam_science.hwp",
       "category": "exam",
@@ -969,6 +1081,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.0065
+      }
+    },
+    {
+      "id": "legacy-hwpml-30",
+      "file": "hwp-3.0-HWPML.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Legacy HWPML 3.0 sample for format and mixed document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
       }
     },
     {
