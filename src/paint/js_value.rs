@@ -4734,6 +4734,58 @@ mod tests {
         assert_eq!(number_prop(&prop(&svg, "viewBox"), "width"), 10.0);
         assert_eq!(number_prop(&prop(&svg, "intrinsicSize"), "height"), 10.0);
         assert_eq!(number_prop(&prop(&svg, "transformToRun"), "e"), 4.0);
+
+        let mut minimal_svg_glyph_outline = glyph_outline;
+        let PaintOp::GlyphOutline { outline, .. } = &mut minimal_svg_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = crate::paint::GlyphOutlinePayloadKind::SvgGlyph;
+        outline.variant.requires = vec!["text.glyphOutline.svgGlyph".to_string()];
+        outline.stroke = None;
+        outline.svg_glyph = Some(crate::paint::SvgGlyphPayload {
+            vector_resource_id: crate::paint::SvgResourceId(3),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(crate::paint::GlyphRange { start: 0, end: 1 }),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 12.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: None,
+            view_box: Some(crate::paint::SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+            intrinsic_size: None,
+            security_mode: crate::paint::SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        });
+        let (json_minimal_svg_payload, js_minimal_svg_payload) =
+            payload_pair_for(minimal_svg_glyph_outline, &["text.glyphOutline.svgGlyph"]);
+        let json_minimal_svg = prop(&json_minimal_svg_payload, "svgGlyph");
+        let minimal_svg = prop(&js_minimal_svg_payload, "svgGlyph");
+        assert!(
+            !Reflect::has(&json_minimal_svg, &JsValue::from_str("intrinsicSize"))
+                .expect("JSON SvgGlyph intrinsicSize presence check should not throw"),
+            "JSON SvgGlyph payload should omit absent optional intrinsicSize"
+        );
+        assert!(
+            !Reflect::has(&minimal_svg, &JsValue::from_str("intrinsicSize"))
+                .expect("JS SvgGlyph intrinsicSize presence check should not throw"),
+            "JS SvgGlyph payload should omit absent optional intrinsicSize"
+        );
+        assert_eq!(string_prop(&minimal_svg, "securityMode"), "staticSanitized");
     }
 
     #[wasm_bindgen_test]
