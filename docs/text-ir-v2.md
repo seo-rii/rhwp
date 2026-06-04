@@ -279,9 +279,8 @@ form-object geometry, image placement and tile fill modes, transformed images,
 crop-aware image effects, equation layout geometry, char overlap, text
 control/footnote markers, TextRun inline style effects and projection
 transforms, SVG-style arc paths, tab leader and decoration line visual ops, and
-the strict GlyphOutline COLRv0 transformed-layer, COLRv1 stage-1 solid graph
-plus stage-2 linear/radial gradient leaves, and BitmapGlyph and
-static-sanitized SvgGlyph payloads.
+the strict GlyphOutline COLRv0 transformed-layer, COLRv1 stage-1 through
+stage-5 graph subsets, BitmapGlyph, and static-sanitized SvgGlyph payloads.
 
 This policy keeps Canvas2D as the compatibility reference while preventing new
 CanvasKit work from adding browser-canvas dependencies that would block a
@@ -1241,9 +1240,8 @@ at a time. The preferred order is:
 - v2 compatibility writer as an opt-in path with `TextRun` fallback required;
 - strictVisual writer only when required features are complete and
   `fallbackPolicy=none` is explicitly requested;
-- richer `GlyphOutline` payload design, starting with the already gated stroke
-  subset and COLRv0 `ColorLayers` resolved-layer writer/replay coverage once
-  capability gates are fixed;
+- richer `GlyphOutline` payload design, starting with the already gated stroke,
+  COLRv0 `ColorLayers`, and implemented COLRv1 stage-1 through stage-5 subsets;
 - `BitmapGlyph` strict replay for one producer-selected image strike across
   SVG, Canvas2D, CanvasKit, and native Skia;
 - `SvgGlyph` strict replay for sanitized static path-vector resources across
@@ -1340,18 +1338,19 @@ Skia `ColorLayers.ColrV1` stage-1 solid-path + transform graph subset plus
 SVG/Canvas2D/CanvasKit/native Skia stage-2 linear/radial gradient leaves,
 stage-4 `sourceOver` composite nodes, and stage-5 run-local clip/reusable DAG
 nodes; Canvas2D/CanvasKit/native Skia also implement stage-3 full-360 sweep
-gradient leaves. The field also implements the
-feature-gated `BitmapGlyph` image-strike subset for CanvasKit and SVG/Canvas2D
-strict replay.
-The field exists so later COLRv1 graph stages or SVG glyph payloads can be
-feature-gated without overloading the first fill-only path representation. Reserved payload
-kinds are defined as schema vocabulary but are rejected by the compatibility
-validator until their strict profile and feature gates land. The v2 validator reports
+gradient leaves. The field also implements the feature-gated `BitmapGlyph`
+image-strike subset and static-sanitized `SvgGlyph` vector subset across the
+browser and native-ready strict replay paths.
+The field exists so later COLRv1 graph primitives or stricter resource-backed
+glyph payloads can be feature-gated without overloading the first fill-only path
+representation. Reserved payload kinds are defined as schema vocabulary but are
+rejected by the compatibility validator until their strict profile and feature
+gates land. The v2 validator reports
 `glyphOutlinePayloadKindFeatureMissing` for `colorLayers` unless both
 `text.glyphOutline.colorLayers` and
 `text.glyphOutline.colorLayers.colrV0` are declared and the resolved-layer
 contract is complete, or `text.glyphOutline.colorLayers.colrV1` is declared
-and the stage-1 normalized graph contract is complete.
+and the currently implemented normalized graph subset is complete.
 For `bitmapGlyph`, it accepts `text.glyphOutline.bitmapGlyph` only when the
 producer-resolved strike fields, deterministic strict visual
 `alphaMode`/`scalingPolicy`/`filtering`, required placement, and source/glyph

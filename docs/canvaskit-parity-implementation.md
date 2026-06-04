@@ -703,10 +703,9 @@ Definition of done:
 ## Remaining Backlog
 
 The current `skia` branch has closed the v2 envelope, the CanvasKit parity
-baseline, COLRv1 stage 1/2 plus full-360 sweep gradients, the first stage-4
-`sourceOver` composite subset, the first stage-5 run-local clip/reusable-DAG
-subset, strict `BitmapGlyph`/`SvgGlyph` resource corpus coverage, and
-font-construction proof controls. The remaining work should keep that
+baseline, COLRv1 stage 1 through stage 5 graph subsets, strict
+`BitmapGlyph`/`SvgGlyph` resource corpus coverage, and font-construction proof
+controls. The remaining work should keep that
 compatibility model intact: add one v2 feature at a time, keep v1 compatibility
 export available, and avoid layout or cross-scope authority changes unless
 explicitly gated.
