@@ -255,6 +255,34 @@
       }
     },
     {
+      "id": "table-core-m",
+      "file": "hwp_table_test-m.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Modified baseline table sample for table border and placement parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "table-core-saved",
+      "file": "hwp_table_test_saved.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Saved baseline table sample for table border and placement parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "table-simple",
       "file": "table-001.hwp",
       "category": "table",
@@ -1042,6 +1070,34 @@
       }
     },
     {
+      "id": "finance-stat-2010",
+      "file": "통합재정통계(2010.11월).hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Finance statistics 2010 real-document sample for dense numeric table parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "finance-stat-2011",
+      "file": "통합재정통계(2011.10월).hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Finance statistics 2011 real-document sample for dense numeric table parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "promo-doc",
       "file": "20250130-hongbo_saved.hwp",
       "category": "mixed-document",
@@ -1056,11 +1112,67 @@
       }
     },
     {
+      "id": "promo-doc-no",
+      "file": "20250130-hongbo-no.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Promotional document no-suffix companion for large mixed-document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "promo-doc-honbo-save",
+      "file": "honbo-save.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Additional saved promotional document companion for mixed-document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "promo-doc-original",
       "file": "20250130-hongbo.hwp",
       "category": "mixed-document",
       "page": 0,
       "notes": "Original promotional document companion for large mixed-document CanvasKit parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "pr-149-regression",
+      "file": "pr-149.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "PR 149 regression sample for real-document CanvasKit parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "task-001",
+      "file": "task-001.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Task document sample for mixed text and object placement parity.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,

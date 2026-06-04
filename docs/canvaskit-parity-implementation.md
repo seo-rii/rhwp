@@ -757,7 +757,8 @@ Recommended implementation order from this point:
    The manifest now includes paragraph indent, left/center/right/justified
    alignment, mixed Korean/English, punctuation and digit-only text samples,
    nested table-in-textbox, vertical table positioning, inner-table,
-   multi-table, IPC, border-style, and complex HWPERS table samples,
+   multi-table, IPC, border-style, modified/saved baseline table, and complex
+   HWPERS table samples,
    Batang/Gulim/Malgun Gothic/DotumChe font-mapping samples, image-start
    anchoring, TAC image placement, TAC control-case samples, a second
    header-image sample, group-box and draw-group vector samples, endnote
@@ -765,9 +766,9 @@ Recommended implementation order from this point:
    documents, blog/HWPX form samples, HWPX text/table/image reference samples,
    Korean/English/math/science/social exam documents, and multiple
    multi-section documents, plus public planning, RFP, technical, return-form,
-   finance-statistics, and original/saved promotional real documents so
-   placement and text fallback regressions have more than one real-document
-   shape;
+   finance-statistics, PR/task regression, and multiple promotional real
+   document variants so placement and text fallback regressions have more than
+   one real-document shape;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
 3. widen strict `SvgGlyph` only with producer-output fixtures that keep the

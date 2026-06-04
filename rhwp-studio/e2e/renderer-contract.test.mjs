@@ -392,6 +392,8 @@ for (const sampleId of [
   'font-malgun-hancom',
   'font-dotumche-hancom',
   'table-core',
+  'table-core-m',
+  'table-core-saved',
   'table-simple',
   'table-complex',
   'complex-table-hwpers',
@@ -448,8 +450,14 @@ for (const sampleId of [
   'real-kps-ai',
   'real-return-school-form',
   'real-finance-stat-2014',
+  'finance-stat-2010',
+  'finance-stat-2011',
   'promo-doc',
+  'promo-doc-no',
+  'promo-doc-honbo-save',
   'promo-doc-original',
+  'pr-149-regression',
+  'task-001',
   'business-doc',
 ]) {
   assert.equal(
