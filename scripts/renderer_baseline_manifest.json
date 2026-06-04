@@ -101,6 +101,20 @@
       }
     },
     {
+      "id": "text-align-left-empty",
+      "file": "re-align-left-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty left-aligned paragraph companion for alignment edge coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "text-align-center",
       "file": "re-align-center-hancom.hwp",
       "category": "paragraph",
@@ -171,6 +185,20 @@
       }
     },
     {
+      "id": "text-hangul-only-empty",
+      "file": "re-01-hangul-only-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty Hangul-only companion for empty text replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "text-space-count",
       "file": "re-02-space-count-hancom.hwp",
       "category": "paragraph",
@@ -185,11 +213,39 @@
       }
     },
     {
+      "id": "text-space-count-empty",
+      "file": "re-02-space-count-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty space-count companion for empty spacing replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "text-latin-only",
       "file": "re-03-latin-only-hancom.hwp",
       "category": "paragraph",
       "page": 0,
       "notes": "Latin-only text sample for fallback and positioning parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "text-latin-only-empty",
+      "file": "re-03-latin-only-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty Latin-only companion for empty fallback replay parity.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,
@@ -232,6 +288,62 @@
       "category": "paragraph",
       "page": 0,
       "notes": "Mixed Malgun/Times New Roman text sample for fallback parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "eng-words-batang-empty",
+      "file": "re-eng-words-batang-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty English words Batang companion for empty Latin run coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "eng-nospace-dotum-times-empty",
+      "file": "re-eng-nospace-dotum-times-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty English no-space Dotum/Times companion for mixed font edge coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "mixed-0tr-empty",
+      "file": "re-mixed-0tr-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty mixed zero-text-run companion for run-lowering edge coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "multisize-10-20-empty",
+      "file": "re-multisize-10-20-empty-hancom.hwp",
+      "category": "paragraph",
+      "page": 0,
+      "notes": "Empty multi-size companion for empty text-size edge coverage.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,
@@ -308,6 +420,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.008
+      }
+    },
+    {
+      "id": "font-malgun-empty",
+      "file": "re-font-malgun-empty-hancom.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "Empty Malgun font mapping companion for no-ink text fallback edge coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
       }
     },
     {

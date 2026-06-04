@@ -757,6 +757,7 @@ Recommended implementation order from this point:
    The manifest now includes paragraph indent, left/center/right/justified
    alignment, mixed Korean/English, punctuation and digit-only text samples,
    Hangul-only, Latin-only, space-count, and mixed Malgun/Times text samples,
+   representative empty/no-ink text and font-mapping edge companions,
    nested table-in-textbox, vertical table positioning, inner-table,
    multi-table, IPC, border-style, modified/saved baseline table, and complex
    HWPERS table samples,
