@@ -494,14 +494,15 @@ Definition of done:
 - no CanvasKit writer starts relying on font-native COLR table interpretation;
 - no paint-order, clip, effect, cache, or cross-scope semantics change.
 
-### Batch 2. BitmapGlyph Strict Validator
+### Batch 2. BitmapGlyph Producer-Output Corpus Widening
 
-Goal: close the strict image-strike contract before enabling broader writer
-emission.
+Goal: preserve the closed strict image-strike contract while adding
+producer-output fixtures that exercise the existing one-strike payload through
+real lowering paths.
 
 Expected code shape:
 
-- `BitmapGlyph` strict payload validation requires one producer-selected image
+- `BitmapGlyph` strict payload validation continues to require one producer-selected image
   strike;
 - `BitmapGlyph` payloads are exclusive to the bitmap family: sibling
   `colorLayers`, `svgGlyph`, or stroke payload fields make the strict contract
@@ -521,10 +522,10 @@ Expected code shape:
 
 Likely touchpoints:
 
-- glyph-outline payload status helpers;
-- renderer diagnostics vocabulary;
-- negative fixtures for missing required fields, backend-default filtering,
-  malformed resource refs, and strike reselection attempts.
+- producer-output fixture generation for image-backed text glyph payloads;
+- resource corpus manifests and expected diagnostics for image-resource replay;
+- renderer baseline coverage that proves Canvas2D/CanvasKit/native Skia keep
+  placement and bbox behavior for the same one-strike payload.
 
 Definition of done:
 
@@ -532,17 +533,20 @@ Definition of done:
 - strictVisual without a valid image-strike payload hard rejects;
 - checked-in resource corpus coverage continues to select the strict
   `BitmapGlyph` variant and keeps its ink inside payload placement and bbox;
-- Canvas2D/SVG writer work remains blocked until the validator and negative
-  fixtures are stable.
+- producer-output bitmap fixtures use the same deterministic alpha, scaling,
+  filtering, placement, cache-key, and resource-lookup contract already covered
+  by handcrafted strict payload fixtures.
 
-### Batch 3. SvgGlyph Static Vector Contract
+### Batch 3. SvgGlyph Producer-Output Corpus Widening
 
-Goal: make the sanitized vector resource contract explicit before widening
-writer emission.
+Goal: preserve the sanitized static vector contract while adding
+producer-output fixtures that exercise the existing `VectorResourceId` payload
+through real lowering paths.
 
 Expected code shape:
 
-- canonical payload references `VectorResourceId` instead of inline raw SVG;
+- canonical payload continues to reference `VectorResourceId` instead of inline
+  raw SVG;
 - `SvgGlyph` payloads are exclusive to the static vector family: sibling
   `colorLayers`, `bitmapGlyph`, or stroke payload fields make the strict
   contract invalid;
@@ -559,13 +563,11 @@ Expected code shape:
 
 Likely touchpoints:
 
-- shared static vector resource validation;
-- SVG exporter eligibility checks;
-- CanvasKit/native Skia fallback diagnostics;
-- negative fixtures for unsafe flags, missing `viewBox`, raw replay attempts,
-  unsupported vector primitives, and external/reference primitives such as
-  `<image href>`, `<use href>`, `foreignObject`, `filter`, `mask`, and
-  `clipPath`.
+- producer-output fixture generation for sanitized static vector glyph payloads;
+- resource corpus manifests and expected diagnostics for vector-resource replay;
+- renderer baseline coverage that proves Canvas2D/CanvasKit/native Skia keep
+  viewBox normalization, placement, and static safety for the same
+  `VectorResourceId` payload.
 
 Definition of done:
 
@@ -574,6 +576,9 @@ Definition of done:
 - unsafe vector resources choose compatibility fallback or strict rejection;
 - checked-in resource corpus coverage continues to select the strict `SvgGlyph`
   variant and replay visible static vector geometry;
+- producer-output vector fixtures keep the same hard-false script, animation,
+  external-resource, interactivity, cache-key, and no-raw-SVG contract already
+  covered by handcrafted strict payload fixtures;
 - no DOM parser, object URL, browser SVG element, or Canvas2D overlay is added.
 
 ### Batch 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
