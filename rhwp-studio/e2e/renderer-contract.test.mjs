@@ -863,6 +863,7 @@ assertTokensInOrder(
 );
 for (const requiredToken of [
   'canvas.drawImageRectOptions(',
+  'this.canvasKit.XYWHRect(0, 0, width, height)',
   "payload.filtering === 'nearest' ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear",
   'this.canvasKit.MipmapMode.None',
 ]) {
@@ -1276,6 +1277,17 @@ assertTokensInOrder(
     'ctx.imageSmoothingEnabled = previousImageSmoothingEnabled',
   ],
   'Canvas2D BitmapGlyph replay must apply deterministic sampling and restore image smoothing',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
+    'this.drawDomImage(',
+    'x: 0',
+    'y: 0',
+    'width',
+    'height',
+  ],
+  'Canvas2D BitmapGlyph replay must draw image strikes at the payload-local origin',
 );
 assertTokensInOrder(
   canvas2dGlyphOutlineReplayBlock,
