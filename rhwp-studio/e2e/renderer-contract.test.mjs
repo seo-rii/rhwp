@@ -886,6 +886,18 @@ assertTokensInOrder(
   ],
   'CanvasKit BitmapGlyph replay must apply run placement before payload-local transform and drawing',
 );
+assertTokensInOrder(
+  canvaskitBitmapGlyphReplayBlock,
+  [
+    'const paint = new this.canvasKit.Paint()',
+    'try {',
+    'canvas.drawImageRectOptions(',
+    '} finally {',
+    'canvas.restore()',
+    'paint.delete()',
+  ],
+  'CanvasKit BitmapGlyph replay must release transient Paint objects',
+);
 assert.equal(
   extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline').includes('hasStaticSanitizedSvgGlyphContract(op)'),
   true,
@@ -927,6 +939,20 @@ assertTokensInOrder(
     'const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
   ],
   'CanvasKit SvgGlyph replay must apply path-layer transforms after viewBox normalization',
+);
+assertTokensInOrder(
+  canvaskitSvgGlyphReplayBlock,
+  [
+    'const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+    'const paint = this.makePaint(',
+    'canvas.drawPath(path, paint)',
+    'paint.delete()',
+    'const strokePaint = this.makePaint(',
+    'canvas.drawPath(path, strokePaint)',
+    'strokePaint.delete()',
+    'path.delete()',
+  ],
+  'CanvasKit SvgGlyph replay must release transient Path and Paint objects',
 );
 for (const [label, source] of [
   ['canvaskit renderer', canvaskitSource],
