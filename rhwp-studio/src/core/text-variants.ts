@@ -14,8 +14,8 @@ import type {
 } from './types';
 import { isKnownLayerPaintOp } from './types';
 
-const MAX_COLRV1_STAGE1_GRAPH_NODES = 64;
-const MAX_COLRV1_STAGE1_GRAPH_DEPTH = 64;
+const MAX_COLRV1_GRAPH_NODES = 64;
+const MAX_COLRV1_GRAPH_DEPTH = 64;
 
 export type LayerTextVariantSelection = ReadonlyMap<string, string>;
 
@@ -177,7 +177,7 @@ export interface LayerTextV2ValidationOptions {
   allowFallbackFree?: boolean;
   allowRicherGlyphOutlinePayloads?: boolean;
   allowColrv0ColorLayersPayloads?: boolean;
-  allowColrv1Stage1ColorGraphPayloads?: boolean;
+  allowColrv1ColorGraphPayloads?: boolean;
   allowBitmapGlyphPayloads?: boolean;
   allowSvgGlyphPayloads?: boolean;
   allowMixedPerGlyphOrientation?: boolean;
@@ -308,7 +308,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
   const allowColrv0ColorLayersPayloads =
     requiredFeatures.has('text.glyphOutline.colorLayers')
     && requiredFeatures.has('text.glyphOutline.colorLayers.colrV0');
-  const allowColrv1Stage1ColorGraphPayloads =
+  const allowColrv1ColorGraphPayloads =
     requiredFeatures.has('text.glyphOutline.colorLayers')
     && requiredFeatures.has('text.glyphOutline.colorLayers.colrV1');
   const allowBitmapGlyphPayloads = requiredFeatures.has('text.glyphOutline.bitmapGlyph');
@@ -357,7 +357,7 @@ export function validateLayerTextV2Tree(tree: PageLayerTree): LayerTextV2Validat
         allowFallbackFree,
         allowRicherGlyphOutlinePayloads,
         allowColrv0ColorLayersPayloads,
-        allowColrv1Stage1ColorGraphPayloads,
+        allowColrv1ColorGraphPayloads,
         allowBitmapGlyphPayloads,
         allowSvgGlyphPayloads,
         allowMixedPerGlyphOrientation,
@@ -630,7 +630,7 @@ export function validateLayerTextV2Op(
               && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers')
               && variant.requiredFeatures?.includes('text.glyphOutline.colorLayers.colrV1');
             if (colrv1Feature) {
-              if (!hasColrv1Stage1ColorGraphContract(part.payload)) {
+              if (!hasColrv1ColorGraphContract(part.payload)) {
                 issues.push({
                   code: 'glyphOutlinePayloadContractInvalid',
                   message: `Text variant '${variant.variantId}' carries a COLRv1 colorLayers payload without the supported normalized graph contract.`,
@@ -640,7 +640,7 @@ export function validateLayerTextV2Op(
                   partIndex,
                 });
               }
-              if (options.allowColrv1Stage1ColorGraphPayloads !== true) {
+              if (options.allowColrv1ColorGraphPayloads !== true) {
                 issues.push({
                   code: 'glyphOutlinePayloadKindFeatureMissing',
                   message: `Text variant '${variant.variantId}' uses colorLayers without the COLRv1 normalized graph writer gate.`,
@@ -884,7 +884,7 @@ export function hasColrv0ColorLayersContract(payload: LayerGlyphOutlineOp): bool
     );
 }
 
-export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp): boolean {
+export function hasColrv1ColorGraphContract(payload: LayerGlyphOutlineOp): boolean {
   const colorLayers = payload.colorLayers;
   const graph = colorLayers?.paintGraph;
   if (
@@ -902,7 +902,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
     || !isValidPayloadGraphNodeId(graph.rootNodeId)
     || !Array.isArray(graph.nodes)
     || graph.nodes.length === 0
-    || graph.nodes.length > MAX_COLRV1_STAGE1_GRAPH_NODES
+    || graph.nodes.length > MAX_COLRV1_GRAPH_NODES
   ) {
     return false;
   }
@@ -1136,7 +1136,7 @@ export function hasColrv1Stage1ColorGraphContract(payload: LayerGlyphOutlineOp):
   const visited = new Set<number>();
   const visiting = new Set<number>();
   const visit = (nodeId: number, depth: number): boolean => {
-    if (depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH) {
+    if (depth > MAX_COLRV1_GRAPH_DEPTH) {
       return false;
     }
     if (visiting.has(nodeId)) {

@@ -1,7 +1,7 @@
 import { resolveLayerResourceIndex } from '@/core/layer-resource-store';
 import {
   hasColrv0ColorLayersContract,
-  hasColrv1Stage1ColorGraphContract,
+  hasColrv1ColorGraphContract,
   hasGlyphOutlinePathsContract,
   hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
@@ -28,7 +28,7 @@ export function glyphOutlinePayloadStatus(
       && hasColrv0ColorLayersContract(op);
     const supportsColrv1 = op.variant.requires?.includes('text.glyphOutline.colorLayers') === true
       && op.variant.requires?.includes('text.glyphOutline.colorLayers.colrV1') === true
-      && hasColrv1Stage1ColorGraphContract(op);
+      && hasColrv1ColorGraphContract(op);
     return {
       supported: supportsColrv0 || supportsColrv1,
       reason: 'unsupportedColorGlyph',

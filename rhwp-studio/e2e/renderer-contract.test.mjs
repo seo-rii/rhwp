@@ -1224,12 +1224,12 @@ for (const requiredToken of [
     `COLRv0 resolved-layer payload contract must keep guard: ${requiredToken}`,
   );
 }
-const colrv1ColorGraphContractBlock = extractFunctionBody(textVariantsSource, 'hasColrv1Stage1ColorGraphContract');
+const colrv1ColorGraphContractBlock = extractFunctionBody(textVariantsSource, 'hasColrv1ColorGraphContract');
 for (const requiredToken of [
   "payload.payloadKind !== 'colorLayers'",
   "colorLayers?.colorFormat !== 'colrV1'",
   'colorLayers.layers.length !== 0',
-  'graph.nodes.length > MAX_COLRV1_STAGE1_GRAPH_NODES',
+  'graph.nodes.length > MAX_COLRV1_GRAPH_NODES',
   'nodeIds.has(node.nodeId)',
   '!nodeIds.has(graph.rootNodeId)',
   "node.kind === 'solidPath'",
@@ -1245,7 +1245,7 @@ for (const requiredToken of [
   'node.composite.sourceNodeId !== node.composite.backdropNodeId',
   "node.kind === 'clip'",
   'isValidPathCommands(node.clip.clipCommands)',
-  'depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH',
+  'depth > MAX_COLRV1_GRAPH_DEPTH',
   'visiting.has(nodeId)',
   'visited.size === graph.nodes.length',
 ]) {

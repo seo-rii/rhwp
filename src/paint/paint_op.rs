@@ -410,8 +410,8 @@ pub struct ColorPaintGraphPayload {
     pub nodes: Vec<ColorPaintGraphNode>,
 }
 
-const MAX_COLRV1_STAGE1_GRAPH_NODES: usize = 64;
-const MAX_COLRV1_STAGE1_GRAPH_DEPTH: usize = 64;
+const MAX_COLRV1_GRAPH_NODES: usize = 64;
+const MAX_COLRV1_GRAPH_DEPTH: usize = 64;
 
 fn text_source_range_is_valid(range: TextSourceRange) -> bool {
     range.end >= range.start
@@ -500,7 +500,7 @@ impl ColorPaintGraphPayload {
     pub fn has_colrv1_supported_graph_contract(&self) -> bool {
         use std::collections::{HashMap, HashSet};
 
-        if self.nodes.is_empty() || self.nodes.len() > MAX_COLRV1_STAGE1_GRAPH_NODES {
+        if self.nodes.is_empty() || self.nodes.len() > MAX_COLRV1_GRAPH_NODES {
             return false;
         }
 
@@ -724,7 +724,7 @@ impl ColorPaintGraphPayload {
             visiting: &mut HashSet<u32>,
             visited: &mut HashSet<u32>,
         ) -> bool {
-            if depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH {
+            if depth > MAX_COLRV1_GRAPH_DEPTH {
                 return false;
             }
             if visiting.contains(&node_id) {
@@ -801,7 +801,7 @@ impl ColorPaintGraphPayload {
     pub fn colrv1_stage1_reference_layer(&self) -> Option<ColorLayerNode> {
         use std::collections::{HashMap, HashSet};
 
-        if self.nodes.is_empty() || self.nodes.len() > MAX_COLRV1_STAGE1_GRAPH_NODES {
+        if self.nodes.is_empty() || self.nodes.len() > MAX_COLRV1_GRAPH_NODES {
             return None;
         }
 
@@ -817,7 +817,7 @@ impl ColorPaintGraphPayload {
         let mut transform_to_run = None;
         let mut depth = 1usize;
         loop {
-            if depth > MAX_COLRV1_STAGE1_GRAPH_DEPTH || !visited.insert(node_id) {
+            if depth > MAX_COLRV1_GRAPH_DEPTH || !visited.insert(node_id) {
                 return None;
             }
             let node = nodes_by_id.get(&node_id)?;
@@ -2597,10 +2597,10 @@ mod tests {
         assert!(!empty_graph.has_colrv1_stage1_contract());
 
         let mut excessive_graph = ColorPaintGraphPayload {
-            root_node_id: MAX_COLRV1_STAGE1_GRAPH_NODES as u32,
+            root_node_id: MAX_COLRV1_GRAPH_NODES as u32,
             nodes: vec![colrv1_solid_node(0)],
         };
-        for node_id in 1..=MAX_COLRV1_STAGE1_GRAPH_NODES as u32 {
+        for node_id in 1..=MAX_COLRV1_GRAPH_NODES as u32 {
             excessive_graph
                 .nodes
                 .push(colrv1_transform_node(node_id, node_id - 1, identity));
