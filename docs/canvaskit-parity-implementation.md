@@ -948,7 +948,10 @@ classified separately. Samples with tiny Canvas2D replay baselines and stable
 native dispatch/pixel parity may also carry scoped replay-performance budgets
 instead of loosening the global CanvasKit guard; `hwpspec.hwp` is the current
 watch item for software-surface variance in that category and remains outside
-the checked-in manifest until its selected diff is understood. The Markdown report
+the checked-in manifest until its selected diff is understood. The current
+candidate sweep measured `hwpspec.hwp` at about `0.113` selected diff and
+`0.117` tolerant diff against Canvas2D, while the saved screenshots show the
+same page structure with large image-sampling differences. The Markdown report
 mirrors target-backend/profile summaries, applied per-comparison thresholds, and
 the worst browser comparisons so large sweeps do not require scanning every
 screenshot row first.

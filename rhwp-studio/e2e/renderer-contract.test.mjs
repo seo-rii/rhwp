@@ -487,6 +487,13 @@ for (const sampleId of [
     `renderer baseline manifest must keep existing representative sample '${sampleId}'`,
   );
 }
+for (const watchSample of ['hwpspec.hwp']) {
+  assert.equal(
+    rendererBaselineManifest.samples.some((sample) => sample.file === watchSample),
+    false,
+    `renderer baseline manifest must not include '${watchSample}' until its CanvasKit selected diff is understood`,
+  );
+}
 for (const category of [
   'paragraph',
   'font',
