@@ -394,6 +394,7 @@ for (const sampleId of [
   'table-core',
   'table-simple',
   'table-complex',
+  'complex-table-hwpers',
   'table-in-textbox',
   'table-vpos',
   'table-inner',
@@ -414,6 +415,11 @@ for (const sampleId of [
   'hwpctl-api',
   'hwpctl-action-table',
   'hwpctl-parameterset-item',
+  'tac-case-001',
+  'tac-case-002',
+  'tac-case-003',
+  'tac-case-004',
+  'tac-case-005',
   'header-image',
   'header-image-alt',
   'shape-object',
@@ -443,6 +449,7 @@ for (const sampleId of [
   'real-return-school-form',
   'real-finance-stat-2014',
   'promo-doc',
+  'promo-doc-original',
   'business-doc',
 ]) {
   assert.equal(
