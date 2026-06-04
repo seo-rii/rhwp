@@ -281,9 +281,12 @@ Implementation shape:
 - reject unreachable nodes, cycles, node counts over the stage limit, and depth
   over the stage limit.
 
-The next implementation batches should add negative and parity fixtures around
-the existing stage-1 graph, then widen to later COLRv1 graph nodes only after
-their reference semantics are fixed.
+The implementation baseline now covers stage 1 through the first stage-5
+subset. Remaining COLRv1 work should preserve those fixed semantics and only
+add concrete follow-up primitives, such as additional blend/composite modes,
+extra clip primitives, or reusable-node memoization, when a real payload or
+document requires them. Unsupported graph features should otherwise keep
+producing deterministic fallback/reject diagnostics.
 
 Later COLRv1 additions should be staged as independent v2 feature additions:
 
@@ -443,46 +446,51 @@ batch discovers that it needs browser-only parsing, hidden Canvas2D drawing, or
 backend-dependent semantics, stop the writer work and add a validator,
 diagnostic, or resource contract instead.
 
-### Batch 1. COLRv1 Stage-1/2/3 Graph Hardening
+### Batch 1. COLRv1 Stage-4/5 Follow-Up Guardrails
 
-Goal: harden the current COLRv1 stage-1 through stage-3 graph vocabulary and
-validation without enabling a broad writer path.
+Goal: preserve the implemented COLRv1 stage-1 through stage-5 graph vocabulary
+and add new graph primitives only when they can stay inside glyph-payload
+composition without changing text variant selection, global paint order, or
+scope semantics.
 
 Expected code shape:
 
 - schema/type vocabulary keeps `ColorLayers.ColrV1` stage-1 nodes as the
-  cross-backend baseline and admits stage-2/3 gradient path leaves;
-- stage-1 nodes are tree-only `solidPath` and local affine `transform`;
-- stage-2 nodes are tree-only `linearGradientPath` and
-  `radialGradientPath` leaves with finite coordinates, ordered stop offsets, and
-  resolved RGBA colors;
-- stage-3 nodes are tree-only `sweepGradientPath` leaves with finite center
-  coordinates, ordered stop offsets, resolved RGBA colors, and a full
-  360-degree angle range;
+  cross-backend baseline and admits the implemented stage-2/3/4/5 graph nodes;
+- stage-1 nodes are `solidPath` and local affine `transform`;
+- stage-2 nodes are `linearGradientPath` and `radialGradientPath` leaves with
+  finite coordinates, ordered stop offsets, and resolved RGBA colors;
+- stage-3 nodes are `sweepGradientPath` leaves with finite center coordinates,
+  ordered stop offsets, resolved RGBA colors, and a full 360-degree angle range;
+- stage-4 nodes are `composite` with `sourceOver` only, painting backdrop then
+  source inside the glyph payload;
+- stage-5 nodes are run-local `clip` child nodes plus reusable acyclic DAG child
+  refs inside the graph size/depth limits;
 - each `solidPath` contains producer-resolved path commands, resolved RGBA,
   `fillRule`, layer/source glyph provenance, palette provenance, and source
   range metadata;
 - graph validation rejects cycles, unreachable nodes, unknown nodes,
-  malformed gradients, partial-angle sweeps, unsupported blends/clips,
-  scope-changing transforms, excessive depth, and excessive node count;
-- fixtures continue to use deterministic internal/native reference behavior
-  before any exporter widening beyond the currently validated stage subset.
+  malformed gradients, partial-angle sweeps, non-`sourceOver` composites,
+  unsupported clip primitives, scope-changing transforms, excessive depth, and
+  excessive node count;
+- any new graph primitive first gets deterministic internal/native reference
+  behavior before Canvas2D/CanvasKit/SVG exporter widening.
 
 Likely touchpoints:
 
 - Rust schema and text payload definitions;
 - Studio text variant and glyph-outline payload status helpers;
-- renderer contract tests for new payload vocabulary and unsupported reasons;
+- renderer contract tests for shared payload vocabulary and unsupported reasons;
 - native/internal fixture code that can assert the normalized graph result.
 
 Definition of done:
 
-- COLRv1 stage-1 payloads continue to validate when they contain only solid
-  color and local transform nodes, stage-2 gradient path leaves validate only
-  with finite coordinates and ordered resolved-color stops, and stage-3 sweep
-  leaves validate only for full 360-degree ranges;
-- unsupported COLRv1 nodes, malformed stage-2 gradients, and partial-angle
-  stage-3 sweeps produce deterministic payload-contract diagnostics;
+- COLRv1 stage-1 through stage-5 payloads continue to validate/replay only for
+  the supported solid, transform, gradient, sweep, `sourceOver` composite,
+  run-local clip, and acyclic reusable-DAG subsets;
+- unsupported COLRv1 nodes, malformed gradients, partial-angle sweeps,
+  non-`sourceOver` composites, and unsupported clip forms produce deterministic
+  payload-contract diagnostics;
 - no CanvasKit writer starts relying on font-native COLR table interpretation;
 - no paint-order, clip, effect, cache, or cross-scope semantics change.
 
