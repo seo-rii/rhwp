@@ -11,7 +11,7 @@
     "e2e:headless": "node e2e/renderer-contract.test.mjs && node e2e/image-diff.test.mjs --mode=headless && node e2e/font-mapping-parity.test.mjs --mode=headless && node e2e/text-flow.test.mjs --mode=headless && RHWP_CANVASKIT_MODE=compat node e2e/canvaskit-render.test.mjs --mode=headless && node e2e/canvaskit-render.test.mjs --mode=headless && npm run e2e:render:webgpu:smoke:headless && npm run e2e:render:software:smoke:headless && node e2e/renderer-lifecycle.test.mjs --mode=headless",
     "e2e:ci": "node e2e/run-ci.mjs",
     "e2e:ci:full": "RHWP_RENDER_SAMPLE_SCOPE=full node e2e/run-ci.mjs",
-    "e2e:baseline:headless": "node e2e/renderer-baseline.mjs --mode=headless",
+    "e2e:baseline:headless": "python3 ../scripts/renderer_baseline.py --skip-native --browser-mode headless",
     "e2e:render:compat:headless": "RHWP_CANVASKIT_MODE=compat node e2e/canvaskit-render.test.mjs --mode=headless",
     "e2e:render:webgpu:headless": "RHWP_CANVASKIT_SURFACE=webgpu node e2e/canvaskit-render.test.mjs --mode=headless",
     "e2e:render:webgpu:smoke:headless": "RHWP_CANVASKIT_SURFACE=webgpu RHWP_RENDER_SAMPLE_FILTER=eq-01 RHWP_E2E_PERF_ITERATIONS=1 node e2e/canvaskit-render.test.mjs --mode=headless",

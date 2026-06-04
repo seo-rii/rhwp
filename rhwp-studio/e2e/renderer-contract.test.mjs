@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(studioRoot, '..');
+const packageJsonPath = path.join(studioRoot, 'package.json');
 const canvas2dPath = path.join(studioRoot, 'src/view/canvas2d-layer-renderer.ts');
 const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
@@ -56,6 +57,7 @@ const rendererBaselineNativeDiffSource = fs.readFileSync(rendererBaselineNativeD
 const runCiSource = fs.readFileSync(runCiPath, 'utf8');
 const rendererBaselineDriverSource = fs.readFileSync(rendererBaselineDriverPath, 'utf8');
 const rendererBaselineManifest = JSON.parse(fs.readFileSync(rendererBaselineManifestPath, 'utf8'));
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const rustPaintReplayOrderSource = fs.readFileSync(rustPaintReplayOrderPath, 'utf8');
 const rustCanvaskitPolicySource = fs.readFileSync(rustCanvaskitPolicyPath, 'utf8');
 const rustSkiaRendererSource = fs.readFileSync(rustSkiaRendererPath, 'utf8');
@@ -608,6 +610,12 @@ assert(
     && rendererBaselineDriverSource.includes('WebGPU Failures Seen')
     && rendererBaselineDriverSource.includes('WebGL Failures Seen'),
   'renderer baseline report must preserve per-surface CanvasKit failure reasons',
+);
+assert(
+  packageJson.scripts['e2e:baseline:headless']?.includes('../scripts/renderer_baseline.py')
+    && packageJson.scripts['e2e:baseline:headless']?.includes('--skip-native')
+    && packageJson.scripts['e2e:baseline:headless']?.includes('--browser-mode headless'),
+  'studio baseline npm script must use the driver that starts Vite and supplies manifest/output defaults',
 );
 assert(
   extractMethodBody(canvas2dSource, 'renderImage').includes('effectiveLayerImageBounds(op.bbox, op.transform)')
