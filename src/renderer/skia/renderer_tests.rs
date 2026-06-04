@@ -21,11 +21,11 @@ use crate::paint::{
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
     LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPageBackgroundImagePaint,
     LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerSemantic,
-    LayerTextOrientation, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp, PaintTextStyle,
-    PaintVariantMeta, RenderProfile, ResolvedColor, ResourceArena, ShapeKey, ShapingEngineId,
-    SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, SvgResourceId, TextDirection,
-    TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan, TextVariantKind,
-    TextVariantQuality, VariationAxisValue, WritingMode,
+    LayerTextOrientation, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp,
+    PaintReplayPlane, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor,
+    ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
+    SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
+    TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
 };
 use crate::renderer::composer::CharOverlapInfo;
 use crate::renderer::layer_renderer::{
@@ -1375,6 +1375,7 @@ fn raster_output_reports_static_picture_cache_fingerprint_mismatch() {
     cache_key.mix_str(RenderProfile::Screen.as_str());
     cache_key.mix_output_options(&LayerOutputOptions::default());
     cache_key.mix_f64(1.0);
+    cache_key.mix_str(PaintReplayPlane::Flow.as_str());
     cache_key.mix_layer_node(&tree.root, &tree.resources);
     let cache_key = cache_key.finish();
 
