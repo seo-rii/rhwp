@@ -4768,6 +4768,65 @@ mod tests {
             "strict BitmapGlyph export must keep the checked-in payload fixture"
         );
 
+        let mut srgb_default_bitmap_glyph_outline = glyph_outline.clone();
+        let PaintOp::GlyphOutline { outline, .. } = &mut srgb_default_bitmap_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::BitmapGlyph;
+        outline.variant.requires = vec!["text.glyphOutline.bitmapGlyph".to_string()];
+        outline.bitmap_glyph = Some(crate::paint::BitmapGlyphPayload {
+            image_resource_id: crate::paint::ImageResourceId(7),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 12.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: None,
+            strike_ppem: Some((16, 16)),
+            strike_selection: Some(crate::paint::BitmapStrikeSelection::ProducerResolved),
+            pixel_format: Some("rgba8".to_string()),
+            color_space: None,
+            alpha_mode: Some(crate::paint::BitmapAlphaMode::Premultiplied),
+            scaling_policy: Some(crate::paint::BitmapGlyphScalingPolicy::ExplicitTransform),
+            filtering: Some(crate::paint::BitmapGlyphFiltering::Linear),
+        });
+        let srgb_default_bitmap_tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run.clone(), srgb_default_bitmap_glyph_outline],
+            ),
+        );
+        let srgb_default_bitmap_json = srgb_default_bitmap_tree
+            .to_json_v2_strict_glyph_outline()
+            .expect("valid strict BitmapGlyph outline export with default sRGB");
+        assert!(srgb_default_bitmap_json.contains("\"payloadKind\":\"bitmapGlyph\""));
+        assert!(
+            !srgb_default_bitmap_json.contains("\"colorSpace\""),
+            "strict BitmapGlyph payload must omit colorSpace when producer leaves it defaulted"
+        );
+        let srgb_default_bitmap_payload_fixture = include_str!(
+            "../../tests/fixtures/glyph_outline_payloads/strict_bitmap_glyph_payload_srgb_default.json"
+        )
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .expect("strict BitmapGlyph sRGB-default fixture is a JSON object");
+        assert!(
+            srgb_default_bitmap_json.contains(srgb_default_bitmap_payload_fixture),
+            "strict BitmapGlyph export must keep the checked-in sRGB-default payload fixture"
+        );
+
         let mut svg_glyph_outline = glyph_outline.clone();
         let PaintOp::GlyphOutline { outline, .. } = &mut svg_glyph_outline else {
             panic!("expected glyph outline");
