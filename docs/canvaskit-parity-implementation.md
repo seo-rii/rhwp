@@ -742,8 +742,9 @@ Recommended implementation order from this point:
    anchoring, TAC image placement, a second header-image sample, group-box and
    draw-group vector samples, endnote routing, hwpctl control-reference
    documents, blog/HWPX form samples, HWPX text/table/image reference samples,
-   and a multi-section document so placement and text fallback regressions have
-   more than one real-document shape;
+   Korean/English/math/science/social exam documents, and multiple
+   multi-section documents so placement and text fallback regressions have more
+   than one real-document shape;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
 3. widen strict `SvgGlyph` only with producer-output fixtures that keep the

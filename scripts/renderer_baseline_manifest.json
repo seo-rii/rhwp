@@ -601,6 +601,76 @@
       }
     },
     {
+      "id": "exam-kor",
+      "file": "exam_kor.hwp",
+      "category": "exam",
+      "page": 0,
+      "notes": "Korean exam real-document sample for mixed text, table, and control parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "exam-eng",
+      "file": "exam_eng.hwp",
+      "category": "exam",
+      "page": 0,
+      "notes": "English exam real-document sample for mixed text and layout parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "exam-math",
+      "file": "exam_math.hwp",
+      "category": "exam",
+      "page": 0,
+      "notes": "Math exam real-document sample for equation and dense layout parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "exam-science",
+      "file": "exam_science.hwp",
+      "category": "exam",
+      "page": 0,
+      "notes": "Science exam real-document sample for mixed content and image/text parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "exam-social",
+      "file": "exam_social.hwp",
+      "category": "exam",
+      "page": 0,
+      "notes": "Social studies exam real-document sample for mixed content parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
       "id": "shape-object",
       "file": "shape-group-02.hwp",
       "category": "shape",
@@ -801,6 +871,20 @@
         "inkMaskMaxDiffRatio": 0.002,
         "nonInkMaxDiffPixels": 0,
         "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "multi-section-doc-2",
+      "file": "hwp-multi-002.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Second multi-section mixed document sample for repeated document-structure parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
       }
     },
     {

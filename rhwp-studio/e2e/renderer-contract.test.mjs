@@ -429,8 +429,14 @@ for (const sampleId of [
   'hwpx-ref-table',
   'hwpx-table-vpos',
   'hwpx-tac-image',
+  'exam-kor',
+  'exam-eng',
+  'exam-math',
+  'exam-science',
+  'exam-social',
   'legacy-doc-2010',
   'multi-section-doc',
+  'multi-section-doc-2',
   'promo-doc',
   'business-doc',
 ]) {
@@ -455,6 +461,7 @@ for (const category of [
   'group-drawing',
   'form',
   'hwpx',
+  'exam',
   'mixed-document',
 ]) {
   assert.equal(
