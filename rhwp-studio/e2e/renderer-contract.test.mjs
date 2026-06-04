@@ -437,6 +437,11 @@ for (const sampleId of [
   'legacy-doc-2010',
   'multi-section-doc',
   'multi-section-doc-2',
+  'real-nikorean-plan-2022',
+  'real-k-water-rfp',
+  'real-kps-ai',
+  'real-return-school-form',
+  'real-finance-stat-2014',
   'promo-doc',
   'business-doc',
 ]) {

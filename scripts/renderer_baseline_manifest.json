@@ -888,6 +888,76 @@
       }
     },
     {
+      "id": "real-nikorean-plan-2022",
+      "file": "2022년 국립국어원 업무계획.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Public planning real-document sample for government report and mixed-layout parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "real-k-water-rfp",
+      "file": "k-water-rfp.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "RFP real-document sample for dense tables, paragraphs, and mixed-document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "real-kps-ai",
+      "file": "kps-ai.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Technical real-document sample for mixed text, table, and resource placement parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "real-return-school-form",
+      "file": "복학원서.hwp",
+      "category": "form",
+      "page": 0,
+      "notes": "Return-to-school form sample for real-world form and text placement parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
+      "id": "real-finance-stat-2014",
+      "file": "통합재정통계(2014.8월).hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Finance statistics real-document sample for dense numeric table and report parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.02
+      }
+    },
+    {
       "id": "promo-doc",
       "file": "20250130-hongbo_saved.hwp",
       "category": "mixed-document",
