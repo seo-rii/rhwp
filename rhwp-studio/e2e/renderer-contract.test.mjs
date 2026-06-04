@@ -1270,6 +1270,16 @@ assertTokensInOrder(
 assertTokensInOrder(
   canvas2dGlyphOutlineReplayBlock,
   [
+    'const previousImageSmoothingEnabled = ctx.imageSmoothingEnabled',
+    "ctx.imageSmoothingEnabled = payload.filtering !== 'nearest'",
+    'this.drawDomImage(',
+    'ctx.imageSmoothingEnabled = previousImageSmoothingEnabled',
+  ],
+  'Canvas2D BitmapGlyph replay must apply deterministic sampling and restore image smoothing',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
     'const vectorIndex = resolveLayerResourceIndex(',
     'payload?.vectorResourceId',
     'this.currentResources?.svgKeys',
