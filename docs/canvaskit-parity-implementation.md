@@ -123,6 +123,13 @@ table routing for equation payloads, passed the raster-only equation diff
 budgets, and rechecked that text, image, equation, form, path, page-background,
 and footnote fallback overlay helpers remain absent. The single-iteration
 performance numbers from that smoke remain metrics only.
+The same sample also passed `npm run e2e:render:webgpu:smoke:headless` in the
+local headless environment. CanvasKit attempted the requested WebGPU surface,
+recorded `CanvasKit WebGPU build support unavailable`, recorded the subsequent
+WebGL context failure, and then replayed through the CanvasKit software surface
+with the same equation resource routing, raster-only diff budgets, and removed
+overlay-helper checks. That result keeps WebGPU as an execution preference, not
+a correctness dependency.
 
 ## Architecture
 
