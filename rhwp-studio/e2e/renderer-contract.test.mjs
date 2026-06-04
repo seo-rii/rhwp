@@ -832,6 +832,19 @@ assert.equal(
   true,
   'CanvasKit static picture cache keys must include output options that affect direct replay',
 );
+const staticPictureCacheSource = fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8');
+for (const requiredToken of [
+  'ArrayBuffer.isView(item)',
+  'view.byteOffset',
+  'view.byteLength',
+  "appendString(`bytes:${bytes.length}:`)",
+]) {
+  assert.equal(
+    staticPictureCacheSource.includes(requiredToken),
+    true,
+    `CanvasKit static picture cache fingerprint must include typed-array payload bytes: ${requiredToken}`,
+  );
+}
 assert.equal(
   canvaskitFontsSource.includes("from '../layer-canvas-utils'"),
   false,
