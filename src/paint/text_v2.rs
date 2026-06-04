@@ -1178,9 +1178,9 @@ mod tests {
         GlyphOutlineStrokeJoin, GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics,
         GlyphRunReplayEligibility, ImageResourceId, LayerAffineTransform, LayerGlyphOutlinePath,
         LayerPoint, LayerSemantic, LayerVector, PaintTextStyle, PaintVariantMeta, ResolvedColor,
-        ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
-        SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
-        TextSourceSpan, WritingMode,
+        ShapeKey, ShapingEngineId, SvgGlyphIntrinsicSize, SvgGlyphPayload, SvgGlyphSecurityMode,
+        SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId,
+        TextSourceRange, TextSourceSpan, WritingMode,
     };
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -2529,6 +2529,41 @@ mod tests {
             .svg_glyph
             .as_ref()
             .is_some_and(SvgGlyphPayload::has_static_sanitized_contract));
+
+        let LayerTextVariantPayload::GlyphOutline(outline) =
+            &mut text_ops[0].variants[1].parts[0].payload
+        else {
+            panic!("expected glyph outline payload");
+        };
+        outline.svg_glyph.as_mut().unwrap().intrinsic_size = Some(SvgGlyphIntrinsicSize {
+            width: 10.0,
+            height: 12.0,
+        });
+        let issues = validate_text_v2_op(&text_ops[0], &options);
+        assert!(
+            issues.is_empty(),
+            "SvgGlyph with intrinsicSize should remain valid: {issues:?}"
+        );
+
+        let strict_slots = strict_glyph_outline_text_v2_slots(&text_ops)
+            .expect("strict svg outline slot with intrinsic size");
+        let LayerTextVariantPayload::GlyphOutline(strict_outline) =
+            &strict_slots[0].variants[0].parts[0].payload
+        else {
+            panic!("expected strict glyph outline payload");
+        };
+        assert!(strict_outline
+            .svg_glyph
+            .as_ref()
+            .is_some_and(SvgGlyphPayload::has_static_sanitized_contract));
+        assert_eq!(
+            strict_outline
+                .svg_glyph
+                .as_ref()
+                .and_then(|payload| payload.intrinsic_size)
+                .map(|size| (size.width, size.height)),
+            Some((10.0, 12.0))
+        );
     }
 
     #[test]
