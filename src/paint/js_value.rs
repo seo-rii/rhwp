@@ -4536,9 +4536,50 @@ mod tests {
             string_prop(&js_bitmap_payload, "payloadKind"),
             "bitmapGlyph"
         );
+        let json_bitmap = prop(&json_bitmap_payload, "bitmapGlyph");
         let bitmap = prop(&js_bitmap_payload, "bitmapGlyph");
+        assert_same_number(&json_bitmap, &bitmap, "imageResourceId");
         assert_eq!(number_prop(&bitmap, "imageResourceId"), 7.0);
+        assert_same_number(
+            &prop(&json_bitmap, "sourceRangeUtf8"),
+            &prop(&bitmap, "sourceRangeUtf8"),
+            "start",
+        );
+        assert_same_number(
+            &prop(&json_bitmap, "sourceRangeUtf8"),
+            &prop(&bitmap, "sourceRangeUtf8"),
+            "end",
+        );
+        assert_eq!(number_prop(&prop(&bitmap, "sourceRangeUtf8"), "start"), 0.0);
+        assert_eq!(number_prop(&prop(&bitmap, "sourceRangeUtf8"), "end"), 1.0);
+        assert_same_number(
+            &prop(&json_bitmap, "glyphRange"),
+            &prop(&bitmap, "glyphRange"),
+            "start",
+        );
+        assert_same_number(
+            &prop(&json_bitmap, "glyphRange"),
+            &prop(&bitmap, "glyphRange"),
+            "end",
+        );
+        assert_eq!(number_prop(&prop(&bitmap, "glyphRange"), "start"), 0.0);
+        assert_eq!(number_prop(&prop(&bitmap, "glyphRange"), "end"), 1.0);
+        assert_same_number(
+            &prop(&prop(&json_bitmap, "placement"), "runToPage"),
+            &prop(&prop(&bitmap, "placement"), "runToPage"),
+            "f",
+        );
+        assert_eq!(
+            number_prop(&prop(&prop(&bitmap, "placement"), "runToPage"), "f"),
+            12.0
+        );
+        assert_eq!(number_prop(&prop(&bitmap, "placement"), "baselineY"), 0.0);
+        assert_eq!(string_prop(&bitmap, "pixelFormat"), "rgba8");
+        assert_eq!(string_prop(&bitmap, "colorSpace"), "srgb");
         assert_eq!(string_prop(&bitmap, "strikeSelection"), "producerResolved");
+        let strike_ppem = Array::from(&prop(&bitmap, "strikePpem"));
+        assert_eq!(strike_ppem.get(0).as_f64(), Some(16.0));
+        assert_eq!(strike_ppem.get(1).as_f64(), Some(16.0));
         assert_eq!(string_prop(&bitmap, "alphaMode"), "premultiplied");
         assert_eq!(string_prop(&bitmap, "scalingPolicy"), "explicitTransform");
         assert_eq!(string_prop(&bitmap, "filtering"), "linear");
@@ -4594,14 +4635,51 @@ mod tests {
             payload_pair_for(svg_glyph_outline, &["text.glyphOutline.svgGlyph"]);
         assert_same_string(&json_svg_payload, &js_svg_payload, "payloadKind");
         assert_eq!(string_prop(&js_svg_payload, "payloadKind"), "svgGlyph");
+        let json_svg = prop(&json_svg_payload, "svgGlyph");
         let svg = prop(&js_svg_payload, "svgGlyph");
+        assert_same_number(&json_svg, &svg, "vectorResourceId");
         assert_eq!(number_prop(&svg, "vectorResourceId"), 3.0);
+        assert_same_number(
+            &prop(&json_svg, "sourceRangeUtf8"),
+            &prop(&svg, "sourceRangeUtf8"),
+            "start",
+        );
+        assert_same_number(
+            &prop(&json_svg, "sourceRangeUtf8"),
+            &prop(&svg, "sourceRangeUtf8"),
+            "end",
+        );
+        assert_eq!(number_prop(&prop(&svg, "sourceRangeUtf8"), "start"), 0.0);
+        assert_eq!(number_prop(&prop(&svg, "sourceRangeUtf8"), "end"), 1.0);
+        assert_same_number(
+            &prop(&json_svg, "glyphRange"),
+            &prop(&svg, "glyphRange"),
+            "start",
+        );
+        assert_same_number(
+            &prop(&json_svg, "glyphRange"),
+            &prop(&svg, "glyphRange"),
+            "end",
+        );
+        assert_eq!(number_prop(&prop(&svg, "glyphRange"), "start"), 0.0);
+        assert_eq!(number_prop(&prop(&svg, "glyphRange"), "end"), 1.0);
+        assert_same_number(
+            &prop(&prop(&json_svg, "placement"), "runToPage"),
+            &prop(&prop(&svg, "placement"), "runToPage"),
+            "f",
+        );
+        assert_eq!(
+            number_prop(&prop(&prop(&svg, "placement"), "runToPage"), "f"),
+            12.0
+        );
+        assert_eq!(number_prop(&prop(&svg, "placement"), "baselineY"), 0.0);
         assert_eq!(string_prop(&svg, "securityMode"), "staticSanitized");
         assert_eq!(bool_prop(&svg, "scriptAllowed"), false);
         assert_eq!(bool_prop(&svg, "animationAllowed"), false);
         assert_eq!(bool_prop(&svg, "externalResourcesAllowed"), false);
         assert_eq!(bool_prop(&svg, "interactivityAllowed"), false);
         assert_eq!(number_prop(&prop(&svg, "viewBox"), "width"), 10.0);
+        assert_eq!(number_prop(&prop(&svg, "intrinsicSize"), "height"), 10.0);
         assert_eq!(number_prop(&prop(&svg, "transformToRun"), "e"), 4.0);
     }
 
