@@ -10,10 +10,10 @@ use std::time::{Duration, Instant};
 
 use crate::model::image::ImageEffect;
 use crate::paint::{
-    paint_op_replay_plane, sidecars_for_leaf_ops, CacheHint, GlyphOutlineFillRule,
-    GlyphOutlinePayloadKind, GlyphRunOrientation, GlyphRunReplayEligibility, LayerAffineTransform,
-    LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind, PageLayerTree, PaintOp,
-    PaintReplayPlane, ResourceArena, TextRunPlacement, TextVariantQuality,
+    layer_node_has_replay_plane, paint_op_replay_plane, sidecars_for_leaf_ops, CacheHint,
+    GlyphOutlineFillRule, GlyphOutlinePayloadKind, GlyphRunOrientation, GlyphRunReplayEligibility,
+    LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
+    PageLayerTree, PaintOp, PaintReplayPlane, ResourceArena, TextRunPlacement, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant, LayerRasterRenderer,
@@ -1132,31 +1132,7 @@ impl SkiaLayerRenderer {
         replay: &mut SkiaReplayContext,
         replay_plane: PaintReplayPlane,
     ) {
-        let mut has_replay_plane = false;
-        let mut stack = vec![node];
-        while let Some(candidate) = stack.pop() {
-            match &candidate.kind {
-                LayerNodeKind::Group { children, .. } => {
-                    stack.extend(children.iter());
-                }
-                LayerNodeKind::ClipRect { child, .. } => {
-                    stack.push(child);
-                }
-                LayerNodeKind::Leaf { ops, .. } => {
-                    if ops
-                        .iter()
-                        .any(|op| paint_op_replay_plane(op) == replay_plane)
-                        || sidecars_for_leaf_ops(ops, variant_ops)
-                            .iter()
-                            .any(|op| paint_op_replay_plane(op) == replay_plane)
-                    {
-                        has_replay_plane = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if !has_replay_plane {
+        if !layer_node_has_replay_plane(node, variant_ops, replay_plane) {
             return;
         }
         replay.record_layer_node_replay();

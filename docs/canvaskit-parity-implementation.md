@@ -67,6 +67,11 @@ payloads as well, so cached pictures cannot be reused across different strict
 text alternatives. CanvasKit static picture cache keys also include replay
 `outputOptions`, because `clipEnabled`, paragraph marks, and control-code
 visibility change direct replay without changing node identity.
+Rust `PageLayerTree` replay-plane subtree detection is now centralized in
+`paint/replay_order.rs` as well: native Skia and layer SVG both use the same
+helper to skip planes that have no root or sidecar paint for the current
+subtree, so static caches and vector output no longer carry backend-local blank
+plane traversal policy.
 
 The first strict `GlyphOutline` payload subsets are also implemented as
 feature-gated direct replay contracts. The current baseline covers

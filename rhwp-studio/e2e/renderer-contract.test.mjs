@@ -33,6 +33,7 @@ const rendererBaselineManifestPath = path.join(repoRoot, 'scripts/renderer_basel
 const rustPaintReplayOrderPath = path.join(repoRoot, 'src/paint/replay_order.rs');
 const rustCanvaskitPolicyPath = path.join(repoRoot, 'src/renderer/canvaskit_policy.rs');
 const rustSkiaRendererPath = path.join(repoRoot, 'src/renderer/skia/renderer.rs');
+const rustSvgRendererPath = path.join(repoRoot, 'src/renderer/svg.rs');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
@@ -61,6 +62,7 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const rustPaintReplayOrderSource = fs.readFileSync(rustPaintReplayOrderPath, 'utf8');
 const rustCanvaskitPolicySource = fs.readFileSync(rustCanvaskitPolicyPath, 'utf8');
 const rustSkiaRendererSource = fs.readFileSync(rustSkiaRendererPath, 'utf8');
+const rustSvgRendererSource = fs.readFileSync(rustSvgRendererPath, 'utf8');
 
 function tsFilesUnder(directory) {
   return fs.readdirSync(directory, { withFileTypes: true })
@@ -1407,6 +1409,13 @@ assertTokensInOrder(
   'Rust replay order helper must keep HWP z-order plane classification',
 );
 assert.equal(
+  rustPaintReplayOrderSource.includes('pub fn layer_node_has_replay_plane')
+    && rustPaintReplayOrderSource.includes('sidecars_for_leaf_ops(ops, sidecar_ops)')
+    && rustPaintReplayOrderSource.includes('LayerNodeKind::ClipRect'),
+  true,
+  'Rust replay order helper must own PageLayerTree subtree plane detection including sidecar variants and clips',
+);
+assert.equal(
   rustCanvaskitPolicySource.includes('replayPlane')
     && rustCanvaskitPolicySource.includes('item.replay_plane = Some(paint_op_replay_plane(op))'),
   true,
@@ -1420,6 +1429,12 @@ assertTokensInOrder(
     'replay_plane',
   ],
   'native Skia renderer must replay the layer tree once per z-order plane',
+);
+assert.equal(
+  rustSkiaRendererSource.includes('layer_node_has_replay_plane(node, variant_ops, replay_plane)')
+    && rustSvgRendererSource.includes('layer_node_has_replay_plane(node, variant_ops, replay_plane)'),
+  true,
+  'native Skia and layer SVG renderers must share PageLayerTree replay-plane subtree detection',
 );
 assertTokensInOrder(
   rustSkiaRendererSource,

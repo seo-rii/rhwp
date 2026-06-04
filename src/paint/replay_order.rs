@@ -1,5 +1,9 @@
 use crate::model::shape::TextWrap;
-use crate::paint::paint_op::PaintOp;
+use crate::paint::{
+    layer_tree::{LayerNode, LayerNodeKind},
+    paint_op::PaintOp,
+    text_v2::sidecars_for_leaf_ops,
+};
 
 /// Logical replay planes for PageLayerTree direct paint backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,11 +44,44 @@ pub fn paint_op_replay_plane(op: &PaintOp) -> PaintReplayPlane {
     }
 }
 
+pub fn layer_node_has_replay_plane(
+    node: &LayerNode,
+    sidecar_ops: &[PaintOp],
+    replay_plane: PaintReplayPlane,
+) -> bool {
+    let mut stack = vec![node];
+    while let Some(candidate) = stack.pop() {
+        match &candidate.kind {
+            LayerNodeKind::Group { children, .. } => {
+                stack.extend(children.iter());
+            }
+            LayerNodeKind::ClipRect { child, .. } => {
+                stack.push(child);
+            }
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops
+                    .iter()
+                    .any(|op| paint_op_replay_plane(op) == replay_plane)
+                    || sidecars_for_leaf_ops(ops, sidecar_ops)
+                        .iter()
+                        .any(|op| paint_op_replay_plane(op) == replay_plane)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::image::ImageEffect;
-    use crate::paint::{LayerImagePaint, LayerPageBackgroundPaint, LayerRectanglePaint};
+    use crate::paint::{
+        CacheHint, LayerImagePaint, LayerNode, LayerPageBackgroundPaint, LayerRectanglePaint,
+        LayerSemantic,
+    };
     use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
     use crate::renderer::ShapeStyle;
 
@@ -128,5 +165,32 @@ mod tests {
             PaintReplayPlane::Flow
         );
         assert_eq!(paint_op_replay_plane(&vector), PaintReplayPlane::Flow);
+    }
+
+    #[test]
+    fn layer_node_replay_plane_scan_descends_groups() {
+        let child = LayerNode::leaf(
+            bbox(),
+            None,
+            vec![image_with_wrap(Some(TextWrap::InFrontOfText))],
+        );
+        let group = LayerNode::group(
+            bbox(),
+            None,
+            vec![child],
+            CacheHint::None,
+            LayerSemantic::default(),
+        );
+
+        assert!(layer_node_has_replay_plane(
+            &group,
+            &[],
+            PaintReplayPlane::InFrontOfText
+        ));
+        assert!(!layer_node_has_replay_plane(
+            &group,
+            &[],
+            PaintReplayPlane::BehindText
+        ));
     }
 }

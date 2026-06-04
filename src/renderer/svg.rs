@@ -19,12 +19,12 @@ use crate::model::control::FormType;
 use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    paint_op_replay_plane, sidecars_for_leaf_ops, BitmapGlyphFiltering, ClipKind,
-    GlyphOutlineFillRule, GlyphOutlinePayloadKind, LayerAffineTransform, LayerEquationPaint,
-    LayerFormObjectPaint, LayerGlyphOutlinePaint, LayerImagePaint, LayerNode, LayerNodeKind,
-    LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole, LayerTextDecorationKind,
-    LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp, PaintReplayPlane,
-    ResourceArena, TextSourceEntry, TextSourceTable,
+    layer_node_has_replay_plane, paint_op_replay_plane, sidecars_for_leaf_ops,
+    BitmapGlyphFiltering, ClipKind, GlyphOutlineFillRule, GlyphOutlinePayloadKind,
+    LayerAffineTransform, LayerEquationPaint, LayerFormObjectPaint, LayerGlyphOutlinePaint,
+    LayerImagePaint, LayerNode, LayerNodeKind, LayerPageBackgroundPaint, LayerSemantic,
+    LayerSemanticRole, LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint,
+    PageLayerTree, PaintOp, PaintReplayPlane, ResourceArena, TextSourceEntry, TextSourceTable,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant,
@@ -222,6 +222,9 @@ impl SvgRenderer {
         variant_ops: &[PaintOp],
         replay_plane: PaintReplayPlane,
     ) {
+        if !layer_node_has_replay_plane(node, variant_ops, replay_plane) {
+            return;
+        }
         match &node.kind {
             LayerNodeKind::Group { children, .. } => {
                 self.enter_layer_group(node.bounds, &node.semantic);
