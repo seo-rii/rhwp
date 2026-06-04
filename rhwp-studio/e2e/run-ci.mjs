@@ -7,11 +7,17 @@ import { fileURLToPath } from 'node:url';
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const preferredPort = Number(process.env.VITE_PORT || '7700');
+const defaultSuiteTimeoutMs = 30 * 60 * 1000;
+const suiteTimeoutMs = (() => {
+  const parsed = Number.parseInt(process.env.RHWP_E2E_CI_TIMEOUT_MS ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultSuiteTimeoutMs;
+})();
 
 function spawnCommand(args, extraEnv = {}) {
   return spawn(npmCmd, args, {
     cwd: studioRoot,
     stdio: 'inherit',
+    detached: process.platform !== 'win32',
     env: {
       ...process.env,
       ...extraEnv,
@@ -19,22 +25,50 @@ function spawnCommand(args, extraEnv = {}) {
   });
 }
 
-function waitForExit(child, signal) {
-  return new Promise((resolve) => {
-    child.once('exit', () => resolve());
+function signalProcessTree(child, signal) {
+  if (child.exitCode !== null || child.signalCode) {
+    return;
+  }
+  try {
+    if (process.platform !== 'win32' && child.pid) {
+      process.kill(-child.pid, signal);
+      return;
+    }
     child.kill(signal);
+  } catch (error) {
+    if (error?.code === 'ESRCH') {
+      return;
+    }
+    try {
+      child.kill(signal);
+    } catch (fallbackError) {
+      if (fallbackError?.code !== 'ESRCH') {
+        throw fallbackError;
+      }
+    }
+  }
+}
+
+function waitForExitAfterSignal(child, signal) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode) {
+      resolve();
+      return;
+    }
+    child.once('exit', () => resolve());
+    signalProcessTree(child, signal);
   });
 }
 
-async function stopServer(child) {
+async function stopProcess(child) {
   if (child.exitCode !== null || child.signalCode) {
     return;
   }
   await Promise.race([
-    waitForExit(child, 'SIGTERM'),
+    waitForExitAfterSignal(child, 'SIGTERM'),
     delay(5000).then(async () => {
       if (child.exitCode === null && !child.signalCode) {
-        await waitForExit(child, 'SIGKILL');
+        await waitForExitAfterSignal(child, 'SIGKILL');
       }
     }),
   ]);
@@ -78,9 +112,18 @@ async function findAvailablePort(startPort, attempts = 20) {
 
 async function runSuite(serverUrl) {
   const child = spawnCommand(['run', 'e2e:headless'], { VITE_URL: serverUrl });
-  const exitCode = await new Promise((resolve, reject) => {
-    child.once('error', reject);
+  let timeoutId;
+  let timedOut = false;
+  const exitPromise = new Promise((resolve, reject) => {
+    child.once('error', (error) => {
+      if (!timedOut) {
+        reject(error);
+      }
+    });
     child.once('exit', (code, signal) => {
+      if (timedOut) {
+        return;
+      }
       if (signal) {
         reject(new Error(`e2e suite terminated by signal ${signal}`));
         return;
@@ -88,9 +131,37 @@ async function runSuite(serverUrl) {
       resolve(code ?? 1);
     });
   });
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      stopProcess(child)
+        .then(() => reject(new Error(`e2e suite timed out after ${suiteTimeoutMs}ms`)))
+        .catch(reject);
+    }, suiteTimeoutMs);
+  });
+  const exitCode = await Promise.race([
+    exitPromise,
+    timeoutPromise,
+  ]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
   if (exitCode !== 0) {
     throw new Error(`e2e suite failed with exit code ${exitCode}`);
   }
+}
+
+function registerShutdown(devServer) {
+  const stopAndExit = (signal) => {
+    stopProcess(devServer)
+      .finally(() => {
+        process.kill(process.pid, signal);
+      });
+  };
+
+  process.once('SIGINT', stopAndExit);
+  process.once('SIGTERM', stopAndExit);
 }
 
 const serverPort = await findAvailablePort(preferredPort);
@@ -99,10 +170,11 @@ const devServer = spawnCommand(
   ['run', 'dev', '--', '--host', '0.0.0.0', '--port', String(serverPort), '--strictPort'],
   { BROWSER: 'none' },
 );
+registerShutdown(devServer);
 
 try {
   await waitForServer(serverUrl);
   await runSuite(serverUrl);
 } finally {
-  await stopServer(devServer);
+  await stopProcess(devServer);
 }

@@ -167,6 +167,7 @@ jobs:
   studio-e2e:
     name: Studio E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
 
@@ -246,6 +247,9 @@ jobs:
 
       - name: Run studio E2E
         working-directory: rhwp-studio
+        timeout-minutes: 35
+        env:
+          RHWP_E2E_CI_TIMEOUT_MS: 1800000
         run: npm run e2e:ci
 
       - name: Upload studio E2E artifacts
