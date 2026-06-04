@@ -909,6 +909,20 @@
       }
     },
     {
+      "id": "h-pen-01",
+      "file": "h-pen-01.hwp",
+      "category": "shape",
+      "page": 0,
+      "notes": "H-pen drawing sample for pen and shape replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "group-box",
       "file": "group-box.hwp",
       "category": "shape",
@@ -1089,6 +1103,34 @@
       "category": "mixed-document",
       "page": 0,
       "notes": "Legacy HWPML 3.0 sample for format and mixed document parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "aift-doc",
+      "file": "aift.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "AIFT sample for mixed document CanvasKit parity coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "loading-fail-01",
+      "file": "loading-fail-01.hwp",
+      "category": "mixed-document",
+      "page": 0,
+      "notes": "Previously loading-sensitive sample for loader and renderer parity coverage.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,

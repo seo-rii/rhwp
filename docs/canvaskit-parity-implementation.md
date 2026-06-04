@@ -766,11 +766,12 @@ Recommended implementation order from this point:
    header-image sample, group-box and draw-group vector samples, endnote
    routing, hwpctl control-reference
    documents, blog/HWPX form samples, HWPX text/table/image reference samples,
-   Korean/English/math/math-no/science/social exam documents, legacy HWPML,
-   and multiple multi-section documents, plus public planning, RFP, technical,
-   return-form, finance-statistics, PR/task regression, and multiple
-   promotional real document variants so placement and text fallback regressions
-   have more than one real-document shape;
+   Korean/English/math/math-no/science/social exam documents, H-pen drawing,
+   legacy HWPML, loading-sensitive mixed documents, and multiple multi-section
+   documents, plus public planning, RFP, technical, return-form,
+   finance-statistics, PR/task regression, and multiple promotional real
+   document variants so placement and text fallback regressions have more than
+   one real-document shape;
 2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
 3. widen strict `SvgGlyph` only with producer-output fixtures that keep the
@@ -945,7 +946,8 @@ non-ink drift are the failure signals and glyph anti-aliasing deltas are
 classified separately. Samples with tiny Canvas2D replay baselines and stable
 native dispatch/pixel parity may also carry scoped replay-performance budgets
 instead of loosening the global CanvasKit guard; `hwpspec.hwp` is the current
-watch item for software-surface variance in that category. The Markdown report
+watch item for software-surface variance in that category and remains outside
+the checked-in manifest until its selected diff is understood. The Markdown report
 mirrors target-backend/profile summaries, applied per-comparison thresholds, and
 the worst browser comparisons so large sweeps do not require scanning every
 screenshot row first.
