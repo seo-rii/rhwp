@@ -673,6 +673,39 @@ for (const apiName of requiredDirectReplayForbiddenApis) {
   );
 }
 
+const textV2TreeValidatorBlock = extractFunctionBody(textVariantsSource, 'validateLayerTextV2Tree');
+for (const requiredToken of [
+  "const allowCrossScopeVariants = requiredFeatures.has('text.crossScopeVariants')",
+  "tree.textV2?.profile === 'strictVisual'",
+  "tree.textV2?.strictVisualFallbackFree === true",
+  "requiredFeatures.has('text.strictVisualFallbackFree')",
+  "const allowMixedPerGlyphOrientation = requiredFeatures.has('text.vertical.mixedPerGlyph')",
+]) {
+  assert.equal(
+    textV2TreeValidatorBlock.includes(requiredToken),
+    true,
+    `schema v2 validator must keep authority gate: ${requiredToken}`,
+  );
+}
+const textV2OpValidatorBlock = extractFunctionBody(textVariantsSource, 'validateLayerTextV2Op');
+for (const requiredToken of [
+  'crossScopeVariantFeatureMissing',
+  'Text variant',
+  'uses scopeRef without text.crossScopeVariants.',
+  'fallbackFreeFeatureMissing',
+  'fallbackPolicy=none requires strictVisual profile, strictVisualFallbackFree metadata, and text.strictVisualFallbackFree.',
+  'strictVisualVariantMissing',
+  'fallbackPolicy=none requires at least one strict visual text variant.',
+  'mixedPerGlyphFeatureMissing',
+  'uses mixedPerGlyph without text.vertical.mixedPerGlyph.',
+]) {
+  assert.equal(
+    textV2OpValidatorBlock.includes(requiredToken),
+    true,
+    `schema v2 validator must keep deferred-authority rejection: ${requiredToken}`,
+  );
+}
+
 assert.equal(
   canvaskitSource.includes('parseStaticSvgPathLayers(fragment)'),
   true,
