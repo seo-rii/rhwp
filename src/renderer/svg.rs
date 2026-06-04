@@ -16,13 +16,15 @@ use super::{
     TextStyle,
 };
 use crate::model::control::FormType;
+use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
-    sidecars_for_leaf_ops, BitmapGlyphFiltering, ClipKind, GlyphOutlineFillRule,
-    GlyphOutlinePayloadKind, LayerAffineTransform, LayerEquationPaint, LayerFormObjectPaint,
-    LayerGlyphOutlinePaint, LayerImagePaint, LayerNode, LayerNodeKind, LayerPageBackgroundPaint,
-    LayerSemantic, LayerSemanticRole, LayerTextDecorationKind, LayerTextDecorationPaint,
-    LayerTextRunPaint, PageLayerTree, PaintOp, ResourceArena, TextSourceEntry, TextSourceTable,
+    paint_op_replay_plane, sidecars_for_leaf_ops, BitmapGlyphFiltering, ClipKind,
+    GlyphOutlineFillRule, GlyphOutlinePayloadKind, LayerAffineTransform, LayerEquationPaint,
+    LayerFormObjectPaint, LayerGlyphOutlinePaint, LayerImagePaint, LayerNode, LayerNodeKind,
+    LayerPageBackgroundPaint, LayerSemantic, LayerSemanticRole, LayerTextDecorationKind,
+    LayerTextDecorationPaint, LayerTextRunPaint, PageLayerTree, PaintOp, PaintReplayPlane,
+    ResourceArena, TextSourceEntry, TextSourceTable,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, should_render_selected_text_variant,
@@ -169,6 +171,24 @@ impl SvgRenderer {
         self.render_node(&tree.root);
     }
 
+    fn render_node_replay_plane(node: &RenderNode) -> PaintReplayPlane {
+        match &node.node_type {
+            RenderNodeType::PageBackground(_) => PaintReplayPlane::Background,
+            RenderNodeType::Image(image) => match image.text_wrap {
+                Some(TextWrap::BehindText) => PaintReplayPlane::BehindText,
+                Some(TextWrap::InFrontOfText) => PaintReplayPlane::InFrontOfText,
+                _ => PaintReplayPlane::Flow,
+            },
+            _ => PaintReplayPlane::Flow,
+        }
+    }
+
+    fn children_need_replay_plane_reorder(node: &RenderNode) -> bool {
+        node.children
+            .iter()
+            .any(|child| Self::render_node_replay_plane(child) != PaintReplayPlane::Flow)
+    }
+
     /// 레이어 트리를 SVG로 직접 재생한다.
     pub fn render_layer_tree(&mut self, tree: &PageLayerTree) {
         self.show_paragraph_marks = tree.output_options.show_paragraph_marks;
@@ -181,7 +201,9 @@ impl SvgRenderer {
         if self.strict_glyph_outline_replay && !tree.text_sources.is_empty() {
             self.render_text_source_metadata(&tree.text_sources);
         }
-        self.render_layer_node(&tree.root, &tree.resources, &tree.variant_ops);
+        for replay_plane in PaintReplayPlane::ORDERED {
+            self.render_layer_node(&tree.root, &tree.resources, &tree.variant_ops, replay_plane);
+        }
         self.end_page();
     }
 
@@ -198,12 +220,13 @@ impl SvgRenderer {
         node: &LayerNode,
         resources: &ResourceArena,
         variant_ops: &[PaintOp],
+        replay_plane: PaintReplayPlane,
     ) {
         match &node.kind {
             LayerNodeKind::Group { children, .. } => {
                 self.enter_layer_group(node.bounds, &node.semantic);
                 for child in children {
-                    self.render_layer_node(child, resources, variant_ops);
+                    self.render_layer_node(child, resources, variant_ops, replay_plane);
                 }
                 self.leave_layer_group(node.bounds, &node.semantic);
             }
@@ -214,7 +237,7 @@ impl SvgRenderer {
                 clip_policy,
             } => {
                 if !self.clip_enabled {
-                    self.render_layer_node(child, resources, variant_ops);
+                    self.render_layer_node(child, resources, variant_ops, replay_plane);
                     return;
                 }
                 let clip_id = match clip_kind {
@@ -242,7 +265,7 @@ impl SvgRenderer {
                 ));
                 self.output
                     .push_str(&format!("<g clip-path=\"url(#{})\">", clip_id));
-                self.render_layer_node(child, resources, variant_ops);
+                self.render_layer_node(child, resources, variant_ops, replay_plane);
                 self.output.push_str("</g>\n");
             }
             LayerNodeKind::Leaf { ops, .. } => {
@@ -489,12 +512,18 @@ impl SvgRenderer {
                 self.text_variant_selection_diagnostics
                     .extend(selection.reports);
                 for op in ops {
+                    if paint_op_replay_plane(op) != replay_plane {
+                        continue;
+                    }
                     if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }
                     self.render_layer_op(op, resources);
                 }
                 for op in &sidecars {
+                    if paint_op_replay_plane(op) != replay_plane {
+                        continue;
+                    }
                     if !should_render_selected_text_variant(op, &selection.selected) {
                         continue;
                     }
@@ -1570,8 +1599,16 @@ impl SvgRenderer {
             }
         }
 
-        for child in &node.children {
-            self.render_node(child);
+        if Self::children_need_replay_plane_reorder(node) {
+            let mut ordered: Vec<&RenderNode> = node.children.iter().collect();
+            ordered.sort_by_key(|child| Self::render_node_replay_plane(child) as u8);
+            for child in ordered {
+                self.render_node(child);
+            }
+        } else {
+            for child in &node.children {
+                self.render_node(child);
+            }
         }
 
         // 디버그 오버레이: skip 깊이 복원
