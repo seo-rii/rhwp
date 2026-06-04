@@ -1213,6 +1213,8 @@ const colrv0ColorLayersContractBlock = extractFunctionBody(textVariantsSource, '
 for (const requiredToken of [
   "payload.payloadKind === 'colorLayers'",
   '!payload.stroke',
+  'payload.bitmapGlyph === undefined',
+  'payload.svgGlyph === undefined',
   "colorLayers?.colorFormat === 'colrV0'",
   'colorLayers.paintGraph === undefined',
   'isValidPayloadRange(colorLayers.sourceRangeUtf8)',
@@ -1231,6 +1233,8 @@ const colrv1ColorGraphContractBlock = extractFunctionBody(textVariantsSource, 'h
 for (const requiredToken of [
   "payload.payloadKind !== 'colorLayers'",
   '|| payload.stroke',
+  '|| payload.bitmapGlyph !== undefined',
+  '|| payload.svgGlyph !== undefined',
   "colorLayers?.colorFormat !== 'colrV1'",
   'colorLayers.layers.length !== 0',
   'graph.nodes.length > MAX_COLRV1_GRAPH_NODES',
