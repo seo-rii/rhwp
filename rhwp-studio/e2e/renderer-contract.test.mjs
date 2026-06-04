@@ -24,6 +24,7 @@ const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-im
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
 const rendererBaselinePath = path.join(studioRoot, 'e2e/renderer-baseline.mjs');
 const rendererBaselineNativeDiffPath = path.join(studioRoot, 'e2e/renderer-baseline-native-diff.mjs');
+const runCiPath = path.join(studioRoot, 'e2e/run-ci.mjs');
 const rendererBaselineDriverPath = path.join(repoRoot, 'scripts/renderer_baseline.py');
 const rendererBaselineManifestPath = path.join(repoRoot, 'scripts/renderer_baseline_manifest.json');
 
@@ -45,6 +46,7 @@ const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
 const rendererBaselineSource = fs.readFileSync(rendererBaselinePath, 'utf8');
 const rendererBaselineNativeDiffSource = fs.readFileSync(rendererBaselineNativeDiffPath, 'utf8');
+const runCiSource = fs.readFileSync(runCiPath, 'utf8');
 const rendererBaselineDriverSource = fs.readFileSync(rendererBaselineDriverPath, 'utf8');
 const rendererBaselineManifest = JSON.parse(fs.readFileSync(rendererBaselineManifestPath, 'utf8'));
 
@@ -280,6 +282,32 @@ function assertTokensInOrder(source, tokens, message) {
     cursor = next;
   }
 }
+
+for (const requiredToken of [
+  'RHWP_E2E_CI_TIMEOUT_MS',
+  'defaultSuiteTimeoutMs = 30 * 60 * 1000',
+  'detached: process.platform !== \'win32\'',
+  'process.kill(-child.pid, signal)',
+  'SIGKILL',
+  'e2e suite timed out after',
+  'clearTimeout(timeoutId)',
+  'registerShutdown(devServer)',
+]) {
+  assert.equal(
+    runCiSource.includes(requiredToken),
+    true,
+    `studio e2e CI runner must keep timeout/process cleanup guard: ${requiredToken}`,
+  );
+}
+assertTokensInOrder(
+  runCiSource,
+  [
+    'timedOut = true',
+    'stopProcess(child)',
+    'e2e suite timed out after',
+  ],
+  'studio e2e CI runner must report suite timeout after stopping the child process tree',
+);
 
 compareCaseContract('renderNode', 'LayerNode dispatch');
 compareCaseContract('renderOp', 'LayerPaintOp dispatch');
