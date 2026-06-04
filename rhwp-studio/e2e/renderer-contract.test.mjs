@@ -811,6 +811,40 @@ assert.equal(
 assertTokensInOrder(
   glyphOutlinePayloadStatusSource,
   [
+    'const supported = hasStrictBitmapGlyphContract(op)',
+    'hasReplayableGlyphPayloadBBox(op)',
+    'resources?.images?.[resourceIndex] !== undefined',
+  ],
+  'BitmapGlyph strict payload status must require replayable bbox and image resource',
+);
+assertTokensInOrder(
+  glyphOutlinePayloadStatusSource,
+  [
+    'supported: hasStaticSanitizedSvgGlyphContract(op)',
+    'hasReplayableGlyphPayloadBBox(op)',
+    "typeof fragment === 'string'",
+    'parseStaticSvgPathLayers(fragment).length > 0',
+  ],
+  'SvgGlyph strict payload status must require replayable bbox and static vector resource',
+);
+const glyphPayloadBBoxGuardBlock = extractFunctionBody(glyphOutlinePayloadStatusSource, 'hasReplayableGlyphPayloadBBox');
+for (const requiredToken of [
+  'Number.isFinite(bbox.x)',
+  'Number.isFinite(bbox.y)',
+  'Number.isFinite(bbox.width)',
+  'Number.isFinite(bbox.height)',
+  'bbox.width > 0',
+  'bbox.height > 0',
+]) {
+  assert.equal(
+    glyphPayloadBBoxGuardBlock.includes(requiredToken),
+    true,
+    `strict glyph payload bbox guard must keep ${requiredToken}`,
+  );
+}
+assertTokensInOrder(
+  glyphOutlinePayloadStatusSource,
+  [
     'details: supported && op.bitmapGlyph && op.bitmapGlyph.colorSpace === undefined',
     "'colorSpaceDefaulted=srgb'",
   ],
