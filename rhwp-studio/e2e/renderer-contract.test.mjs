@@ -893,17 +893,32 @@ assertTokensInOrder(
   ],
   'CanvasKit software fallback rerender must replace failed-attempt text variant diagnostics',
 );
+const canvaskitSurfaceCacheSource = fs.readFileSync(path.join(canvaskitDirectory, 'surface-cache.ts'), 'utf8');
 assert.equal(
   canvaskitResourceCacheSource.includes('Canvas2DLayerRenderer')
-    || fs.readFileSync(path.join(canvaskitDirectory, 'surface-cache.ts'), 'utf8').includes('Canvas2DLayerRenderer'),
+    || canvaskitSurfaceCacheSource.includes('Canvas2DLayerRenderer'),
   false,
   'CanvasKit caches and surface fallback must not instantiate the Canvas2D renderer',
 );
 assert.equal(
-  fs.readFileSync(path.join(canvaskitDirectory, 'surface-cache.ts'), 'utf8')
-    .includes('MakeSWCanvasSurface(targetCanvas)'),
+  canvaskitSurfaceCacheSource.includes('MakeSWCanvasSurface(targetCanvas)'),
   true,
   'CanvasKit software fallback must use CanvasKit MakeSWCanvasSurface',
+);
+assertTokensInOrder(
+  canvaskitSurfaceCacheSource,
+  [
+    "if (this.surfaceRequest.preference === 'webgpu')",
+    'this.webgpuAttempts += 1',
+    'this.canvasKit.MakeGPUCanvasContext',
+    'this.canvasKit.MakeGPUCanvasSurface',
+  ],
+  'CanvasKit WebGPU surface creation must stay behind an explicit WebGPU preference',
+);
+assert.equal(
+  canvaskitSurfaceCacheSource.includes("if (!surface && this.surfaceRequest.preference !== 'software')"),
+  true,
+  'CanvasKit software surface preference must skip WebGL before CanvasKit software replay',
 );
 const canvaskitLayerCanvasUtilsImportBody = importBlockFrom(
   canvaskitSource,
