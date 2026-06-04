@@ -851,6 +851,16 @@ assertTokensInOrder(
   'BitmapGlyph strict payload status must report explicit sRGB default diagnostics',
 );
 const canvaskitBitmapGlyphReplayBlock = extractMethodBody(canvaskitSource, 'renderBitmapGlyphOutline');
+assertTokensInOrder(
+  canvaskitBitmapGlyphReplayBlock,
+  [
+    'const imageIndex = resolveLayerResourceIndex(',
+    'payload?.imageResourceId',
+    'this.lastRenderedTree?.resources?.imageKeys',
+    'this.resourceCache.image(imageIndex)',
+  ],
+  'CanvasKit BitmapGlyph replay must resolve images through resource ids before drawing',
+);
 for (const requiredToken of [
   'canvas.drawImageRectOptions(',
   "payload.filtering === 'nearest' ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear",
@@ -866,6 +876,17 @@ assert.equal(
   extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline').includes('hasStaticSanitizedSvgGlyphContract(op)'),
   true,
   'CanvasKit SvgGlyph replay must call the shared static sanitized payload gate before drawing',
+);
+const canvaskitSvgGlyphReplayBlock = extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline');
+assertTokensInOrder(
+  canvaskitSvgGlyphReplayBlock,
+  [
+    'const vectorIndex = resolveLayerResourceIndex(',
+    'payload?.vectorResourceId',
+    'this.lastRenderedTree?.resources?.svgKeys',
+    'const fragment = this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex]',
+  ],
+  'CanvasKit SvgGlyph replay must resolve vectors through resource ids before parsing',
 );
 for (const [label, source] of [
   ['canvaskit renderer', canvaskitSource],
