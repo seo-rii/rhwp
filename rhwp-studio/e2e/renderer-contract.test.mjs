@@ -916,6 +916,18 @@ assertTokensInOrder(
   ],
   'CanvasKit SvgGlyph replay must apply run placement before payload-local and viewBox transforms',
 );
+assertTokensInOrder(
+  canvaskitSvgGlyphReplayBlock,
+  [
+    'canvas.scale(width / viewBox.width, height / viewBox.height)',
+    'canvas.translate(-viewBox.x, -viewBox.y)',
+    'for (const layer of pathLayers)',
+    'if (layer.transform)',
+    'layer.transform.a',
+    'const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+  ],
+  'CanvasKit SvgGlyph replay must apply path-layer transforms after viewBox normalization',
+);
 for (const [label, source] of [
   ['canvaskit renderer', canvaskitSource],
   ['glyph outline payload status', glyphOutlinePayloadStatusSource],
@@ -1313,6 +1325,18 @@ assertTokensInOrder(
     'ctx.translate(-viewBox.x, -viewBox.y)',
   ],
   'Canvas2D SvgGlyph replay must apply run placement before payload-local and viewBox transforms',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
+    'ctx.scale(width / viewBox.width, height / viewBox.height)',
+    'ctx.translate(-viewBox.x, -viewBox.y)',
+    'for (const layer of pathLayers)',
+    'if (layer.transform)',
+    'layer.transform.a',
+    'const path = new Path2D(layer.pathData)',
+  ],
+  'Canvas2D SvgGlyph replay must apply path-layer transforms after viewBox normalization',
 );
 assert.deepEqual(
   stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'payloadKind'),
