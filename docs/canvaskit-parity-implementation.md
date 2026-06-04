@@ -116,6 +116,14 @@ used one replay iteration, visual parity and dispatch/resource diagnostics are
 authoritative for that sweep, while performance guards were intentionally
 recorded as metrics only.
 
+Targeted local verification on 2026-06-05 ran
+`npm run e2e:render:software:smoke:headless` for the `eq-01` sample. The run
+used an explicit CanvasKit software surface, confirmed shared SVG resource
+table routing for equation payloads, passed the raster-only equation diff
+budgets, and rechecked that text, image, equation, form, path, page-background,
+and footnote fallback overlay helpers remain absent. The single-iteration
+performance numbers from that smoke remain metrics only.
+
 ## Architecture
 
 CanvasKit parity is implemented through four layers:
