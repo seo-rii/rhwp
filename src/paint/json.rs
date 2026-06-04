@@ -4868,7 +4868,7 @@ mod tests {
             LayerNode::leaf(
                 BoundingBox::new(0.0, 0.0, 40.0, 40.0),
                 None,
-                vec![text_run, svg_glyph_outline],
+                vec![text_run.clone(), svg_glyph_outline],
             ),
         );
         let svg_json = svg_tree
@@ -4887,6 +4887,71 @@ mod tests {
         assert!(
             svg_json.contains(svg_payload_fixture),
             "strict SvgGlyph export must keep the checked-in payload fixture"
+        );
+
+        let mut intrinsic_svg_glyph_outline = glyph_outline;
+        let PaintOp::GlyphOutline { outline, .. } = &mut intrinsic_svg_glyph_outline else {
+            panic!("expected glyph outline");
+        };
+        outline.payload_kind = GlyphOutlinePayloadKind::SvgGlyph;
+        outline.variant.requires = vec!["text.glyphOutline.svgGlyph".to_string()];
+        outline.svg_glyph = Some(crate::paint::SvgGlyphPayload {
+            vector_resource_id: crate::paint::SvgResourceId(3),
+            source_range_utf8: Some(TextSourceRange::new(0, 1)),
+            glyph_range: Some(GlyphRange::new(0, 1)),
+            placement: Some(TextRunPlacement {
+                run_to_page: LayerAffineTransform {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: 0.0,
+                    f: 12.0,
+                },
+                baseline_y: 0.0,
+            }),
+            transform_to_run: None,
+            view_box: Some(crate::paint::SvgGlyphViewBox {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+            intrinsic_size: Some(crate::paint::SvgGlyphIntrinsicSize {
+                width: 10.0,
+                height: 12.0,
+            }),
+            security_mode: crate::paint::SvgGlyphSecurityMode::StaticSanitized,
+            script_allowed: false,
+            animation_allowed: false,
+            external_resources_allowed: false,
+            interactivity_allowed: false,
+        });
+        let intrinsic_svg_tree = PageLayerTree::new(
+            40.0,
+            40.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 40.0, 40.0),
+                None,
+                vec![text_run, intrinsic_svg_glyph_outline],
+            ),
+        );
+        let intrinsic_svg_json = intrinsic_svg_tree
+            .to_json_v2_strict_glyph_outline()
+            .expect("valid strict SvgGlyph outline export with intrinsic size");
+        assert!(intrinsic_svg_json.contains("\"payloadKind\":\"svgGlyph\""));
+        assert!(intrinsic_svg_json
+            .contains("\"intrinsicSize\":{\"width\":10.000000,\"height\":12.000000}"));
+        let intrinsic_svg_payload_fixture = include_str!(
+            "../../tests/fixtures/glyph_outline_payloads/strict_svg_glyph_payload_intrinsic_size.json"
+        )
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .expect("strict SvgGlyph intrinsic-size fixture is a JSON object");
+        assert!(
+            intrinsic_svg_json.contains(intrinsic_svg_payload_fixture),
+            "strict SvgGlyph export must keep the checked-in intrinsic-size payload fixture"
         );
     }
 
