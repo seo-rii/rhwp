@@ -516,7 +516,6 @@ impl ColorPaintGraphPayload {
             return false;
         }
 
-        let mut child_ref_counts: HashMap<u32, usize> = HashMap::new();
         for node in &self.nodes {
             match node.kind {
                 ColorPaintGraphNodeKind::SolidPath => {
@@ -643,7 +642,6 @@ impl ColorPaintGraphPayload {
                     {
                         return false;
                     }
-                    *child_ref_counts.entry(transform.child_node_id).or_insert(0) += 1;
                 }
                 ColorPaintGraphNodeKind::Composite => {
                     if node.solid_path.is_some()
@@ -676,12 +674,6 @@ impl ColorPaintGraphPayload {
                     {
                         return false;
                     }
-                    *child_ref_counts
-                        .entry(composite.backdrop_node_id)
-                        .or_insert(0) += 1;
-                    *child_ref_counts
-                        .entry(composite.source_node_id)
-                        .or_insert(0) += 1;
                 }
                 ColorPaintGraphNodeKind::Clip => {
                     if node.solid_path.is_some()
@@ -711,7 +703,6 @@ impl ColorPaintGraphPayload {
                     {
                         return false;
                     }
-                    *child_ref_counts.entry(clip.child_node_id).or_insert(0) += 1;
                 }
             }
         }

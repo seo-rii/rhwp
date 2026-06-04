@@ -908,7 +908,6 @@ export function hasColrv1ColorGraphContract(payload: LayerGlyphOutlineOp): boole
   }
 
   const nodeIds = new Set<number>();
-  const childRefCounts = new Map<number, number>();
   for (const node of graph.nodes) {
     if (!isValidPayloadGraphNodeId(node.nodeId)) {
       return false;
@@ -1063,10 +1062,6 @@ export function hasColrv1ColorGraphContract(payload: LayerGlyphOutlineOp): boole
       ) {
         return false;
       }
-      childRefCounts.set(
-        node.transform.childNodeId,
-        (childRefCounts.get(node.transform.childNodeId) ?? 0) + 1,
-      );
       continue;
     }
     if (node.kind === 'composite') {
@@ -1091,14 +1086,6 @@ export function hasColrv1ColorGraphContract(payload: LayerGlyphOutlineOp): boole
       ) {
         return false;
       }
-      childRefCounts.set(
-        node.composite.backdropNodeId,
-        (childRefCounts.get(node.composite.backdropNodeId) ?? 0) + 1,
-      );
-      childRefCounts.set(
-        node.composite.sourceNodeId,
-        (childRefCounts.get(node.composite.sourceNodeId) ?? 0) + 1,
-      );
       continue;
     }
     if (node.kind === 'clip') {
@@ -1120,10 +1107,6 @@ export function hasColrv1ColorGraphContract(payload: LayerGlyphOutlineOp): boole
       ) {
         return false;
       }
-      childRefCounts.set(
-        node.clip.childNodeId,
-        (childRefCounts.get(node.clip.childNodeId) ?? 0) + 1,
-      );
       continue;
     }
     return false;
