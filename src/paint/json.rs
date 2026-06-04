@@ -4756,6 +4756,17 @@ mod tests {
         assert!(bitmap_json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.bitmapGlyph\"]"));
         assert!(bitmap_json.contains("\"payloadKind\":\"bitmapGlyph\""));
         assert!(bitmap_json.contains("\"bitmapGlyph\":{\"imageResourceId\":7"));
+        let bitmap_payload_fixture = include_str!(
+            "../../tests/fixtures/glyph_outline_payloads/strict_bitmap_glyph_payload.json"
+        )
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .expect("strict BitmapGlyph fixture is a JSON object");
+        assert!(
+            bitmap_json.contains(bitmap_payload_fixture),
+            "strict BitmapGlyph export must keep the checked-in payload fixture"
+        );
 
         let mut svg_glyph_outline = glyph_outline.clone();
         let PaintOp::GlyphOutline { outline, .. } = &mut svg_glyph_outline else {
@@ -4807,6 +4818,17 @@ mod tests {
         assert!(svg_json.contains("\"requiredFeatures\":[\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\",\"text.glyphOutline.svgGlyph\"]"));
         assert!(svg_json.contains("\"payloadKind\":\"svgGlyph\""));
         assert!(svg_json.contains("\"svgGlyph\":{\"vectorResourceId\":3"));
+        let svg_payload_fixture = include_str!(
+            "../../tests/fixtures/glyph_outline_payloads/strict_svg_glyph_payload.json"
+        )
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .expect("strict SvgGlyph fixture is a JSON object");
+        assert!(
+            svg_json.contains(svg_payload_fixture),
+            "strict SvgGlyph export must keep the checked-in payload fixture"
+        );
     }
 
     #[test]

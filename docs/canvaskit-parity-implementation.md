@@ -325,7 +325,9 @@ through the same `GlyphOutline` exclusivity guard before replay. Schema-v2
 strict GlyphOutline JSON and JS exports now declare
 `text.glyphOutline.bitmapGlyph` whenever the selected strict payload uses the
 one-strike bitmap contract, so strict consumers can gate the writer widening at
-the export metadata layer instead of inferring it from the payload body.
+the export metadata layer instead of inferring it from the payload body. A
+checked-in JSON payload snippet now pins the canonical `BitmapGlyph` export
+body used by that strict writer gate.
 CanvasKit lifecycle coverage now also rejects non-finite payload transforms,
 missing alpha mode, backend-default scaling/filtering, non-positive strike
 ppem, and diagnostic-only strikes before replay.
@@ -363,10 +365,12 @@ replay, rejects non-finite transforms and placements, rejects non-positive
 intrinsic sizes and non-static security modes, and rejects missing or ambiguous
 vector resources. Schema-v2 strict
 GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
-the selected strict payload uses the static sanitized vector contract. Before
-writer emission is widened, add broader real-document resource corpus coverage. The
-same exclusivity guard prevents sanitized SVG payloads from being replayed when
-bitmap, color, or stroke sibling fields are present.
+the selected strict payload uses the static sanitized vector contract. A
+checked-in JSON payload snippet now pins the canonical `SvgGlyph` export body
+used by that strict writer gate. Before writer emission is widened, add broader
+real-document resource corpus coverage. The same exclusivity guard prevents
+sanitized SVG payloads from being replayed when bitmap, color, or stroke
+sibling fields are present.
 
 ### 4. CanvasKit And Native Skia Variation/TTC Proof Fixtures
 
@@ -718,8 +722,8 @@ Non-goals for the remaining CanvasKit parity work:
 | --- | --- | --- | --- |
 | COLRv1 stage 4 follow-up | `sourceOver` composite payloads validate and replay where supported | decide whether any additional blend/composite modes are worth enabling; otherwise keep unsupported modes as deterministic fallback/reject cases | any new mode must stay inside glyph-payload composition and must not change text variant selection, global paint order, or scope semantics |
 | COLRv1 stage 5 follow-up | run-local `clip` graph nodes and reusable DAG child refs validate and replay where supported | decide whether reusable-node memoization or additional clip primitives are needed; otherwise keep remaining unsupported graph nodes as deterministic fallback/reject cases | any new graph primitive must stay inside the glyph payload and must not introduce page/layer clip scopes or cross-scope variants |
-| BitmapGlyph corpus widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, strict export feature metadata, SVG/native/CanvasKit deterministic-field rejection coverage, resource-cache key coverage, and real HWP image samples in the browser baseline manifest exist | add producer-output fixtures that use the existing one-strike payload contract | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
-| SvgGlyph corpus widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, strict export feature metadata, SVG/native/CanvasKit static-contract rejection coverage, resource-cache key coverage, and real HWP equation/vector/form samples in the browser baseline manifest exist | add producer-output fixtures for sanitized static vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
+| BitmapGlyph corpus widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, strict export feature metadata, checked-in JSON payload snippet, SVG/native/CanvasKit deterministic-field rejection coverage, resource-cache key coverage, and real HWP image samples in the browser baseline manifest exist | add producer-output fixtures that use the existing one-strike payload contract | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
+| SvgGlyph corpus widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, strict export feature metadata, checked-in JSON payload snippet, SVG/native/CanvasKit static-contract rejection coverage, resource-cache key coverage, and real HWP equation/vector/form samples in the browser baseline manifest exist | add producer-output fixtures for sanitized static vector resources | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
 | Variation font strict replay | variation tuples are represented; native Skia has checked-in variable-font proof for exact axis construction, explicit default-axis replay, alternate valid axis-bound replay, glyph id, advance/bounds smoke, and invalid-axis fallback | widen native coverage with real variable-font corpus cases; keep CanvasKit fallback until its exact instance construction is proven | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
 | TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate and replay checked-in proof bytes as direct TTF and synthetic TTC faces, exact synthetic non-zero `faceIndex` replay is connected to native `GlyphRun` selection/drawing, exact-byte out-of-range `faceIndex` falls back deterministically, invalid exact embedded font bytes and digest mismatches reject with `exactFaceUnavailable`, and the exact-font path keeps the `u32` glyph id guard | widen native coverage with wrong-face/ambiguous metadata negatives and real collection fixtures; keep CanvasKit fallback until its exact face construction is proven | wrong-face/ambiguous metadata negatives pass and renderer draws with the requested face, not a family fallback |
 | CanvasKit variation/TTC | conservative fallback remains in place | add CanvasKit-specific exact construction proof before enabling strict replay | public API path proves exact variation tuple or faceIndex construction and keeps `u32` glyph id range guard |
