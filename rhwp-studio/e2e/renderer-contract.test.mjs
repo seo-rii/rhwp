@@ -834,6 +834,8 @@ assert.equal(
 );
 const staticPictureCacheSource = fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8');
 for (const requiredToken of [
+  'item instanceof ArrayBuffer',
+  "appendString(`buffer:${bytes.length}:`)",
   'ArrayBuffer.isView(item)',
   'view.byteOffset',
   'view.byteLength',
@@ -842,7 +844,7 @@ for (const requiredToken of [
   assert.equal(
     staticPictureCacheSource.includes(requiredToken),
     true,
-    `CanvasKit static picture cache fingerprint must include typed-array payload bytes: ${requiredToken}`,
+    `CanvasKit static picture cache fingerprint must include ArrayBuffer and typed-array payload bytes: ${requiredToken}`,
   );
 }
 assert.equal(
