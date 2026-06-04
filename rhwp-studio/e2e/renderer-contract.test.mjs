@@ -1163,8 +1163,11 @@ for (const requiredToken of [
   'callbacks.withTransform(node.transform.transform',
   "node.kind === 'composite'",
   'callbacks.renderComposite(',
+  'node.composite!.backdropNodeId',
+  'node.composite!.sourceNodeId',
   "node.kind === 'clip'",
   'callbacks.withClip(node.clip',
+  'node.clip!.childNodeId',
   'renderNode(graph.rootNodeId, new Set())',
 ]) {
   assert.equal(
