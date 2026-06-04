@@ -689,6 +689,7 @@ const bitmapGlyphFilteringContractBlock = extractFunctionBody(textVariantsSource
 const textRunPlacementContractBlock = extractFunctionBody(textVariantsSource, 'isValidTextRunPlacement');
 for (const requiredToken of [
   "payload.payloadKind === 'bitmapGlyph'",
+  '!payload.stroke',
   'payload.colorLayers === undefined',
   'payload.svgGlyph === undefined',
   'isValidResourceId(bitmapGlyph.imageResourceId)',
@@ -729,6 +730,7 @@ assert.equal(
 const staticSvgGlyphContractBlock = extractFunctionBody(textVariantsSource, 'hasStaticSanitizedSvgGlyphContract');
 for (const requiredToken of [
   "payload.payloadKind === 'svgGlyph'",
+  '!payload.stroke',
   'payload.colorLayers === undefined',
   'payload.bitmapGlyph === undefined',
   '!hasRawInlineSvgGlyphReplayField(svgGlyph)',
@@ -1210,6 +1212,7 @@ assert(
 const colrv0ColorLayersContractBlock = extractFunctionBody(textVariantsSource, 'hasColrv0ColorLayersContract');
 for (const requiredToken of [
   "payload.payloadKind === 'colorLayers'",
+  '!payload.stroke',
   "colorLayers?.colorFormat === 'colrV0'",
   'colorLayers.paintGraph === undefined',
   'isValidPayloadRange(colorLayers.sourceRangeUtf8)',
@@ -1227,6 +1230,7 @@ for (const requiredToken of [
 const colrv1ColorGraphContractBlock = extractFunctionBody(textVariantsSource, 'hasColrv1ColorGraphContract');
 for (const requiredToken of [
   "payload.payloadKind !== 'colorLayers'",
+  '|| payload.stroke',
   "colorLayers?.colorFormat !== 'colrV1'",
   'colorLayers.layers.length !== 0',
   'graph.nodes.length > MAX_COLRV1_GRAPH_NODES',
