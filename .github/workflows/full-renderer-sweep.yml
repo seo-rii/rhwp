@@ -94,7 +94,7 @@ jobs:
         run: npm run e2e:ci
 
       - name: Capture representative multi-profile baseline
-        run: python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview --browser-mode headless --output output/renderer-baseline/workflow-dispatch
+        run: python3 scripts/renderer_baseline.py --profiles screen,print,high-quality,fast-preview --browser-mode headless --include-pdf --output output/renderer-baseline/workflow-dispatch
 
       - name: Capture WebGPU-preferred CanvasKit baseline
         run: python3 scripts/renderer_baseline.py --profiles screen --browser-mode headless --canvaskit-surface webgpu --skip-native --output output/renderer-baseline/workflow-dispatch-webgpu

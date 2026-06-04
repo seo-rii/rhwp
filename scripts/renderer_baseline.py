@@ -72,6 +72,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="skip canvas2d / canvaskit browser captures",
     )
+    parser.add_argument(
+        "--include-pdf",
+        action="store_true",
+        help="also capture PDF export artifacts in the native baseline matrix",
+    )
     return parser.parse_args()
 
 
@@ -158,11 +163,17 @@ def run_command(cmd: list[str], cwd: Path, extra_env: dict[str, str] | None = No
 
 
 def collect_files(output_dir: Path, suffix: str) -> list[str]:
-    return sorted(str(path.relative_to(ROOT)) for path in output_dir.glob(f"*{suffix}"))
+    collected: list[str] = []
+    for path in output_dir.glob(f"*{suffix}"):
+        try:
+            collected.append(str(path.relative_to(ROOT)))
+        except ValueError:
+            collected.append(str(path))
+    return sorted(collected)
 
 
 def capture_native_sample(
-    sample: dict, output_root: Path, profiles: list[str]
+    sample: dict, output_root: Path, profiles: list[str], include_pdf: bool
 ) -> list[dict]:
     sample_path = SAMPLES_DIR / sample["file"]
     if not sample_path.exists():
@@ -192,6 +203,32 @@ def capture_native_sample(
         ROOT,
     )
     outputs.append({"backend": "legacy-svg", "files": collect_files(legacy_dir, ".svg")})
+
+    if include_pdf:
+        pdf_dir = output_root / sample["id"] / "pdf"
+        if pdf_dir.exists():
+            shutil.rmtree(pdf_dir)
+        ensure_dir(pdf_dir)
+        pdf_path = pdf_dir / f"{sample['id']}-page-{target_page}.pdf"
+        run_command(
+            [
+                "cargo",
+                "run",
+                "--bin",
+                "rhwp",
+                "--",
+                "export-pdf",
+                str(sample_path),
+                "--page",
+                target_page,
+                "--output",
+                str(pdf_path),
+            ],
+            ROOT,
+        )
+        if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+            raise SystemExit(f"PDF baseline export did not create a non-empty artifact: {pdf_path}")
+        outputs.append({"backend": "pdf", "files": collect_files(pdf_dir, ".pdf")})
 
     for profile in profiles:
         layer_dir = output_root / sample["id"] / f"layer-svg-{profile}"
@@ -1150,7 +1187,7 @@ def main() -> None:
     if not args.skip_native:
         for sample in manifest["samples"]:
             print(f"\n[native] {sample['id']} ({sample['category']})", flush=True)
-            backends = capture_native_sample(sample, output_root, profiles)
+            backends = capture_native_sample(sample, output_root, profiles, args.include_pdf)
             native_results.append(
                 {
                     "sampleId": sample["id"],

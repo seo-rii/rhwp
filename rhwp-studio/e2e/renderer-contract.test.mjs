@@ -596,6 +596,19 @@ assert(
   'renderer baseline markdown report must expose category summaries and category columns',
 );
 assert(
+  rendererBaselineDriverSource.includes('--include-pdf')
+    && rendererBaselineDriverSource.includes('"export-pdf"')
+    && rendererBaselineDriverSource.includes('"backend": "pdf"')
+    && rendererBaselineDriverSource.includes('PDF baseline export did not create a non-empty artifact'),
+  'renderer baseline driver must be able to collect verified PDF artifacts in the native output matrix',
+);
+assert(
+  rendererBaselineDriverSource.includes('def collect_files(')
+    && rendererBaselineDriverSource.includes('except ValueError')
+    && rendererBaselineDriverSource.includes('str(path)'),
+  'renderer baseline driver must support output directories outside the repository root',
+);
+assert(
   rendererBaselineDriverSource.includes('canvaskitSurfaceDiagnostics')
     && rendererBaselineDriverSource.includes('CanvasKit Surface Diagnostics Summary')
     && rendererBaselineDriverSource.includes('softwareFallbacksTotal')

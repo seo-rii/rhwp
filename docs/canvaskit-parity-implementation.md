@@ -1004,9 +1004,12 @@ is the strongest local software-surface parity check, but it still does not
 prove a real WebGL or WebGPU surface when the local browser/CanvasKit build
 falls back to software. The manual `Full Renderer Sweep`
 workflow captures the representative multi-profile baseline, then captures
-separate WebGPU-preferred and software CanvasKit baselines. Those wider
-surface-axis outputs are artifacts for diagnosis and threshold tuning, not
-default CI gates. The browser baseline report also compares Canvas2D against
+separate WebGPU-preferred and software CanvasKit baselines. The representative
+baseline also passes `--include-pdf`, so the native output matrix records the
+current SVG-derived PDF export artifact next to legacy SVG, layer SVG, and
+native Skia PNG outputs. Those wider surface-axis outputs are artifacts for
+diagnosis and threshold tuning, not default CI gates. The browser baseline
+report also compares Canvas2D against
 CanvasKit compat/default for each sampled profile with the same report-only
 fuzzy PNG metrics used by the renderer sweep, so CanvasKit parity drift can be
 triaged from the baseline artifact without adding a fast-path gate. The renderer
