@@ -1216,6 +1216,26 @@ const canvas2dGlyphOutlineReplayBlock = extractSwitchCaseBlock(
   'glyphOutline',
 );
 const canvaskitGlyphOutlineReplayBlock = extractMethodBody(canvaskitSource, 'renderGlyphOutline');
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
+    'const imageIndex = resolveLayerResourceIndex(',
+    'payload?.imageResourceId',
+    'this.currentResources?.imageKeys',
+    'this.getDomImage(imageIndex)',
+  ],
+  'Canvas2D BitmapGlyph replay must resolve images through resource ids before drawing',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
+    'const vectorIndex = resolveLayerResourceIndex(',
+    'payload?.vectorResourceId',
+    'this.currentResources?.svgKeys',
+    'const fragment = this.currentResources?.svgFragments?.[vectorIndex]',
+  ],
+  'Canvas2D SvgGlyph replay must resolve vectors through resource ids before parsing',
+);
 assert.deepEqual(
   stringEqualityLiterals(canvas2dGlyphOutlineReplayBlock, 'payloadKind'),
   stringEqualityLiterals(canvaskitGlyphOutlineReplayBlock, 'payloadKind'),
