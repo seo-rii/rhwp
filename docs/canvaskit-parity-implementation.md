@@ -131,6 +131,22 @@ with the same equation resource routing, raster-only diff budgets, and removed
 overlay-helper checks. That result keeps WebGPU as an execution preference, not
 a correctness dependency.
 
+Full local verification on 2026-06-05 also ran `npm run e2e:headless`. That
+suite completed the renderer contract, image diff, font mapping, text flow,
+CanvasKit representative compat/default render comparisons, WebGPU-preferred
+smoke, forced software smoke, and renderer lifecycle checks. The representative
+`default` sweep covered 11 full-page cases plus 2 feature cases; the full-page
+average CanvasKit replay ratio was `5.145 <= 15`, and the feature average was
+`3.108 <= 15`. The lifecycle checks confirmed the `skia` renderer alias still
+normalizes to CanvasKit, Canvas2D overlay methods remain absent, software,
+WebGL-preferred, and WebGPU-preferred surface diagnostics are recorded, and
+static picture/resource caches invalidate on image, bitmap glyph, SVG glyph,
+and ArrayBuffer payload changes. The same session rechecked strict text
+variant, GlyphRun, GlyphOutline, COLRv0/COLRv1, BitmapGlyph, SvgGlyph,
+image-effect, and CanvasKit cache contracts through the browser contract suite.
+GitHub Actions for the current `skia` branch push sequence were green when this
+verification was recorded.
+
 ## Architecture
 
 CanvasKit parity is implemented through four layers:
