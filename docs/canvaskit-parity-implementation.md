@@ -91,6 +91,11 @@ and inside the graph size/depth limits. Studio Canvas2D/CanvasKit, Rust JSON/JS
 bridges, Rust SVG eligibility and output, native Skia, and the Rust CanvasKit
 replay plan share the same payload eligibility vocabulary and deterministic
 fallback/reject reasons for those subsets.
+The browser renderer contract now also pins the strict glyph payload family
+exclusivity rules directly: color, bitmap, SVG, and stroke payload families
+must not be mixed, and deferred-authority gates for cross-scope variants,
+fallback-free strict text, and public `MixedPerGlyph` remain required-feature
+guarded.
 
 Dynamic browser verification on 2026-06-03 completed the checked-in full
 CanvasKit E2E corpus through `npm run e2e:ci` with
