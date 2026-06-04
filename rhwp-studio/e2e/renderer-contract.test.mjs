@@ -957,6 +957,17 @@ assertTokensInOrder(
 assertTokensInOrder(
   canvaskitSvgGlyphReplayBlock,
   [
+    'this.applyPathFillRule(path, layer.fillRule)',
+    'if (layer.fill !== null)',
+    "const paint = this.makePaint(layer.fill, 'fill', layer.opacity)",
+    'canvas.drawPath(path, paint)',
+    'paint.delete()',
+  ],
+  'CanvasKit SvgGlyph replay must preserve fill opacity and fill-rule contracts',
+);
+assertTokensInOrder(
+  canvaskitSvgGlyphReplayBlock,
+  [
     'if (layer.stroke)',
     "const strokePaint = this.makePaint(layer.stroke.color, 'stroke', layer.stroke.opacity)",
     'strokePaint.setStrokeWidth(layer.stroke.width)',
@@ -1381,6 +1392,18 @@ assertTokensInOrder(
     'const path = new Path2D(layer.pathData)',
   ],
   'Canvas2D SvgGlyph replay must apply path-layer transforms after viewBox normalization',
+);
+assertTokensInOrder(
+  canvas2dGlyphOutlineReplayBlock,
+  [
+    'const previousAlpha = ctx.globalAlpha',
+    'if (layer.fill !== null)',
+    'ctx.fillStyle = layer.fill',
+    'ctx.globalAlpha = previousAlpha * layer.opacity',
+    "ctx.fill(path, layer.fillRule ?? 'nonzero')",
+    'ctx.globalAlpha = previousAlpha',
+  ],
+  'Canvas2D SvgGlyph replay must preserve fill opacity and fill-rule contracts',
 );
 assertTokensInOrder(
   canvas2dGlyphOutlineReplayBlock,
