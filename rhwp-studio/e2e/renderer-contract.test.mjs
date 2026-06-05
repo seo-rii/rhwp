@@ -1396,6 +1396,22 @@ assert.equal(
   'CanvasKit static picture cache keys must separate cached pictures by replay plane',
 );
 assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'renderNode'),
+  [
+    "node.cacheHint === 'staticSubtree'",
+    'let hasReplayPlane = false',
+    'const pendingNodes: LayerNode[] = [...node.children]',
+    'layerTextVariantOpsForLeaf(',
+    'candidate.ops',
+    'this.lastRenderedTree?.variantOps',
+    'layerPaintOpReplayPlane(op) === replayPlane',
+    'if (!hasReplayPlane)',
+    'return;',
+    'this.staticPictureCache.keyForStaticSubtree',
+  ],
+  'CanvasKit static picture cache must skip replay planes with no root or sidecar paint ops',
+);
+assertTokensInOrder(
   rustPaintReplayOrderSource,
   [
     'Self::Background',

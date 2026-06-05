@@ -71,7 +71,9 @@ Rust `PageLayerTree` replay-plane subtree detection is now centralized in
 `paint/replay_order.rs` as well: native Skia and layer SVG both use the same
 helper to skip planes that have no root or sidecar paint for the current
 subtree, so static caches and vector output no longer carry backend-local blank
-plane traversal policy.
+plane traversal policy. CanvasKit mirrors that behavior before recording a
+static subtree picture: each replay-plane cache entry is created only when the
+subtree contains a root or sidecar paint op for that plane.
 
 The first strict `GlyphOutline` payload subsets are also implemented as
 feature-gated direct replay contracts. The current baseline covers

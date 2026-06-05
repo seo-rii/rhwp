@@ -433,6 +433,37 @@ export class CanvasKitLayerRenderer {
       case 'group':
         this.withCacheHint(node.cacheHint, () => {
           if (node.cacheHint === 'staticSubtree') {
+            let hasReplayPlane = false;
+            const pendingNodes: LayerNode[] = [...node.children];
+            while (pendingNodes.length > 0 && !hasReplayPlane) {
+              const candidate = pendingNodes.pop();
+              if (!candidate) {
+                continue;
+              }
+              switch (candidate.kind) {
+                case 'group':
+                  pendingNodes.push(...candidate.children);
+                  break;
+                case 'clipRect':
+                  pendingNodes.push(candidate.child);
+                  break;
+                case 'leaf':
+                  for (const op of layerTextVariantOpsForLeaf(
+                    candidate.ops,
+                    this.lastRenderedTree?.variantOps,
+                  )) {
+                    if (layerPaintOpReplayPlane(op) === replayPlane) {
+                      hasReplayPlane = true;
+                      break;
+                    }
+                  }
+                  break;
+              }
+            }
+            if (!hasReplayPlane) {
+              return;
+            }
+
             const cacheKey = this.staticPictureCache.keyForStaticSubtree(
               this.currentLayerTreeCacheKey,
               this.currentProfile,
