@@ -535,6 +535,25 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
 
     const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
+    const staticPathOp = (x, y, fillColor) => ({
+      type: 'path',
+      bbox: { x, y, width: 18, height: 18 },
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+      commands: [
+        { type: 'moveTo', x, y },
+        { type: 'lineTo', x: x + 18, y },
+        { type: 'lineTo', x: x + 18, y: y + 18 },
+        { type: 'lineTo', x, y: y + 18 },
+        { type: 'closePath' },
+      ],
+      style: {
+        fillColor,
+        strokeColor: null,
+        strokeWidth: 1,
+        strokeDash: 'solid',
+        opacity: 1,
+      },
+    });
     pageRenderer.wasm.getPageLayerTree = (pageIdx, profile = 'screen') => ({
       pageWidth: 100,
       pageHeight: 100,
@@ -558,7 +577,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               sourceNodeId: 3000 + pageIdx,
               bounds: { x: 0, y: 0, width: 50, height: 50 },
               cacheHint: 'none',
-              ops: [],
+              ops: [staticPathOp(4, 4, '#000000')],
             }],
           },
           {
@@ -572,7 +591,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               sourceNodeId: 4000 + pageIdx,
               bounds: { x: 0, y: 0, width: 50, height: 50 },
               cacheHint: 'none',
-              ops: [],
+              ops: [staticPathOp(24, 24, '#444444')],
             }],
           },
         ],
