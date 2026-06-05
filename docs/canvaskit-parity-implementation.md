@@ -74,6 +74,11 @@ subtree, so static caches and vector output no longer carry backend-local blank
 plane traversal policy. CanvasKit mirrors that behavior before recording a
 static subtree picture: each replay-plane cache entry is created only when the
 subtree contains a root or sidecar paint op for that plane.
+Native Skia text replay also prefilters system font family lookups against the
+enumerated family list, while preserving generic `serif`, `sans-serif`, and
+`monospace` fallback aliases. This keeps headless platforms from handing
+obviously missing document font names to platform font lookup before the shared
+fallback list is tried.
 
 The first strict `GlyphOutline` payload subsets are also implemented as
 feature-gated direct replay contracts. The current baseline covers

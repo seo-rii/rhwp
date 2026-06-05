@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::sync::OnceLock;
+
 use skia_safe::{
     gradient_shader::{Gradient, GradientColors, Interpolation as GradientInterpolation},
     paint, shaders, surfaces, Color, Color4f, FilterMode, Font, FontHinting, FontMgr, FontStyle,
@@ -8,6 +11,8 @@ use crate::renderer::{
     generic_fallback, GradientFillInfo, LineStyle, PatternFillInfo, ShapeStyle, StrokeDash,
     TextStyle,
 };
+
+static SYSTEM_FONT_FAMILIES: OnceLock<HashSet<String>> = OnceLock::new();
 
 pub fn colorref_to_skia(color: u32, alpha_scale: f32) -> Color {
     let b = ((color >> 16) & 0xFF) as u8;
@@ -87,6 +92,8 @@ pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) 
     } else {
         12.0
     };
+    let system_families =
+        SYSTEM_FONT_FAMILIES.get_or_init(|| font_mgr.family_names().collect::<HashSet<_>>());
     let font_style = match (text_style.bold, text_style.italic) {
         (true, true) => FontStyle::bold_italic(),
         (true, false) => FontStyle::bold(),
@@ -264,6 +271,9 @@ pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) 
 
     let mut matched = None;
     for candidate in &family_candidates {
+        if !can_query_system_family(system_families, candidate) {
+            continue;
+        }
         let typeface = if let Some(probe_char) = probe_char {
             if needs_symbol_fallback
                 || needs_currency_fallback
@@ -341,6 +351,10 @@ pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) 
         1.0
     });
     font
+}
+
+fn can_query_system_family(system_families: &HashSet<String>, family: &str) -> bool {
+    matches!(family, "serif" | "sans-serif" | "monospace") || system_families.contains(family)
 }
 
 pub fn make_text_paint(text_style: &TextStyle) -> Paint {
@@ -515,9 +529,33 @@ fn dash_intervals(dash: StrokeDash, stroke_width: f32) -> Option<Vec<f32>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{dash_intervals, make_font};
+    use std::collections::HashSet;
+
+    use super::{can_query_system_family, dash_intervals, make_font};
     use crate::renderer::{StrokeDash, TextStyle};
     use skia_safe::{FontMgr, FontStyle};
+
+    #[test]
+    fn system_font_lookup_filter_preserves_generic_families() {
+        let system_families = HashSet::new();
+
+        assert!(can_query_system_family(&system_families, "serif"));
+        assert!(can_query_system_family(&system_families, "sans-serif"));
+        assert!(can_query_system_family(&system_families, "monospace"));
+    }
+
+    #[test]
+    fn system_font_lookup_filter_requires_exact_family_match() {
+        let mut system_families = HashSet::new();
+        system_families.insert("AppleGothic".to_string());
+
+        assert!(can_query_system_family(&system_families, "AppleGothic"));
+        assert!(!can_query_system_family(&system_families, "applegothic"));
+        assert!(!can_query_system_family(
+            &system_families,
+            "Definitely Missing RHWP Test Font",
+        ));
+    }
 
     #[test]
     fn scales_dash_intervals_by_stroke_width() {
