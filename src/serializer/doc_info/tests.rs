@@ -106,6 +106,7 @@ fn test_serialize_char_shape_roundtrip() {
         underline_shape: 0,
         strike_shape: 0,
         kerning: false,
+        use_font_space: false,
     };
 
     let data = serialize_char_shape(&cs);
@@ -138,6 +139,38 @@ fn test_serialize_char_shape_roundtrip() {
     }
     assert_eq!(r.read_i32().unwrap(), 1000);
     assert_eq!(r.read_u32().unwrap(), 0x03);
+}
+
+#[test]
+fn test_serialize_char_shape_use_font_space_bit() {
+    let cs = CharShape {
+        use_font_space: true,
+        ..Default::default()
+    };
+
+    let data = serialize_char_shape(&cs);
+    let attr_offset = 14 + 7 + 7 + 7 + 7 + 4;
+    let attr = u32::from_le_bytes([
+        data[attr_offset],
+        data[attr_offset + 1],
+        data[attr_offset + 2],
+        data[attr_offset + 3],
+    ]);
+    assert_ne!(attr & (1 << 25), 0);
+
+    let cs = CharShape {
+        use_font_space: false,
+        attr: 1 << 25,
+        ..Default::default()
+    };
+    let data = serialize_char_shape(&cs);
+    let attr = u32::from_le_bytes([
+        data[attr_offset],
+        data[attr_offset + 1],
+        data[attr_offset + 2],
+        data[attr_offset + 3],
+    ]);
+    assert_eq!(attr & (1 << 25), 0);
 }
 
 #[test]
@@ -386,6 +419,7 @@ fn test_serialize_doc_info_roundtrip() {
         underline_shape: 0,
         strike_shape: 0,
         kerning: false,
+        use_font_space: false,
     });
     doc_info.para_shapes.push(ParaShape {
         raw_data: None,

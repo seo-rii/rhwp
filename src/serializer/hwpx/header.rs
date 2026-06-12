@@ -368,7 +368,7 @@ fn write_char_pr<W: Write>(
             ("height", &cs.base_size.to_string()),
             ("textColor", &color_hex(cs.text_color)),
             ("shadeColor", &shade),
-            ("useFontSpace", bool01(false)),
+            ("useFontSpace", bool01(cs.use_font_space)),
             ("useKerning", bool01(cs.kerning)),
             ("symMark", sym_mark_str(cs.emphasis_dot)),
             ("borderFillIDRef", &cs.border_fill_id.to_string()),
@@ -971,5 +971,35 @@ mod tests {
         let sm = snippet.find("symMark=").unwrap();
         let bf = snippet.find("borderFillIDRef=").unwrap();
         assert!(ip < hp && hp < tc && tc < sc && sc < uf && uf < uk && uk < sm && sm < bf);
+    }
+
+    #[test]
+    fn write_char_pr_use_font_space_roundtrip() {
+        let mut doc = Document::default();
+        doc.doc_info.char_shapes.push(CharShape {
+            use_font_space: true,
+            ..Default::default()
+        });
+        doc.doc_info.char_shapes.push(CharShape {
+            use_font_space: false,
+            ..Default::default()
+        });
+        let ctx = SerializeContext::collect_from_document(&doc);
+        let xml = String::from_utf8(write_header(&doc, &ctx).unwrap()).unwrap();
+
+        let first = xml.find("useFontSpace=").expect("useFontSpace attribute");
+        assert!(
+            xml[first..].starts_with(r#"useFontSpace="1""#),
+            "use_font_space=true must serialize as useFontSpace=\"1\": {xml}"
+        );
+
+        let second = xml[first + 1..]
+            .find("useFontSpace=")
+            .expect("second useFontSpace");
+        let second_abs = first + 1 + second;
+        assert!(
+            xml[second_abs..].starts_with(r#"useFontSpace="0""#),
+            "use_font_space=false must serialize as useFontSpace=\"0\": {xml}"
+        );
     }
 }
