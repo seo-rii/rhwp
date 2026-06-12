@@ -159,6 +159,13 @@ static OPERATORS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(
         ("DOTEQ", "≐"),
         ("PROPTO", "∝"),
         // 집합/논리
+        // 소형 이항 집합연산자. BIG_OPERATORS에 두면 ∑/∏/∫처럼 1.5배 확대된다.
+        ("UNION", "∪"),
+        ("SMALLUNION", "∪"),
+        ("CUP", "∪"),
+        ("INTER", "∩"),
+        ("SMALLINTER", "∩"),
+        ("CAP", "∩"),
         ("SUBSET", "⊂"),
         ("SUPERSET", "⊃"),
         ("SUBSETEQ", "⊆"),
@@ -219,15 +226,9 @@ static BIG_OPERATORS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::
         ("COPROD", "∐"),
         ("SMCOPROD", "∐"),
         ("AMALG", "∐"),
-        // 집합
-        ("UNION", "∪"),
+        // 집합: 소형 이항 연산자(UNION/CUP/INTER/CAP)는 OPERATORS에 둔다.
         ("BIGCUP", "∪"),
-        ("SMALLUNION", "∪"),
-        ("CUP", "∪"),
-        ("INTER", "∩"),
         ("BIGCAP", "∩"),
-        ("SMALLINTER", "∩"),
-        ("CAP", "∩"),
         ("SQCUP", "⊔"),
         ("BIGSQCUP", "⊔"),
         ("SQCAP", "⊓"),
@@ -449,6 +450,18 @@ pub fn lookup_function(cmd: &str) -> Option<&'static str> {
     FUNCTIONS.get(cmd).copied()
 }
 
+/// HWP equation PUA symbols normalized to standard equation symbols.
+///
+/// Hancom equation documents may store visual symbols in the private-use area.
+/// Without an explicit mapping, those characters fall through to missing-glyph
+/// tofu in renderers that do not have the private font.
+static EQUATION_PUA: LazyLock<HashMap<char, &'static str>> =
+    LazyLock::new(|| HashMap::from([('\u{E04D}', "|")]));
+
+pub fn lookup_equation_pua(ch: char) -> Option<&'static str> {
+    EQUATION_PUA.get(&ch).copied()
+}
+
 /// 글자 장식 종류
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecoKind {
@@ -522,6 +535,26 @@ mod tests {
         assert!(is_big_operator("SUM"));
         assert!(is_big_operator("PROD"));
         assert!(!is_big_operator("alpha"));
+    }
+
+    #[test]
+    fn test_set_operators_not_big() {
+        assert!(!is_big_operator("CAP"));
+        assert!(!is_big_operator("CUP"));
+        assert!(!is_big_operator("UNION"));
+        assert!(!is_big_operator("INTER"));
+        assert!(!is_big_operator("SMALLINTER"));
+        assert!(!is_big_operator("SMALLUNION"));
+
+        assert!(is_big_operator("BIGCUP"));
+        assert!(is_big_operator("BIGCAP"));
+
+        assert_eq!(lookup_symbol("CAP"), Some("∩"));
+        assert_eq!(lookup_symbol("CUP"), Some("∪"));
+        assert_eq!(lookup_symbol("SMALLINTER"), Some("∩"));
+        assert_eq!(lookup_symbol("SMALLUNION"), Some("∪"));
+        assert_eq!(lookup_symbol("cap"), Some("∩"));
+        assert_eq!(lookup_symbol("cup"), Some("∪"));
     }
 
     #[test]

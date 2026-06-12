@@ -276,6 +276,13 @@ impl Tokenizer {
             return self.read_command();
         }
 
+        // HWP equation PUA symbols such as U+E04D conditional bars are visual
+        // symbols, not literal text. Unmapped PUA still falls through to Text.
+        if let Some(sym) = super::symbols::lookup_equation_pua(ch) {
+            self.pos += 1;
+            return Token::new(TokenType::Symbol, sym, start);
+        }
+
         // 기타 문자 (한글 등) — 연속 비-ASCII 문자를 하나의 Text 토큰으로
         if !ch.is_ascii() {
             let mut value = String::new();
@@ -428,6 +435,27 @@ mod tests {
             .map(|t| t.value.as_str())
             .collect();
         assert_eq!(syms, vec!["<=", ">=", "!=", "=="]);
+    }
+
+    #[test]
+    fn test_pua_conditional_bar() {
+        let tokens = tokenize("rm P LEFT ( it A \u{E04D} B RIGHT )");
+        let symbols: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.ty == TokenType::Symbol)
+            .map(|t| t.value.as_str())
+            .collect();
+
+        assert_eq!(symbols, vec!["|"]);
+        assert!(tokens.iter().all(|t| !t.value.contains('\u{E04D}')));
+    }
+
+    #[test]
+    fn test_unmapped_pua_stays_text() {
+        let tokens = tokenize("A \u{E04E} B");
+        assert!(tokens
+            .iter()
+            .any(|t| t.ty == TokenType::Text && t.value.contains('\u{E04E}')));
     }
 
     #[test]
