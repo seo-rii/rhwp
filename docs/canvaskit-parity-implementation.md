@@ -159,6 +159,62 @@ image-effect, and CanvasKit cache contracts through the browser contract suite.
 GitHub Actions for the current `skia` branch push sequence were green when this
 verification was recorded.
 
+## Upstream Tracking Check (2026-06-12)
+
+The latest upstream check used `upstream/main` at `bc38ff55`,
+`upstream/devel` at `4574299f`, issue #536 updated on 2026-06-11, and open
+P23 PR #1359 at head `3192efbf`. The upstream plan still matches this branch's
+direction: CanvasKit remains an overlay-free direct replay backend, and the
+remaining feature families advance through explicit fixture, corpus, proof, or
+authority gates rather than hidden Canvas2D/SVG fallback.
+
+No broad upstream or `render-p23` cherry-pick should be applied to this `skia`
+branch just to stay current. The branches have diverged substantially: this
+branch already carries CanvasKit/native Skia parity work that is ahead of
+`devel`, while upstream has unrelated layout, serializer, Studio, and PDF API
+work. Import only small, contract-relevant commits when they close a current
+CanvasKit parity gap or provide a fixture needed by one of the gates below.
+
+The tracking issue changes affect this branch as follows:
+
+- P23 is PDF export/native API packaging. PR #1359 adds shared
+  `DocumentCore` native PDF export APIs, routes CLI `export-pdf` through that
+  API, and adds report-only PDF visual diff artifacts. This is useful for
+  future native/vector export alignment, but it is not a prerequisite for
+  CanvasKit-vs-Canvas2D web parity. The current `skia` branch already keeps PDF
+  artifact collection/reporting as non-hard-gate support work; do not mix the
+  full P23 API surface into CanvasKit replay commits unless the native export
+  API itself becomes the task.
+- P24 remains strict `BitmapGlyph`/`SvgGlyph` producer-output corpus widening.
+  The implementation should add real lowering/resource-path fixtures on top of
+  the existing one-strike bitmap and sanitized static vector contracts, not
+  reopen payload semantics or writer gates.
+- P25 remains exact font replay corpus widening. Native Skia may widen through
+  real variable-font and TTC/OTC fixtures; CanvasKit must keep
+  `variationUnsupported` and `faceIndexUnsupported` until a browser-side exact
+  construction proof exists.
+- P26 remains authority-gated v2 follow-up work. Additional COLRv1 primitives,
+  shapedModern width input/line breaking, cross-scope variants, and public
+  `MixedPerGlyph` writer emission stay blocked until their concrete
+  document/use-case gates are satisfied.
+
+Recent upstream `devel` fixes that matter to renderer planning are treated as
+baseline assumptions, not as automatic cherry-picks:
+
+- #1349 HWPX picture effects shadow roundtrip preservation can affect future
+  object/image replay fixtures. CanvasKit work should preserve effect metadata
+  and diagnostics, but should not hide unsupported effects with overlay paint.
+- #1351 `useFontSpace` preservation can affect text/font serialization
+  baselines. It is not a reason to turn on shapedModern measurement or layout
+  mutation.
+- #1354 equation PUA conditional bar mapping can affect equation/text replay
+  comparisons. Treat it as input normalization baseline when adding equation
+  fixtures.
+- `origin/render-p23` also contains #1378/#1379/#1380 HWPX roundtrip and
+  serializer preservation work. Those changes are useful for future corpus
+  quality, but they are not CanvasKit parity implementation commits unless a
+  specific fixture proves a renderer-visible gap.
+
 ## Architecture
 
 CanvasKit parity is implemented through four layers:
