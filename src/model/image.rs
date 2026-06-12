@@ -33,6 +33,8 @@ pub struct Picture {
     pub instance_id: u32,
     /// SHAPE_PICTURE 레코드의 파싱된 필드 이후 추가 바이트 (라운드트립 보존용)
     pub raw_picture_extra: Vec<u8>,
+    /// HWPX `<hp:effects>` picture effect metadata.
+    pub effects: PictureEffects,
     /// 캡션
     pub caption: Option<super::shape::Caption>,
 }
@@ -62,6 +64,49 @@ pub struct ImageAttr {
     /// `None`이면 문서 내부 BinData payload를 사용한다. `Some`이고 대응하는
     /// `BinDataContent`가 비어 있으면 렌더러는 주입 가능한 외부 이미지로 진단한다.
     pub external_path: Option<String>,
+}
+
+/// HWPX picture effects (`<hp:effects>`).
+#[derive(Debug, Clone, Default)]
+pub struct PictureEffects {
+    pub shadow: Option<PictureShadow>,
+}
+
+/// HWPX picture shadow effect (`<hp:shadow>`).
+#[derive(Debug, Clone, Default)]
+pub struct PictureShadow {
+    pub style: Option<String>,
+    pub alpha: Option<String>,
+    pub radius: Option<String>,
+    pub direction: Option<String>,
+    pub distance: Option<String>,
+    pub align_style: Option<String>,
+    pub rotation_style: Option<String>,
+    pub skew: Option<EffectPoint>,
+    pub scale: Option<EffectPoint>,
+    pub color: Option<EffectColor>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EffectPoint {
+    pub x: Option<String>,
+    pub y: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EffectColor {
+    pub color_type: Option<String>,
+    pub scheme_idx: Option<String>,
+    pub system_idx: Option<String>,
+    pub preset_idx: Option<String>,
+    pub rgb: Option<EffectRgb>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EffectRgb {
+    pub r: Option<String>,
+    pub g: Option<String>,
+    pub b: Option<String>,
 }
 
 /// 이미지 효과
