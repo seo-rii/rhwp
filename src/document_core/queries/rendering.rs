@@ -104,6 +104,34 @@ impl DocumentCore {
         Ok(renderer.output().to_string())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn render_page_pdf_native(&self, page_num: u32) -> Result<Vec<u8>, HwpError> {
+        self.render_pages_pdf_native(&[page_num])
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn render_pages_pdf_native(&self, pages: &[u32]) -> Result<Vec<u8>, HwpError> {
+        if pages.is_empty() {
+            return Err(HwpError::RenderError(
+                "PDF export requires at least one page".to_string(),
+            ));
+        }
+
+        let mut svg_pages = Vec::with_capacity(pages.len());
+        for &page_num in pages {
+            svg_pages.push(self.render_page_svg_native(page_num)?);
+        }
+
+        crate::renderer::pdf::svgs_to_pdf(&svg_pages)
+            .map_err(|err| HwpError::RenderError(err.to_string()))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn render_document_pdf_native(&self) -> Result<Vec<u8>, HwpError> {
+        let pages: Vec<u32> = (0..self.page_count()).collect();
+        self.render_pages_pdf_native(&pages)
+    }
+
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
     pub fn render_page_png_native(&self, page_num: u32) -> Result<Vec<u8>, HwpError> {
         let layer_tree =
