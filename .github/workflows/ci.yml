@@ -211,6 +211,10 @@ jobs:
         working-directory: rhwp-studio
         run: npm ci
 
+      - name: Run studio unit tests
+        working-directory: rhwp-studio
+        run: npm test
+
       - name: Install headless Chrome
         working-directory: rhwp-studio
         run: |
