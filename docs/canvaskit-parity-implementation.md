@@ -1033,10 +1033,19 @@ to assign to schema, resource, adapter, or rasterization behavior.
 Every CanvasKit parity commit should run:
 
 ```bash
+(cd rhwp-studio && npm test)
 (cd rhwp-studio && node e2e/renderer-contract.test.mjs)
 (cd rhwp-studio && npm run build)
 git diff --check
 ```
+
+`npm test` is the fast Studio guard for browser-free CanvasKit parity contracts.
+It covers render-backend option parsing, replay-plane ordering, no-overlay
+source contracts, shared image-effect pixel preprocessing, and the source-level
+strict `GlyphOutline` payload gates for COLRv0/COLRv1, BitmapGlyph, SvgGlyph,
+and monochrome stroke payloads. The Studio CI job and the full renderer sweep
+run this fast test step before launching browser renderer suites, so pure
+contract regressions fail before expensive CanvasKit E2E setup.
 
 When runtime behavior changes, also run the relevant lifecycle/parity fixture,
 usually:
