@@ -297,6 +297,42 @@ function assertTokensInOrder(source, tokens, message) {
   }
 }
 
+function assertRustPlanAndCanvaskitRuntimeContract({
+  opType,
+  rustOp,
+  feature,
+  runtimeCall,
+  methodName,
+  methodTokens = [],
+}) {
+  assert.equal(
+    rustCanvaskitPolicySource.includes(`PaintOp::${rustOp}`),
+    true,
+    `CanvasKit replay plan must classify PaintOp::${rustOp}`,
+  );
+  assert.equal(
+    rustCanvaskitPolicySource.includes(`CanvasKitReplayFeature::${feature}`),
+    true,
+    `CanvasKit replay plan must expose ${feature} for ${opType}`,
+  );
+  const runtimeCase = extractSwitchCaseBlock(extractMethodBody(canvaskitSource, 'renderOp'), opType);
+  assert.equal(
+    runtimeCase.includes(runtimeCall),
+    true,
+    `CanvasKit runtime renderOp case '${opType}' must dispatch to ${runtimeCall}`,
+  );
+  if (methodName) {
+    const methodBody = extractMethodBody(canvaskitSource, methodName);
+    for (const token of methodTokens) {
+      assert.equal(
+        methodBody.includes(token),
+        true,
+        `CanvasKit runtime ${methodName} must keep plan-aligned token for ${opType}: ${token}`,
+      );
+    }
+  }
+}
+
 for (const requiredToken of [
   'RHWP_E2E_CI_TIMEOUT_MS',
   'defaultSuiteTimeoutMs = 30 * 60 * 1000',
@@ -325,6 +361,125 @@ assertTokensInOrder(
 
 compareCaseContract('renderNode', 'LayerNode dispatch');
 compareCaseContract('renderOp', 'LayerPaintOp dispatch');
+for (const contract of [
+  {
+    opType: 'pageBackground',
+    rustOp: 'PageBackground',
+    feature: 'PageBackground',
+    runtimeCall: 'this.renderPageBackground(canvas, op);',
+    methodName: 'renderPageBackground',
+    methodTokens: [
+      'this.makeShapeFillPaint(',
+      'this.drawEncodedImage(',
+      'op.image.effect',
+      'op.image.brightness ?? 0',
+      'op.image.contrast ?? 0',
+    ],
+  },
+  {
+    opType: 'image',
+    rustOp: 'Image',
+    feature: 'RasterImage',
+    runtimeCall: 'this.renderImage(canvas, op);',
+    methodName: 'renderImage',
+    methodTokens: [
+      'effectiveLayerImageBounds(op.bbox, op.transform)',
+      'this.drawEncodedImage(',
+      'op.effect',
+      'op.brightness ?? 0',
+      'op.contrast ?? 0',
+    ],
+  },
+  {
+    opType: 'equation',
+    rustOp: 'Equation',
+    feature: 'Equation',
+    runtimeCall: 'this.renderEquation(canvas, op);',
+    methodName: 'renderEquation',
+    methodTokens: [
+      'this.renderEquationSvgResource(canvas, op)',
+      'this.renderEquationBox(',
+    ],
+  },
+  {
+    opType: 'formObject',
+    rustOp: 'FormObject',
+    feature: 'FormObject',
+    runtimeCall: 'this.renderFormObject(canvas, op);',
+    methodName: 'renderFormObject',
+    methodTokens: [
+      'formObjectPalette(op)',
+      "case 'pushButton':",
+      "case 'checkBox':",
+      "case 'radioButton':",
+      "case 'comboBox':",
+      "case 'edit':",
+    ],
+  },
+  {
+    opType: 'glyphRun',
+    rustOp: 'GlyphRun',
+    feature: 'TextVariant',
+    runtimeCall: 'this.renderGlyphRun(canvas, op);',
+    methodName: 'glyphRunVariantReplayStatus',
+    methodTokens: [
+      'this.fontRegistry.glyphRunReplayStatus(op, this.lastRenderedTree?.fontResources)',
+      'fontVerification',
+    ],
+  },
+  {
+    opType: 'glyphOutline',
+    rustOp: 'GlyphOutline',
+    feature: 'TextVariant',
+    runtimeCall: 'this.renderGlyphOutline(canvas, op);',
+    methodName: 'glyphOutlineVariantReplayStatus',
+    methodTokens: [
+      'glyphOutlinePayloadStatus(',
+      'isFillOnlyGlyphOutlineStyle(op)',
+      'outlineEligibility',
+    ],
+  },
+]) {
+  assertRustPlanAndCanvaskitRuntimeContract(contract);
+}
+for (const [opType, rustOp, runtimeCall] of [
+  ['charOverlap', 'CharOverlap', 'this.renderTextRun(canvas, op);'],
+  ['textControlMark', 'TextControlMark', 'this.renderTextControlMark(canvas, op);'],
+  ['tabLeader', 'TabLeader', 'this.renderTabLeader(canvas, op);'],
+  ['textDecoration', 'TextDecoration', 'this.renderTextDecoration(canvas, op);'],
+  ['footnoteMarker', 'FootnoteMarker', 'this.renderFootnoteMarker(canvas, op);'],
+]) {
+  assertRustPlanAndCanvaskitRuntimeContract({
+    opType,
+    rustOp,
+    feature: 'TextSpecialVisual',
+    runtimeCall,
+  });
+}
+for (const [opType, rustOp, runtimeCall] of [
+  ['line', 'Line', 'this.renderLine(canvas, op);'],
+  ['rectangle', 'Rectangle', 'this.renderRectangle(canvas, op);'],
+  ['ellipse', 'Ellipse', 'this.renderEllipse(canvas, op);'],
+  ['path', 'Path', 'this.renderPath(canvas, op);'],
+]) {
+  assertRustPlanAndCanvaskitRuntimeContract({
+    opType,
+    rustOp,
+    feature: 'VectorShape',
+    runtimeCall,
+  });
+}
+assertTokensInOrder(
+  rustCanvaskitPolicySource,
+  [
+    'PaintOp::Image { image, .. } => image_item(path, image)',
+    'fn image_item(',
+    'if image.resource_id.is_some()',
+    'direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)',
+    'direct_required_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)',
+  ],
+  'CanvasKit replay plan must distinguish replayable image resources from image-data-required runtime cases',
+);
 compareCaseContract('renderFormObject', 'form object replay');
 assert.equal(
   formReplayUtilsSource.includes('export function formObjectPalette('),

@@ -289,6 +289,44 @@ P2 does not require every unsupported branch to be fully replayed immediately.
 It does require every branch to be visible in diagnostics, with a deterministic
 fallback or rejection path.
 
+#### P2 Execution Update: CanvasKit As A Canvas2D-Compatible Backend
+
+The current task is not to add a second hidden renderer behind CanvasKit. It is
+to make the existing CanvasKit backend behave like the Canvas2D backend for the
+same `PageLayerTree` operations, while keeping the implementation native-ready
+for future Skia output. Work should therefore reduce one operation-family
+difference at a time.
+
+The working order is:
+
+1. Align replay diagnostics with runtime behavior. `src/renderer/canvaskit_policy.rs`
+   and `rhwp-studio/src/view/canvaskit-renderer.ts` must classify the same
+   operation families as direct, direct-required, selected strict variant, or
+   fallback/reject. The browser contract test now pins this relationship for
+   page backgrounds, images, equations, form objects, text-special ops, vector
+   shapes, `GlyphRun`, and `GlyphOutline`.
+2. Close high-priority direct replay gaps before opening broader text or
+   authority changes: page background image/gradient fill, image effects,
+   equation replay parity, form object bounds/parity, raw SVG or placeholder
+   previews, path gradient/pattern/fill edge cases, and line/arrow/connector
+   edge cases.
+3. Continue root `TextRun` effect parity fixture by fixture: vertical and
+   rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
+   dots, tab leaders, control marks, character overlap, field markers, and
+   line-break-sensitive cases. These remain `hwpCompat` visual replay work, not
+   shapedModern layout authority changes.
+4. Keep `GlyphRun` and `GlyphOutline` strict replay gated by exact resource
+   proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
+   bitmap/SVG/color glyph payloads, and fallback-free profiles must not be
+   widened until the corresponding proof fixtures exist.
+5. Treat resource/cache identity as part of correctness. Image bytes, static
+   SVG fragments, font blobs, output options, replay plane, and strict sidecar
+   payloads must all participate in cache keys so stale pictures cannot hide
+   renderer differences.
+6. Defer any public default switch until representative Canvas2D-vs-CanvasKit
+   corpus diffs, failure diagnostics, fallback/unsupported inventories, and
+   performance/memory smoke results are stable enough to become hard gates.
+
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload
