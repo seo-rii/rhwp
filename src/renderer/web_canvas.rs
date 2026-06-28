@@ -29,7 +29,8 @@ use crate::model::style::UnderlineType;
 use crate::paint::LayerTextControlMarkKind;
 #[cfg(target_arch = "wasm32")]
 use crate::paint::{
-    LayerFormObjectPaint, LayerNodeKind, LayerOutputOptions, PageLayerTree, PaintOp, ResourceArena,
+    layer_node_has_replay_plane, paint_op_replay_plane, LayerFormObjectPaint, LayerNodeKind,
+    LayerOutputOptions, PageLayerTree, PaintOp, PaintReplayPlane, ResourceArena,
 };
 
 // 이미지 캐시: data 해시 → HtmlImageElement
@@ -154,6 +155,8 @@ pub struct WebCanvasRenderer {
     clip_enabled: bool,
     /// 줌 스케일 (1.0 = 100%)
     scale: f64,
+    /// PageLayerTree direct replay currently paints one logical plane at a time.
+    active_replay_plane: Option<PaintReplayPlane>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -173,6 +176,7 @@ impl WebCanvasRenderer {
             show_control_codes: false,
             clip_enabled: true,
             scale: 1.0,
+            active_replay_plane: None,
         })
     }
 
@@ -192,7 +196,15 @@ impl WebCanvasRenderer {
         self.show_control_codes = tree.output_options.show_control_codes;
         self.clip_enabled = tree.output_options.clip_enabled;
         self.begin_page(tree.page_width, tree.page_height);
-        self.render_layer_node(&tree.root, &tree.resources);
+        let previous_replay_plane = self.active_replay_plane;
+        for replay_plane in PaintReplayPlane::ORDERED {
+            if !layer_node_has_replay_plane(&tree.root, &tree.variant_ops, replay_plane) {
+                continue;
+            }
+            self.active_replay_plane = Some(replay_plane);
+            self.render_layer_node(&tree.root, &tree.resources);
+        }
+        self.active_replay_plane = previous_replay_plane;
         self.end_page();
     }
 
@@ -227,6 +239,11 @@ impl WebCanvasRenderer {
             }
             LayerNodeKind::Leaf { ops, .. } => {
                 for op in ops {
+                    if let Some(active_replay_plane) = self.active_replay_plane {
+                        if paint_op_replay_plane(op) != active_replay_plane {
+                            continue;
+                        }
+                    }
                     match op {
                         PaintOp::PageBackground {
                             bbox, background, ..

@@ -51,3 +51,32 @@ fn web_canvas_layer_leaf_replay_dispatches_paint_ops_directly() {
         "layer replay must not fall back to legacy RenderNode replay"
     );
 }
+
+#[test]
+fn web_canvas_layer_tree_replays_logical_planes_in_order() {
+    let render_layer_tree =
+        rust_body_after(WEB_CANVAS_SOURCE, "pub fn render_layer_tree(&mut self");
+    let render_layer_node = rust_body_after(WEB_CANVAS_SOURCE, "fn render_layer_node(");
+
+    assert!(
+        WEB_CANVAS_SOURCE.contains("active_replay_plane: Option<PaintReplayPlane>"),
+        "WebCanvasRenderer should track the currently replayed logical plane"
+    );
+    assert!(
+        render_layer_tree.contains("for replay_plane in PaintReplayPlane::ORDERED"),
+        "PageLayerTree direct replay should follow the shared HWP z-order plane ordering"
+    );
+    assert!(
+        render_layer_tree
+            .contains("layer_node_has_replay_plane(&tree.root, &tree.variant_ops, replay_plane)"),
+        "WebCanvas should skip empty planes using root ops plus text variant sidecars"
+    );
+    assert!(
+        render_layer_tree.contains("self.active_replay_plane = Some(replay_plane)"),
+        "render_layer_tree should publish the active plane before descending into the tree"
+    );
+    assert!(
+        render_layer_node.contains("paint_op_replay_plane(op) != active_replay_plane"),
+        "leaf replay should filter PaintOps to the active logical plane"
+    );
+}
