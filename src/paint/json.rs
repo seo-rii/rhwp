@@ -10,7 +10,7 @@ use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     has_supported_strict_glyph_outline_bitmap, has_supported_strict_glyph_outline_colrv0,
-    has_supported_strict_glyph_outline_colrv1_stage1, has_supported_strict_glyph_outline_stroke,
+    has_supported_strict_glyph_outline_colrv1, has_supported_strict_glyph_outline_stroke,
     has_supported_strict_glyph_outline_svg, CacheHint, ClipKind, GlyphCluster,
     GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
     LayerNodeKind, LayerPoint, LayerSemantic, LayerTextPaintOpV2, LayerTextRunPaint,
@@ -400,7 +400,7 @@ fn write_text_v2_strict_glyph_outline_export_metadata(buf: &mut String, root: &L
     let externalized_visuals = externalized_text_visuals(root);
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
-    let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1_stage1(root);
+    let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1(root);
     let has_bitmap_glyph = has_supported_strict_glyph_outline_bitmap(root);
     let has_svg_glyph = has_supported_strict_glyph_outline_svg(root);
     buf.push_str(",\"usedFeatures\":[\"text.paintStyle\",\"text.sourceTable\",\"text.sourceSpan\",\"text.variants\",\"text.paintOrderSlot\",\"text.strictVisualFallbackFree\",\"text.v2.placement\",\"text.v2.clusters\",\"text.projectionKind\",\"text.legacyVisuals\",\"text.outlineGlyph\",\"text.glyphOutline.monochromeFill\"");

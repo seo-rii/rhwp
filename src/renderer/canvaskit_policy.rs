@@ -1054,7 +1054,7 @@ fn canvaskit_glyph_outline_payload_status(
         GlyphOutlinePayloadKind::ColorLayers => {
             if outline.color_layers.as_ref().is_some_and(|payload| {
                 payload.has_colrv0_resolved_layer_contract()
-                    || payload.has_colrv1_stage1_graph_contract()
+                    || payload.has_colrv1_supported_graph_contract()
             }) {
                 (true, None)
             } else {
@@ -1671,6 +1671,69 @@ mod tests {
                         source_font_ref: None,
                     },
                 ],
+            }),
+            source_range_utf8: Some(source_range),
+            glyph_range: Some(glyph_range),
+        }
+    }
+
+    fn colrv1_linear_gradient_payload() -> ColorLayersPayload {
+        let source_range = TextSourceRange::new(0, 1);
+        let glyph_range = GlyphRange::new(0, 1);
+        let source_font_ref = source_font_ref(ColorGlyphFormat::ColrV1);
+        ColorLayersPayload {
+            color_format: ColorGlyphFormat::ColrV1,
+            source_font_ref: Some(source_font_ref.clone()),
+            palette_ref: None,
+            layers: Vec::new(),
+            paint_graph: Some(ColorPaintGraphPayload {
+                root_node_id: 0,
+                nodes: vec![ColorPaintGraphNode {
+                    node_id: 0,
+                    kind: ColorPaintGraphNodeKind::LinearGradientPath,
+                    solid_path: None,
+                    linear_gradient_path: Some(ColorPaintLinearGradientPathNode {
+                        commands: vec![
+                            PathCommand::MoveTo(0.0, 0.0),
+                            PathCommand::LineTo(12.0, 0.0),
+                            PathCommand::LineTo(12.0, 12.0),
+                            PathCommand::ClosePath,
+                        ],
+                        gradient: ColorLinearGradient {
+                            x0: 0.0,
+                            y0: 0.0,
+                            x1: 12.0,
+                            y1: 0.0,
+                            stops: vec![
+                                ColorGradientStop {
+                                    offset: 0.0,
+                                    color: ResolvedColor {
+                                        color_space: Some("srgb".to_string()),
+                                        rgba: [1.0, 0.0, 0.0, 1.0],
+                                    },
+                                },
+                                ColorGradientStop {
+                                    offset: 1.0,
+                                    color: ResolvedColor {
+                                        color_space: Some("srgb".to_string()),
+                                        rgba: [0.0, 0.0, 1.0, 1.0],
+                                    },
+                                },
+                            ],
+                        },
+                        fill_rule: GlyphOutlineFillRule::NonZero,
+                        source_glyph_id: Some(42),
+                        palette_index: Some(0),
+                    }),
+                    radial_gradient_path: None,
+                    sweep_gradient_path: None,
+                    transform: None,
+                    composite: None,
+                    clip: None,
+                    source_range_utf8: Some(source_range),
+                    glyph_range: Some(glyph_range),
+                    source_font_ref: Some(source_font_ref),
+                }],
             }),
             source_range_utf8: Some(source_range),
             glyph_range: Some(glyph_range),
@@ -2537,6 +2600,21 @@ mod tests {
     fn canvaskit_accepts_colrv1_stage1_color_graph_contract() {
         let mut outline = outline(GlyphOutlinePayloadKind::ColorLayers);
         outline.color_layers = Some(colrv1_stage1_payload());
+
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(
+                &outline,
+                Some(valid_bbox()),
+                &ResourceArena::default(),
+            ),
+            (true, None)
+        );
+    }
+
+    #[test]
+    fn canvaskit_accepts_colrv1_supported_gradient_graph_contract() {
+        let mut outline = outline(GlyphOutlinePayloadKind::ColorLayers);
+        outline.color_layers = Some(colrv1_linear_gradient_payload());
 
         assert_eq!(
             canvaskit_glyph_outline_payload_status(

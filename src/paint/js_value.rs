@@ -10,7 +10,7 @@ use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     font_blob_resource_key, has_supported_strict_glyph_outline_bitmap,
-    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_colrv1_stage1,
+    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_colrv1,
     has_supported_strict_glyph_outline_stroke, has_supported_strict_glyph_outline_svg,
     image_resource_key, resource_digest_hex, svg_resource_key, CacheHint, ClipKind, GlyphCluster,
     GlyphOutlineStrokeStyle, GlyphRunDiagnostics, GlyphTransform, LayerAffineTransform, LayerNode,
@@ -664,7 +664,7 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
-    let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1_stage1(root);
+    let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1(root);
     let has_bitmap_glyph = has_supported_strict_glyph_outline_bitmap(root);
     let has_svg_glyph = has_supported_strict_glyph_outline_svg(root);
     let mut used_features = vec![

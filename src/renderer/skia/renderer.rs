@@ -665,7 +665,7 @@ fn color_layers_are_replayable(outline: &LayerGlyphOutlinePaint) -> bool {
                     .unwrap_or(true)
         });
     }
-    if payload.has_colrv1_stage1_graph_contract() {
+    if payload.has_colrv1_supported_graph_contract() {
         return true;
     }
     false

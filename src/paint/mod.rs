@@ -91,7 +91,7 @@ pub use text_shape::{
 };
 pub use text_v2::{
     downgrade_text_v2_op_to_v1_compat, has_supported_strict_glyph_outline_bitmap,
-    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_colrv1_stage1,
+    has_supported_strict_glyph_outline_colrv0, has_supported_strict_glyph_outline_colrv1,
     has_supported_strict_glyph_outline_stroke, has_supported_strict_glyph_outline_svg,
     lower_v1_layer_node_text_variants_to_v2, lower_v1_layer_tree_text_variants_to_v2,
     lower_v1_leaf_text_variants_to_v2, lower_v1_leaf_text_variants_with_sidecars_to_v2,

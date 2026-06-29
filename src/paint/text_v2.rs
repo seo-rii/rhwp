@@ -49,7 +49,7 @@ pub struct TextV2ValidationOptions {
     pub allow_cross_scope_variants: bool,
     pub allow_richer_glyph_outline_payloads: bool,
     pub allow_colrv0_color_layers_payloads: bool,
-    pub allow_colrv1_stage1_color_graph_payloads: bool,
+    pub allow_colrv1_color_graph_payloads: bool,
     pub allow_bitmap_glyph_payloads: bool,
     pub allow_svg_glyph_payloads: bool,
     pub allow_mixed_per_glyph_orientation: bool,
@@ -64,7 +64,7 @@ impl Default for TextV2ValidationOptions {
             allow_cross_scope_variants: false,
             allow_richer_glyph_outline_payloads: false,
             allow_colrv0_color_layers_payloads: false,
-            allow_colrv1_stage1_color_graph_payloads: false,
+            allow_colrv1_color_graph_payloads: false,
             allow_bitmap_glyph_payloads: false,
             allow_svg_glyph_payloads: false,
             allow_mixed_per_glyph_orientation: false,
@@ -511,7 +511,7 @@ pub fn strict_glyph_outline_text_v2_slots(
         options.allow_fallback_free = true;
         options.allow_richer_glyph_outline_payloads = true;
         options.allow_colrv0_color_layers_payloads = true;
-        options.allow_colrv1_stage1_color_graph_payloads = true;
+        options.allow_colrv1_color_graph_payloads = true;
         options.allow_bitmap_glyph_payloads = true;
         options.allow_svg_glyph_payloads = true;
         issues.extend(validate_text_v2_op(&strict_op, &options));
@@ -609,7 +609,7 @@ fn strict_glyph_outline_paint_eligible(outline: &LayerGlyphOutlinePaint) -> bool
             outline.stroke.is_none()
                 && outline.color_layers.as_ref().is_some_and(|payload| {
                     payload.has_colrv0_resolved_layer_contract()
-                        || payload.has_colrv1_stage1_graph_contract()
+                        || payload.has_colrv1_supported_graph_contract()
                 })
         }
         GlyphOutlinePayloadKind::BitmapGlyph => {
@@ -651,13 +651,13 @@ pub fn has_supported_strict_glyph_outline_colrv0(root: &LayerNode) -> bool {
     })
 }
 
-pub fn has_supported_strict_glyph_outline_colrv1_stage1(root: &LayerNode) -> bool {
+pub fn has_supported_strict_glyph_outline_colrv1(root: &LayerNode) -> bool {
     has_supported_strict_glyph_outline_payload(root, |outline| {
         outline.payload_kind == GlyphOutlinePayloadKind::ColorLayers
             && outline
                 .color_layers
                 .as_ref()
-                .is_some_and(|payload| payload.has_colrv1_stage1_graph_contract())
+                .is_some_and(|payload| payload.has_colrv1_supported_graph_contract())
             && outline.paint_style.is_fill_only_glyph_replay()
             && outline.diagnostics.strict_visual_eligible
     })
@@ -889,7 +889,7 @@ fn validate_variant_parts(
                     let color_layers = outline.color_layers.as_ref();
                     if has_color_layers_feature && has_colrv1_feature {
                         if !color_layers
-                            .is_some_and(|payload| payload.has_colrv1_stage1_graph_contract())
+                            .is_some_and(|payload| payload.has_colrv1_supported_graph_contract())
                         {
                             issues.push(text_v2_issue(
                                 op,
@@ -898,7 +898,7 @@ fn validate_variant_parts(
                                 Some(part.part_index),
                             ));
                         }
-                        if !options.allow_colrv1_stage1_color_graph_payloads {
+                        if !options.allow_colrv1_color_graph_payloads {
                             issues.push(text_v2_issue(
                                 op,
                                 TextV2ValidationIssueCode::GlyphOutlinePayloadKindFeatureMissing,
@@ -2818,7 +2818,7 @@ mod tests {
         outline.color_layers = Some(colrv1_stage1_color_layers_payload());
 
         let mut options = TextV2ValidationOptions::default();
-        options.allow_colrv1_stage1_color_graph_payloads = true;
+        options.allow_colrv1_color_graph_payloads = true;
         let issues = validate_text_v2_op(&text_ops[0], &options);
         assert!(issues.is_empty(), "{issues:?}");
 
@@ -2840,7 +2840,7 @@ mod tests {
         assert!(strict_outline
             .color_layers
             .as_ref()
-            .is_some_and(ColorLayersPayload::has_colrv1_stage1_graph_contract));
+            .is_some_and(ColorLayersPayload::has_colrv1_supported_graph_contract));
     }
 
     #[test]

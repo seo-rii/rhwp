@@ -396,7 +396,7 @@ impl SvgRenderer {
                                                 .color_layers
                                                 .as_ref()
                                                 .is_some_and(|payload| {
-                                                    payload.has_colrv1_stage1_graph_contract()
+                                                    payload.has_colrv1_supported_graph_contract()
                                                         && payload.paint_graph.as_ref().is_some_and(
                                                             |graph| {
                                                                 graph.nodes.iter().all(|node| {
