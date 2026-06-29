@@ -472,6 +472,19 @@ for (const [opType, rustOp, runtimeCall] of [
 assertTokensInOrder(
   rustCanvaskitPolicySource,
   [
+    'PaintOp::PageBackground { background, .. } =>',
+    'page_background_item(path, background, &self.tree.resources)',
+    'fn page_background_item(',
+    'resources.image_bytes(image.resource_id).is_some()',
+    'if has_payload',
+    'direct_item_with_detail(',
+    'direct_required_item_with_detail(',
+  ],
+  'CanvasKit replay plan must distinguish replayable page background images from image-data-required runtime cases',
+);
+assertTokensInOrder(
+  rustCanvaskitPolicySource,
+  [
     'PaintOp::Image { image, .. } => image_item(path, image, &self.tree.resources)',
     'fn image_item(',
     'resources.image_bytes(resource_id)',
