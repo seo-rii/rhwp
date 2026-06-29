@@ -23,6 +23,8 @@ use crate::model::control::Control;
 use crate::model::paragraph::Paragraph;
 use crate::model::style::{Alignment, HeadType, LineSpacingType, Numbering, UnderlineType};
 
+const CAPTION_CELL_SENTINEL: usize = 65534;
+
 /// lineseg baseline_distance를 폰트 어센트 기준으로 보정한다.
 /// CENTER 문단 수직정렬 등으로 baseline이 50% 이하로 설정된 경우,
 /// 텍스트 어센트(~80%)가 줄 박스 밖으로 넘치지 않도록 보장한다.
@@ -68,6 +70,12 @@ fn right_tab_block_width(
         width += estimate_text_width(&run.text, &text_style);
     }
     width
+}
+
+fn is_caption_cell_context(cell_ctx: Option<&CellContext>) -> bool {
+    cell_ctx
+        .and_then(|ctx| ctx.path.last())
+        .is_some_and(|entry| entry.cell_index == CAPTION_CELL_SENTINEL)
 }
 
 impl LayoutEngine {
@@ -2360,8 +2368,10 @@ impl LayoutEngine {
             if comp_line.runs.is_empty() {
                 // runs가 없는 빈 줄에서 treat_as_char 이미지 렌더링
                 // 테이블 셀 내부에서는 table_layout.rs가 layout_picture로 이미 처리하므로 스킵.
-                // 셀 외부에서 텍스트 없이 TAC만 있는 문단인 경우에만 여기서 렌더링.
-                if cell_ctx.is_none()
+                // 캡션은 pseudo-cell 경로를 사용하므로 source Paragraph/BinData로 직접 렌더링한다.
+                let empty_line_tac_allowed =
+                    cell_ctx.is_none() || is_caption_cell_context(cell_ctx.as_ref());
+                if empty_line_tac_allowed
                     && all_runs_empty
                     && !tac_offsets_px.is_empty()
                     && line_idx == start_line
