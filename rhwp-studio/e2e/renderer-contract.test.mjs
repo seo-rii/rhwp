@@ -766,6 +766,10 @@ assert(
   'renderer baseline driver must support output directories outside the repository root',
 );
 assert(
+  rendererBaselineDriverSource.includes("repo_relative(manifest['_path'])"),
+  'renderer baseline report must support manifest files outside the repository root',
+);
+assert(
   rendererBaselineDriverSource.includes('canvaskitSurfaceDiagnostics')
     && rendererBaselineDriverSource.includes('CanvasKit Surface Diagnostics Summary')
     && rendererBaselineDriverSource.includes('softwareFallbacksTotal')

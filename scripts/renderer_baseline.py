@@ -644,7 +644,7 @@ def write_reports(
         "",
         manifest.get("description", ""),
         "",
-        f"- manifest: `{Path(manifest.get('_path', '')).relative_to(ROOT) if manifest.get('_path') else 'n/a'}`",
+        f"- manifest: `{repo_relative(manifest['_path']) if manifest.get('_path') else 'n/a'}`",
         f"- samples: {len(manifest['samples'])}",
         f"- layered profiles: {', '.join(profiles)}",
         f"- CanvasKit surface: `{effective_canvaskit_surface}`",
