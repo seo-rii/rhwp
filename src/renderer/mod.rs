@@ -159,7 +159,26 @@ pub struct TextStyle {
 impl TextStyle {
     /// CharShape bold flag 또는 face 이름 자체가 굵은 display 계열인 경우.
     pub fn is_visually_bold(&self) -> bool {
-        self.bold || crate::renderer::style_resolver::is_heavy_display_face(&self.font_family)
+        self.bold
+            || crate::renderer::style_resolver::is_heavy_display_face(&self.font_family)
+            || crate::renderer::style_resolver::is_bold_weight_face(&self.font_family)
+    }
+    /// 중고딕 계열(font-weight 500) 여부. SVG/HTML 출력 시 `font-weight: 500` 힌트 삽입에 사용.
+    pub fn is_medium_weight(&self) -> bool {
+        !self.bold && crate::renderer::style_resolver::is_medium_weight_face(&self.font_family)
+    }
+
+    /// CSS/SVG font-weight hint for fallback rendering.
+    pub fn css_font_weight(&self) -> Option<&'static str> {
+        if self.is_visually_bold() {
+            Some("bold")
+        } else if crate::renderer::style_resolver::is_light_weight_face(&self.font_family) {
+            Some("300")
+        } else if self.is_medium_weight() {
+            Some("500")
+        } else {
+            None
+        }
     }
 }
 
@@ -570,6 +589,16 @@ pub fn generic_fallback(font_family: &str) -> &'static str {
     }
     if lower == "monospace" {
         return MONO_FALLBACK;
+    }
+    if (font_family.contains("KoPub돋움체") || lower.contains("kopub dotum"))
+        && (font_family.contains("Light") || lower.contains("light"))
+    {
+        return "'Noto Sans KR ExtraLight','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans KR','Pretendard','HCR Batang Ext-B','함초롬바탕 확장B','HCR Batang Ext','함초롬바탕 확장','HCR Batang','함초롬바탕','Source Han Serif K Old Hangul',sans-serif";
+    }
+    // KoPub Batang uses "바탕체" in the family name, but it is a proportional
+    // serif publication face, not the Windows fixed-width BatangChe face.
+    if font_family.contains("KoPub바탕체") || lower.contains("kopub batang") {
+        return SERIF_FALLBACK;
     }
     if font_family.contains("굴림체")
         || font_family.contains("바탕체")
@@ -997,6 +1026,11 @@ mod tests {
         assert_eq!(generic_fallback("Times New Roman"), serif);
         assert_eq!(generic_fallback("Palatino Linotype"), serif);
         assert_eq!(generic_fallback("serif"), serif);
+        // KoPub바탕체는 이름에 "바탕체"가 들어가지만 고정폭 BatangChe가 아니라
+        // 비례폭 본문/제목용 세리프 계열이다.
+        assert_eq!(generic_fallback("KoPub바탕체 Light"), serif);
+        assert_eq!(generic_fallback("KoPub바탕체 Medium"), serif);
+        assert_eq!(generic_fallback("KoPub Batang Medium"), serif);
         // 산세리프 계열
         assert_eq!(generic_fallback("함초롬돋움"), sans);
         assert_eq!(generic_fallback("돋움"), sans);
@@ -1004,6 +1038,10 @@ mod tests {
         assert_eq!(generic_fallback("Arial"), sans);
         assert_eq!(generic_fallback("맑은 고딕"), sans);
         assert_eq!(generic_fallback("sans-serif"), sans);
+        assert!(generic_fallback("KoPub돋움체 Light")
+            .starts_with("'Noto Sans KR ExtraLight','Malgun Gothic'"));
+        assert!(generic_fallback("KoPub Dotum Light")
+            .starts_with("'Noto Sans KR ExtraLight','Malgun Gothic'"));
         // 고정폭 계열
         assert_eq!(generic_fallback("굴림체"), mono);
         assert_eq!(generic_fallback("바탕체"), mono);
@@ -1011,6 +1049,37 @@ mod tests {
         assert_eq!(generic_fallback("monospace"), mono);
         // 빈 문자열
         assert_eq!(generic_fallback(""), sans);
+    }
+
+    #[test]
+    fn test_medium_weight_face() {
+        use crate::renderer::style_resolver::is_medium_weight_face;
+        assert!(is_medium_weight_face("HY중고딕"));
+        assert!(is_medium_weight_face("신명 중고딕"));
+        assert!(is_medium_weight_face("한양중고딕"));
+        assert!(is_medium_weight_face("HY태고딕"));
+        assert!(is_medium_weight_face("신명 태고딕"));
+        assert!(!is_medium_weight_face("HY헤드라인M"));
+        assert!(!is_medium_weight_face("돋움"));
+        assert!(!is_medium_weight_face("바탕"));
+        assert!(!is_medium_weight_face("맑은 고딕"));
+        assert!(!is_medium_weight_face(""));
+    }
+
+    #[test]
+    fn test_explicit_face_weight_hints() {
+        let light = TextStyle {
+            font_family: "KoPub돋움체 Light".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(light.css_font_weight(), Some("300"));
+
+        let bold = TextStyle {
+            font_family: "KoPub바탕체 Bold".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(bold.css_font_weight(), Some("bold"));
+        assert!(bold.is_visually_bold());
     }
 
     #[test]
