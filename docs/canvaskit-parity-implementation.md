@@ -159,6 +159,20 @@ image-effect, and CanvasKit cache contracts through the browser contract suite.
 GitHub Actions for the current `skia` branch push sequence were green when this
 verification was recorded.
 
+Full local browser-profile verification on 2026-06-29 ran the renderer
+baseline manifest against Canvas2D, `canvaskit-compat`, and
+`canvaskit-default` in all four layered render profiles. The `screen` sweep
+compared `214/214` CanvasKit browser outputs and the `fast-preview` sweep also
+compared `214/214`, with zero failed, missing, or errored comparisons. The
+`print` plus `high-quality` sweep compared another `428/428` CanvasKit browser
+outputs, again with zero failed, missing, or errored comparisons. Every target
+backend and every category in the representative corpus passed with
+`selectedDiffRatio = 0`; the largest tolerant drift remained the existing
+sampling/form/HWPX watch class rather than a missing CanvasKit paint branch.
+These runs cover the current browser CanvasKit parity target across paragraph,
+font, table, image, equation, field, control, form, shape, HWPX, header/footer,
+and mixed real-document samples.
+
 ## Upstream Tracking Check (2026-06-12)
 
 The latest upstream check used `upstream/main` at `bc38ff55`,
