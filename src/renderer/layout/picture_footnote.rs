@@ -18,7 +18,7 @@ use crate::model::control::Control;
 use crate::model::footnote::{FootnoteShape, NumberFormat};
 use crate::model::paragraph::Paragraph;
 use crate::model::shape::{
-    Caption, CaptionDirection, CommonObjAttr, HorzAlign, HorzRelTo, VertAlign, VertRelTo,
+    Caption, CaptionDirection, CommonObjAttr, HorzAlign, HorzRelTo, TextWrap, VertAlign, VertRelTo,
 };
 use crate::model::style::Alignment;
 
@@ -489,6 +489,7 @@ impl LayoutEngine {
 
         let mut para_y = y_start;
         for (pi, para) in caption.paragraphs.iter().enumerate() {
+            let para_y_before_layout = para_y;
             // 먼저 문단을 조합
             let mut composed = compose_paragraph(para);
 
@@ -515,12 +516,105 @@ impl LayoutEngine {
                 composed.lines.len(),
                 0,
                 0,
-                ctx,
+                ctx.clone(),
                 false,
                 0.0,
                 None,
                 Some(para),
                 Some(bin_data_content),
+            );
+
+            self.layout_caption_topbottom_pictures(
+                tree,
+                parent_node,
+                para,
+                &caption_area,
+                para_y_before_layout,
+                bin_data_content,
+                ctx.as_ref(),
+            );
+        }
+    }
+
+    fn layout_caption_topbottom_pictures(
+        &self,
+        tree: &mut PageRenderTree,
+        parent_node: &mut RenderNode,
+        para: &Paragraph,
+        caption_area: &LayoutRect,
+        para_y: f64,
+        bin_data_content: &[BinDataContent],
+        cell_ctx: Option<&super::CellContext>,
+    ) {
+        let anchor_y = para
+            .line_segs
+            .first()
+            .filter(|seg| seg.vertical_pos >= 0)
+            .map(|seg| caption_area.y + hwpunit_to_px(seg.vertical_pos, self.dpi))
+            .unwrap_or(para_y);
+
+        for (ctrl_idx, ctrl) in para.controls.iter().enumerate() {
+            let Control::Picture(pic) = ctrl else {
+                continue;
+            };
+            if pic.common.treat_as_char {
+                continue;
+            }
+            if !matches!(pic.common.text_wrap, TextWrap::TopAndBottom) {
+                continue;
+            }
+            if tree
+                .get_inline_shape_position(0, 0, ctrl_idx, cell_ctx)
+                .is_some()
+            {
+                continue;
+            }
+
+            let (pic_width_hu, pic_height_hu) = picture_display_size_hu(pic);
+            let pic_width = hwpunit_to_px(pic_width_hu, self.dpi);
+            let pic_height = hwpunit_to_px(pic_height_hu, self.dpi);
+            let placement_area = LayoutRect {
+                x: caption_area.x,
+                y: anchor_y,
+                width: caption_area.width,
+                height: pic_height.max(caption_area.height),
+            };
+            let mut placement_common = pic.common.clone();
+            placement_common.treat_as_char = false;
+            let (pic_x, pic_y) = self.compute_object_position(
+                &placement_common,
+                pic_width,
+                pic_height,
+                &placement_area,
+                &placement_area,
+                &placement_area,
+                &placement_area,
+                anchor_y,
+                Alignment::Left,
+            );
+            let pic_area = LayoutRect {
+                x: pic_x,
+                y: pic_y,
+                width: pic_width,
+                height: pic_height,
+            };
+            let mut pic_for_layout = (**pic).clone();
+            pic_for_layout.common.treat_as_char = false;
+            pic_for_layout.common.horizontal_offset = 0;
+            pic_for_layout.common.vertical_offset = 0;
+            pic_for_layout.common.horz_align = HorzAlign::Left;
+            pic_for_layout.common.vert_align = VertAlign::Top;
+
+            self.layout_picture(
+                tree,
+                parent_node,
+                &pic_for_layout,
+                &pic_area,
+                bin_data_content,
+                Alignment::Left,
+                Some(0),
+                Some(0),
+                Some(ctrl_idx),
             );
         }
     }
