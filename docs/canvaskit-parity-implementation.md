@@ -853,7 +853,13 @@ Fixture-ready lanes:
    failed the selected diff budget with `selectedDiffRatio=0.118492`. Keep
    `hwpspec.hwp` out of the checked-in manifest until that selected diff is
    narrowed to a concrete renderer gap or an explicit sample-specific budget is
-   justified by artifact review.
+   justified by artifact review. Follow-up inspection classified the current
+   gap as a whole-page `LayerImageOp` that stretches one 16 by 13 BMP resource
+   across the page. CanvasKit `FilterMode.Linear` is the closest available
+   native-ready sampler; `FilterMode.Nearest`, mipmaps, and tested cubic
+   resamplers all increased the isolated image diff from the Canvas2D baseline.
+   This is not evidence of a missing paint operation, so do not add a hidden
+   Canvas2D pre-pass to force the sample through the budget.
 2. Strict payload validation hardening: add only targeted malformed-payload or
    unsupported graph-node fixtures that exercise already-declared v2
    vocabulary and are backed by a concrete failing input or audit finding. Do
@@ -1150,7 +1156,12 @@ watch item for software-surface variance in that category and remains outside
 the checked-in manifest until its selected diff is understood. The current
 candidate sweep measured `hwpspec.hwp` at about `0.113` selected diff and
 `0.117` tolerant diff against Canvas2D, while the saved screenshots show the
-same page structure with large image-sampling differences. The Markdown report
+same page structure with large image-sampling differences. A focused layer-tree
+probe found a single 886 byte BMP resource decoded as 16 by 13 pixels and drawn
+as a page-scale `image` op; isolated Canvas2D-vs-CanvasKit sampling checks kept
+linear filtering as the closest CanvasKit path, with nearest and cubic variants
+performing worse. Treat this as a sampling-classified watch item, not a
+remaining direct-replay coverage gap. The Markdown report
 mirrors target-backend/profile summaries, applied per-comparison thresholds, and
 the worst browser comparisons so large sweeps do not require scanning every
 screenshot row first.
