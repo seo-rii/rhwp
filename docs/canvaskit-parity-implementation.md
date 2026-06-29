@@ -847,7 +847,13 @@ Fixture-ready lanes:
    contract fixture is needed unless it captures a newly discovered malformed
    payload or unsupported lowering case. Add only real producer-output strict
    payload fixtures that exercise lowering paths beyond those hand-authored
-   contracts, one payload family at a time.
+   contracts, one payload family at a time. A focused 2026-06-29 browser
+   baseline probe for `samples/hwpspec.hwp` completed with Canvas2D, CanvasKit
+   compat, and CanvasKit default captures, but both CanvasKit comparisons still
+   failed the selected diff budget with `selectedDiffRatio=0.118492`. Keep
+   `hwpspec.hwp` out of the checked-in manifest until that selected diff is
+   narrowed to a concrete renderer gap or an explicit sample-specific budget is
+   justified by artifact review.
 2. Strict payload validation hardening: add only targeted malformed-payload or
    unsupported graph-node fixtures that exercise already-declared v2
    vocabulary and are backed by a concrete failing input or audit finding. Do
