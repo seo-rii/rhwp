@@ -12,6 +12,7 @@ pub mod canvaskit_policy;
 pub mod composer;
 pub mod equation;
 pub mod font_metrics_data;
+pub(crate) mod form_caption;
 pub mod height_measurer;
 pub mod html;
 pub mod layer_renderer;

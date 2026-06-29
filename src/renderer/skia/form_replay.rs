@@ -2,6 +2,7 @@ use skia_safe::{Canvas, Color, FontMgr, Paint, PathBuilder, Rect};
 
 use crate::model::control::FormType;
 use crate::paint::LayerFormObjectPaint;
+use crate::renderer::form_caption::display_form_caption;
 use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::TextStyle;
 
@@ -69,15 +70,16 @@ pub(super) fn render_form_object(
             canvas.draw_rect(rect, &stroke);
 
             if !form.caption.is_empty() {
+                let caption = display_form_caption(&form.caption);
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, &form.caption);
+                let font = make_font(&text_style, font_mgr, caption.as_ref());
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);
-                let text_width = form.caption.chars().count() as f32 * font_size as f32 * 0.55;
+                let text_width = caption.chars().count() as f32 * font_size as f32 * 0.55;
                 canvas.draw_str(
-                    &form.caption,
+                    caption.as_ref(),
                     (
                         bbox.x as f32 + bbox.width as f32 / 2.0 - text_width / 2.0,
                         bbox.y as f32 + bbox.height as f32 / 2.0 + font_size as f32 * 0.35,
@@ -118,14 +120,15 @@ pub(super) fn render_form_object(
             }
 
             if !form.caption.is_empty() {
+                let caption = display_form_caption(&form.caption);
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, &form.caption);
+                let font = make_font(&text_style, font_mgr, caption.as_ref());
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);
                 canvas.draw_str(
-                    &form.caption,
+                    caption.as_ref(),
                     (
                         box_x + box_size + 3.0,
                         bbox.y as f32 + bbox.height as f32 / 2.0 + font_size as f32 * 0.35,
@@ -160,14 +163,15 @@ pub(super) fn render_form_object(
             }
 
             if !form.caption.is_empty() {
+                let caption = display_form_caption(&form.caption);
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, &form.caption);
+                let font = make_font(&text_style, font_mgr, caption.as_ref());
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);
                 canvas.draw_str(
-                    &form.caption,
+                    caption.as_ref(),
                     (
                         cx + radius + 3.0,
                         bbox.y as f32 + bbox.height as f32 / 2.0 + font_size as f32 * 0.35,
