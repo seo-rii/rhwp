@@ -302,6 +302,11 @@ explicit unsupported diagnostic, and a targeted lifecycle/parity fixture.
 P2 does not require every unsupported branch to be fully replayed immediately.
 It does require every branch to be visible in diagnostics, with a deterministic
 fallback or rejection path.
+Replay-plan direct status for image-bearing ops is based on resolved resource
+bytes, not merely on a numeric resource handle. A `LayerImagePaint` or page
+background image with a dangling `ImageResourceId` is reported as
+`directRequired` with `missingImageData`, matching the CanvasKit runtime path
+that can only decode from the exported resource arena.
 
 #### P2 Execution Update: CanvasKit As A Canvas2D-Compatible Backend
 
