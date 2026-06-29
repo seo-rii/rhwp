@@ -683,12 +683,9 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
         path: String,
     ) -> CanvasKitReplayItem {
         let mut item = match op {
-            PaintOp::PageBackground { background, .. } => direct_item_with_detail(
-                path,
-                "pageBackground",
-                CanvasKitReplayFeature::PageBackground,
-                page_background_detail(background),
-            ),
+            PaintOp::PageBackground { background, .. } => {
+                page_background_item(path, background, &self.tree.resources)
+            }
             PaintOp::TextRun { run, .. } => {
                 if let Some(variant) = &run.variant {
                     self.text_variant_item(path, "textRun", variant, selected_variants)
@@ -717,7 +714,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             | PaintOp::Path { .. } => {
                 direct_item(path, paint_op_type(op), CanvasKitReplayFeature::VectorShape)
             }
-            PaintOp::Image { image, .. } => image_item(path, image),
+            PaintOp::Image { image, .. } => image_item(path, image, &self.tree.resources),
             PaintOp::Equation { .. } => {
                 direct_item(path, "equation", CanvasKitReplayFeature::Equation)
             }
@@ -1172,7 +1169,15 @@ fn direct_required_item_with_detail(
     }
 }
 
-fn image_item(path: String, image: &crate::paint::LayerImagePaint) -> CanvasKitReplayItem {
+fn image_item(
+    path: String,
+    image: &crate::paint::LayerImagePaint,
+    resources: &ResourceArena,
+) -> CanvasKitReplayItem {
+    let has_payload = image
+        .resource_id
+        .and_then(|resource_id| resources.image_bytes(resource_id))
+        .is_some();
     let detail = Some(image_replay_detail(
         image.fill_mode,
         image.original_size,
@@ -1182,20 +1187,32 @@ fn image_item(path: String, image: &crate::paint::LayerImagePaint) -> CanvasKitR
         image.contrast,
         Some(image.transform),
         image.external_path.as_deref(),
-        image.resource_id.is_some(),
+        has_payload,
         image.text_wrap,
     ));
 
-    if image.resource_id.is_some() {
+    if has_payload {
         direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
     } else {
         direct_required_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
     }
 }
 
-fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -> Option<String> {
-    let image = background.image.as_ref()?;
-    Some(image_replay_detail(
+fn page_background_item(
+    path: String,
+    background: &crate::paint::LayerPageBackgroundPaint,
+    resources: &ResourceArena,
+) -> CanvasKitReplayItem {
+    let Some(image) = background.image.as_ref() else {
+        return direct_item_with_detail(
+            path,
+            "pageBackground",
+            CanvasKitReplayFeature::PageBackground,
+            None,
+        );
+    };
+    let has_payload = resources.image_bytes(image.resource_id).is_some();
+    let detail = Some(image_replay_detail(
         Some(image.fill_mode),
         None,
         None,
@@ -1204,9 +1221,24 @@ fn page_background_detail(background: &crate::paint::LayerPageBackgroundPaint) -
         image.contrast,
         None,
         None,
-        true,
+        has_payload,
         None,
-    ))
+    ));
+    if has_payload {
+        direct_item_with_detail(
+            path,
+            "pageBackground",
+            CanvasKitReplayFeature::PageBackground,
+            detail,
+        )
+    } else {
+        direct_required_item_with_detail(
+            path,
+            "pageBackground",
+            CanvasKitReplayFeature::PageBackground,
+            detail,
+        )
+    }
 }
 
 fn image_replay_detail(
@@ -1997,6 +2029,8 @@ mod tests {
 
     #[test]
     fn canvaskit_replay_plan_reports_image_payload_details() {
+        let mut resources = ResourceArena::default();
+        let background_image_id = resources.intern_image_bytes(&[137, 80, 78, 71]);
         let tree = PageLayerTree::builder(
             100.0,
             100.0,
@@ -2012,7 +2046,7 @@ mod tests {
                             border_width: 0.0,
                             gradient: None,
                             image: Some(LayerPageBackgroundImagePaint {
-                                resource_id: ImageResourceId(7),
+                                resource_id: background_image_id,
                                 fill_mode: ImageFillMode::TileHorzBottom,
                                 brightness: -10,
                                 contrast: 20,
@@ -2042,6 +2076,7 @@ mod tests {
                 ],
             ),
         )
+        .resources(resources)
         .build();
 
         let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
@@ -2120,7 +2155,7 @@ mod tests {
         assert!(detail.contains("externalImage"));
         assert!(detail.contains("missingImageData"));
 
-        let injected_tree = PageLayerTree::builder(
+        let dangling_id_tree = PageLayerTree::builder(
             100.0,
             100.0,
             LayerNode::leaf(
@@ -2143,6 +2178,45 @@ mod tests {
                 }],
             ),
         )
+        .build();
+        let dangling_plan =
+            analyze_canvaskit_replay_plan(&dangling_id_tree, CanvasKitReplayMode::Default);
+        let dangling_item = dangling_plan
+            .items
+            .iter()
+            .find(|item| item.op_type == "image")
+            .expect("dangling image resource item");
+        assert_eq!(dangling_item.status, CanvasKitReplayStatus::DirectRequired);
+        let detail = dangling_item.detail.as_deref().expect("image detail");
+        assert!(detail.contains("externalImage"));
+        assert!(detail.contains("missingImageData"));
+
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&[137, 80, 78, 71]);
+        let injected_tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![PaintOp::Image {
+                    bbox: valid_bbox(),
+                    image: LayerImagePaint {
+                        resource_id: Some(image_id),
+                        external_path: Some("/tmp/linked.gif".to_string()),
+                        text_wrap: None,
+                        fill_mode: None,
+                        original_size: None,
+                        crop: None,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        transform: ShapeTransform::default(),
+                    },
+                }],
+            ),
+        )
+        .resources(resources)
         .build();
         let injected_plan =
             analyze_canvaskit_replay_plan(&injected_tree, CanvasKitReplayMode::Default);

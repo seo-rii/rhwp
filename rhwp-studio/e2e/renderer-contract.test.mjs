@@ -472,9 +472,10 @@ for (const [opType, rustOp, runtimeCall] of [
 assertTokensInOrder(
   rustCanvaskitPolicySource,
   [
-    'PaintOp::Image { image, .. } => image_item(path, image)',
+    'PaintOp::Image { image, .. } => image_item(path, image, &self.tree.resources)',
     'fn image_item(',
-    'if image.resource_id.is_some()',
+    'resources.image_bytes(resource_id)',
+    'if has_payload',
     'direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)',
     'direct_required_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)',
   ],
