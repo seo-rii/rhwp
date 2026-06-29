@@ -283,7 +283,9 @@ fn image_fill_mode_to_u8(mode: ImageFillMode) -> u8 {
 
 pub fn serialize_border_fill(bf: &BorderFill) -> Vec<u8> {
     let mut w = ByteWriter::new();
-    w.write_u16(bf.attr).unwrap();
+    let mut attr = bf.attr;
+    attr |= bf.center_line.hwp_attr_bits();
+    w.write_u16(attr).unwrap();
 
     // 4방향 테두리 (인터리브: 종류 + 굵기 + 색상)
     for border in &bf.borders {

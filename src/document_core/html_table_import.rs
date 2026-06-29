@@ -745,6 +745,7 @@ impl DocumentCore {
             attr: 0,
             borders,
             diagonal: DiagonalLine::default(),
+            center_line: crate::model::style::CenterLine::None,
             fill,
         };
 
@@ -805,6 +806,7 @@ impl DocumentCore {
             attr: 0,
             borders,
             diagonal: DiagonalLine::default(),
+            center_line: crate::model::style::CenterLine::None,
             fill,
         };
 

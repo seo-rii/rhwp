@@ -691,6 +691,7 @@ impl DocumentCore {
                         width: 0,
                         color: 0,
                     },
+                    center_line: crate::model::style::CenterLine::None,
                     fill: Fill::default(),
                 };
                 self.document.doc_info.border_fills.push(new_bf);
@@ -1052,6 +1053,7 @@ impl DocumentCore {
                         width: 0,
                         color: 0,
                     },
+                    center_line: crate::model::style::CenterLine::None,
                     fill: Fill::default(),
                 };
                 self.document.doc_info.border_fills.push(new_bf);

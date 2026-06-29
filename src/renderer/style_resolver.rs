@@ -7,8 +7,8 @@ use super::{hwpunit_to_px, GradientFillInfo, PatternFillInfo, TabStop};
 use crate::model::document::DocInfo;
 use crate::model::image::ImageEffect;
 use crate::model::style::{
-    Alignment, BorderFill, BorderLine, Bullet, CharShape, DiagonalLine, FillType, HeadType,
-    ImageFillMode, LineSpacingType, Numbering, ParaShape, TabDef, UnderlineType,
+    Alignment, BorderFill, BorderLine, Bullet, CenterLine, CharShape, DiagonalLine, FillType,
+    HeadType, ImageFillMode, LineSpacingType, Numbering, ParaShape, TabDef, UnderlineType,
 };
 use crate::model::ColorRef;
 
@@ -241,6 +241,8 @@ pub struct ResolvedBorderStyle {
     pub diagonal_attr: u16,
     /// 대각선 정보
     pub diagonal: DiagonalLine,
+    /// 중심선 방향
+    pub center_line: CenterLine,
 }
 
 /// 해소된 이미지 채우기 정보
@@ -268,6 +270,7 @@ impl Default for ResolvedBorderStyle {
             image_fill: None,
             diagonal_attr: 0,
             diagonal: DiagonalLine::default(),
+            center_line: CenterLine::None,
         }
     }
 }
@@ -813,6 +816,7 @@ fn resolve_single_border_style(bf: &BorderFill) -> ResolvedBorderStyle {
         image_fill,
         diagonal_attr: bf.attr,
         diagonal: bf.diagonal,
+        center_line: bf.center_line,
     }
 }
 

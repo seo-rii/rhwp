@@ -17,8 +17,8 @@ use quick_xml::Writer;
 
 use crate::model::document::{DocInfo, DocProperties, Document};
 use crate::model::style::{
-    Alignment, BorderFill, BorderLine, BorderLineType, CharShape, DiagonalLine, FillType, Font,
-    HeadType, LineSpacingType, Numbering, ParaShape, Style, TabDef,
+    Alignment, BorderFill, BorderLine, BorderLineType, CenterLine, CharShape, DiagonalLine,
+    FillType, Font, HeadType, LineSpacingType, Numbering, ParaShape, Style, TabDef,
 };
 use crate::model::ColorRef;
 
@@ -197,6 +197,8 @@ fn write_border_fill<W: Write>(
     id: u16,
     bf: &BorderFill,
 ) -> Result<(), SerializeError> {
+    let attr = effective_border_fill_attr(bf);
+
     // 속성 순서 (BorderFillType.cpp:64-68): id, threeD, shadow, centerLine, breakCellSeparateLine
     start_tag_attrs(
         w,
@@ -205,15 +207,20 @@ fn write_border_fill<W: Write>(
             ("id", &(id + 1).to_string()), // HWPX 관찰: id는 1-based
             ("threeD", "0"),
             ("shadow", "0"),
-            ("centerLine", "NONE"),
+            ("centerLine", center_line_type(bf)),
             ("breakCellSeparateLine", "0"),
         ],
     )?;
 
     // 자식 순서 (BorderFillType.cpp:51-58):
     // slash, backSlash, leftBorder, rightBorder, topBorder, bottomBorder, diagonal, fillBrush
-    write_diag_line(w, "hh:slash")?;
-    write_diag_line(w, "hh:backSlash")?;
+    write_diag_line(w, "hh:slash", attr & (1 << 8) != 0, attr & (1 << 11) != 0)?;
+    write_diag_line(
+        w,
+        "hh:backSlash",
+        attr & (1 << 10) != 0,
+        attr & (1 << 12) != 0,
+    )?;
     write_border_line(w, "hh:leftBorder", &bf.borders[0])?;
     write_border_line(w, "hh:rightBorder", &bf.borders[1])?;
     write_border_line(w, "hh:topBorder", &bf.borders[2])?;
@@ -232,12 +239,39 @@ fn write_border_fill<W: Write>(
     Ok(())
 }
 
-fn write_diag_line<W: Write>(w: &mut Writer<W>, name: &str) -> Result<(), SerializeError> {
+fn write_diag_line<W: Write>(
+    w: &mut Writer<W>,
+    name: &str,
+    crooked: bool,
+    is_counter: bool,
+) -> Result<(), SerializeError> {
+    let crooked = if crooked { "1" } else { "0" };
+    let is_counter = if is_counter { "1" } else { "0" };
     empty_tag(
         w,
         name,
-        &[("type", "NONE"), ("Crooked", "0"), ("isCounter", "0")],
+        &[
+            ("type", "NONE"),
+            ("Crooked", crooked),
+            ("isCounter", is_counter),
+        ],
     )
+}
+
+fn center_line_type(bf: &BorderFill) -> &'static str {
+    effective_center_line(bf).as_hwpx()
+}
+
+fn effective_center_line(bf: &BorderFill) -> CenterLine {
+    if bf.center_line != CenterLine::None {
+        bf.center_line
+    } else {
+        CenterLine::from_hwp_attr(bf.attr)
+    }
+}
+
+fn effective_border_fill_attr(bf: &BorderFill) -> u16 {
+    bf.attr | bf.center_line.hwp_attr_bits()
 }
 
 fn write_border_line<W: Write>(

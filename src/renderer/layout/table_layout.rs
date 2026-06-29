@@ -407,6 +407,7 @@ impl LayoutEngine {
         }
 
         // ── 4-2. cellzone 배경 렌더링 (zone 전체 영역에 한 번) ──
+        let mut cellzone_diagonal_nodes = Vec::new();
         for zone in &table.zones {
             if zone.border_fill_id == 0 {
                 continue;
@@ -472,6 +473,9 @@ impl LayoutEngine {
                         zone_w,
                         zone_h,
                     );
+                    cellzone_diagonal_nodes.extend(render_cell_diagonal(
+                        tree, zone_bs, zone_x, zone_y, zone_w, zone_h,
+                    ));
                     // 이미지 채우기
                     if let Some(ref img_fill) = zone_bs.image_fill {
                         if let Some(img_content) = crate::renderer::layout::find_bin_data(
@@ -527,6 +531,10 @@ impl LayoutEngine {
             split_row_range,
             row_y_shift,
         );
+
+        if !cellzone_diagonal_nodes.is_empty() {
+            table_node.children.extend(cellzone_diagonal_nodes);
+        }
 
         // ── 6. 테두리 렌더링 ──
         table_node.children.extend(render_edge_borders(

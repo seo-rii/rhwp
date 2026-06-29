@@ -311,6 +311,7 @@ fn test_serialize_border_fill_solid() {
             },
         ],
         diagonal: DiagonalLine::default(),
+        center_line: crate::model::style::CenterLine::None,
         fill: Fill {
             fill_type: FillType::Solid,
             solid: Some(SolidFill {

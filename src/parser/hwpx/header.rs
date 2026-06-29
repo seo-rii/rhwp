@@ -772,6 +772,16 @@ fn parse_border_fill(
     doc_info: &mut DocInfo,
 ) -> Result<(), HwpxError> {
     let mut bf = BorderFill::default();
+    for attr in e.attributes().flatten() {
+        if attr.key.as_ref() == b"centerLine" {
+            bf.center_line = parse_center_line(&attr);
+            if bf.center_line == CenterLine::None {
+                bf.attr &= !(1 << 13);
+            } else {
+                bf.attr |= 1 << 13;
+            }
+        }
+    }
 
     if !is_empty_event(e) {
         let mut buf = Vec::new();
@@ -941,6 +951,8 @@ fn parse_border_fill(
                                             bf.diagonal.diagonal_type = line_type;
                                         }
                                     }
+                                    b"Crooked" => set_bit(&mut bf.attr, 8, parse_bool(&attr)),
+                                    b"isCounter" => set_bit(&mut bf.attr, 11, parse_bool(&attr)),
                                     b"width" => bf.diagonal.width = parse_diagonal_width(&attr),
                                     b"color" => bf.diagonal.color = parse_color(&attr),
                                     _ => {}
@@ -957,6 +969,8 @@ fn parse_border_fill(
                                             bf.diagonal.diagonal_type = line_type;
                                         }
                                     }
+                                    b"Crooked" => set_bit(&mut bf.attr, 10, parse_bool(&attr)),
+                                    b"isCounter" => set_bit(&mut bf.attr, 12, parse_bool(&attr)),
                                     b"width" => bf.diagonal.width = parse_diagonal_width(&attr),
                                     b"color" => bf.diagonal.color = parse_color(&attr),
                                     _ => {}
@@ -1248,6 +1262,10 @@ fn parse_border_line_type_code(attr: &quick_xml::events::attributes::Attribute) 
     }
 }
 
+fn parse_center_line(attr: &quick_xml::events::attributes::Attribute) -> CenterLine {
+    CenterLine::from_hwpx(&attr_str(attr))
+}
+
 fn set_diagonal_attr_bits(bf: &mut BorderFill, shift: u16, line_type: u8) {
     let mask = 0x07u16 << shift;
     bf.attr &= !mask;
@@ -1256,6 +1274,15 @@ fn set_diagonal_attr_bits(bf: &mut BorderFill, shift: u16, line_type: u8) {
         // DiagonalLine(type,width,color). Hancom-authored samples use value
         // 2 for a visible slash/backSlash direction bit-field.
         bf.attr |= 0x02u16 << shift;
+    }
+}
+
+fn set_bit(attr: &mut u16, bit: u16, enabled: bool) {
+    let mask = 1u16 << bit;
+    if enabled {
+        *attr |= mask;
+    } else {
+        *attr &= !mask;
     }
 }
 

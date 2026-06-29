@@ -14,8 +14,8 @@ use super::tags;
 use crate::model::bin_data::{BinData, BinDataCompression, BinDataStatus, BinDataType};
 use crate::model::document::{DocInfo, DocProperties, RawRecord};
 use crate::model::style::{
-    Alignment, BorderFill, BorderLine, BorderLineType, Bullet, CharShape, DiagonalLine, Fill,
-    FillType, Font, GradientFill, ImageFill, ImageFillMode, LineSpacingType, Numbering,
+    Alignment, BorderFill, BorderLine, BorderLineType, Bullet, CenterLine, CharShape, DiagonalLine,
+    Fill, FillType, Font, GradientFill, ImageFill, ImageFillMode, LineSpacingType, Numbering,
     NumberingHead, ParaShape, SolidFill, Style, TabDef, TabItem, UnderlineType,
 };
 
@@ -342,6 +342,7 @@ fn parse_border_fill(data: &[u8]) -> Result<BorderFill, DocInfoError> {
         attr,
         borders,
         diagonal,
+        center_line: CenterLine::from_hwp_attr(attr),
         fill,
     })
 }

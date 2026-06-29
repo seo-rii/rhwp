@@ -12625,6 +12625,7 @@ fn test_save_table_1x1() {
             width: 0,
             color: 0,
         },
+        center_line: crate::model::style::CenterLine::None,
         fill: Fill::default(),
     };
     doc.document.doc_info.border_fills.push(new_bf);
@@ -14562,6 +14563,7 @@ fn test_save_pic_in_table() {
             width: 0,
             color: 0,
         },
+        center_line: crate::model::style::CenterLine::None,
         fill: Fill::default(),
     };
     doc.document.doc_info.border_fills.push(new_bf);
