@@ -96,6 +96,11 @@ WASM 웹 빌드에서는 저작권 폰트를 포함하지 않고, 대응되는 �
 
 Windows 시스템 폰트. 운영체제에서 직접 참조한다.
 
+### ttfs/opensource/
+
+웹 fallback asset의 재현성을 위해 필요한 오픈 라이선스 원본 또는 정적 instance만 둔다.
+각 파일의 출처, 라이선스, subset 범위는 `ttfs/opensource/README.md`에 기록한다.
+
 ## 요약
 
 | 항목 | Git 포함 | 저작권 |
