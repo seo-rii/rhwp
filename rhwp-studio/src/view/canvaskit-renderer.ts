@@ -131,6 +131,8 @@ type CanvasKitClipState = {
 export class CanvasKitLayerRenderer {
   // Prevent pathological tiled fills from monopolizing the render loop.
   private static readonly MAX_IMAGE_TILE_DRAWS = 4096;
+  // A text run is laid out as one unwrapped line at its producer-provided position.
+  private static readonly MAX_SHAPED_TEXT_WIDTH = 1_000_000;
 
   private readonly resourceCache: CanvasKitResourceCache;
   private readonly surfaceCache: CanvasKitSurfaceCache;
@@ -983,6 +985,60 @@ export class CanvasKitLayerRenderer {
         }
         drawControlMarks();
         return;
+      }
+
+      const requiresScriptShaping = (op.style.superscript || op.style.subscript)
+        && Array.from(text).some((character) => {
+          const codePoint = character.codePointAt(0) ?? 0;
+          return codePoint < 0x20 || codePoint > 0x7e;
+        });
+      const canUseScriptParagraph = requiresScriptShaping
+        && !hasRatio
+        && outlineType === 0
+        && shadowType === 0
+        && !emboss
+        && !engrave
+        && shadeColor === '#ffffff'
+        && emphasisDot === 0
+        && op.style.underline === 'none'
+        && !op.style.strikethrough
+        && (!('tabLeaders' in op) || !op.tabLeaders?.length)
+        && (!('controlMarks' in op) || !op.controlMarks?.length);
+      if (canUseScriptParagraph) {
+        let paragraphDrawn = false;
+        try {
+          const textStyle = new this.canvasKit.TextStyle({
+            color: parseCanvasKitCssColor(this.canvasKit, op.style.color),
+            fontSize,
+            fontFamilies: [this.fontRegistry.resolveFamily(op.style.fontFamily)],
+          });
+          const paragraphStyle = new this.canvasKit.ParagraphStyle({
+            maxLines: 1,
+            textStyle,
+          });
+          const builder = this.canvasKit.ParagraphBuilder.MakeFromFontProvider(
+            paragraphStyle,
+            this.fontProvider,
+          );
+          try {
+            builder.addText(text);
+            const paragraph = builder.build();
+            try {
+              paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH);
+              canvas.drawParagraph(paragraph, originX, originY - fontSize);
+              paragraphDrawn = true;
+            } finally {
+              paragraph.delete();
+            }
+          } finally {
+            builder.delete();
+          }
+        } catch {
+          paragraphDrawn = false;
+        }
+        if (paragraphDrawn) {
+          return;
+        }
       }
 
       if (textWidth > 0 && shadeColor !== '#ffffff') {

@@ -1522,6 +1522,22 @@ for (const [label, source] of [
     `${label} text replay must preserve shared superscript/subscript metrics`,
   );
 }
+const canvaskitTextRun = extractMethodBody(canvaskitSource, 'renderTextRun');
+assertTokensInOrder(
+  canvaskitTextRun,
+  [
+    'const requiresScriptShaping = (op.style.superscript || op.style.subscript)',
+    'const canUseScriptParagraph = requiresScriptShaping',
+    'this.canvasKit.ParagraphBuilder.MakeFromFontProvider(',
+    'this.fontProvider',
+    'builder.addText(text)',
+    'paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH)',
+    'canvas.drawParagraph(paragraph, originX, originY - fontSize)',
+    'paragraph.delete()',
+    'builder.delete()',
+  ],
+  'CanvasKit must shape complex superscript/subscript text through the registered font provider',
+);
 for (const geometryHelperName of [
   'angleToCanvasCoords',
   'arrowHeadShape',
