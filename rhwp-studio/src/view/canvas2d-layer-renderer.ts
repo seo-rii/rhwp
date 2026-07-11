@@ -84,6 +84,7 @@ import {
   textDecorationEmphasisMark,
   textDecorationEmphasisPosition,
   textDecorationLineY,
+  textScriptMetrics,
 } from './text-replay-utils';
 
 type OverlayClip = {
@@ -811,7 +812,12 @@ export class Canvas2DLayerRenderer {
     const decorationsAreMirrors = op.legacyVisuals?.decorations === 'mirror';
     const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
-    const fontSize = op.style.fontSize || 12;
+    const baseFontSize = op.style.fontSize || 12;
+    const { fontSize, baselineShift } = textScriptMetrics(
+      baseFontSize,
+      op.style.superscript,
+      op.style.subscript,
+    );
     const text = op.displayText ?? mapPuaDisplayText(op.text);
     const positions = op.displayPositions
       ?? (text === op.text ? op.positions : estimateDisplayTextPositions(text, op.style));
@@ -1006,9 +1012,9 @@ export class Canvas2DLayerRenderer {
       const cy = op.bbox.y + op.bbox.height / 2;
       ctx.translate(cx, cy);
       ctx.rotate((textRotation * Math.PI) / 180);
-      drawClusters(-op.bbox.width / 2, -op.bbox.height / 2 + op.baseline);
+      drawClusters(-op.bbox.width / 2, -op.bbox.height / 2 + op.baseline + baselineShift);
     } else {
-      drawClusters(op.bbox.x, op.bbox.y + op.baseline);
+      drawClusters(op.bbox.x, op.bbox.y + op.baseline + baselineShift);
     }
     ctx.restore();
   }

@@ -402,6 +402,8 @@ export interface LayerTextStyle {
   shadowOffsetY: number;
   emboss: boolean;
   engrave: boolean;
+  superscript: boolean;
+  subscript: boolean;
   emphasisDot: number;
   underlineColor: string;
   strikeColor: string;

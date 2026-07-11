@@ -103,6 +103,7 @@ import {
   textDecorationEmphasisMark,
   textDecorationEmphasisPosition,
   textDecorationLineY,
+  textScriptMetrics,
 } from './text-replay-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
@@ -767,6 +768,12 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerTextRunOp | LayerCharOverlapOp,
   ): void {
+    const baseFontSize = op.style.fontSize || 12;
+    const { fontSize, baselineShift } = textScriptMetrics(
+      baseFontSize,
+      op.style.superscript,
+      op.style.subscript,
+    );
     const ratio = typeof op.style.ratio === 'number' && op.style.ratio > 0 ? op.style.ratio : 1;
     const hasRatio = Math.abs(ratio - 1) > 0.01;
     const outlineType = op.style.outlineType ?? 0;
@@ -781,7 +788,7 @@ export class CanvasKitLayerRenderer {
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
     const primaryObjects = this.makeTextObjects(
       op.style.fontFamily,
-      op.style.fontSize,
+      fontSize,
       op.style.bold,
       op.style.italic,
       op.style.color,
@@ -831,7 +838,7 @@ export class CanvasKitLayerRenderer {
           if (!candidate) {
             candidate = this.makeTextObjects(
               family,
-              op.style.fontSize,
+              fontSize,
               op.style.bold,
               op.style.italic,
               op.style.color,
@@ -850,7 +857,7 @@ export class CanvasKitLayerRenderer {
       clusterFonts.push(selectedFont);
       clusterFontKeys.push([
         this.fontRegistry.resolveFamily(selectedFontFamily),
-        op.style.fontSize.toFixed(3),
+        fontSize.toFixed(3),
         op.style.bold ? 'bold' : 'normal',
         op.style.italic ? 'italic' : 'upright',
       ].join('|'));
@@ -981,7 +988,7 @@ export class CanvasKitLayerRenderer {
       if (textWidth > 0 && shadeColor !== '#ffffff') {
         const shadePaint = this.makePaint(shadeColor, 'fill');
         canvas.drawRect(
-          this.canvasKit.XYWHRect(originX, originY - op.style.fontSize, textWidth, op.style.fontSize * 1.2),
+          this.canvasKit.XYWHRect(originX, originY - fontSize, textWidth, fontSize * 1.2),
           shadePaint,
         );
         shadePaint.delete();
@@ -1077,7 +1084,7 @@ export class CanvasKitLayerRenderer {
       };
 
       if (emboss || engrave) {
-        const offset = Math.max(op.style.fontSize / 20, 1);
+        const offset = Math.max(fontSize / 20, 1);
         const firstPaint = this.makePaint(emboss ? '#ffffff' : '#808080', 'fill');
         const secondPaint = this.makePaint(emboss ? '#808080' : '#ffffff', 'fill');
         drawPass(-offset, -offset, firstPaint);
@@ -1095,7 +1102,7 @@ export class CanvasKitLayerRenderer {
         if (outlineType > 0) {
           const fillPaint = this.makePaint('#ffffff', 'fill');
           const strokePaint = this.makePaint(op.style.color, 'stroke');
-          strokePaint.setStrokeWidth(Math.max(op.style.fontSize / 25, 0.5));
+          strokePaint.setStrokeWidth(Math.max(fontSize / 25, 0.5));
           drawPass(0, 0, fillPaint, strokePaint);
           fillPaint.delete();
           strokePaint.delete();
@@ -1105,14 +1112,14 @@ export class CanvasKitLayerRenderer {
       }
 
       if (emphasisDot > 0) {
-        const dotSize = textDecorationEmphasisSize(op.style.fontSize);
+        const dotSize = textDecorationEmphasisSize(fontSize);
         const dotChar = textDecorationEmphasisMark(emphasisDot);
         for (const position of positions.slice(0, -1)) {
           const markPosition = textDecorationEmphasisPosition(
             originX,
             originY,
             position,
-            op.style.fontSize,
+            fontSize,
             ratio,
           );
           this.drawEmphasisMark(
@@ -1134,14 +1141,14 @@ export class CanvasKitLayerRenderer {
       if (!decorationsAreMirrors && op.style.underline !== 'none') {
         const underlinePaint = this.makePaint(op.style.underlineColor || op.style.color, 'stroke');
         underlinePaint.setStrokeWidth(1);
-        const y = textDecorationLineY('underline', op.style.underline, originY, op.style.fontSize);
+        const y = textDecorationLineY('underline', op.style.underline, originY, fontSize);
         canvas.drawLine(originX, y, originX + textWidth, y, underlinePaint);
         underlinePaint.delete();
       }
       if (!decorationsAreMirrors && op.style.strikethrough) {
         const strikePaint = this.makePaint(op.style.strikeColor || op.style.color, 'stroke');
         strikePaint.setStrokeWidth(1);
-        const y = textDecorationLineY('strikethrough', undefined, originY, op.style.fontSize);
+        const y = textDecorationLineY('strikethrough', undefined, originY, fontSize);
         canvas.drawLine(originX, y, originX + textWidth, y, strikePaint);
         strikePaint.delete();
       }
@@ -1156,10 +1163,10 @@ export class CanvasKitLayerRenderer {
       canvas.save();
       canvas.translate(cx, cy);
       canvas.rotate(textRotation, 0, 0);
-      drawClusters(-op.bbox.width / 2, -op.bbox.height / 2 + op.baseline);
+      drawClusters(-op.bbox.width / 2, -op.bbox.height / 2 + op.baseline + baselineShift);
       canvas.restore();
     } else {
-      drawClusters(op.bbox.x, op.bbox.y + op.baseline);
+      drawClusters(op.bbox.x, op.bbox.y + op.baseline + baselineShift);
     }
 
     for (const { paint, font, typeface } of textObjectsByFamily.values()) {

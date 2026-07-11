@@ -72,6 +72,26 @@ export function textDecorationEmphasisPosition(
   };
 }
 
+export function textScriptMetrics(
+  baseFontSize: number,
+  superscript: boolean,
+  subscript: boolean,
+): { fontSize: number; baselineShift: number } {
+  if (superscript) {
+    return {
+      fontSize: baseFontSize * 0.7,
+      baselineShift: -baseFontSize * 0.3,
+    };
+  }
+  if (subscript) {
+    return {
+      fontSize: baseFontSize * 0.7,
+      baselineShift: baseFontSize * 0.15,
+    };
+  }
+  return { fontSize: baseFontSize, baselineShift: 0 };
+}
+
 function puaOverlapDigit(ch: string): [number, number] | null {
   const cp = ch.codePointAt(0) ?? 0;
   if (cp >= 0xF0289 && cp <= 0xF0291) {

@@ -2040,6 +2040,8 @@ fn paint_text_style_to_value(style: &PaintTextStyle) -> JsValue {
     set_number(&value, "shadowOffsetY", style.shadow_offset_y);
     set_bool(&value, "emboss", style.emboss);
     set_bool(&value, "engrave", style.engrave);
+    set_bool(&value, "superscript", style.superscript);
+    set_bool(&value, "subscript", style.subscript);
     set_number(&value, "emphasisDot", style.emphasis_dot as f64);
     set_string(
         &value,
@@ -3826,6 +3828,8 @@ mod tests {
         assert_same_number(&json_paint_style, &js_paint_style, "fontSize");
         assert_same_string(&json_paint_style, &js_paint_style, "color");
         assert_same_bool(&json_paint_style, &js_paint_style, "bold");
+        assert_same_bool(&json_paint_style, &js_paint_style, "superscript");
+        assert_same_bool(&json_paint_style, &js_paint_style, "subscript");
         assert_same_number(&json_paint_style, &js_paint_style, "ratio");
         assert_same_number(
             &prop(&json_text, "charOverlap"),

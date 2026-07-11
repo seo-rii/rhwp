@@ -1494,6 +1494,34 @@ assert(
     && extractMethodBody(canvaskitSource, 'renderTextDecoration').includes('textDecorationLineY('),
   'Canvas2D and CanvasKit text decoration replay must share underline/strike positioning',
 );
+assert.equal(
+  layerTypesSource.includes('superscript: boolean;')
+    && layerTypesSource.includes('subscript: boolean;'),
+  true,
+  'browser layer text style must retain superscript and subscript paint semantics',
+);
+assert.equal(
+  textReplayUtilsSource.includes('export function textScriptMetrics('),
+  true,
+  'script font scaling and baseline policy must live in shared native-ready text helpers',
+);
+for (const [label, source] of [
+  ['Canvas2D', canvas2dSource],
+  ['CanvasKit', canvaskitSource],
+]) {
+  const renderTextRun = extractMethodBody(source, 'renderTextRun');
+  assertTokensInOrder(
+    renderTextRun,
+    [
+      'const baseFontSize = op.style.fontSize || 12',
+      'textScriptMetrics(',
+      'op.style.superscript',
+      'op.style.subscript',
+      'baselineShift',
+    ],
+    `${label} text replay must preserve shared superscript/subscript metrics`,
+  );
+}
 for (const geometryHelperName of [
   'angleToCanvasCoords',
   'arrowHeadShape',
