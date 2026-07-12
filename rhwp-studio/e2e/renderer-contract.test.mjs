@@ -800,6 +800,34 @@ assert(
   'renderer baseline report must preserve per-surface CanvasKit failure reasons',
 );
 assert(
+  extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getCanvasKitReplayPlan')
+    && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getPatternDiagnostics')
+    && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextVariantSelectionDiagnostics')
+    && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextV2ValidationDiagnostics'),
+  'browser baseline must capture replay-plan, pattern, runtime variant, and v2 validation diagnostics',
+);
+assert(
+  rendererBaselineSource.includes("code: 'replayPlanUnavailable'")
+    && rendererBaselineSource.includes("code: 'replayPlanEmpty'")
+    && rendererBaselineSource.includes("code: 'replayPlanContractMismatch'")
+    && rendererBaselineSource.includes("code: 'hiddenOverlayViolation'")
+    && rendererBaselineSource.includes("code: 'compatOverlayItem'")
+    && rendererBaselineSource.includes("code: 'textV2ValidationIssue'")
+    && rendererBaselineSource.includes("code: 'runtimeVariantSelectionConflict'")
+    && rendererBaselineSource.includes("code: 'planRuntimeVariantMismatch'")
+    && rendererBaselineSource.includes('...planSelections.keys()')
+    && rendererBaselineSource.includes('...runtimeSelections.keys()')
+    && rendererBaselineSource.includes('hardSafetyGateAndReportInventory'),
+  'browser baseline must hard-gate invalid plans, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
+);
+assert(
+  rendererBaselineDriverSource.includes('CanvasKit Replay Diagnostics')
+    && rendererBaselineDriverSource.includes('Replay Reason Inventory')
+    && rendererBaselineDriverSource.includes('planReasonCounts')
+    && rendererBaselineDriverSource.includes('rejectedReasonCounts'),
+  'renderer baseline markdown report must expose CanvasKit fallback and rejection reason inventories',
+);
+assert(
   packageJson.scripts['e2e:baseline:headless']?.includes('../scripts/renderer_baseline.py')
     && packageJson.scripts['e2e:baseline:headless']?.includes('--skip-native')
     && packageJson.scripts['e2e:baseline:headless']?.includes('--browser-mode headless'),

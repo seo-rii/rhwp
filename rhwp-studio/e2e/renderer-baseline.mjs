@@ -156,23 +156,67 @@ async function resetRendererDiagnostics(page) {
     const pageRenderer = window.__canvasView?.pageRenderer;
     pageRenderer?.canvas2dRenderer?.resetImageEffectDiagnostics?.();
     pageRenderer?.canvaskitRenderer?.resetImageEffectDiagnostics?.();
+    pageRenderer?.canvaskitRenderer?.resetPatternDiagnostics?.();
   });
 }
 
-async function readRendererDiagnostics(page) {
-  return await page.evaluate(() => {
+async function readRendererDiagnostics(page, pageIndex, backendKey) {
+  return await page.evaluate(({ capturePageIndex, captureBackend }) => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvas2d = pageRenderer?.canvas2dRenderer?.getImageEffectDiagnostics?.() ?? null;
-    const canvaskit = pageRenderer?.canvaskitRenderer?.getImageEffectDiagnostics?.() ?? null;
-    const surfaceDiagnostics = pageRenderer?.canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    const canvaskit = canvaskitRenderer?.getImageEffectDiagnostics?.() ?? null;
+    const patternDiagnostics = canvaskitRenderer?.getPatternDiagnostics?.() ?? null;
+    const surfaceDiagnostics = canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null;
+    const runtimeRenderer = captureBackend.startsWith('canvaskit')
+      ? canvaskitRenderer
+      : pageRenderer?.canvas2dRenderer;
+    const rawTextVariants = runtimeRenderer?.getTextVariantSelectionDiagnostics?.() ?? [];
+    const textVariantsByGroup = new Map();
+    const textVariantConflicts = [];
+    for (const report of rawTextVariants) {
+      const group = String(report.equivalenceGroup ?? '');
+      const existing = textVariantsByGroup.get(group);
+      if (!existing) {
+        textVariantsByGroup.set(group, report);
+        continue;
+      }
+      if (JSON.stringify(existing) !== JSON.stringify(report)) {
+        textVariantConflicts.push({
+          equivalenceGroup: group,
+          first: existing,
+          repeated: report,
+        });
+      }
+    }
+    const textVariants = [...textVariantsByGroup.values()];
+    const textV2Validation = runtimeRenderer?.getTextV2ValidationDiagnostics?.() ?? [];
+    let replayPlan = null;
+    let replayPlanError = null;
+    if (captureBackend.startsWith('canvaskit')) {
+      try {
+        const mode = captureBackend === 'canvaskit-compat' ? 'compat' : 'default';
+        const rawPlan = window.__wasm?.getCanvasKitReplayPlan?.(capturePageIndex, mode);
+        replayPlan = typeof rawPlan === 'string' ? JSON.parse(rawPlan) : rawPlan ?? null;
+      } catch (error) {
+        replayPlanError = error instanceof Error ? error.message : String(error);
+      }
+    }
     return {
       imageEffects: {
         canvas2d,
         canvaskit,
       },
+      patternDiagnostics,
       surfaceDiagnostics,
+      replayPlan,
+      replayPlanError,
+      textVariants,
+      textVariantDuplicateReports: rawTextVariants.length - textVariants.length,
+      textVariantConflicts,
+      textV2Validation,
     };
-  });
+  }, { capturePageIndex: pageIndex, captureBackend: backendKey });
 }
 
 const options = parseArgs();
@@ -197,6 +241,7 @@ if (samples.length === 0) {
 fs.mkdirSync(options.output, { recursive: true });
 
 const results = [];
+const hardGateViolations = [];
 const browser = await launchBrowser();
 const page = await createPage(browser, 1280, 900);
 
@@ -227,11 +272,121 @@ try {
         const screenshotStartedAt = performance.now();
         await captureCanvasScreenshot(page, outputPath, `Baseline ${backend.key} (${profile})`);
         const screenshotMs = performance.now() - screenshotStartedAt;
-        const diagnostics = await readRendererDiagnostics(page);
+        const diagnostics = await readRendererDiagnostics(page, sample.page, backend.key);
+        if (backend.key.startsWith('canvaskit')) {
+          const replayPlan = diagnostics.replayPlan;
+          const replaySummary = replayPlan?.summary;
+          if (diagnostics.replayPlanError) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'replayPlanUnavailable',
+              detail: diagnostics.replayPlanError,
+            });
+          } else if (!replayPlan || !replaySummary || replaySummary.totalItems <= 0) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'replayPlanEmpty',
+              detail: JSON.stringify(replayPlan),
+            });
+          }
+          if (
+            replayPlan
+            && (replayPlan.hiddenCanvas2dOverlayAllowed !== false || replayPlan.directReplayRequired !== true)
+          ) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'replayPlanContractMismatch',
+              detail: JSON.stringify({
+                hiddenCanvas2dOverlayAllowed: replayPlan.hiddenCanvas2dOverlayAllowed,
+                directReplayRequired: replayPlan.directReplayRequired,
+              }),
+            });
+          }
+          if ((replaySummary?.hiddenOverlayViolations ?? 0) > 0) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'hiddenOverlayViolation',
+              detail: String(replaySummary.hiddenOverlayViolations),
+            });
+          }
+          if ((replaySummary?.compatOverlayItems ?? 0) > 0) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'compatOverlayItem',
+              detail: String(replaySummary.compatOverlayItems),
+            });
+          }
+          if (diagnostics.textV2Validation.length > 0) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'textV2ValidationIssue',
+              detail: JSON.stringify(diagnostics.textV2Validation),
+            });
+          }
+          if (diagnostics.textVariantConflicts.length > 0) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'runtimeVariantSelectionConflict',
+              detail: JSON.stringify(diagnostics.textVariantConflicts),
+            });
+          }
+          const planSelections = new Map(
+            (replayPlan?.textVariants ?? []).map((report) => [
+              String(report.equivalenceGroup ?? ''),
+              report.selectedVariantId ?? null,
+            ]),
+          );
+          const runtimeSelections = new Map(
+            diagnostics.textVariants.map((report) => [
+              String(report.equivalenceGroup ?? ''),
+              report.selectedVariantId ?? null,
+            ]),
+          );
+          const selectionGroups = new Set([
+            ...planSelections.keys(),
+            ...runtimeSelections.keys(),
+          ]);
+          for (const equivalenceGroup of selectionGroups) {
+            const planVariantId = planSelections.get(equivalenceGroup);
+            const runtimeVariantId = runtimeSelections.get(equivalenceGroup);
+            if (
+              !planSelections.has(equivalenceGroup)
+              || !runtimeSelections.has(equivalenceGroup)
+              || runtimeVariantId !== planVariantId
+            ) {
+              hardGateViolations.push({
+                sampleId: sample.id,
+                backend: backend.key,
+                profile,
+                code: 'planRuntimeVariantMismatch',
+                detail: JSON.stringify({
+                  equivalenceGroup,
+                  planVariantId: planVariantId ?? null,
+                  runtimeVariantId: runtimeVariantId ?? null,
+                }),
+              });
+            }
+          }
+        }
         results.push({
           sampleId: sample.id,
           file: sample.file,
           category: sample.category,
+          page: sample.page,
           backend: backend.key,
           profile,
           canvaskitSurface: backend.key.startsWith('canvaskit') ? options.canvaskitSurface : null,
@@ -441,6 +596,118 @@ const browserBackendParity = {
   comparisons: browserBackendComparisons,
 };
 
+const replaySummaryByBackendProfile = new Map();
+for (const result of results) {
+  if (!result.backend.startsWith('canvaskit')) {
+    continue;
+  }
+  const key = `${result.backend}\u0000${result.profile}`;
+  if (!replaySummaryByBackendProfile.has(key)) {
+    replaySummaryByBackendProfile.set(key, {
+      backend: result.backend,
+      profile: result.profile,
+      captureCount: 0,
+      totalItems: 0,
+      directItems: 0,
+      directRequiredItems: 0,
+      compatOverlayItems: 0,
+      textFallbackItems: 0,
+      unsupportedItems: 0,
+      hiddenOverlayViolations: 0,
+      hardGateViolationCount: 0,
+      patternSurfaceFailures: 0,
+      textV2ValidationIssues: 0,
+      runtimeDuplicateVariantReports: 0,
+      runtimeVariantSelectionConflicts: 0,
+      planStatusCounts: {},
+      planReasonCounts: {},
+      selectedReasonCounts: {},
+      rejectedReasonCounts: {},
+      textV2IssueCounts: {},
+    });
+  }
+  const summary = replaySummaryByBackendProfile.get(key);
+  const diagnostics = result.diagnostics ?? {};
+  const replayPlan = diagnostics.replayPlan ?? {};
+  const planSummary = replayPlan.summary ?? {};
+  summary.captureCount += 1;
+  for (const field of [
+    'totalItems',
+    'directItems',
+    'directRequiredItems',
+    'compatOverlayItems',
+    'textFallbackItems',
+    'unsupportedItems',
+    'hiddenOverlayViolations',
+  ]) {
+    const value = planSummary[field];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      summary[field] += value;
+    }
+  }
+  summary.patternSurfaceFailures += diagnostics.patternDiagnostics?.surfaceFailures ?? 0;
+  summary.textV2ValidationIssues += diagnostics.textV2Validation?.length ?? 0;
+  summary.runtimeDuplicateVariantReports += diagnostics.textVariantDuplicateReports ?? 0;
+  summary.runtimeVariantSelectionConflicts += diagnostics.textVariantConflicts?.length ?? 0;
+
+  for (const item of replayPlan.items ?? []) {
+    const status = String(item.status ?? 'unknown');
+    const reason = String(item.reason ?? 'unknown');
+    summary.planStatusCounts[status] = (summary.planStatusCounts[status] ?? 0) + 1;
+    summary.planReasonCounts[reason] = (summary.planReasonCounts[reason] ?? 0) + 1;
+  }
+  for (const report of diagnostics.textVariants ?? []) {
+    const selectedReason = String(report.selectedReason ?? 'unknown');
+    summary.selectedReasonCounts[selectedReason] = (
+      summary.selectedReasonCounts[selectedReason] ?? 0
+    ) + 1;
+    for (const rejected of report.rejectedVariants ?? []) {
+      for (const reason of rejected.reasons ?? []) {
+        const rejectedReason = String(reason);
+        summary.rejectedReasonCounts[rejectedReason] = (
+          summary.rejectedReasonCounts[rejectedReason] ?? 0
+        ) + 1;
+      }
+    }
+  }
+  for (const issue of diagnostics.textV2Validation ?? []) {
+    const issueCode = String(issue.code ?? 'unknown');
+    summary.textV2IssueCounts[issueCode] = (summary.textV2IssueCounts[issueCode] ?? 0) + 1;
+  }
+}
+
+for (const violation of hardGateViolations) {
+  const key = `${violation.backend}\u0000${violation.profile}`;
+  const summary = replaySummaryByBackendProfile.get(key);
+  if (summary) {
+    summary.hardGateViolationCount += 1;
+  }
+}
+
+const replaySummaryRows = [...replaySummaryByBackendProfile.values()]
+  .sort((left, right) => (
+    left.profile.localeCompare(right.profile) || left.backend.localeCompare(right.backend)
+  ));
+for (const summary of replaySummaryRows) {
+  for (const field of [
+    'planStatusCounts',
+    'planReasonCounts',
+    'selectedReasonCounts',
+    'rejectedReasonCounts',
+    'textV2IssueCounts',
+  ]) {
+    summary[field] = Object.fromEntries(
+      Object.entries(summary[field]).sort(([left], [right]) => left.localeCompare(right)),
+    );
+  }
+}
+const canvaskitReplayDiagnostics = {
+  mode: 'hardSafetyGateAndReportInventory',
+  hardGateViolationCount: hardGateViolations.length,
+  hardGateViolations,
+  summaryByBackendProfile: replaySummaryRows,
+};
+
 fs.writeFileSync(
   reportPath,
   JSON.stringify(
@@ -451,9 +718,15 @@ fs.writeFileSync(
       canvaskitSurface: options.canvaskitSurface,
       results,
       browserBackendParity,
+      canvaskitReplayDiagnostics,
     },
     null,
     2,
   ),
 );
 console.log(`\n[baseline] browser report: ${reportPath}`);
+if (hardGateViolations.length > 0) {
+  throw new Error(
+    `CanvasKit baseline safety gate failed with ${hardGateViolations.length} violation(s): ${JSON.stringify(hardGateViolations.slice(0, 5))}`,
+  );
+}

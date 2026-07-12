@@ -452,6 +452,9 @@ def write_reports(
     parity_data = None
     if parity_report and parity_report.exists():
         parity_data = json.loads(parity_report.read_text(encoding="utf-8"))
+    browser_replay_diagnostics = (
+        browser_data.get("canvaskitReplayDiagnostics") if browser_data else None
+    ) or {}
 
     browser_performance_summary: list[dict] = []
     browser_surface_diagnostics_summary: list[dict] = []
@@ -620,6 +623,7 @@ def write_reports(
         "browser": browser_performance_summary,
         "canvaskitSurface": effective_canvaskit_surface,
         "canvaskitSurfaceDiagnostics": browser_surface_diagnostics_summary,
+        "canvaskitReplayDiagnostics": browser_replay_diagnostics,
     }
     (output_root / "performance-summary.json").write_text(
         json.dumps(performance_summary, indent=2, ensure_ascii=False),
@@ -781,6 +785,77 @@ def write_reports(
                     )
                     + " |"
                 )
+
+    replay_summary_rows = browser_replay_diagnostics.get("summaryByBackendProfile") or []
+    if replay_summary_rows:
+        lines.extend(
+            [
+                "",
+                "## CanvasKit Replay Diagnostics",
+                "",
+                f"- mode: `{browser_replay_diagnostics.get('mode', '-')}`",
+                f"- hard-gate violations: {browser_replay_diagnostics.get('hardGateViolationCount', 0)}",
+                "",
+                "| Backend | Profile | Captures | Items | Direct | Direct Required | Text Fallback | Unsupported | Compat Overlay | Hidden Overlay Violations | Pattern Surface Failures | Runtime Duplicate Reports | Runtime Selection Conflicts | v2 Issues |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for item in replay_summary_rows:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        item.get("backend", "-"),
+                        item.get("profile", "-"),
+                        format_count(item.get("captureCount")),
+                        format_count(item.get("totalItems")),
+                        format_count(item.get("directItems")),
+                        format_count(item.get("directRequiredItems")),
+                        format_count(item.get("textFallbackItems")),
+                        format_count(item.get("unsupportedItems")),
+                        format_count(item.get("compatOverlayItems")),
+                        format_count(item.get("hiddenOverlayViolations")),
+                        format_count(item.get("patternSurfaceFailures")),
+                        format_count(item.get("runtimeDuplicateVariantReports")),
+                        format_count(item.get("runtimeVariantSelectionConflicts")),
+                        format_count(item.get("textV2ValidationIssues")),
+                    ]
+                )
+                + " |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "### Replay Reason Inventory",
+                "",
+                "| Backend | Profile | Plan Statuses | Plan Reasons | Runtime Selected Reasons | Runtime Rejected Reasons | v2 Issue Codes |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        for item in replay_summary_rows:
+            reason_columns = []
+            for field in (
+                "planStatusCounts",
+                "planReasonCounts",
+                "selectedReasonCounts",
+                "rejectedReasonCounts",
+                "textV2IssueCounts",
+            ):
+                counts = item.get(field) or {}
+                reason_columns.append(
+                    "<br>".join(
+                        f"`{reason}`: {count}" for reason, count in sorted(counts.items())
+                    )
+                    or "-"
+                )
+            lines.append(
+                "| "
+                + " | ".join(
+                    [item.get("backend", "-"), item.get("profile", "-"), *reason_columns]
+                )
+                + " |"
+            )
 
     browser_backend_parity = (
         browser_data.get("browserBackendParity") if browser_data else None

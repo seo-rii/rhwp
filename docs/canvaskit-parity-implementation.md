@@ -373,6 +373,16 @@ The working order is:
    corpus diffs, failure diagnostics, fallback/unsupported inventories, and
    performance/memory smoke results are stable enough to become hard gates.
 
+The browser baseline now records the Rust replay plan, CanvasKit runtime text
+variant selections/rejections, v2 validation issues, pattern diagnostics, and
+surface diagnostics for every CanvasKit capture. Hidden-overlay items,
+hidden-overlay violations, invalid direct-only plan contracts, empty plans, and
+v2 validation issues are hard failures. Runtime reports are deduplicated by
+equivalence group; conflicting repeated selections and Rust-plan/runtime
+selected-variant mismatches also fail. Intentional TextRun fallback,
+direct-required items, unsupported items, and their exact reasons remain an
+inventory in the JSON and Markdown reports.
+
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload
@@ -1009,10 +1019,13 @@ Non-goals for the remaining CanvasKit parity work:
 
 Recommended implementation order from this point:
 
-No generic source-only work remains ahead of the proof/corpus gates below. Each
-new implementation commit should start from a concrete fixture, corpus document,
-backend proof, or malformed payload that the current branch does not already
-cover.
+Replay diagnostics are now collected from the existing corpus. Two concrete
+test-infrastructure gaps remain before the proof/corpus-only register below is
+fully accurate: capture non-zero pages from checked-in multi-page documents,
+and add the checked-in HWP/HWPX diagonal-cell pair to CanvasKit browser parity.
+Each later implementation commit should start from a concrete fixture, corpus
+document, backend proof, or malformed payload that the current branch does not
+already cover.
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,
