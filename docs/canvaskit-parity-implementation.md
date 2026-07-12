@@ -709,6 +709,18 @@ Expected code shape:
 - checked-in strict JSON/JS/v2 validator coverage now pins both explicit sRGB
   color-space payloads and producer-defaulted payloads where `colorSpace` is
   omitted and the renderer diagnostics report `colorSpaceDefaulted=srgb`.
+- `decode_font_bitmap_glyph_payload` now follows the actual font-native producer
+  path: `ttf-parser` selects a requested `sbix`/bitmap-table strike, the producer
+  accepts only a dimension-verified encoded PNG, interns those bytes in
+  `ResourceArena`, and fills the existing producer-resolved strike contract.
+  Raw mono/gray/BGRA table formats remain deterministic
+  `unsupportedRasterFormat` cases until a canonical PNG/RGBA normalization path
+  is justified by a real fixture.
+- `RHWPBitmapSvgGlyphSmoke.ttf`, generated reproducibly by
+  `scripts/generate_font_glyph_payload_fixture.py`, provides the checked-in PNG
+  strike proof. Its unit fixture verifies strict payload construction and its
+  native Skia fixture verifies strict variant selection and visible replay from
+  the producer-created resource.
 
 Likely touchpoints:
 
@@ -753,6 +765,16 @@ Expected code shape:
 - checked-in strict JSON/v2 validator coverage now pins both the minimal
   payload without `intrinsicSize` and the optional-present payload with
   positive intrinsic geometry.
+- `decode_font_svg_glyph_payload` now follows the actual OpenType `SVG ` producer
+  path. It bounds and decompresses SVGZ input, requires UTF-8, validates the
+  existing static-safe element/attribute subset, parses the complete XML
+  document, resolves a positive root `viewBox`, and only then interns the
+  vector resource. Unsafe or malformed font documents fail before resource
+  insertion.
+- The same generated font carries a compressed safe SVG glyph plus unsafe and
+  malformed negative controls. Unit fixtures cover producer acceptance/reject
+  behavior and native Skia replays the producer-created static resource through
+  strict `SvgGlyph` selection.
 
 Likely touchpoints:
 
@@ -962,8 +984,8 @@ Non-goals for the remaining CanvasKit parity work:
 | --- | --- | --- | --- |
 | COLRv1 stage 4 follow-up | `sourceOver` composite payloads validate and replay where supported | decide whether any additional blend/composite modes are worth enabling; otherwise keep unsupported modes as deterministic fallback/reject cases | any new mode must stay inside glyph-payload composition and must not change text variant selection, global paint order, or scope semantics |
 | COLRv1 stage 5 follow-up | run-local `clip` graph nodes and reusable DAG child refs validate and replay where supported | decide whether reusable-node memoization or additional clip primitives are needed; otherwise keep remaining unsupported graph nodes as deterministic fallback/reject cases | any new graph primitive must stay inside the glyph payload and must not introduce page/layer clip scopes or cross-scope variants |
-| BitmapGlyph corpus widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, strict export feature metadata, checked-in explicit-sRGB and sRGB-default JSON/JS/v2 payload snippets, SVG/native/CanvasKit deterministic-field rejection coverage, resource-cache key coverage, and real HWP image samples in the browser baseline manifest exist | add producer-output fixtures that use the existing one-strike payload contract and cover real lowering paths beyond the hand-authored payload snippets | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
-| SvgGlyph corpus widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, strict export feature metadata, checked-in minimal and intrinsic-size-present JSON/v2 payload snippets, SVG/native/CanvasKit static-contract rejection coverage, resource-cache key coverage, and real HWP equation/vector/form samples in the browser baseline manifest exist | add producer-output fixtures for sanitized static vector resources and real lowering paths beyond the hand-authored payload snippets | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
+| BitmapGlyph corpus widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, strict export feature metadata, checked-in explicit-sRGB and sRGB-default JSON/JS/v2 payload snippets, SVG/native/CanvasKit deterministic-field rejection coverage, resource-cache key coverage, real HWP image samples in the browser baseline manifest, and a generated `sbix` PNG-strike producer fixture with native strict replay exist | add real-document bitmap-font corpus only when digest-pinned bytes are available; add non-PNG table formats only with a deterministic normalization fixture | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
+| SvgGlyph corpus widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, strict export feature metadata, checked-in minimal and intrinsic-size-present JSON/v2 payload snippets, SVG/native/CanvasKit static-contract rejection coverage, resource-cache key coverage, real HWP equation/vector/form samples in the browser baseline manifest, and a generated compressed OpenType SVG producer fixture with unsafe/malformed controls and native strict replay exist | add real-document static SVG-in-font corpus only when sanitized, digest-pinned source bytes are available | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
 | Variation font strict replay | variation tuples are represented; native Skia has checked-in variable-font proof for exact axis construction, explicit default-axis replay, alternate valid axis-bound replay, glyph id, advance/bounds smoke, and invalid-axis fallback | widen native coverage with real variable-font corpus cases; keep CanvasKit fallback until its exact instance construction is proven | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
 | TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate and replay checked-in proof bytes as direct TTF and synthetic TTC faces, exact synthetic non-zero `faceIndex` replay is connected to native `GlyphRun` selection/drawing, exact-byte out-of-range `faceIndex` falls back deterministically, synthetic wrong-face/high-index/ambiguous metadata fallback controls pass, invalid exact embedded font bytes and digest mismatches reject with `exactFaceUnavailable`, and the exact-font path keeps the `u32` glyph id guard | widen native coverage with real collection fixtures and digest-pinned corpus cases; keep CanvasKit fallback until its exact face construction is proven | real collection positive/negative controls pass and renderer draws with the requested face, not a family fallback |
 | CanvasKit variation/TTC | conservative fallback remains in place | add CanvasKit-specific exact construction proof before enabling strict replay | public API path proves exact variation tuple or faceIndex construction and keeps `u32` glyph id range guard |
@@ -1002,10 +1024,11 @@ cover.
    finance-statistics, PR/task regression, and multiple promotional real
    document variants so placement and text fallback regressions have more than
    one real-document shape;
-2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
-   existing one-strike resource contract;
-3. widen strict `SvgGlyph` only with producer-output fixtures that keep the
-   sanitized static vector contract;
+2. widen strict `BitmapGlyph` beyond the generated producer proof only with
+   real-document font fixtures that keep the existing one-strike resource
+   contract;
+3. widen strict `SvgGlyph` beyond the generated producer proof only with
+   real-document font fixtures that keep the sanitized static vector contract;
 4. widen native variation replay only with real variable-font corpus fixtures
    before considering CanvasKit variation replay;
 5. widen native TTC/OTC replay only with real collection fixtures and
@@ -1023,13 +1046,16 @@ satisfied and documented in this file or in the fixture that proves it.
 
 Implementation-ready tracks:
 
-- `BitmapGlyph` corpus widening: keep image-heavy HWP samples in the
-  checked-in browser baseline manifest as placement and resource regression
-  coverage, including image-in-table, image-start anchoring, and repeated
-  header/footer image placement cases. Add producer-output strict payload
-  fixtures only when they keep the existing one-strike payload contract: one
-  producer-selected image strike, deterministic alpha/scaling/filtering, no
-  `backendDefault`, resource bytes included in cache keys, and
+- `BitmapGlyph` corpus widening: the generated `sbix` PNG-strike fixture now
+  proves font-table decoding, producer-selected resource interning, strict
+  payload construction, native selection, and visible replay. Keep image-heavy
+  HWP samples in the checked-in browser baseline manifest as placement and
+  resource regression coverage, including image-in-table, image-start
+  anchoring, and repeated header/footer image placement cases. Add
+  producer-output strict payload fixtures beyond that proof only when they keep
+  the existing one-strike payload contract: one producer-selected image strike,
+  deterministic alpha/scaling/filtering, no `backendDefault`, resource bytes
+  included in cache keys, and
   `colorSpaceDefaulted` diagnostics when sRGB is assumed. SVG strict replay now
   rejects backend-default
   filtering/scaling, missing alpha mode, missing or diagnostic-only strike
@@ -1038,9 +1064,12 @@ Implementation-ready tracks:
   negatives in strict variant selection, and CanvasKit policy covers non-finite
   transforms, missing alpha mode, backend-default filtering/scaling,
   non-positive strike ppem, and non-producer-selected strikes.
-- `SvgGlyph` corpus widening: keep equation, vector, form, table-in-textbox,
-  inner-table, header/footer, and mixed-document HWP samples in the checked-in
-  browser baseline manifest as placement and resource regression coverage. Add
+- `SvgGlyph` corpus widening: the generated compressed OpenType SVG fixture now
+  proves bounded decompression, static-safe/XML/viewBox validation, producer
+  resource interning, unsafe/malformed rejection, native selection, and visible
+  replay. Keep equation, vector, form, table-in-textbox, inner-table,
+  header/footer, and mixed-document HWP samples in the checked-in browser
+  baseline manifest as placement and resource regression coverage. Add further
   producer-output strict payload fixtures only when they keep the sanitized
   static `VectorResourceId` contract. Keep `viewBox` required, keep script,
   animation, external resources, and interactivity hard false, and keep raw

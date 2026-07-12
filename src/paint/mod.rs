@@ -22,6 +22,8 @@ pub mod builder;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod color_glyph;
 pub mod font;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod font_glyph;
 #[cfg(target_arch = "wasm32")]
 pub mod js_value;
 mod json;
@@ -47,6 +49,11 @@ pub use font::{
     FontPortability, FontPortabilityKind, FontResourceSource, FontResourceTable,
     GlyphRunReplayEligibility, LanguageTag, LocalizedName, OpenTypeFeatureSetting, ScriptTag,
     ShapeKey, ShapingEngineId, TextDirection, VariationAxisValue, WritingMode,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use font_glyph::{
+    decode_font_bitmap_glyph_payload, decode_font_svg_glyph_payload, FontBitmapGlyphDecodeError,
+    FontBitmapGlyphDecodeOptions, FontSvgGlyphDecodeError, FontSvgGlyphDecodeOptions,
 };
 pub use layer_tree::{
     CacheHint, ClipKind, ClipPolicy, LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic,

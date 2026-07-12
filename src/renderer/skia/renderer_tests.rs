@@ -5,17 +5,19 @@ use super::{
 use crate::model::image::ImageEffect;
 use crate::model::style::UnderlineType;
 use crate::paint::{
-    decode_colrv0_color_layers_payload, BinaryResourceKind, BinaryResourceRef, BitmapAlphaMode,
+    decode_colrv0_color_layers_payload, decode_font_bitmap_glyph_payload,
+    decode_font_svg_glyph_payload, BinaryResourceKind, BinaryResourceRef, BitmapAlphaMode,
     BitmapGlyphFiltering, BitmapGlyphPayload, BitmapGlyphScalingPolicy, BitmapStrikeSelection,
     CacheHint, ClipKind, ColorGlyphFormat, ColorGradientStop, ColorLayerNode, ColorLayersPayload,
     ColorLinearGradient, ColorPaintClipNode, ColorPaintCompositeMode, ColorPaintCompositeNode,
     ColorPaintGraphNode, ColorPaintGraphNodeKind, ColorPaintGraphPayload,
     ColorPaintLinearGradientPathNode, ColorPaintRadialGradientPathNode, ColorPaintSolidPathNode,
     ColorPaintSweepGradientPathNode, ColorPaintTransformNode, ColorRadialGradient,
-    ColorSweepGradient, Colrv0ColorLayersDecodeOptions, FontBlobKey, FontBlobResource,
-    FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId,
-    FontInstanceKey, FontPortability, FontResourceSource, GlyphCluster, GlyphOutlineFillRule,
-    GlyphOutlinePaintOrder, GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
+    ColorSweepGradient, Colrv0ColorLayersDecodeOptions, FontBitmapGlyphDecodeOptions, FontBlobKey,
+    FontBlobResource, FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource,
+    FontFallbackPolicyId, FontInstanceKey, FontPortability, FontResourceSource,
+    FontSvgGlyphDecodeOptions, GlyphCluster, GlyphOutlineFillRule, GlyphOutlinePaintOrder,
+    GlyphOutlinePayloadKind, GlyphOutlineStrokeCap, GlyphOutlineStrokeJoin,
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunOrientation,
     GlyphRunReplayEligibility, GlyphTransform, ImageResourceId, LayerAffineTransform, LayerBuilder,
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
@@ -4576,6 +4578,145 @@ fn native_skia_replays_checked_in_static_svg_glyph_resource_corpus() {
     assert!(
         cyan_pixels > 80,
         "checked-in SvgGlyph resource should replay static sanitized cyan geometry, cyan={cyan_pixels}"
+    );
+}
+
+#[test]
+fn native_skia_replays_font_native_bitmap_glyph_producer_output() {
+    let renderer = SkiaLayerRenderer::new();
+    let font_data = include_bytes!("../../../tests/fixtures/fonts/RHWPBitmapSvgGlyphSmoke.ttf");
+    let face = ttf_parser::Face::parse(font_data, 0).expect("bitmap/SVG fixture font parses");
+    let glyph_id = u32::from(
+        face.glyph_index('\u{E100}')
+            .expect("font-native bitmap fixture glyph")
+            .0,
+    );
+    let placement = TextRunPlacement {
+        run_to_page: LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 10.0,
+            f: 8.0,
+        },
+        baseline_y: 0.0,
+    };
+    let mut resources = ResourceArena::default();
+    let payload = decode_font_bitmap_glyph_payload(
+        font_data,
+        0,
+        glyph_id,
+        &FontBitmapGlyphDecodeOptions::new(
+            16,
+            TextSourceRange::new(0, 3),
+            GlyphRange::new(0, 1),
+            placement,
+        ),
+        &mut resources,
+    )
+    .expect("font-native bitmap glyph producer lowering");
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::BitmapGlyph, None, None);
+    outline.bitmap_glyph = Some(payload);
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        false,
+        resources,
+        BoundingBox::new(0.0, 0.0, 16.0, 16.0),
+        48.0,
+        40.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("font-native BitmapGlyph producer output render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let colored_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.green() > 90 && pixel.blue() > 100
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("font-native BitmapGlyph selection report");
+
+    assert!(
+        colored_pixels > 80,
+        "producer-lowered BitmapGlyph should replay the embedded PNG, colored={colored_pixels}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
+    );
+}
+
+#[test]
+fn native_skia_replays_font_native_static_svg_glyph_producer_output() {
+    let renderer = SkiaLayerRenderer::new();
+    let font_data = include_bytes!("../../../tests/fixtures/fonts/RHWPBitmapSvgGlyphSmoke.ttf");
+    let face = ttf_parser::Face::parse(font_data, 0).expect("bitmap/SVG fixture font parses");
+    let glyph_id = u32::from(
+        face.glyph_index('\u{E101}')
+            .expect("font-native SVG fixture glyph")
+            .0,
+    );
+    let placement = TextRunPlacement {
+        run_to_page: LayerAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 12.0,
+            f: 9.0,
+        },
+        baseline_y: 0.0,
+    };
+    let mut resources = ResourceArena::default();
+    let payload = decode_font_svg_glyph_payload(
+        font_data,
+        0,
+        glyph_id,
+        &FontSvgGlyphDecodeOptions::new(
+            TextSourceRange::new(0, 3),
+            GlyphRange::new(0, 1),
+            placement,
+        ),
+        &mut resources,
+    )
+    .expect("font-native static SVG glyph producer lowering");
+    let mut outline = glyph_outline_test_paint(GlyphOutlinePayloadKind::SvgGlyph, None, None);
+    outline.svg_glyph = Some(payload);
+    let tree = glyph_outline_variant_test_tree_with_bbox_and_resources(
+        outline,
+        false,
+        resources,
+        BoundingBox::new(0.0, 0.0, 16.0, 16.0),
+        48.0,
+        40.0,
+    );
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("font-native SvgGlyph producer output render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let cyan_pixels = count_pixels_matching(&pixmap, |pixel| {
+        pixel.alpha() > 160 && pixel.green() > 120 && pixel.blue() > 150 && pixel.red() < 80
+    });
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("font-native SvgGlyph selection report");
+
+    assert!(
+        cyan_pixels > 80,
+        "producer-lowered SvgGlyph should replay the embedded static vector, cyan={cyan_pixels}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphOutline");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphOutlineStrictProfile
     );
 }
 
