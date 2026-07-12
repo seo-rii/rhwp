@@ -503,12 +503,17 @@ P0 fixtures are required before treating the `GlyphRun` replay path as stable:
   portable, fill-only `GlyphRun`.
 - `glyphrun_canvaskit_fill_exact_font`: CanvasKit verifies the same single-face
   font blob and reaches the `drawGlyphs` path.
+- `glyphrun_canvaskit_simple_effects_exact_font`: the same exact single-face
+  path selects finite offset-shadow and binary outline passes without a
+  Canvas2D overlay. Producer eligibility, replay-plan eligibility, and runtime
+  font verification must agree.
 - `glyphrun_explicit_positions`: glyph ids and run-local positions are asserted
   exactly, with v1 `TextRun` placement still authoritative for layout.
 - `glyphrun_variant_set_multipart`: a selected variant set can contain multiple
   parts, and all parts are painted together.
-- `glyphrun_unsupported_effect_falls_back`: unsupported CanvasKit effects keep
-  `TextRun` fallback.
+- `glyphrun_unsupported_effect_falls_back`: underline, strike, emphasis,
+  emboss/engrave, shade, ratio, script, tab-leader, and non-finite shadow
+  payloads keep `TextRun` fallback.
 - `glyphrun_digest_mismatch_falls_back`: font blob digest mismatch keeps
   `TextRun` fallback.
 - `glyphrun_non_portable_font_falls_back`: `ResolvedButNotEmbedded`,
@@ -608,13 +613,14 @@ The fast CI path should keep these checks small:
   range guard. P1a adds duplicate-part rejection, synthetic fallback-font split,
   and over-tolerance `PositionAdjusted` fallback. P1.5 adds in-tolerance
   `PositionAdjusted` selection.
-- Native Skia tests: fill-only `GlyphRun`, explicit positions, and unsupported
-  effect fallback, plus small `PositionAdjusted` positive/negative coverage.
-- Studio/CanvasKit E2E: one eligible fill-only glyph replay, one digest
-  mismatch fallback, one unsupported-effect fallback, and small negative
-  capability probes for unsupported variations, font collection face index, and
-  over-tolerance `PositionAdjusted`. P1.5 adds one in-tolerance
-  `PositionAdjusted` replay probe.
+- Native Skia tests: fill/shadow/outline `GlyphRun`, explicit positions, and
+  unsupported effect fallback, plus small `PositionAdjusted` positive/negative
+  coverage.
+- Studio/CanvasKit E2E: eligible fill, finite offset-shadow, and binary outline
+  glyph replay, one digest mismatch fallback, one unsupported-effect fallback,
+  and small negative capability probes for unsupported variations, font
+  collection face index, and over-tolerance `PositionAdjusted`. P1.5 adds one
+  in-tolerance `PositionAdjusted` replay probe.
 
 Native Skia vs CanvasKit PNG fuzzy parity and larger matrices should start in a
 renderer sweep or nightly-style job, then move into the fast path only after
@@ -691,10 +697,10 @@ contract when `text.glyphOutline.colorLayers` and
    work. `glyphOutline` variants carry `anchorOpId` metadata so a sidecar
    outline can reuse the anchored `TextRun` paint-order slot without being
    exported as an ordinary `Path`.
-10. Expand `GlyphRun` parity fixtures for exact-quality, portable, fill-only
-    replay. This phase covers native Skia, CanvasKit, fallback gates,
-    multi-part variant sets, glyph-id range guards, and fuzzy cross-backend PNG
-    comparison. It does not change layout measurement.
+10. Expand `GlyphRun` parity fixtures for exact-quality, portable
+    fill/shadow/outline replay. This phase covers native Skia, CanvasKit,
+    fallback gates, multi-part variant sets, glyph-id range guards, and fuzzy
+    cross-backend PNG comparison. It does not change layout measurement.
 11. Move shaping into layout only after line breaking, fallback metrics, vertical
    metrics, and regression fixtures are stable.
 
@@ -716,6 +722,9 @@ contract when `text.glyphOutline.colorLayers` and
   above. Otherwise it replays the `TextRun` fallback. CanvasKit `default` mode
   is the native-preparation path and `compat` mode uses the same direct-replay
   backend with conservative CanvasKit policy knobs, not Canvas2D overlays.
+  The shadow/outline expansion applies to optional compatibility variants;
+  fallback-free schema-v2 strict writer emission keeps its narrower fill-only
+  gate until paint-effect requirements are explicit in that profile.
 - Canvas2D: replay `TextRun` by default. It never selects `GlyphRun` in schema
   v1. An explicit strict outline profile may select `glyphOutline` variants and
   replay their run-local paths through Canvas 2D path fill; otherwise

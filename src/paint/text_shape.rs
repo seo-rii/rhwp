@@ -1146,7 +1146,7 @@ impl<'a> TextShapeLowerer<'a> {
         if let (Some(bbox), Some(source), Some(variant), Some(shaped)) =
             (bbox, run.source.clone(), run.variant.clone(), shaped)
         {
-            if !paint_style.is_fill_only_glyph_replay() {
+            if !paint_style.is_simple_glyph_run_replay() {
                 reason = Some("unsupportedGlyphRunPaintEffect".to_string());
             } else if glyph_run_is_exportable(&shaped) {
                 let mut glyph_variant = variant;
@@ -1889,7 +1889,39 @@ mod tests {
     }
 
     #[test]
-    fn lowerer_keeps_text_fallback_when_glyph_run_effects_are_not_fill_only() {
+    fn lowerer_emits_glyph_runs_for_simple_shadow_and_outline_effects() {
+        let mut shadow_run = sourced_text_run("A");
+        shadow_run.style.shadow_type = 1;
+        shadow_run.style.shadow_offset_x = 4.0;
+        shadow_run.style.shadow_offset_y = 2.0;
+        let mut outline_run = sourced_text_run("A");
+        outline_run.style.outline_type = 1;
+
+        for (case_name, text_run) in [("shadow", shadow_run), ("outline", outline_run)] {
+            let mut root = LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 100.0, 100.0),
+                None,
+                vec![PaintOp::TextRun {
+                    bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+                    run: text_run,
+                }],
+            );
+            let report = TextShapeLowerer::new(&EmittingResolver).lower_root(&mut root);
+
+            assert_eq!(report.public_glyph_run_count(), 1, "{case_name}");
+            let LayerNodeKind::Leaf { ops, .. } = &root.kind else {
+                panic!("expected leaf root");
+            };
+            let PaintOp::GlyphRun { run, .. } = &ops[1] else {
+                panic!("expected {case_name} glyph run variant");
+            };
+            assert!(run.paint_style.is_simple_glyph_run_replay(), "{case_name}");
+            assert!(!run.paint_style.is_fill_only_glyph_replay(), "{case_name}");
+        }
+    }
+
+    #[test]
+    fn lowerer_keeps_text_fallback_when_glyph_run_effects_are_unsupported() {
         let mut text_run = sourced_text_run("A");
         text_run.style.underline = crate::model::style::UnderlineType::Bottom;
         let mut root = LayerNode::leaf(

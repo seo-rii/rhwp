@@ -358,6 +358,13 @@ The working order is:
    proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
    bitmap/SVG/color glyph payloads, and fallback-free profiles must not be
    widened until the corresponding proof fixtures exist.
+   The proved single-face CanvasKit `GlyphRun` subset includes fill, finite
+   offset shadow, and the current binary outline pass. Rust lowering, replay
+   planning, and the browser font registry use the same subset; underline,
+   strike, emphasis, emboss/engrave, shade, ratio, script, and non-finite
+   effects remain deterministic `TextRun` fallback cases. This widens optional
+   compatibility variants only; fallback-free v2 strict writer emission keeps
+   its existing fill-only gate.
 5. Treat resource/cache identity as part of correctness. Image bytes, static
    SVG fragments, font blobs, output options, replay plane, and strict sidecar
    payloads must all participate in cache keys so stale pictures cannot hide

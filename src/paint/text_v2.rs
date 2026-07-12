@@ -2121,6 +2121,48 @@ mod tests {
     }
 
     #[test]
+    fn keeps_glyph_run_shadow_and_outline_out_of_fallback_free_writer() {
+        for (case_name, shadow_type, outline_type) in [("shadow", 1, 0), ("outline", 0, 1)] {
+            let equivalence_group = format!("text-4-glyph-run-{case_name}");
+            let text = text_op(PaintVariantMeta::text_run_default(&equivalence_group));
+            let mut glyph_run = glyph_run_op(
+                PaintVariantMeta {
+                    equivalence_group: equivalence_group.clone(),
+                    variant_id: "glyphRun".to_string(),
+                    variant_kind: TextVariantKind::GlyphRun,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: None,
+                    local_paint_order: Some(0),
+                },
+                GlyphRunOrientation::Horizontal,
+            );
+            let PaintOp::GlyphRun { run, .. } = &mut glyph_run else {
+                panic!("expected glyph run");
+            };
+            run.paint_style.shadow_type = shadow_type;
+            run.paint_style.shadow_offset_x = 2.0;
+            run.paint_style.shadow_offset_y = 1.0;
+            run.paint_style.outline_type = outline_type;
+            let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, glyph_run]);
+
+            let issue_codes: Vec<_> = strict_glyph_run_text_v2_slots(&text_ops)
+                .expect_err("effectful glyph run must not widen fallback-free writer")
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+
+            assert!(
+                issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing),
+                "{case_name}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_strict_glyph_run_slot_without_strict_eligible_run() {
         let text = text_op(PaintVariantMeta::text_run_default(
             "text-4-glyph-run-missing",

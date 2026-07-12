@@ -870,7 +870,7 @@ fn canvaskit_glyph_run_replay_status(
             );
         }
     }
-    if !run.paint_style.is_fill_only_glyph_replay() {
+    if !run.paint_style.is_simple_glyph_run_replay() {
         return VariantReplayStatus::rejected(VariantRejectReason::UnsupportedPaintEffect);
     }
     if !run.shape_key.font_instance.variations.is_empty() {
@@ -2363,6 +2363,24 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_accepts_simple_glyph_run_shadow_and_outline_effects() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let mut shadow = glyph_run(face_key.clone(), Vec::new());
+        shadow.paint_style.shadow_type = 1;
+        shadow.paint_style.shadow_offset_x = 4.0;
+        shadow.paint_style.shadow_offset_y = 2.0;
+        let mut outline = glyph_run(face_key, Vec::new());
+        outline.paint_style.outline_type = 1;
+
+        for (case_name, run) in [("shadow", shadow), ("outline", outline)] {
+            let status = canvaskit_glyph_run_replay_status(&run, &resources);
+            assert!(status.replayable, "{case_name}: {status:?}");
+            assert_eq!(status.reason, None, "{case_name}");
+        }
+    }
+
+    #[test]
     fn canvaskit_accepts_position_adjusted_glyph_run_within_residual_tolerance() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
@@ -2586,6 +2604,7 @@ mod tests {
             .max_residual_after_adjustment_px = 10.0;
         let mut unsupported_paint = glyph_run(face_key, Vec::new());
         unsupported_paint.paint_style.shadow_type = 1;
+        unsupported_paint.paint_style.shadow_offset_x = f64::INFINITY;
 
         for (case_name, run, reason) in [
             (

@@ -1774,22 +1774,28 @@ impl From<&TextStyle> for PaintTextStyle {
 }
 
 impl PaintTextStyle {
-    /// Returns whether a backend may replay this text as a simple fill-only
-    /// positioned glyph run without losing HWP text effects.
-    pub fn is_fill_only_glyph_replay(&self) -> bool {
+    /// Returns whether positioned glyph replay can preserve the currently
+    /// shared fill, finite offset-shadow, and binary outline passes.
+    pub fn is_simple_glyph_run_replay(&self) -> bool {
         let ratio = if self.ratio > 0.0 { self.ratio } else { 1.0 };
         (ratio - 1.0).abs() <= 0.001
             && self.tab_leaders.is_empty()
             && self.underline == UnderlineType::None
             && !self.strikethrough
-            && self.outline_type == 0
-            && self.shadow_type == 0
+            && (self.shadow_type == 0
+                || (self.shadow_offset_x.is_finite() && self.shadow_offset_y.is_finite()))
             && !self.emboss
             && !self.engrave
             && !self.superscript
             && !self.subscript
             && self.emphasis_dot == 0
             && (self.shade_color & 0x00FF_FFFF) == 0x00FF_FFFF
+    }
+
+    /// Returns whether a backend may replay this text as a simple fill-only
+    /// positioned glyph run without losing HWP text effects.
+    pub fn is_fill_only_glyph_replay(&self) -> bool {
+        self.is_simple_glyph_run_replay() && self.outline_type == 0 && self.shadow_type == 0
     }
 }
 
@@ -2213,6 +2219,31 @@ pub struct PaintBounds {
 mod tests {
     use super::*;
     use crate::renderer::{StrokeDash, TextStyle};
+
+    #[test]
+    fn glyph_run_simple_effect_eligibility_preserves_fill_only_distinction() {
+        let mut style = PaintTextStyle::from(&TextStyle::default());
+        assert!(style.is_simple_glyph_run_replay());
+        assert!(style.is_fill_only_glyph_replay());
+
+        style.shadow_type = 1;
+        style.shadow_offset_x = 4.0;
+        style.shadow_offset_y = 2.0;
+        assert!(style.is_simple_glyph_run_replay());
+        assert!(!style.is_fill_only_glyph_replay());
+
+        style.shadow_offset_x = f64::INFINITY;
+        assert!(!style.is_simple_glyph_run_replay());
+
+        style.shadow_type = 0;
+        style.shadow_offset_x = 0.0;
+        style.outline_type = 1;
+        assert!(style.is_simple_glyph_run_replay());
+        assert!(!style.is_fill_only_glyph_replay());
+
+        style.emboss = true;
+        assert!(!style.is_simple_glyph_run_replay());
+    }
 
     #[test]
     fn visual_bounds_expand_for_line_stroke_and_arrow() {
