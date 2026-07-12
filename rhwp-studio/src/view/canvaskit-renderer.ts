@@ -3227,7 +3227,7 @@ export class CanvasKitLayerRenderer {
       slant: italic ? this.canvasKit.FontSlant.Italic : this.canvasKit.FontSlant.Upright,
     });
     const font = new this.canvasKit.Font(typeface, fontSize || 12);
-    font.setEmbolden(bold && (family === 'D2Coding' || family === 'Latin Modern Math'));
+    font.setEmbolden(bold && this.fontRegistry.shouldSynthesizeBold(family));
     font.setScaleX(scaleX > 0 ? scaleX : 1);
     font.setSkewX(italic ? -0.25 : 0);
     font.setSubpixel(true);

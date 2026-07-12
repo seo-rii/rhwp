@@ -110,6 +110,23 @@ function canonicalFallback(fontName) {
 const studioFontList = loadStudioFontList();
 const editorFontList = loadEditorFontList();
 assert.deepStrictEqual(editorFontList, studioFontList, 'legacy editor font list must match studio font-loader entries');
+for (const [family, expectedFaces] of [
+  ['HY헤드라인M', [{ file: 'fonts/NotoSansKR-Bold.woff2', weight: null }]],
+  ['HY신명조', [{ file: 'fonts/NotoSerifKR-Regular.woff2', weight: null }]],
+  ['Palatino Linotype', [{ file: 'fonts/NotoSerifKR-Regular.woff2', weight: null }]],
+  ['Noto Sans KR', [
+    { file: 'fonts/NotoSansKR-Regular.woff2', weight: '400' },
+    { file: 'fonts/NotoSansKR-Bold.woff2', weight: '700' },
+  ]],
+]) {
+  assert.deepStrictEqual(
+    studioFontList
+      .filter((entry) => entry.name === family)
+      .map((entry) => ({ file: entry.file, weight: entry.weight })),
+    expectedFaces,
+    `Canvas2D/CanvasKit shared face catalog mismatch for ${family}`,
+  );
+}
 
 const studioTables = loadStudioSubstTables();
 const legacyTables = loadLegacySubstTables();

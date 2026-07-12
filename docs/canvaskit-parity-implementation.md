@@ -383,6 +383,17 @@ selected-variant mismatches also fail. Intentional TextRun fallback,
 direct-required items, unsupported items, and their exact reasons remain an
 inventory in the JSON and Markdown reports.
 
+CanvasKit fallback text now consumes the same `FONT_LIST` face catalog as the
+Canvas2D `FontFace` loader for the aliases it replays directly. This preserves
+bold-only families such as `HY헤드라인M`, regular-only families such as
+`HY신명조` and `Palatino Linotype`, and explicit 400/700 families without
+registering a different style set in CanvasKit. Synthetic emboldening is used
+only when that shared catalog has no 700 face for the resolved family. The
+Batang, Malgun Gothic, and mixed Korean/English browser fixtures retain selected
+raster diff zero in both CanvasKit modes. The larger repeated-header page keeps
+its residual text-position/raster difference report-only rather than hiding it
+through a looser font substitution.
+
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload

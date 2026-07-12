@@ -10,6 +10,7 @@ const canvas2dPath = path.join(studioRoot, 'src/view/canvas2d-layer-renderer.ts'
 const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
+const fontLoaderPath = path.join(studioRoot, 'src/core/font-loader.ts');
 const canvaskitReplayPlanePath = path.join(canvaskitDirectory, 'replay-plane.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
 const canvaskitStaticPictureCachePath = path.join(canvaskitDirectory, 'static-picture-cache.ts');
@@ -38,6 +39,7 @@ const rustSvgRendererPath = path.join(repoRoot, 'src/renderer/svg.rs');
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
+const fontLoaderSource = fs.readFileSync(fontLoaderPath, 'utf8');
 const canvaskitReplayPlaneSource = fs.readFileSync(canvaskitReplayPlanePath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
 const staticPictureCacheSource = fs.readFileSync(canvaskitStaticPictureCachePath, 'utf8');
@@ -1343,6 +1345,15 @@ assert.equal(
   canvaskitFontsSource.includes("from '../layer-canvas-utils'"),
   false,
   'CanvasKit font registry must use native-ready image/font helpers instead of broad Canvas2D utilities',
+);
+assert(
+  fontLoaderSource.includes('export const FONT_LIST')
+    && canvaskitFontsSource.includes("import { FONT_LIST } from '@/core/font-loader'")
+    && canvaskitFontsSource.includes('new URL(entry.file, document.baseURI).href')
+    && canvaskitFontsSource.includes("entry.weight === '700'")
+    && canvaskitFontsSource.includes("'Palatino Linotype'")
+    && canvaskitSource.includes('bold && this.fontRegistry.shouldSynthesizeBold(family)'),
+  'CanvasKit TextRun fallback must mirror Canvas2D font-face registrations and synthesize bold only when no 700 face exists',
 );
 const canvaskitGlyphRunReplayStatusBlock = extractMethodBody(canvaskitFontsSource, 'glyphRunReplayStatus');
 assertTokensInOrder(

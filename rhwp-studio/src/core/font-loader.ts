@@ -6,7 +6,7 @@
  *   2. document.fonts.load()로 필요한 family/weight만 개별 로드
  */
 
-interface FontEntry {
+export interface FontEntry {
   name: string;
   file: string;
   /** woff2(기본) 또는 woff — CDN woff 파일용 */
@@ -22,7 +22,7 @@ const HAMCHOROM_DOTUM_REGULAR = 'fonts/NotoSansKR-Regular.woff2';
 const HAMCHOROM_DOTUM_BOLD = 'fonts/NotoSansKR-Bold.woff2';
 
 // 한컴 webhwp CSS(@font-face) 매핑 기준 + HWP 문서에서 사용하는 별칭
-const FONT_LIST: FontEntry[] = [
+export const FONT_LIST: FontEntry[] = [
   // === 함초롬/함초롱/한컴 폰트 aliases → 번들 서체 ===
   { name: '함초롬돋움', file: HAMCHOROM_DOTUM_REGULAR, weight: '400' },
   { name: '함초롬돋움', file: HAMCHOROM_DOTUM_BOLD, weight: '700' },

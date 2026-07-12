@@ -1,5 +1,6 @@
 import type { CanvasKit, Font, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 
+import { FONT_LIST } from '@/core/font-loader';
 import { resolveFont } from '@/core/font-substitution';
 import type {
   LayerFontBlobResource,
@@ -72,6 +73,7 @@ const SERIF_ALIASES = [
   '새궁서',
   'HY신명조',
   'HY견명조',
+  'Palatino Linotype',
   'Batang',
 ];
 
@@ -120,6 +122,7 @@ export class CanvasKitFontRegistry {
   private readonly verifiedFontBlobs = new Map<string, ArrayBuffer>();
   private readonly glyphRunTypefaces = new Map<string, Typeface>();
   private readonly glyphRunFonts = new Map<string, Font>();
+  private readonly familiesWithBoldFace = new Set<string>();
 
   constructor(
     private readonly canvasKit: CanvasKit,
@@ -142,6 +145,9 @@ export class CanvasKitFontRegistry {
     };
 
     const registerAliases = async (aliases: string[], regularUrl: string, boldUrl?: string): Promise<void> => {
+      if (aliases.length === 0) {
+        return;
+      }
       const regularBytes = await loadFontFile(regularUrl);
       const boldBytes = boldUrl ? await loadFontFile(boldUrl) : null;
 
@@ -150,16 +156,50 @@ export class CanvasKitFontRegistry {
         this.aliases.add(alias);
         if (boldBytes) {
           this.fontProvider.registerFont(boldBytes, alias);
+          this.familiesWithBoldFace.add(alias);
         }
       }
     };
 
+    const registerCatalogAliases = async (aliases: string[]): Promise<string[]> => {
+      const requestedAliases = new Set(aliases);
+      const registeredAliases = new Set<string>();
+      for (const entry of FONT_LIST) {
+        if (!requestedAliases.has(entry.name)) {
+          continue;
+        }
+        const fontUrl = new URL(entry.file, document.baseURI).href;
+        const bytes = await loadFontFile(fontUrl);
+        this.fontProvider.registerFont(bytes, entry.name);
+        this.aliases.add(entry.name);
+        registeredAliases.add(entry.name);
+        if (entry.weight === '700') {
+          this.familiesWithBoldFace.add(entry.name);
+        }
+      }
+      return aliases.filter((alias) => !registeredAliases.has(alias));
+    };
+
     await registerAliases([HAMCHOROM_DOTUM_FAMILY], FONT_HAMCHOROM_DOTUM_URL, FONT_HAMCHOROM_DOTUM_BOLD_URL);
     await registerAliases([HAMCHOROM_BATANG_FAMILY], FONT_HAMCHOROM_BATANG_URL, FONT_HAMCHOROM_BATANG_BOLD_URL);
-    await registerAliases(SANS_ALIASES, FONT_SANS_REGULAR_URL, FONT_SANS_BOLD_URL);
-    await registerAliases(SERIF_ALIASES, FONT_SERIF_REGULAR_URL, FONT_SERIF_BOLD_URL);
-    await registerAliases(MONO_ALIASES, FONT_MONO_REGULAR_URL);
-    await registerAliases(MATH_ALIASES, FONT_MATH_REGULAR_URL);
+    await registerAliases(
+      await registerCatalogAliases(SANS_ALIASES),
+      FONT_SANS_REGULAR_URL,
+      FONT_SANS_BOLD_URL,
+    );
+    await registerAliases(
+      await registerCatalogAliases(SERIF_ALIASES),
+      FONT_SERIF_REGULAR_URL,
+      FONT_SERIF_BOLD_URL,
+    );
+    await registerAliases(
+      await registerCatalogAliases(MONO_ALIASES),
+      FONT_MONO_REGULAR_URL,
+    );
+    await registerAliases(
+      await registerCatalogAliases(MATH_ALIASES),
+      FONT_MATH_REGULAR_URL,
+    );
   }
 
   resolveFamily(fontFamily: string): string {
@@ -181,6 +221,10 @@ export class CanvasKitFontRegistry {
       return 'Noto Serif KR';
     }
     return 'Noto Sans KR';
+  }
+
+  shouldSynthesizeBold(fontFamily: string): boolean {
+    return !this.familiesWithBoldFace.has(this.resolveFamily(fontFamily));
   }
 
   registerVerifiedFontBlob(blobId: string, digestValue: string, bytes: ArrayBuffer | Uint8Array): void {
