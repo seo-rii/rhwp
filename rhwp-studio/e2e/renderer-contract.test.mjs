@@ -708,11 +708,15 @@ assert.equal(
 assert(
   rendererBaselineSource.includes('pageRenderer.renderPage(capturePageIndex')
     && rendererBaselineSource.includes('pageRenderer?.cancelAll?.()')
-    && rendererBaselineSource.includes('BASELINE_CAPTURE_CANVAS_SELECTOR')
+    && rendererBaselineSource.includes("canvas.toDataURL('image/png')")
+    && rendererBaselineSource.includes('pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, 1.0)')
+    && rendererBaselineSource.includes("if (captureBackend === 'canvas2d')")
+    && rendererBaselineSource.includes('canvas2dRenderer?.domImageCache')
     && rendererBaselineSource.includes('selectedPageRenderMs')
     && rendererBaselineDriverSource.includes('averageSelectedPageRenderMs')
+    && !rendererBaselineSource.includes('setTimeout(resolve, 250)')
     && !rendererBaselineSource.includes('browser baseline currently supports only page=0 samples'),
-  'browser baseline must render, time, and capture the requested manifest page instead of the first visible canvas',
+  'browser baseline must settle async resources and capture scale-1 intrinsic pixels for the requested manifest page',
 );
 for (const watchSample of ['hwpspec.hwp']) {
   assert.equal(

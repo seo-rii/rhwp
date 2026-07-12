@@ -1021,13 +1021,16 @@ Recommended implementation order from this point:
 
 Replay diagnostics are now collected from the existing corpus. Browser captures
 render the requested manifest page into a dedicated backend canvas instead of
-implicitly taking the first visible page. Checked-in page 5 of the repeated
-header-image document and page 4 of the multi-section document exercise this
-path and keep replay-plan/runtime diagnostics page-indexed. The remaining
-concrete test-infrastructure gap before the proof/corpus-only register below is
-the checked-in HWP/HWPX diagonal-cell pair. Each later implementation commit
-should start from a concrete fixture, corpus document, backend proof, or
-malformed payload that the current branch does not already cover.
+implicitly taking the first visible page. The canvas stays DOM-attached while
+Canvas2D image resources settle, pending animation frames drain, and one final
+scale-1 render fixes the selected-page diagnostics. The baseline then encodes
+intrinsic canvas pixels rather than a CSS/DPR-dependent element screenshot.
+Checked-in page 5 of the repeated header-image document and page 4 of the
+multi-section document exercise this path. The remaining concrete
+test-infrastructure gap before the proof/corpus-only register below is the
+checked-in HWP/HWPX diagonal-cell pair. Each later implementation commit should
+start from a concrete fixture, corpus document, backend proof, or malformed
+payload that the current branch does not already cover.
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,

@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
-  captureCanvasScreenshot,
   closeBrowser,
   closePage,
   comparePngBuffers,
@@ -17,7 +16,6 @@ const DEFAULT_BROWSER_PARITY_THRESHOLDS = {
   maxDiffRatio: 0.005,
 };
 const BASELINE_CAPTURE_CANVAS_ID = 'renderer-baseline-page-canvas';
-const BASELINE_CAPTURE_CANVAS_SELECTOR = `#${BASELINE_CAPTURE_CANVAS_ID}`;
 const BACKENDS = [
   {
     key: 'canvas2d',
@@ -287,37 +285,108 @@ try {
             const canvas = document.createElement('canvas');
             canvas.id = captureCanvasId;
             canvas.style.position = 'fixed';
-            canvas.style.left = '0';
+            canvas.style.left = '-100000px';
             canvas.style.top = '0';
-            canvas.style.zIndex = '2147483647';
             canvas.style.background = '#fff';
             canvas.style.pointerEvents = 'none';
             document.body.appendChild(canvas);
 
             const pageInfo = wasm.getPageInfo(capturePageIndex);
-            const renderScale = window.devicePixelRatio || 1;
+            const renderScale = 1.0;
             pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, renderScale);
-            canvas.style.width = `${canvas.width / renderScale}px`;
-            canvas.style.height = `${canvas.height / renderScale}px`;
+            canvas.style.width = `${canvas.width}px`;
+            canvas.style.height = `${canvas.height}px`;
           },
           {
             captureCanvasId: BASELINE_CAPTURE_CANVAS_ID,
             capturePageIndex: sample.page,
           },
         );
-        await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
+        await page.waitForFunction(
+          ({ captureBackend }) => {
+            if (captureBackend !== 'canvas2d') {
+              return true;
+            }
+            const imageCache = window.__canvasView?.pageRenderer?.canvas2dRenderer?.domImageCache;
+            return imageCache instanceof Map
+              && [...imageCache.values()].every((image) => image.complete);
+          },
+          { timeout: 10000, polling: 50 },
+          { captureBackend: backend.key },
+        );
+        await page.evaluate(() => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        }));
+        const selectedPageState = await page.evaluate(
+          ({ captureCanvasId, capturePageIndex, captureBackend }) => {
+            const canvasView = window.__canvasView;
+            const pageRenderer = canvasView?.pageRenderer;
+            const wasm = window.__wasm;
+            const canvas = document.getElementById(captureCanvasId);
+            if (!pageRenderer || !wasm || !(canvas instanceof HTMLCanvasElement)) {
+              throw new Error('baseline capture canvas is unavailable');
+            }
+            const pageInfo = wasm.getPageInfo(capturePageIndex);
+            if (captureBackend === 'canvas2d') {
+              pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, 1.0);
+            }
+            const imageCache = captureBackend === 'canvas2d'
+              ? pageRenderer.canvas2dRenderer?.domImageCache
+              : null;
+            const imageReadiness = imageCache instanceof Map
+              ? [...imageCache.values()].reduce(
+                (summary, image) => {
+                  if (!image.complete) {
+                    summary.pending += 1;
+                  } else if (image.naturalWidth > 0) {
+                    summary.loaded += 1;
+                  } else {
+                    summary.failed += 1;
+                  }
+                  return summary;
+                },
+                { total: imageCache.size, loaded: 0, failed: 0, pending: 0 },
+              )
+              : null;
+            return {
+              width: canvas.width,
+              height: canvas.height,
+              imageReadiness,
+            };
+          },
+          {
+            captureCanvasId: BASELINE_CAPTURE_CANVAS_ID,
+            capturePageIndex: sample.page,
+            captureBackend: backend.key,
+          },
+        );
+        if ((selectedPageState.imageReadiness?.pending ?? 0) > 0) {
+          throw new Error(
+            `baseline capture still has pending images: ${sample.id} backend=${backend.key} pending=${selectedPageState.imageReadiness.pending}`,
+          );
+        }
         const selectedPageRenderMs = performance.now() - selectedPageRenderStartedAt;
 
         const sampleDir = path.join(options.output, sample.id);
         const outputPath = path.join(sampleDir, backend.filenameForProfile(profile));
         const screenshotStartedAt = performance.now();
         try {
-          await captureCanvasScreenshot(
-            page,
-            outputPath,
-            `Baseline ${backend.key} (${profile})`,
-            BASELINE_CAPTURE_CANVAS_SELECTOR,
+          const pngDataUrl = await page.evaluate(
+            ({ captureCanvasId }) => {
+              const canvas = document.getElementById(captureCanvasId);
+              if (!(canvas instanceof HTMLCanvasElement)) {
+                throw new Error('baseline capture canvas is unavailable');
+              }
+              return canvas.toDataURL('image/png');
+            },
+            {
+              captureCanvasId: BASELINE_CAPTURE_CANVAS_ID,
+            },
           );
+          fs.mkdirSync(sampleDir, { recursive: true });
+          const pngBase64 = pngDataUrl.slice(pngDataUrl.indexOf(',') + 1);
+          fs.writeFileSync(outputPath, Buffer.from(pngBase64, 'base64'));
+          console.log(`  Baseline ${backend.key} (${profile}): ${outputPath}`);
         } finally {
           await page.evaluate(
             ({ captureCanvasId, capturePageIndex }) => {
@@ -332,6 +401,11 @@ try {
         }
         const screenshotMs = performance.now() - screenshotStartedAt;
         const diagnostics = await readRendererDiagnostics(page, sample.page, backend.key);
+        diagnostics.capture = {
+          width: selectedPageState.width,
+          height: selectedPageState.height,
+          imageReadiness: selectedPageState.imageReadiness,
+        };
         if (backend.key.startsWith('canvaskit')) {
           const replayPlan = diagnostics.replayPlan;
           const replaySummary = replayPlan?.summary;
