@@ -1026,11 +1026,12 @@ Canvas2D image resources settle, pending animation frames drain, and one final
 scale-1 render fixes the selected-page diagnostics. The baseline then encodes
 intrinsic canvas pixels rather than a CSS/DPR-dependent element screenshot.
 Checked-in page 5 of the repeated header-image document and page 4 of the
-multi-section document exercise this path. The remaining concrete
-test-infrastructure gap before the proof/corpus-only register below is the
-checked-in HWP/HWPX diagonal-cell pair. Each later implementation commit should
-start from a concrete fixture, corpus document, backend proof, or malformed
-payload that the current branch does not already cover.
+multi-section document exercise this path. The checked-in HWP and HWPX
+diagonal-cell pair now also runs through Canvas2D and both CanvasKit modes, so
+the concrete test-infrastructure gaps identified for this phase are closed.
+Each later implementation commit should start from a concrete fixture, corpus
+document, backend proof, or malformed payload that the current branch does not
+already cover.
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,

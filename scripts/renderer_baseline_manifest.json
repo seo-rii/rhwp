@@ -605,6 +605,34 @@
       }
     },
     {
+      "id": "table-diagonal-cell-hwp",
+      "file": "대각선샘플.hwp",
+      "category": "table",
+      "page": 0,
+      "notes": "Binary HWP half of the paired cell-zone diagonal rendering corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
+      "id": "table-diagonal-cell-hwpx",
+      "file": "대각선샘플.hwpx",
+      "category": "table",
+      "page": 0,
+      "notes": "HWPX half of the paired cell-zone diagonal rendering corpus.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.0125
+      }
+    },
+    {
       "id": "multi-table-001",
       "file": "multi-table-001.hwp",
       "category": "table",

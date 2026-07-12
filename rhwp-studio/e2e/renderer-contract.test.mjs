@@ -628,6 +628,8 @@ for (const sampleId of [
   'table-vpos',
   'table-inner',
   'table-border-style',
+  'table-diagonal-cell-hwp',
+  'table-diagonal-cell-hwpx',
   'multi-table-001',
   'multi-table-002',
   'table-ipc',
@@ -704,6 +706,14 @@ assert.equal(
   rendererBaselineManifest.samples.some((sample) => Number(sample.page) > 0),
   true,
   'renderer baseline manifest must keep non-zero page coverage',
+);
+assert.deepEqual(
+  rendererBaselineManifest.samples
+    .filter((sample) => sample.id.startsWith('table-diagonal-cell-'))
+    .map((sample) => sample.file)
+    .sort(),
+  ['대각선샘플.hwp', '대각선샘플.hwpx'],
+  'renderer baseline manifest must keep the paired HWP/HWPX diagonal-cell corpus',
 );
 assert(
   rendererBaselineSource.includes('pageRenderer.renderPage(capturePageIndex')
