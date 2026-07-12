@@ -248,27 +248,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const originalCanvas2DRenderPage = pageRenderer.canvas2dRenderer.renderPage.bind(
       pageRenderer.canvas2dRenderer,
     );
-    const originalCanvasKitRenderPage = pageRenderer.canvaskitRenderer.renderPage.bind(
-      pageRenderer.canvaskitRenderer,
-    );
-    const originalCanvasKitDrawMarginGuides = pageRenderer.canvaskitRenderer.drawMarginGuides.bind(
+    const originalCanvasKitRenderPageWithMarginGuides = pageRenderer.canvaskitRenderer.renderPageWithMarginGuides.bind(
       pageRenderer.canvaskitRenderer,
     );
     const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
     let canvas2DCalls = 0;
     let canvasKitCalls = 0;
-    let canvasKitMarginGuideCalls = 0;
+    let canvasKitPageInfoForwarded = false;
     pageRenderer.canvas2dRenderer.renderPage = () => {
       canvas2DCalls += 1;
       throw new Error('Canvas2D overlay renderPage should not be called for CanvasKit backend');
     };
-    pageRenderer.canvaskitRenderer.renderPage = (layerTree, canvas, scale) => {
+    pageRenderer.canvaskitRenderer.renderPageWithMarginGuides = (layerTree, canvas, scale, pageInfo) => {
       canvasKitCalls += 1;
-      originalCanvasKitRenderPage(layerTree, canvas, scale);
-    };
-    pageRenderer.canvaskitRenderer.drawMarginGuides = (pageInfo, canvas, scale) => {
-      canvasKitMarginGuideCalls += 1;
-      originalCanvasKitDrawMarginGuides(pageInfo, canvas, scale);
+      canvasKitPageInfoForwarded = pageInfo?.width === 96 && pageInfo?.height === 64;
+      originalCanvasKitRenderPageWithMarginGuides(layerTree, canvas, scale, pageInfo);
     };
     pageRenderer.wasm.getPageLayerTree = (pageIdx, profile = 'screen') => ({
       pageWidth: 96,
@@ -305,7 +299,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         backend: pageRenderer.getBackend?.(),
         canvas2DCalls,
         canvasKitCalls,
-        canvasKitMarginGuideCalls,
+        canvasKitPageInfoForwarded,
       };
     } catch (error) {
       return {
@@ -313,14 +307,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
         backend: pageRenderer.getBackend?.(),
         canvas2DCalls,
         canvasKitCalls,
-        canvasKitMarginGuideCalls,
+        canvasKitPageInfoForwarded,
       };
     } finally {
       pageRenderer.cancelAll?.();
       pageRenderer.clearLayerTreeCache?.();
       pageRenderer.canvas2dRenderer.renderPage = originalCanvas2DRenderPage;
-      pageRenderer.canvaskitRenderer.renderPage = originalCanvasKitRenderPage;
-      pageRenderer.canvaskitRenderer.drawMarginGuides = originalCanvasKitDrawMarginGuides;
+      pageRenderer.canvaskitRenderer.renderPageWithMarginGuides = originalCanvasKitRenderPageWithMarginGuides;
       pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
     }
   });
@@ -331,7 +324,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     noCanvas2DOverlayProbe.backend === 'canvaskit'
       && noCanvas2DOverlayProbe.canvasKitCalls === 1
-      && noCanvas2DOverlayProbe.canvasKitMarginGuideCalls === 1
+      && noCanvas2DOverlayProbe.canvasKitPageInfoForwarded === true
       && noCanvas2DOverlayProbe.canvas2DCalls === 0,
     `CanvasKit render dispatch avoids Canvas2D overlay=${JSON.stringify(noCanvas2DOverlayProbe)}`,
   );

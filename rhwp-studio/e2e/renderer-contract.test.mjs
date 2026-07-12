@@ -8,6 +8,7 @@ const repoRoot = path.resolve(studioRoot, '..');
 const packageJsonPath = path.join(studioRoot, 'package.json');
 const canvas2dPath = path.join(studioRoot, 'src/view/canvas2d-layer-renderer.ts');
 const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
+const pageRendererPath = path.join(studioRoot, 'src/view/page-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
 const fontLoaderPath = path.join(studioRoot, 'src/core/font-loader.ts');
@@ -38,6 +39,7 @@ const rustSvgRendererPath = path.join(repoRoot, 'src/renderer/svg.rs');
 
 const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
+const pageRendererSource = fs.readFileSync(pageRendererPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
 const fontLoaderSource = fs.readFileSync(fontLoaderPath, 'utf8');
 const canvaskitReplayPlaneSource = fs.readFileSync(canvaskitReplayPlanePath, 'utf8');
@@ -1305,9 +1307,14 @@ assert.equal(
 );
 assert.equal(
   fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
-    .includes('stableValueFingerprint(tree.resources ?? null)'),
+    .includes('resourceTableFingerprint(tree.resources, this.resourcePayloadFingerprints)'),
   true,
   'CanvasKit static picture cache keys must include resource payload fingerprints for image and vector glyph resources',
+);
+assert(
+  staticPictureCacheSource.includes('payloadFingerprints.get(payload) ?? stableValueFingerprint(payload)')
+    && staticPictureCacheSource.includes('producerHash: hashes?.[index] ?? null'),
+  'CanvasKit static picture cache keys must memoize payload bytes while preserving producer identities',
 );
 assert.equal(
   fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
@@ -1350,10 +1357,16 @@ assert(
   fontLoaderSource.includes('export const FONT_LIST')
     && canvaskitFontsSource.includes("import { FONT_LIST } from '@/core/font-loader'")
     && canvaskitFontsSource.includes('new URL(entry.file, document.baseURI).href')
-    && canvaskitFontsSource.includes("entry.weight === '700'")
+    && canvaskitFontsSource.includes("entry.weight === '700' || /(?:^|[-_])bold(?:[-_.]|$)/i.test(entry.file)")
     && canvaskitFontsSource.includes("'Palatino Linotype'")
     && canvaskitSource.includes('bold && this.fontRegistry.shouldSynthesizeBold(family)'),
   'CanvasKit TextRun fallback must mirror Canvas2D font-face registrations and synthesize bold only when no 700 face exists',
+);
+const pageRendererContentBlock = extractMethodBody(pageRendererSource, 'renderContent');
+assert(
+  pageRendererContentBlock.includes('this.canvaskitRenderer.renderPageWithMarginGuides(')
+    && !pageRendererContentBlock.includes('this.canvaskitRenderer.renderPage(layerTree, canvas, appliedScale)'),
+  'Studio CanvasKit page replay must render content and margin guides before a single surface flush',
 );
 const canvaskitGlyphRunReplayStatusBlock = extractMethodBody(canvaskitFontsSource, 'glyphRunReplayStatus');
 assertTokensInOrder(
@@ -1388,11 +1401,11 @@ assert.equal(
   'CanvasKit GPU render failures must fall back to a CanvasKit software surface, not a Canvas2D overlay',
 );
 assertTokensInOrder(
-  extractMethodBody(canvaskitSource, 'renderPage'),
+  extractMethodBody(canvaskitSource, 'renderPageInternal'),
   [
     'const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas)',
     'this.textVariantSelectionDiagnostics.length = 0',
-    'this.renderSurface(fallbackSurface, tree, scale)',
+    'this.renderSurface(fallbackSurface, tree, scale, pageInfo)',
   ],
   'CanvasKit software fallback rerender must replace failed-attempt text variant diagnostics',
 );

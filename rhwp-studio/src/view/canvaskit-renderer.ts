@@ -240,6 +240,24 @@ export class CanvasKitLayerRenderer {
     targetCanvas: HTMLCanvasElement,
     scale: number,
   ): void {
+    this.renderPageInternal(tree, targetCanvas, scale);
+  }
+
+  renderPageWithMarginGuides(
+    tree: PageLayerTree,
+    targetCanvas: HTMLCanvasElement,
+    scale: number,
+    pageInfo: PageInfo,
+  ): void {
+    this.renderPageInternal(tree, targetCanvas, scale, pageInfo);
+  }
+
+  private renderPageInternal(
+    tree: PageLayerTree,
+    targetCanvas: HTMLCanvasElement,
+    scale: number,
+    pageInfo?: PageInfo,
+  ): void {
     if (this.disposed) {
       throw new Error('CanvasKit renderer가 이미 dispose되었습니다');
     }
@@ -266,7 +284,7 @@ export class CanvasKitLayerRenderer {
     try {
       this.collectTextVariantSelectionDiagnostics = true;
       try {
-        this.renderSurface(surface, tree, scale);
+        this.renderSurface(surface, tree, scale, pageInfo);
       } finally {
         this.collectTextVariantSelectionDiagnostics = false;
       }
@@ -291,7 +309,7 @@ export class CanvasKitLayerRenderer {
     this.textVariantSelectionDiagnostics.length = 0;
     this.collectTextVariantSelectionDiagnostics = true;
     try {
-      this.renderSurface(fallbackSurface, tree, scale);
+      this.renderSurface(fallbackSurface, tree, scale, pageInfo);
     } finally {
       this.collectTextVariantSelectionDiagnostics = false;
     }
@@ -383,7 +401,12 @@ export class CanvasKitLayerRenderer {
     return this.textV2ValidationDiagnostics.map((issue) => ({ ...issue }));
   }
 
-  private renderSurface(surface: Surface, tree: PageLayerTree, scale: number): void {
+  private renderSurface(
+    surface: Surface,
+    tree: PageLayerTree,
+    scale: number,
+    pageInfo?: PageInfo,
+  ): void {
     const canvas = surface.getCanvas();
     canvas.clear(this.canvasKit.TRANSPARENT);
     canvas.save();
@@ -392,11 +415,23 @@ export class CanvasKitLayerRenderer {
       this.renderNode(canvas, tree.root, replayPlane);
     }
     canvas.restore();
+    if (pageInfo) {
+      this.drawMarginGuidesOnCanvas(canvas, pageInfo, scale);
+    }
     surface.flush();
   }
 
   private drawMarginGuidesOnSurface(surface: Surface, pageInfo: PageInfo, scale: number): void {
     const canvas = surface.getCanvas();
+    this.drawMarginGuidesOnCanvas(canvas, pageInfo, scale);
+    surface.flush();
+  }
+
+  private drawMarginGuidesOnCanvas(
+    canvas: ReturnType<Surface['getCanvas']>,
+    pageInfo: PageInfo,
+    scale: number,
+  ): void {
     const { width, height, marginLeft, marginRight, marginTop, marginBottom, marginHeader, marginFooter } = pageInfo;
     const left = marginLeft;
     const top = marginHeader + marginTop;
@@ -424,7 +459,6 @@ export class CanvasKitLayerRenderer {
       canvas.restore();
       paint.delete();
     }
-    surface.flush();
   }
 
   private renderNode(

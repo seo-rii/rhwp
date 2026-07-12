@@ -1,12 +1,18 @@
 import type { SkPicture } from 'canvaskit-wasm';
 
-import type { LayerGroupNode, LayerRenderProfile, PageLayerTree } from '@/core/types';
+import type {
+  LayerGroupNode,
+  LayerRenderProfile,
+  LayerResources,
+  PageLayerTree,
+} from '@/core/types';
 import type { CanvasKitReplayPlane } from './replay-plane';
 
 export class CanvasKitStaticPictureCache {
   private readonly pictures = new Map<string, SkPicture>();
   private readonly layerTreeIds = new WeakMap<PageLayerTree, number>();
   private readonly nodeIds = new WeakMap<LayerGroupNode, number>();
+  private readonly resourcePayloadFingerprints = new WeakMap<object, string>();
   private nextLayerTreeId = 1;
   private nextNodeId = 1;
 
@@ -27,7 +33,7 @@ export class CanvasKitStaticPictureCache {
     }
     return [
       treeId,
-      stableValueFingerprint(tree.resources ?? null),
+      resourceTableFingerprint(tree.resources, this.resourcePayloadFingerprints),
       stableValueFingerprint(tree.fontResources ?? null),
       stableValueFingerprint(tree.variantOps ?? null),
       stableValueFingerprint(tree.outputOptions ?? null),
@@ -93,6 +99,58 @@ export class CanvasKitStaticPictureCache {
     }
     this.pictures.clear();
   }
+}
+
+function resourceTableFingerprint(
+  resources: LayerResources | undefined,
+  payloadFingerprints: WeakMap<object, string>,
+): string {
+  if (!resources) {
+    return stableValueFingerprint(null);
+  }
+  return stableValueFingerprint({
+    tableId: resources.tableId,
+    images: resourcePayloadReferences(
+      resources.images,
+      resources.imageHashes,
+      resources.imageKeys,
+      payloadFingerprints,
+    ),
+    svgFragments: resourcePayloadReferences(
+      resources.svgFragments,
+      resources.svgHashes,
+      resources.svgKeys,
+      payloadFingerprints,
+    ),
+    fontBlobs: resourcePayloadReferences(
+      resources.fontBlobs ?? [],
+      resources.fontBlobHashes,
+      resources.fontBlobKeys,
+      payloadFingerprints,
+    ),
+  });
+}
+
+function resourcePayloadReferences(
+  payloads: readonly unknown[],
+  hashes: readonly string[] | undefined,
+  keys: readonly string[] | undefined,
+  payloadFingerprints: WeakMap<object, string>,
+): unknown[] {
+  return payloads.map((payload, index) => {
+    let payloadFingerprint: string;
+    if (typeof payload === 'object' && payload !== null) {
+      payloadFingerprint = payloadFingerprints.get(payload) ?? stableValueFingerprint(payload);
+      payloadFingerprints.set(payload, payloadFingerprint);
+    } else {
+      payloadFingerprint = stableValueFingerprint(payload ?? null);
+    }
+    return {
+      key: keys?.[index] ?? null,
+      producerHash: hashes?.[index] ?? null,
+      payloadFingerprint,
+    };
+  });
 }
 
 function stableValueFingerprint(value: unknown): string {

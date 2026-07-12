@@ -173,7 +173,7 @@ export class CanvasKitFontRegistry {
         this.fontProvider.registerFont(bytes, entry.name);
         this.aliases.add(entry.name);
         registeredAliases.add(entry.name);
-        if (entry.weight === '700') {
+        if (entry.weight === '700' || /(?:^|[-_])bold(?:[-_.]|$)/i.test(entry.file)) {
           this.familiesWithBoldFace.add(entry.name);
         }
       }

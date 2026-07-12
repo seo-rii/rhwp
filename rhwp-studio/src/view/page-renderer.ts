@@ -89,7 +89,12 @@ export class PageRenderer {
       if (!this.canvaskitRenderer) {
         throw new Error('CanvasKit renderer가 초기화되지 않았습니다');
       }
-      this.canvaskitRenderer.renderPage(layerTree, canvas, appliedScale);
+      this.canvaskitRenderer.renderPageWithMarginGuides(
+        layerTree,
+        canvas,
+        appliedScale,
+        pageInfo,
+      );
       return appliedScale;
     }
 
@@ -142,10 +147,6 @@ export class PageRenderer {
   /** 편집 용지 여백 가이드라인을 캔버스에 그린다 (4모서리 L자 표시) */
   private drawMarginGuides(pageInfo: PageInfo, canvas: HTMLCanvasElement, scale: number): void {
     if (this.backend === 'canvaskit') {
-      if (!this.canvaskitRenderer) {
-        throw new Error('CanvasKit renderer가 초기화되지 않았습니다');
-      }
-      this.canvaskitRenderer.drawMarginGuides(pageInfo, canvas, scale);
       return;
     }
 

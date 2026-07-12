@@ -273,6 +273,15 @@ GPU surface failures follow the same rule: CanvasKit may retry with a CanvasKit
 software surface, but it must not instantiate Canvas2D as a hidden renderer
 fallback.
 
+Studio page replay composes page content and margin guides on the same
+CanvasKit surface before one flush. A second guide-only flush is not part of
+the normal page path because it makes software-surface cost scale twice with
+the page raster size. Static-picture resource keys include the producer table,
+resource key/hash, and an actual payload fingerprint. Payload fingerprints are
+memoized by resource object identity so repeated replay does not rescan large
+byte arrays, while replacing a resource object still invalidates stale
+pictures even when producer metadata is unchanged.
+
 ## Work Phases
 
 ### P1. Dependency Boundary Closure
