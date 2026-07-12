@@ -281,6 +281,9 @@ resource key/hash, and an actual payload fingerprint. Payload fingerprints are
 memoized by resource object identity so repeated replay does not rescan large
 byte arrays, while replacing a resource object still invalidates stale
 pictures even when producer metadata is unchanged.
+CanvasKit fallback-font initialization deduplicates bundled Noto/D2/math URLs
+and prefetches the remaining unique catalog files in parallel; registration
+order and family/style matching remain deterministic.
 
 ## Work Phases
 

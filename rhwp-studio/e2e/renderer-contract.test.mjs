@@ -1356,8 +1356,10 @@ assert.equal(
 assert(
   fontLoaderSource.includes('export const FONT_LIST')
     && canvaskitFontsSource.includes("import { FONT_LIST } from '@/core/font-loader'")
-    && canvaskitFontsSource.includes('new URL(entry.file, document.baseURI).href')
+    && canvaskitFontsSource.includes('new URL(file, document.baseURI).href')
     && canvaskitFontsSource.includes("entry.weight === '700' || /(?:^|[-_])bold(?:[-_.]|$)/i.test(entry.file)")
+    && canvaskitFontsSource.includes('await Promise.all([...catalogFontUrls].map((url) => loadFontFile(url)))')
+    && canvaskitFontsSource.includes('BUNDLED_FONT_URLS.get(file)')
     && canvaskitFontsSource.includes("'Palatino Linotype'")
     && canvaskitSource.includes('bold && this.fontRegistry.shouldSynthesizeBold(family)'),
   'CanvasKit TextRun fallback must mirror Canvas2D font-face registrations and synthesize bold only when no 700 face exists',

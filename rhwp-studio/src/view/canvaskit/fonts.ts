@@ -21,6 +21,14 @@ const FONT_HAMCHOROM_DOTUM_URL = new URL('../../../../web/fonts/NotoSansKR-Regul
 const FONT_HAMCHOROM_DOTUM_BOLD_URL = new URL('../../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_BATANG_URL = new URL('../../../../web/fonts/NotoSerifKR-Regular.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_BATANG_BOLD_URL = new URL('../../../../web/fonts/NotoSerifKR-Bold.woff2', import.meta.url).href;
+const BUNDLED_FONT_URLS = new Map<string, string>([
+  ['fonts/NotoSansKR-Regular.woff2', FONT_SANS_REGULAR_URL],
+  ['fonts/NotoSansKR-Bold.woff2', FONT_SANS_BOLD_URL],
+  ['fonts/NotoSerifKR-Regular.woff2', FONT_SERIF_REGULAR_URL],
+  ['fonts/NotoSerifKR-Bold.woff2', FONT_SERIF_BOLD_URL],
+  ['fonts/D2Coding-Regular.woff2', FONT_MONO_REGULAR_URL],
+  ['fonts/LatinModernMath-Regular.woff2', FONT_MATH_REGULAR_URL],
+]);
 
 const HAMCHOROM_DOTUM_FAMILY = 'HCR Dotum';
 export const HAMCHOROM_BATANG_FAMILY = 'HCR Batang';
@@ -168,7 +176,7 @@ export class CanvasKitFontRegistry {
         if (!requestedAliases.has(entry.name)) {
           continue;
         }
-        const fontUrl = new URL(entry.file, document.baseURI).href;
+        const fontUrl = resolveCatalogFontUrl(entry.file);
         const bytes = await loadFontFile(fontUrl);
         this.fontProvider.registerFont(bytes, entry.name);
         this.aliases.add(entry.name);
@@ -179,6 +187,22 @@ export class CanvasKitFontRegistry {
       }
       return aliases.filter((alias) => !registeredAliases.has(alias));
     };
+
+    const catalogAliases = new Set([
+      ...SANS_ALIASES,
+      ...SERIF_ALIASES,
+      ...MONO_ALIASES,
+      ...MATH_ALIASES,
+    ]);
+    const resolveCatalogFontUrl = (file: string): string => (
+      BUNDLED_FONT_URLS.get(file) ?? new URL(file, document.baseURI).href
+    );
+    const catalogFontUrls = new Set(
+      FONT_LIST
+        .filter((entry) => catalogAliases.has(entry.name))
+        .map((entry) => resolveCatalogFontUrl(entry.file)),
+    );
+    await Promise.all([...catalogFontUrls].map((url) => loadFontFile(url)));
 
     await registerAliases([HAMCHOROM_DOTUM_FAMILY], FONT_HAMCHOROM_DOTUM_URL, FONT_HAMCHOROM_DOTUM_BOLD_URL);
     await registerAliases([HAMCHOROM_BATANG_FAMILY], FONT_HAMCHOROM_BATANG_URL, FONT_HAMCHOROM_BATANG_BOLD_URL);
