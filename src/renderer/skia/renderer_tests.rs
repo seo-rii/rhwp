@@ -5359,6 +5359,46 @@ fn synthetic_two_face_ttc_from_ttf(font_data: &[u8]) -> Vec<u8> {
     collection
 }
 
+fn checked_in_exact_face_ttc_tree(face_index: u32) -> PageLayerTree {
+    let ttc_data = include_bytes!("../../../tests/fixtures/fonts/RHWPExactFaceSmoke.ttc");
+    let first_face = ttf_parser::Face::parse(ttc_data, 0).expect("checked-in TTC face 0 parses");
+    let second_face = ttf_parser::Face::parse(ttc_data, 1).expect("checked-in TTC face 1 parses");
+    assert!(
+        first_face.glyph_index('\u{E104}').is_none(),
+        "face 0 must not contain the face-1 proof glyph"
+    );
+    let glyph_id = second_face
+        .glyph_index('\u{E104}')
+        .expect("face 1 contains the exact-face proof glyph")
+        .0;
+    assert!(
+        second_face
+            .glyph_bounding_box(ttf_parser::GlyphId(glyph_id))
+            .is_some(),
+        "face-1 proof glyph must have an outline"
+    );
+
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    let digest_value = crate::paint::resource_digest_hex(ttc_data);
+    let data_ref = BinaryResourceRef {
+        kind: BinaryResourceKind::FontBlob,
+        id: crate::paint::font_blob_resource_key(ttc_data.len(), &digest_value),
+    };
+    let digest = FontDigest {
+        algorithm: "blake3".to_string(),
+        value: digest_value,
+    };
+    tree.resources.intern_font_blob_bytes(ttc_data);
+    let blob = &mut tree.resources.font_resources_mut().blobs[0];
+    blob.digest = Some(digest.clone());
+    blob.data_ref = Some(data_ref.clone());
+    blob.portability = FontPortability::PortableBlob { digest, data_ref };
+    let face = &mut tree.resources.font_resources_mut().faces[0];
+    face.face_index = face_index;
+    face.postscript_name = Some("RHWPExactFaceOne-Regular".to_string());
+    tree
+}
+
 #[test]
 fn native_skia_exact_font_construction_fixture_instantiates_checked_in_ttf_and_ttc_faces() {
     let renderer = SkiaLayerRenderer::new();
@@ -5399,6 +5439,105 @@ fn native_skia_exact_font_construction_fixture_instantiates_checked_in_ttf_and_t
             .is_none(),
         "out-of-range TTC face index should not instantiate"
     );
+}
+
+#[test]
+fn native_skia_replays_digest_pinned_checked_in_ttc_face() {
+    let renderer = SkiaLayerRenderer::new();
+    let ttc_data = include_bytes!("../../../tests/fixtures/fonts/RHWPExactFaceSmoke.ttc");
+    let face = ttf_parser::Face::parse(ttc_data, 1).expect("checked-in TTC face 1 parses");
+    let glyph_id = face
+        .glyph_index('\u{E104}')
+        .expect("checked-in TTC face 1 proof glyph")
+        .0;
+    let typeface = renderer
+        .font_mgr
+        .new_from_data(ttc_data.as_slice(), Some(1))
+        .expect("checked-in TTC face 1 should instantiate");
+    let font = skia_safe::Font::from_typeface(typeface.clone(), Some(32.0));
+    let mapped_glyphs = font.text_to_glyphs_vec("\u{E104}");
+    assert_eq!(
+        mapped_glyphs,
+        vec![glyph_id],
+        "checked-in TTC face 1 must map its proof code point to the requested glyph"
+    );
+    assert!(
+        font.get_path(glyph_id).is_some(),
+        "checked-in TTC face 1 should expose its unique outline: count={}, mapped={mapped_glyphs:?}, expected={glyph_id}",
+        typeface.count_glyphs()
+    );
+    let tree = checked_in_exact_face_ttc_tree(1);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("checked-in exact TTC face glyph run render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("checked-in exact TTC face report");
+    let bounds = alpha_bounds(&pixmap)
+        .unwrap_or_else(|| panic!("checked-in TTC glyph run ink, report={report:?}"));
+
+    assert!(
+        bounds.max_x < 100,
+        "native Skia should draw face 1's unique outline and suppress TextRun fallback, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "glyphRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::GlyphRunStrictEligible
+    );
+    let font_report = report
+        .font_verification
+        .as_ref()
+        .expect("checked-in TTC selection should carry font verification");
+    assert_eq!(font_report.blob_resolved, Some(true));
+    assert_eq!(font_report.digest_matched, Some(true));
+    assert_eq!(font_report.exact_face_instantiated, Some(true));
+    assert_eq!(font_report.face_index_supported, Some(true));
+}
+
+#[test]
+fn native_skia_rejects_out_of_range_digest_pinned_ttc_face() {
+    let renderer = SkiaLayerRenderer::new();
+    let tree = checked_in_exact_face_ttc_tree(2);
+    let output = renderer
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("checked-in out-of-range TTC face fallback render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("checked-in TTC fallback ink");
+    let report = output
+        .diagnostics
+        .variant_selections
+        .iter()
+        .find(|report| report.equivalence_group == "text-0")
+        .expect("checked-in out-of-range TTC report");
+
+    assert!(
+        bounds.min_x > 95,
+        "native Skia must keep TextRun fallback for an out-of-range checked-in TTC face, got {bounds:?}"
+    );
+    assert_eq!(report.selected_variant_id, "textRun");
+    assert_eq!(
+        report.selected_reason,
+        VariantSelectedReason::DefaultTextRunFallback
+    );
+    assert!(report.rejected_variants.iter().any(|variant| {
+        variant.variant_id == "glyphRun"
+            && variant
+                .reasons
+                .contains(&VariantRejectReason::FaceIndexUnsupported)
+    }));
+    let font_report = report
+        .font_verification
+        .as_ref()
+        .expect("checked-in TTC rejection should carry font verification");
+    assert_eq!(font_report.blob_resolved, Some(true));
+    assert_eq!(font_report.digest_matched, Some(true));
+    assert_eq!(font_report.exact_face_instantiated, Some(false));
+    assert_eq!(font_report.face_index_supported, Some(false));
 }
 
 #[test]

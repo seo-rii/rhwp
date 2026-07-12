@@ -223,9 +223,10 @@ The tracking issue changes affect this branch as follows:
   the existing one-strike bitmap and sanitized static vector contracts, not
   reopen payload semantics or writer gates.
 - P25 remains exact font replay corpus widening. Native Skia may widen through
-  real variable-font and TTC/OTC fixtures; CanvasKit must keep
-  `variationUnsupported` and `faceIndexUnsupported` until a browser-side exact
-  construction proof exists.
+  real variable-font and TTC/OTC fixtures. Native Skia now has a digest-pinned
+  two-face TTC whose second face contains a unique outline, while CanvasKit must
+  keep `variationUnsupported` and `faceIndexUnsupported` until a browser-side
+  exact construction proof exists.
 - P26 remains authority-gated v2 follow-up work. Additional COLRv1 primitives,
   shapedModern width input/line breaking, cross-scope variants, and public
   `MixedPerGlyph` writer emission stay blocked until their concrete
@@ -813,16 +814,20 @@ Expected code shape:
   face/no-variation gate, so later exact-construction changes can distinguish
   real variation/TTC enablement from a general GlyphRun regression;
 - native Skia proof coverage includes checked-in font bytes instantiated and
-  replayed as a normal TTF face and as a synthetic two-face TTC, including the
-  out-of-range face-index negative case;
+  replayed as a normal TTF face, a synthetic same-face TTC, and
+  `RHWPExactFaceSmoke.ttc`, a digest-pinned collection with two distinct faces.
+  The second checked-in face carries a unique outline absent from face 0, so the
+  positive cannot pass through a family or face-0 fallback; face index 2 is the
+  paired out-of-range negative;
 - CanvasKit policy and native Skia renderer coverage both include explicit
   variation negatives for unsupported axes, out-of-range values, and unproven
   tuples. Native Skia additionally covers selected supported axes, alternate
   valid axis-bound replay, explicit default-axis replay, synthetic non-zero
   face-index positives, and exact-byte out-of-range fallback;
 - native synthetic wrong-face, high-index, and ambiguous-metadata fallback
-  controls exist; real collection fixtures remain corpus-widening follow-up
-  work before broad TTC/OTC coverage;
+  controls exist, and the checked-in distinct-face collection adds exact
+  positive/negative construction proof. Third-party or document-derived
+  collections remain optional corpus widening rather than an enablement gate;
 - either backend may diverge only after its own proof fixtures pass. CanvasKit
   still keeps `TextRun` fallback for variation/TTC cases, while native Skia may
   select strict replay for its proof fixtures and records fallback/reject
@@ -835,7 +840,8 @@ Definition of done:
 - no CanvasKit strict replay enablement happens without the positive and
   negative proof fixtures;
 - native Skia can instantiate and replay the checked-in proof font as a direct
-  TTF and as a synthetic TTC face;
+  TTF, a synthetic TTC face, and the unique second face of the digest-pinned
+  checked-in TTC;
 - public `u32` glyph ids keep the native exact-font and CanvasKit adapter range
   guards;
 - backend divergence is deterministic and visible in diagnostics.
@@ -987,7 +993,7 @@ Non-goals for the remaining CanvasKit parity work:
 | BitmapGlyph corpus widening | strict contract, negative validation, native/CanvasKit replay, checked-in PNG corpus, strict export feature metadata, checked-in explicit-sRGB and sRGB-default JSON/JS/v2 payload snippets, SVG/native/CanvasKit deterministic-field rejection coverage, resource-cache key coverage, real HWP image samples in the browser baseline manifest, and a generated `sbix` PNG-strike producer fixture with native strict replay exist | add real-document bitmap-font corpus only when digest-pinned bytes are available; add non-PNG table formats only with a deterministic normalization fixture | one producer-selected strike, deterministic alpha/scaling/filtering, no strict `backendDefault`, resource bytes in cache keys |
 | SvgGlyph corpus widening | sanitized static vector contract, negative validation, native/CanvasKit replay, checked-in SVG corpus, strict export feature metadata, checked-in minimal and intrinsic-size-present JSON/v2 payload snippets, SVG/native/CanvasKit static-contract rejection coverage, resource-cache key coverage, real HWP equation/vector/form samples in the browser baseline manifest, and a generated compressed OpenType SVG producer fixture with unsafe/malformed controls and native strict replay exist | add real-document static SVG-in-font corpus only when sanitized, digest-pinned source bytes are available | `VectorResourceId`, required `viewBox`, hard-false script/animation/external/interactivity flags, no raw SVG-in-font replay |
 | Variation font strict replay | variation tuples are represented; native Skia has checked-in variable-font proof for exact axis construction, explicit default-axis replay, alternate valid axis-bound replay, glyph id, advance/bounds smoke, and invalid-axis fallback | widen native coverage with real variable-font corpus cases; keep CanvasKit fallback until its exact instance construction is proven | supported/out-of-range/unsupported/default-axis fixtures pass and backend constructs the exact instance |
-| TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate and replay checked-in proof bytes as direct TTF and synthetic TTC faces, exact synthetic non-zero `faceIndex` replay is connected to native `GlyphRun` selection/drawing, exact-byte out-of-range `faceIndex` falls back deterministically, synthetic wrong-face/high-index/ambiguous metadata fallback controls pass, invalid exact embedded font bytes and digest mismatches reject with `exactFaceUnavailable`, and the exact-font path keeps the `u32` glyph id guard | widen native coverage with real collection fixtures and digest-pinned corpus cases; keep CanvasKit fallback until its exact face construction is proven | real collection positive/negative controls pass and renderer draws with the requested face, not a family fallback |
+| TTC/OTC strict replay | faceIndex is represented; native Skia can instantiate and replay direct TTF, synthetic TTC, and a digest-pinned checked-in TTC with two distinct faces; its unique face-1 glyph proves non-zero `faceIndex` selection, face index 2 falls back deterministically, synthetic wrong-face/high-index/ambiguous metadata controls pass, invalid exact embedded bytes and digest mismatches reject with `exactFaceUnavailable`, and the `u32` glyph id guard remains | keep CanvasKit fallback until its exact face construction is proven; add more native collections only as real-document corpus widening | checked-in distinct-face positive/negative controls pass and renderer draws the requested face, not a family fallback |
 | CanvasKit variation/TTC | conservative fallback remains in place | add CanvasKit-specific exact construction proof before enabling strict replay | public API path proves exact variation tuple or faceIndex construction and keeps `u32` glyph id range guard |
 | shapedModern width input | v2 metadata and report-only `lineBreakRisk` exist | collect representative HWP corpus, calibrate width deltas, then add opt-in width input | hwpCompat remains default; shaping/measurement failure falls back to legacy HWP-compatible width |
 | shapedModern line breaking | blocked behind width-input stage | add opt-in line-breaking profile and calibrated thresholds | line-level corpus diff, table/cell review, fallback font split, cluster mapping, and vertical metrics are stable |
@@ -1031,9 +1037,9 @@ cover.
    real-document font fixtures that keep the sanitized static vector contract;
 4. widen native variation replay only with real variable-font corpus fixtures
    before considering CanvasKit variation replay;
-5. widen native TTC/OTC replay only with real collection fixtures and
-   digest-pinned corpus cases beyond the existing synthetic fallback controls,
-   keeping CanvasKit fallback until its exact face construction is proven;
+5. widen native TTC/OTC replay beyond the checked-in distinct-face collection
+   only with real-document corpus cases, keeping CanvasKit fallback until its
+   exact face construction is proven;
 6. leave additional COLRv1 blend modes, reusable-node memoization, shapedModern
    layout mutation, cross-scope writer emission, and public `MixedPerGlyph`
    writer emission blocked until their explicit gates are satisfied.
@@ -1093,14 +1099,14 @@ Proof-gated tracks:
   explicit default-axis replay, alternate valid axis-bound replay, glyph id,
   advance/bounds smoke, and invalid-axis fallback. Add real variable-font corpus
   cases before calling native variation strict replay broadly covered.
-- native TTC/OTC strict replay widening: native Skia exact synthetic non-zero
-  `faceIndex` replay is connected, direct-TTF replay uses exact checked-in font
-  bytes when available, exact-byte out-of-range `faceIndex` rejection falls back
-  with `faceIndexUnsupported`, synthetic wrong-face/high-index/ambiguous
-  metadata fallback controls pass, invalid direct font bytes and digest
-  mismatches fall back with `exactFaceUnavailable`, and exact-font replay keeps
-  the `u32` glyph id guard. Add real collection controls before calling native
-  TTC/OTC strict replay broadly covered.
+- native TTC/OTC strict replay widening: native Skia exact non-zero `faceIndex`
+  replay now covers both the synthetic same-face control and a digest-pinned
+  checked-in collection whose face 1 has a unique outline absent from face 0.
+  Its out-of-range index 2 control falls back with `faceIndexUnsupported`;
+  synthetic wrong-face/high-index/ambiguous metadata, invalid direct bytes, and
+  digest mismatch controls remain in place, and exact-font replay keeps the
+  `u32` glyph id guard. Additional real-document collections are corpus
+  widening, not a prerequisite for the current native exact-face proof.
 - CanvasKit variation/TTC strict replay: keep rejecting with
   `variationUnsupported` or `faceIndexUnsupported` until the public CanvasKit
   path proves exact variation tuple or exact collection face construction.
