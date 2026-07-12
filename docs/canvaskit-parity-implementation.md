@@ -186,6 +186,14 @@ The 2026-07-12 `upstream/devel` review imported the three later CanvasKit
 changes that still closed real gaps on this branch: ordinary text
 superscript/subscript metrics, complex-script paragraph shaping, and the
 expanded Noto Sans KR symbol subset used for bullets and box-drawing glyphs.
+The browser lifecycle suite now closes the corresponding raster-proof gap with
+`canvas-layer-text-script-parity`: it renders normal, superscript, and
+subscript ASCII plus superscript Korean, a subscript combining-mark sequence,
+and a superscript PUA-expanded display string through Canvas2D and CanvasKit.
+Both backends must preserve superscript-before-normal-before-subscript vertical
+ordering, produce ink for every complex-script region, and pass the existing
+fuzzy PNG comparison. The first Chromium proof passed with `1445` exact,
+`801` tolerant, and `289` ink-mask differing pixels over the `244x100` fixture.
 The older `unsupportedDirectReplay` equation/raw-SVG diagnostic patch was
 intentionally not imported because this branch already directly replays both
 operation families; applying it would make the Rust plan disagree with the
@@ -971,13 +979,7 @@ new implementation commit should start from a concrete fixture, corpus document,
 backend proof, or malformed payload that the current branch does not already
 cover.
 
-1. add one browser pixel fixture for ordinary `TextRun` superscript/subscript
-   replay, covering ASCII, Korean, combining-mark, and PUA-expanded text. The
-   shared script metrics, CanvasKit paragraph-shaping path, JSON/JS paint-style
-   fields, and CanvasKit symbol-font glyph coverage are now implemented and
-   contract-tested, but the new path still needs an explicit
-   Canvas2D-vs-CanvasKit raster comparison;
-2. keep the expanded browser baseline manifest running over the checked-in
+1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,
    equation, footnote/endnote, hwpctl control, HWPX format, font mapping,
    header/footer, and mixed-document corpus.
@@ -1000,16 +1002,16 @@ cover.
    finance-statistics, PR/task regression, and multiple promotional real
    document variants so placement and text fallback regressions have more than
    one real-document shape;
-3. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
+2. widen strict `BitmapGlyph` only with producer-output fixtures that keep the
    existing one-strike resource contract;
-4. widen strict `SvgGlyph` only with producer-output fixtures that keep the
+3. widen strict `SvgGlyph` only with producer-output fixtures that keep the
    sanitized static vector contract;
-5. widen native variation replay only with real variable-font corpus fixtures
+4. widen native variation replay only with real variable-font corpus fixtures
    before considering CanvasKit variation replay;
-6. widen native TTC/OTC replay only with real collection fixtures and
+5. widen native TTC/OTC replay only with real collection fixtures and
    digest-pinned corpus cases beyond the existing synthetic fallback controls,
    keeping CanvasKit fallback until its exact face construction is proven;
-7. leave additional COLRv1 blend modes, reusable-node memoization, shapedModern
+6. leave additional COLRv1 blend modes, reusable-node memoization, shapedModern
    layout mutation, cross-scope writer emission, and public `MixedPerGlyph`
    writer emission blocked until their explicit gates are satisfied.
 

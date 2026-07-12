@@ -15289,6 +15289,258 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text style parity exact=${textStyleDiff.exactDiffPixels}, tolerant=${textStyleDiff.rawTolerantDiffPixels}, ink=${textStyleDiff.rawInkMaskDiffPixels}, max_channel_delta=${textStyleDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-script-parity');
+  const textScriptParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const textRun = ({
+      text,
+      x,
+      y,
+      width,
+      color,
+      superscript = false,
+      subscript = false,
+      positions,
+      displayText,
+      displayPositions,
+    }) => {
+      const op = {
+        type: 'textRun',
+        bbox: { x, y, width, height: 38 },
+        text,
+        baseline: 26,
+        rotation: 0,
+        isVertical: false,
+        orientation: 'horizontal',
+        isParaEnd: false,
+        isLineBreakEnd: false,
+        style: {
+          fontFamily: 'Noto Sans KR',
+          fontSize: 22,
+          color,
+          bold: false,
+          italic: false,
+          superscript,
+          subscript,
+          ratio: 1,
+          underline: 'none',
+          underlineShape: 0,
+          strikethrough: false,
+          strikeShape: 0,
+          outlineType: 0,
+          shadowType: 0,
+          shadowColor: '#000000',
+          shadowOffsetX: 0,
+          shadowOffsetY: 0,
+          emboss: false,
+          engrave: false,
+          emphasisDot: 0,
+          underlineColor: color,
+          strikeColor: color,
+          shadeColor: '#ffffff',
+        },
+        positions: positions
+          ?? Array.from({ length: text.length + 1 }, (_, index) => index * 16),
+        controlMarks: [],
+        tabLeaders: [],
+      };
+      if (displayText !== undefined) {
+        op.displayText = displayText;
+      }
+      if (displayPositions !== undefined) {
+        op.displayPositions = displayPositions;
+      }
+      return op;
+    };
+    const tree = {
+      pageWidth: 244,
+      pageHeight: 100,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 2191,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 2191,
+        bounds: { x: 0, y: 0, width: 244, height: 100 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 244, height: 100 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          textRun({
+            text: 'ABC',
+            x: 8,
+            y: 6,
+            width: 52,
+            color: '#008000',
+            positions: [0, 16, 32, 48],
+          }),
+          textRun({
+            text: 'ABC',
+            x: 88,
+            y: 6,
+            width: 52,
+            color: '#d00000',
+            superscript: true,
+            positions: [0, 16, 32, 48],
+          }),
+          textRun({
+            text: 'ABC',
+            x: 168,
+            y: 6,
+            width: 52,
+            color: '#0044d0',
+            subscript: true,
+            positions: [0, 16, 32, 48],
+          }),
+          textRun({
+            text: '한글',
+            x: 8,
+            y: 54,
+            width: 56,
+            color: '#202020',
+            superscript: true,
+            positions: [0, 22, 44],
+          }),
+          textRun({
+            text: 'e\u0301',
+            x: 88,
+            y: 54,
+            width: 44,
+            color: '#202020',
+            subscript: true,
+            positions: [0, 18, 18],
+          }),
+          textRun({
+            text: String.fromCodePoint(0xf012b),
+            displayText: '(인)',
+            x: 160,
+            y: 54,
+            width: 70,
+            color: '#202020',
+            superscript: true,
+            positions: [0, 35, 35],
+            displayPositions: [0, 9, 27, 36],
+          }),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !textScriptParityProbe.error,
+    textScriptParityProbe.error || 'text script parity probe available',
+  );
+  const textScriptStats = {};
+  for (const [backend, dataUrl] of Object.entries(textScriptParityProbe)) {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    const stats = {
+      superscript: { count: 0, yTotal: 0 },
+      normal: { count: 0, yTotal: 0 },
+      subscript: { count: 0, yTotal: 0 },
+      complexInk: [0, 0, 0],
+    };
+    for (let y = 0; y < png.height; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        const red = png.data[offset];
+        const green = png.data[offset + 1];
+        const blue = png.data[offset + 2];
+        const alpha = png.data[offset + 3];
+        if (alpha <= 32) {
+          continue;
+        }
+        if (red > green + 35 && red > blue + 35) {
+          stats.superscript.count += 1;
+          stats.superscript.yTotal += y;
+        } else if (green > red + 35 && green > blue + 20) {
+          stats.normal.count += 1;
+          stats.normal.yTotal += y;
+        } else if (blue > red + 35 && blue > green + 20) {
+          stats.subscript.count += 1;
+          stats.subscript.yTotal += y;
+        }
+        if (y >= 48 && (red < 230 || green < 230 || blue < 230)) {
+          if (x < 72) {
+            stats.complexInk[0] += 1;
+          } else if (x >= 80 && x < 144) {
+            stats.complexInk[1] += 1;
+          } else if (x >= 152) {
+            stats.complexInk[2] += 1;
+          }
+        }
+      }
+    }
+    textScriptStats[backend] = stats;
+  }
+  for (const [backend, stats] of Object.entries(textScriptStats)) {
+    assert(
+      stats.superscript.count > 30 && stats.normal.count > 60 && stats.subscript.count > 30,
+      `${backend} script text draws colored runs superscript=${stats.superscript.count}, normal=${stats.normal.count}, subscript=${stats.subscript.count}`,
+    );
+    const superscriptMeanY = stats.superscript.yTotal / stats.superscript.count;
+    const normalMeanY = stats.normal.yTotal / stats.normal.count;
+    const subscriptMeanY = stats.subscript.yTotal / stats.subscript.count;
+    assert(
+      superscriptMeanY < normalMeanY - 1.5 && subscriptMeanY > normalMeanY + 1,
+      `${backend} script baseline order superscript=${superscriptMeanY.toFixed(2)}, normal=${normalMeanY.toFixed(2)}, subscript=${subscriptMeanY.toFixed(2)}`,
+    );
+    assert(
+      stats.complexInk.every((count) => count > 12),
+      `${backend} script shaping draws Korean/combining/PUA runs ink=${stats.complexInk.join(',')}`,
+    );
+  }
+  const textScriptDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textScriptParityProbe.canvas2d),
+    pngBufferFromDataUrl(textScriptParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-script-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.24,
+      inkMaskMaxDiffRatio: 0.16,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textScriptDiff.passed,
+    `text script parity exact=${textScriptDiff.exactDiffPixels}, tolerant=${textScriptDiff.rawTolerantDiffPixels}, ink=${textScriptDiff.rawInkMaskDiffPixels}, max_channel_delta=${textScriptDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-fallback-font-parity');
   const textFallbackFontProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
