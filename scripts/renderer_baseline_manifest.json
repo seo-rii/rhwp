@@ -755,6 +755,20 @@
       }
     },
     {
+      "id": "header-image-page-5",
+      "file": "pic-in-head-01.hwp",
+      "category": "header-footer",
+      "page": 5,
+      "notes": "Non-zero page coverage for repeated header image placement and page-indexed CanvasKit replay diagnostics.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
       "id": "header-image-alt",
       "file": "pic-in-head-02.hwp",
       "category": "header-footer",
@@ -1271,6 +1285,20 @@
       "category": "mixed-document",
       "page": 0,
       "notes": "Multi-section mixed document sample for repeated page/document structure coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.015
+      }
+    },
+    {
+      "id": "multi-section-doc-page-4",
+      "file": "hwp-multi-001.hwp",
+      "category": "mixed-document",
+      "page": 4,
+      "notes": "Non-zero page coverage across the checked-in multi-section document.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,

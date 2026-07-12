@@ -650,6 +650,7 @@ for (const sampleId of [
   'tac-case-004',
   'tac-case-005',
   'header-image',
+  'header-image-page-5',
   'header-image-alt',
   'shape-object',
   'group-box',
@@ -676,6 +677,7 @@ for (const sampleId of [
   'aift-doc',
   'loading-fail-01',
   'multi-section-doc',
+  'multi-section-doc-page-4',
   'multi-section-doc-2',
   'real-nikorean-plan-2022',
   'real-k-water-rfp',
@@ -698,6 +700,20 @@ for (const sampleId of [
     `renderer baseline manifest must keep existing representative sample '${sampleId}'`,
   );
 }
+assert.equal(
+  rendererBaselineManifest.samples.some((sample) => Number(sample.page) > 0),
+  true,
+  'renderer baseline manifest must keep non-zero page coverage',
+);
+assert(
+  rendererBaselineSource.includes('pageRenderer.renderPage(capturePageIndex')
+    && rendererBaselineSource.includes('pageRenderer?.cancelAll?.()')
+    && rendererBaselineSource.includes('BASELINE_CAPTURE_CANVAS_SELECTOR')
+    && rendererBaselineSource.includes('selectedPageRenderMs')
+    && rendererBaselineDriverSource.includes('averageSelectedPageRenderMs')
+    && !rendererBaselineSource.includes('browser baseline currently supports only page=0 samples'),
+  'browser baseline must render, time, and capture the requested manifest page instead of the first visible canvas',
+);
 for (const watchSample of ['hwpspec.hwp']) {
   assert.equal(
     rendererBaselineManifest.samples.some((sample) => sample.file === watchSample),

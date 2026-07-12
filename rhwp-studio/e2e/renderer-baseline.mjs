@@ -16,6 +16,8 @@ const DEFAULT_BROWSER_PARITY_THRESHOLDS = {
   ignoreChannelDelta: 8,
   maxDiffRatio: 0.005,
 };
+const BASELINE_CAPTURE_CANVAS_ID = 'renderer-baseline-page-canvas';
+const BASELINE_CAPTURE_CANVAS_SELECTOR = `#${BASELINE_CAPTURE_CANVAS_ID}`;
 const BACKENDS = [
   {
     key: 'canvas2d',
@@ -237,6 +239,11 @@ const profiles = parseProfiles(options.profiles);
 if (samples.length === 0) {
   throw new Error('manifest filter removed every sample');
 }
+for (const sample of samples) {
+  if (!Number.isInteger(sample.page) || sample.page < 0) {
+    throw new Error(`baseline sample page must be a non-negative integer: ${sample.id} page=${sample.page}`);
+  }
+}
 
 fs.mkdirSync(options.output, { recursive: true });
 
@@ -247,13 +254,7 @@ const page = await createPage(browser, 1280, 900);
 
 try {
   for (const sample of samples) {
-    if (sample.page !== 0) {
-      throw new Error(
-        `browser baseline currently supports only page=0 samples: ${sample.id} requested page=${sample.page}`,
-      );
-    }
-
-    console.log(`\n[baseline] ${sample.id} (${sample.category})`);
+    console.log(`\n[baseline] ${sample.id} (${sample.category}, page=${sample.page})`);
 
     for (const profile of profiles) {
       for (const backend of BACKENDS) {
@@ -262,15 +263,73 @@ try {
         await loadApp(page, backend.queryForProfile(profile));
         const appLoadMs = performance.now() - appLoadStartedAt;
 
-        await resetRendererDiagnostics(page);
         const documentLoadStartedAt = performance.now();
-        await loadHwpFile(page, sample.file);
+        const documentInfo = await loadHwpFile(page, sample.file);
         const documentLoadAndInitialRenderMs = performance.now() - documentLoadStartedAt;
+        if (sample.page >= documentInfo.pageCount) {
+          throw new Error(
+            `baseline sample page is out of range: ${sample.id} page=${sample.page} pageCount=${documentInfo.pageCount}`,
+          );
+        }
+
+        await page.evaluate(() => window.__canvasView?.pageRenderer?.cancelAll?.());
+        await resetRendererDiagnostics(page);
+        const selectedPageRenderStartedAt = performance.now();
+        await page.evaluate(
+          ({ captureCanvasId, capturePageIndex }) => {
+            const canvasView = window.__canvasView;
+            const pageRenderer = canvasView?.pageRenderer;
+            const wasm = window.__wasm;
+            if (!pageRenderer || !wasm) {
+              throw new Error('baseline page renderer is unavailable');
+            }
+            document.getElementById(captureCanvasId)?.remove();
+            const canvas = document.createElement('canvas');
+            canvas.id = captureCanvasId;
+            canvas.style.position = 'fixed';
+            canvas.style.left = '0';
+            canvas.style.top = '0';
+            canvas.style.zIndex = '2147483647';
+            canvas.style.background = '#fff';
+            canvas.style.pointerEvents = 'none';
+            document.body.appendChild(canvas);
+
+            const pageInfo = wasm.getPageInfo(capturePageIndex);
+            const renderScale = window.devicePixelRatio || 1;
+            pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, renderScale);
+            canvas.style.width = `${canvas.width / renderScale}px`;
+            canvas.style.height = `${canvas.height / renderScale}px`;
+          },
+          {
+            captureCanvasId: BASELINE_CAPTURE_CANVAS_ID,
+            capturePageIndex: sample.page,
+          },
+        );
+        await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
+        const selectedPageRenderMs = performance.now() - selectedPageRenderStartedAt;
 
         const sampleDir = path.join(options.output, sample.id);
         const outputPath = path.join(sampleDir, backend.filenameForProfile(profile));
         const screenshotStartedAt = performance.now();
-        await captureCanvasScreenshot(page, outputPath, `Baseline ${backend.key} (${profile})`);
+        try {
+          await captureCanvasScreenshot(
+            page,
+            outputPath,
+            `Baseline ${backend.key} (${profile})`,
+            BASELINE_CAPTURE_CANVAS_SELECTOR,
+          );
+        } finally {
+          await page.evaluate(
+            ({ captureCanvasId, capturePageIndex }) => {
+              window.__canvasView?.pageRenderer?.cancelReRender?.(capturePageIndex);
+              document.getElementById(captureCanvasId)?.remove();
+            },
+            {
+              captureCanvasId: BASELINE_CAPTURE_CANVAS_ID,
+              capturePageIndex: sample.page,
+            },
+          );
+        }
         const screenshotMs = performance.now() - screenshotStartedAt;
         const diagnostics = await readRendererDiagnostics(page, sample.page, backend.key);
         if (backend.key.startsWith('canvaskit')) {
@@ -394,6 +453,7 @@ try {
           timings: {
             appLoadMs,
             documentLoadAndInitialRenderMs,
+            selectedPageRenderMs,
             screenshotMs,
             totalMs: performance.now() - totalStartedAt,
           },

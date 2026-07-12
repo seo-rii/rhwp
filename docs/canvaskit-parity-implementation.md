@@ -1019,13 +1019,15 @@ Non-goals for the remaining CanvasKit parity work:
 
 Recommended implementation order from this point:
 
-Replay diagnostics are now collected from the existing corpus. Two concrete
-test-infrastructure gaps remain before the proof/corpus-only register below is
-fully accurate: capture non-zero pages from checked-in multi-page documents,
-and add the checked-in HWP/HWPX diagonal-cell pair to CanvasKit browser parity.
-Each later implementation commit should start from a concrete fixture, corpus
-document, backend proof, or malformed payload that the current branch does not
-already cover.
+Replay diagnostics are now collected from the existing corpus. Browser captures
+render the requested manifest page into a dedicated backend canvas instead of
+implicitly taking the first visible page. Checked-in page 5 of the repeated
+header-image document and page 4 of the multi-section document exercise this
+path and keep replay-plan/runtime diagnostics page-indexed. The remaining
+concrete test-infrastructure gap before the proof/corpus-only register below is
+the checked-in HWP/HWPX diagonal-cell pair. Each later implementation commit
+should start from a concrete fixture, corpus document, backend proof, or
+malformed payload that the current branch does not already cover.
 
 1. keep the expanded browser baseline manifest running over the checked-in
    CanvasKit representative suite plus paragraph, table, image, field, form,

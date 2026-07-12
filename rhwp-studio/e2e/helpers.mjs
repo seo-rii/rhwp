@@ -317,13 +317,18 @@ export async function screenshot(page, name) {
   return path;
 }
 
-/** 편집 영역의 첫 번째 페이지 캔버스를 지정 경로로 캡처한다 */
-export async function captureCanvasScreenshot(page, outputPath, logLabel = 'Canvas Screenshot') {
+/** 지정한 편집 영역 캔버스를 캡처한다. selector 기본값은 첫 번째 페이지다. */
+export async function captureCanvasScreenshot(
+  page,
+  outputPath,
+  logLabel = 'Canvas Screenshot',
+  selector = CANVAS_SELECTOR,
+) {
   const { mkdirSync, existsSync } = await import('fs');
   const outputDir = path.dirname(outputPath);
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
-  const canvas = await page.$(CANVAS_SELECTOR);
-  if (!canvas) throw new Error('편집 영역 캔버스를 찾을 수 없습니다');
+  const canvas = await page.$(selector);
+  if (!canvas) throw new Error(`편집 영역 캔버스를 찾을 수 없습니다: ${selector}`);
   const buffer = await canvas.screenshot({ path: outputPath });
   console.log(`  ${logLabel}: ${outputPath}`);
   _lastScreenshot = path.basename(outputPath);
