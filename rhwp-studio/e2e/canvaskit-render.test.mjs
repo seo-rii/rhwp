@@ -352,6 +352,14 @@ async function renderScenario(page, backend, caseInfo) {
     const statsBefore = window.__wasm?.getLayerResourceStats?.() ?? null;
     const tree = window.__wasm?.getPageLayerTree?.(0, profile);
     if (!tree) return null;
+    if (typeof tree !== 'object' || !tree.root) {
+      return {
+        error: 'layer tree root is unavailable',
+        treeType: typeof tree,
+        treeKeys: typeof tree === 'object' ? Object.keys(tree) : [],
+      };
+    }
+    const root = tree.root;
     const statsAfterFirst = window.__wasm?.getLayerResourceStats?.() ?? null;
     const treeAgain = window.__wasm?.getPageLayerTree?.(0, profile);
     const statsAfterSecond = window.__wasm?.getLayerResourceStats?.() ?? null;
@@ -420,9 +428,9 @@ async function renderScenario(page, backend, caseInfo) {
         for (const child of node.children) walk(child);
       }
     };
-    walk(tree.root);
+    walk(root);
     return {
-      kind: tree.root.kind,
+      kind: root.kind,
       opCount,
       mode: window.__canvaskitRenderMode,
       profile: tree.profile,
@@ -466,7 +474,13 @@ async function renderScenario(page, backend, caseInfo) {
         : null,
     };
   });
-  assert(!!layerSummary && layerSummary.opCount > 0, `${caseInfo.name} layer tree exported`);
+  const layerTreeExported = !!layerSummary && !layerSummary.error && layerSummary.opCount > 0;
+  assert(
+    layerTreeExported,
+    layerTreeExported
+      ? `${caseInfo.name} layer tree exported`
+      : `${caseInfo.name} layer tree export failed: ${JSON.stringify(layerSummary)}`,
+  );
   assert(layerSummary?.profile === RENDER_PROFILE, `${caseInfo.name} renderProfile=${RENDER_PROFILE}`);
   assert(layerSummary?.sharedResourceTable === true, `${caseInfo.name} layer resources use shared document table`);
   assert(layerSummary?.embeddedBase64PayloadCount === 0, `${caseInfo.name} object API embeds no base64 payloads`);
@@ -706,20 +720,23 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     const probe = { legacyCalls: 0, layerCalls: 0 };
     const originalLayer = wasm.getPageLayerTree.bind(wasm);
     const originalLegacy = wasm.renderPageToCanvas?.bind(wasm);
-    wasm.getPageLayerTree = (...args) => {
+    const wrappedLayerTree = (...args) => {
       probe.layerCalls += 1;
       return originalLayer(...args);
     };
+    wasm.getPageLayerTree = wrappedLayerTree;
     wasm.renderPageToCanvas = (..._args) => {
       probe.legacyCalls += 1;
       if (originalLegacy) {
         throw new Error('legacy canvas render path should stay unused');
       }
     };
+    window.__canvasView?.pageRenderer?.clearLayerTreeCache?.();
     window.__layerPathProbe = probe;
-    return { ok: true };
+    return { ok: true, wrapperInstalled: wasm.getPageLayerTree === wrappedLayerTree };
   });
   assert(!pathProbeInstall.error, pathProbeInstall.error || 'canvas2d layer probe installed');
+  assert(pathProbeInstall.wrapperInstalled === true, 'canvas2d layer tree probe wrapper installed');
   await loadHwpFile(page, 'lseg-01-basic.hwp');
   const layerPathProbe = await page.evaluate(() => {
     const probe = window.__layerPathProbe;
