@@ -265,7 +265,10 @@ CanvasKit parity is implemented through four layers:
    TextRun warm replay also caches the resolved fallback family by primary
    family, style, fallback class, and text cluster. The bounded cache stores
    family names only; CanvasKit font/typeface objects remain render-owned and
-   are released after each run.
+   are released after each run. Encoded-image decode failures are contained as
+   unavailable resources and memoized by resource identity until that resource
+   table is replaced, preventing corrupt payloads from aborting page replay or
+   repeatedly entering the decoder.
 4. Diagnostics explain every selection, rejection, fallback, and cache decision
    that affects faithful replay.
 

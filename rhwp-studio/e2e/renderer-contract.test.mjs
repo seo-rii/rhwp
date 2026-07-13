@@ -1305,6 +1305,24 @@ assert.equal(
   false,
   'CanvasKit resource cache must not collapse missing resource hashes into a shared unknown cache key',
 );
+assertTokensInOrder(
+  canvaskitResourceCacheSource,
+  [
+    'if (this.failedImageCacheKeys.has(cacheKey)) return null',
+    'try {',
+    'image = this.canvasKit.MakeImageFromEncoded(bytes)',
+    '} catch {',
+    'image = null',
+    'this.failedImageCacheKeys.add(cacheKey)',
+  ],
+  'CanvasKit resource cache must contain and memoize encoded-image decode failures',
+);
+assert(
+  canvaskitResourceCacheSource.includes('this.failedImageCacheKeys.clear()')
+    && canvaskitResourceCacheSource.includes("if (key.startsWith('res:')) {")
+    && canvaskitResourceCacheSource.includes('this.failedImageCacheKeys.delete(key)'),
+  'CanvasKit image decode failure cache must clear on dispose and resource-table replacement',
+);
 assert.equal(
   fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
     .includes('resourceTableFingerprint(tree.resources, this.resourcePayloadFingerprints)'),

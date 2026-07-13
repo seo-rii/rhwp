@@ -23,6 +23,7 @@ export class CanvasKitResourceCache {
   readonly mipmappedImageCache = new Map<string, CanvasKitImage>();
   readonly imageEffectCache = new Map<string, CanvasKitImage>();
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
+  readonly failedImageCacheKeys = new Set<string>();
   private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
     cacheHits: 0,
     cacheMisses: 0,
@@ -83,11 +84,20 @@ export class CanvasKitResourceCache {
 
     const cached = this.imageCache.get(cacheKey);
     if (cached) return cached;
+    if (this.failedImageCacheKeys.has(cacheKey)) return null;
 
     const bytes = this.imageBytes(resourceId, base64);
     if (!bytes) return null;
-    const image = this.canvasKit.MakeImageFromEncoded(bytes);
-    if (!image) return null;
+    let image: CanvasKitImage | null;
+    try {
+      image = this.canvasKit.MakeImageFromEncoded(bytes);
+    } catch {
+      image = null;
+    }
+    if (!image) {
+      this.failedImageCacheKeys.add(cacheKey);
+      return null;
+    }
     this.imageCache.set(cacheKey, image);
     return image;
   }
@@ -276,6 +286,7 @@ export class CanvasKitResourceCache {
       image.delete();
     }
     this.imageCache.clear();
+    this.failedImageCacheKeys.clear();
 
   }
 
@@ -376,6 +387,11 @@ export class CanvasKitResourceCache {
       }
       image.delete();
       this.imageCache.delete(key);
+    }
+    for (const key of this.failedImageCacheKeys) {
+      if (key.startsWith('res:')) {
+        this.failedImageCacheKeys.delete(key);
+      }
     }
   }
 }
