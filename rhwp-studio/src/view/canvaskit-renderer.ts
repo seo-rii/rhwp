@@ -2569,6 +2569,7 @@ export class CanvasKitLayerRenderer {
       return false;
     }
 
+    let replayed = false;
     canvas.save();
     try {
       canvas.translate(x, y);
@@ -2596,6 +2597,7 @@ export class CanvasKitLayerRenderer {
           if (layer.fill !== null) {
             const paint = this.makePaint(layer.fill, 'fill', layer.opacity);
             canvas.drawPath(path, paint);
+            replayed = true;
             paint.delete();
           }
           if (layer.stroke) {
@@ -2610,6 +2612,7 @@ export class CanvasKitLayerRenderer {
               effect.delete();
             }
             canvas.drawPath(path, strokePaint);
+            replayed = true;
             strokePaint.delete();
           }
           path.delete();
@@ -2619,11 +2622,12 @@ export class CanvasKitLayerRenderer {
       }
       for (const layer of textLayers) {
         this.renderStaticSvgTextLayer(canvas, layer);
+        replayed = true;
       }
     } finally {
       canvas.restore();
     }
-    return true;
+    return replayed;
   }
 
   private renderStaticSvgTextLayer(

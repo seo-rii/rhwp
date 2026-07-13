@@ -276,6 +276,10 @@ The implementation should keep Canvas2D as a test oracle, not a code
 dependency. If CanvasKit behavior intentionally differs because Skia semantics
 are stricter or more native-ready, the fixture should label that difference
 instead of hiding it behind a Canvas2D overlay.
+Equation SVG replay counts as successful only after a parsed path or text layer
+actually reaches CanvasKit drawing. If every SVG path fails CanvasKit parsing,
+the renderer must use the existing equation layout-box replay instead of
+suppressing it with a blank SVG result.
 GPU surface failures follow the same rule: CanvasKit may retry with a CanvasKit
 software surface, but it must not instantiate Canvas2D as a hidden renderer
 fallback.

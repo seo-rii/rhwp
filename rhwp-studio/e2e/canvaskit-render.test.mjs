@@ -1045,15 +1045,28 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       layoutDirectCalls += 1;
       return originalRenderEquationBox.apply(this, args);
     };
+    let validLayoutDirectCalls = 0;
+    let malformedLayoutDirectCalls = 0;
     try {
       renderer.renderPage(probeTree, probeCanvas, 1);
+      validLayoutDirectCalls = layoutDirectCalls;
+      probeTree.resources = {
+        ...probeTree.resources,
+        tableId: 903,
+        svgFragments: ['<path d="not-a-path"/>'],
+        svgHashes: ['malformed-equation-probe'],
+        svgKeys: ['malformed-equation-probe'],
+      };
+      renderer.renderPage(probeTree, probeCanvas, 1);
+      malformedLayoutDirectCalls = layoutDirectCalls - validLayoutDirectCalls;
     } finally {
       renderer.renderEquationBox = originalRenderEquationBox;
     }
     const equationSvgNativeProbe = {
       hasEquationSvgDomImageCache: Object.prototype.hasOwnProperty.call(renderer, 'equationSvgDomImageCache'),
       hasEquationSvgImageCache: Object.prototype.hasOwnProperty.call(renderer, 'equationSvgImageCache'),
-      layoutDirectCalls,
+      validLayoutDirectCalls,
+      malformedLayoutDirectCalls,
     };
 
     const corruptBitmapGroup = 'canvaskit-corrupt-bitmap-glyph';
@@ -1791,8 +1804,12 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     `equation svg CanvasKit cache removed=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
   );
   assert(
-    nativeRouting.equationSvgNativeProbe?.layoutDirectCalls === 0,
+    nativeRouting.equationSvgNativeProbe?.validLayoutDirectCalls === 0,
     `equation svg resource bypasses layout fallback=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.equationSvgNativeProbe?.malformedLayoutDirectCalls === 1,
+    `malformed equation svg uses layout fallback=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
   );
   assert(
     nativeRouting.corruptBitmapNativeProbe?.selectedVariantKind === 'textRun'
