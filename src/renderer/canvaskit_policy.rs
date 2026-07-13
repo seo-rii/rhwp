@@ -3061,6 +3061,7 @@ mod tests {
     fn canvaskit_requires_svg_static_sanitized_contract() {
         let mut resources = ResourceArena::default();
         let empty_svg_id = resources.intern_svg_fragment("<svg viewBox=\"0 0 16 16\"></svg>");
+        let malformed_svg_id = resources.intern_svg_fragment("<path d=\"not-a-path\"/>");
         let path_svg_id = resources
             .intern_svg_fragment("<path d=\"M0 0 L16 0 L16 16 L0 16 Z\" fill=\"#00ffff\"/>");
         let mut outline = outline(GlyphOutlinePayloadKind::SvgGlyph);
@@ -3106,6 +3107,12 @@ mod tests {
         );
 
         outline.svg_glyph = Some(svg_payload(empty_svg_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
+        );
+
+        outline.svg_glyph = Some(svg_payload(malformed_svg_id));
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
             (false, Some(VariantRejectReason::UnsupportedSvgGlyph))
@@ -3166,6 +3173,9 @@ mod tests {
         ));
         assert!(!canvaskit_static_svg_fragment_has_path_layer(
             "<rect x=\"0\" y=\"0\" width=\"0\" height=\"16\"/>"
+        ));
+        assert!(!canvaskit_static_svg_fragment_has_path_layer(
+            "<path d=\"not-a-path\"/>"
         ));
     }
 }

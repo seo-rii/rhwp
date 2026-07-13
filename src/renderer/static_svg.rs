@@ -136,8 +136,16 @@ fn static_svg_tag_is_ignored_subtree(name: &str) -> bool {
 
 fn static_svg_tag_has_path_layer(name: &str, raw_attributes: &str) -> bool {
     match name {
-        "path" => static_svg_attribute_value(raw_attributes, "d")
-            .is_some_and(|value| !value.trim().is_empty()),
+        "path" => static_svg_attribute_value(raw_attributes, "d").is_some_and(|value| {
+            let mut has_segment = false;
+            for segment in svgtypes::PathParser::from(value.as_str()) {
+                if segment.is_err() {
+                    return false;
+                }
+                has_segment = true;
+            }
+            has_segment
+        }),
         "rect" => {
             static_svg_attribute_number(raw_attributes, "width").is_some_and(|value| value > 0.0)
                 && static_svg_attribute_number(raw_attributes, "height")
@@ -353,6 +361,9 @@ mod tests {
         ));
         assert!(!static_svg_fragment_has_path_layer(
             "<rect x=\"0\" y=\"0\" width=\"0\" height=\"16\"/>"
+        ));
+        assert!(!static_svg_fragment_has_path_layer(
+            "<path d=\"not-a-path\"/>"
         ));
     }
 }
