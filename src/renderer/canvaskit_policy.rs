@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
+use image::load_from_memory;
+
 use crate::model::image::ImageEffect;
 use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
@@ -1062,9 +1064,12 @@ fn canvaskit_glyph_outline_payload_status(
             let Some(payload) = &outline.bitmap_glyph else {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             };
+            let Some(bytes) = resources.image_bytes(payload.image_resource_id) else {
+                return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
+            };
             if bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
                 || !payload.has_strict_visual_contract()
-                || resources.image_bytes(payload.image_resource_id).is_none()
+                || load_from_memory(bytes).is_err()
             {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             }
@@ -1417,6 +1422,8 @@ mod tests {
         BoundingBox, PageRenderTree, RawSvgNode, RenderNode, RenderNodeType, ShapeTransform,
     };
     use crate::renderer::{PathCommand, TextStyle};
+
+    const FIXTURE_PNG: &[u8] = include_bytes!("../../assets/logo/logo-32.png");
 
     fn identity() -> LayerAffineTransform {
         LayerAffineTransform {
@@ -1936,7 +1943,7 @@ mod tests {
             _ => unreachable!("helper returns textRun"),
         };
         let mut resources = ResourceArena::default();
-        let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
+        let image_id = resources.intern_image_bytes(FIXTURE_PNG);
         let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
         outline.variant.anchor_op_id = Some(anchor_op_id);
         outline.variant.requires = vec![
@@ -1973,6 +1980,63 @@ mod tests {
             item.path == "root/leaf/variantOps/0"
                 && item.op_type == "glyphOutline"
                 && item.status == CanvasKitReplayStatus::Direct
+        }));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_keeps_text_fallback_for_undecodable_bitmap_glyph() {
+        let text = text_run_op("text-0");
+        let anchor_op_id = match &text {
+            PaintOp::TextRun { run, .. } => run
+                .variant
+                .as_ref()
+                .expect("text fallback variant")
+                .stable_op_id(),
+            _ => unreachable!("helper returns textRun"),
+        };
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(b"RHWP");
+        let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        outline.variant.anchor_op_id = Some(anchor_op_id);
+        outline.variant.requires = vec![
+            "text.glyphOutline.bitmapGlyph".to_string(),
+            "text.strictVisualFallbackFree".to_string(),
+        ];
+        outline.bitmap_glyph = Some(bitmap_payload(image_id));
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        )
+        .resources(resources)
+        .variant_ops(vec![PaintOp::GlyphOutline {
+            bbox: valid_bbox(),
+            outline: Box::new(outline),
+        }])
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let report = plan
+            .text_variants
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("bitmap sidecar variant report");
+
+        assert_eq!(report.selected_variant_id, "textRun");
+        assert!(report.parts.iter().any(|part| {
+            part.variant_id == "glyphOutline"
+                && !part.replayable
+                && part.reason == Some("unsupportedBitmapGlyph")
+        }));
+        assert!(plan.items.iter().any(|item| {
+            item.path == "root/leaf/0"
+                && item.op_type == "textRun"
+                && item.status == CanvasKitReplayStatus::TextFallback
+        }));
+        assert!(plan.items.iter().any(|item| {
+            item.path == "root/leaf/variantOps/0"
+                && item.op_type == "glyphOutline"
+                && item.status == CanvasKitReplayStatus::TextFallback
         }));
     }
 
@@ -2868,7 +2932,7 @@ mod tests {
     #[test]
     fn canvaskit_rejects_mixed_glyph_outline_payload_families() {
         let mut resources = ResourceArena::default();
-        let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
+        let image_id = resources.intern_image_bytes(FIXTURE_PNG);
         let svg_id = resources
             .intern_svg_fragment("<path d=\"M0 0 L16 0 L16 16 L0 16 Z\" fill=\"#00ffff\"/>");
 
@@ -2912,7 +2976,7 @@ mod tests {
     #[test]
     fn canvaskit_requires_bitmap_strict_visual_contract() {
         let mut resources = ResourceArena::default();
-        let image_id = resources.intern_image_bytes(&[0, 1, 2, 3]);
+        let image_id = resources.intern_image_bytes(FIXTURE_PNG);
         let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
         let mut payload = bitmap_payload(image_id);
         payload.filtering = Some(BitmapGlyphFiltering::BackendDefault);
