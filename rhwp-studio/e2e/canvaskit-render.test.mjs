@@ -1171,6 +1171,76 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       rejectedDetails: corruptBitmapReport?.rejectedVariants.flatMap((variant) => variant.details ?? []) ?? [],
     };
 
+    const corruptSvgGroup = 'canvaskit-corrupt-svg-glyph';
+    const corruptSvgTextRun = {
+      ...corruptBitmapTextRun,
+      id: `op-text-${corruptSvgGroup}`,
+      variant: {
+        ...corruptBitmapTextRun.variant,
+        equivalenceGroup: corruptSvgGroup,
+      },
+    };
+    const corruptSvgOutline = {
+      ...corruptBitmapOutline,
+      id: `op-outline-${corruptSvgGroup}`,
+      payloadKind: 'svgGlyph',
+      source: corruptSvgTextRun.source,
+      variant: {
+        ...corruptBitmapOutline.variant,
+        equivalenceGroup: corruptSvgGroup,
+        requires: ['text.outlineGlyph', 'text.glyphOutline.svgGlyph'],
+        anchorOpId: corruptSvgTextRun.id,
+      },
+      bitmapGlyph: undefined,
+      svgGlyph: {
+        vectorResourceId: 'corrupt-svg-glyph-resource',
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+          baselineY: 0,
+        },
+        viewBox: { x: 0, y: 0, width: 20, height: 20 },
+        securityMode: 'staticSanitized',
+        scriptAllowed: false,
+        animationAllowed: false,
+        externalResourcesAllowed: false,
+        interactivityAllowed: false,
+      },
+    };
+    const corruptSvgCanvas = document.createElement('canvas');
+    corruptSvgCanvas.width = 48;
+    corruptSvgCanvas.height = 40;
+    renderer.renderPage({
+      pageWidth: 48,
+      pageHeight: 40,
+      profile: 'screen',
+      root: {
+        kind: 'leaf',
+        bounds: { x: 0, y: 0, width: 48, height: 40 },
+        cacheHint: 'none',
+        ops: [corruptSvgTextRun, corruptSvgOutline],
+      },
+      resources: {
+        tableId: 904,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: ['<path d="not-a-path"/>'],
+        svgHashes: ['corrupt-svg-glyph-resource'],
+        svgKeys: ['corrupt-svg-glyph-resource'],
+      },
+    }, corruptSvgCanvas, 1);
+    const corruptSvgReport = renderer.getTextVariantSelectionDiagnostics().find(
+      (report) => report.equivalenceGroup === corruptSvgGroup,
+    );
+    const corruptSvgNativeProbe = {
+      selectedVariantId: corruptSvgReport?.selectedVariantId,
+      selectedVariantKind: corruptSvgReport?.selectedVariantKind,
+      rejectedReasons: corruptSvgReport?.rejectedVariants.flatMap((variant) => variant.reasons) ?? [],
+      rejectedDetails: corruptSvgReport?.rejectedVariants.flatMap((variant) => variant.details ?? []) ?? [],
+    };
+
     let textBlobNativeProbe = null;
     if (window.__canvaskitRenderMode === 'default') {
       const probeCanvas = document.createElement('canvas');
@@ -1726,6 +1796,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       batangcheFamily: renderer.resolveCanvasKitFontFamily?.('바탕체'),
       equationSvgNativeProbe,
       corruptBitmapNativeProbe,
+      corruptSvgNativeProbe,
       textBlobNativeProbe,
       textEffectNativeProbe,
       textProjectionNativeProbe,
@@ -1816,6 +1887,12 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       && nativeRouting.corruptBitmapNativeProbe?.rejectedReasons?.includes('unsupportedBitmapGlyph')
       && nativeRouting.corruptBitmapNativeProbe?.rejectedDetails?.includes('imageDecodeFailed'),
     `undecodable BitmapGlyph keeps TextRun fallback=${JSON.stringify(nativeRouting.corruptBitmapNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.corruptSvgNativeProbe?.selectedVariantKind === 'textRun'
+      && nativeRouting.corruptSvgNativeProbe?.rejectedReasons?.includes('unsupportedSvgGlyph')
+      && nativeRouting.corruptSvgNativeProbe?.rejectedDetails?.includes('pathDecodeFailed'),
+    `unparseable SvgGlyph keeps TextRun fallback=${JSON.stringify(nativeRouting.corruptSvgNativeProbe)}`,
   );
   if (CANVASKIT_MODE === 'default') {
     assert(

@@ -709,6 +709,36 @@ export class CanvasKitLayerRenderer {
         payloadDetails = 'imageDecodeFailed';
       }
     }
+    if (payloadSupported && op.payloadKind === 'svgGlyph') {
+      const vectorIndex = resolveLayerResourceIndex(
+        op.svgGlyph?.vectorResourceId,
+        this.lastRenderedTree?.resources?.svgKeys,
+        this.lastRenderedTree?.resources?.svgFragments.length ?? 0,
+      );
+      const fragment = vectorIndex === undefined
+        ? undefined
+        : this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex];
+      let hasCanvasKitPath = false;
+      if (typeof fragment === 'string') {
+        for (const layer of parseStaticSvgPathLayers(fragment)) {
+          let path: Path | null = null;
+          try {
+            path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+          } catch {
+            path = null;
+          }
+          if (path) {
+            path.delete();
+            hasCanvasKitPath = true;
+            break;
+          }
+        }
+      }
+      if (!hasCanvasKitPath) {
+        payloadSupported = false;
+        payloadDetails = 'pathDecodeFailed';
+      }
+    }
     const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
     const replayable = payloadSupported && paintStyleSupported;
     let reason: LayerTextVariantReplayStatus['reason'];
