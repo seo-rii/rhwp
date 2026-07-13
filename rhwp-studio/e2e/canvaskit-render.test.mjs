@@ -1056,6 +1056,108 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       layoutDirectCalls,
     };
 
+    const corruptBitmapGroup = 'canvaskit-corrupt-bitmap-glyph';
+    const corruptBitmapTextRun = {
+      ...simpleTextRun,
+      id: `op-text-${corruptBitmapGroup}`,
+      text: 'A',
+      positions: [0, 20],
+      bbox: { x: 8, y: 8, width: 24, height: 24 },
+      baseline: 20,
+      style: { ...simpleTextRun.style, color: '#dd0000' },
+      source: { id: 902, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+      variant: {
+        equivalenceGroup: corruptBitmapGroup,
+        variantId: 'textRun',
+        variantKind: 'textRun',
+        partIndex: 0,
+        partCount: 1,
+        isDefaultFallback: true,
+        quality: 'exact',
+      },
+    };
+    const corruptBitmapOutline = {
+      id: `op-outline-${corruptBitmapGroup}`,
+      type: 'glyphOutline',
+      payloadKind: 'bitmapGlyph',
+      bbox: { x: 8, y: 8, width: 20, height: 20 },
+      source: corruptBitmapTextRun.source,
+      variant: {
+        equivalenceGroup: corruptBitmapGroup,
+        variantId: 'glyphOutline',
+        variantKind: 'glyphOutline',
+        partIndex: 0,
+        partCount: 1,
+        isDefaultFallback: false,
+        quality: 'exact',
+        requires: ['text.outlineGlyph', 'text.glyphOutline.bitmapGlyph'],
+        anchorOpId: corruptBitmapTextRun.id,
+        localPaintOrder: 0,
+      },
+      paintStyle: { ...simpleTextRun.style, color: '#000000' },
+      placement: {
+        runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+        baselineY: 0,
+      },
+      paths: [],
+      bitmapGlyph: {
+        imageResourceId: 'corrupt-bitmap-glyph-image',
+        sourceRangeUtf8: { start: 0, end: 1 },
+        glyphRange: { start: 0, end: 1 },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 8, f: 8 },
+          baselineY: 0,
+        },
+        strikeSelection: 'producerResolved',
+        alphaMode: 'premultiplied',
+        scalingPolicy: 'scaleToEm',
+        filtering: 'nearest',
+      },
+      diagnostics: {
+        quality: 'exact',
+        replayEligibility: 'portable',
+        strictVisualEligible: true,
+        maxOriginDeltaPx: 0,
+        maxAdvanceDeltaPx: 0,
+        maxResidualAfterAdjustmentPx: 0,
+        clusterMismatchCount: 0,
+        missingGlyphCount: 0,
+        usedFallbackFontCount: 0,
+      },
+    };
+    const corruptBitmapCanvas = document.createElement('canvas');
+    corruptBitmapCanvas.width = 48;
+    corruptBitmapCanvas.height = 40;
+    renderer.renderPage({
+      pageWidth: 48,
+      pageHeight: 40,
+      profile: 'screen',
+      root: {
+        kind: 'leaf',
+        bounds: { x: 0, y: 0, width: 48, height: 40 },
+        cacheHint: 'none',
+        ops: [corruptBitmapTextRun, corruptBitmapOutline],
+      },
+      resources: {
+        tableId: 902,
+        images: [new Uint8Array([0x52, 0x48, 0x57, 0x50])],
+        imageHashes: ['corrupt-bitmap-glyph-image'],
+        imageKeys: ['corrupt-bitmap-glyph-image'],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+    }, corruptBitmapCanvas, 1);
+    const corruptBitmapReport = renderer.getTextVariantSelectionDiagnostics().find(
+      (report) => report.equivalenceGroup === corruptBitmapGroup,
+    );
+    const corruptBitmapNativeProbe = {
+      selectedVariantId: corruptBitmapReport?.selectedVariantId,
+      selectedVariantKind: corruptBitmapReport?.selectedVariantKind,
+      rejectedReasons: corruptBitmapReport?.rejectedVariants.flatMap((variant) => variant.reasons) ?? [],
+      rejectedDetails: corruptBitmapReport?.rejectedVariants.flatMap((variant) => variant.details ?? []) ?? [],
+    };
+
     let textBlobNativeProbe = null;
     if (window.__canvaskitRenderMode === 'default') {
       const probeCanvas = document.createElement('canvas');
@@ -1610,6 +1712,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       fastPreviewHasPreferRasterHint: JSON.stringify(window.__wasm?.getPageLayerTree?.(0, 'fast-preview') ?? {}).includes('"cacheHint":"preferRaster"'),
       batangcheFamily: renderer.resolveCanvasKitFontFamily?.('바탕체'),
       equationSvgNativeProbe,
+      corruptBitmapNativeProbe,
       textBlobNativeProbe,
       textEffectNativeProbe,
       textProjectionNativeProbe,
@@ -1690,6 +1793,12 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
   assert(
     nativeRouting.equationSvgNativeProbe?.layoutDirectCalls === 0,
     `equation svg resource bypasses layout fallback=${JSON.stringify(nativeRouting.equationSvgNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.corruptBitmapNativeProbe?.selectedVariantKind === 'textRun'
+      && nativeRouting.corruptBitmapNativeProbe?.rejectedReasons?.includes('unsupportedBitmapGlyph')
+      && nativeRouting.corruptBitmapNativeProbe?.rejectedDetails?.includes('imageDecodeFailed'),
+    `undecodable BitmapGlyph keeps TextRun fallback=${JSON.stringify(nativeRouting.corruptBitmapNativeProbe)}`,
   );
   if (CANVASKIT_MODE === 'default') {
     assert(

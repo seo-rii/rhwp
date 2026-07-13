@@ -688,7 +688,27 @@ export class CanvasKitLayerRenderer {
       op,
       this.lastRenderedTree?.resources,
     );
-    const payloadSupported = op.diagnostics.strictVisualEligible && payloadStatus.supported;
+    let payloadSupported = op.diagnostics.strictVisualEligible && payloadStatus.supported;
+    let payloadDetails = payloadStatus.details;
+    if (payloadSupported && op.payloadKind === 'bitmapGlyph') {
+      const imageIndex = resolveLayerResourceIndex(
+        op.bitmapGlyph?.imageResourceId,
+        this.lastRenderedTree?.resources?.imageKeys,
+        this.lastRenderedTree?.resources?.images.length ?? 0,
+      );
+      let imageDecodable = false;
+      if (imageIndex !== undefined) {
+        try {
+          imageDecodable = this.resourceCache.image(imageIndex) !== null;
+        } catch {
+          imageDecodable = false;
+        }
+      }
+      if (!imageDecodable) {
+        payloadSupported = false;
+        payloadDetails = 'imageDecodeFailed';
+      }
+    }
     const paintStyleSupported = isFillOnlyGlyphOutlineStyle(op);
     const replayable = payloadSupported && paintStyleSupported;
     let reason: LayerTextVariantReplayStatus['reason'];
@@ -700,7 +720,7 @@ export class CanvasKitLayerRenderer {
     return {
       replayable,
       reason,
-      details: payloadStatus.details,
+      details: payloadDetails,
       outlineEligibility: {
         strictVisualEligible: op.diagnostics.strictVisualEligible,
         payloadSupported,
