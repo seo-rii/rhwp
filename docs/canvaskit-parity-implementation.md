@@ -262,6 +262,10 @@ CanvasKit parity is implemented through four layers:
 3. CanvasKit adapter code builds `Path`, `Paint`, `Shader`, `Image`, `Surface`,
    font, and text objects from those payloads. It may use CanvasKit caches, but
    cache keys must be based on resource identity and replay-relevant options.
+   TextRun warm replay also caches the resolved fallback family by primary
+   family, style, fallback class, and text cluster. The bounded cache stores
+   family names only; CanvasKit font/typeface objects remain render-owned and
+   are released after each run.
 4. Diagnostics explain every selection, rejection, fallback, and cache decision
    that affects faithful replay.
 

@@ -120,6 +120,7 @@ import { CanvasKitSurfaceCache, type CanvasKitSurfaceDiagnostics } from './canva
 const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
 const MAX_TEXT_BLOB_CACHE_ENTRIES = 4096;
+const MAX_TEXT_FALLBACK_FAMILY_CACHE_ENTRIES = 4096;
 
 type CanvasKitClipState = {
   bounds: LayerBounds;
@@ -145,6 +146,9 @@ export class CanvasKitLayerRenderer {
   private readonly textBlobCache = new Map<string, TextBlob>();
   private textBlobCacheHits = 0;
   private textBlobCacheMisses = 0;
+  private readonly textFallbackFamilyCache = new Map<string, string>();
+  private textFallbackFamilyCacheHits = 0;
+  private textFallbackFamilyCacheMisses = 0;
   private readonly currentClipStack: CanvasKitClipState[] = [];
   private readonly currentCacheHintStack: LayerCacheHint[] = [];
   private currentClipEnabled = true;
@@ -822,14 +826,7 @@ export class CanvasKitLayerRenderer {
     const decorationsAreMirrors = 'legacyVisuals' in op && op.legacyVisuals?.decorations === 'mirror';
     const emphasisDot = decorationsAreMirrors ? 0 : (op.style.emphasisDot ?? 0);
     const shadeColor = (typeof op.style.shadeColor === 'string' ? op.style.shadeColor : '#ffffff').toLowerCase();
-    const primaryObjects = this.makeTextObjects(
-      op.style.fontFamily,
-      fontSize,
-      op.style.bold,
-      op.style.italic,
-      op.style.color,
-      1,
-    );
+    const primaryPaint = this.makePaint(op.style.color, 'fill');
     const text = 'displayText' in op && typeof op.displayText === 'string'
       ? op.displayText
       : mapPuaDisplayText(op.text);
@@ -838,7 +835,6 @@ export class CanvasKitLayerRenderer {
       : text === op.text ? op.positions : estimateDisplayTextPositions(text, op.style);
     const clusters = splitIntoClusters(text);
     const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
-    textObjectsByFamily.set(op.style.fontFamily, primaryObjects);
     const fallbackFamilies = [
       op.style.fontFamily,
       'Noto Sans KR',
@@ -849,10 +845,12 @@ export class CanvasKitLayerRenderer {
       'Noto Serif KR',
       'Noto Serif CJK KR',
     ].filter((family, index, all) => all.indexOf(family) === index);
-    const clusterFonts: Font[] = [];
+    const clusterFonts: Array<Font | null> = [];
+    const clusterFontFamilies: string[] = [];
     const clusterFontKeys: string[] = [];
+    const resolvedPrimaryFamily = this.fontRegistry.resolveFamily(op.style.fontFamily);
     for (const cluster of clusters) {
-      let selectedFont = primaryObjects.font;
+      let selectedFont: Font | null = null;
       let selectedFontFamily = op.style.fontFamily;
       const codePoint = cluster.text.codePointAt(0) ?? 0;
       const needsCurrencyFallback =
@@ -866,37 +864,95 @@ export class CanvasKitLayerRenderer {
         : needsSymbolFallback
           ? ['GulimChe', '굴림체', 'D2Coding', 'NanumGothicCoding', 'Noto Sans Mono']
           : [];
-      const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
-      if (preferredFallbackFamilies.length > 0 || primaryGlyphs?.some((glyphId) => glyphId === 0)) {
-        const candidateFamilies = preferredFallbackFamilies.length > 0 ? preferredFallbackFamilies : fallbackFamilies;
-        for (const family of candidateFamilies) {
-          let candidate = textObjectsByFamily.get(family);
-          if (!candidate) {
-            candidate = this.makeTextObjects(
-              family,
-              fontSize,
-              op.style.bold,
-              op.style.italic,
-              op.style.color,
-              1,
-            );
-            textObjectsByFamily.set(family, candidate);
+      const fallbackClass = needsCurrencyFallback ? 'currency' : needsSymbolFallback ? 'symbol' : 'general';
+      const familyCacheKey = JSON.stringify([
+        resolvedPrimaryFamily,
+        op.style.bold ? 'bold' : 'normal',
+        op.style.italic ? 'italic' : 'upright',
+        fallbackClass,
+        cluster.text,
+      ]);
+      const cachedFamily = this.textFallbackFamilyCache.get(familyCacheKey);
+      if (cachedFamily !== undefined) {
+        this.textFallbackFamilyCacheHits += 1;
+        this.textFallbackFamilyCache.delete(familyCacheKey);
+        this.textFallbackFamilyCache.set(familyCacheKey, cachedFamily);
+        selectedFontFamily = cachedFamily;
+      } else {
+        this.textFallbackFamilyCacheMisses += 1;
+        let primaryObjects = textObjectsByFamily.get(op.style.fontFamily);
+        if (!primaryObjects) {
+          primaryObjects = this.makeTextObjects(
+            op.style.fontFamily,
+            fontSize,
+            op.style.bold,
+            op.style.italic,
+            op.style.color,
+            1,
+          );
+          textObjectsByFamily.set(op.style.fontFamily, primaryObjects);
+        }
+        selectedFont = primaryObjects.font;
+        const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
+        if (preferredFallbackFamilies.length > 0 || primaryGlyphs?.some((glyphId) => glyphId === 0)) {
+          const candidateFamilies = preferredFallbackFamilies.length > 0 ? preferredFallbackFamilies : fallbackFamilies;
+          for (const family of candidateFamilies) {
+            let candidate = textObjectsByFamily.get(family);
+            if (!candidate) {
+              candidate = this.makeTextObjects(
+                family,
+                fontSize,
+                op.style.bold,
+                op.style.italic,
+                op.style.color,
+                1,
+              );
+              textObjectsByFamily.set(family, candidate);
+            }
+            const candidateGlyphs = candidate.font.getGlyphIDs(cluster.text);
+            if (candidateGlyphs && candidateGlyphs.every((glyphId) => glyphId !== 0)) {
+              selectedFont = candidate.font;
+              selectedFontFamily = family;
+              break;
+            }
           }
-          const candidateGlyphs = candidate.font.getGlyphIDs(cluster.text);
-          if (candidateGlyphs && candidateGlyphs.every((glyphId) => glyphId !== 0)) {
-            selectedFont = candidate.font;
-            selectedFontFamily = family;
-            break;
+        }
+        this.textFallbackFamilyCache.set(familyCacheKey, selectedFontFamily);
+        if (this.textFallbackFamilyCache.size > MAX_TEXT_FALLBACK_FAMILY_CACHE_ENTRIES) {
+          const oldestKey = this.textFallbackFamilyCache.keys().next().value;
+          if (oldestKey !== undefined) {
+            this.textFallbackFamilyCache.delete(oldestKey);
           }
         }
       }
-      clusterFonts.push(selectedFont);
-      clusterFontKeys.push([
+      const clusterFontKey = [
         this.fontRegistry.resolveFamily(selectedFontFamily),
         fontSize.toFixed(3),
         op.style.bold ? 'bold' : 'normal',
         op.style.italic ? 'italic' : 'upright',
-      ].join('|'));
+      ].join('|');
+      const skipsTextBlob = cluster.text === ' '
+        || cluster.text === '\t'
+        || cluster.text === '\u2007'
+        || startsWithInvalidControl(cluster.text);
+      if (!selectedFont && !skipsTextBlob && !this.textBlobCache.has(`${clusterFontKey}|${cluster.text}`)) {
+        let selectedObjects = textObjectsByFamily.get(selectedFontFamily);
+        if (!selectedObjects) {
+          selectedObjects = this.makeTextObjects(
+            selectedFontFamily,
+            fontSize,
+            op.style.bold,
+            op.style.italic,
+            op.style.color,
+            1,
+          );
+          textObjectsByFamily.set(selectedFontFamily, selectedObjects);
+        }
+        selectedFont = selectedObjects.font;
+      }
+      clusterFonts.push(selectedFont);
+      clusterFontFamilies.push(selectedFontFamily);
+      clusterFontKeys.push(clusterFontKey);
     }
     const drawClusters = (originX: number, originY: number) => {
       const textWidth = positions.at(-1) ?? 0;
@@ -1102,7 +1158,25 @@ export class CanvasKitLayerRenderer {
               this.textBlobCache.delete(cacheKey);
               this.textBlobCache.set(cacheKey, blob);
             } else {
-              blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+              let font = clusterFonts[index];
+              if (!font) {
+                const family = clusterFontFamilies[index];
+                let objects = textObjectsByFamily.get(family);
+                if (!objects) {
+                  objects = this.makeTextObjects(
+                    family,
+                    fontSize,
+                    op.style.bold,
+                    op.style.italic,
+                    op.style.color,
+                    1,
+                  );
+                  textObjectsByFamily.set(family, objects);
+                }
+                font = objects.font;
+                clusterFonts[index] = font;
+              }
+              blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, font);
               if (!blob) {
                 return;
               }
@@ -1148,7 +1222,25 @@ export class CanvasKitLayerRenderer {
             this.textBlobCache.delete(cacheKey);
             this.textBlobCache.set(cacheKey, blob);
           } else {
-            blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, clusterFonts[index]);
+            let font = clusterFonts[index];
+            if (!font) {
+              const family = clusterFontFamilies[index];
+              let objects = textObjectsByFamily.get(family);
+              if (!objects) {
+                objects = this.makeTextObjects(
+                  family,
+                  fontSize,
+                  op.style.bold,
+                  op.style.italic,
+                  op.style.color,
+                  1,
+                );
+                textObjectsByFamily.set(family, objects);
+              }
+              font = objects.font;
+              clusterFonts[index] = font;
+            }
+            blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, font);
             if (!blob) {
               continue;
             }
@@ -1179,7 +1271,7 @@ export class CanvasKitLayerRenderer {
         const secondPaint = this.makePaint(emboss ? '#808080' : '#ffffff', 'fill');
         drawPass(-offset, -offset, firstPaint);
         drawPass(offset, offset, secondPaint);
-        drawPass(0, 0, primaryObjects.paint);
+        drawPass(0, 0, primaryPaint);
         firstPaint.delete();
         secondPaint.delete();
       } else {
@@ -1197,7 +1289,7 @@ export class CanvasKitLayerRenderer {
           fillPaint.delete();
           strokePaint.delete();
         } else {
-          drawPass(0, 0, primaryObjects.paint);
+          drawPass(0, 0, primaryPaint);
         }
       }
 
@@ -1264,6 +1356,7 @@ export class CanvasKitLayerRenderer {
       font.delete();
       typeface.delete();
     }
+    primaryPaint.delete();
   }
 
   private renderGlyphRun(
@@ -3478,6 +3571,9 @@ export class CanvasKitLayerRenderer {
     this.textBlobCache.clear();
     this.textBlobCacheHits = 0;
     this.textBlobCacheMisses = 0;
+    this.textFallbackFamilyCache.clear();
+    this.textFallbackFamilyCacheHits = 0;
+    this.textFallbackFamilyCacheMisses = 0;
 
     this.clearStaticPictureCache();
     this.surfaceCache.dispose();

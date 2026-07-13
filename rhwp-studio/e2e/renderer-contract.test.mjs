@@ -1364,6 +1364,25 @@ assert(
     && canvaskitSource.includes('bold && this.fontRegistry.shouldSynthesizeBold(family)'),
   'CanvasKit TextRun fallback must mirror Canvas2D font-face registrations and synthesize bold only when no 700 face exists',
 );
+const canvaskitTextRunBlock = extractMethodBody(canvaskitSource, 'renderTextRun');
+assert(
+  canvaskitSource.includes('const MAX_TEXT_FALLBACK_FAMILY_CACHE_ENTRIES = 4096')
+    && canvaskitSource.includes('private readonly textFallbackFamilyCache = new Map<string, string>()')
+    && canvaskitTextRunBlock.includes('this.textFallbackFamilyCache.get(familyCacheKey)')
+    && canvaskitTextRunBlock.includes('!this.textBlobCache.has(`${clusterFontKey}|${cluster.text}`)')
+    && canvaskitSource.includes('this.textFallbackFamilyCache.clear()'),
+  'CanvasKit TextRun warm replay must use a bounded family-name cache and release it with the renderer',
+);
+assertTokensInOrder(
+  canvaskitTextRunBlock,
+  [
+    'const cachedFamily = this.textFallbackFamilyCache.get(familyCacheKey)',
+    'const clusterFontKey = [',
+    '!this.textBlobCache.has(`${clusterFontKey}|${cluster.text}`)',
+    'selectedObjects = this.makeTextObjects(',
+  ],
+  'CanvasKit TextRun must consult family and TextBlob caches before constructing CanvasKit font objects',
+);
 const pageRendererContentBlock = extractMethodBody(pageRendererSource, 'renderContent');
 assert(
   pageRendererContentBlock.includes('this.canvaskitRenderer.renderPageWithMarginGuides(')

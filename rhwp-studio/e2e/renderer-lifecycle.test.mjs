@@ -17546,6 +17546,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       patternImageCacheSize: renderer?.patternImageCache?.size ?? -1,
       staticPictureCacheSize: renderer?.staticPictureCache?.size ?? -1,
       textBlobCacheSize: renderer?.textBlobCache?.size ?? -1,
+      textFallbackFamilyCacheSize: renderer?.textFallbackFamilyCache?.size ?? -1,
       fontAliasCount: renderer?.fontAliases?.size ?? -1,
       layerTreeCacheSize: canvasView?.pageRenderer?.layerTreeCache?.size ?? -1,
     };
@@ -17589,6 +17590,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       patternImageCacheSize: renderer.patternImageCache?.size ?? -1,
       staticPictureCacheSize: renderer.staticPictureCache?.size ?? -1,
       textBlobCacheSize: renderer.textBlobCache?.size ?? -1,
+      textFallbackFamilyCacheSize: renderer.textFallbackFamilyCache?.size ?? -1,
       fontAliasCount: renderer.fontAliases?.size ?? -1,
       lastRenderedTree: renderer.lastRenderedTree ? 'present' : 'null',
       lastTargetCanvas: renderer.lastTargetCanvas ? 'present' : 'null',
@@ -17605,6 +17607,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(afterDispose.patternImageCacheSize === 0, `pattern cache cleared=${afterDispose.patternImageCacheSize}`);
   assert(afterDispose.staticPictureCacheSize === 0, `static picture cache cleared=${afterDispose.staticPictureCacheSize}`);
   assert(afterDispose.textBlobCacheSize === 0, `text blob cache cleared=${afterDispose.textBlobCacheSize}`);
+  assert(afterDispose.textFallbackFamilyCacheSize === 0, `text fallback family cache cleared=${afterDispose.textFallbackFamilyCacheSize}`);
   assert(afterDispose.fontAliasCount === 0, `font aliases cleared=${afterDispose.fontAliasCount}`);
   assert(afterDispose.lastRenderedTree === 'null', `last rendered tree released=${afterDispose.lastRenderedTree}`);
   assert(afterDispose.lastTargetCanvas === 'null', `last target canvas released=${afterDispose.lastTargetCanvas}`);

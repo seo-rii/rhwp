@@ -1083,15 +1083,46 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       };
       const hitsBefore = renderer.textBlobCacheHits ?? 0;
       const missesBefore = renderer.textBlobCacheMisses ?? 0;
-      renderer.renderPage(probeTree, probeCanvas, 1);
-      const cacheSizeAfterFirst = renderer.textBlobCache?.size ?? 0;
-      renderer.renderPage(probeTree, probeCanvas, 1);
-      textBlobNativeProbe = {
-        cacheSizeAfterFirst,
-        cacheSizeAfterSecond: renderer.textBlobCache?.size ?? 0,
-        hitsGained: (renderer.textBlobCacheHits ?? 0) - hitsBefore,
-        missesGained: (renderer.textBlobCacheMisses ?? 0) - missesBefore,
+      renderer.textFallbackFamilyCache?.clear?.();
+      const fallbackHitsBefore = renderer.textFallbackFamilyCacheHits ?? 0;
+      const fallbackMissesBefore = renderer.textFallbackFamilyCacheMisses ?? 0;
+      const originalMakeTextObjects = renderer.makeTextObjects;
+      let makeTextObjectsCalls = 0;
+      let getGlyphIdsCalls = 0;
+      renderer.makeTextObjects = function makeTextObjectsCacheProbe() {
+        makeTextObjectsCalls += 1;
+        const objects = originalMakeTextObjects.apply(this, arguments);
+        const originalGetGlyphIDs = objects.font.getGlyphIDs.bind(objects.font);
+        objects.font.getGlyphIDs = function getGlyphIDsCacheProbe() {
+          getGlyphIdsCalls += 1;
+          return originalGetGlyphIDs(...arguments);
+        };
+        return objects;
       };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        const cacheSizeAfterFirst = renderer.textBlobCache?.size ?? 0;
+        const fallbackCacheSizeAfterFirst = renderer.textFallbackFamilyCache?.size ?? 0;
+        const makeTextObjectsCallsAfterFirst = makeTextObjectsCalls;
+        const getGlyphIdsCallsAfterFirst = getGlyphIdsCalls;
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        textBlobNativeProbe = {
+          cacheSizeAfterFirst,
+          cacheSizeAfterSecond: renderer.textBlobCache?.size ?? 0,
+          hitsGained: (renderer.textBlobCacheHits ?? 0) - hitsBefore,
+          missesGained: (renderer.textBlobCacheMisses ?? 0) - missesBefore,
+          fallbackCacheSizeAfterFirst,
+          fallbackCacheSizeAfterSecond: renderer.textFallbackFamilyCache?.size ?? 0,
+          fallbackHitsGained: (renderer.textFallbackFamilyCacheHits ?? 0) - fallbackHitsBefore,
+          fallbackMissesGained: (renderer.textFallbackFamilyCacheMisses ?? 0) - fallbackMissesBefore,
+          firstMakeTextObjectsCalls: makeTextObjectsCallsAfterFirst,
+          firstGetGlyphIdsCalls: getGlyphIdsCallsAfterFirst,
+          secondMakeTextObjectsCalls: makeTextObjectsCalls - makeTextObjectsCallsAfterFirst,
+          secondGetGlyphIdsCalls: getGlyphIdsCalls - getGlyphIdsCallsAfterFirst,
+        };
+      } finally {
+        renderer.makeTextObjects = originalMakeTextObjects;
+      }
     }
 
     let textEffectNativeProbe = null;
@@ -1672,6 +1703,28 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     assert(
       nativeRouting.textBlobNativeProbe?.hitsGained > 0,
       `text blob cache hits recorded=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.fallbackCacheSizeAfterSecond > 0,
+      `text fallback family cache populated=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.fallbackMissesGained > 0,
+      `text fallback family cache misses recorded=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.fallbackHitsGained > 0,
+      `text fallback family cache hits recorded=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.firstMakeTextObjectsCalls > 0
+        && nativeRouting.textBlobNativeProbe?.firstGetGlyphIdsCalls > 0,
+      `cold text replay probes font coverage=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
+    );
+    assert(
+      nativeRouting.textBlobNativeProbe?.secondMakeTextObjectsCalls === 0
+        && nativeRouting.textBlobNativeProbe?.secondGetGlyphIdsCalls === 0,
+      `warm text replay skips font construction and coverage probes=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
     );
   }
   } finally {
