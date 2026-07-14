@@ -1319,7 +1319,7 @@ impl LayoutEngine {
                 // 그룹 내 그림: common이 비어있으므로 w, h(shape_attr 기반)를 직접 사용
                 let bin_data_id = pic.image_attr.bin_data_id;
                 let image_data =
-                    find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.clone());
+                    find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.load());
                 let img_id = tree.next_id();
                 let img_node = RenderNode::new(
                     img_id,
@@ -1354,9 +1354,10 @@ impl LayoutEngine {
                 // Task #195 단계 8: BinData에서 OOXML 차트 시도 → 성공 시 네이티브 SVG 렌더
                 let mut rendered = false;
                 if let Some(content) = find_bin_data(bin_data_content, ole.bin_data_id as u16) {
+                    let content_data = content.data.load();
                     // HWPX에서 주입된 OOXML 차트 XML 직접 경로 (CFB 컨테이너 없음)
                     if content.extension == "ooxml_chart" {
-                        if let Some(chart) = crate::ooxml_chart::OoxmlChart::parse(&content.data) {
+                        if let Some(chart) = crate::ooxml_chart::OoxmlChart::parse(&content_data) {
                             let svg_fragment =
                                 chart.render_svg(render_x, render_y, render_w, render_h);
                             let node_id = tree.next_id();
@@ -1373,7 +1374,7 @@ impl LayoutEngine {
                     }
                     if !rendered {
                         if let Some(container) =
-                            crate::parser::ole_container::parse_ole_container(&content.data)
+                            crate::parser::ole_container::parse_ole_container(&content_data)
                         {
                             if let Some(ooxml_bytes) = container.ooxml_chart.as_ref() {
                                 if let Some(chart) =
@@ -1509,7 +1510,7 @@ impl LayoutEngine {
             if let Some(ref img_fill) = drawing.fill.image {
                 let bin_data_id = img_fill.bin_data_id;
                 let image_data =
-                    find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.clone());
+                    find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.load());
                 // 이미지 원본 크기: shape_attr의 original_width/height (HWPUNIT)
                 let original_size = {
                     let ow = drawing.shape_attr.original_width;

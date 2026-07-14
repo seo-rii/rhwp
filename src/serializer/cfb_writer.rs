@@ -110,18 +110,19 @@ fn write_hwp_cfb(
         let storage_name = format!("BIN{:04X}.{}", storage_id, ext);
         let path = format!("/BinData/{}", storage_name);
 
-        let is_ole_storage = content.data.len() >= CFB_MAGIC.len()
-            && content.data[..CFB_MAGIC.len()] == CFB_MAGIC
+        let bytes = content.data.load();
+        let is_ole_storage = bytes.len() >= CFB_MAGIC.len()
+            && bytes[..CFB_MAGIC.len()] == CFB_MAGIC
             && bin_data_list
                 .iter()
                 .any(|bd| bd.data_type == BinDataType::Storage && bd.storage_id == content.id);
         let payload = if is_ole_storage {
-            let mut bytes = Vec::with_capacity(content.data.len() + 4);
-            bytes.extend_from_slice(&(content.data.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(&content.data);
-            bytes
+            let mut payload = Vec::with_capacity(bytes.len() + 4);
+            payload.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+            payload.extend_from_slice(&bytes);
+            payload
         } else {
-            content.data.clone()
+            bytes
         };
 
         let data = if should_compress {

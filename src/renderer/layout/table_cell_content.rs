@@ -692,7 +692,7 @@ impl LayoutEngine {
 
                             let bin_id = pic.image_attr.bin_data_id;
                             let img_data =
-                                find_bin_data(bin_data_content, bin_id).map(|bd| bd.data.clone());
+                                find_bin_data(bin_data_content, bin_id).map(|bd| bd.data.load());
                             let img_node_id = tree.next_id();
                             let img_node = RenderNode::new(
                                 img_node_id,

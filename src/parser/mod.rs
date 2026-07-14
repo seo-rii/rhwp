@@ -120,7 +120,7 @@ pub fn parse_hwp(data: &[u8]) -> Result<Document, ParseError> {
 /// 표준 CfbReader로 파싱
 fn parse_hwp_with_cfb(
     mut cfb: cfb_reader::CfbReader,
-    _raw_data: &[u8],
+    raw_data: &[u8],
 ) -> Result<Document, ParseError> {
     // 2. FileHeader 파싱
     let header_data = cfb.read_file_header().map_err(ParseError::CfbError)?;
@@ -147,7 +147,8 @@ fn parse_hwp_with_cfb(
 
     // 5-7. 미리보기, BinData, 추가 스트림
     let preview = extract_preview(&mut cfb);
-    let bin_data_content = load_bin_data_content(&mut cfb, &doc_info.bin_data_list, compressed);
+    let bin_data_content =
+        load_bin_data_content(&mut cfb, raw_data, &doc_info.bin_data_list, compressed);
     let extra_streams = collect_extra_streams(&mut cfb, &doc_info.bin_data_list);
 
     // Document 조립
@@ -387,7 +388,7 @@ fn load_bin_data_content_lenient(
 
                 contents.push(BinDataContent {
                     id: bd.storage_id,
-                    data: decompressed,
+                    data: decompressed.into(),
                     extension: ext.to_string(),
                 });
             }
@@ -783,12 +784,78 @@ fn collect_extra_streams(
 ///
 /// bin_data_list의 각 항목에 대해 CFB 스토리지에서 바이너리 데이터를 읽어온다.
 /// Embedding 타입인 경우에만 로드하며, 압축된 경우 해제한다.
+struct Hwp5BinResolver {
+    cfb: std::sync::Mutex<cfb_reader::CfbReader>,
+    ole_streams: std::collections::HashSet<String>,
+}
+
+impl std::fmt::Debug for Hwp5BinResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hwp5BinResolver")
+            .field("ole_streams", &self.ole_streams.len())
+            .finish()
+    }
+}
+
+impl crate::model::bin_data::BinDataResolver for Hwp5BinResolver {
+    fn resolve(&self, key: &str) -> Vec<u8> {
+        let mut cfb = match self.cfb.lock() {
+            Ok(cfb) => cfb,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let raw = match cfb.read_bin_data(key) {
+            Ok(data) => data,
+            Err(error) => {
+                eprintln!("경고: BinData '{}' 로드 실패: {}", key, error);
+                return Vec::new();
+            }
+        };
+        let mut decompressed = match cfb_reader::decompress_stream(&raw) {
+            Ok(data) => data,
+            Err(_) => raw,
+        };
+
+        if self.ole_streams.contains(key) && decompressed.len() >= 12 {
+            const CFB_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+            if decompressed[..8] != CFB_MAGIC && decompressed[4..12] == CFB_MAGIC {
+                decompressed.drain(..4);
+            }
+        }
+
+        decompressed
+    }
+}
+
 fn load_bin_data_content(
     cfb: &mut cfb_reader::CfbReader,
+    data: &[u8],
     bin_data_list: &[crate::model::bin_data::BinData],
     _compressed: bool,
 ) -> Vec<BinDataContent> {
     use crate::model::bin_data::BinDataType;
+
+    let ole_streams = bin_data_list
+        .iter()
+        .filter(|bin_data| bin_data.data_type == BinDataType::Storage)
+        .map(|bin_data| {
+            let extension = bin_data.extension.as_deref().unwrap_or("OLE");
+            format!("BIN{:04X}.{}", bin_data.storage_id, extension)
+        })
+        .collect();
+    let resolver: Option<std::sync::Arc<dyn crate::model::bin_data::BinDataResolver>> =
+        match cfb_reader::CfbReader::open(data) {
+            Ok(reader) => Some(std::sync::Arc::new(Hwp5BinResolver {
+                cfb: std::sync::Mutex::new(reader),
+                ole_streams,
+            })),
+            Err(error) => {
+                eprintln!(
+                    "경고: BinData 지연 로딩 리졸버 생성 실패: {} — 즉시 로드로 폴백",
+                    error
+                );
+                None
+            }
+        };
 
     let mut contents = Vec::new();
 
@@ -809,6 +876,22 @@ fn load_bin_data_content(
         };
         let storage_name = format!("BIN{:04X}.{}", bd.storage_id, ext);
 
+        if let Some(resolver) = resolver.as_ref() {
+            if !cfb.has_stream(&format!("/BinData/{}", storage_name)) {
+                eprintln!("경고: BinData '{}' 스트림 없음", storage_name);
+                continue;
+            }
+            contents.push(BinDataContent {
+                id: bd.storage_id,
+                data: crate::model::bin_data::BinDataBytes::Lazy {
+                    resolver: resolver.clone(),
+                    key: storage_name,
+                },
+                extension: ext.to_string(),
+            });
+            continue;
+        }
+
         match cfb.read_bin_data(&storage_name) {
             Ok(data) => {
                 // 압축된 BinData 해제 시도
@@ -819,7 +902,7 @@ fn load_bin_data_content(
 
                 // Task #195 단계 6: OLE Storage는 해제 후 선두 4바이트 size prefix를 스킵하여
                 // 내부 CFB(`d0cf11e0...`) 시작 바이트부터 노출한다.
-                if is_storage && decompressed.len() > 8 {
+                if is_storage && decompressed.len() >= 12 {
                     // CFB 매직이 바로 시작하면 prefix 없음
                     let cfb_magic = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
                     if decompressed[..8] != cfb_magic && decompressed[4..12] == cfb_magic {
@@ -829,7 +912,7 @@ fn load_bin_data_content(
 
                 contents.push(BinDataContent {
                     id: bd.storage_id,
-                    data: decompressed,
+                    data: decompressed.into(),
                     extension: ext.to_string(),
                 });
             }

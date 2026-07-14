@@ -19,6 +19,33 @@ pub mod utils;
 use crate::model::bin_data::{BinData, BinDataContent, BinDataType};
 use crate::model::document::{Document, FileHeader, HwpVersion, Section};
 
+/// HWPX ZIP 원본을 보유하고 요청 시점에 BinData 엔트리를 압축 해제한다.
+struct HwpxBinResolver {
+    reader: std::sync::Mutex<reader::HwpxReader>,
+}
+
+impl std::fmt::Debug for HwpxBinResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HwpxBinResolver").finish_non_exhaustive()
+    }
+}
+
+impl crate::model::bin_data::BinDataResolver for HwpxBinResolver {
+    fn resolve(&self, key: &str) -> Vec<u8> {
+        let mut reader = match self.reader.lock() {
+            Ok(reader) => reader,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match reader.read_file_bytes(key) {
+            Ok(data) => data,
+            Err(error) => {
+                eprintln!("경고: BinData '{}' 로드 실패: {}", key, error);
+                Vec::new()
+            }
+        }
+    }
+}
+
 /// HWPX 파싱 에러
 #[derive(Debug)]
 pub enum HwpxError {
@@ -100,25 +127,31 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
         }
     }
 
-    // 5. BinData 이미지 로딩
+    // 5. BinData 이미지 등록 (지연 로딩)
+    let bin_data_entries: std::collections::HashSet<String> =
+        reader.file_names().into_iter().collect();
+    let bin_resolver: std::sync::Arc<dyn crate::model::bin_data::BinDataResolver> =
+        std::sync::Arc::new(HwpxBinResolver {
+            reader: std::sync::Mutex::new(reader::HwpxReader::open(data)?),
+        });
     let mut bin_data_content = Vec::new();
     for (i, item) in package_info.bin_data_items.iter().enumerate() {
         if !item.is_embedded {
             continue;
         }
-        match reader.read_file_bytes(&item.href) {
-            Ok(data) => {
-                let ext = item.href.rsplit('.').next().unwrap_or("dat").to_string();
-                bin_data_content.push(BinDataContent {
-                    id: (i + 1) as u16,
-                    data,
-                    extension: ext,
-                });
-            }
-            Err(e) => {
-                eprintln!("경고: BinData '{}' 로드 실패: {}", item.href, e);
-            }
+        if !bin_data_entries.contains(&item.href) {
+            eprintln!("경고: BinData '{}' 엔트리 없음", item.href);
+            continue;
         }
+        let ext = item.href.rsplit('.').next().unwrap_or("dat").to_string();
+        bin_data_content.push(BinDataContent {
+            id: (i + 1) as u16,
+            data: crate::model::bin_data::BinDataBytes::Lazy {
+                resolver: bin_resolver.clone(),
+                key: item.href.clone(),
+            },
+            extension: ext,
+        });
     }
 
     // 5-1. Chart/*.xml (OOXML 차트) 로딩 — bin_data_id = 60000+N, extension="ooxml_chart"
@@ -129,7 +162,7 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
             Ok(data) => {
                 bin_data_content.push(BinDataContent {
                     id: 60000 + n,
-                    data,
+                    data: data.into(),
                     extension: "ooxml_chart".to_string(),
                 });
             }

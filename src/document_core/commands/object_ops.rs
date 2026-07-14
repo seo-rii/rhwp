@@ -1279,7 +1279,7 @@ impl DocumentCore {
         let next_id = self.document.bin_data_content.len() as u16 + 1;
         self.document.bin_data_content.push(BinDataContent {
             id: next_id,
-            data: image_data.to_vec(),
+            data: image_data.to_vec().into(),
             extension: extension.to_string(),
         });
 

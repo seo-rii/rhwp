@@ -90,7 +90,7 @@ pub fn serialize_hwpx(doc: &Document) -> Result<Vec<u8>, SerializeError> {
                     entry.bin_data_id
                 ))
             })?;
-        z.write_deflated(&entry.href, &data.data)?;
+        z.write_deflated(&entry.href, &data.data.load())?;
         zip_bin_entries.insert(entry.href.clone());
     }
 

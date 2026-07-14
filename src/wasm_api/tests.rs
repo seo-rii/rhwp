@@ -171,7 +171,7 @@ fn test_external_image_reference_discovery_and_injection_use_bin_data_index() {
     assert_eq!(doc.document().bin_data_content.len(), 2);
     assert!(doc.document().bin_data_content[0].data.is_empty());
     assert_eq!(doc.document().bin_data_content[1].id, 2);
-    assert_eq!(doc.document().bin_data_content[1].data, b"GIF89a");
+    assert_eq!(doc.document().bin_data_content[1].data.load(), b"GIF89a");
     assert_eq!(doc.document().bin_data_content[1].extension, "gif");
     assert_eq!(doc.get_external_image_basenames(), "[]");
 
@@ -198,7 +198,7 @@ fn test_external_image_key_injection_targets_only_requested_reference() {
         doc.document().bin_data_content[0].data.is_empty(),
         "key injection must not fall back to basename matching"
     );
-    assert_eq!(doc.document().bin_data_content[1].data, b"GIF89a");
+    assert_eq!(doc.document().bin_data_content[1].data.load(), b"GIF89a");
     assert_eq!(doc.document().bin_data_content[1].extension, "gif");
     assert!(!external_image_ref_loaded(&doc, "binData:1"));
     assert!(external_image_ref_loaded(&doc, "binData:2"));
@@ -236,7 +236,7 @@ fn test_external_image_basename_injection_respects_index_first_loaded_state() {
     let mut doc = external_image_test_doc();
     doc.document_mut().bin_data_content.push(BinDataContent {
         id: 99,
-        data: b"GIF".to_vec(),
+        data: b"GIF".to_vec().into(),
         extension: "gif".to_string(),
     });
     let before = doc.document().bin_data_content[0].clone();
@@ -247,13 +247,16 @@ fn test_external_image_basename_injection_respects_index_first_loaded_state() {
         "basename injection should skip the already-loaded index-1 slot and still load binData:2"
     );
     assert_eq!(doc.document().bin_data_content[0].id, before.id);
-    assert_eq!(doc.document().bin_data_content[0].data, before.data);
+    assert_eq!(
+        doc.document().bin_data_content[0].data.load(),
+        before.data.load()
+    );
     assert_eq!(
         doc.document().bin_data_content[0].extension,
         before.extension
     );
     assert_eq!(doc.document().bin_data_content[1].id, 2);
-    assert_eq!(doc.document().bin_data_content[1].data, b"GIF89a");
+    assert_eq!(doc.document().bin_data_content[1].data.load(), b"GIF89a");
     assert!(external_image_ref_loaded(&doc, "binData:1"));
     assert!(external_image_ref_loaded(&doc, "binData:2"));
 }
@@ -317,7 +320,7 @@ fn test_shape_picture_external_image_reference_uses_same_injection_contract() {
     assert_eq!(doc.document().bin_data_content[2].id, 3);
     assert_eq!(doc.document().bin_data_content[2].extension, "png");
     assert_eq!(
-        doc.document().bin_data_content[2].data,
+        doc.document().bin_data_content[2].data.load(),
         b"\x89PNG\r\n\x1A\n"
     );
     assert!(external_image_ref_loaded(&doc, "binData:3"));
@@ -2063,7 +2066,7 @@ fn test_web_saved_vs_original_detailed() {
         let saved_bc = saved_doc.bin_data_content.iter().find(|c| c.id == bc.id);
         match saved_bc {
             Some(sbc) => {
-                if bc.data.len() == sbc.data.len() && bc.data == sbc.data {
+                if bc.data.len() == sbc.data.len() && bc.data.load() == sbc.data.load() {
                     eprintln!(
                         "  ID {}: 동일 ({}B, ext={})",
                         bc.id,
@@ -13112,7 +13115,7 @@ fn test_analyze_reference_picture() {
             bc.data.len()
         );
         if bc.data.len() >= 8 {
-            let sig = &bc.data[..8];
+            let sig = &bc.data.load()[..8];
             let format = if sig[0..2] == [0xFF, 0xD8] {
                 "JPEG"
             } else if sig[0..4] == [0x89, 0x50, 0x4E, 0x47] {

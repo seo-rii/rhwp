@@ -1657,7 +1657,7 @@ fn test_ole_storage_size_prefix_restored() {
         preview: None,
         bin_data_content: vec![BinDataContent {
             id: 1,
-            data: ole_cfb.clone(),
+            data: ole_cfb.clone().into(),
             extension: "OLE".to_string(),
         }],
         extra_streams: Vec::new(),

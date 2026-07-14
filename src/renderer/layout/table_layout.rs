@@ -492,7 +492,7 @@ impl LayoutEngine {
                                     effect: img_fill.effect,
                                     ..ImageNode::new(
                                         img_fill.bin_data_id,
-                                        Some(img_content.data.clone()),
+                                        Some(img_content.data.load()),
                                     )
                                 }),
                                 BoundingBox::new(zone_x, zone_y, zone_w, zone_h),

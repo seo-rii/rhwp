@@ -261,14 +261,14 @@ impl Document {
             let id = (self.bin_data_content.len() + 1) as u16;
             self.bin_data_content.push(BinDataContent {
                 id,
-                data: Vec::new(),
+                data: Vec::new().into(),
                 extension: String::new(),
             });
         }
 
         let content = &mut self.bin_data_content[idx];
         content.id = bin_data_id;
-        content.data = data;
+        content.data = data.into();
         content.extension = extension;
         true
     }
