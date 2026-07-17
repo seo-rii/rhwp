@@ -1401,6 +1401,55 @@ mod tests {
         }
     }
 
+    // ── #2279 한컴돋움/한컴바탕 = Haansoft 실메트릭 ──
+
+    /// 한컴돋움/한컴바탕의 실체는 Haansoft Dotum/Batang (HDOTUM.TTF/HBATANG.TTF
+    /// name table 한국어명). 한글 PDF 실측(36398599 pi35 단일줄 무신축 '*' run:
+    /// 0.583em, 한글 음절 1.0em)과 hmtx 가 일치 — HCR(함초롬) 메트릭('*' 0.498,
+    /// 음절 0.97em)으로 회귀하면 '*' 마스킹 구분선·본문 래핑 줄수가 한글 대비
+    /// ±1 이탈한다 (92 컨트롤셋 36398599/36399105 −1쪽 계열).
+    #[test]
+    fn issue_2279_hancom_dotum_batang_use_haansoft_metrics() {
+        let fs = 20.0; // 15pt
+        let w = |fam: &str, c: char| {
+            measure_char_width_embedded(fam, false, false, c, fs)
+                .unwrap_or_else(|| panic!("측정 실패: {fam} {c:?}"))
+        };
+        // 한컴돋움 = Haansoft Dotum
+        assert!(
+            (w("한컴돋움", '*') - fs * 0.583).abs() < 0.05,
+            "'*' {}",
+            w("한컴돋움", '*')
+        );
+        assert!(
+            (w("한컴돋움", '0') - fs * 0.583).abs() < 0.05,
+            "'0' {}",
+            w("한컴돋움", '0')
+        );
+        assert!(
+            (w("한컴돋움", '가') - fs * 1.0).abs() < 0.05,
+            "'가' {}",
+            w("한컴돋움", '가')
+        );
+        // 한컴바탕 = Haansoft Batang (음절 1.0em; ASCII 는 #2156 표와 동일)
+        assert!(
+            (w("한컴바탕", '가') - fs * 1.0).abs() < 0.05,
+            "'가' {}",
+            w("한컴바탕", '가')
+        );
+        assert!(
+            (w("한컴바탕", '*') - fs * 0.5).abs() < 0.05,
+            "'*' {}",
+            w("한컴바탕", '*')
+        );
+        // 함초롬돋움은 종전대로 HCR Dotum 메트릭 유지 (한글 대체 여부 미실측)
+        assert!(
+            (w("함초롬돋움", '가') - fs * 0.97).abs() < 0.05,
+            "HCR '가' {}",
+            w("함초롬돋움", '가')
+        );
+    }
+
     // ── MockTextMeasurer 테스트 ──
 
     #[test]
