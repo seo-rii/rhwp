@@ -156,6 +156,18 @@ impl HwpDocument {
             .map_err(|e| e.into())
     }
 
+    /// 문서 전체의 bounded CanvasKit direct replay capability를 반환한다.
+    #[wasm_bindgen(js_name = getCanvasKitDocumentPreflight)]
+    pub fn get_canvaskit_document_preflight(
+        &self,
+        mode: &str,
+        profile_name: &str,
+    ) -> Result<String, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        self.get_canvaskit_document_preflight_native(mode, profile)
+            .map_err(|e| e.into())
+    }
+
     /// 페이지 레이어 트리를 JSON 문자열로 반환한다. profile을 명시적으로 덮어쓸 수 있다.
     #[wasm_bindgen(js_name = getPageLayerTreeWithProfile)]
     pub fn get_page_layer_tree_with_profile(

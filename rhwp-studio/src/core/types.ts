@@ -269,6 +269,55 @@ export type LayerNode = LayerGroupNode | LayerClipNode | LayerLeafNode;
 
 export type LayerCacheHint = 'none' | 'staticSubtree' | 'preferRaster' | 'preferVectorRecording';
 export type LayerRenderProfile = 'fast-preview' | 'screen' | 'print' | 'high-quality';
+
+export type CanvasKitDocumentPreflightStatus = 'eligible' | 'ineligible' | 'incomplete';
+
+export interface CanvasKitReplaySummary {
+  totalItems: number;
+  directItems: number;
+  directRequiredItems: number;
+  compatOverlayItems: number;
+  textFallbackItems: number;
+  unsupportedItems: number;
+  hiddenOverlayViolations: number;
+}
+
+export interface CanvasKitDocumentPreflightBlocker {
+  code:
+    | 'pageLimitExceeded'
+    | 'workLimitExceeded'
+    | 'pageBuildFailed'
+    | 'hiddenCanvas2dOverlayRequired'
+    | 'unsupported'
+    | 'textFallback'
+    | 'compatOverlay';
+  pageIndex: number;
+  opType?: string;
+  detail?: string;
+}
+
+export interface CanvasKitDocumentPreflight {
+  schemaVersion: 1;
+  mode: 'default' | 'compat';
+  profile: LayerRenderProfile;
+  status: CanvasKitDocumentPreflightStatus;
+  eligible: boolean;
+  complete: boolean;
+  pageCount: number;
+  scannedPages: number;
+  scannedWorkUnits: number;
+  limits: {
+    maxPages: number;
+    maxWorkUnits: number;
+    maxBlockers: number;
+    maxRequiredFontFamilies: number;
+  };
+  summary: CanvasKitReplaySummary;
+  blockers: CanvasKitDocumentPreflightBlocker[];
+  requiredFontFamilies: string[];
+  capabilityDigest: string;
+}
+
 export type LayerSemanticRole =
   | 'generic'
   | 'page'

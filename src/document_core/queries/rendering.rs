@@ -247,6 +247,44 @@ impl DocumentCore {
         Ok(plan.to_json())
     }
 
+    pub fn get_canvaskit_document_preflight_native(
+        &self,
+        mode: &str,
+        profile: RenderProfile,
+    ) -> Result<String, HwpError> {
+        use crate::renderer::canvaskit_policy::{
+            analyze_canvaskit_document_preflight, estimate_canvaskit_page_lowering_work,
+            CanvasKitBoundedWorkCount, CanvasKitPreflightPageBuild, CanvasKitReplayMode,
+        };
+
+        let mode = CanvasKitReplayMode::from_str(mode).ok_or_else(|| {
+            HwpError::RenderError(format!(
+                "지원하지 않는 CanvasKit replay mode입니다: {mode}. allowed modes: default, compat"
+            ))
+        })?;
+        let preflight = analyze_canvaskit_document_preflight(
+            self.page_count(),
+            mode,
+            profile,
+            |page_index, remaining_work_units| -> Result<CanvasKitPreflightPageBuild, HwpError> {
+                let page = self.with_page_tree_cached(page_index, |tree| {
+                    let CanvasKitBoundedWorkCount::Complete(prelower_work_units) =
+                        estimate_canvaskit_page_lowering_work(tree, remaining_work_units)
+                    else {
+                        return Ok(CanvasKitPreflightPageBuild::WorkLimitExceeded);
+                    };
+                    Ok(CanvasKitPreflightPageBuild::Complete {
+                        tree: Box::new(self.build_layer_tree_from_page_tree(tree, profile)),
+                        prelower_work_units,
+                    })
+                })?;
+                let _overflows = self.layout_engine.take_overflows();
+                Ok(page)
+            },
+        );
+        Ok(preflight.to_json())
+    }
+
     pub fn get_page_layer_tree_native(&self, page_num: u32) -> Result<String, HwpError> {
         let layer_tree = self.build_page_layer_tree_for_output(page_num, RenderProfile::Screen)?;
         Ok(layer_tree.to_json())
@@ -2024,6 +2062,35 @@ impl DocumentCore {
         }
 
         Ok(tree)
+    }
+
+    /// 캐시된 페이지 렌더 트리를 복제하지 않고 참조로 사용한다.
+    pub(crate) fn with_page_tree_cached<T>(
+        &self,
+        page_num: u32,
+        build: impl FnOnce(&PageRenderTree) -> Result<T, HwpError>,
+    ) -> Result<T, HwpError> {
+        let idx = page_num as usize;
+        let cached = self
+            .page_tree_cache
+            .borrow()
+            .get(idx)
+            .is_some_and(Option::is_some);
+
+        if !cached {
+            let tree = self.build_page_tree(page_num)?;
+            let mut cache = self.page_tree_cache.borrow_mut();
+            if cache.len() <= idx {
+                cache.resize_with(idx + 1, || None);
+            }
+            cache[idx] = Some(tree);
+        }
+
+        let cache = self.page_tree_cache.borrow();
+        let tree = cache[idx]
+            .as_ref()
+            .expect("페이지 tree cache는 채운 뒤에 참조해야 한다");
+        build(tree)
     }
 
     /// 캐시된 페이지 레이어 트리를 반환한다 (캐시 미스 시 빌드 후 캐시).

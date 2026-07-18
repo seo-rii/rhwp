@@ -1,6 +1,7 @@
 import init, { HwpDocument, version } from '@wasm/rhwp.js';
 import { isKnownLayerPaintOp } from './types';
-import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, BodyFootnoteMarkerHit, FootnoteAtCursorResult, DeleteFootnoteResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree, LayerNode, LayerPaintOp } from './types';
+import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestResult, BodyFootnoteMarkerHit, FootnoteAtCursorResult, DeleteFootnoteResult, LineInfo, TableDimensions, CellInfo, CellBbox, CellProperties, TableProperties, DocumentPosition, MoveVerticalResult, SelectionRect, CharProperties, ParaProperties, NavContextEntry, FieldInfoResult, BookmarkInfo, LayerRenderProfile, PageLayerTree, LayerNode, LayerPaintOp, CanvasKitDocumentPreflight } from './types';
+import { parseCanvasKitDocumentPreflight } from './canvaskit-document-preflight';
 import { resolveFont, fontFamilyWithFallback } from './font-substitution';
 import { REGISTERED_FONTS } from './font-loader';
 import { LayerResourceStore } from './layer-resource-store';
@@ -260,7 +261,26 @@ export class WasmBridge {
       },
       items: [],
       textVariants: [],
+      requiredFontFamilies: [],
+      requiredFontFamiliesComplete: true,
     });
+  }
+
+  getCanvasKitDocumentPreflight(
+    mode: 'default' | 'compat' = 'default',
+    profile: LayerRenderProfile = 'screen',
+  ): CanvasKitDocumentPreflight {
+    if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
+    const d = this.doc as unknown as {
+      getCanvasKitDocumentPreflight?: (mode: string, profile: string) => string;
+    };
+    if (typeof d.getCanvasKitDocumentPreflight !== 'function') {
+      throw new Error('[WasmBridge] 현재 WASM은 CanvasKit document preflight를 지원하지 않습니다');
+    }
+    return parseCanvasKitDocumentPreflight(
+      d.getCanvasKitDocumentPreflight(mode, profile),
+      '[WasmBridge] CanvasKit document preflight',
+    );
   }
 
   getPageOverlayImages(pageNum: number): string {

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::fmt::Write;
+use std::collections::{BTreeSet, HashMap};
+use std::fmt::{self, Write};
 
 use image::{guess_format, load_from_memory, ImageFormat};
 
@@ -9,8 +9,8 @@ use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     paint_op_replay_plane, sidecars_for_leaf_ops, CacheHint, ClipKind, GlyphOutlinePayloadKind,
     GlyphRunOrientation, GlyphRunReplayEligibility, LayerGlyphOutlinePaint, LayerGlyphRunPaint,
-    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintReplayPlane, ResourceArena,
-    TextVariantKind, TextVariantQuality,
+    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintReplayPlane, RenderProfile,
+    ResourceArena, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, VariantFontVerificationReport,
@@ -18,6 +18,7 @@ use crate::renderer::layer_renderer::{
     VariantSelectedReason, VariantSelectionBackend, VariantSelectionContext,
     VariantSelectionReport,
 };
+use crate::renderer::render_tree::{PageRenderTree, RenderNodeType};
 use crate::renderer::static_svg::static_svg_fragment_has_path_layer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +36,7 @@ impl CanvasKitReplayMode {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Default => "default",
             Self::Compat => "compat",
@@ -73,6 +74,8 @@ pub struct CanvasKitReplayPlan {
     pub summary: CanvasKitReplaySummary,
     pub items: Vec<CanvasKitReplayItem>,
     pub text_variants: Vec<CanvasKitTextVariantReport>,
+    pub required_font_families: Vec<String>,
+    pub required_font_families_complete: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -84,6 +87,169 @@ pub struct CanvasKitReplaySummary {
     pub text_fallback_items: u32,
     pub unsupported_items: u32,
     pub hidden_overlay_violations: u32,
+}
+
+pub const CANVASKIT_DOCUMENT_PREFLIGHT_SCHEMA_VERSION: u32 = 1;
+pub const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_PAGES: u32 = 128;
+pub const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_WORK_UNITS: u32 = 50_000;
+pub const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_BLOCKERS: u32 = 32;
+pub const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_REQUIRED_FONT_FAMILIES: u32 = 256;
+
+const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_DETAIL_BYTES: usize = 256;
+const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_FONT_FAMILY_BYTES: usize = 256;
+const CANVASKIT_DOCUMENT_PREFLIGHT_WORK_UNIT_BYTES: usize = 4 * 1024;
+const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TREE_DEPTH: usize = 256;
+const CANVASKIT_DOCUMENT_PREFLIGHT_PRELOWER_UNIT_BYTES: usize = 1024;
+const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_RENDER_TREE_DEPTH: usize = 128;
+const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanvasKitDocumentPreflightLimits {
+    pub max_pages: u32,
+    pub max_work_units: u32,
+    pub max_blockers: u32,
+    pub max_required_font_families: u32,
+}
+
+impl CanvasKitDocumentPreflightLimits {
+    pub const FIXED: Self = Self {
+        max_pages: CANVASKIT_DOCUMENT_PREFLIGHT_MAX_PAGES,
+        max_work_units: CANVASKIT_DOCUMENT_PREFLIGHT_MAX_WORK_UNITS,
+        max_blockers: CANVASKIT_DOCUMENT_PREFLIGHT_MAX_BLOCKERS,
+        max_required_font_families: CANVASKIT_DOCUMENT_PREFLIGHT_MAX_REQUIRED_FONT_FAMILIES,
+    };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanvasKitDocumentPreflightStatus {
+    Eligible,
+    Ineligible,
+    Incomplete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanvasKitDocumentPreflightBlockerCode {
+    PageLimitExceeded,
+    WorkLimitExceeded,
+    PageBuildFailed,
+    HiddenCanvas2dOverlayRequired,
+    Unsupported,
+    TextFallback,
+    CompatOverlay,
+}
+
+impl CanvasKitDocumentPreflightBlockerCode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PageLimitExceeded => "pageLimitExceeded",
+            Self::WorkLimitExceeded => "workLimitExceeded",
+            Self::PageBuildFailed => "pageBuildFailed",
+            Self::HiddenCanvas2dOverlayRequired => "hiddenCanvas2dOverlayRequired",
+            Self::Unsupported => "unsupported",
+            Self::TextFallback => "textFallback",
+            Self::CompatOverlay => "compatOverlay",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanvasKitDocumentPreflightBlocker {
+    pub page_index: u32,
+    pub code: CanvasKitDocumentPreflightBlockerCode,
+    pub op_type: Option<&'static str>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanvasKitDocumentPreflight {
+    pub schema_version: u32,
+    pub mode: CanvasKitReplayMode,
+    pub profile: &'static str,
+    pub status: CanvasKitDocumentPreflightStatus,
+    pub eligible: bool,
+    pub complete: bool,
+    pub page_count: u32,
+    pub scanned_pages: u32,
+    pub scanned_work_units: u32,
+    pub limits: CanvasKitDocumentPreflightLimits,
+    pub summary: CanvasKitReplaySummary,
+    pub blockers: Vec<CanvasKitDocumentPreflightBlocker>,
+    pub required_font_families: Vec<String>,
+    pub capability_digest: String,
+}
+
+impl CanvasKitDocumentPreflight {
+    pub fn to_json(&self) -> String {
+        let mut out = String::new();
+        let status = match self.status {
+            CanvasKitDocumentPreflightStatus::Eligible => "eligible",
+            CanvasKitDocumentPreflightStatus::Ineligible => "ineligible",
+            CanvasKitDocumentPreflightStatus::Incomplete => "incomplete",
+        };
+        let _ = write!(out, "{{\"schemaVersion\":{},\"mode\":", self.schema_version);
+        push_json_str(&mut out, self.mode.as_str());
+        out.push_str(",\"profile\":");
+        push_json_str(&mut out, self.profile);
+        out.push_str(",\"status\":");
+        push_json_str(&mut out, status);
+        let _ = write!(
+            out,
+            ",\"eligible\":{},\"complete\":{},\"pageCount\":{},\"scannedPages\":{},\"scannedWorkUnits\":{},\"limits\":{{\"maxPages\":{},\"maxWorkUnits\":{},\"maxBlockers\":{},\"maxRequiredFontFamilies\":{}}},\"summary\":",
+            bool_json(self.eligible),
+            bool_json(self.complete),
+            self.page_count,
+            self.scanned_pages,
+            self.scanned_work_units,
+            self.limits.max_pages,
+            self.limits.max_work_units,
+            self.limits.max_blockers,
+            self.limits.max_required_font_families,
+        );
+        self.summary.write_json(&mut out);
+        out.push_str(",\"blockers\":[");
+        for (index, blocker) in self.blockers.iter().enumerate() {
+            if index != 0 {
+                out.push(',');
+            }
+            let _ = write!(out, "{{\"pageIndex\":{},\"code\":", blocker.page_index);
+            push_json_str(&mut out, blocker.code.as_str());
+            if let Some(op_type) = blocker.op_type {
+                out.push_str(",\"opType\":");
+                push_json_str(&mut out, op_type);
+            }
+            if let Some(detail) = blocker.detail.as_deref() {
+                out.push_str(",\"detail\":");
+                push_json_str(&mut out, detail);
+            }
+            out.push('}');
+        }
+        out.push_str("],\"requiredFontFamilies\":[");
+        for (index, font_family) in self.required_font_families.iter().enumerate() {
+            if index != 0 {
+                out.push(',');
+            }
+            push_json_str(&mut out, font_family);
+        }
+        out.push_str("],\"capabilityDigest\":");
+        push_json_str(&mut out, &self.capability_digest);
+        out.push('}');
+        out
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum CanvasKitPreflightPageBuild {
+    Complete {
+        tree: Box<PageLayerTree>,
+        prelower_work_units: u32,
+    },
+    WorkLimitExceeded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanvasKitBoundedWorkCount {
+    Complete(u32),
+    Exceeded,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,6 +278,23 @@ pub enum CanvasKitReplayFeature {
     CacheHint,
 }
 
+impl CanvasKitReplayFeature {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PageBackground => "pageBackground",
+            Self::VectorShape => "vectorShape",
+            Self::RasterImage => "rasterImage",
+            Self::Equation => "equation",
+            Self::FormObject => "formObject",
+            Self::TextRun => "textRun",
+            Self::TextSpecialVisual => "textSpecialVisual",
+            Self::TextVariant => "textVariant",
+            Self::Clip => "clip",
+            Self::CacheHint => "cacheHint",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanvasKitReplayStatus {
     Direct,
@@ -119,6 +302,18 @@ pub enum CanvasKitReplayStatus {
     CompatOverlay,
     TextFallback,
     Unsupported,
+}
+
+impl CanvasKitReplayStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::DirectRequired => "directRequired",
+            Self::CompatOverlay => "compatOverlay",
+            Self::TextFallback => "textFallback",
+            Self::Unsupported => "unsupported",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +324,19 @@ pub enum CanvasKitReplayReason {
     HiddenOverlayForbidden,
     ExplicitTextRunFallback,
     UnsupportedFeature,
+}
+
+impl CanvasKitReplayReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectReplaySupported => "directReplaySupported",
+            Self::DirectReplayRequired => "directReplayRequired",
+            Self::CompatOverlayAllowed => "compatOverlayAllowed",
+            Self::HiddenOverlayForbidden => "hiddenOverlayForbidden",
+            Self::ExplicitTextRunFallback => "explicitTextRunFallback",
+            Self::UnsupportedFeature => "unsupportedFeature",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -196,7 +404,16 @@ impl CanvasKitReplayPlan {
             }
             report.write_json(&mut out);
         }
-        out.push_str("]}");
+        out.push_str("],\"requiredFontFamilies\":[");
+        for (index, font_family) in self.required_font_families.iter().enumerate() {
+            if index != 0 {
+                out.push(',');
+            }
+            push_json_str(&mut out, font_family);
+        }
+        out.push_str("],\"requiredFontFamiliesComplete\":");
+        out.push_str(bool_json(self.required_font_families_complete));
+        out.push('}');
         out
     }
 }
@@ -241,48 +458,6 @@ impl CanvasKitReplayItem {
             push_json_str(out, detail);
         }
         out.push('}');
-    }
-}
-
-impl CanvasKitReplayFeature {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::PageBackground => "pageBackground",
-            Self::VectorShape => "vectorShape",
-            Self::RasterImage => "rasterImage",
-            Self::Equation => "equation",
-            Self::FormObject => "formObject",
-            Self::TextRun => "textRun",
-            Self::TextSpecialVisual => "textSpecialVisual",
-            Self::TextVariant => "textVariant",
-            Self::Clip => "clip",
-            Self::CacheHint => "cacheHint",
-        }
-    }
-}
-
-impl CanvasKitReplayStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Direct => "direct",
-            Self::DirectRequired => "directRequired",
-            Self::CompatOverlay => "compatOverlay",
-            Self::TextFallback => "textFallback",
-            Self::Unsupported => "unsupported",
-        }
-    }
-}
-
-impl CanvasKitReplayReason {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::DirectReplaySupported => "directReplaySupported",
-            Self::DirectReplayRequired => "directReplayRequired",
-            Self::CompatOverlayAllowed => "compatOverlayAllowed",
-            Self::HiddenOverlayForbidden => "hiddenOverlayForbidden",
-            Self::ExplicitTextRunFallback => "explicitTextRunFallback",
-            Self::UnsupportedFeature => "unsupportedFeature",
-        }
     }
 }
 
@@ -563,6 +738,739 @@ fn bool_json(value: bool) -> &'static str {
     }
 }
 
+pub fn analyze_canvaskit_document_preflight<F, E>(
+    page_count: u32,
+    mode: CanvasKitReplayMode,
+    profile: RenderProfile,
+    build_page: F,
+) -> CanvasKitDocumentPreflight
+where
+    F: FnMut(u32, u32) -> Result<CanvasKitPreflightPageBuild, E>,
+    E: fmt::Display,
+{
+    analyze_canvaskit_document_preflight_with_limits(
+        page_count,
+        mode,
+        profile,
+        CanvasKitDocumentPreflightLimits::FIXED,
+        build_page,
+    )
+}
+
+fn analyze_canvaskit_document_preflight_with_limits<F, E>(
+    page_count: u32,
+    mode: CanvasKitReplayMode,
+    profile: RenderProfile,
+    limits: CanvasKitDocumentPreflightLimits,
+    mut build_page: F,
+) -> CanvasKitDocumentPreflight
+where
+    F: FnMut(u32, u32) -> Result<CanvasKitPreflightPageBuild, E>,
+    E: fmt::Display,
+{
+    let mut preflight =
+        CanvasKitDocumentPreflightAccumulator::new(page_count, mode, profile.as_str(), limits);
+
+    if page_count > limits.max_pages {
+        preflight.mark_incomplete(
+            limits.max_pages,
+            CanvasKitDocumentPreflightBlockerCode::PageLimitExceeded,
+            Some(format!(
+                "pageCount={page_count};maxPages={}",
+                limits.max_pages
+            )),
+        );
+        return preflight.finish();
+    }
+
+    for page_index in 0..page_count {
+        let remaining_work_units = limits
+            .max_work_units
+            .saturating_sub(preflight.scanned_work_units);
+        if remaining_work_units == 0 {
+            preflight.mark_incomplete(
+                page_index,
+                CanvasKitDocumentPreflightBlockerCode::WorkLimitExceeded,
+                Some(format!("maxWorkUnits={}", limits.max_work_units)),
+            );
+            break;
+        }
+
+        let (tree, prelower_work_units) = match build_page(page_index, remaining_work_units) {
+            Ok(CanvasKitPreflightPageBuild::Complete {
+                tree,
+                prelower_work_units,
+            }) => (tree, prelower_work_units),
+            Ok(CanvasKitPreflightPageBuild::WorkLimitExceeded) => {
+                preflight.scanned_work_units = limits.max_work_units;
+                preflight.mark_incomplete(
+                    page_index,
+                    CanvasKitDocumentPreflightBlockerCode::WorkLimitExceeded,
+                    Some(format!(
+                        "stage=preLowering;maxWorkUnits={};remainingWorkUnits={remaining_work_units}",
+                        limits.max_work_units
+                    )),
+                );
+                break;
+            }
+            Err(error) => {
+                preflight.mark_incomplete(
+                    page_index,
+                    CanvasKitDocumentPreflightBlockerCode::PageBuildFailed,
+                    Some(error.to_string()),
+                );
+                break;
+            }
+        };
+
+        let layer_work_units = match count_layer_tree_work_units(&tree, remaining_work_units) {
+            CanvasKitBoundedWorkCount::Complete(work_units) => work_units,
+            CanvasKitBoundedWorkCount::Exceeded => {
+                preflight.scanned_work_units = limits.max_work_units;
+                preflight.mark_incomplete(
+                    page_index,
+                    CanvasKitDocumentPreflightBlockerCode::WorkLimitExceeded,
+                    Some(format!(
+                        "stage=layerTree;maxWorkUnits={};remainingWorkUnits={remaining_work_units}",
+                        limits.max_work_units
+                    )),
+                );
+                break;
+            }
+        };
+        let page_work_units = prelower_work_units.max(layer_work_units);
+        if page_work_units > remaining_work_units {
+            preflight.scanned_work_units = limits.max_work_units;
+            preflight.mark_incomplete(
+                page_index,
+                CanvasKitDocumentPreflightBlockerCode::WorkLimitExceeded,
+                Some(format!(
+                    "stage=combined;maxWorkUnits={};remainingWorkUnits={remaining_work_units}",
+                    limits.max_work_units
+                )),
+            );
+            break;
+        }
+
+        let plan = analyze_canvaskit_replay_plan(&tree, mode);
+        if !preflight.record_page(page_index, page_work_units, plan) {
+            break;
+        }
+    }
+
+    preflight.finish()
+}
+
+/// Estimates lowering cost before PageLayerTree allocation expands text into
+/// fallback and strict-visual sidecars.
+pub fn estimate_canvaskit_page_lowering_work(
+    tree: &PageRenderTree,
+    max_work_units: u32,
+) -> CanvasKitBoundedWorkCount {
+    let max_work_units = max_work_units as usize;
+    let mut work_units = 0usize;
+    let mut pending = vec![(&tree.root, 0usize)];
+
+    while let Some((node, depth)) = pending.pop() {
+        if !node.visible {
+            continue;
+        }
+        if depth > CANVASKIT_DOCUMENT_PREFLIGHT_MAX_RENDER_TREE_DEPTH {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        }
+        let Some(node_work_units) = render_node_prelower_work_units(&node.node_type) else {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        };
+        let Some(next_work_units) = work_units.checked_add(node_work_units) else {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        };
+        work_units = next_work_units;
+        if minimum_work_exceeds_limit(
+            work_units,
+            pending.len(),
+            node.children.len(),
+            max_work_units,
+        ) {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        }
+        pending.extend(node.children.iter().rev().map(|child| (child, depth + 1)));
+    }
+
+    CanvasKitBoundedWorkCount::Complete(work_units as u32)
+}
+
+fn render_node_prelower_work_units(node_type: &RenderNodeType) -> Option<usize> {
+    let (base_units, payload_bytes, text_like) = match node_type {
+        RenderNodeType::TextRun(run) => (
+            10usize,
+            run.text
+                .len()
+                .checked_add(run.style.font_family.len())?
+                .checked_add(
+                    run.style
+                        .tab_stops
+                        .len()
+                        .checked_mul(std::mem::size_of::<crate::renderer::TabStop>())?,
+                )?,
+            true,
+        ),
+        RenderNodeType::Path(path) => (2usize.checked_add(path.commands.len())?, 0, false),
+        RenderNodeType::Image(image) => (2, image.data.as_ref().map_or(0, Vec::len), false),
+        RenderNodeType::PageBackground(background) => (
+            2,
+            background
+                .image
+                .as_ref()
+                .map_or(0, |image| image.data.len()),
+            false,
+        ),
+        RenderNodeType::Equation(equation) => (2, equation.svg_content.len(), true),
+        RenderNodeType::RawSvg(raw) => (2, raw.svg.len(), true),
+        RenderNodeType::FormObject(form) => (
+            2,
+            form.caption
+                .len()
+                .checked_add(form.text.len())?
+                .checked_add(form.name.len())?,
+            true,
+        ),
+        RenderNodeType::Placeholder(placeholder) => (2, placeholder.label.len(), true),
+        RenderNodeType::FootnoteMarker(marker) => (
+            2,
+            marker.text.len().checked_add(marker.font_family.len())?,
+            true,
+        ),
+        RenderNodeType::Line(_) | RenderNodeType::Rectangle(_) | RenderNodeType::Ellipse(_) => {
+            (2, 0, false)
+        }
+        RenderNodeType::Page(_)
+        | RenderNodeType::MasterPage
+        | RenderNodeType::Header
+        | RenderNodeType::Footer
+        | RenderNodeType::Body { .. }
+        | RenderNodeType::Column(_)
+        | RenderNodeType::FootnoteArea
+        | RenderNodeType::TextLine(_)
+        | RenderNodeType::Table(_)
+        | RenderNodeType::TableCell(_)
+        | RenderNodeType::Group(_)
+        | RenderNodeType::TextBox => (1, 0, false),
+    };
+    if text_like && payload_bytes > CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES {
+        return None;
+    }
+    base_units.checked_add(payload_bytes.div_ceil(CANVASKIT_DOCUMENT_PREFLIGHT_PRELOWER_UNIT_BYTES))
+}
+
+fn count_layer_tree_work_units(
+    tree: &PageLayerTree,
+    max_work_units: u32,
+) -> CanvasKitBoundedWorkCount {
+    let max_work_units = max_work_units as usize;
+    let resource_bytes = tree
+        .resources
+        .image_resources()
+        .map(|(_, bytes)| bytes.len())
+        .chain(
+            tree.resources
+                .svg_resources()
+                .map(|(_, fragment)| fragment.len()),
+        )
+        .chain(
+            tree.resources
+                .font_blob_resources()
+                .map(|(_, bytes)| bytes.len()),
+        )
+        .try_fold(0usize, |total, bytes| total.checked_add(bytes));
+    let Some(resource_bytes) = resource_bytes else {
+        return CanvasKitBoundedWorkCount::Exceeded;
+    };
+    let mut work_units = payload_work_units(resource_bytes);
+    if work_units > max_work_units {
+        return CanvasKitBoundedWorkCount::Exceeded;
+    }
+    let mut pending = vec![(&tree.root, 0usize)];
+
+    while let Some((node, depth)) = pending.pop() {
+        if depth > CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TREE_DEPTH {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        }
+        let Some(next_work_units) = work_units.checked_add(1) else {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        };
+        work_units = next_work_units;
+        if work_units > max_work_units {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        }
+
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => {
+                if minimum_work_exceeds_limit(
+                    work_units,
+                    pending.len(),
+                    children.len(),
+                    max_work_units,
+                ) {
+                    return CanvasKitBoundedWorkCount::Exceeded;
+                }
+                pending.extend(children.iter().rev().map(|child| (child, depth + 1)));
+            }
+            LayerNodeKind::ClipRect { child, .. } => {
+                if minimum_work_exceeds_limit(work_units, pending.len(), 1, max_work_units) {
+                    return CanvasKitBoundedWorkCount::Exceeded;
+                }
+                pending.push((child, depth + 1));
+            }
+            LayerNodeKind::Leaf { ops, .. } => {
+                for op in ops {
+                    let Some(next_work_units) = work_units.checked_add(paint_op_work_units(op))
+                    else {
+                        return CanvasKitBoundedWorkCount::Exceeded;
+                    };
+                    work_units = next_work_units;
+                    if work_units > max_work_units {
+                        return CanvasKitBoundedWorkCount::Exceeded;
+                    }
+                }
+                if minimum_work_exceeds_limit(work_units, pending.len(), 0, max_work_units) {
+                    return CanvasKitBoundedWorkCount::Exceeded;
+                }
+            }
+        }
+    }
+
+    for op in &tree.variant_ops {
+        let Some(next_work_units) = work_units.checked_add(paint_op_work_units(op)) else {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        };
+        work_units = next_work_units;
+        if work_units > max_work_units {
+            return CanvasKitBoundedWorkCount::Exceeded;
+        }
+    }
+
+    CanvasKitBoundedWorkCount::Complete(work_units as u32)
+}
+
+fn payload_work_units(bytes: usize) -> usize {
+    bytes.div_ceil(CANVASKIT_DOCUMENT_PREFLIGHT_WORK_UNIT_BYTES)
+}
+
+fn additional_payload_work_units(bytes: usize) -> usize {
+    bytes
+        .saturating_sub(1)
+        .checked_div(CANVASKIT_DOCUMENT_PREFLIGHT_WORK_UNIT_BYTES)
+        .unwrap_or_default()
+}
+
+fn paint_op_work_units(op: &PaintOp) -> usize {
+    let payload_bytes = match op {
+        PaintOp::PageBackground { .. } => 0,
+        PaintOp::TextRun { run, .. } => run
+            .text
+            .len()
+            .saturating_add(run.style.font_family.len())
+            .saturating_add(
+                run.positions
+                    .len()
+                    .saturating_mul(std::mem::size_of::<f64>()),
+            )
+            .saturating_add(
+                run.clusters
+                    .len()
+                    .saturating_mul(std::mem::size_of::<crate::paint::TextClusterPlacement>()),
+            ),
+        PaintOp::CharOverlap { overlap, .. } => overlap
+            .text
+            .len()
+            .saturating_add(overlap.style.font_family.len())
+            .saturating_add(
+                overlap
+                    .positions
+                    .len()
+                    .saturating_mul(std::mem::size_of::<f64>()),
+            ),
+        PaintOp::TextControlMark { mark, .. } => mark.mark.kind.glyph().len(),
+        PaintOp::TabLeader { .. } => 0,
+        PaintOp::TextDecoration { decoration, .. } => decoration
+            .positions
+            .len()
+            .saturating_mul(std::mem::size_of::<f64>()),
+        PaintOp::FootnoteMarker { marker, .. } => {
+            marker.text.len().saturating_add(marker.font_family.len())
+        }
+        PaintOp::GlyphRun { run, .. } => run
+            .glyph_ids
+            .len()
+            .saturating_mul(std::mem::size_of::<u32>())
+            .saturating_add(
+                run.positions
+                    .len()
+                    .saturating_mul(std::mem::size_of::<crate::paint::LayerPoint>()),
+            )
+            .saturating_add(
+                run.clusters
+                    .len()
+                    .saturating_mul(std::mem::size_of::<crate::paint::GlyphCluster>()),
+            ),
+        PaintOp::GlyphOutline { outline, .. } => outline
+            .paths
+            .iter()
+            .map(|path| {
+                path.commands
+                    .len()
+                    .saturating_mul(std::mem::size_of::<crate::renderer::PathCommand>())
+            })
+            .chain(
+                outline
+                    .color_layers
+                    .iter()
+                    .flat_map(|payload| payload.layers.iter())
+                    .map(|layer| {
+                        layer.commands.as_ref().map_or(0, |commands| {
+                            commands
+                                .len()
+                                .saturating_mul(std::mem::size_of::<crate::renderer::PathCommand>())
+                        })
+                    }),
+            )
+            .fold(0usize, usize::saturating_add),
+        PaintOp::Path { path, .. } => path
+            .commands
+            .len()
+            .saturating_mul(std::mem::size_of::<crate::renderer::PathCommand>()),
+        PaintOp::Image { image, .. } => image.external_path.as_ref().map_or(0, String::len),
+        PaintOp::Equation { equation, .. } => equation.color_str.len(),
+        PaintOp::FormObject { form, .. } => form
+            .caption
+            .len()
+            .saturating_add(form.text.len())
+            .saturating_add(form.fore_color.len())
+            .saturating_add(form.back_color.len()),
+        PaintOp::Line { .. } | PaintOp::Rectangle { .. } | PaintOp::Ellipse { .. } => 0,
+    };
+    1usize.saturating_add(additional_payload_work_units(payload_bytes))
+}
+
+fn minimum_work_exceeds_limit(
+    work_units: usize,
+    pending_nodes: usize,
+    added_nodes: usize,
+    max_work_units: usize,
+) -> bool {
+    work_units
+        .checked_add(pending_nodes)
+        .and_then(|value| value.checked_add(added_nodes))
+        .is_none_or(|minimum| minimum > max_work_units)
+}
+
+struct CanvasKitDocumentPreflightAccumulator {
+    mode: CanvasKitReplayMode,
+    profile: &'static str,
+    page_count: u32,
+    limits: CanvasKitDocumentPreflightLimits,
+    complete: bool,
+    scanned_pages: u32,
+    scanned_work_units: u32,
+    summary: CanvasKitReplaySummary,
+    blockers: Vec<CanvasKitDocumentPreflightBlocker>,
+    required_font_families: BTreeSet<String>,
+    digest: CanvasKitCapabilityDigest,
+}
+
+impl CanvasKitDocumentPreflightAccumulator {
+    fn new(
+        page_count: u32,
+        mode: CanvasKitReplayMode,
+        profile: &'static str,
+        limits: CanvasKitDocumentPreflightLimits,
+    ) -> Self {
+        Self {
+            mode,
+            profile,
+            page_count,
+            limits,
+            complete: true,
+            scanned_pages: 0,
+            scanned_work_units: 0,
+            summary: CanvasKitReplaySummary::default(),
+            blockers: Vec::new(),
+            required_font_families: BTreeSet::new(),
+            digest: CanvasKitCapabilityDigest::new(mode, profile, page_count, limits),
+        }
+    }
+
+    fn record_page(&mut self, page_index: u32, work_units: u32, plan: CanvasKitReplayPlan) -> bool {
+        self.scanned_pages = self.scanned_pages.saturating_add(1);
+        self.scanned_work_units = self.scanned_work_units.saturating_add(work_units);
+        self.summary.merge(&plan.summary);
+        self.digest.record_page(page_index, work_units);
+
+        let mut required_font_families_complete = plan.required_font_families_complete;
+        for font_family in plan.required_font_families {
+            self.digest
+                .record_required_font_family(page_index, &font_family);
+            if self.required_font_families.contains(&font_family) {
+                continue;
+            }
+            if self.required_font_families.len() >= self.limits.max_required_font_families as usize
+            {
+                required_font_families_complete = false;
+                continue;
+            }
+            self.required_font_families.insert(font_family);
+        }
+
+        for item in plan.items {
+            self.digest.record_item(page_index, &item);
+            let Some(code) = blocker_code_for_item(&item) else {
+                continue;
+            };
+            self.push_capability_blocker(CanvasKitDocumentPreflightBlocker {
+                page_index,
+                code,
+                op_type: Some(item.op_type),
+                detail: item.detail.map(bounded_blocker_detail),
+            });
+        }
+        if !required_font_families_complete {
+            self.mark_incomplete(
+                page_index,
+                CanvasKitDocumentPreflightBlockerCode::WorkLimitExceeded,
+                Some(format!(
+                    "stage=requiredFontFamilies;maxRequiredFontFamilies={}",
+                    self.limits.max_required_font_families
+                )),
+            );
+            return false;
+        }
+        true
+    }
+
+    fn push_capability_blocker(&mut self, blocker: CanvasKitDocumentPreflightBlocker) {
+        if self.blockers.len() < self.limits.max_blockers as usize {
+            self.blockers.push(blocker);
+        }
+    }
+
+    fn mark_incomplete(
+        &mut self,
+        page_index: u32,
+        code: CanvasKitDocumentPreflightBlockerCode,
+        detail: Option<String>,
+    ) {
+        self.complete = false;
+        let detail = detail.map(bounded_blocker_detail);
+        self.digest
+            .record_incomplete(page_index, code, detail.as_deref());
+        let blocker = CanvasKitDocumentPreflightBlocker {
+            page_index,
+            code,
+            op_type: None,
+            detail,
+        };
+        let max_blockers = self.limits.max_blockers as usize;
+        if self.blockers.len() < max_blockers {
+            self.blockers.push(blocker);
+        } else if max_blockers > 0 {
+            self.blockers[max_blockers - 1] = blocker;
+        }
+    }
+
+    fn finish(self) -> CanvasKitDocumentPreflight {
+        let eligible = self.complete
+            && self.summary.hidden_overlay_violations == 0
+            && self.summary.unsupported_items == 0
+            && self.summary.text_fallback_items == 0
+            && self.summary.compat_overlay_items == 0;
+        let status = if !self.complete {
+            CanvasKitDocumentPreflightStatus::Incomplete
+        } else if eligible {
+            CanvasKitDocumentPreflightStatus::Eligible
+        } else {
+            CanvasKitDocumentPreflightStatus::Ineligible
+        };
+        let capability_digest = self.digest.finish(
+            status,
+            self.complete,
+            self.scanned_pages,
+            self.scanned_work_units,
+            &self.summary,
+        );
+
+        CanvasKitDocumentPreflight {
+            schema_version: CANVASKIT_DOCUMENT_PREFLIGHT_SCHEMA_VERSION,
+            mode: self.mode,
+            profile: self.profile,
+            status,
+            eligible,
+            complete: self.complete,
+            page_count: self.page_count,
+            scanned_pages: self.scanned_pages,
+            scanned_work_units: self.scanned_work_units,
+            limits: self.limits,
+            summary: self.summary,
+            blockers: self.blockers,
+            required_font_families: self.required_font_families.into_iter().collect(),
+            capability_digest,
+        }
+    }
+}
+
+impl CanvasKitReplaySummary {
+    fn merge(&mut self, other: &Self) {
+        self.total_items = self.total_items.saturating_add(other.total_items);
+        self.direct_items = self.direct_items.saturating_add(other.direct_items);
+        self.direct_required_items = self
+            .direct_required_items
+            .saturating_add(other.direct_required_items);
+        self.compat_overlay_items = self
+            .compat_overlay_items
+            .saturating_add(other.compat_overlay_items);
+        self.text_fallback_items = self
+            .text_fallback_items
+            .saturating_add(other.text_fallback_items);
+        self.unsupported_items = self
+            .unsupported_items
+            .saturating_add(other.unsupported_items);
+        self.hidden_overlay_violations = self
+            .hidden_overlay_violations
+            .saturating_add(other.hidden_overlay_violations);
+    }
+}
+
+fn blocker_code_for_item(
+    item: &CanvasKitReplayItem,
+) -> Option<CanvasKitDocumentPreflightBlockerCode> {
+    if matches!(item.reason, CanvasKitReplayReason::HiddenOverlayForbidden) {
+        return Some(CanvasKitDocumentPreflightBlockerCode::HiddenCanvas2dOverlayRequired);
+    }
+    match item.status {
+        CanvasKitReplayStatus::CompatOverlay => {
+            Some(CanvasKitDocumentPreflightBlockerCode::CompatOverlay)
+        }
+        CanvasKitReplayStatus::TextFallback => {
+            Some(CanvasKitDocumentPreflightBlockerCode::TextFallback)
+        }
+        CanvasKitReplayStatus::Unsupported => {
+            Some(CanvasKitDocumentPreflightBlockerCode::Unsupported)
+        }
+        CanvasKitReplayStatus::Direct | CanvasKitReplayStatus::DirectRequired => None,
+    }
+}
+
+fn bounded_blocker_detail(mut detail: String) -> String {
+    if detail.len() <= CANVASKIT_DOCUMENT_PREFLIGHT_MAX_DETAIL_BYTES {
+        return detail;
+    }
+    let mut truncate_at = CANVASKIT_DOCUMENT_PREFLIGHT_MAX_DETAIL_BYTES.saturating_sub(3);
+    while !detail.is_char_boundary(truncate_at) {
+        truncate_at = truncate_at.saturating_sub(1);
+    }
+    detail.truncate(truncate_at);
+    detail.push_str("...");
+    detail
+}
+
+struct CanvasKitCapabilityDigest(blake3::Hasher);
+
+impl CanvasKitCapabilityDigest {
+    fn new(
+        mode: CanvasKitReplayMode,
+        profile: &str,
+        page_count: u32,
+        limits: CanvasKitDocumentPreflightLimits,
+    ) -> Self {
+        let mut digest = Self(blake3::Hasher::new());
+        digest.0.update(b"rhwp.canvaskit.document-preflight.v1\0");
+        digest.record_str(mode.as_str());
+        digest.record_str(profile);
+        digest.record_u32(page_count);
+        digest.record_u32(limits.max_pages);
+        digest.record_u32(limits.max_work_units);
+        digest.record_u32(limits.max_blockers);
+        digest.record_u32(limits.max_required_font_families);
+        digest
+    }
+
+    fn record_page(&mut self, page_index: u32, work_units: u32) {
+        self.0.update(b"page\0");
+        self.record_u32(page_index);
+        self.record_u32(work_units);
+    }
+
+    fn record_item(&mut self, page_index: u32, item: &CanvasKitReplayItem) {
+        self.0.update(b"item\0");
+        self.record_u32(page_index);
+        self.record_str(item.op_type);
+        self.record_str(item.feature.as_str());
+        self.record_str(item.status.as_str());
+        self.record_str(item.reason.as_str());
+        self.record_optional_str(item.detail.as_deref());
+    }
+
+    fn record_required_font_family(&mut self, page_index: u32, font_family: &str) {
+        self.0.update(b"required-font-family\0");
+        self.record_u32(page_index);
+        self.record_str(font_family);
+    }
+
+    fn record_incomplete(
+        &mut self,
+        page_index: u32,
+        code: CanvasKitDocumentPreflightBlockerCode,
+        detail: Option<&str>,
+    ) {
+        self.0.update(b"incomplete\0");
+        self.record_u32(page_index);
+        self.record_str(code.as_str());
+        self.record_optional_str(detail);
+    }
+
+    fn finish(
+        mut self,
+        status: CanvasKitDocumentPreflightStatus,
+        complete: bool,
+        scanned_pages: u32,
+        scanned_work_units: u32,
+        summary: &CanvasKitReplaySummary,
+    ) -> String {
+        self.0.update(b"result\0");
+        self.record_str(match status {
+            CanvasKitDocumentPreflightStatus::Eligible => "eligible",
+            CanvasKitDocumentPreflightStatus::Ineligible => "ineligible",
+            CanvasKitDocumentPreflightStatus::Incomplete => "incomplete",
+        });
+        self.0.update(&[u8::from(complete)]);
+        self.record_u32(scanned_pages);
+        self.record_u32(scanned_work_units);
+        self.record_u32(summary.total_items);
+        self.record_u32(summary.direct_items);
+        self.record_u32(summary.direct_required_items);
+        self.record_u32(summary.compat_overlay_items);
+        self.record_u32(summary.text_fallback_items);
+        self.record_u32(summary.unsupported_items);
+        self.record_u32(summary.hidden_overlay_violations);
+        format!("blake3:{}", self.0.finalize().to_hex())
+    }
+
+    fn record_u32(&mut self, value: u32) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    fn record_str(&mut self, value: &str) {
+        self.0.update(&(value.len() as u64).to_le_bytes());
+        self.0.update(value.as_bytes());
+    }
+
+    fn record_optional_str(&mut self, value: Option<&str>) {
+        self.0.update(&[u8::from(value.is_some())]);
+        if let Some(value) = value {
+            self.record_str(value);
+        }
+    }
+}
+
 pub fn analyze_canvaskit_replay_plan(
     tree: &PageLayerTree,
     mode: CanvasKitReplayMode,
@@ -579,6 +1487,8 @@ struct CanvasKitReplayPlanBuilder<'a> {
     summary: CanvasKitReplaySummary,
     items: Vec<CanvasKitReplayItem>,
     text_variants: Vec<CanvasKitTextVariantReport>,
+    required_font_families: BTreeSet<String>,
+    required_font_families_complete: bool,
 }
 
 impl<'a> CanvasKitReplayPlanBuilder<'a> {
@@ -590,6 +1500,8 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             summary: CanvasKitReplaySummary::default(),
             items: Vec::new(),
             text_variants: Vec::new(),
+            required_font_families: BTreeSet::new(),
+            required_font_families_complete: true,
         }
     }
 
@@ -601,6 +1513,8 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             summary: self.summary,
             items: self.items,
             text_variants: self.text_variants,
+            required_font_families: self.required_font_families.into_iter().collect(),
+            required_font_families_complete: self.required_font_families_complete,
         }
     }
 
@@ -634,6 +1548,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 self.visit_node(child, &format!("{path}/clip/child"));
             }
             LayerNodeKind::Leaf { ops, .. } => {
+                self.collect_leaf_required_font_families(ops);
                 let sidecars = sidecars_for_leaf_ops(ops, &self.tree.variant_ops);
                 let mut selection_ops = Vec::with_capacity(ops.len() + sidecars.len());
                 selection_ops.extend(ops.iter().cloned());
@@ -676,6 +1591,53 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 }
             }
         }
+    }
+
+    fn collect_leaf_required_font_families(&mut self, ops: &[PaintOp]) {
+        for op in ops {
+            match op {
+                PaintOp::TextRun { run, .. } => {
+                    self.record_required_font_family(&run.style.font_family)
+                }
+                PaintOp::CharOverlap { overlap, .. } => {
+                    self.record_required_font_family(&overlap.style.font_family)
+                }
+                PaintOp::FootnoteMarker { marker, .. } => {
+                    self.record_required_font_family(&marker.font_family)
+                }
+                PaintOp::PageBackground { .. }
+                | PaintOp::GlyphRun { .. }
+                | PaintOp::GlyphOutline { .. }
+                | PaintOp::TextControlMark { .. }
+                | PaintOp::TabLeader { .. }
+                | PaintOp::TextDecoration { .. }
+                | PaintOp::Line { .. }
+                | PaintOp::Rectangle { .. }
+                | PaintOp::Ellipse { .. }
+                | PaintOp::Path { .. }
+                | PaintOp::Image { .. }
+                | PaintOp::Equation { .. }
+                | PaintOp::FormObject { .. } => {}
+            }
+        }
+    }
+
+    fn record_required_font_family(&mut self, font_family: &str) {
+        let font_family = font_family.trim();
+        if font_family.is_empty() {
+            return;
+        }
+        if self.required_font_families.contains(font_family) {
+            return;
+        }
+        if font_family.len() > CANVASKIT_DOCUMENT_PREFLIGHT_MAX_FONT_FAMILY_BYTES
+            || self.required_font_families.len()
+                >= CANVASKIT_DOCUMENT_PREFLIGHT_MAX_REQUIRED_FONT_FAMILIES as usize
+        {
+            self.required_font_families_complete = false;
+            return;
+        }
+        self.required_font_families.insert(font_family.to_string());
     }
 
     fn item_for_op(
@@ -1525,10 +2487,13 @@ fn cache_hint_detail(cache_hint: CacheHint) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        analyze_canvaskit_replay_plan, canvaskit_glyph_outline_payload_status,
-        canvaskit_glyph_run_replay_status, canvaskit_static_svg_fragment_has_path_layer,
-        CanvasKitReplayMode, CanvasKitReplayStatus, CanvasKitTextVariantPartReport,
-        CanvasKitTextVariantReport, GlyphOutlinePayloadKind, VariantRejectReason,
+        analyze_canvaskit_document_preflight_with_limits, analyze_canvaskit_replay_plan,
+        canvaskit_glyph_outline_payload_status, canvaskit_glyph_run_replay_status,
+        canvaskit_static_svg_fragment_has_path_layer, estimate_canvaskit_page_lowering_work,
+        CanvasKitBoundedWorkCount, CanvasKitDocumentPreflightLimits,
+        CanvasKitDocumentPreflightStatus, CanvasKitPreflightPageBuild, CanvasKitReplayMode,
+        CanvasKitReplayStatus, CanvasKitTextVariantPartReport, CanvasKitTextVariantReport,
+        GlyphOutlinePayloadKind, VariantRejectReason, CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::ImageFillMode;
@@ -3529,5 +4494,126 @@ mod tests {
         assert!(!canvaskit_static_svg_fragment_has_path_layer(
             "<path d=\"not-a-path\"/>"
         ));
+    }
+
+    #[test]
+    fn replay_plan_reports_required_font_families() {
+        let mut text = text_run_op("text-0");
+        let PaintOp::TextRun { run, .. } = &mut text else {
+            unreachable!("helper returns textRun");
+        };
+        run.style.font_family = "Test Family".to_string();
+        run.variant = None;
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        );
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+
+        assert_eq!(plan.required_font_families, ["Test Family"]);
+        assert!(plan.required_font_families_complete);
+        assert!(plan
+            .to_json()
+            .contains("\"requiredFontFamilies\":[\"Test Family\"]"));
+    }
+
+    #[test]
+    fn document_preflight_aggregates_text_fallback_and_fonts() {
+        let mut text = text_run_op("text-0");
+        let PaintOp::TextRun { run, .. } = &mut text else {
+            unreachable!("helper returns textRun");
+        };
+        run.style.font_family = "Test Family".to_string();
+        run.variant = None;
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        );
+        let preflight = analyze_canvaskit_document_preflight_with_limits(
+            1,
+            CanvasKitReplayMode::Default,
+            RenderProfile::FastPreview,
+            CanvasKitDocumentPreflightLimits {
+                max_pages: 4,
+                max_work_units: 16,
+                max_blockers: 4,
+                max_required_font_families: 8,
+            },
+            move |_, _| {
+                Ok::<_, &'static str>(CanvasKitPreflightPageBuild::Complete {
+                    tree: Box::new(tree.clone()),
+                    prelower_work_units: 0,
+                })
+            },
+        );
+
+        assert_eq!(
+            preflight.status,
+            CanvasKitDocumentPreflightStatus::Ineligible,
+            "{preflight:?}"
+        );
+        assert!(!preflight.eligible);
+        assert!(preflight.complete);
+        assert_eq!(preflight.scanned_pages, 1);
+        assert_eq!(preflight.scanned_work_units, 2);
+        assert_eq!(preflight.summary.text_fallback_items, 1);
+        assert_eq!(preflight.required_font_families, ["Test Family"]);
+        assert!(preflight.capability_digest.starts_with("blake3:"));
+        let json = preflight.to_json();
+        assert!(json.contains("\"profile\":\"fast-preview\""));
+        assert!(json.contains("\"status\":\"ineligible\""));
+    }
+
+    #[test]
+    fn document_preflight_stops_at_bounded_work_limit() {
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text_run_op("text-0")]),
+        );
+        let preflight = analyze_canvaskit_document_preflight_with_limits(
+            1,
+            CanvasKitReplayMode::Default,
+            RenderProfile::Screen,
+            CanvasKitDocumentPreflightLimits {
+                max_pages: 4,
+                max_work_units: 1,
+                max_blockers: 4,
+                max_required_font_families: 8,
+            },
+            move |_, _| {
+                Ok::<_, &'static str>(CanvasKitPreflightPageBuild::Complete {
+                    tree: Box::new(tree.clone()),
+                    prelower_work_units: 0,
+                })
+            },
+        );
+
+        assert_eq!(
+            preflight.status,
+            CanvasKitDocumentPreflightStatus::Incomplete
+        );
+        assert!(!preflight.complete);
+        assert_eq!(preflight.scanned_pages, 0);
+    }
+
+    #[test]
+    fn prelower_estimate_rejects_oversized_text_like_payloads() {
+        let mut tree = PageRenderTree::new(0, 100.0, 100.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::RawSvg(RawSvgNode {
+                svg: "x".repeat(CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES + 1),
+            }),
+            valid_bbox(),
+        ));
+
+        assert_eq!(
+            estimate_canvaskit_page_lowering_work(&tree, 50_000),
+            CanvasKitBoundedWorkCount::Exceeded
+        );
     }
 }

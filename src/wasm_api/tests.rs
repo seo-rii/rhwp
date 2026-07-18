@@ -91,6 +91,8 @@ fn test_canvaskit_replay_plan_export_uses_mode_policy() {
     assert!(default_plan.contains("\"mode\":\"default\""));
     assert!(default_plan.contains("\"hiddenCanvas2dOverlayAllowed\":false"));
     assert!(default_plan.contains("\"directReplayRequired\":true"));
+    assert!(default_plan.contains("\"requiredFontFamilies\""));
+    assert!(default_plan.contains("\"requiredFontFamiliesComplete\":true"));
 
     let compat_plan = doc
         .get_canvaskit_replay_plan_native(0, "compat")
@@ -105,6 +107,31 @@ fn test_canvaskit_replay_plan_export_uses_mode_policy() {
     let message = invalid.to_string();
     assert!(message.contains("canvas2d"));
     assert!(message.contains("allowed modes: default, compat"));
+}
+
+#[test]
+fn test_empty_document_canvaskit_preflight_api_schema() {
+    let doc = HwpDocument::create_empty();
+
+    let json = doc
+        .get_canvaskit_document_preflight("default", "screen")
+        .expect("empty document CanvasKit preflight should export");
+
+    assert!(json.contains("\"schemaVersion\":1"));
+    assert!(json.contains("\"mode\":\"default\""));
+    assert!(json.contains("\"profile\":\"screen\""));
+    assert!(json.contains("\"status\":"));
+    assert!(json.contains("\"eligible\":"));
+    assert!(json.contains("\"complete\":"));
+    assert!(json.contains("\"pageCount\":1"));
+    assert!(json.contains("\"maxPages\":128"));
+    assert!(json.contains("\"maxWorkUnits\":50000"));
+    assert!(json.contains("\"maxBlockers\":32"));
+    assert!(json.contains("\"maxRequiredFontFamilies\":256"));
+    assert!(json.contains("\"requiredFontFamilies\":"));
+    assert!(json.contains("\"capabilityDigest\":\"blake3:"));
+    assert!(!json.contains("\"root\":"));
+    assert!(!json.contains("\"resources\":"));
 }
 
 #[test]
