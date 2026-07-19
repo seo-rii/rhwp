@@ -62,11 +62,27 @@ impl HwpxReader {
 
     /// 지정한 경로의 파일을 바이트 배열로 읽는다.
     pub fn read_file_bytes(&mut self, path: &str) -> Result<Vec<u8>, HwpxError> {
+        self.read_file_bytes_limited(path, MAX_BINDATA_SIZE)
+    }
+
+    /// 지정한 경로의 파일을 `max_bytes` 바이트까지만 압축 해제한다.
+    pub fn read_file_bytes_limited(
+        &mut self,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, HwpxError> {
         let mut file = self
             .archive
             .by_name(path)
             .map_err(|e| HwpxError::MissingFile(format!("{}: {}", path, e)))?;
-        read_limited(&mut file, MAX_BINDATA_SIZE)
+        let max_bytes = max_bytes.min(MAX_BINDATA_SIZE);
+        if file.size() > max_bytes as u64 {
+            return Err(HwpxError::ZipError(format!(
+                "{} 읽기 실패: HWPX entry exceeds {} byte limit (possible decompression bomb)",
+                path, max_bytes
+            )));
+        }
+        read_limited(&mut file, max_bytes)
             .map_err(|e| HwpxError::ZipError(format!("{} 읽기 실패: {}", path, e)))
     }
 
@@ -109,6 +125,29 @@ mod tests {
         let result = read_limited(&mut cursor, 1000);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_compressed_entry_limited_read_rejects_before_materialization() {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        use zip::ZipWriter;
+
+        let mut out = Cursor::new(Vec::<u8>::new());
+        {
+            let mut zip = ZipWriter::new(&mut out);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file("BinData/font.ttf", options).unwrap();
+            zip.write_all(&vec![b'A'; 4096]).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut reader = HwpxReader::open(&out.into_inner()).unwrap();
+        let error = reader
+            .read_file_bytes_limited("BinData/font.ttf", 1024)
+            .expect_err("oversized deflated entry must be rejected");
+        assert!(error.to_string().contains("1024 byte limit"));
     }
 
     #[test]

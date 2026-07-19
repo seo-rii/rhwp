@@ -104,7 +104,7 @@ impl From<hwpx::HwpxError> for ParseError {
 pub fn parse_hwp(data: &[u8]) -> Result<Document, ParseError> {
     // 1. CFB 컨테이너 열기 (strict → lenient 폴백)
     match cfb_reader::CfbReader::open(data) {
-        Ok(cfb) => parse_hwp_with_cfb(cfb, data),
+        Ok(cfb) => parse_hwp_with_cfb(cfb),
         Err(strict_err) => {
             eprintln!(
                 "표준 CFB 파서 실패: {}, lenient 파서로 재시도...",
@@ -118,10 +118,7 @@ pub fn parse_hwp(data: &[u8]) -> Result<Document, ParseError> {
 }
 
 /// 표준 CfbReader로 파싱
-fn parse_hwp_with_cfb(
-    mut cfb: cfb_reader::CfbReader,
-    raw_data: &[u8],
-) -> Result<Document, ParseError> {
+fn parse_hwp_with_cfb(mut cfb: cfb_reader::CfbReader) -> Result<Document, ParseError> {
     // 2. FileHeader 파싱
     let header_data = cfb.read_file_header().map_err(ParseError::CfbError)?;
     let file_header = header::parse_file_header(&header_data).map_err(ParseError::HeaderError)?;
@@ -147,9 +144,8 @@ fn parse_hwp_with_cfb(
 
     // 5-7. 미리보기, BinData, 추가 스트림
     let preview = extract_preview(&mut cfb);
-    let bin_data_content =
-        load_bin_data_content(&mut cfb, raw_data, &doc_info.bin_data_list, compressed);
     let extra_streams = collect_extra_streams(&mut cfb, &doc_info.bin_data_list);
+    let bin_data_content = load_bin_data_content(cfb, &doc_info.bin_data_list);
 
     // Document 조립
     let model_header = ModelFileHeader {
@@ -824,13 +820,38 @@ impl crate::model::bin_data::BinDataResolver for Hwp5BinResolver {
 
         decompressed
     }
+
+    fn resolve_limited(&self, key: &str, max_bytes: usize) -> Option<Vec<u8>> {
+        let mut cfb = match self.cfb.lock() {
+            Ok(cfb) => cfb,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let raw = match cfb.read_bin_data_limited(key, max_bytes) {
+            Ok(data) => data,
+            Err(error) => {
+                eprintln!("경고: BinData '{}' bounded 로드 실패: {}", key, error);
+                return None;
+            }
+        };
+
+        let mut bytes = match cfb_reader::decompress_stream_limited(&raw, max_bytes) {
+            Ok(data) => data,
+            Err(cfb_reader::CfbError::LimitExceeded(_)) => return None,
+            Err(_) => raw,
+        };
+        if self.ole_streams.contains(key) && bytes.len() >= 12 {
+            const CFB_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+            if bytes[..8] != CFB_MAGIC && bytes[4..12] == CFB_MAGIC {
+                bytes.drain(..4);
+            }
+        }
+        (bytes.len() <= max_bytes).then_some(bytes)
+    }
 }
 
 fn load_bin_data_content(
-    cfb: &mut cfb_reader::CfbReader,
-    data: &[u8],
+    cfb: cfb_reader::CfbReader,
     bin_data_list: &[crate::model::bin_data::BinData],
-    _compressed: bool,
 ) -> Vec<BinDataContent> {
     use crate::model::bin_data::BinDataType;
 
@@ -842,22 +863,8 @@ fn load_bin_data_content(
             format!("BIN{:04X}.{}", bin_data.storage_id, extension)
         })
         .collect();
-    let resolver: Option<std::sync::Arc<dyn crate::model::bin_data::BinDataResolver>> =
-        match cfb_reader::CfbReader::open(data) {
-            Ok(reader) => Some(std::sync::Arc::new(Hwp5BinResolver {
-                cfb: std::sync::Mutex::new(reader),
-                ole_streams,
-            })),
-            Err(error) => {
-                eprintln!(
-                    "경고: BinData 지연 로딩 리졸버 생성 실패: {} — 즉시 로드로 폴백",
-                    error
-                );
-                None
-            }
-        };
 
-    let mut contents = Vec::new();
+    let mut lazy_bin_data = Vec::new();
 
     for bd in bin_data_list.iter() {
         // Embedding(이미지)과 Storage(OLE) 로드. Link는 외부 파일 참조이므로 제외
@@ -876,53 +883,30 @@ fn load_bin_data_content(
         };
         let storage_name = format!("BIN{:04X}.{}", bd.storage_id, ext);
 
-        if let Some(resolver) = resolver.as_ref() {
-            if !cfb.has_stream(&format!("/BinData/{}", storage_name)) {
-                eprintln!("경고: BinData '{}' 스트림 없음", storage_name);
-                continue;
-            }
-            contents.push(BinDataContent {
-                id: bd.storage_id,
-                data: crate::model::bin_data::BinDataBytes::Lazy {
-                    resolver: resolver.clone(),
-                    key: storage_name,
-                },
-                extension: ext.to_string(),
-            });
+        if !cfb.has_stream(&format!("/BinData/{}", storage_name)) {
+            eprintln!("경고: BinData '{}' 스트림 없음", storage_name);
             continue;
         }
-
-        match cfb.read_bin_data(&storage_name) {
-            Ok(data) => {
-                // 압축된 BinData 해제 시도
-                let mut decompressed = match cfb_reader::decompress_stream(&data) {
-                    Ok(d) => d,
-                    Err(_) => data, // 압축 해제 실패 시 원본 사용 (비압축 데이터)
-                };
-
-                // Task #195 단계 6: OLE Storage는 해제 후 선두 4바이트 size prefix를 스킵하여
-                // 내부 CFB(`d0cf11e0...`) 시작 바이트부터 노출한다.
-                if is_storage && decompressed.len() >= 12 {
-                    // CFB 매직이 바로 시작하면 prefix 없음
-                    let cfb_magic = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-                    if decompressed[..8] != cfb_magic && decompressed[4..12] == cfb_magic {
-                        decompressed.drain(..4);
-                    }
-                }
-
-                contents.push(BinDataContent {
-                    id: bd.storage_id,
-                    data: decompressed.into(),
-                    extension: ext.to_string(),
-                });
-            }
-            Err(e) => {
-                eprintln!("경고: BinData '{}' 로드 실패: {}", storage_name, e);
-            }
-        }
+        lazy_bin_data.push((bd.storage_id, storage_name, ext.to_string()));
     }
 
-    contents
+    // 파싱에 사용한 CFB reader를 그대로 resolver로 넘겨 원본 CFB 복사를 피한다.
+    let resolver: std::sync::Arc<dyn crate::model::bin_data::BinDataResolver> =
+        std::sync::Arc::new(Hwp5BinResolver {
+            cfb: std::sync::Mutex::new(cfb),
+            ole_streams,
+        });
+    lazy_bin_data
+        .into_iter()
+        .map(|(id, key, extension)| BinDataContent {
+            id,
+            data: crate::model::bin_data::BinDataBytes::Lazy {
+                resolver: resolver.clone(),
+                key,
+            },
+            extension,
+        })
+        .collect()
 }
 
 #[cfg(test)]

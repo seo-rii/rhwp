@@ -1,8 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Write};
 
-use image::{guess_format, load_from_memory, ImageFormat};
-
 use crate::model::image::ImageEffect;
 use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
@@ -12,6 +10,7 @@ use crate::paint::{
     LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintReplayPlane, RenderProfile,
     ResourceArena, TextVariantKind, TextVariantQuality,
 };
+use crate::renderer::image_header::canvaskit_encoded_image_header;
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, VariantFontVerificationReport,
     VariantOutlineEligibilityReport, VariantRejectReason, VariantReplayStatus,
@@ -102,6 +101,7 @@ const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TREE_DEPTH: usize = 256;
 const CANVASKIT_DOCUMENT_PREFLIGHT_PRELOWER_UNIT_BYTES: usize = 1024;
 const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_RENDER_TREE_DEPTH: usize = 128;
 const CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES: usize = 1024 * 1024;
+const CANVASKIT_MAX_ENCODED_IMAGE_BASE64_BYTES: usize = 24 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CanvasKitDocumentPreflightLimits {
@@ -2133,7 +2133,7 @@ fn canvaskit_glyph_outline_payload_status(
             };
             if bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
                 || !payload.has_strict_visual_contract()
-                || load_from_memory(bytes).is_err()
+                || !canvaskit_encoded_image_is_replayable(bytes)
             {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             }
@@ -2328,17 +2328,20 @@ enum CanvasKitImageAdmission {
 }
 
 fn image_admission(bytes: &[u8]) -> CanvasKitImageAdmission {
-    match guess_format(bytes) {
-        Ok(ImageFormat::Png | ImageFormat::Bmp) => {
-            if load_from_memory(bytes).is_ok() {
-                CanvasKitImageAdmission::Replayable
-            } else {
-                CanvasKitImageAdmission::DecodeFailed
-            }
-        }
-        Ok(_) => CanvasKitImageAdmission::Replayable,
-        Err(_) => CanvasKitImageAdmission::DecodeFailed,
+    if canvaskit_encoded_image_is_replayable(bytes) {
+        CanvasKitImageAdmission::Replayable
+    } else {
+        CanvasKitImageAdmission::DecodeFailed
     }
+}
+
+fn canvaskit_encoded_image_is_replayable(bytes: &[u8]) -> bool {
+    if bytes.is_empty()
+        || bytes.len().div_ceil(3).saturating_mul(4) > CANVASKIT_MAX_ENCODED_IMAGE_BASE64_BYTES
+    {
+        return false;
+    }
+    canvaskit_encoded_image_header(bytes).is_some_and(|header| header.is_within_decode_limits())
 }
 
 fn image_replay_detail(
@@ -2524,6 +2527,19 @@ mod tests {
     const FIXTURE_PNG: &[u8] = include_bytes!("../../assets/logo/logo-32.png");
     const FIXTURE_FONT: &[u8] =
         include_bytes!("../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf");
+
+    fn compact_bmp(width: i32, height: i32) -> Vec<u8> {
+        let mut bytes = vec![0; 54];
+        bytes[..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&54u32.to_le_bytes());
+        bytes[10..14].copy_from_slice(&54u32.to_le_bytes());
+        bytes[14..18].copy_from_slice(&40u32.to_le_bytes());
+        bytes[18..22].copy_from_slice(&width.to_le_bytes());
+        bytes[22..26].copy_from_slice(&height.to_le_bytes());
+        bytes[26..28].copy_from_slice(&1u16.to_le_bytes());
+        bytes[28..30].copy_from_slice(&24u16.to_le_bytes());
+        bytes
+    }
 
     fn identity() -> LayerAffineTransform {
         LayerAffineTransform {
@@ -3471,6 +3487,72 @@ mod tests {
                     .as_deref()
                     .is_some_and(|detail| detail.contains("imageDecodeFailed"))
         }));
+    }
+
+    #[test]
+    fn canvaskit_rejects_oversized_compact_images_before_decode() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&compact_bmp(8193, 1));
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![
+                    PaintOp::PageBackground {
+                        bbox: valid_bbox(),
+                        background: LayerPageBackgroundPaint {
+                            background_color: None,
+                            border_color: None,
+                            border_width: 0.0,
+                            gradient: None,
+                            image: Some(LayerPageBackgroundImagePaint {
+                                resource_id: image_id,
+                                fill_mode: ImageFillMode::FitToSize,
+                                brightness: 0,
+                                contrast: 0,
+                                effect: ImageEffect::RealPic,
+                            }),
+                        },
+                    },
+                    PaintOp::Image {
+                        bbox: valid_bbox(),
+                        image: LayerImagePaint {
+                            resource_id: Some(image_id),
+                            external_path: None,
+                            text_wrap: None,
+                            fill_mode: None,
+                            original_size: None,
+                            crop: None,
+                            brightness: 0,
+                            contrast: 0,
+                            effect: ImageEffect::RealPic,
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                ],
+            ),
+        )
+        .resources(resources.clone())
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        assert_eq!(plan.summary.direct_required_items, 2);
+        assert!(plan.items.iter().all(|item| {
+            item.status == CanvasKitReplayStatus::DirectRequired
+                && item
+                    .detail
+                    .as_deref()
+                    .is_some_and(|detail| detail.contains("imageDecodeFailed"))
+        }));
+
+        let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        outline.bitmap_glyph = Some(bitmap_payload(image_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &tree.resources,),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
+        );
     }
 
     #[test]

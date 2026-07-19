@@ -44,6 +44,20 @@ impl crate::model::bin_data::BinDataResolver for HwpxBinResolver {
             }
         }
     }
+
+    fn resolve_limited(&self, key: &str, max_bytes: usize) -> Option<Vec<u8>> {
+        let mut reader = match self.reader.lock() {
+            Ok(reader) => reader,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match reader.read_file_bytes_limited(key, max_bytes) {
+            Ok(data) => Some(data),
+            Err(error) => {
+                eprintln!("경고: BinData '{}' bounded 로드 실패: {}", key, error);
+                None
+            }
+        }
+    }
 }
 
 /// HWPX 파싱 에러
@@ -130,11 +144,7 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
     // 5. BinData 이미지 등록 (지연 로딩)
     let bin_data_entries: std::collections::HashSet<String> =
         reader.file_names().into_iter().collect();
-    let bin_resolver: std::sync::Arc<dyn crate::model::bin_data::BinDataResolver> =
-        std::sync::Arc::new(HwpxBinResolver {
-            reader: std::sync::Mutex::new(reader::HwpxReader::open(data)?),
-        });
-    let mut bin_data_content = Vec::new();
+    let mut lazy_bin_data = Vec::new();
     for (i, item) in package_info.bin_data_items.iter().enumerate() {
         if !item.is_embedded {
             continue;
@@ -144,23 +154,17 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
             continue;
         }
         let ext = item.href.rsplit('.').next().unwrap_or("dat").to_string();
-        bin_data_content.push(BinDataContent {
-            id: (i + 1) as u16,
-            data: crate::model::bin_data::BinDataBytes::Lazy {
-                resolver: bin_resolver.clone(),
-                key: item.href.clone(),
-            },
-            extension: ext,
-        });
+        lazy_bin_data.push(((i + 1) as u16, item.href.clone(), ext));
     }
 
     // 5-1. Chart/*.xml (OOXML 차트) 로딩 — bin_data_id = 60000+N, extension="ooxml_chart"
     // section 파서에서 <hp:chart chartIDRef="Chart/chartN.xml">를 만나면 동일 ID의 OleShape 생성
+    let mut chart_bin_data = Vec::new();
     for n in 1..=64u16 {
         let path = format!("Chart/chart{}.xml", n);
         match reader.read_file_bytes(&path) {
             Ok(data) => {
-                bin_data_content.push(BinDataContent {
+                chart_bin_data.push(BinDataContent {
                     id: 60000 + n,
                     data: data.into(),
                     extension: "ooxml_chart".to_string(),
@@ -169,6 +173,24 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
             Err(_) => break,
         }
     }
+
+    // 파싱에 사용한 ZIP reader를 그대로 lazy resolver로 넘겨 원본 ZIP 복사를 피한다.
+    let bin_resolver: std::sync::Arc<dyn crate::model::bin_data::BinDataResolver> =
+        std::sync::Arc::new(HwpxBinResolver {
+            reader: std::sync::Mutex::new(reader),
+        });
+    let mut bin_data_content = lazy_bin_data
+        .into_iter()
+        .map(|(id, key, extension)| BinDataContent {
+            id,
+            data: crate::model::bin_data::BinDataBytes::Lazy {
+                resolver: bin_resolver.clone(),
+                key,
+            },
+            extension,
+        })
+        .collect::<Vec<_>>();
+    bin_data_content.extend(chart_bin_data);
 
     // Document 조립
     let model_header = FileHeader {

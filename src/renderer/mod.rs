@@ -15,6 +15,7 @@ pub mod font_metrics_data;
 pub(crate) mod form_caption;
 pub mod height_measurer;
 pub mod html;
+pub(crate) mod image_header;
 pub mod layer_renderer;
 pub mod layout;
 pub mod page_layout;
