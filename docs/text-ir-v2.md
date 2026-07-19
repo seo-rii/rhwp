@@ -916,7 +916,10 @@ implicitly change schema authority:
   used by Canvas2D and CanvasKit diagnostics: filled path geometry, safe
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
   stroke subset; unsupported stroke styles such as invalid dash arrays or
-  non-numeric dash offsets remain deterministic fallback cases.
+  non-numeric dash offsets remain deterministic fallback cases. CanvasKit
+  preflights every path in an `SvgGlyph` resource before selecting that variant,
+  and equation SVG replay decodes the complete path set before drawing so a
+  partially valid resource cannot suppress its layout fallback.
 - CanvasKit resource admission fails closed before direct replay. Malformed
   inline image base64 and encoded-image decoder failures are contained and
   negative-cached, malformed embedded font base64 is ignored, and exceptions

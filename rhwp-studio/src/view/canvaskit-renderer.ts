@@ -69,6 +69,7 @@ import type {
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
+  type StaticSvgPathLayer,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
 import { replayColorPaintGraph, resolvedColorUnitRgba } from './glyph-outline-color-graph-utils';
@@ -719,6 +720,7 @@ export class CanvasKitLayerRenderer {
         ? undefined
         : this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex];
       let hasCanvasKitPath = false;
+      let allCanvasKitPathsDecodable = true;
       if (typeof fragment === 'string') {
         for (const layer of parseStaticSvgPathLayers(fragment)) {
           let path: Path | null = null;
@@ -727,14 +729,15 @@ export class CanvasKitLayerRenderer {
           } catch {
             path = null;
           }
-          if (path) {
-            path.delete();
-            hasCanvasKitPath = true;
+          if (!path) {
+            allCanvasKitPathsDecodable = false;
             break;
           }
+          path.delete();
+          hasCanvasKitPath = true;
         }
       }
-      if (!hasCanvasKitPath) {
+      if (!hasCanvasKitPath || !allCanvasKitPathsDecodable) {
         payloadSupported = false;
         payloadDetails = 'pathDecodeFailed';
       }
@@ -1845,7 +1848,12 @@ export class CanvasKitLayerRenderer {
               1,
             ]);
           }
-          const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+          let path: Path | null = null;
+          try {
+            path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+          } catch {
+            path = null;
+          }
           if (!path) {
             continue;
           }
@@ -2599,11 +2607,28 @@ export class CanvasKitLayerRenderer {
       return false;
     }
 
+    const decodedPathLayers: Array<{ layer: StaticSvgPathLayer; path: Path }> = [];
+    for (const layer of pathLayers) {
+      let path: Path | null = null;
+      try {
+        path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+      } catch {
+        path = null;
+      }
+      if (!path) {
+        for (const decoded of decodedPathLayers) {
+          decoded.path.delete();
+        }
+        return false;
+      }
+      decodedPathLayers.push({ layer, path });
+    }
+
     let replayed = false;
     canvas.save();
     try {
       canvas.translate(x, y);
-      for (const layer of pathLayers) {
+      for (const { layer, path } of decodedPathLayers) {
         canvas.save();
         try {
           if (layer.transform) {
@@ -2618,10 +2643,6 @@ export class CanvasKitLayerRenderer {
               0,
               1,
             ]);
-          }
-          const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
-          if (!path) {
-            continue;
           }
           this.applyPathFillRule(path, layer.fillRule);
           if (layer.fill !== null) {
@@ -2645,7 +2666,6 @@ export class CanvasKitLayerRenderer {
             replayed = true;
             strokePaint.delete();
           }
-          path.delete();
         } finally {
           canvas.restore();
         }
@@ -2656,6 +2676,9 @@ export class CanvasKitLayerRenderer {
       }
     } finally {
       canvas.restore();
+      for (const decoded of decodedPathLayers) {
+        decoded.path.delete();
+      }
     }
     return replayed;
   }

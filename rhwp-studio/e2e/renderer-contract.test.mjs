@@ -938,6 +938,21 @@ assert(
       .includes('this.renderEquationSvgResource(canvas, op)'),
   'Canvas2D and CanvasKit equation replay must prefer direct SVG resources before layout fallback',
 );
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'renderEquationSvgResource'),
+  [
+    'const decodedPathLayers:',
+    'for (const layer of pathLayers)',
+    'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+    '} catch {',
+    'for (const decoded of decodedPathLayers)',
+    'return false',
+    'for (const { layer, path } of decodedPathLayers)',
+    'for (const decoded of decodedPathLayers)',
+    'decoded.path.delete()',
+  ],
+  'CanvasKit equation SVG replay must decode every path before drawing or choosing layout fallback',
+);
 
 for (const { docToken, filePath, kind } of implementationPlanTouchpoints) {
   assert.equal(
@@ -1201,6 +1216,20 @@ assert.equal(
 );
 const canvaskitSvgGlyphReplayBlock = extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline');
 assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'glyphOutlineVariantReplayStatus'),
+  [
+    'let hasCanvasKitPath = false',
+    'let allCanvasKitPathsDecodable = true',
+    'for (const layer of parseStaticSvgPathLayers(fragment))',
+    'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+    'if (!path)',
+    'allCanvasKitPathsDecodable = false',
+    'if (!hasCanvasKitPath || !allCanvasKitPathsDecodable)',
+    "payloadDetails = 'pathDecodeFailed'",
+  ],
+  'CanvasKit SvgGlyph selection must preflight every path before suppressing TextRun fallback',
+);
+assertTokensInOrder(
   canvaskitSvgGlyphReplayBlock,
   [
     'const vectorIndex = resolveLayerResourceIndex(',
@@ -1232,14 +1261,17 @@ assertTokensInOrder(
     'for (const layer of pathLayers)',
     'if (layer.transform)',
     'layer.transform.a',
-    'const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+    'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
   ],
   'CanvasKit SvgGlyph replay must apply path-layer transforms after viewBox normalization',
 );
 assertTokensInOrder(
   canvaskitSvgGlyphReplayBlock,
   [
-    'const path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+    'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+    '} catch {',
+    'path = null',
+    'if (!path)',
     'const paint = this.makePaint(',
     'canvas.drawPath(path, paint)',
     'paint.delete()',

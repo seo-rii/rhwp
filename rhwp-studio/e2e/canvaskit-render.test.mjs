@@ -1053,7 +1053,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       probeTree.resources = {
         ...probeTree.resources,
         tableId: 903,
-        svgFragments: ['<path d="not-a-path"/>'],
+        svgFragments: ['<path d="M0 0L20 0L20 20Z" fill="#000"/><path d="not-a-path"/>'],
         svgHashes: ['malformed-equation-probe'],
         svgKeys: ['malformed-equation-probe'],
       };
@@ -1226,7 +1226,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         images: [],
         imageHashes: [],
         imageKeys: [],
-        svgFragments: ['<path d="not-a-path"/>'],
+        svgFragments: ['<path d="M0 0L20 0L20 20Z" fill="#000"/><path d="not-a-path"/>'],
         svgHashes: ['corrupt-svg-glyph-resource'],
         svgKeys: ['corrupt-svg-glyph-resource'],
       },
