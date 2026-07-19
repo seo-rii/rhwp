@@ -511,6 +511,19 @@ assertTokensInOrder(
   ],
   'CanvasKit replay plan must preflight known encoded image payloads before advertising direct replay',
 );
+assertTokensInOrder(
+  rustCanvaskitPolicySource,
+  [
+    'for (id, bytes) in resources.font_blob_resources()',
+    'crate::paint::font_blob_resource_key(bytes.len(), &digest)',
+    'VariantRejectReason::FontBlobNotVerified',
+    'VariantRejectReason::FontDigestMismatch',
+    'blob_resolved: Some(true)',
+    'digest_matched: Some(true)',
+    'exact_face_instantiated: None',
+  ],
+  'CanvasKit replay plan must verify portable font resource identity before runtime typeface construction',
+);
 compareCaseContract('renderFormObject', 'form object replay');
 assert.equal(
   formReplayUtilsSource.includes('export function formObjectPalette('),

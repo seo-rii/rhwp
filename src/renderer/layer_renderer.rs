@@ -177,6 +177,7 @@ impl VariantSelectedReason {
 pub enum VariantRejectReason {
     FontDigestMismatch,
     FontNotPortable,
+    FontBlobNotVerified,
     ExternalFontNotVerified,
     ExactFaceUnavailable,
     FaceIndexUnsupported,
@@ -209,6 +210,7 @@ impl VariantRejectReason {
         match self {
             Self::FontDigestMismatch => "fontDigestMismatch",
             Self::FontNotPortable => "fontNotPortable",
+            Self::FontBlobNotVerified => "fontBlobNotVerified",
             Self::ExternalFontNotVerified => "externalFontNotVerified",
             Self::ExactFaceUnavailable => "exactFaceUnavailable",
             Self::FaceIndexUnsupported => "faceIndexUnsupported",

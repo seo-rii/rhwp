@@ -1018,7 +1018,7 @@ therefore expose a report separate from the immutable layer export:
 - `anchorOpId`, `partsExpected`, and `partsReplayed` so sidecar variants and
   multi-part variant sets can be audited;
 - rejected variant ids with stable reasons such as `fontDigestMismatch`,
-  `fontNotPortable`, `externalFontNotVerified`, `exactFaceUnavailable`,
+  `fontNotPortable`, `fontBlobNotVerified`, `externalFontNotVerified`, `exactFaceUnavailable`,
   `faceIndexUnsupported`, `variationUnsupported`, `glyphIdOutOfRange`,
   `missingGlyph`, `clusterMismatch`, `diagnosticsNotClean`, `incompleteVariantSet`,
   `unsupportedPaintEffect`, `unsupportedOutlinePayload`,
@@ -1042,7 +1042,11 @@ are rejected, missing glyphs and cluster mismatches keep their specific reason,
 and any recorded fallback-font use is `diagnosticsNotClean`. Richer
 `ColorLayers`, `BitmapGlyph`, and `SvgGlyph` candidates are eligible only when
 their payload-family required feature is declared as well as structurally
-valid.
+valid. A portable `GlyphRun` is not advertised as direct replay from metadata
+alone: the replay plan must resolve the referenced font blob bytes and match
+their resource digest. Missing bytes report `fontBlobNotVerified`; mismatched
+bytes report `fontDigestMismatch`. CanvasKit Typeface construction remains the
+runtime proof and may still select the `TextRun` fallback.
 
 The Studio selector uses the same report shape for CanvasKit and Canvas2D strict
 outline replay. Canvas2D reports `GlyphRun` rejection as
