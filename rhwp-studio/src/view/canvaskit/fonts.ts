@@ -270,11 +270,24 @@ export class CanvasKitFontRegistry {
       if (blob.portability !== 'portableBlob' || !blob.digest || blob.dataRef?.kind !== 'fontBlob') {
         continue;
       }
-      const digest = this.fontBlobDigestForRef(resources.fontBlobHashes, blob.dataRef.id);
+      let resolvedRefId = blob.dataRef.id;
+      const numericRef = /^(0|[1-9]\d*)$/.test(resolvedRefId)
+        ? Number.parseInt(resolvedRefId, 10)
+        : -1;
+      if (numericRef < 0 || numericRef >= resources.fontBlobs.length) {
+        const keyIndex = resources.fontBlobKeys?.indexOf(resolvedRefId) ?? -1;
+        const digestIndex = resources.fontBlobHashes?.indexOf(blob.digest.value) ?? -1;
+        const resolvedIndex = keyIndex >= 0 ? keyIndex : digestIndex;
+        if (resolvedIndex < 0) {
+          continue;
+        }
+        resolvedRefId = String(resolvedIndex);
+      }
+      const digest = this.fontBlobDigestForRef(resources.fontBlobHashes, resolvedRefId);
       if (digest !== blob.digest.value) {
         continue;
       }
-      const bytes = this.fontBlobBytesForRef(resources.fontBlobs, blob.dataRef.id);
+      const bytes = this.fontBlobBytesForRef(resources.fontBlobs, resolvedRefId);
       if (!bytes) {
         continue;
       }

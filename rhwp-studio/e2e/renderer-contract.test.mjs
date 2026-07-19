@@ -1459,12 +1459,28 @@ assert(
   'Studio CanvasKit page replay must render content and margin guides before a single surface flush',
 );
 const canvaskitGlyphRunReplayStatusBlock = extractMethodBody(canvaskitFontsSource, 'glyphRunReplayStatus');
+const canvaskitFontBlobRegistrationBlock = extractMethodBody(
+  canvaskitFontsSource,
+  'registerFontBlobsFromResources',
+);
 const canvaskitUnsupportedGlyphRunPaintBlock = extractMethodBody(
   canvaskitFontsSource,
   'unsupportedGlyphRunPaintReason',
 );
 const canvaskitGlyphRunTypefaceBlock = extractMethodBody(canvaskitFontsSource, 'typefaceForGlyphRun');
 const canvaskitFontBlobBytesBlock = extractMethodBody(canvaskitFontsSource, 'fontBlobBytesForRef');
+assertTokensInOrder(
+  canvaskitFontBlobRegistrationBlock,
+  [
+    'let resolvedRefId = blob.dataRef.id',
+    'resources.fontBlobKeys?.indexOf(resolvedRefId)',
+    'resources.fontBlobHashes?.indexOf(blob.digest.value)',
+    'resolvedRefId = String(resolvedIndex)',
+    'this.fontBlobDigestForRef(resources.fontBlobHashes, resolvedRefId)',
+    'this.fontBlobBytesForRef(resources.fontBlobs, resolvedRefId)',
+  ],
+  'CanvasKit portable font registration must resolve stable resource keys before array payload lookup',
+);
 assertTokensInOrder(
   canvaskitGlyphRunTypefaceBlock,
   [

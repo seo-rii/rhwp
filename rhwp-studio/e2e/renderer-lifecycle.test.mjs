@@ -2300,6 +2300,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       quality: 'exact',
     };
     const digest = 'fixture-font-digest';
+    const fontResourceKey = `font:fixture:${fontBytes.length}:${digest}`;
     const tree = {
       pageWidth: 96,
       pageHeight: 64,
@@ -2321,7 +2322,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         svgKeys: [],
         fontBlobs: [fontBytes],
         fontBlobHashes: [digest],
-        fontBlobKeys: [`font:fixture:${fontBytes.length}:${digest}`],
+        fontBlobKeys: [fontResourceKey],
       },
       fontResources: {
         blobs: [{
@@ -2329,7 +2330,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           source: 'bundled',
           portability: 'portableBlob',
           digest: { algorithm: 'fixture', value: digest },
-          dataRef: { kind: 'fontBlob', id: '0' },
+          dataRef: { kind: 'fontBlob', id: fontResourceKey },
         }],
         faces: [{
           id: 'fixture-face',
@@ -2442,11 +2443,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const assignFontIdentity = (candidate, suffix, digestValue) => {
       const blobId = `fixture-font-blob-${suffix}`;
       const faceId = `fixture-face-${suffix}`;
+      const resourceKey = `font:fixture:${fontBytes.length}:${digestValue}`;
       candidate.resources.fontBlobHashes = [digestValue];
-      candidate.resources.fontBlobKeys = [`font:fixture:${fontBytes.length}:${digestValue}`];
+      candidate.resources.fontBlobKeys = [resourceKey];
       candidate.fontResources.blobs[0].id = blobId;
       candidate.fontResources.blobs[0].digest = { algorithm: 'fixture', value: digestValue };
-      candidate.fontResources.blobs[0].dataRef = { kind: 'fontBlob', id: '0' };
+      candidate.fontResources.blobs[0].dataRef = { kind: 'fontBlob', id: resourceKey };
       candidate.fontResources.faces[0].id = faceId;
       candidate.fontResources.faces[0].blobKey = blobId;
       for (const op of candidate.root.ops) {
@@ -2502,7 +2504,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
                 source: 'bundled',
                 portability: 'portableBlob',
                 digest: { algorithm: 'sha256', value: colorFontDigest },
-                dataRef: { kind: 'fontBlob', id: '0' },
+                dataRef: {
+                  kind: 'fontBlob',
+                  id: `font:fixture:${colorFontBytes.length}:${colorFontDigest}`,
+                },
               }],
               faces: [{
                 id: 'color-smoke-face',

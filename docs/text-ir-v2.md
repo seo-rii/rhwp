@@ -213,9 +213,11 @@ explicit gates for exact font instantiation before selecting a `GlyphRun`:
   `UnresolvedFallback` always keep `TextRun` fallback.
 - When a `PortableBlob` points at an exported `fontBlob` resource, CanvasKit
   registers it at `renderPage` setup time after the resource digest metadata
-  matches the font resource digest. Typeface/font caches are keyed by face id,
-  blob id, digest, and face index so tree-local ids cannot accidentally reuse a
-  stale typeface from another export.
+  matches the font resource digest. A `dataRef.id` may be the exported stable
+  `fontBlobKeys` value or the compatibility numeric array index; digest lookup
+  is the final identity-preserving bridge for older producers. Typeface/font
+  caches are keyed by face id, blob id, digest, and face index so tree-local ids
+  cannot accidentally reuse a stale typeface from another export.
 - The current CanvasKit adapter rejects TTC/OTC faces with `faceIndex != 0`
   because the public browser binding used here does not expose an explicit face
   selection parameter for glyph replay. It also rejects variation instances
