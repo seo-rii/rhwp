@@ -856,6 +856,9 @@ fn canvaskit_glyph_run_replay_status(
     if run.diagnostics.cluster_mismatch_count != 0 {
         return VariantReplayStatus::rejected(VariantRejectReason::ClusterMismatch);
     }
+    if run.diagnostics.used_fallback_font_count != 0 {
+        return VariantReplayStatus::rejected(VariantRejectReason::DiagnosticsNotClean);
+    }
     if !matches!(
         run.diagnostics.quality,
         TextVariantQuality::Exact | TextVariantQuality::PositionAdjusted
@@ -935,7 +938,7 @@ fn canvaskit_glyph_run_replay_status(
     if run
         .glyph_ids
         .iter()
-        .any(|glyph_id| *glyph_id > u16::MAX as u32)
+        .any(|glyph_id| *glyph_id == 0 || *glyph_id > u16::MAX as u32)
     {
         return VariantReplayStatus::rejected(VariantRejectReason::GlyphIdOutOfRange);
     }
@@ -1051,16 +1054,48 @@ fn canvaskit_glyph_outline_payload_status(
             (true, None)
         }
         GlyphOutlinePayloadKind::ColorLayers => {
-            if outline.color_layers.as_ref().is_some_and(|payload| {
-                payload.has_colrv0_resolved_layer_contract()
-                    || payload.has_colrv1_supported_graph_contract()
-            }) {
+            let requires_color_layers = outline
+                .variant
+                .requires
+                .iter()
+                .any(|feature| feature == "text.glyphOutline.colorLayers");
+            let requires_format = outline.color_layers.as_ref().is_some_and(|payload| {
+                let feature = match payload.color_format {
+                    crate::paint::ColorGlyphFormat::ColrV0 => {
+                        "text.glyphOutline.colorLayers.colrV0"
+                    }
+                    crate::paint::ColorGlyphFormat::ColrV1 => {
+                        "text.glyphOutline.colorLayers.colrV1"
+                    }
+                    crate::paint::ColorGlyphFormat::Other => return false,
+                };
+                outline
+                    .variant
+                    .requires
+                    .iter()
+                    .any(|required| required == feature)
+            });
+            if requires_color_layers
+                && requires_format
+                && outline.color_layers.as_ref().is_some_and(|payload| {
+                    payload.has_colrv0_resolved_layer_contract()
+                        || payload.has_colrv1_supported_graph_contract()
+                })
+            {
                 (true, None)
             } else {
                 (false, Some(VariantRejectReason::UnsupportedColorGlyph))
             }
         }
         GlyphOutlinePayloadKind::BitmapGlyph => {
+            if !outline
+                .variant
+                .requires
+                .iter()
+                .any(|feature| feature == "text.glyphOutline.bitmapGlyph")
+            {
+                return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
+            }
             let Some(payload) = &outline.bitmap_glyph else {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             };
@@ -1076,6 +1111,14 @@ fn canvaskit_glyph_outline_payload_status(
             (true, None)
         }
         GlyphOutlinePayloadKind::SvgGlyph => {
+            if !outline
+                .variant
+                .requires
+                .iter()
+                .any(|feature| feature == "text.glyphOutline.svgGlyph")
+            {
+                return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
+            }
             let Some(payload) = &outline.svg_glyph else {
                 return (false, Some(VariantRejectReason::UnsupportedSvgGlyph));
             };
@@ -1561,9 +1604,25 @@ mod tests {
     }
 
     fn outline(payload_kind: GlyphOutlinePayloadKind) -> LayerGlyphOutlinePaint {
+        let mut variant = variant();
+        variant.requires = match payload_kind {
+            GlyphOutlinePayloadKind::ColorLayers => vec![
+                "text.glyphOutline.colorLayers".to_string(),
+                "text.glyphOutline.colorLayers.colrV0".to_string(),
+                "text.glyphOutline.colorLayers.colrV1".to_string(),
+            ],
+            GlyphOutlinePayloadKind::BitmapGlyph => {
+                vec!["text.glyphOutline.bitmapGlyph".to_string()]
+            }
+            GlyphOutlinePayloadKind::SvgGlyph => {
+                vec!["text.glyphOutline.svgGlyph".to_string()]
+            }
+            GlyphOutlinePayloadKind::MonochromeFill
+            | GlyphOutlinePayloadKind::MonochromeFillStroke => Vec::new(),
+        };
         LayerGlyphOutlinePaint {
             source: source_span(),
-            variant: variant(),
+            variant,
             payload_kind,
             stroke: None,
             color_layers: None,
@@ -2591,17 +2650,26 @@ mod tests {
     fn canvaskit_rejects_out_of_range_glyph_ids_before_replay() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
-        let mut run = glyph_run(face_key, Vec::new());
-        run.glyph_ids[0] = u32::from(u16::MAX) + 1;
+        for (case_name, glyph_id) in [
+            ("missing-glyph-zero", 0),
+            ("above-u16", u32::from(u16::MAX) + 1),
+        ] {
+            let mut run = glyph_run(face_key.clone(), Vec::new());
+            run.glyph_ids[0] = glyph_id;
 
-        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+            let status = canvaskit_glyph_run_replay_status(&run, &resources);
 
-        assert!(!status.replayable);
-        assert_eq!(status.reason, Some(VariantRejectReason::GlyphIdOutOfRange));
-        assert!(
-            status.font_verification.is_none(),
-            "the glyph id range guard should reject before backend font construction"
-        );
+            assert!(!status.replayable, "{case_name}");
+            assert_eq!(
+                status.reason,
+                Some(VariantRejectReason::GlyphIdOutOfRange),
+                "{case_name}"
+            );
+            assert!(
+                status.font_verification.is_none(),
+                "the glyph id range guard should reject before backend font construction for {case_name}"
+            );
+        }
     }
 
     #[test]
@@ -2659,6 +2727,8 @@ mod tests {
         missing_glyph.diagnostics.missing_glyph_count = 1;
         let mut cluster_mismatch = glyph_run(face_key.clone(), Vec::new());
         cluster_mismatch.diagnostics.cluster_mismatch_count = 1;
+        let mut fallback_font_used = glyph_run(face_key.clone(), Vec::new());
+        fallback_font_used.diagnostics.used_fallback_font_count = 1;
         let mut approximate_quality = glyph_run(face_key.clone(), Vec::new());
         approximate_quality.diagnostics.quality = TextVariantQuality::Approximate;
         let mut residual_too_large = glyph_run(face_key.clone(), Vec::new());
@@ -2690,6 +2760,11 @@ mod tests {
                 "cluster-mismatch",
                 cluster_mismatch,
                 VariantRejectReason::ClusterMismatch,
+            ),
+            (
+                "fallback-font-used",
+                fallback_font_used,
+                VariantRejectReason::DiagnosticsNotClean,
             ),
             (
                 "approximate-quality",
@@ -2971,6 +3046,45 @@ mod tests {
             canvaskit_glyph_outline_payload_status(&svg, Some(valid_bbox()), &resources),
             (false, Some(VariantRejectReason::MixedGlyphOutlinePayload))
         );
+    }
+
+    #[test]
+    fn canvaskit_requires_richer_outline_payload_features() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(FIXTURE_PNG);
+        let svg_id = resources
+            .intern_svg_fragment("<path d=\"M0 0 L16 0 L16 16 L0 16 Z\" fill=\"#00ffff\"/>");
+
+        let mut color = outline(GlyphOutlinePayloadKind::ColorLayers);
+        color.color_layers = Some(colrv0_payload());
+        color
+            .variant
+            .requires
+            .retain(|feature| feature != "text.glyphOutline.colorLayers.colrV0");
+
+        let mut bitmap = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        bitmap.bitmap_glyph = Some(bitmap_payload(image_id));
+        bitmap.variant.requires.clear();
+
+        let mut svg = outline(GlyphOutlinePayloadKind::SvgGlyph);
+        svg.svg_glyph = Some(svg_payload(svg_id));
+        svg.variant.requires.clear();
+
+        for (case_name, outline, reason) in [
+            ("colrv0", color, VariantRejectReason::UnsupportedColorGlyph),
+            (
+                "bitmap",
+                bitmap,
+                VariantRejectReason::UnsupportedBitmapGlyph,
+            ),
+            ("svg", svg, VariantRejectReason::UnsupportedSvgGlyph),
+        ] {
+            assert_eq!(
+                canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources,),
+                (false, Some(reason)),
+                "{case_name}"
+            );
+        }
     }
 
     #[test]

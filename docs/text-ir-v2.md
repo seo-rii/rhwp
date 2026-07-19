@@ -1011,7 +1011,7 @@ therefore expose a report separate from the immutable layer export:
 - rejected variant ids with stable reasons such as `fontDigestMismatch`,
   `fontNotPortable`, `externalFontNotVerified`, `exactFaceUnavailable`,
   `faceIndexUnsupported`, `variationUnsupported`, `glyphIdOutOfRange`,
-  `missingGlyph`, `clusterMismatch`, `incompleteVariantSet`,
+  `missingGlyph`, `clusterMismatch`, `diagnosticsNotClean`, `incompleteVariantSet`,
   `unsupportedPaintEffect`, `unsupportedOutlinePayload`,
   `unsupportedColorGlyph`, `unsupportedBitmapGlyph`, `unsupportedSvgGlyph`,
   `glyphOutlinePayloadContractInvalid`,
@@ -1026,6 +1026,14 @@ support, variation support, and effect support. These are render diagnostics,
 not schema fields, because `ExternalVerified` fonts and backend capabilities
 are resolved at render time. Unsupported runs must select the `TextRun`
 fallback instead of painting an approximate glyph stream.
+
+The Rust CanvasKit replay plan and Studio runtime selector apply the same
+pre-font diagnostic gates: glyph id `0` and ids above the CanvasKit `u16` path
+are rejected, missing glyphs and cluster mismatches keep their specific reason,
+and any recorded fallback-font use is `diagnosticsNotClean`. Richer
+`ColorLayers`, `BitmapGlyph`, and `SvgGlyph` candidates are eligible only when
+their payload-family required feature is declared as well as structurally
+valid.
 
 The Studio selector uses the same report shape for CanvasKit and Canvas2D strict
 outline replay. Canvas2D reports `GlyphRun` rejection as

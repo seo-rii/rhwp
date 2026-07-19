@@ -302,11 +302,13 @@ export class CanvasKitFontRegistry {
         return this.glyphRunReplayFailure(run, 'positionAdjustedResidualTooHigh');
       }
     }
-    if (
-      run.diagnostics.missingGlyphCount !== 0
-      || run.diagnostics.clusterMismatchCount !== 0
-      || run.diagnostics.usedFallbackFontCount !== 0
-    ) {
+    if (run.diagnostics.missingGlyphCount !== 0) {
+      return this.glyphRunReplayFailure(run, 'missingGlyph');
+    }
+    if (run.diagnostics.clusterMismatchCount !== 0) {
+      return this.glyphRunReplayFailure(run, 'clusterMismatch');
+    }
+    if (run.diagnostics.usedFallbackFontCount !== 0) {
       return this.glyphRunReplayFailure(run, 'diagnosticsNotClean');
     }
     if (run.orientation === 'mixedPerGlyph' || run.glyphTransforms?.length) {

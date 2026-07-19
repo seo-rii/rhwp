@@ -1476,7 +1476,14 @@ assertTokensInOrder(
 assertTokensInOrder(
   canvaskitGlyphRunReplayStatusBlock,
   [
+    'run.diagnostics.missingGlyphCount !== 0',
+    "this.glyphRunReplayFailure(run, 'missingGlyph')",
+    'run.diagnostics.clusterMismatchCount !== 0',
+    "this.glyphRunReplayFailure(run, 'clusterMismatch')",
+    'run.diagnostics.usedFallbackFontCount !== 0',
+    "this.glyphRunReplayFailure(run, 'diagnosticsNotClean')",
     'for (const glyphId of run.glyphIds)',
+    'glyphId <= 0',
     'glyphId > 0xffff',
     "return this.glyphRunReplayFailure(run, 'glyphIdOutOfRange')",
     'if (run.shapeKey.fontInstance.variations?.length)',
