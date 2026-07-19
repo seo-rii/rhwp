@@ -2678,6 +2678,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ).reason;
     }
 
+    const defaultRatioTree = structuredClone(tree);
+    glyphOp(defaultRatioTree).paintStyle.ratio = 0;
+    const defaultRatioRenderResult = renderTreeWithDiagnostics(defaultRatioTree);
+    const defaultRatioStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(defaultRatioTree),
+      defaultRatioTree.fontResources,
+    );
+
     const digestMismatchTree = structuredClone(tree);
     assignFontIdentity(
       digestMismatchTree,
@@ -2954,6 +2962,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       png,
       unsupportedStatus,
       unsupportedEffectReasons,
+      defaultRatioStatus,
+      defaultRatioSelectionDiagnostics: defaultRatioRenderResult.textVariantSelectionDiagnostics,
       unsupportedPng,
       digestMismatchStatus,
       digestMismatchPng,
@@ -3170,6 +3180,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       shade: 'glyphRunShadeUnsupported',
     }),
     `CanvasKit GlyphRun reports precise unsupported effect reasons=${JSON.stringify(portableGlyphRunProbe.unsupportedEffectReasons)}`,
+  );
+  const defaultRatioSelectionReport = portableGlyphRunProbe.defaultRatioSelectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    portableGlyphRunProbe.defaultRatioStatus?.replayable === true
+      && defaultRatioSelectionReport?.selectedVariantId === 'glyphRun'
+      && defaultRatioSelectionReport?.selectedReason === 'glyphRunStrictEligible',
+    `CanvasKit GlyphRun normalizes non-positive default ratio=${JSON.stringify({
+      status: portableGlyphRunProbe.defaultRatioStatus,
+      selection: defaultRatioSelectionReport,
+    })}`,
   );
   const fallbackRedPixels = countPixels(
     portableGlyphRunProbe.unsupportedPng,

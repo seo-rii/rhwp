@@ -384,8 +384,11 @@ The working order is:
    The proved single-face CanvasKit `GlyphRun` subset includes fill, finite
    offset shadow, and the current binary outline pass. Rust lowering, replay
    planning, and the browser font registry use the same subset; underline,
-   strike, emphasis, emboss/engrave, shade, ratio, script, and non-finite
-   effects remain deterministic `TextRun` fallback cases. This widens optional
+   strike, emphasis, emboss/engrave, shade, non-default ratio, script, and
+   non-finite effects remain deterministic `TextRun` fallback cases. A missing
+   or non-positive ratio follows the root `TextRun` contract and normalizes to
+   `1`; a finite positive ratio outside the strict unit-ratio
+   tolerance remains a fallback case. This widens optional
    compatibility variants only; fallback-free v2 strict writer emission keeps
    its existing fill-only gate.
 5. Treat resource/cache identity as part of correctness. Image bytes, static

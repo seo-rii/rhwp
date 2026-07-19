@@ -586,7 +586,7 @@ export class CanvasKitFontRegistry {
 
   private unsupportedGlyphRunPaintReason(run: LayerGlyphRunOp): string | null {
     const style = run.paintStyle;
-    const ratio = typeof style.ratio === 'number' ? style.ratio : 1;
+    const ratio = typeof style.ratio === 'number' && style.ratio > 0 ? style.ratio : 1;
     const shadeColor = (style.shadeColor || '#ffffff').toLowerCase();
     const shadowType = style.shadowType ?? 0;
     const shadowOffsetX = style.shadowOffsetX ?? 0;
