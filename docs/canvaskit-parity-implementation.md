@@ -1051,6 +1051,14 @@ Non-goals for the remaining CanvasKit parity work:
 | cross-scope variants | schema vocabulary and `text.crossScopeVariants` gate exist; writer emits same-scope variants | add first concrete use case only when same-scope fallback is insufficient | `paintOrderSlotId + scopeRef` semantics remain sufficient; unsupported compatibility profile can choose same-scope fallback; strict fallback-free rejects |
 | MixedPerGlyph writer | vocabulary and gate exist; default writer uses homogeneous run split | add cluster/grapheme orientation mapping, `GlyphTransformRun`, GlyphRun/GlyphOutline transform replay, fixtures | shaped/vertical semantics are stable and unsupported backends have explicit fallback/reject policy |
 
+The producer-side CanvasKit replay plan deliberately cannot claim an
+`ExternalVerified` font is ready, because consumer registration and exact
+typeface construction happen in the browser. It reports the conditional run as
+`externalFontNotVerified` and keeps the `TextRun` fallback. Studio may promote
+the same run only after the supplied bytes match the declared digest and
+CanvasKit constructs the requested face; other non-portable font states remain
+`fontNotPortable`.
+
 Recommended implementation order from this point:
 
 Replay diagnostics are now collected from the existing corpus. Browser captures

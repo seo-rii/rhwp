@@ -844,8 +844,18 @@ fn canvaskit_glyph_run_replay_status(
     {
         return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
     }
-    if run.diagnostics.replay_eligibility != GlyphRunReplayEligibility::Portable {
-        return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
+    match run.diagnostics.replay_eligibility {
+        GlyphRunReplayEligibility::Portable => {}
+        GlyphRunReplayEligibility::ConditionalExternalFont => {
+            return canvaskit_glyph_run_font_rejection(
+                run,
+                VariantRejectReason::ExternalFontNotVerified,
+            );
+        }
+        GlyphRunReplayEligibility::LocalDiagnosticOnly
+        | GlyphRunReplayEligibility::NotReplayable => {
+            return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
+        }
     }
     if !run.diagnostics.strict_visual_eligible {
         return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
@@ -2995,6 +3005,30 @@ mod tests {
                 "diagnostic gate failure should not look like a font verification failure for {case_name}"
             );
         }
+    }
+
+    #[test]
+    fn canvaskit_reports_conditional_external_font_verification_gate() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let mut run = glyph_run(face_key, Vec::new());
+        run.diagnostics.replay_eligibility = GlyphRunReplayEligibility::ConditionalExternalFont;
+
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(!status.replayable);
+        assert_eq!(
+            status.reason,
+            Some(VariantRejectReason::ExternalFontNotVerified)
+        );
+        let verification = status
+            .font_verification
+            .expect("conditional external font verification report");
+        assert_eq!(
+            verification.reason,
+            Some(VariantRejectReason::ExternalFontNotVerified)
+        );
+        assert!(!verification.replay_eligible);
     }
 
     #[test]

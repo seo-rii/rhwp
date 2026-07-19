@@ -729,6 +729,10 @@ contract when `text.glyphOutline.colorLayers` and
   The shadow/outline expansion applies to optional compatibility variants;
   fallback-free schema-v2 strict writer emission keeps its narrower fill-only
   gate until paint-effect requirements are explicit in that profile.
+  The producer-side replay plan cannot observe consumer-registered external
+  font bytes, so a `ConditionalExternalFont` candidate remains fallback-selected
+  there with `externalFontNotVerified`; the Studio runtime may select it only
+  after its own digest verification and exact typeface instantiation succeed.
 - Canvas2D: replay `TextRun` by default. It never selects `GlyphRun` in schema
   v1. An explicit strict outline profile may select `glyphOutline` variants and
   replay their run-local paths through Canvas 2D path fill; otherwise
