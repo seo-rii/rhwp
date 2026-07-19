@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use image::load_from_memory;
+use image::{guess_format, load_from_memory, ImageFormat};
 
 use crate::model::image::ImageEffect;
 use crate::model::shape::TextWrap;
@@ -1222,10 +1222,10 @@ fn image_item(
     image: &crate::paint::LayerImagePaint,
     resources: &ResourceArena,
 ) -> CanvasKitReplayItem {
-    let has_payload = image
+    let admission = image
         .resource_id
         .and_then(|resource_id| resources.image_bytes(resource_id))
-        .is_some();
+        .map_or(CanvasKitImageAdmission::Missing, image_admission);
     let detail = Some(image_replay_detail(
         image.fill_mode,
         image.original_size,
@@ -1235,11 +1235,11 @@ fn image_item(
         image.contrast,
         Some(image.transform),
         image.external_path.as_deref(),
-        has_payload,
+        admission,
         image.text_wrap,
     ));
 
-    if has_payload {
+    if admission == CanvasKitImageAdmission::Replayable {
         direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
     } else {
         direct_required_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
@@ -1259,7 +1259,9 @@ fn page_background_item(
             None,
         );
     };
-    let has_payload = resources.image_bytes(image.resource_id).is_some();
+    let admission = resources
+        .image_bytes(image.resource_id)
+        .map_or(CanvasKitImageAdmission::Missing, image_admission);
     let detail = Some(image_replay_detail(
         Some(image.fill_mode),
         None,
@@ -1269,10 +1271,10 @@ fn page_background_item(
         image.contrast,
         None,
         None,
-        has_payload,
+        admission,
         None,
     ));
-    if has_payload {
+    if admission == CanvasKitImageAdmission::Replayable {
         direct_item_with_detail(
             path,
             "pageBackground",
@@ -1289,6 +1291,27 @@ fn page_background_item(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CanvasKitImageAdmission {
+    Missing,
+    DecodeFailed,
+    Replayable,
+}
+
+fn image_admission(bytes: &[u8]) -> CanvasKitImageAdmission {
+    match guess_format(bytes) {
+        Ok(ImageFormat::Png | ImageFormat::Bmp) => {
+            if load_from_memory(bytes).is_ok() {
+                CanvasKitImageAdmission::Replayable
+            } else {
+                CanvasKitImageAdmission::DecodeFailed
+            }
+        }
+        Ok(_) => CanvasKitImageAdmission::Replayable,
+        Err(_) => CanvasKitImageAdmission::DecodeFailed,
+    }
+}
+
 fn image_replay_detail(
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
@@ -1298,7 +1321,7 @@ fn image_replay_detail(
     contrast: i8,
     transform: Option<crate::renderer::render_tree::ShapeTransform>,
     external_path: Option<&str>,
-    has_payload: bool,
+    admission: CanvasKitImageAdmission,
     text_wrap: Option<TextWrap>,
 ) -> String {
     let mut detail = String::new();
@@ -1339,10 +1362,10 @@ fn image_replay_detail(
     if external_path.is_some() {
         detail.push_str(";externalImage");
     }
-    if has_payload {
-        detail.push_str(";injectedImageData");
-    } else {
-        detail.push_str(";missingImageData");
+    match admission {
+        CanvasKitImageAdmission::Missing => detail.push_str(";missingImageData"),
+        CanvasKitImageAdmission::DecodeFailed => detail.push_str(";imageDecodeFailed"),
+        CanvasKitImageAdmission::Replayable => detail.push_str(";injectedImageData"),
     }
 
     detail
@@ -2153,7 +2176,7 @@ mod tests {
     #[test]
     fn canvaskit_replay_plan_reports_image_payload_details() {
         let mut resources = ResourceArena::default();
-        let background_image_id = resources.intern_image_bytes(&[137, 80, 78, 71]);
+        let background_image_id = resources.intern_image_bytes(FIXTURE_PNG);
         let tree = PageLayerTree::builder(
             100.0,
             100.0,
@@ -2315,7 +2338,7 @@ mod tests {
         assert!(detail.contains("missingImageData"));
 
         let mut resources = ResourceArena::default();
-        let image_id = resources.intern_image_bytes(&[137, 80, 78, 71]);
+        let image_id = resources.intern_image_bytes(FIXTURE_PNG);
         let injected_tree = PageLayerTree::builder(
             100.0,
             100.0,
@@ -2355,13 +2378,73 @@ mod tests {
     }
 
     #[test]
+    fn canvaskit_replay_plan_rejects_undecodable_image_resources() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&[0x89, b'P', b'N', b'G']);
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![
+                    PaintOp::PageBackground {
+                        bbox: valid_bbox(),
+                        background: LayerPageBackgroundPaint {
+                            background_color: None,
+                            border_color: None,
+                            border_width: 0.0,
+                            gradient: None,
+                            image: Some(LayerPageBackgroundImagePaint {
+                                resource_id: image_id,
+                                fill_mode: ImageFillMode::FitToSize,
+                                brightness: 0,
+                                contrast: 0,
+                                effect: ImageEffect::RealPic,
+                            }),
+                        },
+                    },
+                    PaintOp::Image {
+                        bbox: valid_bbox(),
+                        image: LayerImagePaint {
+                            resource_id: Some(image_id),
+                            external_path: None,
+                            text_wrap: None,
+                            fill_mode: None,
+                            original_size: None,
+                            crop: None,
+                            brightness: 0,
+                            contrast: 0,
+                            effect: ImageEffect::RealPic,
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                ],
+            ),
+        )
+        .resources(resources)
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+
+        assert_eq!(plan.summary.direct_required_items, 2);
+        assert!(plan.items.iter().all(|item| {
+            item.status == CanvasKitReplayStatus::DirectRequired
+                && item
+                    .detail
+                    .as_deref()
+                    .is_some_and(|detail| detail.contains("imageDecodeFailed"))
+        }));
+    }
+
+    #[test]
     fn canvaskit_replay_plan_sees_raw_svg_data_image_as_resource_image() {
         let bbox = BoundingBox::new(10.0, 20.0, 120.0, 40.0);
         let mut render_tree = PageRenderTree::new(0, 200.0, 120.0);
         render_tree.root.children.push(RenderNode::new(
             1,
             RenderNodeType::RawSvg(RawSvgNode {
-                svg: r#"<image x="10" y="20" width="120" height="40" href="data:image/png;base64,iVBORw0KGgo="/>"#.to_string(),
+                svg: r#"<image x="10" y="20" width="120" height="40" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="/>"#.to_string(),
             }),
             bbox,
         ));
