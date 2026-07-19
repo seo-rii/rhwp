@@ -606,6 +606,12 @@ export class CanvasKitFontRegistry {
     if (style.engrave) {
       return 'glyphRunEngraveUnsupported';
     }
+    if (style.superscript) {
+      return 'glyphRunSuperscriptUnsupported';
+    }
+    if (style.subscript) {
+      return 'glyphRunSubscriptUnsupported';
+    }
     if (shadeColor !== '#ffffff') {
       return 'glyphRunShadeUnsupported';
     }

@@ -2660,6 +2660,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ['ratio', (style) => ({ ...style, ratio: 0.8 })],
       ['emboss', (style) => ({ ...style, emboss: true })],
       ['engrave', (style) => ({ ...style, engrave: true })],
+      ['superscript', (style) => ({ ...style, superscript: true })],
+      ['subscript', (style) => ({ ...style, subscript: true })],
       ['shade', (style) => ({ ...style, shadeColor: '#ffff00' })],
     ];
     for (const [name, mutateStyle] of unsupportedEffectCases) {
@@ -3158,6 +3160,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ratio: 'glyphRunRatioUnsupported',
       emboss: 'glyphRunEmbossUnsupported',
       engrave: 'glyphRunEngraveUnsupported',
+      superscript: 'glyphRunSuperscriptUnsupported',
+      subscript: 'glyphRunSubscriptUnsupported',
       shade: 'glyphRunShadeUnsupported',
     }),
     `CanvasKit GlyphRun reports precise unsupported effect reasons=${JSON.stringify(portableGlyphRunProbe.unsupportedEffectReasons)}`,

@@ -479,8 +479,9 @@ assertTokensInOrder(
     'PaintOp::PageBackground { background, .. } =>',
     'page_background_item(path, background, &self.tree.resources)',
     'fn page_background_item(',
-    'resources.image_bytes(image.resource_id).is_some()',
-    'if has_payload',
+    '.image_bytes(image.resource_id)',
+    '.map_or(CanvasKitImageAdmission::Missing, image_admission)',
+    'if admission == CanvasKitImageAdmission::Replayable',
     'direct_item_with_detail(',
     'direct_required_item_with_detail(',
   ],
@@ -492,11 +493,23 @@ assertTokensInOrder(
     'PaintOp::Image { image, .. } => image_item(path, image, &self.tree.resources)',
     'fn image_item(',
     'resources.image_bytes(resource_id)',
-    'if has_payload',
+    '.map_or(CanvasKitImageAdmission::Missing, image_admission)',
+    'if admission == CanvasKitImageAdmission::Replayable',
     'direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)',
     'direct_required_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)',
   ],
   'CanvasKit replay plan must distinguish replayable image resources from image-data-required runtime cases',
+);
+assertTokensInOrder(
+  rustCanvaskitPolicySource,
+  [
+    'fn image_admission(bytes: &[u8])',
+    'match guess_format(bytes)',
+    'Ok(ImageFormat::Png | ImageFormat::Bmp)',
+    'load_from_memory(bytes).is_ok()',
+    'CanvasKitImageAdmission::DecodeFailed',
+  ],
+  'CanvasKit replay plan must preflight known encoded image payloads before advertising direct replay',
 );
 compareCaseContract('renderFormObject', 'form object replay');
 assert.equal(
@@ -1446,6 +1459,10 @@ assert(
   'Studio CanvasKit page replay must render content and margin guides before a single surface flush',
 );
 const canvaskitGlyphRunReplayStatusBlock = extractMethodBody(canvaskitFontsSource, 'glyphRunReplayStatus');
+const canvaskitUnsupportedGlyphRunPaintBlock = extractMethodBody(
+  canvaskitFontsSource,
+  'unsupportedGlyphRunPaintReason',
+);
 const canvaskitGlyphRunTypefaceBlock = extractMethodBody(canvaskitFontsSource, 'typefaceForGlyphRun');
 const canvaskitFontBlobBytesBlock = extractMethodBody(canvaskitFontsSource, 'fontBlobBytesForRef');
 assertTokensInOrder(
@@ -1494,6 +1511,16 @@ assertTokensInOrder(
     "return this.glyphRunReplayFailure(run, 'fontBlobNotPortable'",
   ],
   'CanvasKit GlyphRun replay must keep range, variation, and face-index gates before portable replay',
+);
+assertTokensInOrder(
+  canvaskitUnsupportedGlyphRunPaintBlock,
+  [
+    'if (style.superscript)',
+    "return 'glyphRunSuperscriptUnsupported'",
+    'if (style.subscript)',
+    "return 'glyphRunSubscriptUnsupported'",
+  ],
+  'CanvasKit GlyphRun replay must preserve TextRun script metrics through explicit fallback',
 );
 for (const requiredToken of [
   'variationSupported: false',

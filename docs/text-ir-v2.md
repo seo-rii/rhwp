@@ -232,8 +232,10 @@ explicit gates for exact font instantiation before selecting a `GlyphRun`:
   (`glyphRunUnderlineUnsupported`, `glyphRunStrikethroughUnsupported`,
   `glyphRunEmphasisUnsupported`, `glyphRunRatioUnsupported`,
   `glyphRunEmbossUnsupported`, `glyphRunEngraveUnsupported`,
+  `glyphRunSuperscriptUnsupported`, `glyphRunSubscriptUnsupported`, and
   `glyphRunShadeUnsupported`) so each effect can be promoted independently once
-  a parity fixture covers it.
+  a parity fixture covers it. Superscript and subscript remain on `TextRun`
+  until positioned-glyph replay applies the same script scale and baseline shift.
 - Explicit glyph positions use `canvas.drawGlyphs`. `TextBlob.MakeFromGlyphs`
   is not used for positioned `GlyphRun` replay because it relies on font default
   advances. RSXform/TextBlob paths are future optimizations for repeated static
