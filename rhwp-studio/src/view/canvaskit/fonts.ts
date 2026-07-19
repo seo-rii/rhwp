@@ -495,8 +495,19 @@ export class CanvasKitFontRegistry {
     if (!bytes) {
       return null;
     }
-    const typeface = this.canvasKit.Typeface.MakeTypefaceFromData(bytes.slice(0))
-      ?? this.canvasKit.Typeface.MakeFreeTypeFaceFromData(bytes.slice(0));
+    let typeface: Typeface | null = null;
+    try {
+      typeface = this.canvasKit.Typeface.MakeTypefaceFromData(bytes.slice(0));
+    } catch {
+      typeface = null;
+    }
+    if (!typeface) {
+      try {
+        typeface = this.canvasKit.Typeface.MakeFreeTypeFaceFromData(bytes.slice(0));
+      } catch {
+        typeface = null;
+      }
+    }
     if (!typeface) {
       return null;
     }
@@ -546,7 +557,12 @@ export class CanvasKitFontRegistry {
       return null;
     }
     const base64 = payload.includes(',') ? payload.split(',').pop() ?? '' : payload;
-    const bytes = decodeBase64(base64);
+    let bytes: Uint8Array;
+    try {
+      bytes = decodeBase64(base64);
+    } catch {
+      return null;
+    }
     if (bytes.length === 0) {
       return null;
     }

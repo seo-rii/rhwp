@@ -1309,6 +1309,12 @@ assertTokensInOrder(
   canvaskitResourceCacheSource,
   [
     'if (this.failedImageCacheKeys.has(cacheKey)) return null',
+    'let bytes: Uint8Array | undefined',
+    'bytes = this.imageBytes(resourceId, base64)',
+    '} catch {',
+    'this.failedImageCacheKeys.add(cacheKey)',
+    'return null',
+    'if (!bytes) return null',
     'try {',
     'image = this.canvasKit.MakeImageFromEncoded(bytes)',
     '} catch {',
@@ -1408,6 +1414,33 @@ assert(
   'Studio CanvasKit page replay must render content and margin guides before a single surface flush',
 );
 const canvaskitGlyphRunReplayStatusBlock = extractMethodBody(canvaskitFontsSource, 'glyphRunReplayStatus');
+const canvaskitGlyphRunTypefaceBlock = extractMethodBody(canvaskitFontsSource, 'typefaceForGlyphRun');
+const canvaskitFontBlobBytesBlock = extractMethodBody(canvaskitFontsSource, 'fontBlobBytesForRef');
+assertTokensInOrder(
+  canvaskitGlyphRunTypefaceBlock,
+  [
+    'try {',
+    'typeface = this.canvasKit.Typeface.MakeTypefaceFromData(bytes.slice(0))',
+    '} catch {',
+    'typeface = null',
+    'if (!typeface)',
+    'try {',
+    'typeface = this.canvasKit.Typeface.MakeFreeTypeFaceFromData(bytes.slice(0))',
+    '} catch {',
+    'typeface = null',
+  ],
+  'CanvasKit GlyphRun font selection must contain both typeface parser failure paths',
+);
+assertTokensInOrder(
+  canvaskitFontBlobBytesBlock,
+  [
+    'try {',
+    'bytes = decodeBase64(base64)',
+    '} catch {',
+    'return null',
+  ],
+  'CanvasKit GlyphRun font resources must reject malformed base64 without aborting page replay',
+);
 assertTokensInOrder(
   canvaskitGlyphRunReplayStatusBlock,
   [

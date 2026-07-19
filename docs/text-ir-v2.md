@@ -917,6 +917,12 @@ implicitly change schema authority:
   nonvisual metadata, local transforms, CSS color parsing, and the conservative
   stroke subset; unsupported stroke styles such as invalid dash arrays or
   non-numeric dash offsets remain deterministic fallback cases.
+- CanvasKit resource admission fails closed before direct replay. Malformed
+  inline image base64 and encoded-image decoder failures are contained and
+  negative-cached, malformed embedded font base64 is ignored, and exceptions
+  from either CanvasKit typeface constructor leave the `GlyphRun` ineligible so
+  its `TextRun` fallback remains selected. Resource parser failures must not
+  abort the page or bypass variant selection.
 - Variation, TTC, and OTC strict replay are backend capability additions. A
   backend must keep reporting `variationUnsupported` or `faceIndexUnsupported`
   and select the fallback variant until exact construction is proven for that

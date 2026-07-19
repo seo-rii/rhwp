@@ -1507,6 +1507,129 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         : false,
       hasRendererDomImageCache: Object.prototype.hasOwnProperty.call(renderer, 'domImageCache'),
     };
+    const nativeResourceFailureProbe = (() => {
+      let invalidInlineImageError = null;
+      let invalidInlineImageFirst = null;
+      let invalidInlineImageSecond = null;
+      try {
+        invalidInlineImageFirst = renderer.resourceCache.image(undefined, '%%%');
+        invalidInlineImageSecond = renderer.resourceCache.image(undefined, '%%%');
+      } catch (error) {
+        invalidInlineImageError = error?.message ?? String(error);
+      }
+
+      let invalidFontBase64Error = null;
+      try {
+        renderer.fontRegistry.registerFontBlobsFromResources({
+          blobs: [{
+            id: 'invalid-base64-font',
+            source: 'embedded',
+            portability: 'portableBlob',
+            digest: { algorithm: 'fixture', value: 'invalid-base64-font-digest' },
+            dataRef: { kind: 'fontBlob', id: '0' },
+          }],
+          faces: [],
+        }, {
+          tableId: 907,
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+          fontBlobs: ['%%%'],
+          fontBlobHashes: ['invalid-base64-font-digest'],
+          fontBlobKeys: ['invalid-base64-font'],
+        });
+      } catch (error) {
+        invalidFontBase64Error = error?.message ?? String(error);
+      }
+
+      renderer.fontRegistry.registerVerifiedFontBlob(
+        'invalid-font-parser-blob',
+        'invalid-font-parser-digest',
+        new Uint8Array([0x52, 0x48, 0x57, 0x50]),
+      );
+      const invalidFontParserStatus = renderer.fontRegistry.glyphRunReplayStatus({
+        type: 'glyphRun',
+        bbox: { x: 0, y: 0, width: 20, height: 20 },
+        source: { id: 908, utf8Range: { start: 0, end: 1 }, utf16Range: { start: 0, end: 1 } },
+        variant: {
+          equivalenceGroup: 'invalid-font-parser',
+          variantId: 'glyphRun',
+          variantKind: 'glyphRun',
+          partIndex: 0,
+          partCount: 1,
+          isDefaultFallback: false,
+          quality: 'exact',
+          requires: ['fontResources', 'text.glyphRun'],
+        },
+        paintStyle: { ...simpleTextRun.style },
+        shapeKey: {
+          fontInstance: {
+            faceKey: 'invalid-font-parser-face',
+            sizePx: 12,
+            variations: [],
+            syntheticBold: false,
+            syntheticItalic: false,
+          },
+          direction: 'ltr',
+          writingMode: 'horizontal-tb',
+          shapingEngine: 'fixture',
+          fallbackPolicy: 'none',
+        },
+        placement: {
+          runToPage: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+          baselineY: 0,
+        },
+        glyphIds: [1],
+        positions: [{ x: 0, y: 0 }],
+        clusters: [{
+          sourceRangeUtf8: { start: 0, end: 1 },
+          sourceRangeUtf16: { start: 0, end: 1 },
+          glyphRange: { start: 0, end: 1 },
+          flags: [],
+        }],
+        direction: 'ltr',
+        writingMode: 'horizontal-tb',
+        orientation: 'horizontal',
+        diagnostics: {
+          quality: 'exact',
+          replayEligibility: 'portable',
+          strictVisualEligible: true,
+          maxOriginDeltaPx: 0,
+          maxAdvanceDeltaPx: 0,
+          maxResidualAfterAdjustmentPx: 0,
+          clusterMismatchCount: 0,
+          missingGlyphCount: 0,
+          usedFallbackFontCount: 0,
+        },
+      }, {
+        blobs: [{
+          id: 'invalid-font-parser-blob',
+          source: 'embedded',
+          portability: 'portableBlob',
+          digest: { algorithm: 'fixture', value: 'invalid-font-parser-digest' },
+          dataRef: { kind: 'fontBlob', id: '0' },
+        }],
+        faces: [{
+          id: 'invalid-font-parser-face',
+          blobKey: 'invalid-font-parser-blob',
+          faceIndex: 0,
+          familyNames: [{ value: 'Invalid Parser Fixture' }],
+          styleNames: [],
+        }],
+      });
+      return {
+        invalidInlineImageError,
+        invalidInlineImageFirst,
+        invalidInlineImageSecond,
+        invalidInlineImageNegativeCached: renderer.resourceCache.failedImageCacheKeys.has('b64:%%%'),
+        invalidFontBase64Error,
+        invalidFontParserReplayable: invalidFontParserStatus.replayable,
+        invalidFontParserReason: invalidFontParserStatus.reason,
+      };
+    })();
 
     const nativeDispatchProbe = (() => {
       const onePixelPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7s8AAAAASUVORK5CYII=';
@@ -1803,6 +1926,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       pageBackgroundImageNativeProbe,
       fallbackOverlayPassProbe,
       nativeResourceCacheProbe,
+      nativeResourceFailureProbe,
       nativeDispatchProbe,
     };
   });
@@ -1858,6 +1982,19 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       && nativeRouting.nativeResourceCacheProbe?.hasDomImageMethod === false
       && nativeRouting.nativeResourceCacheProbe?.hasRendererDomImageCache === false,
     `CanvasKit DOM image cache removed=${JSON.stringify(nativeRouting.nativeResourceCacheProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.invalidInlineImageError === null
+      && nativeRouting.nativeResourceFailureProbe?.invalidInlineImageFirst === null
+      && nativeRouting.nativeResourceFailureProbe?.invalidInlineImageSecond === null
+      && nativeRouting.nativeResourceFailureProbe?.invalidInlineImageNegativeCached === true,
+    `invalid inline image base64 is contained and memoized=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.invalidFontBase64Error === null
+      && nativeRouting.nativeResourceFailureProbe?.invalidFontParserReplayable === false
+      && nativeRouting.nativeResourceFailureProbe?.invalidFontParserReason === 'fontFaceInstantiationFailed',
+    `invalid font payloads preserve GlyphRun fallback=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
   );
   for (const [method, calls] of Object.entries(nativeRouting.nativeDispatchProbe?.calls ?? {})) {
     assert(calls > 0, `${method} native dispatch calls=${JSON.stringify(nativeRouting.nativeDispatchProbe)}`);

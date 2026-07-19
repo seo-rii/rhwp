@@ -86,7 +86,13 @@ export class CanvasKitResourceCache {
     if (cached) return cached;
     if (this.failedImageCacheKeys.has(cacheKey)) return null;
 
-    const bytes = this.imageBytes(resourceId, base64);
+    let bytes: Uint8Array | undefined;
+    try {
+      bytes = this.imageBytes(resourceId, base64);
+    } catch {
+      this.failedImageCacheKeys.add(cacheKey);
+      return null;
+    }
     if (!bytes) return null;
     let image: CanvasKitImage | null;
     try {
