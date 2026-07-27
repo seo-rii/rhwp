@@ -52,13 +52,21 @@
 | 파일명 | 폰트명 | 라이선스 | 출처 | 대체 대상 |
 |--------|--------|---------|------|----------|
 | Pretendard-*.woff2 (9종) | Pretendard | SIL OFL 1.1 | GitHub | 맑은 고딕, 함초롬돋움 |
-| NotoSansKR-Regular.woff2 | Noto Sans KR Regular | SIL OFL 1.1 | Google Fonts | 돋움, 굴림, 한컴돋움, CanvasKit 기본 typeface |
+| NotoSansKR-ExtraLight.woff2 | Noto Sans KR ExtraLight | SIL OFL 1.1 | Google Fonts | 돋움, 돋움체, 굴림, 새굴림, Haansoft Dotum |
+| NotoSansKR-Regular.woff2 | Noto Sans KR Regular | SIL OFL 1.1 | Google Fonts | 한컴돋움, CanvasKit 심볼 폴백 |
 | NotoSansKR-Bold.woff2 | Noto Sans KR Bold | SIL OFL 1.1 | Google Fonts | 돋움 Bold |
 | NanumGothic-Regular.woff2 | 나눔고딕 Regular | SIL OFL 1.1 | Google Fonts | 나눔고딕 (동일) |
 | NanumGothic-Bold.woff2 | 나눔고딕 Bold | SIL OFL 1.1 | Google Fonts | 나눔고딕 Bold |
 | NanumGothic-ExtraBold.woff2 | 나눔고딕 ExtraBold | SIL OFL 1.1 | Google Fonts | 나눔고딕 ExtraBold |
 | GowunDodum-Regular.woff2 | 고운돋움 Regular | SIL OFL 1.1 | Google Fonts | HY고딕 대체 |
 | SpoqaHanSans-Regular.woff2 | 스포카 한 산스 | SIL OFL 1.1 | GitHub | 보조 Sans |
+
+`NotoSansKR-ExtraLight.woff2`는 내부 family name이 `Noto Sans KR ExtraLight`,
+weight class가 `400`인 독립 face다. Canvas2D와 CanvasKit은 돋움·굴림 계열 alias를 이
+독립 family에 같은 weight로 등록하며, 네이티브 Skia는 대응하는
+`ttfs/opensource/NotoSansKR-ExtraLight.ttf`를 sans fallback에서 Regular보다 먼저
+선택한다. 기하 도형과 box-drawing 범위를 확장한 Regular asset은 CanvasKit의 심볼
+폴백으로 계속 유지한다.
 
 ### Noto Sans KR Regular 서브셋 재생성
 
@@ -79,8 +87,8 @@ python tools/subset_noto_sans_kr_regular.py \
 ```
 
 출력은 `ttfs/opensource/NotoSansKR-Regular.ttf`와 `web/fonts/NotoSansKR-Regular.woff2`다.
-`npm run e2e:canvaskit-font-coverage`는 CanvasKit 실번들에서 `■`, `▪`, `□`, `○`, `─`의 glyph ID가
-`0`이 아닌지 확인한다.
+`npm run e2e:canvaskit-font-coverage`는 CanvasKit 실번들에서 Regular의 `■`, `▪`, `□`,
+`○`, `─`와 ExtraLight의 한글/라틴 glyph ID가 `0`이 아닌지 확인한다.
 
 ### Monospace (고정폭)
 

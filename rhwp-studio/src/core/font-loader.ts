@@ -20,6 +20,7 @@ const HAMCHOROM_BATANG_REGULAR = 'fonts/NotoSerifKR-Regular.woff2';
 const HAMCHOROM_BATANG_BOLD = 'fonts/NotoSerifKR-Bold.woff2';
 const HAMCHOROM_DOTUM_REGULAR = 'fonts/NotoSansKR-Regular.woff2';
 const HAMCHOROM_DOTUM_BOLD = 'fonts/NotoSansKR-Bold.woff2';
+const NOTO_SANS_KR_EXTRALIGHT = 'fonts/NotoSansKR-ExtraLight.woff2';
 
 // 한컴 webhwp CSS(@font-face) 매핑 기준 + HWP 문서에서 사용하는 별칭
 export const FONT_LIST: FontEntry[] = [
@@ -61,12 +62,14 @@ export const FONT_LIST: FontEntry[] = [
   { name: '맑은 고딕', file: 'fonts/NotoSansKR-Bold.woff2', weight: '700' },
   { name: 'Apple SD Gothic Neo', file: 'fonts/NotoSansKR-Regular.woff2', weight: '400' },
   { name: 'Apple SD Gothic Neo', file: 'fonts/NotoSansKR-Bold.woff2', weight: '700' },
-  { name: '돋움', file: 'fonts/NotoSansKR-Regular.woff2' },
-  { name: '돋움체', file: 'fonts/NotoSansKR-Regular.woff2' },
-  { name: '굴림', file: 'fonts/NotoSansKR-Regular.woff2' },
+  // 독립 family인 ExtraLight 번들은 내부 weight class가 400이므로 alias도 400으로 등록한다.
+  { name: '돋움', file: NOTO_SANS_KR_EXTRALIGHT, weight: '400' },
+  { name: '돋움체', file: NOTO_SANS_KR_EXTRALIGHT, weight: '400' },
+  { name: '굴림', file: NOTO_SANS_KR_EXTRALIGHT, weight: '400' },
   { name: 'GulimChe', file: 'fonts/D2Coding-Regular.woff2' },
   { name: '굴림체', file: 'fonts/D2Coding-Regular.woff2' },
-  { name: '새굴림', file: 'fonts/NotoSansKR-Regular.woff2' },
+  { name: '새굴림', file: NOTO_SANS_KR_EXTRALIGHT, weight: '400' },
+  { name: 'Haansoft Dotum', file: NOTO_SANS_KR_EXTRALIGHT, weight: '400' },
   { name: 'Batang', file: 'fonts/NotoSerifKR-Regular.woff2' },
   { name: '바탕', file: 'fonts/NotoSerifKR-Regular.woff2' },
   { name: '바탕체', file: 'fonts/D2Coding-Regular.woff2' },
@@ -86,6 +89,7 @@ export const FONT_LIST: FontEntry[] = [
   // === Noto (OFL, 로컬) ===
   { name: 'Noto Sans CJK KR', file: 'fonts/NotoSansKR-Regular.woff2', weight: '400' },
   { name: 'Noto Sans CJK KR', file: 'fonts/NotoSansKR-Bold.woff2', weight: '700' },
+  { name: 'Noto Sans KR ExtraLight', file: NOTO_SANS_KR_EXTRALIGHT, weight: '400' },
   { name: 'Noto Sans KR', file: 'fonts/NotoSansKR-Regular.woff2', weight: '400' },
   { name: 'Noto Sans KR', file: 'fonts/NotoSansKR-Bold.woff2', weight: '700' },
   { name: 'Noto Serif CJK KR', file: 'fonts/NotoSerifKR-Regular.woff2' },

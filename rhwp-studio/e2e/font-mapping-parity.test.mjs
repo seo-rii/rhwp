@@ -104,7 +104,7 @@ function canonicalFallback(fontName) {
   if (/[바탕명조궁서]|hymjre|times|palatino|georgia|batang|gungsuh/i.test(fontName)) {
     return `"${fontName}", "Batang", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "NanumMyeongjo", "나눔명조", serif`;
   }
-  return `"${fontName}", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", sans-serif`;
+  return `"${fontName}", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", sans-serif`;
 }
 
 const studioFontList = loadStudioFontList();
@@ -117,6 +117,18 @@ for (const [family, expectedFaces] of [
   ['Noto Sans KR', [
     { file: 'fonts/NotoSansKR-Regular.woff2', weight: '400' },
     { file: 'fonts/NotoSansKR-Bold.woff2', weight: '700' },
+  ]],
+  ['Noto Sans KR ExtraLight', [
+    { file: 'fonts/NotoSansKR-ExtraLight.woff2', weight: '400' },
+  ]],
+  ['돋움', [
+    { file: 'fonts/NotoSansKR-ExtraLight.woff2', weight: '400' },
+  ]],
+  ['굴림', [
+    { file: 'fonts/NotoSansKR-ExtraLight.woff2', weight: '400' },
+  ]],
+  ['Haansoft Dotum', [
+    { file: 'fonts/NotoSansKR-ExtraLight.woff2', weight: '400' },
   ]],
 ]) {
   assert.deepStrictEqual(

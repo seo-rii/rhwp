@@ -433,6 +433,18 @@ raster diff zero in both CanvasKit modes. The larger repeated-header page keeps
 its residual text-position/raster difference report-only rather than hiding it
 through a looser font substitution.
 
+The shared font matrix also maps the Dotum/Gulim family aliases (`돋움`,
+`돋움체`, `굴림`, `새굴림`, and `Haansoft Dotum`) to the independent
+`Noto Sans KR ExtraLight` family. Browser renderers use the checked-in WOFF2
+face and native Skia uses the matching checked-in TTF; all three fallback
+chains place that family before the regular Noto sans faces. The independent
+face intentionally advertises weight class 400, so aliases register it as 400
+rather than pretending it is a weight variant of `Noto Sans KR`. The expanded
+Regular face remains registered for CanvasKit symbol and box-drawing coverage.
+Catalog parity tests pin the alias mapping, and the CanvasKit font-coverage
+smoke verifies both the Regular symbol subset and ExtraLight Korean/Latin
+coverage.
+
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload

@@ -31,6 +31,7 @@
         'Malgun Gothic',
         '맑은 고딕',
         'Apple SD Gothic Neo',
+        'Haansoft Dotum',
         '돋움',
         '돋움체',
         '굴림',
@@ -52,6 +53,7 @@
         '나눔고딕코딩',
         'Palatino Linotype',
         'Noto Sans CJK KR',
+        'Noto Sans KR ExtraLight',
         'Noto Sans KR',
         'Noto Serif CJK KR',
         'Noto Serif KR',
@@ -301,7 +303,7 @@
         if (/[바탕명조궁서]|hymjre|times|palatino|georgia|batang|gungsuh/i.test(fontName)) {
             return '"' + fontName + '", "Batang", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "NanumMyeongjo", "나눔명조", serif';
         }
-        return '"' + fontName + '", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", sans-serif';
+        return '"' + fontName + '", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", sans-serif';
     }
 
     globalThis.FontSubstitution = {

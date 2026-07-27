@@ -206,6 +206,7 @@ mod tests {
         let font_mgr = FontMgr::default();
         let catalog = TypefaceCatalog::load(&font_mgr, &font_paths::bundled_font_dirs());
         assert!(catalog.contains_family("Noto Sans KR"));
+        assert!(catalog.contains_family("Noto Sans KR ExtraLight"));
 
         let style = TextStyle {
             font_family: "Noto Sans KR".to_string(),
@@ -231,12 +232,32 @@ mod tests {
     }
 
     #[test]
+    fn bundled_sans_fallback_prefers_extralight_before_regular() {
+        let font_mgr = FontMgr::default();
+        let catalog = TypefaceCatalog::load(&font_mgr, &font_paths::bundled_font_dirs());
+        let style = TextStyle {
+            font_family: "Definitely Missing RHWP Test Font".to_string(),
+            ..Default::default()
+        };
+        let candidates = font_family_candidates(&style, "한글");
+        let typeface = catalog
+            .typeface_for_text(
+                &candidates,
+                font_style_for_text(&style),
+                text_font_size(&style),
+                "한글",
+            )
+            .expect("bundled Korean fallback should resolve");
+        assert_eq!(typeface.family_name(), "Noto Sans KR ExtraLight");
+    }
+
+    #[test]
     fn caller_font_catalog_precedes_system_and_bundled_fallbacks() {
         let font_mgr = FontMgr::default();
         let resolver = SkiaFontResolver::new(font_mgr, &font_paths::bundled_font_dirs());
         let font = resolver.make_font(
             &TextStyle {
-                font_family: "Definitely Missing RHWP Test Font".to_string(),
+                font_family: "Noto Sans KR".to_string(),
                 ..Default::default()
             },
             "한글",

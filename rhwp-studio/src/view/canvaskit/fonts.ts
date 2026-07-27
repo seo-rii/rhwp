@@ -17,6 +17,7 @@ import { decodeBase64 } from '../image-effect-pixels';
 
 const FONT_SANS_REGULAR_URL = new URL('../../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
 const FONT_SANS_BOLD_URL = new URL('../../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
+const FONT_SANS_EXTRALIGHT_URL = new URL('../../../../web/fonts/NotoSansKR-ExtraLight.woff2', import.meta.url).href;
 const FONT_SERIF_REGULAR_URL = new URL('../../../../web/fonts/NotoSerifKR-Regular.woff2', import.meta.url).href;
 const FONT_SERIF_BOLD_URL = new URL('../../../../web/fonts/NotoSerifKR-Bold.woff2', import.meta.url).href;
 const FONT_MONO_REGULAR_URL = new URL('../../../../web/fonts/D2Coding-Regular.woff2', import.meta.url).href;
@@ -28,6 +29,7 @@ const FONT_HAMCHOROM_BATANG_BOLD_URL = new URL('../../../../web/fonts/NotoSerifK
 const BUNDLED_FONT_URLS = new Map<string, string>([
   ['fonts/NotoSansKR-Regular.woff2', FONT_SANS_REGULAR_URL],
   ['fonts/NotoSansKR-Bold.woff2', FONT_SANS_BOLD_URL],
+  ['fonts/NotoSansKR-ExtraLight.woff2', FONT_SANS_EXTRALIGHT_URL],
   ['fonts/NotoSerifKR-Regular.woff2', FONT_SERIF_REGULAR_URL],
   ['fonts/NotoSerifKR-Bold.woff2', FONT_SERIF_BOLD_URL],
   ['fonts/D2Coding-Regular.woff2', FONT_MONO_REGULAR_URL],
@@ -53,6 +55,7 @@ const HAMCHOROM_BATANG_ALIASES = new Set([
 
 const SANS_ALIASES = [
   'Noto Sans KR',
+  'Noto Sans KR ExtraLight',
   'Noto Sans CJK KR',
   'NanumGothic',
   '나눔고딕',
@@ -62,6 +65,7 @@ const SANS_ALIASES = [
   'Pretendard',
   '돋움',
   '돋움체',
+  'Haansoft Dotum',
   '굴림',
   '새굴림',
   'HY중고딕',

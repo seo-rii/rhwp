@@ -10,6 +10,7 @@ import {
   fontFamilyWithFallback,
   resolveRenderFontWeight,
 } from '../src/core/font-family-fallback.ts';
+import { FONT_LIST } from '../src/core/font-loader.ts';
 
 test('weight-suffixed faces insert their base family before generic fallbacks', () => {
   assert.equal(baseFamilyWithoutWeightSuffix('Noto Serif KR Black'), 'Noto Serif KR');
@@ -60,8 +61,30 @@ test('Canvas2D shorthand combines inferred weight with the shared family chain',
   );
   assert.match(
     buildCanvasTextFont('', 10, false, false),
-    /"Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo"/,
+    /"Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight"/,
   );
+});
+
+test('Dotum aliases and generic sans fallbacks use the independent ExtraLight family', () => {
+  assert.deepEqual(
+    canvasFontFamilyFallbackCandidates('없는 산세리프').slice(0, 6),
+    [
+      '없는 산세리프',
+      'Malgun Gothic',
+      '맑은 고딕',
+      'Apple SD Gothic Neo',
+      'Noto Sans KR ExtraLight',
+      'Noto Sans CJK KR',
+    ],
+  );
+  for (const family of ['돋움', '돋움체', '굴림', '새굴림', 'Haansoft Dotum']) {
+    assert.deepEqual(
+      FONT_LIST
+        .filter((entry) => entry.name === family)
+        .map((entry) => ({ file: entry.file, weight: entry.weight })),
+      [{ file: 'fonts/NotoSansKR-ExtraLight.woff2', weight: '400' }],
+    );
+  }
 });
 
 test('CanvasKit consumes the shared family and weight fallback semantics', () => {
@@ -76,6 +99,8 @@ test('CanvasKit consumes the shared family and weight fallback semantics', () =>
 
   assert.match(registrySource, /baseFamilyWithoutWeightSuffix\(candidate\)/);
   assert.match(registrySource, /canvasFontFamilyFallbackCandidates\(resolved\)/);
+  assert.match(registrySource, /NotoSansKR-ExtraLight\.woff2/);
+  assert.match(registrySource, /'Noto Sans KR ExtraLight'/);
   assert.match(rendererSource, /resolveRenderFontWeight\(op\.style\.fontFamily, op\.style\.bold\)/);
   assert.match(rendererSource, /this\.canvasKit\.FontWeight\.Light/);
   assert.match(rendererSource, /this\.canvasKit\.FontWeight\.Medium/);

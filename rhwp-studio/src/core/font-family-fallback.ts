@@ -127,6 +127,7 @@ function systemFallbackFamilies(fontName: string): string[] {
   return [
     'Malgun Gothic',
     'Apple SD Gothic Neo',
+    'Noto Sans KR ExtraLight',
     'Noto Sans KR',
     'Noto Sans CJK KR',
     'NanumGothic',
@@ -177,6 +178,7 @@ function canvasRenderFallbackFamilies(fontName: string): string[] {
     'Malgun Gothic',
     '맑은 고딕',
     'Apple SD Gothic Neo',
+    'Noto Sans KR ExtraLight',
     'Noto Sans CJK KR',
     'NanumGothic',
     '나눔고딕',
