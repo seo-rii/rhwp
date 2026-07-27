@@ -7,6 +7,7 @@ use skia_safe::{
 
 use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
+use crate::renderer::font_paths;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImageSampling {
@@ -723,8 +724,7 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Option<Image> {
     match detect_image_mime_type(bytes) {
         "image/x-wmf" => {
             let svg = crate::renderer::svg::convert_wmf_to_svg(bytes)?;
-            let mut options = usvg::Options::default();
-            options.fontdb_mut().load_system_fonts();
+            let options = svg_options();
             let tree = usvg::Tree::from_data(&svg, &options).ok()?;
             let size = tree.size().to_int_size();
             let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height())?;
@@ -766,12 +766,7 @@ pub fn rasterize_svg_fragment_with_view_box(
     let svg = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.2}\" height=\"{height:.2}\" viewBox=\"{view_box_x:.2} {view_box_y:.2} {view_box_width:.2} {view_box_height:.2}\" preserveAspectRatio=\"none\">{svg_fragment}</svg>"
     );
-    let mut options = usvg::Options::default();
-    let fontdb = options.fontdb_mut();
-    fontdb.load_system_fonts();
-    fontdb.set_sans_serif_family("Noto Sans CJK KR");
-    fontdb.set_serif_family("Noto Serif CJK KR");
-    fontdb.set_monospace_family("D2Coding");
+    let options = svg_options();
 
     let tree = usvg::Tree::from_str(&svg, &options).ok()?;
     let size = tree.size().to_int_size();
@@ -779,6 +774,16 @@ pub fn rasterize_svg_fragment_with_view_box(
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
     let png = pixmap.encode_png().ok()?;
     Image::from_encoded(Data::new_copy(&png))
+}
+
+fn svg_options() -> usvg::Options<'static> {
+    let fontdb = font_paths::default_usvg_fontdb();
+    let mut options = usvg::Options::default();
+    options.font_family = fontdb
+        .family_name(&usvg::fontdb::Family::SansSerif)
+        .to_string();
+    options.fontdb = fontdb;
+    options
 }
 
 pub(crate) fn draw_missing_image_placeholder(
@@ -881,6 +886,26 @@ mod tests {
         source.pixels_mut()[3] =
             tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 255, 255).unwrap();
         source.encode_png().expect("source png")
+    }
+
+    #[test]
+    fn svg_text_uses_portable_korean_fallback() {
+        let image = rasterize_svg_fragment(
+            r##"<text x="2" y="28" font-family="Definitely Missing RHWP Font, sans-serif" font-size="24" fill="#000000">한글</text>"##,
+            64.0,
+            36.0,
+        )
+        .expect("rasterize Korean SVG text");
+        let encoded = image
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("encode Korean SVG text");
+        let pixmap =
+            tiny_skia::Pixmap::decode_png(encoded.as_bytes()).expect("decode Korean SVG text");
+
+        assert!(
+            pixmap.pixels().iter().any(|pixel| pixel.alpha() > 0),
+            "bundled Korean fallback should produce visible SVG text"
+        );
     }
 
     fn render_cropped_bottom_row(fill_mode: ImageFillMode) -> tiny_skia::Pixmap {
