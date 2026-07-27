@@ -10,7 +10,7 @@ use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::UnderlineType;
 
 use super::image_conv::{draw_decoded_image, ImageSampling};
-use super::paint_conv::{colorref_to_skia, make_font};
+use super::paint_conv::colorref_to_skia;
 use super::renderer::SkiaLayerRenderer;
 use super::replay_context::SkiaReplayContext;
 
@@ -108,7 +108,7 @@ impl SkiaLayerRenderer {
                 } else {
                     colorref_to_skia(run.style.color, 1.0)
                 });
-                let font = make_font(&overlap_style, &self.font_mgr, display);
+                let font = self.font_resolver.make_font(&overlap_style, display);
                 let (measured_width, _) = font.measure_str(display, Some(&text_paint));
                 let measured_width = measured_width.max(1.0);
                 let baseline_y = inner_font_size * 0.35;
@@ -216,7 +216,7 @@ impl SkiaLayerRenderer {
             mapped_text.as_str()
         };
         let clusters = split_into_clusters(text);
-        let metrics_font = make_font(&render_style, &self.font_mgr, text);
+        let metrics_font = self.font_resolver.make_font(&render_style, text);
         let display_positions;
         let char_positions = if mapped_text == run.text {
             &run.positions
@@ -397,7 +397,7 @@ impl SkiaLayerRenderer {
                         end_index += 1;
                     }
 
-                    let font = make_font(&render_style, &self.font_mgr, &shaped_text);
+                    let font = self.font_resolver.make_font(&render_style, &shaped_text);
                     if let Some(blob) = shape_text_blob(&shaped_text, &font) {
                         canvas.draw_text_blob(&blob, (x, pass_y), &fill_paint);
                         if stroke_color.is_some() {
@@ -420,7 +420,7 @@ impl SkiaLayerRenderer {
                     continue;
                 }
 
-                let font = make_font(&render_style, &self.font_mgr, cluster);
+                let font = self.font_resolver.make_font(&render_style, cluster);
                 if let Some(blob) = shape_text_blob(cluster, &font) {
                     canvas.draw_text_blob(&blob, (x, pass_y), &fill_paint);
                     if stroke_color.is_some() {
@@ -591,7 +591,7 @@ impl SkiaLayerRenderer {
                 let mut dot_style = render_style.clone();
                 dot_style.font_family = "sans-serif".to_string();
                 dot_style.font_size = render_style.font_size * 0.3;
-                let dot_font = make_font(&dot_style, &self.font_mgr, dot_char);
+                let dot_font = self.font_resolver.make_font(&dot_style, dot_char);
                 let mut dot_paint = Paint::default();
                 dot_paint.set_anti_alias(true);
                 dot_paint.set_color(colorref_to_skia(run.style.color, 1.0));
@@ -668,7 +668,7 @@ impl SkiaLayerRenderer {
                     font_size: f64::from(font_size) * 0.3,
                     ..Default::default()
                 };
-                let dot_font = make_font(&dot_style, &self.font_mgr, dot_char);
+                let dot_font = self.font_resolver.make_font(&dot_style, dot_char);
                 let mut dot_paint = Paint::default();
                 dot_paint.set_anti_alias(true);
                 dot_paint.set_color(colorref_to_skia(decoration.color, 1.0));
@@ -707,7 +707,7 @@ impl SkiaLayerRenderer {
             ..Default::default()
         };
         let glyph = mark.kind.glyph();
-        let marker_font = make_font(&marker_style, &self.font_mgr, glyph);
+        let marker_font = self.font_resolver.make_font(&marker_style, glyph);
         canvas.draw_str(
             glyph,
             (

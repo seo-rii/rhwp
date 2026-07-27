@@ -1,4 +1,4 @@
-use skia_safe::{Canvas, Color, FontMgr, Paint, PathBuilder, Rect};
+use skia_safe::{Canvas, Color, Paint, PathBuilder, Rect};
 
 use crate::model::control::FormType;
 use crate::paint::LayerFormObjectPaint;
@@ -6,11 +6,11 @@ use crate::renderer::form_caption::display_form_caption;
 use crate::renderer::render_tree::BoundingBox;
 use crate::renderer::TextStyle;
 
-use super::paint_conv::make_font;
+use super::font_resolver::SkiaFontResolver;
 
 pub(super) fn render_form_object(
     canvas: &Canvas,
-    font_mgr: &FontMgr,
+    font_resolver: &SkiaFontResolver,
     bbox: &BoundingBox,
     form: &LayerFormObjectPaint,
 ) {
@@ -73,7 +73,7 @@ pub(super) fn render_form_object(
                 let caption = display_form_caption(&form.caption);
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, caption.as_ref());
+                let font = font_resolver.make_font(&text_style, caption.as_ref());
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);
@@ -123,7 +123,7 @@ pub(super) fn render_form_object(
                 let caption = display_form_caption(&form.caption);
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, caption.as_ref());
+                let font = font_resolver.make_font(&text_style, caption.as_ref());
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);
@@ -166,7 +166,7 @@ pub(super) fn render_form_object(
                 let caption = display_form_caption(&form.caption);
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, caption.as_ref());
+                let font = font_resolver.make_font(&text_style, caption.as_ref());
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);
@@ -229,7 +229,7 @@ pub(super) fn render_form_object(
             if !form.text.is_empty() {
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, &form.text);
+                let font = font_resolver.make_font(&text_style, &form.text);
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);
@@ -260,7 +260,7 @@ pub(super) fn render_form_object(
             if !form.text.is_empty() {
                 let font_size = (bbox.height * 0.55).clamp(7.0, 12.0);
                 text_style.font_size = font_size;
-                let font = make_font(&text_style, font_mgr, &form.text);
+                let font = font_resolver.make_font(&text_style, &form.text);
                 let mut paint = Paint::default();
                 paint.set_anti_alias(true);
                 paint.set_color(control_text);

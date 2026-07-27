@@ -3,6 +3,7 @@
 pub(crate) mod cache;
 pub(crate) mod cache_key;
 pub mod equation_conv;
+pub(crate) mod font_resolver;
 pub(crate) mod form_replay;
 pub mod image_conv;
 pub mod paint_conv;

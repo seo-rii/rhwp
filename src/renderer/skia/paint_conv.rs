@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use skia_safe::{
+    font_style::{Weight, Width},
     gradient_shader::{Gradient, GradientColors, Interpolation as GradientInterpolation},
     paint, shaders, surfaces, Color, Color4f, FilterMode, Font, FontHinting, FontMgr, FontStyle,
     MipmapMode, Paint, Point, Rect, SamplingOptions, TileMode,
@@ -86,60 +87,140 @@ pub fn make_line_paint(style: &LineStyle) -> Paint {
     paint
 }
 
-pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) -> Font {
-    let font_size = if text_style.font_size > 0.0 {
+pub(super) fn text_font_size(text_style: &TextStyle) -> f32 {
+    if text_style.font_size > 0.0 {
         text_style.font_size as f32
     } else {
         12.0
-    };
-    let system_families =
-        SYSTEM_FONT_FAMILIES.get_or_init(|| font_mgr.family_names().collect::<HashSet<_>>());
-    let font_style = match (text_style.bold, text_style.italic) {
-        (true, true) => FontStyle::bold_italic(),
-        (true, false) => FontStyle::bold(),
-        (false, true) => FontStyle::italic(),
-        (false, false) => FontStyle::normal(),
-    };
+    }
+}
 
+pub(super) fn font_style_for_text(text_style: &TextStyle) -> FontStyle {
+    FontStyle::new(
+        Weight::from(text_style.render_font_weight()),
+        Width::NORMAL,
+        if text_style.italic {
+            FontStyle::italic().slant()
+        } else {
+            FontStyle::normal().slant()
+        },
+    )
+}
+
+fn push_family_candidate(candidates: &mut Vec<String>, candidate: &str) {
+    let candidate = candidate.trim().trim_matches('\'').trim_matches('"');
+    if candidate.is_empty()
+        || candidates
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(candidate))
+    {
+        return;
+    }
+    candidates.push(candidate.to_string());
+}
+
+pub(super) fn font_family_candidates(text_style: &TextStyle, sample_text: &str) -> Vec<String> {
     let mut family_candidates = Vec::new();
+    let primary = text_style
+        .font_family
+        .split(',')
+        .next()
+        .unwrap_or(&text_style.font_family);
+    push_family_candidate(&mut family_candidates, primary);
+    if let Some(base) = crate::renderer::base_family_without_weight_suffix(&text_style.font_family)
+    {
+        push_family_candidate(&mut family_candidates, &base);
+    }
+
     for candidate_list in [
         text_style.font_family.as_str(),
         generic_fallback(&text_style.font_family),
     ] {
         for candidate in candidate_list.split(',') {
             let candidate = candidate.trim().trim_matches('\'').trim_matches('"');
-            if candidate.is_empty() {
-                continue;
-            }
-
-            for alias in match candidate {
-                "함초롬바탕" => vec!["함초롬바탕", "HCR Batang"],
-                "함초롬돋움" => vec!["함초롬돋움", "HCR Dotum"],
-                "함초롱바탕" => vec!["함초롱바탕", "HCR Batang"],
-                "함초롱돋움" => vec!["함초롱돋움", "HCR Dotum"],
-                "한컴바탕" => vec!["한컴바탕", "함초롬바탕", "HCR Batang"],
-                "한컴돋움" => vec!["한컴돋움", "함초롬돋움", "HCR Dotum"],
-                "맑은 고딕" => vec!["맑은 고딕", "Malgun Gothic"],
-                "바탕" => vec!["바탕", "Batang"],
-                "돋움" => vec!["돋움", "Dotum"],
-                "굴림" => vec!["굴림", "Gulim"],
-                "굴림체" => vec!["굴림체", "GulimChe"],
-                "바탕체" => vec!["바탕체", "BatangChe"],
-                "궁서" => vec!["궁서", "Gungsuh"],
-                "궁서체" => vec!["궁서체", "GungsuhChe"],
-                _ => vec![candidate],
-            } {
-                if family_candidates
-                    .iter()
-                    .any(|existing: &String| existing == alias)
-                {
-                    continue;
-                }
-                family_candidates.push(alias.to_string());
+            push_family_candidate(&mut family_candidates, candidate);
+            let aliases: &[&str] = match candidate {
+                "함초롬바탕" | "함초롱바탕" => &["HCR Batang"],
+                "함초롬돋움" | "함초롱돋움" => &["HCR Dotum"],
+                "한컴바탕" => &["함초롬바탕", "HCR Batang"],
+                "한컴돋움" => &["함초롬돋움", "HCR Dotum"],
+                "맑은 고딕" => &["Malgun Gothic"],
+                "바탕" => &["Batang"],
+                "돋움" => &["Dotum"],
+                "굴림" => &["Gulim"],
+                "굴림체" => &["GulimChe"],
+                "바탕체" => &["BatangChe"],
+                "궁서" => &["Gungsuh"],
+                "궁서체" => &["GungsuhChe"],
+                _ => &[],
+            };
+            for alias in aliases {
+                push_family_candidate(&mut family_candidates, alias);
             }
         }
     }
 
+    let probe_char = sample_text
+        .chars()
+        .find(|ch| !ch.is_whitespace() && !ch.is_ascii());
+    if probe_char.is_some_and(|ch| matches!(ch, '\u{20A9}' | '\u{20AC}' | '\u{00A3}' | '\u{00A5}'))
+    {
+        for candidate in ["DejaVu Sans", "sans-serif"] {
+            push_family_candidate(&mut family_candidates, candidate);
+        }
+    } else if probe_char.is_some_and(|ch| {
+        matches!(
+            ch,
+            '\u{2460}'..='\u{24FF}' | '\u{25A0}'..='\u{25FF}' | '\u{2600}'..='\u{27BF}'
+        )
+    }) {
+        for candidate in ["OpenSymbol", "Segoe UI Symbol", "DejaVu Sans", "sans-serif"] {
+            push_family_candidate(&mut family_candidates, candidate);
+        }
+    }
+
+    let generic = generic_fallback(&text_style.font_family);
+    let platform_fallback = match generic
+        .split(',')
+        .next_back()
+        .map(str::trim)
+        .unwrap_or("sans-serif")
+    {
+        "monospace" => "DejaVu Sans Mono",
+        "serif" => "DejaVu Serif",
+        _ => "DejaVu Sans",
+    };
+    push_family_candidate(&mut family_candidates, platform_fallback);
+    family_candidates
+}
+
+pub(super) fn typeface_covers_text(
+    typeface: &skia_safe::Typeface,
+    font_size: f32,
+    sample_text: &str,
+) -> bool {
+    if !sample_text.chars().any(|ch| !ch.is_whitespace()) {
+        return true;
+    }
+    let probe_font = Font::new(typeface.clone(), font_size);
+    let glyphs = probe_font.text_to_glyphs_vec(sample_text);
+    glyphs.len() == sample_text.chars().count()
+        && glyphs
+            .iter()
+            .zip(sample_text.chars())
+            .all(|(&glyph, ch)| ch.is_whitespace() || glyph != 0)
+}
+
+pub(super) fn system_typeface_for_text(
+    text_style: &TextStyle,
+    font_mgr: &FontMgr,
+    sample_text: &str,
+) -> Option<skia_safe::Typeface> {
+    let font_size = text_font_size(text_style);
+    let system_families =
+        SYSTEM_FONT_FAMILIES.get_or_init(|| font_mgr.family_names().collect::<HashSet<_>>());
+    let font_style = font_style_for_text(text_style);
+    let family_candidates = font_family_candidates(text_style, sample_text);
     let probe_char = sample_text
         .chars()
         .find(|ch| !ch.is_whitespace() && !ch.is_ascii());
@@ -152,124 +233,6 @@ pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) 
         )
     });
 
-    if needs_currency_fallback {
-        for candidate in [
-            "Malgun Gothic",
-            "맑은 고딕",
-            "Apple SD Gothic Neo",
-            "Noto Sans CJK KR",
-            "NanumGothic",
-            "Noto Sans KR",
-            "Pretendard",
-            "DejaVu Sans",
-            "sans-serif",
-        ] {
-            if family_candidates
-                .iter()
-                .any(|existing| existing == candidate)
-            {
-                continue;
-            }
-            family_candidates.push(candidate.to_string());
-        }
-    } else if needs_symbol_fallback {
-        for candidate in [
-            "Noto Sans CJK KR",
-            "NanumGothic",
-            "Noto Sans KR",
-            "DejaVu Sans",
-            "OpenSymbol",
-            "Segoe UI Symbol",
-            "sans-serif",
-        ] {
-            if family_candidates
-                .iter()
-                .any(|existing| existing == candidate)
-            {
-                continue;
-            }
-            family_candidates.push(candidate.to_string());
-        }
-    }
-
-    if family_candidates
-        .iter()
-        .any(|candidate| candidate.eq_ignore_ascii_case("monospace"))
-    {
-        for candidate in [
-            "D2Coding",
-            "NanumGothicCoding",
-            "Noto Sans Mono",
-            "DejaVu Sans Mono",
-            "monospace",
-        ] {
-            if family_candidates
-                .iter()
-                .any(|existing| existing == candidate)
-            {
-                continue;
-            }
-            family_candidates.push(candidate.to_string());
-        }
-    } else if family_candidates
-        .iter()
-        .any(|candidate| candidate.eq_ignore_ascii_case("serif"))
-    {
-        let serif_fallbacks: &[&str] = if probe_char.is_some() {
-            &[
-                "Batang",
-                "바탕",
-                "AppleMyungjo",
-                "Noto Serif CJK KR",
-                "NanumMyeongjo",
-                "Noto Serif KR",
-                "DejaVu Serif",
-                "serif",
-            ]
-        } else {
-            &[
-                "DejaVu Serif",
-                "Batang",
-                "바탕",
-                "AppleMyungjo",
-                "Noto Serif CJK KR",
-                "NanumMyeongjo",
-                "Noto Serif KR",
-                "serif",
-            ]
-        };
-        for candidate in serif_fallbacks {
-            if family_candidates
-                .iter()
-                .any(|existing| existing == candidate)
-            {
-                continue;
-            }
-            family_candidates.push((*candidate).to_string());
-        }
-    } else {
-        for candidate in [
-            "Malgun Gothic",
-            "맑은 고딕",
-            "Apple SD Gothic Neo",
-            "Noto Sans CJK KR",
-            "NanumGothic",
-            "Noto Sans KR",
-            "Pretendard",
-            "DejaVu Sans",
-            "sans-serif",
-        ] {
-            if family_candidates
-                .iter()
-                .any(|existing| existing == candidate)
-            {
-                continue;
-            }
-            family_candidates.push(candidate.to_string());
-        }
-    }
-
-    let mut matched = None;
     for candidate in &family_candidates {
         if !can_query_system_family(system_families, candidate) {
             continue;
@@ -309,30 +272,26 @@ pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) 
         let Some(typeface) = typeface else {
             continue;
         };
-        if sample_text.chars().any(|ch| !ch.is_whitespace()) {
-            let probe_font = Font::new(typeface.clone(), font_size);
-            let glyphs = probe_font.text_to_glyphs_vec(sample_text);
-            if glyphs.len() != sample_text.chars().count()
-                || glyphs
-                    .iter()
-                    .zip(sample_text.chars())
-                    .any(|(&glyph, ch)| !ch.is_whitespace() && glyph == 0)
-            {
-                continue;
-            }
+        if !typeface_covers_text(&typeface, font_size, sample_text) {
+            continue;
         }
         let family_name = typeface.family_name();
         if matches!(candidate.as_str(), "serif" | "sans-serif" | "monospace")
             || family_name == *candidate
             || family_name.eq_ignore_ascii_case(candidate)
         {
-            matched = Some(typeface);
-            break;
+            return Some(typeface);
         }
     }
-    let matched = matched.or_else(|| font_mgr.legacy_make_typeface(None::<&str>, font_style));
+    None
+}
 
-    let mut font = if let Some(typeface) = matched {
+pub(super) fn font_from_typeface(
+    text_style: &TextStyle,
+    typeface: Option<skia_safe::Typeface>,
+) -> Font {
+    let font_size = text_font_size(text_style);
+    let mut font = if let Some(typeface) = typeface {
         Font::new(typeface, font_size)
     } else {
         let mut font = Font::default();
@@ -351,6 +310,17 @@ pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) 
         1.0
     });
     font
+}
+
+/// System-only font selection used by exact GlyphRun fallback.
+///
+/// Custom and bundled typefaces must not enter this path because glyph IDs are
+/// meaningful only for the face identity recorded in the run.
+pub fn make_font(text_style: &TextStyle, font_mgr: &FontMgr, sample_text: &str) -> Font {
+    let font_style = font_style_for_text(text_style);
+    let typeface = system_typeface_for_text(text_style, font_mgr, sample_text)
+        .or_else(|| font_mgr.legacy_make_typeface(None::<&str>, font_style));
+    font_from_typeface(text_style, typeface)
 }
 
 fn can_query_system_family(system_families: &HashSet<String>, family: &str) -> bool {

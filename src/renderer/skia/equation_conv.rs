@@ -7,7 +7,8 @@ use crate::renderer::equation::layout::{
 use crate::renderer::equation::symbols::{DecoKind, FontStyleKind};
 use crate::renderer::TextStyle;
 
-use super::paint_conv::{colorref_to_skia, make_font};
+use super::font_resolver::SkiaFontResolver;
+use super::paint_conv::colorref_to_skia;
 
 const EQ_FONT_FAMILY: &str =
     "Latin Modern Math, STIX Two Math, Cambria Math, Pretendard, Noto Serif CJK KR, serif";
@@ -15,6 +16,27 @@ const EQ_FONT_FAMILY: &str =
 pub fn render_equation(
     canvas: &Canvas,
     font_mgr: &FontMgr,
+    layout: &LayoutBox,
+    origin_x: f64,
+    origin_y: f64,
+    color: u32,
+    base_font_size: f64,
+) {
+    let font_resolver = SkiaFontResolver::new(font_mgr.clone(), &[]);
+    render_equation_with_resolver(
+        canvas,
+        &font_resolver,
+        layout,
+        origin_x,
+        origin_y,
+        color,
+        base_font_size,
+    );
+}
+
+pub(super) fn render_equation_with_resolver(
+    canvas: &Canvas,
+    font_mgr: &SkiaFontResolver,
     layout: &LayoutBox,
     origin_x: f64,
     origin_y: f64,
@@ -36,7 +58,7 @@ pub fn render_equation(
 
 fn render_box(
     canvas: &Canvas,
-    font_mgr: &FontMgr,
+    font_mgr: &SkiaFontResolver,
     lb: &LayoutBox,
     parent_x: f64,
     parent_y: f64,
@@ -398,7 +420,7 @@ fn render_box(
 
 fn draw_text(
     canvas: &Canvas,
-    font_mgr: &FontMgr,
+    font_mgr: &SkiaFontResolver,
     text: &str,
     x: f64,
     baseline_y: f64,
@@ -420,7 +442,7 @@ fn draw_text(
         italic,
         ..Default::default()
     };
-    let font = make_font(&style, font_mgr, text);
+    let font = font_mgr.make_font(&style, text);
     let paint = fill_paint(color);
     let draw_x = if centered {
         let (width, _) = font.measure_str(text, Some(&paint));
@@ -453,7 +475,7 @@ fn draw_text(
 
 fn draw_stretch_bracket(
     canvas: &Canvas,
-    font_mgr: &FontMgr,
+    font_mgr: &SkiaFontResolver,
     bracket: &str,
     x: f64,
     y: f64,

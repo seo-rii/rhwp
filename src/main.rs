@@ -64,6 +64,7 @@ fn print_help() {
     println!();
     println!("      -o, --output <폴더>     출력 폴더 (기본: output/)");
     println!("      -p, --page <번호>       특정 페이지만 내보내기 (0부터 시작)");
+    println!("      --font-path <경로>      native Skia 폰트 탐색 경로 (여러 번 지정 가능)");
     println!();
     println!("  info <파일.hwp>");
     println!("      HWP 파일 정보 표시");
@@ -372,6 +373,7 @@ fn export_png(args: &[String]) {
         let file_path = &args[0];
         let mut output_dir = "output".to_string();
         let mut target_page: Option<u32> = None;
+        let mut font_paths = Vec::new();
 
         let mut i = 1;
         while i < args.len() {
@@ -397,6 +399,15 @@ fn export_png(args: &[String]) {
                         i += 2;
                     } else {
                         eprintln!("오류: --page 뒤에 페이지 번호가 필요합니다.");
+                        return;
+                    }
+                }
+                "--font-path" => {
+                    if i + 1 < args.len() {
+                        font_paths.push(std::path::PathBuf::from(&args[i + 1]));
+                        i += 2;
+                    } else {
+                        eprintln!("오류: --font-path 뒤에 경로가 필요합니다.");
                         return;
                     }
                 }
@@ -457,7 +468,7 @@ fn export_png(args: &[String]) {
             .unwrap_or("page");
 
         for page_num in &pages {
-            match doc.render_page_png_native(*page_num) {
+            match doc.render_page_png_native_with_fonts(*page_num, &font_paths) {
                 Ok(png) => {
                     let png_filename = if page_count == 1 {
                         format!("{}.png", file_stem)

@@ -12,6 +12,8 @@ pub mod canvaskit_policy;
 pub mod composer;
 pub mod equation;
 pub mod font_metrics_data;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod font_paths;
 pub(crate) mod form_caption;
 pub mod height_measurer;
 pub mod html;
@@ -171,16 +173,26 @@ impl TextStyle {
         !self.bold && crate::renderer::style_resolver::is_medium_weight_face(&self.font_family)
     }
 
+    /// Numeric weight used by direct raster backends.
+    pub fn render_font_weight(&self) -> i32 {
+        if self.is_visually_bold() {
+            700
+        } else if crate::renderer::style_resolver::is_light_weight_face(&self.font_family) {
+            300
+        } else if self.is_medium_weight() {
+            500
+        } else {
+            400
+        }
+    }
+
     /// CSS/SVG font-weight hint for fallback rendering.
     pub fn css_font_weight(&self) -> Option<&'static str> {
-        if self.is_visually_bold() {
-            Some("bold")
-        } else if crate::renderer::style_resolver::is_light_weight_face(&self.font_family) {
-            Some("300")
-        } else if self.is_medium_weight() {
-            Some("500")
-        } else {
-            None
+        match self.render_font_weight() {
+            700 => Some("bold"),
+            300 => Some("300"),
+            500 => Some("500"),
+            _ => None,
         }
     }
 }
@@ -565,6 +577,53 @@ pub fn hwpunit_to_px(hwpunit: i32, dpi: f64) -> f64 {
 #[inline]
 pub fn px_to_hwpunit(px: f64, dpi: f64) -> i32 {
     (px * HWPUNIT_PER_INCH / dpi) as i32
+}
+
+/// Returns the primary family with trailing weight tokens removed.
+///
+/// This is used only by render fallback selection. Layout measurement keeps
+/// the original family identity.
+pub fn base_family_without_weight_suffix(font_family: &str) -> Option<String> {
+    const WEIGHT_TOKENS: &[&str] = &[
+        "black",
+        "heavy",
+        "extrabold",
+        "ultrabold",
+        "semibold",
+        "demibold",
+        "bold",
+        "medium",
+        "regular",
+        "normal",
+        "extralight",
+        "ultralight",
+        "demilight",
+        "light",
+        "thin",
+        "extra",
+        "ultra",
+        "semi",
+        "demi",
+    ];
+
+    let primary = font_family
+        .split(',')
+        .next()
+        .unwrap_or(font_family)
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"');
+    let mut tokens: Vec<&str> = primary.split_whitespace().collect();
+    let original_len = tokens.len();
+    while tokens.len() > 1 {
+        let token = tokens.last().expect("length checked").to_ascii_lowercase();
+        if WEIGHT_TOKENS.contains(&token.as_str()) {
+            tokens.pop();
+        } else {
+            break;
+        }
+    }
+    (tokens.len() < original_len).then(|| tokens.join(" "))
 }
 
 /// CSS generic fallback 반환 (serif 또는 sans-serif)
@@ -1015,6 +1074,45 @@ mod tests {
         assert_eq!(format_number(26, NumberFormat::LatinUpper), "Z");
         assert_eq!(format_number(27, NumberFormat::LatinUpper), "AA");
         assert_eq!(format_number(1, NumberFormat::LatinLower), "a");
+    }
+
+    #[test]
+    fn strips_render_only_weight_suffixes_from_primary_family() {
+        assert_eq!(
+            base_family_without_weight_suffix("Noto Serif KR Black").as_deref(),
+            Some("Noto Serif KR")
+        );
+        assert_eq!(
+            base_family_without_weight_suffix("Noto Sans KR Extra Bold").as_deref(),
+            Some("Noto Sans KR")
+        );
+        assert_eq!(
+            base_family_without_weight_suffix("'나눔고딕 Bold', sans-serif").as_deref(),
+            Some("나눔고딕")
+        );
+        assert_eq!(base_family_without_weight_suffix("맑은 고딕"), None);
+        assert_eq!(base_family_without_weight_suffix("Light"), None);
+    }
+
+    #[test]
+    fn resolves_numeric_render_font_weight_matrix() {
+        let mut style = TextStyle {
+            font_family: "Noto Sans KR Light".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(style.render_font_weight(), 300);
+
+        style.font_family = "HY중고딕".to_string();
+        assert_eq!(style.render_font_weight(), 500);
+
+        style.font_family = "Noto Serif KR Extra Bold".to_string();
+        assert_eq!(style.render_font_weight(), 700);
+
+        style.font_family = "Noto Serif KR Black".to_string();
+        assert_eq!(style.render_font_weight(), 400);
+
+        style.bold = true;
+        assert_eq!(style.render_font_weight(), 700);
     }
 
     #[test]

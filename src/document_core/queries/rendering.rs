@@ -287,9 +287,18 @@ impl DocumentCore {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
     pub fn render_page_png_native(&self, page_num: u32) -> Result<Vec<u8>, HwpError> {
+        self.render_page_png_native_with_fonts(page_num, &[])
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    pub fn render_page_png_native_with_fonts(
+        &self,
+        page_num: u32,
+        font_paths: &[std::path::PathBuf],
+    ) -> Result<Vec<u8>, HwpError> {
         let layer_tree =
             self.build_page_layer_tree_for_output(page_num, RenderProfile::HighQuality)?;
-        let renderer = SkiaLayerRenderer::new();
+        let renderer = SkiaLayerRenderer::new().with_font_paths(font_paths);
         LayerRasterRenderer::render_png(&renderer, &layer_tree)
             .map_err(|err| HwpError::RenderError(err.to_string()))
     }

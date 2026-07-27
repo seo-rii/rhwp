@@ -27,7 +27,8 @@ use crate::renderer::{ArrowStyle, LineRenderType};
 
 use super::cache::StaticPictureCache;
 use super::cache_key::StaticSubtreeCacheKey;
-use super::equation_conv::render_equation;
+use super::equation_conv::render_equation_with_resolver;
+use super::font_resolver::SkiaFontResolver;
 use super::form_replay;
 use super::image_conv::{
     decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder,
@@ -42,6 +43,7 @@ use super::replay_context::SkiaReplayContext;
 
 pub struct SkiaLayerRenderer {
     pub(super) font_mgr: FontMgr,
+    pub(super) font_resolver: SkiaFontResolver,
     pub(super) text_shaper: Shaper,
     static_picture_cache: RefCell<StaticPictureCache>,
 }
@@ -1001,15 +1003,22 @@ fn draw_arrow_head(
 impl SkiaLayerRenderer {
     pub fn new() -> Self {
         let font_mgr = FontMgr::default();
+        let font_resolver = SkiaFontResolver::new(font_mgr.clone(), &[]);
         let text_shaper = Shaper::new(Some(font_mgr.clone()));
         Self {
             font_mgr,
+            font_resolver,
             text_shaper,
             static_picture_cache: RefCell::new(StaticPictureCache::new(
                 MAX_STATIC_PICTURE_CACHE_ENTRIES,
                 MAX_STATIC_PICTURE_CACHE_BYTES,
             )),
         }
+    }
+
+    pub fn with_font_paths(mut self, font_paths: &[std::path::PathBuf]) -> Self {
+        self.font_resolver = SkiaFontResolver::new(self.font_mgr.clone(), font_paths);
+        self
     }
 
     pub fn render_png(&self, tree: &PageLayerTree) -> LayerRenderResult<Vec<u8>> {
@@ -2172,14 +2181,13 @@ impl SkiaLayerRenderer {
                 }
             }
             PaintOp::FootnoteMarker { bbox, marker } => {
-                let mut font = make_font(
+                let mut font = self.font_resolver.make_font(
                     &crate::renderer::TextStyle {
                         font_family: marker.font_family.clone(),
                         font_size: (marker.base_font_size * 0.55).max(7.0),
                         color: marker.color,
                         ..Default::default()
                     },
-                    &self.font_mgr,
                     &marker.text,
                 );
                 font.set_size((marker.base_font_size * 0.55).max(7.0) as f32);
@@ -2567,9 +2575,9 @@ impl SkiaLayerRenderer {
                     }
                 }
                 if !rendered {
-                    render_equation(
+                    render_equation_with_resolver(
                         canvas,
-                        &self.font_mgr,
+                        &self.font_resolver,
                         &equation.layout_box,
                         bbox.x,
                         bbox.y,
@@ -2579,7 +2587,7 @@ impl SkiaLayerRenderer {
                 }
             }
             PaintOp::FormObject { bbox, form } => {
-                form_replay::render_form_object(canvas, &self.font_mgr, bbox, form)
+                form_replay::render_form_object(canvas, &self.font_resolver, bbox, form)
             }
         }
     }
