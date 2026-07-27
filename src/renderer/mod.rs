@@ -626,6 +626,22 @@ pub fn base_family_without_weight_suffix(font_family: &str) -> Option<String> {
     (tokens.len() < original_len).then(|| tokens.join(" "))
 }
 
+/// Quoted Canvas 2D family chain used by the Rust WebCanvas renderer.
+///
+/// The base family follows a weight-suffixed face before generic fallbacks so
+/// an unavailable named weight can still resolve to the intended family.
+pub fn canvas_font_family_chain(font_family: &str) -> String {
+    if font_family.is_empty() {
+        return "sans-serif".to_string();
+    }
+
+    let fallback = generic_fallback(font_family);
+    match base_family_without_weight_suffix(font_family) {
+        Some(base) => format!("\"{font_family}\", \"{base}\", {fallback}"),
+        None => format!("\"{font_family}\", {fallback}"),
+    }
+}
+
 /// CSS generic fallback 반환 (serif 또는 sans-serif)
 ///
 /// 폰트 이름에 명조/바탕/궁서 등 세리프 계열 키워드가 포함되면 "serif",
@@ -1092,6 +1108,18 @@ mod tests {
         );
         assert_eq!(base_family_without_weight_suffix("맑은 고딕"), None);
         assert_eq!(base_family_without_weight_suffix("Light"), None);
+        assert_eq!(
+            canvas_font_family_chain("Noto Serif KR Black"),
+            format!(
+                "\"Noto Serif KR Black\", \"Noto Serif KR\", {}",
+                generic_fallback("Noto Serif KR Black")
+            )
+        );
+        assert_eq!(
+            canvas_font_family_chain("맑은 고딕"),
+            format!("\"맑은 고딕\", {}", generic_fallback("맑은 고딕"))
+        );
+        assert_eq!(canvas_font_family_chain(""), "sans-serif");
     }
 
     #[test]

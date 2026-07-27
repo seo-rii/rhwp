@@ -91,7 +91,10 @@ keys, requests the matching CanvasKit family style, and synthesizes emboldening
 only for a 700 request without a registered 700 face. The lifecycle fixture
 verifies that a two-token `Extra Bold` suffix preserves weight 700 across the
 primary, currency, and symbol fallback paths while retaining Canvas2D-vs-
-CanvasKit fuzzy pixel parity.
+CanvasKit fuzzy pixel parity. Rust WebCanvas uses the same requested-face,
+base-family, and generic fallback order for rotated text, ordinary runs, and
+overlap controls, so its Canvas font string no longer skips the base face for
+weight-suffixed families.
 
 The first strict `GlyphOutline` payload subsets are also implemented as
 feature-gated direct replay contracts. The current baseline covers
