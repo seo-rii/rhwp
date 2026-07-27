@@ -9,6 +9,7 @@ import {
   type LayerImageEffectSourceRect,
 } from '../image-effect-pixels';
 import { parseCanvasKitCssColor } from './css-color';
+import { canvasKitEncodedImageIsReplayable } from './encoded-image-admission';
 
 export type CanvasKitPatternDiagnostics = {
   cacheHits: number;
@@ -94,6 +95,10 @@ export class CanvasKitResourceCache {
       return null;
     }
     if (!bytes) return null;
+    if (!canvasKitEncodedImageIsReplayable(bytes)) {
+      this.failedImageCacheKeys.add(cacheKey);
+      return null;
+    }
     let image: CanvasKitImage | null;
     try {
       image = this.canvasKit.MakeImageFromEncoded(bytes);

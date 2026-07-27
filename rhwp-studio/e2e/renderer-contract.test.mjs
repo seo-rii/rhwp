@@ -14,6 +14,10 @@ const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
 const fontLoaderPath = path.join(studioRoot, 'src/core/font-loader.ts');
 const canvaskitReplayPlanePath = path.join(canvaskitDirectory, 'replay-plane.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
+const canvaskitEncodedImageAdmissionPath = path.join(
+  canvaskitDirectory,
+  'encoded-image-admission.ts',
+);
 const canvaskitStaticPictureCachePath = path.join(canvaskitDirectory, 'static-picture-cache.ts');
 const glyphOutlinePayloadStatusPath = path.join(studioRoot, 'src/view/glyph-outline-payload-status.ts');
 const glyphOutlineColorGraphUtilsPath = path.join(studioRoot, 'src/view/glyph-outline-color-graph-utils.ts');
@@ -44,6 +48,10 @@ const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
 const fontLoaderSource = fs.readFileSync(fontLoaderPath, 'utf8');
 const canvaskitReplayPlaneSource = fs.readFileSync(canvaskitReplayPlanePath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
+const canvaskitEncodedImageAdmissionSource = fs.readFileSync(
+  canvaskitEncodedImageAdmissionPath,
+  'utf8',
+);
 const staticPictureCacheSource = fs.readFileSync(canvaskitStaticPictureCachePath, 'utf8');
 const glyphOutlinePayloadStatusSource = fs.readFileSync(glyphOutlinePayloadStatusPath, 'utf8');
 const glyphOutlineColorGraphUtilsSource = fs.readFileSync(glyphOutlineColorGraphUtilsPath, 'utf8');
@@ -504,12 +512,15 @@ assertTokensInOrder(
   rustCanvaskitPolicySource,
   [
     'fn image_admission(bytes: &[u8])',
-    'match guess_format(bytes)',
-    'Ok(ImageFormat::Png | ImageFormat::Bmp)',
-    'load_from_memory(bytes).is_ok()',
+    'canvaskit_encoded_image_is_replayable(bytes)',
+    'CanvasKitImageAdmission::Replayable',
     'CanvasKitImageAdmission::DecodeFailed',
+    'fn canvaskit_encoded_image_is_replayable(bytes: &[u8])',
+    'CANVASKIT_MAX_ENCODED_IMAGE_BASE64_BYTES',
+    'canvaskit_encoded_image_header(bytes)',
+    'header.is_within_decode_limits()',
   ],
-  'CanvasKit replay plan must preflight known encoded image payloads before advertising direct replay',
+  'CanvasKit replay plan must bound and validate encoded image headers before advertising direct replay',
 );
 assertTokensInOrder(
   rustCanvaskitPolicySource,
@@ -1363,6 +1374,19 @@ assert.equal(
   false,
   'CanvasKit resource cache must not collapse missing resource hashes into a shared unknown cache key',
 );
+assert(
+  canvaskitResourceCacheSource.includes('canvasKitEncodedImageIsReplayable(bytes)')
+    && canvaskitEncodedImageAdmissionSource.includes(
+      'CANVASKIT_MAX_ENCODED_IMAGE_BASE64_BYTES = 24 * 1024 * 1024',
+    )
+    && canvaskitEncodedImageAdmissionSource.includes(
+      'CANVASKIT_MAX_IMAGE_DIMENSION = 8192',
+    )
+    && canvaskitEncodedImageAdmissionSource.includes(
+      'CANVASKIT_MAX_IMAGE_PIXELS = 32 * 1024 * 1024',
+    ),
+  'CanvasKit runtime must reject malformed and oversized encoded images before decoder entry',
+);
 assertTokensInOrder(
   canvaskitResourceCacheSource,
   [
@@ -1373,6 +1397,9 @@ assertTokensInOrder(
     'this.failedImageCacheKeys.add(cacheKey)',
     'return null',
     'if (!bytes) return null',
+    'if (!canvasKitEncodedImageIsReplayable(bytes))',
+    'this.failedImageCacheKeys.add(cacheKey)',
+    'return null',
     'try {',
     'image = this.canvasKit.MakeImageFromEncoded(bytes)',
     '} catch {',
