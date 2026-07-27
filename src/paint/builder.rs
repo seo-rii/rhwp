@@ -12,6 +12,7 @@ use crate::paint::paint_op::{
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
+use crate::paint::{lower_font_native_glyph_sidecars, EmbeddedFontFace, TextFontSlot};
 use crate::renderer::layout::compute_char_positions;
 use crate::renderer::render_tree::{
     FieldMarkerType, PageRenderTree, RenderNode, RenderNodeType, TextRunNode,
@@ -41,6 +42,14 @@ impl LayerBuilder {
     }
 
     pub fn build(&mut self, tree: &PageRenderTree) -> PageLayerTree {
+        self.build_with_embedded_fonts(tree, &[])
+    }
+
+    pub fn build_with_embedded_fonts(
+        &mut self,
+        tree: &PageRenderTree,
+        fonts: &[EmbeddedFontFace<'_>],
+    ) -> PageLayerTree {
         self.resources = ResourceArena::default();
         let (page_width, page_height) = match &tree.root.node_type {
             RenderNodeType::Page(page) => (page.width, page.height),
@@ -56,11 +65,13 @@ impl LayerBuilder {
             LayerSemantic::role(LayerSemanticRole::Page),
         );
 
-        PageLayerTree::builder(page_width, page_height, root)
+        let mut layer_tree = PageLayerTree::builder(page_width, page_height, root)
             .resources(std::mem::take(&mut self.resources))
             .profile(self.profile)
             .output_options(self.output_options)
-            .build()
+            .build();
+        lower_font_native_glyph_sidecars(&mut layer_tree, fonts);
+        layer_tree
     }
 
     fn build_children(&mut self, node: &RenderNode) -> Vec<LayerNode> {
@@ -176,6 +187,12 @@ impl LayerBuilder {
                     run: LayerTextRunPaint {
                         source: None,
                         variant: None,
+                        font_slot: run.char_shape_id.zip(run.style.font_language_index).map(
+                            |(char_shape_id, language_index)| TextFontSlot {
+                                char_shape_id,
+                                language_index,
+                            },
+                        ),
                         text: run.text.clone(),
                         style: run.style.clone(),
                         projection: TextProjectionKind::Verbatim,
@@ -446,6 +463,7 @@ impl LayerBuilder {
                     run: LayerTextRunPaint {
                         source: None,
                         variant: None,
+                        font_slot: None,
                         text: placeholder.label.clone(),
                         positions: compute_char_positions(&placeholder.label, &text_style),
                         control_marks: Vec::new(),
@@ -920,6 +938,36 @@ mod tests {
     use crate::renderer::render_tree::{EquationNode, ImageNode};
     use crate::renderer::{ShapeStyle, TabLeaderInfo, TextStyle};
 
+    fn font_native_test_run(
+        text: &str,
+        char_shape_id: Option<u32>,
+        font_family: &str,
+    ) -> TextRunNode {
+        TextRunNode {
+            text: text.to_string(),
+            style: TextStyle {
+                font_family: font_family.to_string(),
+                font_language_index: Some(0),
+                font_size: 16.0,
+                ..TextStyle::default()
+            },
+            char_shape_id,
+            para_shape_id: None,
+            section_index: None,
+            para_index: None,
+            char_start: None,
+            cell_context: None,
+            is_para_end: false,
+            is_line_break_end: false,
+            rotation: 0.0,
+            is_vertical: false,
+            char_overlap: None,
+            border_fill_id: 0,
+            baseline: 12.0,
+            field_marker: FieldMarkerType::None,
+        }
+    }
+
     #[test]
     fn builds_body_clip_layer() {
         let mut tree = PageRenderTree::new(0, 800.0, 600.0);
@@ -962,6 +1010,80 @@ mod tests {
             }
             other => panic!("expected root group, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn embedded_font_build_uses_render_tree_char_shape_slot_sequence() {
+        let bbox = BoundingBox::new(10.0, 20.0, 16.0, 16.0);
+        let mut tree = PageRenderTree::new(0, 100.0, 100.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(font_native_test_run(
+                "\u{E100}",
+                Some(1),
+                "RHWP Bitmap SVG Glyph Smoke",
+            )),
+            bbox,
+        ));
+        tree.root.children.push(RenderNode::new(
+            2,
+            RenderNodeType::TextRun(font_native_test_run(
+                "\u{E100}",
+                Some(2),
+                "unrelated CSS fallback",
+            )),
+            bbox,
+        ));
+        let font = include_bytes!("../../tests/fixtures/fonts/RHWPBitmapSvgGlyphSmoke.ttf");
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+
+        let layer_tree = builder.build_with_embedded_fonts(
+            &tree,
+            &[EmbeddedFontFace {
+                char_shape_id: 2,
+                language_index: 0,
+                family: "RHWP Bitmap SVG Glyph Smoke",
+                alternate_family: None,
+                bytes: font,
+                face_index: 0,
+            }],
+        );
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected page group");
+        };
+        let LayerNodeKind::Leaf { ops: first_ops, .. } = &children[0].kind else {
+            panic!("expected first text leaf");
+        };
+        let LayerNodeKind::Leaf {
+            ops: second_ops, ..
+        } = &children[1].kind
+        else {
+            panic!("expected second text leaf");
+        };
+        assert!(matches!(first_ops.as_slice(), [PaintOp::TextRun { .. }]));
+        assert!(matches!(second_ops.as_slice(), [PaintOp::TextRun { .. }]));
+        assert!(matches!(
+            layer_tree.variant_ops.as_slice(),
+            [PaintOp::GlyphOutline { .. }]
+        ));
+        assert_eq!(layer_tree.resources.image_count(), 1);
+        assert_eq!(layer_tree.resources.font_blob_count(), 0);
+        assert!(layer_tree.resources.font_resources().blobs.is_empty());
+        assert!(layer_tree.resources.font_resources().faces.is_empty());
+        let v2_ops = crate::paint::lower_v1_layer_tree_text_variants_to_v2(&layer_tree);
+        let validation = crate::paint::validate_text_v2_ops(
+            &v2_ops,
+            &crate::paint::TextV2ValidationOptions {
+                allow_richer_glyph_outline_payloads: true,
+                allow_bitmap_glyph_payloads: true,
+                ..crate::paint::TextV2ValidationOptions::default()
+            },
+        );
+        assert!(
+            validation.is_empty(),
+            "font-native sidecar must satisfy the current v2 contract: {validation:?}"
+        );
     }
 
     #[test]

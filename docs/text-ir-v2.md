@@ -785,6 +785,17 @@ the sidecar writer. Future writers that emit sidecar payloads should declare
 absorbs sidecar variants into the canonical `Text` op rather than re-emitting a
 top-level `variantOps` array.
 
+Producer-side font-native bitmap/SVG lowering follows that richer-payload
+policy. The layout path preserves the resolved HWP `(charShapeId,
+languageIndex)` font slot as internal text-run metadata, loads only exact
+embedded faces supplied to the page builder, and emits resolved bitmap or
+sanitized static SVG payloads only in `variantOps`. The root `TextRun` remains
+the fallback. Source fonts are bounded to 32 MiB, and each page is additionally
+bounded to 128 emitted sidecars, 8 MiB of encoded payload, and 32 Mi pixels.
+Font bytes are transient producer input for these outline families and are not
+retained as `FontBlobResource`; retained exact font blobs remain a separate
+`GlyphRun` resource contract.
+
 The first richer payload discriminator is intentionally narrow:
 `payloadKind: "monochromeFill"` remains the baseline replay-eligible outline
 payload. `payloadKind: "monochromeFillStroke"` is schema vocabulary for the

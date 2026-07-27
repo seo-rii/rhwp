@@ -98,6 +98,8 @@ pub struct LayerFootnoteMarkerPaint {
 pub struct LayerTextRunPaint {
     pub source: Option<TextSourceSpan>,
     pub variant: Option<PaintVariantMeta>,
+    /// Exact HWP char-shape/language slot used to resolve this run's font.
+    pub font_slot: Option<TextFontSlot>,
     /// Source-backed identity is exported through the layer tree `textSources`
     /// table and per-op `source` span. The in-memory v1 payload keeps the
     /// string projection here so existing Canvas2D/SVG replay remains stable
@@ -125,6 +127,12 @@ pub struct LayerTextRunPaint {
     pub field_marker: FieldMarkerType,
     pub is_para_end: bool,
     pub is_line_break_end: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TextFontSlot {
+    pub char_shape_id: u32,
+    pub language_index: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -1295,6 +1303,7 @@ impl Default for LayerTextRunPaint {
         Self {
             source: None,
             variant: None,
+            font_slot: None,
             text: String::new(),
             style: TextStyle::default(),
             projection: TextProjectionKind::Verbatim,

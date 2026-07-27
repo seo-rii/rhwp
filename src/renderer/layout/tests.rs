@@ -790,6 +790,7 @@ fn test_resolved_to_text_style() {
 
     let ts = resolved_to_text_style(&styles, 0, 0);
     assert_eq!(ts.font_family, "나눔고딕");
+    assert_eq!(ts.font_language_index, Some(0));
     assert!((ts.font_size - 14.0).abs() < 0.01);
     assert!(ts.bold);
     assert!(!ts.italic);
@@ -797,6 +798,9 @@ fn test_resolved_to_text_style() {
     assert_eq!(ts.color, 0x000000FF);
     assert!((ts.letter_spacing - 1.5).abs() < 0.01);
     assert!((ts.ratio - 1.0).abs() < 0.01); // 기본 장평 100%
+
+    let user_slot = resolved_to_text_style(&styles, 0, 6);
+    assert_eq!(user_slot.font_language_index, Some(6));
 }
 
 #[test]

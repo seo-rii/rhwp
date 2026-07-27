@@ -91,6 +91,8 @@ pub struct TabLeaderInfo {
 pub struct TextStyle {
     /// 글꼴 이름
     pub font_family: String,
+    /// HWP 글자 모양의 정확한 언어별 글꼴 슬롯 (0..=6)
+    pub font_language_index: Option<u8>,
     /// 글꼴 크기 (px)
     pub font_size: f64,
     /// 글자 색상
@@ -187,6 +189,7 @@ impl Default for TextStyle {
     fn default() -> Self {
         Self {
             font_family: String::new(),
+            font_language_index: None,
             font_size: 0.0,
             color: 0,
             bold: false,

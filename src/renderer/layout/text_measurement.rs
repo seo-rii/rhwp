@@ -968,6 +968,9 @@ pub(crate) fn resolved_to_text_style(
     if let Some(cs) = styles.char_styles.get(char_style_id as usize) {
         TextStyle {
             font_family: cs.font_family_for_lang(lang_index).to_string(),
+            font_language_index: u8::try_from(lang_index)
+                .ok()
+                .filter(|language_index| *language_index < 7),
             font_size: cs.font_size,
             color: cs.text_color,
             bold: cs.bold,

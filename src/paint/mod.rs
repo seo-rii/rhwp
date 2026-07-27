@@ -22,7 +22,6 @@ pub mod builder;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod color_glyph;
 pub mod font;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod font_glyph;
 #[cfg(target_arch = "wasm32")]
 pub mod js_value;
@@ -50,10 +49,11 @@ pub use font::{
     GlyphRunReplayEligibility, LanguageTag, LocalizedName, OpenTypeFeatureSetting, ScriptTag,
     ShapeKey, ShapingEngineId, TextDirection, VariationAxisValue, WritingMode,
 };
-#[cfg(not(target_arch = "wasm32"))]
 pub use font_glyph::{
-    decode_font_bitmap_glyph_payload, decode_font_svg_glyph_payload, FontBitmapGlyphDecodeError,
-    FontBitmapGlyphDecodeOptions, FontSvgGlyphDecodeError, FontSvgGlyphDecodeOptions,
+    decode_font_bitmap_glyph_payload, decode_font_svg_glyph_payload,
+    lower_font_native_glyph_sidecars, resolve_embedded_font_face_index, EmbeddedFontFace,
+    FontBitmapGlyphDecodeError, FontBitmapGlyphDecodeOptions, FontGlyphLoweringReport,
+    FontSvgGlyphDecodeError, FontSvgGlyphDecodeOptions,
 };
 pub use layer_tree::{
     CacheHint, ClipKind, ClipPolicy, LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic,
@@ -79,8 +79,8 @@ pub use paint_op::{
     LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint, LayerVector, PaintBounds,
     PaintOp, PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor, SvgGlyphIntrinsicSize,
     SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextClusterBasis, TextClusterFlag,
-    TextClusterPlacement, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
-    TextRunPlacement, TextVariantKind, TextVariantQuality,
+    TextClusterPlacement, TextFontSlot, TextLegacyVisualState, TextLegacyVisuals,
+    TextProjectionKind, TextRunPlacement, TextVariantKind, TextVariantQuality,
 };
 pub use profile::RenderProfile;
 pub use replay_order::{layer_node_has_replay_plane, paint_op_replay_plane, PaintReplayPlane};
