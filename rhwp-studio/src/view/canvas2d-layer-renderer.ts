@@ -11,6 +11,10 @@ import {
   type LayerTextVariantReplayStatus,
   type LayerTextV2ValidationIssue,
 } from '@/core/text-variants';
+import {
+  buildCanvasTextFont,
+  resolveRenderFontWeight,
+} from '@/core/font-substitution';
 import { resolveLayerResourceIndex } from '@/core/layer-resource-store';
 import { assertNeverLayerPaintOp } from '@/core/types';
 import type { CanvasKitRenderMode } from './render-backend';
@@ -47,7 +51,6 @@ import {
   allowsTextControlMark,
   angleToCanvasCoords,
   applyLayerImageEffect,
-  buildCanvasTextFont,
   calculateArrowDimensions,
   canPreprocessCroppedLayerImageEffect,
   computePathPaintBounds,
@@ -822,11 +825,28 @@ export class Canvas2DLayerRenderer {
     const positions = op.displayPositions
       ?? (text === op.text ? op.positions : estimateDisplayTextPositions(text, op.style));
     const clusters = splitIntoClusters(text);
-    const baseFont = buildCanvasTextFont(op.style.fontFamily, fontSize, op.style.bold, op.style.italic);
-    const currencyFallbackFont =
-      `${op.style.italic ? 'italic ' : ''}${op.style.bold ? 'bold ' : ''}${fontSize.toFixed(3)}px 'Malgun Gothic','맑은 고딕',sans-serif`;
-    const symbolFallbackFont =
-      `${op.style.italic ? 'italic ' : ''}${op.style.bold ? 'bold ' : ''}${fontSize.toFixed(3)}px 'GulimChe','굴림체','D2Coding','NanumGothicCoding','나눔고딕코딩','Noto Sans Mono',monospace`;
+    const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
+    const baseFont = buildCanvasTextFont(
+      op.style.fontFamily,
+      fontSize,
+      op.style.bold,
+      op.style.italic,
+      renderFontWeight,
+    );
+    const currencyFallbackFont = buildCanvasTextFont(
+      'Malgun Gothic',
+      fontSize,
+      op.style.bold,
+      op.style.italic,
+      renderFontWeight,
+    );
+    const symbolFallbackFont = buildCanvasTextFont(
+      'GulimChe',
+      fontSize,
+      op.style.bold,
+      op.style.italic,
+      renderFontWeight,
+    );
     const clusterFonts = clusters.map((cluster) => {
       const ch = cluster.text.codePointAt(0) ?? 0;
       const needsCurrencyFallback =

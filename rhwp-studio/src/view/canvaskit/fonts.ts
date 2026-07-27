@@ -1,7 +1,11 @@
 import type { CanvasKit, Font, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 
 import { FONT_LIST } from '@/core/font-loader';
-import { resolveFont } from '@/core/font-substitution';
+import {
+  baseFamilyWithoutWeightSuffix,
+  canvasFontFamilyFallbackCandidates,
+  resolveFont,
+} from '@/core/font-substitution';
 import type {
   LayerFontBlobResource,
   LayerFontFaceResource,
@@ -237,12 +241,16 @@ export class CanvasKitFontRegistry {
     if (this.aliases.has(resolved)) return resolved;
     if (this.aliases.has(fontFamily)) return fontFamily;
 
-    const lower = resolved.toLowerCase();
-    if (/gulimche|coding|courier/.test(lower) || /굴림체/.test(resolved)) {
-      return 'D2Coding';
+    for (const candidate of [resolved, fontFamily]) {
+      const baseFamily = baseFamilyWithoutWeightSuffix(candidate);
+      if (baseFamily && this.aliases.has(baseFamily)) {
+        return baseFamily;
+      }
     }
-    if (/batang|batangche|gungsuh|serif|times/.test(lower) || /바탕|바탕체|명조|궁서/.test(resolved)) {
-      return 'Noto Serif KR';
+    for (const candidate of canvasFontFamilyFallbackCandidates(resolved)) {
+      if (this.aliases.has(candidate)) {
+        return candidate;
+      }
     }
     return 'Noto Sans KR';
   }

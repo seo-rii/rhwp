@@ -17,6 +17,10 @@ import type {
 import canvaskitWasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 
 import {
+  resolveRenderFontWeight,
+  type RenderFontWeight,
+} from '@/core/font-substitution';
+import {
   hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
   isFillOnlyGlyphOutlineStyle,
@@ -902,6 +906,7 @@ export class CanvasKitLayerRenderer {
     const clusterFontFamilies: string[] = [];
     const clusterFontKeys: string[] = [];
     const resolvedPrimaryFamily = this.fontRegistry.resolveFamily(op.style.fontFamily);
+    const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
     for (const cluster of clusters) {
       let selectedFont: Font | null = null;
       let selectedFontFamily = op.style.fontFamily;
@@ -920,7 +925,7 @@ export class CanvasKitLayerRenderer {
       const fallbackClass = needsCurrencyFallback ? 'currency' : needsSymbolFallback ? 'symbol' : 'general';
       const familyCacheKey = JSON.stringify([
         resolvedPrimaryFamily,
-        op.style.bold ? 'bold' : 'normal',
+        renderFontWeight,
         op.style.italic ? 'italic' : 'upright',
         fallbackClass,
         cluster.text,
@@ -942,6 +947,7 @@ export class CanvasKitLayerRenderer {
             op.style.italic,
             op.style.color,
             1,
+            renderFontWeight,
           );
           textObjectsByFamily.set(op.style.fontFamily, primaryObjects);
         }
@@ -959,6 +965,7 @@ export class CanvasKitLayerRenderer {
                 op.style.italic,
                 op.style.color,
                 1,
+                renderFontWeight,
               );
               textObjectsByFamily.set(family, candidate);
             }
@@ -981,7 +988,7 @@ export class CanvasKitLayerRenderer {
       const clusterFontKey = [
         this.fontRegistry.resolveFamily(selectedFontFamily),
         fontSize.toFixed(3),
-        op.style.bold ? 'bold' : 'normal',
+        renderFontWeight,
         op.style.italic ? 'italic' : 'upright',
       ].join('|');
       const skipsTextBlob = cluster.text === ' '
@@ -998,6 +1005,7 @@ export class CanvasKitLayerRenderer {
             op.style.italic,
             op.style.color,
             1,
+            renderFontWeight,
           );
           textObjectsByFamily.set(selectedFontFamily, selectedObjects);
         }
@@ -3424,14 +3432,29 @@ export class CanvasKitLayerRenderer {
     path.setFillType(fillRule === 'evenodd' ? this.canvasKit.FillType.EvenOdd : this.canvasKit.FillType.Winding);
   }
 
-  private makeTextObjects(fontFamily: string, fontSize: number, bold: boolean, italic: boolean, color: string, scaleX = 1): { typeface: Typeface; font: Font; paint: Paint } {
+  private makeTextObjects(
+    fontFamily: string,
+    fontSize: number,
+    bold: boolean,
+    italic: boolean,
+    color: string,
+    scaleX = 1,
+    weightOverride?: RenderFontWeight,
+  ): { typeface: Typeface; font: Font; paint: Paint } {
     const family = this.fontRegistry.resolveFamily(fontFamily);
+    const weight = weightOverride ?? resolveRenderFontWeight(fontFamily, bold);
     const typeface = this.fontProvider.matchFamilyStyle(family, {
-      weight: bold ? this.canvasKit.FontWeight.Bold : this.canvasKit.FontWeight.Normal,
+      weight: weight === 300
+        ? this.canvasKit.FontWeight.Light
+        : weight === 500
+          ? this.canvasKit.FontWeight.Medium
+          : weight === 700
+            ? this.canvasKit.FontWeight.Bold
+            : this.canvasKit.FontWeight.Normal,
       slant: italic ? this.canvasKit.FontSlant.Italic : this.canvasKit.FontSlant.Upright,
     });
     const font = new this.canvasKit.Font(typeface, fontSize || 12);
-    font.setEmbolden(bold && this.fontRegistry.shouldSynthesizeBold(family));
+    font.setEmbolden(weight === 700 && this.fontRegistry.shouldSynthesizeBold(family));
     font.setScaleX(scaleX > 0 ? scaleX : 1);
     font.setSkewX(italic ? -0.25 : 0);
     font.setSubpixel(true);

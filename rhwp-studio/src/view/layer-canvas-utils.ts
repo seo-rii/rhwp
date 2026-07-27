@@ -6,6 +6,7 @@ import type {
   LayerPatternFill,
   LayerTextRunOp,
 } from '@/core/types';
+import { buildCanvasTextFont } from '@/core/font-substitution';
 import { parseSupportedCssColor } from './canvaskit/css-color';
 import {
   applyLayerImageEffectPixels,
@@ -1559,25 +1560,6 @@ export function applyLayerImageEffect(
   }
 
   return canvas;
-}
-
-export function buildCanvasTextFont(
-  fontFamily: string,
-  fontSize: number,
-  bold: boolean,
-  italic: boolean,
-): string {
-  const baseFamily = fontFamily?.trim() ?? '';
-  const lower = baseFamily.toLowerCase();
-  const fallback = !baseFamily
-    ? `'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans CJK KR','NanumGothic','나눔고딕','Noto Sans KR','Pretendard',sans-serif`
-    : /굴림체|바탕체|gulimche|batangche|coding|courier/i.test(baseFamily)
-      ? `'GulimChe','굴림체','D2Coding','NanumGothicCoding','나눔고딕코딩','Noto Sans Mono',monospace`
-      : /바탕|명조|궁서/.test(baseFamily) || /times|hymjre|palatino|georgia|batang|gungsuh/i.test(lower)
-        ? `'Batang','바탕','AppleMyungjo','Noto Serif CJK KR','NanumMyeongjo','나눔명조','Noto Serif KR',serif`
-        : `'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans CJK KR','NanumGothic','나눔고딕','Noto Sans KR','Pretendard',sans-serif`;
-  const family = baseFamily ? `"${baseFamily}", ${fallback}` : fallback;
-  return `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${(fontSize || 12).toFixed(3)}px ${family}`;
 }
 
 export function drawCanvas2DCharOverlap(

@@ -12,6 +12,16 @@
 
 import { REGISTERED_FONTS } from './font-loader';
 
+export {
+  baseFamilyWithoutWeightSuffix,
+  buildCanvasTextFont,
+  canvasFontFamilyFallbackCandidates,
+  fontFamilyFallbackCandidates,
+  fontFamilyWithFallback,
+  resolveRenderFontWeight,
+  type RenderFontWeight,
+} from './font-family-fallback';
+
 // 치환 엔트리: [원본폰트, 원본타입, 대체폰트, 대체타입]
 // 타입: 1=TTF, 2=HFT
 type SubstEntry = [string, number, string, number];
@@ -244,25 +254,4 @@ export function resolveFont(fontName: string, altType: number, langId: number): 
 
   _resolveCache.set(cacheKey, name);
   return name;
-}
-
-/**
- * CSS font-family 문자열에 전 플랫폼 fallback 체인을 추가한다.
- * Windows → macOS/iOS → Android → 오픈소스 → generic
- */
-export function fontFamilyWithFallback(fontName: string): string {
-  if (fontName === 'serif' || fontName === 'sans-serif' || fontName === 'monospace') {
-    return fontName;
-  }
-  const lower = fontName.toLowerCase();
-  // Monospace 판별
-  if (/굴림체|바탕체|gulimche|batangche|coding|courier/i.test(fontName)) {
-    return `"${fontName}", "GulimChe", "D2Coding", "NanumGothicCoding", "나눔고딕코딩", "Noto Sans Mono", monospace`;
-  }
-  // Serif 판별
-  if (/[바탕명조궁서]|hymjre|times|palatino|georgia|batang|gungsuh/i.test(fontName)) {
-    return `"${fontName}", "Batang", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "NanumMyeongjo", "나눔명조", serif`;
-  }
-  // Sans-serif (기본)
-  return `"${fontName}", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", sans-serif`;
 }

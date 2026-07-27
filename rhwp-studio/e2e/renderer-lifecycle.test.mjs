@@ -15616,7 +15616,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
             isParaEnd: false,
             isLineBreakEnd: false,
             style: {
-              fontFamily: 'Noto Serif KR',
+              fontFamily: 'Noto Serif KR Extra Bold',
               fontSize: 18,
               color: '#111111',
               bold: false,
@@ -15656,17 +15656,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
       return png;
     };
     const canvas2d = await render(canvas2dRenderer);
-    const makeTextFamilies = [];
+    const makeTextRequests = [];
     const originalMakeTextObjects = canvaskitRenderer.makeTextObjects;
     canvaskitRenderer.makeTextObjects = function makeTextObjectsProbe(fontFamily) {
-      makeTextFamilies.push(fontFamily);
+      makeTextRequests.push({
+        fontFamily,
+        weight: arguments[6],
+      });
       return originalMakeTextObjects.apply(this, arguments);
     };
     try {
       return {
         canvas2d,
         canvaskit: await render(canvaskitRenderer),
-        makeTextFamilies,
+        makeTextRequests,
       };
     } finally {
       canvaskitRenderer.makeTextObjects = originalMakeTextObjects;
@@ -15677,9 +15680,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     textFallbackFontProbe.error || 'text fallback font parity probe available',
   );
   assert(
-    textFallbackFontProbe.makeTextFamilies.includes('Malgun Gothic')
-      && textFallbackFontProbe.makeTextFamilies.includes('GulimChe'),
-    `CanvasKit text fallback routes currency and symbol clusters=${JSON.stringify(textFallbackFontProbe.makeTextFamilies)}`,
+    textFallbackFontProbe.makeTextRequests.some(
+      ({ fontFamily, weight }) => fontFamily === 'Noto Serif KR Extra Bold' && weight === 700,
+    ),
+    `CanvasKit resolves the family weight suffix=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
+  );
+  assert(
+    textFallbackFontProbe.makeTextRequests.some(
+      ({ fontFamily, weight }) => fontFamily === 'Malgun Gothic' && weight === 700,
+    ) && textFallbackFontProbe.makeTextRequests.some(
+      ({ fontFamily, weight }) => fontFamily === 'GulimChe' && weight === 700,
+    ),
+    `CanvasKit text fallback keeps the inferred weight for currency and symbol clusters=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
   );
   const textFallbackCanvas2dInkPixels = countPixels(
     textFallbackFontProbe.canvas2d,
