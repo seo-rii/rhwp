@@ -152,10 +152,14 @@ fn parse_begin_num(e: &quick_xml::events::BytesStart, props: &mut DocProperties)
 
 fn parse_font(e: &quick_xml::events::BytesStart, doc_info: &mut DocInfo, font_group: usize) {
     let mut name = String::new();
+    let mut is_embedded = false;
+    let mut bin_item_id_ref = String::new();
 
     for attr in e.attributes().flatten() {
         match attr.key.as_ref() {
             b"face" => name = attr_str(&attr),
+            b"isEmbedded" => is_embedded = parse_bool(&attr),
+            b"binaryItemIDRef" => bin_item_id_ref = attr_str(&attr),
             _ => {}
         }
     }
@@ -163,6 +167,8 @@ fn parse_font(e: &quick_xml::events::BytesStart, doc_info: &mut DocInfo, font_gr
     if !name.is_empty() {
         let font = Font {
             name,
+            is_embedded,
+            bin_item_id_ref,
             ..Default::default()
         };
         // fontface lang 컨텍스트에 따라 해당 언어 그룹에 추가
@@ -1317,6 +1323,23 @@ fn parse_border_width(attr: &quick_xml::events::attributes::Attribute) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_font_preserves_embedded_identity() {
+        let xml = r#"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">
+  <hh:fontface lang="HANGUL">
+    <hh:font id="0" face="Embedded Face" type="TTF" isEmbedded="1" binaryItemIDRef="font-resource-alpha"/>
+  </hh:fontface>
+</hh:head>"#;
+
+        let (doc_info, _) = parse_hwpx_header(xml).expect("header parse");
+        let font = &doc_info.font_faces[0][0];
+
+        assert_eq!(font.name, "Embedded Face");
+        assert!(font.is_embedded);
+        assert_eq!(font.bin_item_id_ref, "font-resource-alpha");
+        assert_eq!(font.resolved_bin_data_id, None);
+    }
 
     #[test]
     fn test_parse_color_rgb() {

@@ -42,6 +42,7 @@ fn test_serialize_face_name_simple() {
         alt_type: 0,
         alt_name: None,
         default_name: None,
+        ..Default::default()
     };
 
     let data = serialize_face_name(&font);
@@ -60,6 +61,7 @@ fn test_serialize_face_name_with_alt() {
         alt_type: 1,
         alt_name: Some("Malgun Gothic".to_string()),
         default_name: None,
+        ..Default::default()
     };
 
     let data = serialize_face_name(&font);
@@ -388,6 +390,7 @@ fn test_serialize_doc_info_roundtrip() {
         alt_type: 0,
         alt_name: None,
         default_name: None,
+        ..Default::default()
     });
     doc_info.char_shapes.push(CharShape {
         raw_data: None,

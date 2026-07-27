@@ -130,6 +130,7 @@ fn test_full_roundtrip_uncompressed() {
         alt_type: 0,
         alt_name: None,
         default_name: None,
+        ..Default::default()
     });
     doc_info.char_shapes.push(CharShape {
         font_ids: [0; 7],

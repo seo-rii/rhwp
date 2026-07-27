@@ -110,6 +110,7 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
     // 3. header.xml → DocInfo, DocProperties
     let header_xml = reader.read_file("Contents/header.xml")?;
     let (mut doc_info, doc_properties) = header::parse_hwpx_header(&header_xml)?;
+    resolve_embedded_font_references(&mut doc_info, &package_info.bin_data_items);
 
     // BinData 목록을 DocInfo에 등록
     for (i, item) in package_info.bin_data_items.iter().enumerate() {
@@ -221,6 +222,35 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
     Ok(doc)
 }
 
+fn resolve_embedded_font_references(
+    doc_info: &mut crate::model::document::DocInfo,
+    items: &[content::PackageItem],
+) {
+    let mut item_ids = std::collections::HashMap::<&str, Option<u16>>::new();
+    for (index, item) in items.iter().enumerate() {
+        let storage_id = item
+            .is_embedded
+            .then(|| u16::try_from(index + 1).ok())
+            .flatten();
+        item_ids
+            .entry(item.id.as_str())
+            .and_modify(|resolved| *resolved = None)
+            .or_insert(storage_id);
+    }
+
+    for font in doc_info.font_faces.iter_mut().flatten() {
+        font.resolved_bin_data_id = font
+            .is_embedded
+            .then(|| {
+                item_ids
+                    .get(font.bin_item_id_ref.as_str())
+                    .copied()
+                    .flatten()
+            })
+            .flatten();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,5 +266,96 @@ mod tests {
         // CFB/HWP 데이터로 시도
         let result = parse_hwpx(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn embedded_font_reference_uses_exact_manifest_item_id() {
+        let mut doc_info = crate::model::document::DocInfo {
+            font_faces: vec![vec![crate::model::style::Font {
+                name: "Embedded Face".to_string(),
+                is_embedded: true,
+                bin_item_id_ref: "font-resource-alpha".to_string(),
+                ..Default::default()
+            }]],
+            ..Default::default()
+        };
+        let items = vec![
+            content::PackageItem {
+                id: "font-resource-beta".to_string(),
+                href: "BinData/beta.ttf".to_string(),
+                media_type: "application/x-font-ttf".to_string(),
+                is_embedded: true,
+            },
+            content::PackageItem {
+                id: "font-resource-alpha".to_string(),
+                href: "BinData/alpha.ttf".to_string(),
+                media_type: "application/x-font-ttf".to_string(),
+                is_embedded: true,
+            },
+        ];
+
+        resolve_embedded_font_references(&mut doc_info, &items);
+
+        let font = &doc_info.font_faces[0][0];
+        assert_eq!(font.resolved_bin_data_id, Some(2));
+        assert_eq!(font.bin_item_id_ref, "font-resource-alpha");
+    }
+
+    #[test]
+    fn non_embedded_font_does_not_resolve_manifest_reference() {
+        let mut doc_info = crate::model::document::DocInfo {
+            font_faces: vec![vec![crate::model::style::Font {
+                name: "External Face".to_string(),
+                bin_item_id_ref: "font-resource-alpha".to_string(),
+                ..Default::default()
+            }]],
+            ..Default::default()
+        };
+        let items = vec![content::PackageItem {
+            id: "font-resource-alpha".to_string(),
+            href: "BinData/alpha.ttf".to_string(),
+            media_type: "application/x-font-ttf".to_string(),
+            is_embedded: true,
+        }];
+
+        resolve_embedded_font_references(&mut doc_info, &items);
+
+        assert_eq!(doc_info.font_faces[0][0].resolved_bin_data_id, None);
+    }
+
+    #[test]
+    fn embedded_font_reference_rejects_external_or_ambiguous_manifest_items() {
+        let make_font = || crate::model::style::Font {
+            name: "Embedded Face".to_string(),
+            is_embedded: true,
+            bin_item_id_ref: "font-resource".to_string(),
+            ..Default::default()
+        };
+        let package_item = |href: &str, is_embedded| content::PackageItem {
+            id: "font-resource".to_string(),
+            href: href.to_string(),
+            media_type: "application/x-font-ttf".to_string(),
+            is_embedded,
+        };
+
+        let mut external = crate::model::document::DocInfo {
+            font_faces: vec![vec![make_font()]],
+            ..Default::default()
+        };
+        resolve_embedded_font_references(&mut external, &[package_item("external.ttf", false)]);
+        assert_eq!(external.font_faces[0][0].resolved_bin_data_id, None);
+
+        let mut ambiguous = crate::model::document::DocInfo {
+            font_faces: vec![vec![make_font()]],
+            ..Default::default()
+        };
+        resolve_embedded_font_references(
+            &mut ambiguous,
+            &[
+                package_item("external.ttf", false),
+                package_item("BinData/embedded.ttf", true),
+            ],
+        );
+        assert_eq!(ambiguous.font_faces[0][0].resolved_bin_data_id, None);
     }
 }

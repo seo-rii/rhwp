@@ -790,6 +790,7 @@ impl DocumentCore {
             alt_type: 0,
             alt_name: None,
             default_name: None,
+            ..Default::default()
         };
 
         let font_faces = &mut self.document.doc_info.font_faces;
@@ -835,6 +836,7 @@ impl DocumentCore {
             alt_type: 0,
             alt_name: None,
             default_name: None,
+            ..Default::default()
         };
 
         let font_faces = &mut self.document.doc_info.font_faces;

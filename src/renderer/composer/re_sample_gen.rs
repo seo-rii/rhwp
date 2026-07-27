@@ -39,6 +39,7 @@ mod tests {
                 alt_type: 0,
                 alt_name: None,
                 default_name: None,
+                ..Default::default()
             });
             (fonts.len() - 1) as u16
         };

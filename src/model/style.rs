@@ -11,6 +11,12 @@ pub struct Font {
     pub name: String,
     /// 대체 글꼴 유형 (0: 알 수 없음, 1: TTF, 2: HFT)
     pub alt_type: u8,
+    /// HWPX `<hh:font>`가 임베디드 글꼴 리소스를 참조하는지 여부
+    pub is_embedded: bool,
+    /// HWPX `<hh:font>`의 원본 `binaryItemIDRef`
+    pub bin_item_id_ref: String,
+    /// HWPX manifest item ID에서 해석된 BinData storage ID
+    pub resolved_bin_data_id: Option<u16>,
     /// 대체 글꼴 이름
     pub alt_name: Option<String>,
     /// 기본 글꼴 이름
@@ -901,6 +907,15 @@ impl ParaShapeMods {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_font_embedded_identity_defaults_are_safe() {
+        let font = Font::default();
+
+        assert!(!font.is_embedded);
+        assert!(font.bin_item_id_ref.is_empty());
+        assert_eq!(font.resolved_bin_data_id, None);
+    }
 
     #[test]
     fn test_char_shape_default() {
