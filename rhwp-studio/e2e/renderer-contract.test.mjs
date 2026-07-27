@@ -600,6 +600,12 @@ assert.deepEqual(
 );
 const imageCropBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'image-crop');
 const paragraphBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'paragraph-basic');
+const paragraphMarksBaselineSample = rendererBaselineManifest.samples.find(
+  (sample) => sample.id === 'paragraph-text-marks',
+);
+const hwpxTabLeadersBaselineSample = rendererBaselineManifest.samples.find(
+  (sample) => sample.id === 'hwpx-tac-tab-leaders',
+);
 const baselineSampleIds = new Set(rendererBaselineManifest.samples.map((sample) => sample.id));
 const baselineCategories = new Set(rendererBaselineManifest.samples.map((sample) => sample.category));
 for (const sample of rendererBaselineManifest.samples) {
@@ -624,9 +630,25 @@ assert.equal(
   3,
   'text-heavy baseline samples must keep the native text raster neighborhood budget',
 );
+assert.deepEqual(
+  paragraphMarksBaselineSample?.viewOptions,
+  { showParagraphMarks: true, showControlCodes: false },
+  'paragraph-mark parity must be captured through explicit document view options',
+);
+assert.equal(
+  hwpxTabLeadersBaselineSample?.file,
+  'tac-img-02.hwpx',
+  'HWPX tab-leader parity must keep the checked-in TAC document',
+);
+assert.equal(
+  hwpxTabLeadersBaselineSample?.page,
+  4,
+  'HWPX tab-leader parity must capture the real table-of-contents page',
+);
 for (const sampleId of [
   'paragraph-line-basic',
   'paragraph-basic',
+  'paragraph-text-marks',
   'paragraph-mixed-style',
   'paragraph-spacing',
   'paragraph-multisize',
@@ -708,6 +730,7 @@ for (const sampleId of [
   'hwpx-ref-table',
   'hwpx-table-vpos',
   'hwpx-tac-image',
+  'hwpx-tac-tab-leaders',
   'exam-kor',
   'exam-eng',
   'exam-math',
@@ -778,6 +801,7 @@ for (const watchSample of ['hwpspec.hwp']) {
 }
 for (const category of [
   'paragraph',
+  'positioned-text',
   'font',
   'table',
   'image',
@@ -803,6 +827,16 @@ for (const category of [
 assert(
   extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('...sample'),
   'browser baseline sample normalization must preserve manifest extension fields such as browserParityThresholds',
+);
+assert(
+  extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('viewOptions')
+    && extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('showParagraphMarks')
+    && extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('showControlCodes')
+    && extractFunctionBody(rendererBaselineSource, 'applySampleViewOptions').includes('setShowParagraphMarks')
+    && extractFunctionBody(rendererBaselineSource, 'applySampleViewOptions').includes('setShowControlCodes')
+    && extractFunctionBody(rendererBaselineSource, 'applySampleViewOptions').includes("emit('document-changed')")
+    && rendererBaselineSource.includes('await applySampleViewOptions(page, sample.viewOptions)'),
+  'browser baseline must validate and apply document view options before capturing a selected page',
 );
 assert(
   extractFunctionBody(rendererBaselineSource, 'browserParityThresholdsForSample').includes('browserParityThresholds')

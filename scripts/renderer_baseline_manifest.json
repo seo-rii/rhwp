@@ -31,6 +31,24 @@
       }
     },
     {
+      "id": "paragraph-text-marks",
+      "file": "lseg-05-tab.hwp",
+      "category": "positioned-text",
+      "page": 0,
+      "notes": "Paragraph-mark view mode covering positioned spaces, tabs, and line-end control visuals.",
+      "viewOptions": {
+        "showParagraphMarks": true,
+        "showControlCodes": false
+      },
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.02,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.03
+      }
+    },
+    {
       "id": "paragraph-mixed-style",
       "file": "lseg-02-mixed.hwp",
       "category": "paragraph",
@@ -1243,6 +1261,20 @@
       "category": "hwpx",
       "page": 0,
       "notes": "HWPX TAC image sample for format and image replay parity.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "hwpx-tac-tab-leaders",
+      "file": "tac-img-02.hwpx",
+      "category": "positioned-text",
+      "page": 4,
+      "notes": "HWPX table-of-contents page with real tab-leader text visuals.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,

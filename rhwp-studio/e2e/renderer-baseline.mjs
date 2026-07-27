@@ -137,18 +137,74 @@ function parseProfiles(rawProfiles) {
 
 function normalizeSamples(manifest, filterPattern) {
   const filter = filterPattern ? new RegExp(filterPattern, 'i') : null;
-  return (manifest.samples ?? []).map((sample) => ({
-    ...sample,
-    id: sample.id || path.basename(sample.file, path.extname(sample.file)),
-    file: sample.file,
-    category: sample.category || 'uncategorized',
-    page: sample.page ?? 0,
-  })).filter((sample) => {
+  return (manifest.samples ?? []).map((sample) => {
+    const id = sample.id || path.basename(sample.file, path.extname(sample.file));
+    const normalizedSample = {
+      ...sample,
+      id,
+      file: sample.file,
+      category: sample.category || 'uncategorized',
+      page: sample.page ?? 0,
+      viewOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+      },
+    };
+    if (sample.viewOptions !== undefined) {
+      if (!sample.viewOptions
+        || typeof sample.viewOptions !== 'object'
+        || Array.isArray(sample.viewOptions)
+        || Object.keys(sample.viewOptions).some(
+          (key) => !['showParagraphMarks', 'showControlCodes'].includes(key),
+        )
+        || Object.values(sample.viewOptions).some((value) => typeof value !== 'boolean')) {
+        throw new Error(`invalid viewOptions for baseline sample: ${id}`);
+      }
+      normalizedSample.viewOptions = {
+        showParagraphMarks: sample.viewOptions.showParagraphMarks ?? false,
+        showControlCodes: sample.viewOptions.showControlCodes ?? false,
+      };
+    }
+    return normalizedSample;
+  }).filter((sample) => {
     if (!filter) {
       return true;
     }
     return filter.test(sample.id) || filter.test(sample.file) || filter.test(sample.category);
   });
+}
+
+async function applySampleViewOptions(page, viewOptions) {
+  const previous = await page.evaluate(() => ({
+    showParagraphMarks: window.__wasm?.getShowParagraphMarks?.() ?? false,
+    showControlCodes: window.__wasm?.getShowControlCodes?.() ?? false,
+  }));
+  if (previous.showParagraphMarks === viewOptions.showParagraphMarks
+    && previous.showControlCodes === viewOptions.showControlCodes) {
+    return;
+  }
+
+  await page.evaluate((nextViewOptions) => {
+    const wasm = window.__wasm;
+    if (!wasm) {
+      throw new Error('baseline view options require a loaded document');
+    }
+    wasm.setShowControlCodes(nextViewOptions.showControlCodes);
+    wasm.setShowParagraphMarks(nextViewOptions.showParagraphMarks);
+    window.__eventBus?.emit('document-changed');
+  }, viewOptions);
+  await page.waitForFunction(
+    (expected) => {
+      const wasm = window.__wasm;
+      return wasm?.getShowParagraphMarks?.() === expected.showParagraphMarks
+        && wasm?.getShowControlCodes?.() === expected.showControlCodes;
+    },
+    { timeout: 15000, polling: 50 },
+    viewOptions,
+  );
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
 }
 
 async function resetRendererDiagnostics(page) {
@@ -264,6 +320,7 @@ try {
         const documentLoadStartedAt = performance.now();
         const documentInfo = await loadHwpFile(page, sample.file);
         const documentLoadAndInitialRenderMs = performance.now() - documentLoadStartedAt;
+        await applySampleViewOptions(page, sample.viewOptions);
         if (sample.page >= documentInfo.pageCount) {
           throw new Error(
             `baseline sample page is out of range: ${sample.id} page=${sample.page} pageCount=${documentInfo.pageCount}`,

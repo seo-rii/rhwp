@@ -1108,6 +1108,13 @@ Canvas2D and CanvasKit without a hidden overlay. CanvasKit collects text
 variant diagnostics in a cache-independent pre-replay tree walk, so static
 picture cache hits and the three replay planes cannot omit or duplicate the
 runtime selection report compared with the Rust replay plan.
+The browser baseline also applies per-sample `showParagraphMarks` and
+`showControlCodes` settings before the selected-page capture. The real
+`lseg-05-tab.hwp` paragraph-mark view now covers positioned spaces, tabs, and
+line-end controls, while page 4 of `tac-img-02.hwpx` covers the document's real
+table-of-contents tab leaders. This keeps view-option visuals and HWPX
+positioned text in the same Canvas2D-versus-CanvasKit hard-safety workflow as
+ordinary page replay.
 Each later implementation commit should start from a concrete fixture, corpus
 document, backend proof, or malformed payload that the current branch does not
 already cover.

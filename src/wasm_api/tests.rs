@@ -61,6 +61,18 @@ fn test_create_empty_document() {
 }
 
 #[test]
+fn test_paragraph_mark_visibility_round_trip() {
+    let mut doc = HwpDocument::create_empty();
+    assert!(!doc.get_show_paragraph_marks());
+
+    doc.set_show_paragraph_marks(true);
+    assert!(doc.get_show_paragraph_marks());
+
+    doc.set_show_paragraph_marks(false);
+    assert!(!doc.get_show_paragraph_marks());
+}
+
+#[test]
 fn test_empty_document_info() {
     let doc = HwpDocument::create_empty();
     let info = doc.get_document_info();
