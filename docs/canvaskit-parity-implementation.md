@@ -44,6 +44,7 @@ the broad Canvas2D utility module:
 | --- | --- | --- |
 | image effect pixels, crop preprocessing, base64 decode | `rhwp-studio/src/view/image-effect-pixels.ts` | resource cache, font blob registration, cropped effect replay |
 | HWP text replay helpers and PUA projection helpers | `rhwp-studio/src/view/text-replay-utils.ts` | root `TextRun`, special text ops, control marks, overlap text |
+| fallback family chains and face-weight hints | `rhwp-studio/src/core/font-family-fallback.ts` | Canvas2D CSS font shorthand and CanvasKit family/style matching |
 | geometry helpers and conservative bounds | `rhwp-studio/src/view/layer-geometry-utils.ts` | paths, arrows, transformed bounds |
 | static SVG path parsing | `rhwp-studio/src/view/static-svg-path-layers.ts` | strict `SvgGlyph` and SVG-style outline replay |
 | static SVG glyph fragment validation | `src/renderer/static_svg.rs` | CanvasKit replay-plan eligibility plus strict SVG/native Skia fallback |
@@ -79,6 +80,18 @@ enumerated family list, while preserving generic `serif`, `sans-serif`, and
 `monospace` fallback aliases. This keeps headless platforms from handing
 obviously missing document font names to platform font lookup before the shared
 fallback list is tried.
+
+Browser text fallback now uses one family/weight contract for Canvas2D and
+CanvasKit. A weight-suffixed face is tried first, then its base family, then the
+same HWP-aware serif/sans/monospace candidates. Explicit `Bold`/`볼드`, Light
+family, and 중고딕/태고딕-style names map to the same 700/300/500 hints used by
+the Rust renderer; other faces remain weight 400 unless the HWP bold bit is
+set. CanvasKit includes the resolved weight in its text fallback and blob cache
+keys, requests the matching CanvasKit family style, and synthesizes emboldening
+only for a 700 request without a registered 700 face. The lifecycle fixture
+verifies that a two-token `Extra Bold` suffix preserves weight 700 across the
+primary, currency, and symbol fallback paths while retaining Canvas2D-vs-
+CanvasKit fuzzy pixel parity.
 
 The first strict `GlyphOutline` payload subsets are also implemented as
 feature-gated direct replay contracts. The current baseline covers

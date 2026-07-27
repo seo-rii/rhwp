@@ -787,14 +787,23 @@ top-level `variantOps` array.
 
 Producer-side font-native bitmap/SVG lowering follows that richer-payload
 policy. The layout path preserves the resolved HWP `(charShapeId,
-languageIndex)` font slot as internal text-run metadata, loads only exact
-embedded faces supplied to the page builder, and emits resolved bitmap or
-sanitized static SVG payloads only in `variantOps`. The root `TextRun` remains
-the fallback. Source fonts are bounded to 32 MiB, and each page is additionally
-bounded to 128 emitted sidecars, 8 MiB of encoded payload, and 32 Mi pixels.
-Font bytes are transient producer input for these outline families and are not
-retained as `FontBlobResource`; retained exact font blobs remain a separate
-`GlyphRun` resource contract.
+languageIndex)` font slot as internal text-run metadata. `DocumentCore` scans
+the visible page tree for eligible single-character runs, resolves only the
+exact embedded HWP slots those runs use, and supplies those faces to
+`LayerBuilder::build_with_embedded_fonts`. It does not walk or eagerly load the
+entire document font table. Embedded resources are read through the bounded
+`BinData::load_limited` path, shared `BinData` bytes are deduplicated per page,
+and TTC/OTC input must resolve the requested family to an exact face index
+before lowering.
+
+The page-loading gate admits at most 64 embedded face slots, 32 MiB per source,
+and 64 MiB of distinct embedded font bytes per page. The lowerer then emits
+resolved bitmap or sanitized static SVG payloads only in `variantOps`; the root
+`TextRun` remains the fallback. Each page is additionally bounded to 128
+emitted sidecars, 8 MiB of encoded payload, and 32 Mi pixels. Font bytes are
+transient producer input for these outline families and are not retained as
+`FontBlobResource`; retained exact font blobs remain a separate `GlyphRun`
+resource contract.
 
 The first richer payload discriminator is intentionally narrow:
 `payloadKind: "monochromeFill"` remains the baseline replay-eligible outline
