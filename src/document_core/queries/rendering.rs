@@ -7,7 +7,10 @@ use crate::model::control::Control;
 use crate::model::document::Section;
 use crate::model::page::ColumnDef;
 use crate::model::paragraph::Paragraph;
-use crate::paint::{LayerBuilder, LayerOutputOptions, PageLayerTree, RenderProfile};
+use crate::paint::{
+    resolve_embedded_font_face_index, EmbeddedFontFace, LayerBuilder, LayerOutputOptions,
+    PageLayerTree, RenderProfile, TextFontSlot,
+};
 use crate::renderer::canvas::CanvasRenderer;
 use crate::renderer::composer::{compose_paragraph, compose_section, ComposedParagraph};
 use crate::renderer::height_measurer::{HeightMeasurer, MeasuredSection, MeasuredTable};
@@ -23,6 +26,31 @@ use crate::renderer::style_resolver::resolve_styles;
 use crate::renderer::svg::SvgRenderer;
 use crate::renderer::svg_layer::SvgLayerRenderer;
 use std::cell::RefCell;
+
+const MAX_EMBEDDED_FONT_SOURCE_BYTES: usize = 32 * 1024 * 1024;
+const MAX_PAGE_EMBEDDED_FONT_SOURCE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_PAGE_EMBEDDED_FONT_FACES: usize = 64;
+
+struct LoadedEmbeddedFontFace {
+    slot: TextFontSlot,
+    family: String,
+    alternate_family: Option<String>,
+    bytes: std::sync::Arc<[u8]>,
+    face_index: u32,
+}
+
+impl LoadedEmbeddedFontFace {
+    fn borrowed(&self) -> EmbeddedFontFace<'_> {
+        EmbeddedFontFace {
+            char_shape_id: self.slot.char_shape_id,
+            language_index: usize::from(self.slot.language_index),
+            family: &self.family,
+            alternate_family: self.alternate_family.as_deref(),
+            bytes: &self.bytes,
+            face_index: self.face_index,
+        }
+    }
+}
 
 impl DocumentCore {
     fn build_page_tree_for_output(&self, page_num: u32) -> Result<PageRenderTree, HwpError> {
@@ -55,7 +83,132 @@ impl DocumentCore {
             debug_overlay: self.debug_overlay,
         };
         let mut builder = LayerBuilder::new(profile).with_output_options(output_options);
-        builder.build(tree)
+        let loaded_fonts = self.load_page_embedded_fonts(tree);
+        let embedded_fonts = loaded_fonts
+            .iter()
+            .map(LoadedEmbeddedFontFace::borrowed)
+            .collect::<Vec<_>>();
+        builder.build_with_embedded_fonts(tree, &embedded_fonts)
+    }
+
+    fn load_page_embedded_fonts(&self, tree: &PageRenderTree) -> Vec<LoadedEmbeddedFontFace> {
+        let mut font_candidates = Vec::new();
+        let mut seen_slots = std::collections::HashSet::new();
+        let mut pending = vec![&tree.root];
+        while let Some(node) = pending.pop() {
+            if !node.visible {
+                continue;
+            }
+            if let crate::renderer::render_tree::RenderNodeType::TextRun(run) = &node.node_type {
+                let mut characters = run.text.chars();
+                if characters.next().is_some() && characters.next().is_none() {
+                    if let Some(slot) = run.char_shape_id.zip(run.style.font_language_index).map(
+                        |(char_shape_id, language_index)| TextFontSlot {
+                            char_shape_id,
+                            language_index,
+                        },
+                    ) {
+                        if seen_slots.insert(slot) {
+                            let language_index = usize::from(slot.language_index);
+                            let font_id = self
+                                .document
+                                .doc_info
+                                .char_shapes
+                                .get(slot.char_shape_id as usize)
+                                .and_then(|char_shape| {
+                                    char_shape.font_ids.get(language_index).copied()
+                                })
+                                .map(usize::from);
+                            if let Some(font_id) = font_id {
+                                let is_embedded = self
+                                    .document
+                                    .doc_info
+                                    .font_faces
+                                    .get(language_index)
+                                    .and_then(|fonts| fonts.get(font_id))
+                                    .is_some_and(|font| {
+                                        font.is_embedded && font.resolved_bin_data_id.is_some()
+                                    });
+                                if is_embedded {
+                                    font_candidates.push((slot, language_index, font_id));
+                                    if font_candidates.len() >= MAX_PAGE_EMBEDDED_FONT_FACES {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            pending.extend(node.children.iter().rev());
+        }
+
+        let mut loaded_bytes = std::collections::HashMap::<u16, std::sync::Arc<[u8]>>::new();
+        let mut total_source_bytes = 0usize;
+        let mut loaded_faces = Vec::new();
+        for (slot, language_index, font_id) in font_candidates {
+            let Some(font) = self
+                .document
+                .doc_info
+                .font_faces
+                .get(language_index)
+                .and_then(|fonts| fonts.get(font_id))
+            else {
+                continue;
+            };
+            if !font.is_embedded {
+                continue;
+            }
+            let Some(bin_data_id) = font.resolved_bin_data_id else {
+                continue;
+            };
+            let bytes = if let Some(bytes) = loaded_bytes.get(&bin_data_id) {
+                std::sync::Arc::clone(bytes)
+            } else {
+                let remaining = MAX_PAGE_EMBEDDED_FONT_SOURCE_BYTES
+                    .saturating_sub(total_source_bytes)
+                    .min(MAX_EMBEDDED_FONT_SOURCE_BYTES);
+                if remaining == 0 {
+                    continue;
+                }
+                let Some(content) = crate::renderer::layout::find_bin_data(
+                    &self.document.bin_data_content,
+                    bin_data_id,
+                ) else {
+                    continue;
+                };
+                let Some(bytes) = content.data.load_limited(remaining) else {
+                    continue;
+                };
+                if bytes.is_empty() {
+                    continue;
+                }
+                let Some(next_total) = total_source_bytes.checked_add(bytes.len()) else {
+                    continue;
+                };
+                if next_total > MAX_PAGE_EMBEDDED_FONT_SOURCE_BYTES {
+                    continue;
+                }
+                total_source_bytes = next_total;
+                let bytes = std::sync::Arc::<[u8]>::from(bytes);
+                loaded_bytes.insert(bin_data_id, std::sync::Arc::clone(&bytes));
+                bytes
+            };
+            let alternate_family = font.alt_name.clone().or_else(|| font.default_name.clone());
+            let Some(face_index) =
+                resolve_embedded_font_face_index(&bytes, &font.name, alternate_family.as_deref())
+            else {
+                continue;
+            };
+            loaded_faces.push(LoadedEmbeddedFontFace {
+                slot,
+                family: font.name.clone(),
+                alternate_family,
+                bytes,
+                face_index,
+            });
+        }
+        loaded_faces
     }
 
     fn resolve_layer_render_profile(&self, default_profile: RenderProfile) -> RenderProfile {
@@ -2369,4 +2522,183 @@ impl DocumentCore {
     // =====================================================================
     // 클립보드 API (내부)
     // =====================================================================
+}
+
+#[cfg(test)]
+mod embedded_font_tests {
+    use super::*;
+    use crate::model::bin_data::{BinDataBytes, BinDataContent, BinDataResolver};
+    use crate::model::style::{CharShape, Font};
+    use crate::paint::PaintOp;
+    use crate::renderer::render_tree::{
+        BoundingBox, FieldMarkerType, RenderNode, RenderNodeType, TextRunNode,
+    };
+    use crate::renderer::TextStyle;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct LimitedFontResolver {
+        bytes: Vec<u8>,
+        limited_calls: Arc<AtomicUsize>,
+    }
+
+    impl BinDataResolver for LimitedFontResolver {
+        fn resolve(&self, _key: &str) -> Vec<u8> {
+            panic!("embedded font rendering must not use unbounded resolve")
+        }
+
+        fn resolve_limited(&self, _key: &str, max_bytes: usize) -> Option<Vec<u8>> {
+            self.limited_calls.fetch_add(1, Ordering::SeqCst);
+            (self.bytes.len() <= max_bytes).then(|| self.bytes.clone())
+        }
+    }
+
+    #[derive(Debug)]
+    struct UnusedFontResolver;
+
+    impl BinDataResolver for UnusedFontResolver {
+        fn resolve(&self, _key: &str) -> Vec<u8> {
+            panic!("unused embedded font must stay lazy")
+        }
+
+        fn resolve_limited(&self, _key: &str, _max_bytes: usize) -> Option<Vec<u8>> {
+            panic!("unused embedded font must stay lazy")
+        }
+    }
+
+    #[test]
+    fn page_layer_build_loads_only_used_embedded_font_through_bounded_resolver() {
+        let font_bytes =
+            include_bytes!("../../../tests/fixtures/fonts/RHWPBitmapSvgGlyphSmoke.ttf");
+        let limited_calls = Arc::new(AtomicUsize::new(0));
+        let mut core = DocumentCore::new_empty();
+        core.document.doc_info.font_faces = vec![Vec::new(); 7];
+        core.document.doc_info.font_faces[0] = (0..MAX_PAGE_EMBEDDED_FONT_FACES)
+            .map(|index| Font {
+                name: format!("Non-embedded face {index}"),
+                ..Font::default()
+            })
+            .chain([
+                Font {
+                    name: "RHWP Bitmap SVG Glyph Smoke".to_string(),
+                    is_embedded: true,
+                    resolved_bin_data_id: Some(1),
+                    ..Font::default()
+                },
+                Font {
+                    name: "Unused Embedded Face".to_string(),
+                    is_embedded: true,
+                    resolved_bin_data_id: Some(2),
+                    ..Font::default()
+                },
+            ])
+            .collect();
+        core.document.doc_info.char_shapes = (0..MAX_PAGE_EMBEDDED_FONT_FACES + 2)
+            .map(|font_id| CharShape {
+                font_ids: [u16::try_from(font_id).unwrap(); 7],
+                ..CharShape::default()
+            })
+            .collect();
+        core.document.bin_data_content = vec![
+            BinDataContent {
+                id: 1,
+                data: BinDataBytes::Lazy {
+                    resolver: Arc::new(LimitedFontResolver {
+                        bytes: font_bytes.to_vec(),
+                        limited_calls: Arc::clone(&limited_calls),
+                    }),
+                    key: "used-font".to_string(),
+                },
+                extension: "ttf".to_string(),
+            },
+            BinDataContent {
+                id: 2,
+                data: BinDataBytes::Lazy {
+                    resolver: Arc::new(UnusedFontResolver),
+                    key: "unused-font".to_string(),
+                },
+                extension: "ttf".to_string(),
+            },
+        ];
+
+        let mut tree = PageRenderTree::new(0, 100.0, 100.0);
+        for char_shape_id in 0..MAX_PAGE_EMBEDDED_FONT_FACES {
+            tree.root.children.push(RenderNode::new(
+                u32::try_from(char_shape_id + 1).unwrap(),
+                RenderNodeType::TextRun(TextRunNode {
+                    text: "A".to_string(),
+                    style: TextStyle {
+                        font_family: format!("Non-embedded face {char_shape_id}"),
+                        font_language_index: Some(0),
+                        font_size: 16.0,
+                        ..TextStyle::default()
+                    },
+                    char_shape_id: Some(u32::try_from(char_shape_id).unwrap()),
+                    para_shape_id: None,
+                    section_index: None,
+                    para_index: None,
+                    char_start: None,
+                    cell_context: None,
+                    is_para_end: false,
+                    is_line_break_end: false,
+                    rotation: 0.0,
+                    is_vertical: false,
+                    char_overlap: None,
+                    border_fill_id: 0,
+                    baseline: 12.0,
+                    field_marker: FieldMarkerType::None,
+                }),
+                BoundingBox::new(10.0, 20.0, 16.0, 16.0),
+            ));
+        }
+        tree.root.children.push(RenderNode::new(
+            u32::try_from(MAX_PAGE_EMBEDDED_FONT_FACES + 1).unwrap(),
+            RenderNodeType::TextRun(TextRunNode {
+                text: "\u{E100}".to_string(),
+                style: TextStyle {
+                    font_family: "unrelated CSS fallback".to_string(),
+                    font_language_index: Some(0),
+                    font_size: 16.0,
+                    ..TextStyle::default()
+                },
+                char_shape_id: Some(u32::try_from(MAX_PAGE_EMBEDDED_FONT_FACES).unwrap()),
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 12.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            BoundingBox::new(10.0, 20.0, 16.0, 16.0),
+        ));
+
+        let layer_tree = core.build_layer_tree_from_page_tree(&tree, RenderProfile::Screen);
+
+        assert_eq!(limited_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(layer_tree.resources.image_count(), 1);
+        assert!(matches!(
+            layer_tree.variant_ops.as_slice(),
+            [PaintOp::GlyphOutline { .. }]
+        ));
+        crate::paint::validate_text_variant_scope(&layer_tree)
+            .expect("font-native sidecar must anchor to the used TextRun");
+        let validation =
+            layer_tree.validate_text_v2_slots(&crate::paint::TextV2ValidationOptions {
+                allow_richer_glyph_outline_payloads: true,
+                allow_bitmap_glyph_payloads: true,
+                ..crate::paint::TextV2ValidationOptions::default()
+            });
+        assert!(
+            validation.is_empty(),
+            "font-native sidecar must satisfy the v2 bitmap payload contract: {validation:?}"
+        );
+    }
 }

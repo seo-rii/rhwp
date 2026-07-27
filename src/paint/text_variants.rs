@@ -11,8 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::paint::{
-    GlyphOutlinePayloadKind, LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintVariantMeta,
-    TextVariantKind,
+    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintVariantMeta, TextVariantKind,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,7 +142,7 @@ impl fmt::Display for TextVariantScopeError {
                 leaf,
             } => write!(
                 f,
-                "glyph outline variant `{variant_id}` in group `{equivalence_group}` at leaf `{leaf}` is not monochrome fill-only eligible"
+                "glyph outline variant `{variant_id}` in group `{equivalence_group}` at leaf `{leaf}` does not use a fill-only glyph replay style"
             ),
         }
     }
@@ -298,9 +297,9 @@ fn validate_leaf(
             });
         }
         if let PaintOp::GlyphOutline { outline, .. } = op {
-            if outline.payload_kind != GlyphOutlinePayloadKind::MonochromeFill
-                || !outline.paint_style.is_fill_only_glyph_replay()
-            {
+            // Payload-family contracts are validated after v1-to-v2 lowering.
+            // This validator owns only v1 grouping and paint-scope invariants.
+            if !outline.paint_style.is_fill_only_glyph_replay() {
                 return Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle {
                     equivalence_group: outline.variant.equivalence_group.clone(),
                     variant_id: outline.variant.variant_id.clone(),
@@ -826,7 +825,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_reserved_glyph_outline_payload_kind() {
+    fn accepts_richer_glyph_outline_payload_kind_with_valid_scope() {
         let outline_part = PaintVariantMeta {
             equivalence_group: "text-1".to_string(),
             variant_id: "glyphOutline".to_string(),
@@ -857,9 +856,6 @@ mod tests {
             ],
         ));
 
-        assert!(matches!(
-            validate_text_variant_scope(&tree),
-            Err(TextVariantScopeError::UnsupportedGlyphOutlineStyle { .. })
-        ));
+        validate_text_variant_scope(&tree).unwrap();
     }
 }
