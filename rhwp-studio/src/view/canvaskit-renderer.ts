@@ -166,7 +166,6 @@ export class CanvasKitLayerRenderer {
   private currentLayerTreeCacheKey = 'none';
   private readonly textVariantSelectionDiagnostics: LayerTextVariantGroupReport[] = [];
   private readonly textV2ValidationDiagnostics: LayerTextV2ValidationIssue[] = [];
-  private collectTextVariantSelectionDiagnostics = false;
   private disposed = false;
 
   private constructor(
@@ -286,19 +285,42 @@ export class CanvasKitLayerRenderer {
     this.textVariantSelectionDiagnostics.length = 0;
     this.textV2ValidationDiagnostics.length = 0;
     this.textV2ValidationDiagnostics.push(...validateLayerTextV2Tree(tree));
+    const pendingTextVariantNodes: LayerNode[] = [tree.root];
+    while (pendingTextVariantNodes.length > 0) {
+      const node = pendingTextVariantNodes.pop();
+      if (!node) {
+        continue;
+      }
+      switch (node.kind) {
+        case 'group':
+          pendingTextVariantNodes.push(...node.children);
+          break;
+        case 'clipRect':
+          pendingTextVariantNodes.push(node.child);
+          break;
+        case 'leaf': {
+          const ops = layerTextVariantOpsForLeaf(node.ops, tree.variantOps);
+          const selection = selectLayerTextVariantSetsWithReport(
+            ops,
+            (op) => this.glyphRunVariantReplayStatus(op),
+            (op) => this.glyphOutlineVariantReplayStatus(op),
+            {
+              backend: 'canvaskit',
+              renderProfile: this.currentProfile,
+            },
+          );
+          this.textVariantSelectionDiagnostics.push(...selection.reports);
+          break;
+        }
+      }
+    }
 
     const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
 
     let renderError: unknown = null;
     try {
-      this.collectTextVariantSelectionDiagnostics = true;
-      try {
-        this.renderSurface(surface, tree, scale, pageInfo);
-      } finally {
-        this.collectTextVariantSelectionDiagnostics = false;
-      }
+      this.renderSurface(surface, tree, scale, pageInfo);
     } catch (error) {
-      this.collectTextVariantSelectionDiagnostics = false;
       renderError = error;
     }
 
@@ -315,13 +337,7 @@ export class CanvasKitLayerRenderer {
       throw renderError;
     }
 
-    this.textVariantSelectionDiagnostics.length = 0;
-    this.collectTextVariantSelectionDiagnostics = true;
-    try {
-      this.renderSurface(fallbackSurface, tree, scale, pageInfo);
-    } finally {
-      this.collectTextVariantSelectionDiagnostics = false;
-    }
+    this.renderSurface(fallbackSurface, tree, scale, pageInfo);
   }
 
   drawMarginGuides(pageInfo: PageInfo, targetCanvas: HTMLCanvasElement, scale: number): void {
@@ -646,24 +662,11 @@ export class CanvasKitLayerRenderer {
   }
 
   private selectLayerTextVariantSets(ops: readonly LayerPaintOp[]): ReturnType<typeof selectLayerTextVariantSets> {
-    if (!this.collectTextVariantSelectionDiagnostics) {
-      return selectLayerTextVariantSets(
-        ops,
-        (op) => this.canReplayGlyphRun(op),
-        (op) => this.glyphOutlineVariantReplayStatus(op).replayable,
-      );
-    }
-    const result = selectLayerTextVariantSetsWithReport(
+    return selectLayerTextVariantSets(
       ops,
-      (op) => this.glyphRunVariantReplayStatus(op),
-      (op) => this.glyphOutlineVariantReplayStatus(op),
-      {
-        backend: 'canvaskit',
-        renderProfile: this.currentProfile,
-      },
+      (op) => this.canReplayGlyphRun(op),
+      (op) => this.glyphOutlineVariantReplayStatus(op).replayable,
     );
-    this.textVariantSelectionDiagnostics.push(...result.reports);
-    return result.selected;
   }
 
   private glyphRunVariantReplayStatus(op: LayerGlyphRunOp): LayerTextVariantReplayStatus {

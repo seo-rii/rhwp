@@ -1099,6 +1099,15 @@ Checked-in page 5 of the repeated header-image document and page 4 of the
 multi-section document exercise this path. The checked-in HWP and HWPX
 diagonal-cell pair now also runs through Canvas2D and both CanvasKit modes, so
 the concrete test-infrastructure gaps identified for this phase are closed.
+The real `aift.hwp` corpus now pins the positioned-text path separately:
+page 0 contains six explicit `textDecoration` ops, page 1 contains one
+`charOverlap` op, and page 3 contains 24 `tabLeader` ops. Rust integration
+tests assert those lowering counts and compare all three pages through native
+Skia and layered SVG; the browser baseline compares the same pages through
+Canvas2D and CanvasKit without a hidden overlay. CanvasKit collects text
+variant diagnostics in a cache-independent pre-replay tree walk, so static
+picture cache hits and the three replay planes cannot omit or duplicate the
+runtime selection report compared with the Rust replay plan.
 Each later implementation commit should start from a concrete fixture, corpus
 document, backend proof, or malformed payload that the current branch does not
 already cover.

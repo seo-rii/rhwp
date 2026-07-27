@@ -1594,14 +1594,24 @@ assert.equal(
   true,
   'CanvasKit GPU render failures must fall back to a CanvasKit software surface, not a Canvas2D overlay',
 );
+const canvaskitRenderPageInternalBlock = extractMethodBody(canvaskitSource, 'renderPageInternal');
 assertTokensInOrder(
-  extractMethodBody(canvaskitSource, 'renderPageInternal'),
+  canvaskitRenderPageInternalBlock,
   [
-    'const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas)',
     'this.textVariantSelectionDiagnostics.length = 0',
+    'const pendingTextVariantNodes: LayerNode[] = [tree.root]',
+    'selectLayerTextVariantSetsWithReport(',
+    'this.textVariantSelectionDiagnostics.push(...selection.reports)',
+    'this.renderSurface(surface, tree, scale, pageInfo)',
+    'const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas)',
     'this.renderSurface(fallbackSurface, tree, scale, pageInfo)',
   ],
-  'CanvasKit software fallback rerender must replace failed-attempt text variant diagnostics',
+  'CanvasKit variant diagnostics must be collected before cached/GPU replay and remain valid for software fallback',
+);
+assert.equal(
+  canvaskitRenderPageInternalBlock.match(/this\.textVariantSelectionDiagnostics\.length = 0/g)?.length,
+  1,
+  'CanvasKit variant diagnostics must be reset once per page, not once per replay attempt',
 );
 const canvaskitSurfaceCacheSource = fs.readFileSync(path.join(canvaskitDirectory, 'surface-cache.ts'), 'utf8');
 assert.equal(

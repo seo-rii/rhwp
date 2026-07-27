@@ -547,6 +547,49 @@ runTest('Renderer lifecycle', async ({ page }) => {
         opacity: 1,
       },
     });
+    const staticTextOp = (pageIdx) => ({
+      type: 'textRun',
+      bbox: { x: 4, y: 28, width: 34, height: 18 },
+      variant: {
+        equivalenceGroup: `cache-text-${pageIdx}`,
+        variantId: 'textRun',
+        variantKind: 'textRun',
+        partIndex: 0,
+        partCount: 1,
+        isDefaultFallback: true,
+      },
+      text: 'A',
+      baseline: 14,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      isParaEnd: false,
+      isLineBreakEnd: false,
+      style: {
+        fontFamily: 'Noto Sans KR',
+        fontSize: 12,
+        color: '#000000',
+        bold: false,
+        italic: false,
+        ratio: 1,
+        underline: 'none',
+        underlineShape: 0,
+        strikethrough: false,
+        strikeShape: 0,
+        outlineType: 0,
+        shadowType: 0,
+        shadowColor: '#000000',
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        emboss: false,
+        engrave: false,
+        emphasisDot: 0,
+        shadeColor: '#ffffff',
+      },
+      positions: [0, 9],
+      controlMarks: [],
+      tabLeaders: [],
+    });
     pageRenderer.wasm.getPageLayerTree = (pageIdx, profile = 'screen') => ({
       pageWidth: 100,
       pageHeight: 100,
@@ -570,7 +613,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               sourceNodeId: 3000 + pageIdx,
               bounds: { x: 0, y: 0, width: 50, height: 50 },
               cacheHint: 'none',
-              ops: [staticPathOp(4, 4, '#000000')],
+              ops: [staticPathOp(4, 4, '#000000'), staticTextOp(pageIdx)],
             }],
           },
           {
@@ -611,13 +654,29 @@ runTest('Renderer lifecycle', async ({ page }) => {
       pageRenderer.renderPage(0, { ...pageInfo, pageIndex: 0 }, canvas, 1);
       pageRenderer.cancelReRender(0);
       const afterFirstPage = renderer.staticPictureCache?.size ?? -1;
+      const firstVariantGroups = renderer.getTextVariantSelectionDiagnostics()
+        .map((report) => report.equivalenceGroup);
+      pageRenderer.renderPage(0, { ...pageInfo, pageIndex: 0 }, canvas, 1);
+      pageRenderer.cancelReRender(0);
+      const cachedVariantGroups = renderer.getTextVariantSelectionDiagnostics()
+        .map((report) => report.equivalenceGroup);
       pageRenderer.renderPage(1, { ...pageInfo, pageIndex: 1 }, canvas, 1);
       pageRenderer.cancelReRender(1);
       const afterSecondPage = renderer.staticPictureCache?.size ?? -1;
+      const secondVariantGroups = renderer.getTextVariantSelectionDiagnostics()
+        .map((report) => report.equivalenceGroup);
       const cacheKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
       pageRenderer.clearLayerTreeCache();
       const afterClear = renderer.staticPictureCache?.size ?? -1;
-      return { afterFirstPage, afterSecondPage, afterClear, cacheKeys };
+      return {
+        afterFirstPage,
+        afterSecondPage,
+        afterClear,
+        cacheKeys,
+        firstVariantGroups,
+        cachedVariantGroups,
+        secondVariantGroups,
+      };
     } finally {
       pageRenderer.cancelAll?.();
       pageRenderer.clearLayerTreeCache?.();
@@ -633,6 +692,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     staticPictureProbe.afterSecondPage > staticPictureProbe.afterFirstPage,
     `static picture cache keeps multiple pages=${JSON.stringify(staticPictureProbe)}`,
+  );
+  assert(
+    JSON.stringify(staticPictureProbe.firstVariantGroups) === JSON.stringify(['cache-text-0'])
+      && JSON.stringify(staticPictureProbe.cachedVariantGroups) === JSON.stringify(['cache-text-0'])
+      && JSON.stringify(staticPictureProbe.secondVariantGroups) === JSON.stringify(['cache-text-1']),
+    `text variant diagnostics survive static picture cache hits=${JSON.stringify(staticPictureProbe)}`,
   );
   assert(staticPictureProbe.afterClear === 0, `static picture cache released with layer tree cache=${staticPictureProbe.afterClear}`);
 

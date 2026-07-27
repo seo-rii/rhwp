@@ -1284,7 +1284,35 @@
       "file": "aift.hwp",
       "category": "mixed-document",
       "page": 0,
-      "notes": "AIFT sample for mixed document CanvasKit parity coverage.",
+      "notes": "AIFT sample page with six explicit text-decoration PaintOps.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "aift-char-overlap",
+      "file": "aift.hwp",
+      "category": "positioned-text",
+      "page": 1,
+      "notes": "Real HWP character-overlap page with one explicit charOverlap PaintOp.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.002,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.045
+      }
+    },
+    {
+      "id": "aift-tab-leaders",
+      "file": "aift.hwp",
+      "category": "positioned-text",
+      "page": 3,
+      "notes": "Real HWP tab-leader page with 24 explicit tabLeader PaintOps.",
       "browserParityThresholds": {
         "maxDiffRatio": null,
         "inkMaskNeighborhoodRadius": 3,

@@ -43,6 +43,55 @@ mod tests {
         crate::document_core::DocumentCore::from_bytes(&data).ok()
     }
 
+    #[test]
+    fn test_real_hwp_externalizes_positioned_text_visuals() {
+        use crate::paint::{LayerNodeKind, PaintOp};
+
+        let Some(core) = load_document("samples/aift.hwp") else {
+            return;
+        };
+        let cases = [
+            (0, "textDecoration", 6usize),
+            (1, "charOverlap", 1usize),
+            (3, "tabLeader", 24usize),
+        ];
+
+        for (page_num, op_type, expected_count) in cases {
+            let tree = core
+                .build_page_layer_tree_for_output(page_num, RenderProfile::Screen)
+                .unwrap_or_else(|err| panic!("aift.hwp page {page_num} layer build failed: {err}"));
+            let mut count = 0usize;
+            let mut stack = vec![&tree.root];
+
+            while let Some(node) = stack.pop() {
+                match &node.kind {
+                    LayerNodeKind::Group { children, .. } => {
+                        stack.extend(children.iter());
+                    }
+                    LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+                    LayerNodeKind::Leaf { ops, .. } => {
+                        count += ops
+                            .iter()
+                            .filter(|op| match op_type {
+                                "charOverlap" => matches!(op, PaintOp::CharOverlap { .. }),
+                                "tabLeader" => matches!(op, PaintOp::TabLeader { .. }),
+                                "textDecoration" => {
+                                    matches!(op, PaintOp::TextDecoration { .. })
+                                }
+                                _ => unreachable!("unsupported positioned text op"),
+                            })
+                            .count();
+                    }
+                }
+            }
+
+            assert_eq!(
+                count, expected_count,
+                "aift.hwp page {page_num} must preserve explicit {op_type} PaintOps",
+            );
+        }
+    }
+
     fn rasterize_svg(svg: &str) -> Option<tiny_skia::Pixmap> {
         let svg = normalize_svg_embedded_bitmaps(svg);
         let mut options = usvg::Options::default();
@@ -1485,6 +1534,13 @@ mod tests {
     #[test]
     fn test_skia_screenshot_matches_layer_svg_for_hwpspec_sample() {
         assert_skia_png_matches_layer_svg("samples/hwpspec.hwp", 0);
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
+    #[test]
+    fn test_skia_screenshot_matches_layer_svg_for_real_positioned_text_visuals() {
+        let samples = vec![("samples/aift.hwp".to_string(), vec![0, 1, 3])];
+        assert_skia_png_matches_layer_svg_for_corpus("positioned-text", &samples);
     }
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-skia"))]
