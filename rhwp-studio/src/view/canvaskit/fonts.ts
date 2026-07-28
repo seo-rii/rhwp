@@ -13,7 +13,7 @@ import type {
   LayerResources,
   LayerGlyphRunOp,
 } from '@/core/types';
-import { decodeBase64 } from '../image-effect-pixels';
+import { decodeBase64 } from '@/core/base64';
 
 const FONT_SANS_REGULAR_URL = new URL('../../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
 const FONT_SANS_BOLD_URL = new URL('../../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;

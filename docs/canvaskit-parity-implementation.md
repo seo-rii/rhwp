@@ -42,7 +42,8 @@ the broad Canvas2D utility module:
 
 | Shared concern | Native-ready module | CanvasKit use |
 | --- | --- | --- |
-| image effect pixels, crop preprocessing, base64 decode | `rhwp-studio/src/view/image-effect-pixels.ts` | resource cache, font blob registration, cropped effect replay |
+| image effect pixels and crop preprocessing | `rhwp-studio/src/view/image-effect-pixels.ts` | resource cache and cropped effect replay |
+| base64 payload decode | `rhwp-studio/src/core/base64.ts` | image resources and portable font-blob registration |
 | HWP text replay helpers and PUA projection helpers | `rhwp-studio/src/view/text-replay-utils.ts` | root `TextRun`, special text ops, control marks, overlap text |
 | fallback family chains and face-weight hints | `rhwp-studio/src/core/font-family-fallback.ts` | Canvas2D CSS font shorthand and CanvasKit family/style matching |
 | geometry helpers and conservative bounds | `rhwp-studio/src/view/layer-geometry-utils.ts` | paths, arrows, transformed bounds |
@@ -320,12 +321,15 @@ pictures even when producer metadata is unchanged.
 Ordinary document edits invalidate exported page trees and their static
 pictures, but retain the document-scoped resource table until a new document
 is loaded or the view is disposed. Content-addressed resource interning then
-keeps unchanged image ids and decoded CanvasKit images warm across edit
-refreshes, while changed bytes receive a distinct resource id and static
-picture key. A true document reset immediately cancels pending image work,
-releases decoded/effect/mipmap images and verified embedded-font instances,
-and detaches the previous tree even when the replacement document has no
-renderable page.
+keeps unchanged image, static SVG, and portable font-blob ids stable across
+edit refreshes. Decoded CanvasKit images and verified portable font inputs can
+therefore remain warm, while changed bytes receive a distinct document resource
+id even if a malformed producer reuses a key. Studio rewrites page-local
+portable-font `dataRef` values to those document resource ids before replacing
+the page resource table. A true document reset immediately cancels pending
+image work, releases decoded/effect/mipmap images and verified embedded-font
+instances, and detaches the previous tree even when the replacement document
+has no renderable page.
 CanvasKit fallback-font initialization deduplicates bundled Noto/D2/math URLs
 and prefetches the remaining unique catalog files in parallel; registration
 order and family/style matching remain deterministic.

@@ -215,9 +215,13 @@ explicit gates for exact font instantiation before selecting a `GlyphRun`:
   registers it at `renderPage` setup time after the resource digest metadata
   matches the font resource digest. A `dataRef.id` may be the exported stable
   `fontBlobKeys` value or the compatibility numeric array index; digest lookup
-  is the final identity-preserving bridge for older producers. Typeface/font
-  caches are keyed by face id, blob id, digest, and face index so tree-local ids
-  cannot accidentally reuse a stale typeface from another export.
+  is the final identity-preserving bridge for older producers. Studio interns
+  page-local font payloads into its document-scoped resource table and rewrites
+  resolved `fontBlob` references to the document numeric id before CanvasKit
+  registration. Equal key-and-byte payloads reuse an id; changed bytes never
+  reuse the old payload merely because the producer key is unchanged. Typeface/
+  font caches are keyed by face id, blob id, digest, and face index so tree-local
+  ids cannot accidentally reuse a stale typeface from another export.
 - The current CanvasKit adapter rejects TTC/OTC faces with `faceIndex != 0`
   because the public browser binding used here does not expose an explicit face
   selection parameter for glyph replay. It also rejects variation instances

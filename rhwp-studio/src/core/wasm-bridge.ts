@@ -4,7 +4,8 @@ import type { DocumentInfo, PageInfo, PageDef, SectionDef, CursorRect, HitTestRe
 import { parseCanvasKitDocumentPreflight } from './canvaskit-document-preflight';
 import { resolveFont, fontFamilyWithFallback } from './font-substitution';
 import { REGISTERED_FONTS } from './font-loader';
-import { LayerResourceStore } from './layer-resource-store';
+import { decodeBase64 } from './base64';
+import { LayerResourceStore, resolveLayerResourceIndex } from './layer-resource-store';
 import type { FileSystemFileHandleLike } from '@/command/file-system-access';
 
 /** HWPX 비표준 감지 경고 리포트 (#177). */
@@ -543,12 +544,16 @@ export class WasmBridge {
 
     const imageIdMap = new Map<number, number>();
     const svgIdMap = new Map<number, number>();
+    const fontBlobIdMap = new Map<number, number>();
     const imageResources = pageResources.images ?? [];
     const imageHashes = pageResources.imageHashes ?? [];
     const imageKeys = pageResources.imageKeys ?? [];
     const svgFragments = pageResources.svgFragments ?? [];
     const svgHashes = pageResources.svgHashes ?? [];
     const svgKeys = pageResources.svgKeys ?? [];
+    const fontBlobs = pageResources.fontBlobs ?? [];
+    const fontBlobHashes = pageResources.fontBlobHashes ?? [];
+    const fontBlobKeys = pageResources.fontBlobKeys ?? [];
 
     const mapImageResourceId = (resourceId: number | undefined): number | undefined => {
       if (typeof resourceId !== 'number') return resourceId;
@@ -581,6 +586,75 @@ export class WasmBridge {
       svgIdMap.set(resourceId, docResourceId);
       return docResourceId;
     };
+
+    for (const blob of tree.fontResources?.blobs ?? []) {
+      const dataRef = blob.dataRef;
+      if (dataRef?.kind !== 'fontBlob') {
+        continue;
+      }
+
+      const numericRef = /^(0|[1-9]\d*)$/.test(dataRef.id)
+        ? Number.parseInt(dataRef.id, 10)
+        : undefined;
+      let pageResourceId = numericRef !== undefined
+        && numericRef < fontBlobs.length
+        ? numericRef
+        : resolveLayerResourceIndex(dataRef.id, fontBlobKeys, fontBlobs.length);
+      if (pageResourceId === undefined && blob.digest?.value) {
+        pageResourceId = resolveLayerResourceIndex(
+          blob.digest.value,
+          fontBlobHashes,
+          fontBlobs.length,
+        );
+      }
+      if (pageResourceId === undefined) {
+        const knownResourceId = this.layerResourceStore.findFontBlobByKey(dataRef.id);
+        if (knownResourceId !== undefined) {
+          dataRef.id = String(knownResourceId);
+        }
+        continue;
+      }
+
+      const mapped = fontBlobIdMap.get(pageResourceId);
+      if (mapped !== undefined) {
+        dataRef.id = String(mapped);
+        continue;
+      }
+
+      const payload = fontBlobs[pageResourceId];
+      let bytes: Uint8Array | undefined;
+      if (payload instanceof Uint8Array) {
+        bytes = payload;
+      } else if (Array.isArray(payload)) {
+        bytes = new Uint8Array(payload);
+      } else if (typeof payload === 'string') {
+        const separator = payload.indexOf(',');
+        const encoded = separator >= 0 ? payload.slice(separator + 1) : payload;
+        try {
+          bytes = decodeBase64(encoded);
+        } catch {
+          bytes = undefined;
+        }
+      }
+      if (!bytes || bytes.byteLength === 0) {
+        const knownPageResourceId = this.layerResourceStore.findFontBlobByKey(
+          fontBlobKeys[pageResourceId],
+        );
+        if (knownPageResourceId !== undefined) {
+          fontBlobIdMap.set(pageResourceId, knownPageResourceId);
+          dataRef.id = String(knownPageResourceId);
+        }
+        continue;
+      }
+
+      const docResourceId = this.layerResourceStore.internFontBlob(
+        bytes,
+        fontBlobHashes[pageResourceId] ?? blob.digest?.value,
+        fontBlobKeys[pageResourceId],
+      );
+      fontBlobIdMap.set(pageResourceId, docResourceId);
+      dataRef.id = String(docResourceId);
+    }
 
     const rewriteGlyphOutlineResources = (op: LayerPaintOp): void => {
       if (op.type !== 'glyphOutline') return;

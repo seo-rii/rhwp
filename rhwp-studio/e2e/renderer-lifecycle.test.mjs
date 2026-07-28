@@ -1757,6 +1757,101 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
   setTestCase('layer-resource-cache-edit-preservation');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=auto');
+  setTestCase('layer-resource-font-blob-normalization');
+  const fontBlobNormalizationProbe = await page.evaluate(() => {
+    const wasm = window.__wasm;
+    if (!wasm?.normalizeLayerResources || !wasm?.clearLayerResourceCache) {
+      return { error: 'WasmBridge resource normalizer unavailable' };
+    }
+
+    const makeTree = (payload, digest) => ({
+      pageWidth: 100,
+      pageHeight: 100,
+      profile: 'screen',
+      resources: {
+        tableId: 900,
+        images: [],
+        svgFragments: [],
+        fontBlobs: [payload],
+        fontBlobHashes: [digest],
+        fontBlobKeys: ['font:fixture'],
+      },
+      fontResources: {
+        blobs: [{
+          id: `blob-${digest}`,
+          source: 'embedded',
+          portability: 'portableBlob',
+          digest: { algorithm: 'blake3', value: digest },
+          dataRef: { kind: 'fontBlob', id: 'font:fixture' },
+        }],
+        faces: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 0,
+        bounds: { x: 0, y: 0, width: 100, height: 100 },
+        cacheHint: 'none',
+        ops: [],
+      },
+    });
+
+    wasm.clearLayerResourceCache();
+    const first = wasm.normalizeLayerResources(
+      makeTree('data:font/ttf;base64,AQIDBA==', 'digest-a'),
+    );
+    const second = wasm.normalizeLayerResources(
+      makeTree([1, 2, 3, 4], 'digest-a'),
+    );
+    const omitted = wasm.normalizeLayerResources(
+      makeTree(undefined, 'digest-a'),
+    );
+    const replacement = wasm.normalizeLayerResources(
+      makeTree([4, 3, 2, 1], 'digest-b'),
+    );
+    const stats = wasm.getLayerResourceStats();
+
+    return {
+      firstRef: first.fontResources?.blobs?.[0]?.dataRef?.id,
+      secondRef: second.fontResources?.blobs?.[0]?.dataRef?.id,
+      omittedRef: omitted.fontResources?.blobs?.[0]?.dataRef?.id,
+      replacementRef: replacement.fontResources?.blobs?.[0]?.dataRef?.id,
+      firstBytes: Array.from(first.resources?.fontBlobs?.[0] ?? []),
+      replacementBytes: Array.from(replacement.resources?.fontBlobs?.[1] ?? []),
+      sameResourceTable: first.resources === second.resources
+        && second.resources === omitted.resources
+        && omitted.resources === replacement.resources,
+      fontBlobKeys: replacement.resources?.fontBlobKeys ?? [],
+      stats,
+    };
+  });
+  assert(
+    !fontBlobNormalizationProbe.error,
+    fontBlobNormalizationProbe.error || 'font blob normalization probe available',
+  );
+  assert(
+    fontBlobNormalizationProbe.firstRef === '0'
+      && fontBlobNormalizationProbe.secondRef === '0'
+      && fontBlobNormalizationProbe.omittedRef === '0'
+      && fontBlobNormalizationProbe.replacementRef === '1',
+    `font blob refs normalize to document resource ids=${JSON.stringify(fontBlobNormalizationProbe)}`,
+  );
+  assert(
+    JSON.stringify(fontBlobNormalizationProbe.firstBytes) === '[1,2,3,4]'
+      && JSON.stringify(fontBlobNormalizationProbe.replacementBytes) === '[4,3,2,1]',
+    `font blob payloads survive normalization=${JSON.stringify(fontBlobNormalizationProbe)}`,
+  );
+  assert(
+    fontBlobNormalizationProbe.sameResourceTable
+      && fontBlobNormalizationProbe.stats?.fontBlobCount === 2
+      && fontBlobNormalizationProbe.stats?.fontBlobPayloadsOmitted === 1,
+    `font blobs share the document table and omit known payloads=${JSON.stringify(fontBlobNormalizationProbe)}`,
+  );
+  assert(
+    fontBlobNormalizationProbe.fontBlobKeys.length === 2
+      && fontBlobNormalizationProbe.fontBlobKeys.every((key) => key === 'font:fixture'),
+    `font blob key collisions keep distinct payload ids=${JSON.stringify(fontBlobNormalizationProbe)}`,
+  );
+
   await loadHwpFile(page, '20250130-hongbo_saved.hwp');
   const resourcePreservationProbe = await page.evaluate(() => {
     const canvasView = window.__canvasView;
@@ -1843,7 +1938,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       mipmappedImageCacheSize: renderer.mipmappedImageCache?.size ?? -1,
       imageEffectCacheSize: renderer.resourceCache?.imageEffectCache?.size ?? -1,
       verifiedFontBlobCount: renderer.fontRegistry.verifiedFontBlobs?.size ?? -1,
-      resourceTableId: renderer.resourceCache?.resourceTableId ?? 'unavailable',
+      resourceTableId: renderer.resourceCache
+        ? renderer.resourceCache.resourceTableId
+        : 'unavailable',
       lastRenderedTree: renderer.lastRenderedTree ?? null,
       lastTargetCanvas: renderer.lastTargetCanvas ?? null,
     };

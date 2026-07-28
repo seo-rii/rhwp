@@ -26,6 +26,7 @@ export class LayerResourceStore {
   private tableId = 0;
   private imageLookup = new Map<string, number[]>();
   private svgLookup = new Map<string, number[]>();
+  private fontBlobLookup = new Map<string, number[]>();
   private cachedKnownImageKeys: string[] | null = null;
   private cachedKnownSvgKeys: string[] | null = null;
   private importedImagePayloads = 0;
@@ -34,6 +35,9 @@ export class LayerResourceStore {
   private importedSvgPayloads = 0;
   private importedSvgPayloadBytes = 0;
   private omittedSvgPayloads = 0;
+  private importedFontBlobPayloads = 0;
+  private importedFontBlobPayloadBytes = 0;
+  private omittedFontBlobPayloads = 0;
 
   constructor() {
     this.resources = this.createResources();
@@ -44,6 +48,7 @@ export class LayerResourceStore {
     this.resources = this.createResources();
     this.imageLookup.clear();
     this.svgLookup.clear();
+    this.fontBlobLookup.clear();
     this.cachedKnownImageKeys = null;
     this.cachedKnownSvgKeys = null;
     this.importedImagePayloads = 0;
@@ -52,6 +57,9 @@ export class LayerResourceStore {
     this.importedSvgPayloads = 0;
     this.importedSvgPayloadBytes = 0;
     this.omittedSvgPayloads = 0;
+    this.importedFontBlobPayloads = 0;
+    this.importedFontBlobPayloadBytes = 0;
+    this.omittedFontBlobPayloads = 0;
   }
 
   internImage(bytes: Uint8Array, contentHash?: string, resourceKey?: string): number {
@@ -113,6 +121,34 @@ export class LayerResourceStore {
     return id;
   }
 
+  internFontBlob(bytes: Uint8Array, contentHash?: string, resourceKey?: string): number {
+    this.importedFontBlobPayloads += 1;
+    this.importedFontBlobPayloadBytes += bytes.byteLength;
+    const resourceHash = contentHash ?? this.hashBytes(bytes);
+    const key = resourceKey
+      ?? this.makeResourceKey('font', contentHash ? 'blake3' : 'fnv1a32', bytes.byteLength, resourceHash);
+    const candidates = this.fontBlobLookup.get(key);
+    if (candidates) {
+      for (const candidate of candidates) {
+        const candidateBytes = this.resources.fontBlobs?.[candidate];
+        if (candidateBytes instanceof Uint8Array && this.bytesEqual(candidateBytes, bytes)) {
+          return candidate;
+        }
+      }
+    }
+
+    const id = this.resources.fontBlobs?.length ?? 0;
+    this.resources.fontBlobs?.push(bytes);
+    this.resources.fontBlobHashes?.push(resourceHash);
+    this.resources.fontBlobKeys?.push(key);
+    if (candidates) {
+      candidates.push(id);
+    } else {
+      this.fontBlobLookup.set(key, [id]);
+    }
+    return id;
+  }
+
   findImageByKey(resourceKey: string | undefined): number | undefined {
     if (!resourceKey) return undefined;
     const candidates = this.imageLookup.get(resourceKey);
@@ -126,6 +162,14 @@ export class LayerResourceStore {
     const candidates = this.svgLookup.get(resourceKey);
     if (!candidates || candidates.length !== 1) return undefined;
     this.omittedSvgPayloads += 1;
+    return candidates[0];
+  }
+
+  findFontBlobByKey(resourceKey: string | undefined): number | undefined {
+    if (!resourceKey) return undefined;
+    const candidates = this.fontBlobLookup.get(resourceKey);
+    if (!candidates || candidates.length !== 1) return undefined;
+    this.omittedFontBlobPayloads += 1;
     return candidates[0];
   }
 
@@ -150,6 +194,10 @@ export class LayerResourceStore {
       svgPayloadsImported: this.importedSvgPayloads,
       svgPayloadBytesImported: this.importedSvgPayloadBytes,
       svgPayloadsOmitted: this.omittedSvgPayloads,
+      fontBlobCount: this.resources.fontBlobs?.length ?? 0,
+      fontBlobPayloadsImported: this.importedFontBlobPayloads,
+      fontBlobPayloadBytesImported: this.importedFontBlobPayloadBytes,
+      fontBlobPayloadsOmitted: this.omittedFontBlobPayloads,
       knownImageKeyCount: this.knownImageKeys().length,
       knownSvgKeyCount: this.knownSvgKeys().length,
     };
@@ -164,6 +212,9 @@ export class LayerResourceStore {
       svgFragments: [],
       svgHashes: [],
       svgKeys: [],
+      fontBlobs: [],
+      fontBlobHashes: [],
+      fontBlobKeys: [],
     };
   }
 
@@ -177,7 +228,7 @@ export class LayerResourceStore {
   }
 
   private makeResourceKey(
-    kind: 'img' | 'svg',
+    kind: 'img' | 'svg' | 'font',
     algorithm: 'blake3' | 'fnv1a32',
     byteLength: number,
     hash: string,

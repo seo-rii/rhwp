@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+import { decodeBase64 } from '../src/core/base64.ts';
 import {
   applyLayerImageEffectPixels,
   canPreprocessCroppedLayerImageEffect,
-  decodeBase64,
   resolveLayerImageCropSource,
 } from '../src/view/image-effect-pixels.ts';
 

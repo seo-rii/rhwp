@@ -1,9 +1,9 @@
 import type { CanvasKit, Image as CanvasKitImage } from 'canvaskit-wasm';
 
+import { decodeBase64 } from '@/core/base64';
 import type { LayerImageOp, LayerPatternFill, PageLayerTree } from '@/core/types';
 import {
   applyLayerImageEffectPixels,
-  decodeBase64,
   resetLayerImageEffectDiagnostics,
   type LayerImageEffectDiagnostics,
   type LayerImageEffectSourceRect,

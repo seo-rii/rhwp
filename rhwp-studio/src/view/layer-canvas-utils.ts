@@ -6,12 +6,12 @@ import type {
   LayerPatternFill,
   LayerTextRunOp,
 } from '@/core/types';
+import { decodeBase64 } from '@/core/base64';
 import { buildCanvasTextFont } from '@/core/font-substitution';
 import { parseSupportedCssColor } from './canvaskit/css-color';
 import {
   applyLayerImageEffectPixels,
   canPreprocessCroppedLayerImageEffect,
-  decodeBase64,
   resolveLayerImageCropSource,
   type LayerImageEffectDiagnostics,
   type LayerImageEffectSourceRect,
@@ -23,9 +23,11 @@ import {
 } from './text-replay-utils';
 
 export {
+  decodeBase64,
+} from '@/core/base64';
+export {
   applyLayerImageEffectPixels,
   canPreprocessCroppedLayerImageEffect,
-  decodeBase64,
   resolveLayerImageCropSource,
   resetLayerImageEffectDiagnostics,
 } from './image-effect-pixels';
