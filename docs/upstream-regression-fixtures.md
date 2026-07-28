@@ -18,6 +18,13 @@ to keep selected tests available while preserving the layered renderer work.
 - `tests/issue_658_text_selection_rects.rs`: selection rectangles must choose
   the correct leading/trailing TextRun when a line boundary offset appears in
   adjacent runs.
+- `tests/issue_3460_svg_picture.rs` with
+  `samples/issue3460/svg_picture_repro.hwpx`: body and repeated-header SVG
+  pictures must preserve `image/svg+xml`, exact nonnumeric HWPX BinData
+  references, direct CanvasKit admission, and native Skia raster replay.
+  The sample and behavioral intent came from upstream `e1cc64bbf`; this branch
+  uses its stricter source-aware BinData resolver and shared bounded SVG image
+  admission instead of copying the superseded parser implementation.
 
 ## Ported Renderer Behaviors
 

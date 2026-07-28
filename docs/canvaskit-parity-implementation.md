@@ -526,6 +526,22 @@ RawSvg fragments that are exactly one embedded `data:` image are lowered to the
 same `Image` paint op and resource table path as ordinary pictures. This keeps
 OLE/chart preview images on the shared Canvas2D/CanvasKit/native image replay
 path instead of depending on an SVG or DOM image overlay.
+Ordinary HWP/HWPX image resources may now also contain bounded SVG documents.
+Rust and Studio share the same admission contract: UTF-8 XML with an `svg`
+root, no doctype, a resolvable positive intrinsic size or `viewBox`, at most
+4 MiB of source bytes, at most 8192 pixels on either raster axis, and at most
+32 Mi pixels. The Studio resource cache decodes an admitted SVG asynchronously
+through a browser image source and immediately converts it with
+`MakeImageFromCanvasImageSource`; the decoded pixels are then painted only by
+CanvasKit. This narrowly scoped decode bridge is not a Canvas2D compositing
+overlay: it cannot create or acquire a canvas context, and a pending decode
+prevents static-picture caching until the callback requests a fresh direct
+replay. Decode failures are negative-cached with the ordinary image diagnostics.
+Native Skia parses the same admission header, rasterizes through `usvg`/`resvg`
+at the replay destination and output scale, and keys the SVG cache by resource,
+destination size, and scale. Raster resources retain their resource-only cache.
+The native image shader maps raster pixels to the authored logical tile size,
+so destination-sized SVG rasters do not change tile spacing or origin.
 HWPX shape-local `<gradation><color .../>` stops must be materialized by the
 section parser before this replay layer sees the shape fill; otherwise all
 backends receive an empty gradient color list and can only fall back or paint a
@@ -1016,7 +1032,14 @@ Definition of done:
 The current `skia` branch has closed the v2 envelope, the CanvasKit parity
 baseline, COLRv1 stage 1 through stage 5 graph subsets, strict
 `BitmapGlyph`/`SvgGlyph` resource corpus coverage, and font-construction proof
-controls. The upstream/devel items audited for CanvasKit parity are already
+controls. Generic embedded SVG pictures are also a closed direct-replay image
+format rather than a strict `SvgGlyph` special case. The issue #3460 HWPX
+fixture covers a body SVG plus a repeated header SVG referenced by a
+nonnumeric manifest id. Its focused screen-profile browser sweep captured
+Canvas2D, CanvasKit compat, and CanvasKit default for both pages with four
+comparisons passed, no direct-required or unsupported items, no runtime image
+failures, and no hidden-overlay violations. The upstream/devel items audited
+for CanvasKit parity are already
 represented by current branch coverage: external-image injection uses the
 synthetic Wasm/API and CanvasKit policy tests instead of importing sample-only
 fixtures, textbox clip lowering is covered by `TextBox` clip support, TAC-only

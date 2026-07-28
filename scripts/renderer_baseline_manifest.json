@@ -1228,6 +1228,34 @@
       }
     },
     {
+      "id": "hwpx-embedded-svg-body",
+      "file": "issue3460/svg_picture_repro.hwpx",
+      "category": "image",
+      "page": 0,
+      "notes": "HWPX body picture with a bounded embedded SVG resource and exact manifest BinData reference.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.01,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.03
+      }
+    },
+    {
+      "id": "hwpx-embedded-svg-header",
+      "file": "issue3460/svg_picture_repro.hwpx",
+      "category": "header-footer",
+      "page": 1,
+      "notes": "Repeated HWPX header picture with an embedded SVG resource referenced by the nonnumeric BINHDR manifest id.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.01,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.03
+      }
+    },
+    {
       "id": "hwpx-ref-text",
       "file": "hwpx/ref/ref_text.hwpx",
       "category": "hwpx",
