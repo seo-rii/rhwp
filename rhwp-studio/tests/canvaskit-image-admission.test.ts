@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   CANVASKIT_MAX_ENCODED_IMAGE_BASE64_BYTES,
+  CANVASKIT_MAX_SVG_BYTES,
   canvasKitEncodedImageHeader,
   canvasKitEncodedImageIsReplayable,
 } from '../src/view/canvaskit/encoded-image-admission.ts';
@@ -75,6 +76,12 @@ function bmp(width: number, height: number): Uint8Array {
   return bytes;
 }
 
+function svg(attributes: string): Uint8Array {
+  return new TextEncoder().encode(
+    `<?xml version="1.0"?><!-- fixture --><svg xmlns="http://www.w3.org/2000/svg" ${attributes}><path d="M0 0h1v1z"/></svg>`,
+  );
+}
+
 test('CanvasKit encoded-image admission accepts bounded browser formats', () => {
   const fixtures = [
     [png(320, 240), { format: 'png', width: 320, height: 240 }],
@@ -82,6 +89,7 @@ test('CanvasKit encoded-image admission accepts bounded browser formats', () => 
     [gif(160, 120), { format: 'gif', width: 160, height: 120 }],
     [webp(640, 480), { format: 'webp', width: 640, height: 480 }],
     [bmp(800, -600), { format: 'bmp', width: 800, height: 600 }],
+    [svg('width="320" height="240"'), { format: 'svg', width: 320, height: 240 }],
   ] as const;
   for (const [bytes, expected] of fixtures) {
     assert.deepEqual(canvasKitEncodedImageHeader(bytes), expected);
@@ -100,4 +108,38 @@ test('CanvasKit encoded-image admission rejects malformed and oversized payloads
   const overEncodedLimit = new Uint8Array(maxRawBytes + 1);
   overEncodedLimit.set(png(1, 1));
   assert.equal(canvasKitEncodedImageIsReplayable(overEncodedLimit), false);
+});
+
+test('CanvasKit SVG admission resolves bounded intrinsic dimensions', () => {
+  assert.deepEqual(
+    canvasKitEncodedImageHeader(svg('viewBox="0 0 640 360"')),
+    { format: 'svg', width: 640, height: 360 },
+  );
+  assert.deepEqual(
+    canvasKitEncodedImageHeader(svg('width="320px" viewBox="0 0 16 9"')),
+    { format: 'svg', width: 320, height: 180 },
+  );
+  assert.deepEqual(
+    canvasKitEncodedImageHeader(svg('width="100%" height="100%"')),
+    { format: 'svg', width: 300, height: 150 },
+  );
+  assert.deepEqual(
+    canvasKitEncodedImageHeader(svg('width="1in" height="72pt"')),
+    { format: 'svg', width: 96, height: 96 },
+  );
+});
+
+test('CanvasKit SVG admission rejects unsafe, invalid, and oversized resources', () => {
+  const encode = (source: string): Uint8Array => new TextEncoder().encode(source);
+  assert.equal(canvasKitEncodedImageHeader(encode('<!DOCTYPE svg><svg/>')), null);
+  assert.equal(canvasKitEncodedImageHeader(encode('<html/>')), null);
+  assert.equal(canvasKitEncodedImageHeader(encode('<svg width="0" height="1"/>')), null);
+  assert.equal(canvasKitEncodedImageHeader(encode('<svg viewBox="0 0 -1 1"/>')), null);
+  assert.equal(canvasKitEncodedImageHeader(encode('<svg width="1em" height="1"/>')), null);
+  assert.equal(canvasKitEncodedImageIsReplayable(svg('width="8193" height="1"')), false);
+
+  const oversized = new Uint8Array(CANVASKIT_MAX_SVG_BYTES + 1);
+  oversized.fill(0x20);
+  oversized.set(encode('<svg width="1" height="1">'));
+  assert.equal(canvasKitEncodedImageIsReplayable(oversized), false);
 });

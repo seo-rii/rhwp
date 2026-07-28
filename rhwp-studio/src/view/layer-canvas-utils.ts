@@ -1348,6 +1348,9 @@ export function encodeBase64(bytes: Uint8Array): string {
 }
 
 export function inferImageMime(bytes: Uint8Array): string {
+  if (hasSvgImagePrefix(bytes)) {
+    return 'image/svg+xml';
+  }
   if (bytes.length >= 8
     && bytes[0] === 0x89
     && bytes[1] === 0x50
@@ -1383,6 +1386,40 @@ export function inferImageMime(bytes: Uint8Array): string {
     return 'image/webp';
   }
   return 'image/png';
+}
+
+function hasSvgImagePrefix(bytes: Uint8Array): boolean {
+  let prefix: string;
+  try {
+    prefix = new TextDecoder('utf-8', { fatal: true })
+      .decode(bytes.subarray(0, Math.min(bytes.byteLength, 4096)));
+  } catch {
+    return false;
+  }
+  if (prefix.charCodeAt(0) === 0xfeff) {
+    prefix = prefix.slice(1);
+  }
+  let cursor = 0;
+  while (true) {
+    while (cursor < prefix.length && /[\t\n\r ]/.test(prefix[cursor])) {
+      cursor += 1;
+    }
+    if (prefix.startsWith('<!--', cursor)) {
+      const end = prefix.indexOf('-->', cursor + 4);
+      if (end < 0) return false;
+      cursor = end + 3;
+      continue;
+    }
+    if (prefix.startsWith('<?', cursor)) {
+      const end = prefix.indexOf('?>', cursor + 2);
+      if (end < 0) return false;
+      cursor = end + 2;
+      continue;
+    }
+    break;
+  }
+  return prefix.startsWith('<svg', cursor)
+    && /[\t\n\r />]/.test(prefix[cursor + 4] ?? '');
 }
 
 export function layerCanvasImageSourceSize(image: LayerCanvasImageSource): { width: number; height: number } {

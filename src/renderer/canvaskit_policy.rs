@@ -10,7 +10,7 @@ use crate::paint::{
     LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintReplayPlane, RenderProfile,
     ResourceArena, TextVariantKind, TextVariantQuality,
 };
-use crate::renderer::image_header::canvaskit_encoded_image_header;
+use crate::renderer::image_header::{canvaskit_encoded_image_header, CANVASKIT_MAX_SVG_BYTES};
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, VariantFontVerificationReport,
     VariantOutlineEligibilityReport, VariantRejectReason, VariantReplayStatus,
@@ -2349,7 +2349,10 @@ fn canvaskit_encoded_image_is_replayable(bytes: &[u8]) -> bool {
     {
         return false;
     }
-    canvaskit_encoded_image_header(bytes).is_some_and(|header| header.is_within_decode_limits())
+    canvaskit_encoded_image_header(bytes).is_some_and(|header| {
+        (!header.is_svg() || bytes.len() <= CANVASKIT_MAX_SVG_BYTES)
+            && header.is_within_decode_limits()
+    })
 }
 
 fn image_replay_detail(
@@ -2506,13 +2509,14 @@ fn cache_hint_detail(cache_hint: CacheHint) -> &'static str {
 mod tests {
     use super::{
         analyze_canvaskit_document_preflight_with_limits, analyze_canvaskit_replay_plan,
-        canvaskit_glyph_outline_payload_status, canvaskit_glyph_run_replay_status,
-        canvaskit_static_svg_fragment_has_path_layer, estimate_canvaskit_page_lowering_work,
-        CanvasKitBoundedWorkCount, CanvasKitDocumentPreflightBlockerCode,
-        CanvasKitDocumentPreflightLimits, CanvasKitDocumentPreflightStatus,
-        CanvasKitPreflightPageBuild, CanvasKitReplayMode, CanvasKitReplayStatus,
-        CanvasKitTextVariantPartReport, CanvasKitTextVariantReport, GlyphOutlinePayloadKind,
-        VariantRejectReason, CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES,
+        canvaskit_encoded_image_is_replayable, canvaskit_glyph_outline_payload_status,
+        canvaskit_glyph_run_replay_status, canvaskit_static_svg_fragment_has_path_layer,
+        estimate_canvaskit_page_lowering_work, CanvasKitBoundedWorkCount,
+        CanvasKitDocumentPreflightBlockerCode, CanvasKitDocumentPreflightLimits,
+        CanvasKitDocumentPreflightStatus, CanvasKitPreflightPageBuild, CanvasKitReplayMode,
+        CanvasKitReplayStatus, CanvasKitTextVariantPartReport, CanvasKitTextVariantReport,
+        GlyphOutlinePayloadKind, VariantRejectReason, CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES,
+        CANVASKIT_MAX_SVG_BYTES,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::ImageFillMode;
@@ -2555,6 +2559,24 @@ mod tests {
         bytes[26..28].copy_from_slice(&1u16.to_le_bytes());
         bytes[28..30].copy_from_slice(&24u16.to_le_bytes());
         bytes
+    }
+
+    #[test]
+    fn canvaskit_image_admission_accepts_only_bounded_svg_resources() {
+        assert!(canvaskit_encoded_image_is_replayable(
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 240\"/>"
+        ));
+        assert!(!canvaskit_encoded_image_is_replayable(
+            b"<!DOCTYPE svg><svg viewBox=\"0 0 1 1\"/>"
+        ));
+        assert!(!canvaskit_encoded_image_is_replayable(
+            b"<svg width=\"8193\" height=\"1\"/>"
+        ));
+
+        let mut oversized = vec![b' '; CANVASKIT_MAX_SVG_BYTES + 1];
+        let root = b"<svg width=\"1\" height=\"1\">";
+        oversized[..root.len()].copy_from_slice(root);
+        assert!(!canvaskit_encoded_image_is_replayable(&oversized));
     }
 
     fn identity() -> LayerAffineTransform {

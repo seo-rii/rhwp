@@ -2,6 +2,7 @@ const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
 pub(crate) const CANVASKIT_MAX_IMAGE_DIMENSION: u32 = 8192;
 pub(crate) const CANVASKIT_MAX_IMAGE_PIXELS: u64 = 32 * 1024 * 1024;
+pub(crate) const CANVASKIT_MAX_SVG_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CanvasKitEncodedImageFormat {
@@ -10,6 +11,7 @@ pub(crate) enum CanvasKitEncodedImageFormat {
     Gif,
     WebP,
     Bmp,
+    Svg,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +28,10 @@ impl CanvasKitEncodedImageHeader {
             && u64::from(self.width).saturating_mul(u64::from(self.height))
                 <= CANVASKIT_MAX_IMAGE_PIXELS
     }
+
+    pub(crate) fn is_svg(self) -> bool {
+        self.format == CanvasKitEncodedImageFormat::Svg
+    }
 }
 
 pub(crate) fn canvaskit_encoded_image_header(bytes: &[u8]) -> Option<CanvasKitEncodedImageHeader> {
@@ -34,6 +40,155 @@ pub(crate) fn canvaskit_encoded_image_header(bytes: &[u8]) -> Option<CanvasKitEn
         .or_else(|| parse_webp_header(bytes))
         .or_else(|| parse_bmp_header(bytes))
         .or_else(|| parse_jpeg_header(bytes))
+        .or_else(|| parse_svg_header(bytes))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SvgIntrinsicLength {
+    Missing,
+    Relative,
+    Absolute(f64),
+}
+
+fn parse_svg_header(bytes: &[u8]) -> Option<CanvasKitEncodedImageHeader> {
+    if bytes
+        .windows(b"<!doctype".len())
+        .any(|window| window.eq_ignore_ascii_case(b"<!doctype"))
+    {
+        return None;
+    }
+    let text = std::str::from_utf8(bytes).ok()?;
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let mut reader = quick_xml::Reader::from_str(text);
+
+    loop {
+        match reader.read_event().ok()? {
+            quick_xml::events::Event::Decl(_)
+            | quick_xml::events::Event::PI(_)
+            | quick_xml::events::Event::Comment(_) => {}
+            quick_xml::events::Event::Text(text) if is_xml_whitespace(text.as_ref()) => {}
+            quick_xml::events::Event::Start(root) | quick_xml::events::Event::Empty(root) => {
+                if root.local_name().as_ref() != b"svg" {
+                    return None;
+                }
+
+                let mut width = SvgIntrinsicLength::Missing;
+                let mut height = SvgIntrinsicLength::Missing;
+                let mut view_box = None;
+                for attribute in root.attributes() {
+                    let attribute = attribute.ok()?;
+                    let value = attribute.decode_and_unescape_value(root.decoder()).ok()?;
+                    match attribute.key.as_ref() {
+                        b"width" => width = parse_svg_length(&value)?,
+                        b"height" => height = parse_svg_length(&value)?,
+                        b"viewBox" => view_box = Some(parse_svg_view_box(&value)?),
+                        _ => {}
+                    }
+                }
+
+                let (width, height) = resolve_svg_dimensions(width, height, view_box)?;
+                return Some(CanvasKitEncodedImageHeader {
+                    format: CanvasKitEncodedImageFormat::Svg,
+                    width,
+                    height,
+                });
+            }
+            quick_xml::events::Event::DocType(_)
+            | quick_xml::events::Event::CData(_)
+            | quick_xml::events::Event::End(_)
+            | quick_xml::events::Event::GeneralRef(_) => return None,
+            quick_xml::events::Event::Eof => return None,
+            _ => return None,
+        }
+    }
+}
+
+fn is_xml_whitespace(bytes: &[u8]) -> bool {
+    bytes.iter().all(u8::is_ascii_whitespace)
+}
+
+fn parse_svg_length(value: &str) -> Option<SvgIntrinsicLength> {
+    let value = value.trim();
+    let normalized = value.to_ascii_lowercase();
+    if normalized == "auto" {
+        return Some(SvgIntrinsicLength::Relative);
+    }
+    if let Some(number) = normalized.strip_suffix('%') {
+        let number = number.trim().parse::<f64>().ok()?;
+        return (number.is_finite() && number > 0.0).then_some(SvgIntrinsicLength::Relative);
+    }
+
+    let (number, scale) = [
+        ("px", 1.0),
+        ("pt", 96.0 / 72.0),
+        ("pc", 16.0),
+        ("in", 96.0),
+        ("cm", 96.0 / 2.54),
+        ("mm", 96.0 / 25.4),
+        ("q", 96.0 / 101.6),
+    ]
+    .into_iter()
+    .find_map(|(suffix, scale)| {
+        normalized
+            .strip_suffix(suffix)
+            .map(|number| (number.trim(), scale))
+    })
+    .unwrap_or((normalized.as_str(), 1.0));
+    let number = number.parse::<f64>().ok()? * scale;
+    (number.is_finite() && number > 0.0).then_some(SvgIntrinsicLength::Absolute(number))
+}
+
+fn parse_svg_view_box(value: &str) -> Option<(f64, f64)> {
+    let values = value
+        .split(|character: char| character == ',' || character.is_ascii_whitespace())
+        .filter(|value| !value.is_empty())
+        .map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if values.len() != 4 || values.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    let width = values[2];
+    let height = values[3];
+    (width > 0.0 && height > 0.0).then_some((width, height))
+}
+
+fn resolve_svg_dimensions(
+    width: SvgIntrinsicLength,
+    height: SvgIntrinsicLength,
+    view_box: Option<(f64, f64)>,
+) -> Option<(u32, u32)> {
+    let absolute_width = match width {
+        SvgIntrinsicLength::Absolute(value) => Some(value),
+        SvgIntrinsicLength::Missing | SvgIntrinsicLength::Relative => None,
+    };
+    let absolute_height = match height {
+        SvgIntrinsicLength::Absolute(value) => Some(value),
+        SvgIntrinsicLength::Missing | SvgIntrinsicLength::Relative => None,
+    };
+    let (width, height) = match (absolute_width, absolute_height, view_box) {
+        (Some(width), Some(height), _) => (width, height),
+        (Some(width), None, Some((view_width, view_height))) => {
+            (width, width * view_height / view_width)
+        }
+        (None, Some(height), Some((view_width, view_height))) => {
+            (height * view_width / view_height, height)
+        }
+        (None, None, Some(dimensions)) => dimensions,
+        (Some(width), None, None) => (width, 150.0),
+        (None, Some(height), None) => (300.0, height),
+        (None, None, None) => (300.0, 150.0),
+    };
+    let width = finite_svg_dimension(width)?;
+    let height = finite_svg_dimension(height)?;
+    Some((width, height))
+}
+
+fn finite_svg_dimension(value: f64) -> Option<u32> {
+    if !value.is_finite() || value <= 0.0 || value > f64::from(u32::MAX) {
+        return None;
+    }
+    Some(value.ceil() as u32)
 }
 
 fn parse_png_header(bytes: &[u8]) -> Option<CanvasKitEncodedImageHeader> {
@@ -331,6 +486,13 @@ mod tests {
         bytes
     }
 
+    fn svg(root_attributes: &str) -> Vec<u8> {
+        format!(
+            "<?xml version=\"1.0\"?><!-- fixture --><svg xmlns=\"http://www.w3.org/2000/svg\" {root_attributes}><path d=\"M0 0h1v1z\"/></svg>"
+        )
+        .into_bytes()
+    }
+
     #[test]
     fn parses_all_browser_admitted_encoded_image_headers() {
         let mut vp8x = [0u8; 10];
@@ -349,6 +511,11 @@ mod tests {
                 jpeg(300, 200),
                 CanvasKitEncodedImageFormat::Jpeg,
                 (300, 200),
+            ),
+            (
+                svg("width=\"320\" height=\"240\""),
+                CanvasKitEncodedImageFormat::Svg,
+                (320, 240),
             ),
         ];
 
@@ -413,5 +580,38 @@ mod tests {
 
         let over_pixels = canvaskit_encoded_image_header(&jpeg(8192, 8192)).unwrap();
         assert!(!over_pixels.is_within_decode_limits());
+    }
+
+    #[test]
+    fn resolves_svg_intrinsic_dimensions_without_browser_layout() {
+        let view_box = canvaskit_encoded_image_header(&svg("viewBox=\"0 0 640 360\"")).unwrap();
+        assert_eq!(view_box.format, CanvasKitEncodedImageFormat::Svg);
+        assert_eq!((view_box.width, view_box.height), (640, 360));
+
+        let inferred_height =
+            canvaskit_encoded_image_header(&svg("width=\"320px\" viewBox=\"0 0 16 9\"")).unwrap();
+        assert_eq!((inferred_height.width, inferred_height.height), (320, 180));
+
+        let relative =
+            canvaskit_encoded_image_header(&svg("width=\"100%\" height=\"100%\"")).unwrap();
+        assert_eq!((relative.width, relative.height), (300, 150));
+
+        let physical_units =
+            canvaskit_encoded_image_header(&svg("width=\"1in\" height=\"72pt\"")).unwrap();
+        assert_eq!((physical_units.width, physical_units.height), (96, 96));
+    }
+
+    #[test]
+    fn rejects_unsafe_or_invalid_svg_headers() {
+        assert!(canvaskit_encoded_image_header(b"<!DOCTYPE svg><svg/>").is_none());
+        assert!(canvaskit_encoded_image_header(b"<html/>").is_none());
+        assert!(canvaskit_encoded_image_header(b"<svg width=\"0\" height=\"1\"/>").is_none());
+        assert!(canvaskit_encoded_image_header(b"<svg viewBox=\"0 0 -1 1\"/>").is_none());
+        assert!(canvaskit_encoded_image_header(b"<svg width=\"1em\" height=\"1\"/>").is_none());
+        assert!(canvaskit_encoded_image_header(b"\xff<svg/>").is_none());
+
+        let oversized =
+            canvaskit_encoded_image_header(b"<svg width=\"8193\" height=\"1\"/>").unwrap();
+        assert!(!oversized.is_within_decode_limits());
     }
 }
