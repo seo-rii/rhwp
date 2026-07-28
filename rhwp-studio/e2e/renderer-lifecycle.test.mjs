@@ -1820,6 +1820,60 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `ordinary refresh reuses the decoded CanvasKit image=${JSON.stringify(resourcePreservationProbe)}`,
   );
 
+  setTestCase('layer-resource-cache-immediate-document-reset');
+  const immediateResourceResetProbe = await page.evaluate(() => {
+    const canvasView = window.__canvasView;
+    const renderer = canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!canvasView?.reset || !renderer?.fontRegistry) {
+      return { error: 'canvas view reset or CanvasKit renderer unavailable' };
+    }
+    renderer.fontRegistry.registerVerifiedFontBlob(
+      'document-reset-fixture',
+      'document-reset-digest',
+      new Uint8Array([1, 2, 3]),
+    );
+    const before = {
+      imageCacheSize: renderer.imageCache?.size ?? -1,
+      verifiedFontBlobCount: renderer.fontRegistry.verifiedFontBlobs?.size ?? -1,
+    };
+    canvasView.reset();
+    return {
+      before,
+      imageCacheSize: renderer.imageCache?.size ?? -1,
+      mipmappedImageCacheSize: renderer.mipmappedImageCache?.size ?? -1,
+      imageEffectCacheSize: renderer.resourceCache?.imageEffectCache?.size ?? -1,
+      verifiedFontBlobCount: renderer.fontRegistry.verifiedFontBlobs?.size ?? -1,
+      resourceTableId: renderer.resourceCache?.resourceTableId ?? 'unavailable',
+      lastRenderedTree: renderer.lastRenderedTree ?? null,
+      lastTargetCanvas: renderer.lastTargetCanvas ?? null,
+    };
+  });
+  assert(
+    !immediateResourceResetProbe.error,
+    immediateResourceResetProbe.error || 'immediate document resource reset probe available',
+  );
+  assert(
+    immediateResourceResetProbe.before.imageCacheSize > 0
+      && immediateResourceResetProbe.before.verifiedFontBlobCount > 0,
+    `document-scoped renderer state is populated before reset=${JSON.stringify(immediateResourceResetProbe)}`,
+  );
+  assert(
+    immediateResourceResetProbe.imageCacheSize === 0
+      && immediateResourceResetProbe.mipmappedImageCacheSize === 0
+      && immediateResourceResetProbe.imageEffectCacheSize === 0,
+    `true document reset releases CanvasKit image state immediately=${JSON.stringify(immediateResourceResetProbe)}`,
+  );
+  assert(
+    immediateResourceResetProbe.verifiedFontBlobCount === 0,
+    `true document reset releases verified document fonts=${JSON.stringify(immediateResourceResetProbe)}`,
+  );
+  assert(
+    immediateResourceResetProbe.resourceTableId === null
+      && immediateResourceResetProbe.lastRenderedTree === null
+      && immediateResourceResetProbe.lastTargetCanvas === null,
+    `true document reset detaches the previous CanvasKit document=${JSON.stringify(immediateResourceResetProbe)}`,
+  );
+
   setTestCase('layer-resource-cache-document-reset');
   await loadHwpFile(page, 'pic-crop-01.hwp');
   const resourceResetProbe = await page.evaluate(() => {

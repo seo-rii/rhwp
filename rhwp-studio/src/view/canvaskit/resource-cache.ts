@@ -110,6 +110,7 @@ export class CanvasKitResourceCache {
   private resourceTableId: number | null = null;
   private asyncResourceReadyCallback: (() => void) | null = null;
   private asyncResourceNotificationQueued = false;
+  private resourceGeneration = 0;
   private disposed = false;
 
   constructor(
@@ -132,6 +133,8 @@ export class CanvasKitResourceCache {
       this.resources = nextResources;
       return;
     }
+    this.resourceGeneration += 1;
+    this.asyncResourceNotificationQueued = false;
     this.clearResourceImageCaches();
     this.resources = nextResources;
     this.resourceTableId = nextTableId;
@@ -414,19 +417,14 @@ export class CanvasKitResourceCache {
     this.patternDiagnostics.imagesCreated = 0;
   }
 
-  dispose(): void {
-    this.disposed = true;
-    this.asyncResourceReadyCallback = null;
+  resetDocumentResources(): void {
+    this.resourceGeneration += 1;
+    this.asyncResourceNotificationQueued = false;
     this.resources = null;
     this.resourceTableId = null;
     for (const [cacheKey, pending] of this.pendingSvgImageLoads) {
       this.cancelPendingSvgImageLoad(cacheKey, pending);
     }
-
-    for (const image of this.patternImageCache.values()) {
-      image?.delete();
-    }
-    this.patternImageCache.clear();
 
     for (const image of this.mipmappedImageCache.values()) {
       image.delete();
@@ -445,6 +443,18 @@ export class CanvasKitResourceCache {
     this.failedImageCacheKeys.clear();
     this.failedImageReasons.clear();
     this.resetImageDiagnostics();
+    this.resetImageEffectDiagnostics();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.asyncResourceReadyCallback = null;
+    this.resetDocumentResources();
+
+    for (const image of this.patternImageCache.values()) {
+      image?.delete();
+    }
+    this.patternImageCache.clear();
   }
 
   private startSvgImageLoad(
@@ -539,10 +549,11 @@ export class CanvasKitResourceCache {
     if (this.asyncResourceNotificationQueued || this.disposed) {
       return;
     }
+    const generation = this.resourceGeneration;
     this.asyncResourceNotificationQueued = true;
     queueMicrotask(() => {
       this.asyncResourceNotificationQueued = false;
-      if (!this.disposed) {
+      if (!this.disposed && generation === this.resourceGeneration) {
         this.asyncResourceReadyCallback?.();
       }
     });

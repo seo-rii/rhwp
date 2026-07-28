@@ -174,6 +174,15 @@ export class Canvas2DLayerRenderer {
     this.asyncResourceReadyCallback = callback;
   }
 
+  resetDocumentResources(): void {
+    this.clearResourceImageCaches();
+    this.currentResources = null;
+    this.currentResourceTableId = null;
+    this.lastRenderedTree = null;
+    this.lastTargetCanvas = null;
+    this.rerenderScheduled = false;
+  }
+
   setStrictGlyphOutlineReplay(enabled: boolean): void {
     this.strictGlyphOutlineReplay = enabled;
   }

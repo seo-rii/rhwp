@@ -215,6 +215,36 @@ test('cancels pending SVG work and deletes decoded images across resource lifeti
   ]);
 });
 
+test('resets document image state without disposing the reusable cache', async () => {
+  const harness = makeHarness();
+  const decodedRaster = fakeCanvasKitImage();
+  harness.canvasKit.encodedResult = decodedRaster;
+  assert.equal(harness.cache.image(undefined, base64(png(10, 8))), decodedRaster);
+
+  const encodedSvg = base64(svg(18, 12));
+  assert.equal(harness.cache.image(undefined, encodedSvg), null);
+  const pendingImage = harness.browser.images[0];
+  const staleComplete = pendingImage.onload;
+
+  harness.cache.resetDocumentResources();
+
+  assert.equal(decodedRaster.deleteCalls, 1);
+  assert.equal(harness.cache.imageCache.size, 0);
+  assert.equal(harness.cache.mipmappedImageCache.size, 0);
+  assert.equal(harness.cache.imageEffectCache.size, 0);
+  assert.equal(harness.cache.failedImageCacheKeys.size, 0);
+  assert.equal(pendingImage.onload, null);
+  assert.equal(pendingImage.onerror, null);
+  assert.equal(pendingImage.src, '');
+  staleComplete();
+  await Promise.resolve();
+  assert.equal(harness.canvasKit.canvasSources.length, 0);
+
+  const nextRaster = fakeCanvasKitImage();
+  harness.canvasKit.encodedResult = nextRaster;
+  assert.equal(harness.cache.image(undefined, base64(png(12, 9))), nextRaster);
+});
+
 test('renderer forwards readiness and excludes pending SVGs from static pictures', () => {
   const rendererSource = fs.readFileSync(
     path.join(studioRoot, 'src/view/canvaskit-renderer.ts'),

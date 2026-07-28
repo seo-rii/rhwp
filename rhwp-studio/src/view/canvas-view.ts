@@ -268,6 +268,7 @@ export class CanvasView {
   private reset(): void {
     this.pageRenderer.cancelAll();
     this.pageRenderer.clearLayerTreeCache();
+    this.pageRenderer.resetDocumentResources();
     this.wasm.clearLayerResourceCache();
     this.canvasPool.releaseAll();
     this.currentVisiblePages = [];

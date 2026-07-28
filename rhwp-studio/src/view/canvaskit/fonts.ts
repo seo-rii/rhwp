@@ -496,8 +496,7 @@ export class CanvasKitFontRegistry {
     return font;
   }
 
-  clear(): void {
-    this.aliases.clear();
+  clearDocumentResources(): void {
     for (const font of this.glyphRunFonts.values()) {
       font.delete();
     }
@@ -507,6 +506,11 @@ export class CanvasKitFontRegistry {
     }
     this.glyphRunTypefaces.clear();
     this.verifiedFontBlobs.clear();
+  }
+
+  clear(): void {
+    this.aliases.clear();
+    this.clearDocumentResources();
   }
 
   private typefaceForGlyphRun(face: LayerFontFaceResource, blob: LayerFontBlobResource): Typeface | null {

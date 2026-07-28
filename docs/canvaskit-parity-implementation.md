@@ -322,7 +322,10 @@ pictures, but retain the document-scoped resource table until a new document
 is loaded or the view is disposed. Content-addressed resource interning then
 keeps unchanged image ids and decoded CanvasKit images warm across edit
 refreshes, while changed bytes receive a distinct resource id and static
-picture key.
+picture key. A true document reset immediately cancels pending image work,
+releases decoded/effect/mipmap images and verified embedded-font instances,
+and detaches the previous tree even when the replacement document has no
+renderable page.
 CanvasKit fallback-font initialization deduplicates bundled Noto/D2/math URLs
 and prefetches the remaining unique catalog files in parallel; registration
 order and family/style matching remain deterministic.

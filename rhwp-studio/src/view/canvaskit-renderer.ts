@@ -400,6 +400,17 @@ export class CanvasKitLayerRenderer {
     this.resourceCache.setAsyncResourceReadyCallback(callback);
   }
 
+  resetDocumentResources(): void {
+    this.staticPictureCache.clear();
+    this.resourceCache.resetDocumentResources();
+    this.fontRegistry.clearDocumentResources();
+    this.lastRenderedTree = null;
+    this.lastTargetCanvas = null;
+    this.currentLayerTreeCacheKey = 'none';
+    this.textVariantSelectionDiagnostics.length = 0;
+    this.textV2ValidationDiagnostics.length = 0;
+  }
+
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
     return this.resourceCache.getImageEffectDiagnostics();
   }

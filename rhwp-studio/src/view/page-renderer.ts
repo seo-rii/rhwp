@@ -223,6 +223,11 @@ export class PageRenderer {
     this.retainedLayerTreePages.clear();
   }
 
+  resetDocumentResources(): void {
+    this.canvas2dRenderer.resetDocumentResources();
+    this.canvaskitRenderer?.resetDocumentResources();
+  }
+
   dispose(): void {
     this.cancelAll();
     this.clearLayerTreeCache();
