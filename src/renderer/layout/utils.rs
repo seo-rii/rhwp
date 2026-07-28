@@ -14,6 +14,9 @@ use crate::model::style::{HeadType, Numbering};
 /// bin_data_id(1-indexed 순번)로 BinDataContent를 찾는다.
 /// bin_data_id는 doc_info의 BinData 레코드 순번(1부터 시작)이며,
 /// BinDataContent 배열도 같은 순서로 저장되어 있다.
+///
+/// HWPX 차트처럼 sparse storage ID를 직접 참조하는 경우가 있으므로,
+/// 인덱스 범위 밖일 때만 storage ID 검색으로 fallback한다.
 pub(crate) fn find_bin_data<'a>(
     bin_data_content: &'a [BinDataContent],
     bin_data_id: u16,
@@ -21,13 +24,11 @@ pub(crate) fn find_bin_data<'a>(
     if bin_data_id == 0 {
         return None;
     }
-    // 1-indexed 순번으로 먼저 조회 (기존 동작 유지)
+
     if let Some(c) = bin_data_content.get((bin_data_id - 1) as usize) {
-        if c.id == bin_data_id {
-            return Some(c);
-        }
+        return Some(c);
     }
-    // 실패 시 id 필드로 직접 검색 (HWPX 차트처럼 sparse id 사용 시)
+
     bin_data_content.iter().find(|c| c.id == bin_data_id)
 }
 
@@ -421,8 +422,70 @@ pub(crate) fn layout_rect_to_bbox(rect: &LayoutRect) -> BoundingBox {
 
 #[cfg(test)]
 mod tests {
-    use super::picture_display_size_hu;
+    use super::{find_bin_data, picture_display_size_hu};
+    use crate::model::bin_data::{BinDataBytes, BinDataContent};
     use crate::model::image::Picture;
+
+    fn bin_data(id: u16, extension: &str) -> BinDataContent {
+        BinDataContent {
+            id,
+            data: BinDataBytes::Loaded(Vec::new()),
+            extension: extension.to_string(),
+        }
+    }
+
+    #[test]
+    fn find_bin_data_rejects_zero_id() {
+        assert!(find_bin_data(&[bin_data(1, "png")], 0).is_none());
+    }
+
+    #[test]
+    fn find_bin_data_uses_document_index_before_storage_id() {
+        let content = [bin_data(12, "png"), bin_data(1, "bmp"), bin_data(2, "bmp")];
+
+        let selected = find_bin_data(&content, 1).expect("document index should resolve");
+
+        assert_eq!(selected.id, 12);
+        assert_eq!(selected.extension, "png");
+    }
+
+    #[test]
+    fn find_bin_data_resolves_matching_document_index() {
+        let content = [bin_data(1, "jpg"), bin_data(2, "png"), bin_data(3, "bmp")];
+
+        for bin_data_id in 1..=3 {
+            assert_eq!(
+                find_bin_data(&content, bin_data_id).map(|item| item.id),
+                Some(bin_data_id)
+            );
+        }
+    }
+
+    #[test]
+    fn find_bin_data_falls_back_to_sparse_storage_id() {
+        let content = [
+            bin_data(1, "png"),
+            bin_data(2, "png"),
+            bin_data(60_001, "ooxml_chart"),
+            bin_data(60_002, "ooxml_chart"),
+        ];
+
+        assert_eq!(
+            find_bin_data(&content, 60_001).map(|item| item.id),
+            Some(60_001)
+        );
+        assert_eq!(
+            find_bin_data(&content, 60_002).map(|item| item.id),
+            Some(60_002)
+        );
+    }
+
+    #[test]
+    fn find_bin_data_rejects_unknown_out_of_range_id() {
+        let content = [bin_data(1, "png"), bin_data(2, "png")];
+
+        assert!(find_bin_data(&content, 99).is_none());
+    }
 
     #[test]
     fn picture_display_size_uses_larger_current_axis() {
