@@ -379,6 +379,14 @@ a distinct replay-plan status and count, but it now makes document preflight
 ineligible. Schema-v1 blocker JSON uses the existing `unsupported` code so the
 public blocker vocabulary remains stable.
 
+HWPX image-fill modes remain distinct in the parser and paint IR even when
+their current replay geometry is identical. In particular, `TOTAL` is exported
+as `total` rather than being collapsed into `fitToSize`; Canvas2D, CanvasKit,
+SVG, and native Skia replay both values as a non-aspect-preserving stretch.
+The HWPX header and shape parsers also preserve the image child's resource id,
+brightness, contrast, and effect attributes so replay policy and runtime
+receive the same operation. Fill-mode parity fixtures cover both values.
+
 #### P2 Execution Update: CanvasKit As A Canvas2D-Compatible Backend
 
 The current task is not to add a second hidden renderer behind CanvasKit. It is

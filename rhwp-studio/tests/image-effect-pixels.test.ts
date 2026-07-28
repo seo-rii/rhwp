@@ -74,6 +74,7 @@ test('resolveLayerImageCropSource normalizes HWP crop bounds to source pixels', 
 test('canPreprocessCroppedLayerImageEffect matches deterministic image fill modes', () => {
   assert.equal(canPreprocessCroppedLayerImageEffect(), true);
   assert.equal(canPreprocessCroppedLayerImageEffect('fitToSize'), true);
+  assert.equal(canPreprocessCroppedLayerImageEffect('total'), true);
   assert.equal(canPreprocessCroppedLayerImageEffect('none'), true);
   assert.equal(canPreprocessCroppedLayerImageEffect('tile'), false);
 });

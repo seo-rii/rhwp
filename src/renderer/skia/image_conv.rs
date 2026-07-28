@@ -261,7 +261,10 @@ fn draw_decoded_image_impl(
         }
     };
 
-    if matches!(mode, ImageFillMode::FitToSize | ImageFillMode::None) {
+    if matches!(
+        mode,
+        ImageFillMode::FitToSize | ImageFillMode::Total | ImageFillMode::None
+    ) {
         if let Some(src) = crop_src {
             draw_image_rect(canvas, Some(src), dst);
             return diagnostics;

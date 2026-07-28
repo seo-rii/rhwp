@@ -577,6 +577,8 @@ pub enum ImageFillMode {
     TileVertLeft,
     TileVertRight,
     FitToSize,
+    /// HWPX `TOTAL`: stretch the image to fill the target bounds.
+    Total,
     Center,
     CenterTop,
     CenterBottom,

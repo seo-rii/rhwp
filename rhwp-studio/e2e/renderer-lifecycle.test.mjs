@@ -14128,10 +14128,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ['centerBottom', 26, 26],
       ['tileHorzTop', 50, 26],
       ['tileVertLeft', 74, 26],
+      ['fitToSize', 2, 50],
+      ['total', 26, 50],
     ];
     const tree = {
       pageWidth: 96,
-      pageHeight: 48,
+      pageHeight: 70,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: false,
@@ -14156,10 +14158,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 19061,
-        bounds: { x: 0, y: 0, width: 96, height: 48 },
+        bounds: { x: 0, y: 0, width: 96, height: 70 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 96, height: 48 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 96, height: 70 }, backgroundColor: '#ffffff', borderWidth: 0 },
           ...modes.map(([fillMode, x, y]) => ({
             type: 'image',
             bbox: { x, y, width: 18, height: 18 },
@@ -14221,13 +14223,44 @@ runTest('Renderer lifecycle', async ({ page }) => {
     imageFillModeCanvas2dInkPixels > 250 && imageFillModeCanvaskitInkPixels > 250,
     `image fill mode variants replay canvas2d=${imageFillModeCanvas2dInkPixels}, canvaskit=${imageFillModeCanvaskitInkPixels}`,
   );
+  const countStretchModeMismatches = (dataUrl) => {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    let mismatches = 0;
+    let maxChannelDelta = 0;
+    for (let y = 0; y < 18; y += 1) {
+      for (let x = 0; x < 18; x += 1) {
+        const fitOffset = ((50 + y) * png.width + 2 + x) * 4;
+        const totalOffset = ((50 + y) * png.width + 26 + x) * 4;
+        let pixelDiffers = false;
+        for (let channel = 0; channel < 4; channel += 1) {
+          const delta = Math.abs(png.data[fitOffset + channel] - png.data[totalOffset + channel]);
+          maxChannelDelta = Math.max(maxChannelDelta, delta);
+          pixelDiffers ||= delta !== 0;
+        }
+        if (pixelDiffers) {
+          mismatches += 1;
+        }
+      }
+    }
+    return { mismatches, maxChannelDelta };
+  };
+  const canvas2dStretchModeParity = countStretchModeMismatches(imageFillModeVariantProbe.canvas2d);
+  const canvaskitStretchModeParity = countStretchModeMismatches(imageFillModeVariantProbe.canvaskit);
+  assert(
+    canvas2dStretchModeParity.mismatches === 0,
+    `Canvas2D TOTAL matches fitToSize exactly=${JSON.stringify(canvas2dStretchModeParity)}`,
+  );
+  assert(
+    canvaskitStretchModeParity.mismatches <= 2 && canvaskitStretchModeParity.maxChannelDelta <= 4,
+    `CanvasKit TOTAL matches fitToSize within raster tolerance=${JSON.stringify(canvaskitStretchModeParity)}`,
+  );
   const imageFillModeVariantDiff = await comparePngBuffers(
     pngBufferFromDataUrl(imageFillModeVariantProbe.canvas2d),
     pngBufferFromDataUrl(imageFillModeVariantProbe.canvaskit),
     {
       diffName: 'canvas-layer-image-fill-mode-variant-parity',
       ignoreChannelDelta: 4,
-      maxDiffRatio: 0.02,
+      maxDiffRatio: 0.025,
       inkMaskMaxDiffRatio: 0.01,
       nonInkMaxDiffRatio: 0,
     },

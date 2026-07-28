@@ -920,9 +920,10 @@ fn parse_border_fill(
                                             "CENTER" => ImageFillMode::Center,
                                             "CENTER_TOP" => ImageFillMode::CenterTop,
                                             "CENTER_BOTTOM" => ImageFillMode::CenterBottom,
-                                            "FIT" | "FIT_TO_SIZE" | "STRETCH" | "TOTAL" => {
+                                            "FIT" | "FIT_TO_SIZE" | "STRETCH" => {
                                                 ImageFillMode::FitToSize
                                             }
+                                            "TOTAL" => ImageFillMode::Total,
                                             "TOP_LEFT_ALIGN" => ImageFillMode::LeftTop,
                                             _ => ImageFillMode::TileAll,
                                         };
@@ -935,14 +936,28 @@ fn parse_border_fill(
                             bf.fill.image = Some(img_fill);
                         }
                         b"img" | b"image" => {
-                            // imgBrush 내부의 이미지 참조
                             if let Some(ref mut img_fill) = bf.fill.image {
                                 for attr in ce.attributes().flatten() {
-                                    if attr.key.as_ref() == b"binaryItemIDRef" {
-                                        let val = attr_str(&attr);
-                                        let num: String =
-                                            val.chars().filter(|c| c.is_ascii_digit()).collect();
-                                        img_fill.bin_data_id = num.parse().unwrap_or(0);
+                                    match attr.key.as_ref() {
+                                        b"binaryItemIDRef" => {
+                                            let value = attr_str(&attr);
+                                            let numeric: String = value
+                                                .chars()
+                                                .filter(|ch| ch.is_ascii_digit())
+                                                .collect();
+                                            img_fill.bin_data_id = numeric.parse().unwrap_or(0);
+                                        }
+                                        b"bright" => img_fill.brightness = parse_i8(&attr),
+                                        b"contrast" => img_fill.contrast = parse_i8(&attr),
+                                        b"effect" => {
+                                            img_fill.effect = match attr_str(&attr).as_str() {
+                                                "GRAY_SCALE" => 1,
+                                                "BLACK_WHITE" => 2,
+                                                "PATTERN_8_8" => 3,
+                                                _ => 0,
+                                            };
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
@@ -1410,6 +1425,33 @@ mod tests {
         assert_eq!(grad.blur, 40);
         assert_eq!(grad.step_center, 55);
         assert_eq!(grad.colors, vec![0x0033_2211]);
+    }
+
+    #[test]
+    fn test_parse_border_fill_total_image_preserves_child_attributes() {
+        let xml = r#"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"
+    xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hh:borderFill id="1">
+    <hh:fillBrush>
+      <hc:imgBrush mode="TOTAL">
+        <hc:img binaryItemIDRef="image36" bright="10" contrast="-5" effect="PATTERN_8_8"/>
+      </hc:imgBrush>
+    </hh:fillBrush>
+  </hh:borderFill>
+</hh:head>"#;
+
+        let (doc_info, _) = parse_hwpx_header(xml).expect("header parse");
+        let image = doc_info.border_fills[0]
+            .fill
+            .image
+            .as_ref()
+            .expect("image fill");
+
+        assert_eq!(image.fill_mode, crate::model::style::ImageFillMode::Total);
+        assert_eq!(image.bin_data_id, 36);
+        assert_eq!(image.brightness, 10);
+        assert_eq!(image.contrast, -5);
+        assert_eq!(image.effect, 3);
     }
 
     #[test]

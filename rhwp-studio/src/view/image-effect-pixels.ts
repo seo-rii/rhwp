@@ -134,7 +134,7 @@ export function resolveLayerImageCropSource(
 }
 
 export function canPreprocessCroppedLayerImageEffect(fillMode = 'fitToSize'): boolean {
-  return fillMode === 'fitToSize' || fillMode === 'none';
+  return fillMode === 'fitToSize' || fillMode === 'total' || fillMode === 'none';
 }
 
 export function applyLayerImageEffectPixels(

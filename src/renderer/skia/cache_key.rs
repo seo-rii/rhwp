@@ -1546,6 +1546,7 @@ impl StaticSubtreeCacheKey {
             ImageFillMode::TileVertLeft => 3,
             ImageFillMode::TileVertRight => 4,
             ImageFillMode::FitToSize => 5,
+            ImageFillMode::Total => 16,
             ImageFillMode::Center => 6,
             ImageFillMode::CenterTop => 7,
             ImageFillMode::CenterBottom => 8,

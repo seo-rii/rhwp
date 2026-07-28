@@ -2974,7 +2974,7 @@ impl WebCanvasRenderer {
         };
         let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
         match mode {
-            ImageFillMode::FitToSize | ImageFillMode::None => {
+            ImageFillMode::FitToSize | ImageFillMode::Total | ImageFillMode::None => {
                 draw_image(self, bbox.x, bbox.y, bbox.width, bbox.height);
             }
             _ => {

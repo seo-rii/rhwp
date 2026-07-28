@@ -2191,10 +2191,18 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                                 b"mode" => {
                                     img.fill_mode = match attr_str(&attr).as_str() {
                                         "TILE" | "TILE_ALL" => ImageFillMode::TileAll,
-                                        "FIT" | "FIT_TO_SIZE" | "STRETCH" | "TOTAL" => {
+                                        "TILE_HORZ_TOP" => ImageFillMode::TileHorzTop,
+                                        "TILE_HORZ_BOTTOM" => ImageFillMode::TileHorzBottom,
+                                        "TILE_VERT_LEFT" => ImageFillMode::TileVertLeft,
+                                        "TILE_VERT_RIGHT" => ImageFillMode::TileVertRight,
+                                        "FIT" | "FIT_TO_SIZE" | "STRETCH" => {
                                             ImageFillMode::FitToSize
                                         }
+                                        "TOTAL" => ImageFillMode::Total,
                                         "CENTER" => ImageFillMode::Center,
+                                        "CENTER_TOP" => ImageFillMode::CenterTop,
+                                        "CENTER_BOTTOM" => ImageFillMode::CenterBottom,
+                                        "TOP_LEFT_ALIGN" => ImageFillMode::LeftTop,
                                         _ => ImageFillMode::TileAll,
                                     };
                                 }
@@ -2202,6 +2210,33 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                             }
                         }
                         fill.image = Some(img);
+                    }
+                    b"img" | b"image" => {
+                        if let Some(ref mut img_fill) = fill.image {
+                            for attr in ce.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"binaryItemIDRef" => {
+                                        let value = attr_str(&attr);
+                                        let numeric: String = value
+                                            .chars()
+                                            .filter(|ch| ch.is_ascii_digit())
+                                            .collect();
+                                        img_fill.bin_data_id = numeric.parse().unwrap_or(0);
+                                    }
+                                    b"bright" => img_fill.brightness = parse_i8(&attr),
+                                    b"contrast" => img_fill.contrast = parse_i8(&attr),
+                                    b"effect" => {
+                                        img_fill.effect = match attr_str(&attr).as_str() {
+                                            "GRAY_SCALE" => 1,
+                                            "BLACK_WHITE" => 2,
+                                            "PATTERN_8_8" => 3,
+                                            _ => 0,
+                                        };
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -4251,6 +4286,43 @@ mod tests {
 
         assert_eq!(fill.fill_type, crate::model::style::FillType::Gradient);
         assert_eq!(grad.colors, vec![0x0033_2211, 0x0066_5544]);
+    }
+
+    #[test]
+    fn test_parse_shape_total_image_preserves_child_attributes() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:rect id="7" zOrder="0">
+      <hp:sz width="1000" height="1000"/>
+      <hc:fillBrush>
+        <hc:imgBrush mode="TOTAL">
+          <hc:img binaryItemIDRef="image3" bright="10" contrast="-5" effect="GRAY_SCALE"/>
+        </hc:imgBrush>
+      </hc:fillBrush>
+    </hp:rect>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let Control::Shape(shape) = &section.paragraphs[0].controls[0] else {
+            panic!("expected shape control");
+        };
+        let image = shape
+            .drawing()
+            .expect("shape drawing")
+            .fill
+            .image
+            .as_ref()
+            .expect("image fill");
+
+        assert_eq!(image.fill_mode, crate::model::style::ImageFillMode::Total);
+        assert_eq!(image.bin_data_id, 3);
+        assert_eq!(image.brightness, 10);
+        assert_eq!(image.contrast, -5);
+        assert_eq!(image.effect, 1);
     }
 
     #[test]

@@ -275,9 +275,21 @@ fn image_fill_mode_to_u8(mode: ImageFillMode) -> u8 {
     match mode {
         ImageFillMode::TileAll => 0,
         ImageFillMode::TileHorzTop => 1,
-        ImageFillMode::TileVertLeft => 2,
-        ImageFillMode::FitToSize => 3,
-        _ => 0,
+        ImageFillMode::TileHorzBottom => 2,
+        ImageFillMode::TileVertLeft => 3,
+        ImageFillMode::TileVertRight => 4,
+        ImageFillMode::Total => 0,
+        ImageFillMode::FitToSize => 5,
+        ImageFillMode::Center => 6,
+        ImageFillMode::CenterTop => 7,
+        ImageFillMode::CenterBottom => 8,
+        ImageFillMode::LeftCenter => 9,
+        ImageFillMode::LeftTop => 10,
+        ImageFillMode::LeftBottom => 11,
+        ImageFillMode::RightCenter => 12,
+        ImageFillMode::RightTop => 13,
+        ImageFillMode::RightBottom => 14,
+        ImageFillMode::None => 15,
     }
 }
 

@@ -3380,7 +3380,7 @@ export class CanvasKitLayerRenderer {
       drawImageRect(0, 0, sourceWidth, sourceHeight, dstX, dstY, dstW, dstH);
     };
 
-    if (fillMode === 'fitToSize' || fillMode === 'none') {
+    if (fillMode === 'fitToSize' || fillMode === 'total' || fillMode === 'none') {
       drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
       return;
     }

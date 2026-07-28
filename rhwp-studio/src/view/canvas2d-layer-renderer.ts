@@ -1788,7 +1788,7 @@ export class Canvas2DLayerRenderer {
     };
 
     try {
-      if (fillMode === 'fitToSize' || fillMode === 'none') {
+      if (fillMode === 'fitToSize' || fillMode === 'total' || fillMode === 'none') {
         drawImage(bbox.x, bbox.y, bbox.width, bbox.height);
         return;
       }

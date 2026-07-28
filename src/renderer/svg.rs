@@ -1709,7 +1709,7 @@ impl SvgRenderer {
                         .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
                 }
                 match image.fill_mode {
-                    ImageFillMode::FitToSize | ImageFillMode::None => {
+                    ImageFillMode::FitToSize | ImageFillMode::Total | ImageFillMode::None => {
                         self.output.push_str(&format!(
                             "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
                             bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
@@ -3083,7 +3083,7 @@ impl SvgRenderer {
         });
 
         match fill_mode {
-            ImageFillMode::FitToSize => {
+            ImageFillMode::FitToSize | ImageFillMode::Total => {
                 // 그림 자르기: crop이 있으면 원본 이미지의 일부만 표시
                 if let Some((src_x, src_y, src_w, src_h, img_w, img_h)) = crop_viewbox {
                     // SVG: 중첩 svg + viewBox로 crop 영역만 표시
