@@ -8,6 +8,10 @@ use skia_safe::{
 use crate::model::image::ImageEffect;
 use crate::model::style::ImageFillMode;
 use crate::renderer::font_paths;
+use crate::renderer::image_header::{
+    canvaskit_encoded_image_header, CANVASKIT_MAX_IMAGE_DIMENSION, CANVASKIT_MAX_IMAGE_PIXELS,
+    CANVASKIT_MAX_SVG_BYTES,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImageSampling {
@@ -99,7 +103,9 @@ pub fn draw_image_bytes(
     if !is_valid_destination_rect(x, y, width, height) {
         return ImageDrawDiagnostics::default();
     }
-    let Some(image) = decode_image_bytes(bytes) else {
+    let Some(image) =
+        decode_image_bytes_for_replay(bytes, width, height, canvas_raster_scale(canvas))
+    else {
         draw_missing_image_placeholder(canvas, x, y, width, height);
         return ImageDrawDiagnostics::default();
     };
@@ -356,15 +362,12 @@ fn draw_decoded_image_impl(
             if shader_source_width <= 0.0 || shader_source_height <= 0.0 {
                 return false;
             }
-            let scale_x = shader_source_width / image_width;
-            let scale_y = shader_source_height / image_height;
+            let scale_x = image_width / shader_source_width;
+            let scale_y = image_height / shader_source_height;
             if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
                 return false;
             }
-            let local_matrix = Matrix::scale_translate(
-                (scale_x, scale_y),
-                (-origin_x * scale_x, -origin_y * scale_y),
-            );
+            let local_matrix = Matrix::scale_translate((scale_x, scale_y), (origin_x, origin_y));
             let Some(shader) = shader_image.to_shader(
                 Some((TileMode::Repeat, TileMode::Repeat)),
                 sampling.options(),
@@ -760,6 +763,7 @@ fn resolve_image_placement(
 
 pub fn decode_image_bytes(bytes: &[u8]) -> Option<Image> {
     match detect_image_mime_type(bytes) {
+        "image/svg+xml" => None,
         "image/x-wmf" => {
             let svg = crate::renderer::svg::convert_wmf_to_svg(bytes)?;
             let options = svg_options();
@@ -771,6 +775,108 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Option<Image> {
             Image::from_encoded(Data::new_copy(&png))
         }
         _ => Image::from_encoded(Data::new_copy(bytes)),
+    }
+}
+
+pub(crate) fn decode_image_bytes_for_replay(
+    bytes: &[u8],
+    width: f32,
+    height: f32,
+    raster_scale: f64,
+) -> Option<Image> {
+    if is_embedded_svg_image(bytes) {
+        rasterize_svg_image_bytes(bytes, width, height, raster_scale)
+    } else {
+        decode_image_bytes(bytes)
+    }
+}
+
+pub(crate) fn is_embedded_svg_image(bytes: &[u8]) -> bool {
+    embedded_svg_intrinsic_size(bytes).is_some()
+}
+
+pub(crate) fn embedded_svg_intrinsic_size(bytes: &[u8]) -> Option<(f64, f64)> {
+    if bytes.len() > CANVASKIT_MAX_SVG_BYTES {
+        return None;
+    }
+    let header = canvaskit_encoded_image_header(bytes)?;
+    (header.is_svg() && header.is_within_decode_limits())
+        .then_some((f64::from(header.width), f64::from(header.height)))
+}
+
+pub(crate) fn rasterize_svg_image_bytes(
+    bytes: &[u8],
+    width: f32,
+    height: f32,
+    raster_scale: f64,
+) -> Option<Image> {
+    if !is_embedded_svg_image(bytes) {
+        return None;
+    }
+    let (raster_width, raster_height) =
+        embedded_svg_raster_dimensions(width, height, raster_scale)?;
+    let options = svg_options();
+    let tree = usvg::Tree::from_data(bytes, &options).ok()?;
+    let size = tree.size();
+    if !size.width().is_finite()
+        || !size.height().is_finite()
+        || size.width() <= 0.0
+        || size.height() <= 0.0
+    {
+        return None;
+    }
+
+    let mut pixmap = tiny_skia::Pixmap::new(raster_width, raster_height)?;
+    let transform = tiny_skia::Transform::from_scale(
+        raster_width as f32 / size.width(),
+        raster_height as f32 / size.height(),
+    );
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    let png = pixmap.encode_png().ok()?;
+    Image::from_encoded(Data::new_copy(&png))
+}
+
+fn embedded_svg_raster_dimensions(
+    width: f32,
+    height: f32,
+    raster_scale: f64,
+) -> Option<(u32, u32)> {
+    if !width.is_finite()
+        || !height.is_finite()
+        || !raster_scale.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+        || raster_scale <= 0.0
+    {
+        return None;
+    }
+    let raster_width = (f64::from(width) * raster_scale).ceil();
+    let raster_height = (f64::from(height) * raster_scale).ceil();
+    if !raster_width.is_finite()
+        || !raster_height.is_finite()
+        || raster_width > f64::from(CANVASKIT_MAX_IMAGE_DIMENSION)
+        || raster_height > f64::from(CANVASKIT_MAX_IMAGE_DIMENSION)
+    {
+        return None;
+    }
+    let raster_width = raster_width.max(1.0) as u32;
+    let raster_height = raster_height.max(1.0) as u32;
+    if u64::from(raster_width)
+        .checked_mul(u64::from(raster_height))
+        .is_none_or(|pixels| pixels > CANVASKIT_MAX_IMAGE_PIXELS)
+    {
+        return None;
+    }
+    Some((raster_width, raster_height))
+}
+
+fn canvas_raster_scale(canvas: &Canvas) -> f64 {
+    let matrix = canvas.local_to_device_as_3x3();
+    let scale = matrix.scale_x().abs().max(matrix.scale_y().abs());
+    if scale.is_finite() && scale > 0.0 {
+        f64::from(scale)
+    } else {
+        1.0
     }
 }
 
@@ -875,6 +981,9 @@ fn detect_image_mime_type(data: &[u8]) -> &'static str {
             return "image/tiff";
         }
     }
+    if is_embedded_svg_image(data) {
+        return "image/svg+xml";
+    }
 
     "application/octet-stream"
 }
@@ -958,6 +1067,63 @@ mod tests {
             pixmap.pixels().iter().any(|pixel| pixel.alpha() > 0),
             "bundled Korean fallback should produce visible SVG text"
         );
+    }
+
+    #[test]
+    fn rasterizes_embedded_svg_at_destination_pixel_size() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 1"><rect width="2" height="1" fill="#00ff00"/></svg>"##;
+        let image = rasterize_svg_image_bytes(svg, 10.0, 6.0, 2.0).expect("rasterize embedded SVG");
+
+        assert_eq!((image.width(), image.height()), (20, 12));
+    }
+
+    #[test]
+    fn embedded_svg_rejects_malformed_and_oversized_inputs() {
+        assert!(rasterize_svg_image_bytes(b"<svg><invalid", 8.0, 8.0, 1.0).is_none());
+        assert!(rasterize_svg_image_bytes(
+            br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#,
+            (CANVASKIT_MAX_IMAGE_DIMENSION + 1) as f32,
+            1.0,
+            1.0,
+        )
+        .is_none());
+
+        let mut oversized = vec![b' '; CANVASKIT_MAX_SVG_BYTES + 1];
+        oversized[..4].copy_from_slice(b"<svg");
+        assert!(rasterize_svg_image_bytes(&oversized, 8.0, 8.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn draw_image_bytes_replays_embedded_svg_without_placeholder() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect width="4" height="4" fill="#00ff00"/></svg>"##;
+        let mut surface = surfaces::raster_n32_premul((4, 4)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+
+        draw_image_bytes(
+            surface.canvas(),
+            svg,
+            0.0,
+            0.0,
+            4.0,
+            4.0,
+            Some(ImageFillMode::FitToSize),
+            None,
+            None,
+            ImageEffect::RealPic,
+            0,
+            0,
+            ImageSampling::nearest(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render PNG");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let center = pixmap.pixels()[2 * 4 + 2];
+        assert!(center.green() > 240);
+        assert!(center.red() < 16);
+        assert_eq!(center.alpha(), 255);
     }
 
     fn render_cropped_bottom_row(fill_mode: ImageFillMode) -> tiny_skia::Pixmap {
@@ -1071,6 +1237,53 @@ mod tests {
             bottom_right.green() > 200 && bottom_right.alpha() == 255,
             "shader tile replay should cover pixels beyond the old capped loop area"
         );
+    }
+
+    #[test]
+    fn tiled_shader_maps_source_pixels_to_logical_tile_size_and_origin() {
+        let mut source = tiny_skia::Pixmap::new(2, 1).expect("source pixmap");
+        source.pixels_mut()[0] =
+            tiny_skia::PremultipliedColorU8::from_rgba(255, 0, 0, 255).unwrap();
+        source.pixels_mut()[1] =
+            tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 255, 255).unwrap();
+        let image =
+            Image::from_encoded(Data::new_copy(&source.encode_png().expect("encode source")))
+                .expect("decode source image");
+        let mut surface = surfaces::raster_n32_premul((12, 1)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+
+        draw_decoded_image(
+            surface.canvas(),
+            &image,
+            2.0,
+            0.0,
+            8.0,
+            1.0,
+            Some(ImageFillMode::TileAll),
+            Some((4.0, 1.0)),
+            None,
+            ImageEffect::RealPic,
+            0,
+            0,
+            ImageSampling::nearest(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let pixels = pixmap.pixels();
+        assert_eq!(pixels[0].alpha(), 0);
+        assert_eq!(pixels[1].alpha(), 0);
+        for tile_x in [2usize, 6] {
+            assert!(pixels[tile_x].red() > 240);
+            assert!(pixels[tile_x + 1].red() > 240);
+            assert!(pixels[tile_x + 2].blue() > 240);
+            assert!(pixels[tile_x + 3].blue() > 240);
+        }
+        assert_eq!(pixels[10].alpha(), 0);
+        assert_eq!(pixels[11].alpha(), 0);
     }
 
     #[test]

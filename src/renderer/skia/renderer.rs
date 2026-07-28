@@ -32,7 +32,8 @@ use super::font_resolver::SkiaFontResolver;
 use super::form_replay;
 use super::image_conv::{
     decode_image_bytes, draw_decoded_image, draw_decoded_image_with_crop_reference,
-    draw_missing_image_placeholder, rasterize_svg_fragment_with_view_box, ImageSampling,
+    draw_missing_image_placeholder, embedded_svg_intrinsic_size,
+    rasterize_svg_fragment_with_view_box, ImageSampling,
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
@@ -1928,9 +1929,15 @@ impl SkiaLayerRenderer {
                 }
                 if let Some(image) = &background.image {
                     if let Some(bytes) = resources.image_bytes(image.resource_id) {
-                        if let Some(decoded) = replay.image_for_resource(image.resource_id, bytes) {
-                            let binary_effect_image = replay.binary_effect_image_for_resource(
+                        if let Some(decoded) = replay.image_for_resource_at_size(
+                            image.resource_id,
+                            bytes,
+                            bbox.width as f32,
+                            bbox.height as f32,
+                        ) {
+                            let binary_effect_image = replay.binary_effect_image_for_replay(
                                 image.resource_id,
+                                bytes,
                                 &decoded,
                                 image.effect,
                             );
@@ -1948,7 +1955,7 @@ impl SkiaLayerRenderer {
                                 bbox.width as f32,
                                 bbox.height as f32,
                                 Some(image.fill_mode),
-                                None,
+                                embedded_svg_intrinsic_size(bytes),
                                 None,
                                 effect,
                                 image.brightness,
@@ -2482,11 +2489,16 @@ impl SkiaLayerRenderer {
                     |canvas| {
                         if let Some(resource_id) = image.resource_id {
                             if let Some(data) = resources.image_bytes(resource_id) {
-                                if let Some(decoded) = replay.image_for_resource(resource_id, data)
-                                {
+                                if let Some(decoded) = replay.image_for_resource_at_size(
+                                    resource_id,
+                                    data,
+                                    effective_bbox.width as f32,
+                                    effective_bbox.height as f32,
+                                ) {
                                     let binary_effect_image = replay
-                                        .binary_effect_image_for_resource(
+                                        .binary_effect_image_for_replay(
                                             resource_id,
+                                            data,
                                             &decoded,
                                             image.effect,
                                         );
@@ -2508,7 +2520,9 @@ impl SkiaLayerRenderer {
                                         effective_bbox.width as f32,
                                         effective_bbox.height as f32,
                                         image.fill_mode,
-                                        image.original_size,
+                                        image
+                                            .original_size
+                                            .or_else(|| embedded_svg_intrinsic_size(data)),
                                         image.crop,
                                         image.original_size_hu,
                                         effect,
@@ -2639,3 +2653,168 @@ impl LayerRasterRenderer for SkiaLayerRenderer {
 #[cfg(test)]
 #[path = "renderer_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod embedded_svg_image_tests {
+    use super::*;
+    use crate::model::style::ImageFillMode;
+    use crate::paint::{
+        LayerImagePaint, LayerNode, LayerPageBackgroundImagePaint, LayerPageBackgroundPaint,
+    };
+    use crate::renderer::render_tree::ShapeTransform;
+    use resvg::tiny_skia;
+
+    fn render_svg_ops(
+        svg: &[u8],
+        page_width: f64,
+        page_height: f64,
+        ops: Vec<PaintOp>,
+        scale: f64,
+    ) -> tiny_skia::Pixmap {
+        let mut resources = ResourceArena::default();
+        let resource_id = resources.intern_image_bytes(svg);
+        let ops = ops
+            .into_iter()
+            .map(|op| match op {
+                PaintOp::Image { bbox, mut image } => {
+                    image.resource_id = Some(resource_id);
+                    PaintOp::Image { bbox, image }
+                }
+                PaintOp::PageBackground {
+                    bbox,
+                    mut background,
+                } => {
+                    if let Some(image) = background.image.as_mut() {
+                        image.resource_id = resource_id;
+                    }
+                    PaintOp::PageBackground { bbox, background }
+                }
+                other => other,
+            })
+            .collect();
+        let tree = PageLayerTree::with_resources(
+            page_width,
+            page_height,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, page_width, page_height),
+                None,
+                ops,
+            ),
+            resources,
+        );
+        let output = SkiaLayerRenderer::new()
+            .render_raster_with_options(
+                &tree,
+                RasterRenderOptions {
+                    scale,
+                    ..RasterRenderOptions::default()
+                },
+            )
+            .expect("render embedded SVG");
+        tiny_skia::Pixmap::decode_png(&output.bytes).expect("decode rendered PNG")
+    }
+
+    #[test]
+    fn paint_image_replays_embedded_svg_at_output_scale() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 6"><rect width="8" height="6" fill="#00ff00"/></svg>"##;
+        let pixmap = render_svg_ops(
+            svg,
+            8.0,
+            6.0,
+            vec![PaintOp::Image {
+                bbox: BoundingBox::new(0.0, 0.0, 8.0, 6.0),
+                image: LayerImagePaint {
+                    resource_id: None,
+                    external_path: None,
+                    text_wrap: None,
+                    fill_mode: Some(ImageFillMode::FitToSize),
+                    original_size: Some((8.0, 6.0)),
+                    crop: None,
+                    original_size_hu: None,
+                    brightness: 0,
+                    contrast: 0,
+                    effect: ImageEffect::RealPic,
+                    transform: ShapeTransform::default(),
+                },
+            }],
+            2.0,
+        );
+
+        assert_eq!((pixmap.width(), pixmap.height()), (16, 12));
+        let center = pixmap.pixels()[6 * 16 + 8];
+        assert!(center.green() > 240);
+        assert!(center.red() < 16);
+    }
+
+    #[test]
+    fn page_background_replays_embedded_svg() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 6 4"><rect width="6" height="4" fill="#ff0000"/></svg>"##;
+        let pixmap = render_svg_ops(
+            svg,
+            6.0,
+            4.0,
+            vec![PaintOp::PageBackground {
+                bbox: BoundingBox::new(0.0, 0.0, 6.0, 4.0),
+                background: LayerPageBackgroundPaint {
+                    background_color: None,
+                    border_color: None,
+                    border_width: 0.0,
+                    gradient: None,
+                    image: Some(LayerPageBackgroundImagePaint {
+                        resource_id: crate::paint::ImageResourceId(0),
+                        fill_mode: ImageFillMode::FitToSize,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                    }),
+                },
+            }],
+            1.0,
+        );
+
+        let center = pixmap.pixels()[2 * 6 + 3];
+        assert!(center.red() > 240);
+        assert!(center.green() < 16);
+    }
+
+    #[test]
+    fn page_background_svg_tiling_uses_intrinsic_dimensions() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="1" viewBox="0 0 2 1"><rect width="1" height="1" fill="#ff0000"/><rect x="1" width="1" height="1" fill="#0000ff"/></svg>"##;
+        let pixmap = render_svg_ops(
+            svg,
+            6.0,
+            1.0,
+            vec![PaintOp::PageBackground {
+                bbox: BoundingBox::new(0.0, 0.0, 6.0, 1.0),
+                background: LayerPageBackgroundPaint {
+                    background_color: None,
+                    border_color: None,
+                    border_width: 0.0,
+                    gradient: None,
+                    image: Some(LayerPageBackgroundImagePaint {
+                        resource_id: crate::paint::ImageResourceId(0),
+                        fill_mode: ImageFillMode::TileAll,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                    }),
+                },
+            }],
+            1.0,
+        );
+
+        let pixels = pixmap.pixels();
+        assert!(
+            pixels[0].red() > pixels[0].blue(),
+            "unexpected tile samples: {pixels:?}"
+        );
+        assert!(
+            pixels[1].blue() > pixels[1].red(),
+            "unexpected tile samples: {pixels:?}"
+        );
+        assert_eq!(pixels[0], pixels[2]);
+        assert_eq!(pixels[0], pixels[4]);
+        assert_eq!(pixels[1], pixels[3]);
+        assert_eq!(pixels[1], pixels[5]);
+    }
+}

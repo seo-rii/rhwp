@@ -7,8 +7,9 @@ use crate::renderer::layer_renderer::{LayerRenderDiagnostics, VariantSelectionBa
 
 use super::cache::BoundedLruCache;
 use super::image_conv::{
-    decode_image_bytes, image_approx_rgba_bytes, preprocess_binary_image_effect,
-    rasterize_svg_fragment, ImageDrawDiagnostics, ImageSampling,
+    decode_image_bytes, image_approx_rgba_bytes, is_embedded_svg_image,
+    preprocess_binary_image_effect, rasterize_svg_fragment, rasterize_svg_image_bytes,
+    ImageDrawDiagnostics, ImageSampling,
 };
 use super::replay_policy::SkiaReplayPolicy;
 
@@ -20,6 +21,14 @@ pub(super) struct SvgResourceCacheKey {
     resource_id: SvgResourceId,
     width_bits: u32,
     height_bits: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct EmbeddedSvgImageCacheKey {
+    resource_id: ImageResourceId,
+    width_bits: u32,
+    height_bits: u32,
+    scale_bits: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -64,6 +73,7 @@ pub(super) struct SkiaReplayContext {
     pub(super) diagnostics: LayerRenderDiagnostics,
     cache_hints: Vec<CacheHint>,
     pub(super) image_cache: HashMap<ImageResourceId, Option<Image>>,
+    pub(super) embedded_svg_image_cache: HashMap<EmbeddedSvgImageCacheKey, Option<Image>>,
     pub(super) image_effect_cache:
         BoundedLruCache<ImageEffectResourceCacheKey, ImageEffectCacheEntry>,
     pub(super) svg_resource_cache: HashMap<SvgResourceCacheKey, Option<Image>>,
@@ -88,6 +98,7 @@ impl SkiaReplayContext {
             },
             cache_hints: Vec::new(),
             image_cache: HashMap::new(),
+            embedded_svg_image_cache: HashMap::new(),
             image_effect_cache: BoundedLruCache::new(
                 MAX_IMAGE_EFFECT_CACHE_ENTRIES,
                 MAX_IMAGE_EFFECT_CACHE_BYTES,
@@ -194,6 +205,58 @@ impl SkiaReplayContext {
         image
     }
 
+    pub(super) fn image_for_resource_at_size(
+        &mut self,
+        resource_id: ImageResourceId,
+        bytes: &[u8],
+        width: f32,
+        height: f32,
+    ) -> Option<Image> {
+        if !is_embedded_svg_image(bytes) {
+            return self.image_for_resource(resource_id, bytes);
+        }
+        let key = EmbeddedSvgImageCacheKey {
+            resource_id,
+            width_bits: width.to_bits(),
+            height_bits: height.to_bits(),
+            scale_bits: self.scale.to_bits(),
+        };
+        if let Some(image) = self.embedded_svg_image_cache.get(&key) {
+            return image.clone();
+        }
+        let image = rasterize_svg_image_bytes(bytes, width, height, self.scale);
+        self.embedded_svg_image_cache.insert(key, image.clone());
+        image
+    }
+
+    pub(super) fn binary_effect_image_for_replay(
+        &mut self,
+        resource_id: ImageResourceId,
+        bytes: &[u8],
+        image: &Image,
+        effect: ImageEffect,
+    ) -> Option<Image> {
+        if !is_embedded_svg_image(bytes) {
+            return self.binary_effect_image_for_resource(resource_id, image, effect);
+        }
+        if !matches!(effect, ImageEffect::BlackWhite | ImageEffect::Pattern8x8) {
+            return None;
+        }
+
+        // Embedded SVG images are rasterized for the current destination and
+        // replay scale. Keep their binary effects out of the resource-only
+        // cache so another placement cannot reuse pixels from the wrong size.
+        self.diagnostics.image_effect_cache_misses =
+            self.diagnostics.image_effect_cache_misses.saturating_add(1);
+        let image = preprocess_binary_image_effect(image, effect);
+        let approx_bytes = image.as_ref().map(image_approx_rgba_bytes).unwrap_or(0);
+        self.diagnostics.image_effect_preprocessed_bytes = self
+            .diagnostics
+            .image_effect_preprocessed_bytes
+            .saturating_add(approx_bytes);
+        image
+    }
+
     pub(super) fn binary_effect_image_for_resource(
         &mut self,
         resource_id: ImageResourceId,
@@ -286,5 +349,96 @@ impl SkiaReplayContext {
         let image = rasterize_svg_fragment(fragment, width, height);
         self.svg_fragment_cache.insert(key, image.clone());
         image
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use resvg::tiny_skia;
+
+    const SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 1"><rect width="2" height="1" fill="#7e7e7e"/></svg>"##;
+
+    fn raster_png() -> Vec<u8> {
+        let mut pixmap = tiny_skia::Pixmap::new(2, 2).expect("source pixmap");
+        for pixel in pixmap.pixels_mut() {
+            *pixel =
+                tiny_skia::PremultipliedColorU8::from_rgba(0, 255, 0, 255).expect("source color");
+        }
+        pixmap.encode_png().expect("source PNG")
+    }
+
+    #[test]
+    fn raster_resource_cache_remains_resource_only() {
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 2.0);
+        let resource_id = ImageResourceId(101);
+        let png = raster_png();
+
+        let first = replay
+            .image_for_resource_at_size(resource_id, &png, 4.0, 4.0)
+            .expect("first raster decode");
+        let second = replay
+            .image_for_resource_at_size(resource_id, b"not an image", 40.0, 30.0)
+            .expect("resource-only raster cache hit");
+
+        assert_eq!((first.width(), first.height()), (2, 2));
+        assert_eq!((second.width(), second.height()), (2, 2));
+        assert_eq!(replay.image_cache.len(), 1);
+        assert!(replay.embedded_svg_image_cache.is_empty());
+    }
+
+    #[test]
+    fn embedded_svg_cache_keys_destination_and_replay_scale() {
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 2.0);
+        let resource_id = ImageResourceId(102);
+
+        let first = replay
+            .image_for_resource_at_size(resource_id, SVG, 4.0, 3.0)
+            .expect("first SVG raster");
+        let cached = replay
+            .image_for_resource_at_size(resource_id, SVG, 4.0, 3.0)
+            .expect("same placement SVG cache hit");
+        let resized = replay
+            .image_for_resource_at_size(resource_id, SVG, 5.0, 3.0)
+            .expect("resized SVG raster");
+        replay.scale = 1.0;
+        let rescaled = replay
+            .image_for_resource_at_size(resource_id, SVG, 5.0, 3.0)
+            .expect("new replay-scale SVG raster");
+
+        assert_eq!((first.width(), first.height()), (8, 6));
+        assert_eq!((cached.width(), cached.height()), (8, 6));
+        assert_eq!((resized.width(), resized.height()), (10, 6));
+        assert_eq!((rescaled.width(), rescaled.height()), (5, 3));
+        assert_eq!(replay.embedded_svg_image_cache.len(), 3);
+        assert!(replay.image_cache.is_empty());
+    }
+
+    #[test]
+    fn embedded_svg_binary_effects_do_not_use_resource_only_cache() {
+        let mut replay =
+            SkiaReplayContext::new(RenderProfile::Screen, LayerOutputOptions::default(), 1.0);
+        let resource_id = ImageResourceId(103);
+        let small = replay
+            .image_for_resource_at_size(resource_id, SVG, 4.0, 4.0)
+            .expect("small SVG raster");
+        let large = replay
+            .image_for_resource_at_size(resource_id, SVG, 8.0, 4.0)
+            .expect("large SVG raster");
+
+        let small_effect = replay
+            .binary_effect_image_for_replay(resource_id, SVG, &small, ImageEffect::Pattern8x8)
+            .expect("small SVG effect");
+        let large_effect = replay
+            .binary_effect_image_for_replay(resource_id, SVG, &large, ImageEffect::Pattern8x8)
+            .expect("large SVG effect");
+
+        assert_eq!((small_effect.width(), small_effect.height()), (4, 4));
+        assert_eq!((large_effect.width(), large_effect.height()), (8, 4));
+        assert!(replay.image_effect_cache.is_empty());
+        assert_eq!(replay.diagnostics.image_effect_cache_hits, 0);
+        assert_eq!(replay.diagnostics.image_effect_cache_misses, 2);
     }
 }
