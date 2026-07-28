@@ -1755,21 +1755,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `invalid CanvasKit surface request still renders canvas=${JSON.stringify(invalidSurfaceParamProbe)}`,
   );
 
-  setTestCase('layer-resource-cache-invalidation');
+  setTestCase('layer-resource-cache-edit-preservation');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=auto');
   await loadHwpFile(page, '20250130-hongbo_saved.hwp');
-  const resourceInvalidationProbe = await page.evaluate(() => {
+  const resourcePreservationProbe = await page.evaluate(() => {
     const canvasView = window.__canvasView;
     const wasm = window.__wasm;
-    if (!canvasView || !wasm?.getPageLayerTree) {
-      return { error: 'canvas view or wasm bridge unavailable' };
+    const renderer = canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!canvasView || !wasm?.getPageLayerTree || !renderer?.resourceCache) {
+      return { error: 'canvas view, wasm bridge, or CanvasKit renderer unavailable' };
     }
 
     const beforeTree = wasm.getPageLayerTree(0, 'screen');
     const beforeResources = beforeTree.resources;
+    renderer.resourceCache.setResources(beforeResources);
+    const beforeCachedImage = renderer.resourceCache.image(0);
+    const beforeImageCacheSize = renderer.imageCache?.size ?? -1;
     canvasView.refreshPages();
     const afterTree = wasm.getPageLayerTree(0, 'screen');
     const afterResources = afterTree.resources;
+    renderer.resourceCache.setResources(afterResources);
+    const afterCachedImage = renderer.resourceCache.image(0);
 
     return {
       beforeImageCount: beforeResources?.images?.length ?? -1,
@@ -1777,26 +1783,77 @@ runTest('Renderer lifecycle', async ({ page }) => {
       beforeTableId: beforeResources?.tableId ?? null,
       afterTableId: afterResources?.tableId ?? null,
       sameResourceTable: beforeResources === afterResources,
+      beforeImageCacheSize,
+      afterImageCacheSize: renderer.imageCache?.size ?? -1,
+      reusedDecodedImage: beforeCachedImage !== null && beforeCachedImage === afterCachedImage,
       layerTreeCacheSize: canvasView.pageRenderer?.layerTreeCache?.size ?? -1,
     };
   });
 
-  assert(!resourceInvalidationProbe.error, resourceInvalidationProbe.error || 'layer resource invalidation probe available');
   assert(
-    resourceInvalidationProbe.beforeImageCount > 0,
-    `resource table populated before refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+    !resourcePreservationProbe.error,
+    resourcePreservationProbe.error || 'layer resource edit-preservation probe available',
   );
   assert(
-    resourceInvalidationProbe.afterImageCount > 0,
-    `resource table repopulated after refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+    resourcePreservationProbe.beforeImageCount > 0,
+    `resource table populated before refresh=${JSON.stringify(resourcePreservationProbe)}`,
   );
   assert(
-    resourceInvalidationProbe.sameResourceTable === false,
-    `resource table generation changes on refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+    resourcePreservationProbe.afterImageCount > 0,
+    `resource table remains populated after refresh=${JSON.stringify(resourcePreservationProbe)}`,
   );
   assert(
-    resourceInvalidationProbe.beforeTableId !== resourceInvalidationProbe.afterTableId,
-    `resource table id changes on refresh=${JSON.stringify(resourceInvalidationProbe)}`,
+    resourcePreservationProbe.sameResourceTable === true,
+    `ordinary refresh preserves the document resource table=${JSON.stringify(resourcePreservationProbe)}`,
+  );
+  assert(
+    resourcePreservationProbe.beforeTableId === resourcePreservationProbe.afterTableId,
+    `ordinary refresh preserves the resource table id=${JSON.stringify(resourcePreservationProbe)}`,
+  );
+  assert(
+    resourcePreservationProbe.beforeImageCacheSize > 0
+      && resourcePreservationProbe.afterImageCacheSize >= resourcePreservationProbe.beforeImageCacheSize,
+    `ordinary refresh preserves decoded CanvasKit image state=${JSON.stringify(resourcePreservationProbe)}`,
+  );
+  assert(
+    resourcePreservationProbe.reusedDecodedImage,
+    `ordinary refresh reuses the decoded CanvasKit image=${JSON.stringify(resourcePreservationProbe)}`,
+  );
+
+  setTestCase('layer-resource-cache-document-reset');
+  await loadHwpFile(page, 'pic-crop-01.hwp');
+  const resourceResetProbe = await page.evaluate(() => {
+    const canvasView = window.__canvasView;
+    const wasm = window.__wasm;
+    const renderer = canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!wasm?.getPageLayerTree || !renderer?.resourceCache) {
+      return { error: 'wasm bridge or CanvasKit renderer unavailable' };
+    }
+    const tree = wasm.getPageLayerTree(0, 'screen');
+    const tableId = tree.resources?.tableId ?? null;
+    const resourceCacheKeys = Array.from(renderer.imageCache?.keys?.() ?? [])
+      .filter((key) => key.startsWith('res:'));
+    return {
+      tableId,
+      rendererTableId: renderer.resourceCache.resourceTableId ?? null,
+      resourceCacheKeys,
+    };
+  });
+  assert(!resourceResetProbe.error, resourceResetProbe.error || 'layer resource document-reset probe available');
+  assert(
+    resourceResetProbe.tableId !== resourcePreservationProbe.afterTableId,
+    `new document load advances the resource table generation=${JSON.stringify(resourceResetProbe)}`,
+  );
+  assert(
+    resourceResetProbe.rendererTableId === resourceResetProbe.tableId,
+    `CanvasKit adopts the new document resource table=${JSON.stringify(resourceResetProbe)}`,
+  );
+  assert(
+    resourceResetProbe.resourceCacheKeys.length > 0
+      && resourceResetProbe.resourceCacheKeys.every(
+        (key) => key.startsWith(`res:${resourceResetProbe.tableId}:`),
+      ),
+    `new document load releases stale resource-table images=${JSON.stringify(resourceResetProbe)}`,
   );
 
   setTestCase('document-resource-table-cache-reuse');
@@ -1984,7 +2041,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         imageCacheSize: renderer.imageCache?.size ?? -1,
         afterFirstKeys,
         afterSecondKeys,
-        firstCachedImageReusedForSecondPayload: firstCachedImage === (secondCachedImages[1] ?? null),
+        firstCachedImageReusedForSecondPayload: firstCachedImage === (secondCachedImages[0] ?? null),
         allKeysUsePayloadFingerprint: afterSecondKeys.every((key) => key.includes(':fp:')),
       };
     } finally {
@@ -1999,14 +2056,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     hashlessResourceProbe.error || 'hashless resource cache invalidation probe available',
   );
   assert(
-    hashlessResourceProbe.imageCacheSize === 2,
-    `hashless resource bytes produce distinct CanvasKit cached images=${JSON.stringify(hashlessResourceProbe)}`,
+    hashlessResourceProbe.imageCacheSize === 1,
+    `hashless resource replacement releases the stale CanvasKit image=${JSON.stringify(hashlessResourceProbe)}`,
   );
   assert(
     hashlessResourceProbe.afterFirstKeys.length === 1
-      && hashlessResourceProbe.afterSecondKeys.length === 2
-      && hashlessResourceProbe.afterSecondKeys[0] !== hashlessResourceProbe.afterSecondKeys[1],
-    `hashless resource cache keys are payload-specific=${JSON.stringify(hashlessResourceProbe)}`,
+      && hashlessResourceProbe.afterSecondKeys.length === 1
+      && hashlessResourceProbe.afterFirstKeys[0] !== hashlessResourceProbe.afterSecondKeys[0],
+    `hashless resource replacement changes the payload-specific cache key=${JSON.stringify(hashlessResourceProbe)}`,
   );
   assert(
     hashlessResourceProbe.allKeysUsePayloadFingerprint,

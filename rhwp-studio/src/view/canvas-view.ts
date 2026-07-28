@@ -245,7 +245,6 @@ export class CanvasView {
 
     this.pageRenderer.cancelAll();
     this.pageRenderer.clearLayerTreeCache();
-    this.wasm.clearLayerResourceCache();
 
     // 페이지 정보 재수집 (페이지 수/크기가 변경될 수 있음)
     const pageCount = this.wasm.pageCount;

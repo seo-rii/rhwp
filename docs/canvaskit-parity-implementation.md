@@ -317,6 +317,12 @@ resource key/hash, and an actual payload fingerprint. Payload fingerprints are
 memoized by resource object identity so repeated replay does not rescan large
 byte arrays, while replacing a resource object still invalidates stale
 pictures even when producer metadata is unchanged.
+Ordinary document edits invalidate exported page trees and their static
+pictures, but retain the document-scoped resource table until a new document
+is loaded or the view is disposed. Content-addressed resource interning then
+keeps unchanged image ids and decoded CanvasKit images warm across edit
+refreshes, while changed bytes receive a distinct resource id and static
+picture key.
 CanvasKit fallback-font initialization deduplicates bundled Noto/D2/math URLs
 and prefetches the remaining unique catalog files in parallel; registration
 order and family/style matching remain deterministic.
