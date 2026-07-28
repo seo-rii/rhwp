@@ -98,6 +98,118 @@ impl From<quick_xml::Error> for HwpxError {
     }
 }
 
+fn numeric_bin_item_id(value: &str) -> Option<u16> {
+    let digits = value
+        .chars()
+        .filter(char::is_ascii_digit)
+        .collect::<String>();
+    (!digits.is_empty()).then(|| digits.parse().ok()).flatten()
+}
+
+/// Normalizes image-like `binaryItemIDRef` values to the internal manifest
+/// position used by `bin_data_id`. Font references remain untouched because
+/// they retain their exact manifest identity for face verification.
+fn canonicalize_image_bin_item_refs<'a>(
+    xml: &'a str,
+    items: &[content::PackageItem],
+) -> Result<std::borrow::Cow<'a, str>, HwpxError> {
+    let mut ids = std::collections::HashMap::<&str, Option<u16>>::new();
+    for (index, item) in items.iter().enumerate() {
+        let canonical_id = u16::try_from(index + 1).map_err(|_| {
+            HwpxError::ConversionError("HWPX BinData manifest exceeds u16 IDs".to_string())
+        })?;
+        ids.entry(item.id.as_str())
+            .and_modify(|resolved| *resolved = None)
+            .or_insert(Some(canonical_id));
+    }
+
+    let replacements = ids
+        .into_iter()
+        .filter_map(|(manifest_id, canonical_id)| {
+            let canonical_id = canonical_id?;
+            (numeric_bin_item_id(manifest_id) != Some(canonical_id))
+                .then_some((manifest_id, canonical_id))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    if replacements.is_empty() {
+        return Ok(std::borrow::Cow::Borrowed(xml));
+    }
+
+    fn rewrite_start(
+        start: quick_xml::events::BytesStart<'_>,
+        replacements: &std::collections::HashMap<&str, u16>,
+    ) -> Result<quick_xml::events::BytesStart<'static>, HwpxError> {
+        if !matches!(start.local_name().as_ref(), b"img" | b"image" | b"ole") {
+            return Ok(start.into_owned());
+        }
+
+        let decoder = start.decoder();
+        let mut changed = false;
+        let mut attributes = Vec::new();
+        for attribute in start.attributes().with_checks(false) {
+            let attribute = attribute.map_err(|error| {
+                HwpxError::XmlError(format!("invalid HWPX image attribute: {error}"))
+            })?;
+            let key = attribute.key.as_ref().to_vec();
+            let value = if key == b"binaryItemIDRef" {
+                let manifest_id = attribute
+                    .decode_and_unescape_value(decoder)
+                    .map_err(HwpxError::from)?;
+                if let Some(canonical_id) = replacements.get(manifest_id.as_ref()) {
+                    changed = true;
+                    format!("image{canonical_id}").into_bytes()
+                } else {
+                    attribute.value.as_ref().to_vec()
+                }
+            } else {
+                attribute.value.as_ref().to_vec()
+            };
+            attributes.push((key, value));
+        }
+
+        if !changed {
+            return Ok(start.into_owned());
+        }
+
+        let mut rewritten = start.into_owned();
+        rewritten.clear_attributes();
+        for (key, value) in &attributes {
+            rewritten.push_attribute((key.as_slice(), value.as_slice()));
+        }
+        Ok(rewritten)
+    }
+
+    let mut reader = quick_xml::Reader::from_str(xml);
+    let mut writer = quick_xml::Writer::new(Vec::with_capacity(xml.len()));
+    let mut buffer = Vec::new();
+    loop {
+        let event = reader.read_event_into(&mut buffer)?;
+        match event {
+            quick_xml::events::Event::Start(start) => writer
+                .write_event(quick_xml::events::Event::Start(rewrite_start(
+                    start,
+                    &replacements,
+                )?))
+                .map_err(|error| HwpxError::XmlError(error.to_string()))?,
+            quick_xml::events::Event::Empty(start) => writer
+                .write_event(quick_xml::events::Event::Empty(rewrite_start(
+                    start,
+                    &replacements,
+                )?))
+                .map_err(|error| HwpxError::XmlError(error.to_string()))?,
+            quick_xml::events::Event::Eof => break,
+            event => writer
+                .write_event(event)
+                .map_err(|error| HwpxError::XmlError(error.to_string()))?,
+        }
+        buffer.clear();
+    }
+
+    String::from_utf8(writer.into_inner())
+        .map(std::borrow::Cow::Owned)
+        .map_err(|error| HwpxError::XmlError(error.to_string()))
+}
+
 /// HWPX 파일 바이트 데이터를 파싱하여 Document IR로 변환
 pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
     // 1. ZIP 컨테이너 열기
@@ -109,6 +221,7 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
 
     // 3. header.xml → DocInfo, DocProperties
     let header_xml = reader.read_file("Contents/header.xml")?;
+    let header_xml = canonicalize_image_bin_item_refs(&header_xml, &package_info.bin_data_items)?;
     let (mut doc_info, doc_properties) = header::parse_hwpx_header(&header_xml)?;
     resolve_embedded_font_references(&mut doc_info, &package_info.bin_data_items);
 
@@ -133,6 +246,8 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
     let mut sections = Vec::new();
     for section_href in &package_info.section_files {
         let section_xml = reader.read_file(section_href)?;
+        let section_xml =
+            canonicalize_image_bin_item_refs(&section_xml, &package_info.bin_data_items)?;
         match section::parse_hwpx_section(&section_xml) {
             Ok(section) => sections.push(section),
             Err(e) => {
@@ -266,6 +381,59 @@ mod tests {
         // CFB/HWP 데이터로 시도
         let result = parse_hwpx(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
         assert!(result.is_err());
+    }
+
+    fn image_item(id: &str) -> content::PackageItem {
+        content::PackageItem {
+            id: id.to_string(),
+            href: format!("BinData/{id}.png"),
+            media_type: "image/png".to_string(),
+            is_embedded: true,
+        }
+    }
+
+    #[test]
+    fn image_bin_refs_use_manifest_positions_without_touching_font_refs() {
+        let xml = r#"<root>
+  <hh:font binaryItemIDRef="font-alpha"/>
+  <hc:img binaryItemIDRef="BINHDR"/>
+  <hp:ole binaryItemIDRef="BIN0007"/>
+</root>"#;
+        let items = [
+            image_item("font-alpha"),
+            image_item("BINHDR"),
+            image_item("BIN0007"),
+        ];
+
+        let normalized = canonicalize_image_bin_item_refs(xml, &items).unwrap();
+
+        assert!(normalized.contains(r#"hh:font binaryItemIDRef="font-alpha""#));
+        assert!(normalized.contains(r#"hc:img binaryItemIDRef="image2""#));
+        assert!(normalized.contains(r#"hp:ole binaryItemIDRef="image3""#));
+    }
+
+    #[test]
+    fn canonical_image_bin_refs_keep_the_original_xml_borrowed() {
+        let xml = r#"<hc:img binaryItemIDRef="image1"/>"#;
+
+        let normalized = canonicalize_image_bin_item_refs(xml, &[image_item("image1")]).unwrap();
+
+        assert!(matches!(normalized, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(normalized, xml);
+    }
+
+    #[test]
+    fn ambiguous_or_unknown_image_bin_refs_are_not_rewritten() {
+        let xml = r#"<root>
+  <hc:img binaryItemIDRef="duplicate"/>
+  <hc:img binaryItemIDRef="unknown"/>
+</root>"#;
+        let items = [image_item("duplicate"), image_item("duplicate")];
+
+        let normalized = canonicalize_image_bin_item_refs(xml, &items).unwrap();
+
+        assert!(matches!(normalized, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(normalized, xml);
     }
 
     #[test]

@@ -1185,6 +1185,11 @@ the earlier slice's crop while retaining its `originalSizeHu` coordinate
 reference, and is shared by SVG, Canvas2D, native Skia, and CanvasKit lowering.
 Pairs in different replay planes are deliberately excluded because page-tree
 traversal order does not define their actual paint order.
+HWPX image-like `binaryItemIDRef` values are resolved through their exact
+`content.hpf` manifest identity before section/header parsing. Nonnumeric IDs
+and numeric IDs that do not match manifest position are normalized to the
+internal document index, while duplicate IDs remain unresolved and embedded
+font references retain their exact manifest identity.
 Each later implementation commit should start from a concrete fixture, corpus
 document, backend proof, or malformed payload that the current branch does not
 already cover.
