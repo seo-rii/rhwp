@@ -603,6 +603,9 @@ const paragraphBaselineSample = rendererBaselineManifest.samples.find((sample) =
 const paragraphMarksBaselineSample = rendererBaselineManifest.samples.find(
   (sample) => sample.id === 'paragraph-text-marks',
 );
+const puaBaselineSample = rendererBaselineManifest.samples.find(
+  (sample) => sample.id === 'pua-special-glyphs',
+);
 const hwpxTabLeadersBaselineSample = rendererBaselineManifest.samples.find(
   (sample) => sample.id === 'hwpx-tac-tab-leaders',
 );
@@ -636,6 +639,32 @@ assert.deepEqual(
   'paragraph-mark parity must be captured through explicit document view options',
 );
 assert.equal(
+  puaBaselineSample?.file,
+  'pua-test.hwp',
+  'PUA parity must keep the checked-in original-glyph regression document',
+);
+assert.equal(
+  puaBaselineSample?.page,
+  0,
+  'PUA parity must capture the original and circled glyph page',
+);
+assert.equal(
+  puaBaselineSample?.category,
+  'font',
+  'PUA parity must remain part of the representative font corpus',
+);
+assert.deepEqual(
+  puaBaselineSample?.browserParityThresholds,
+  {
+    maxDiffRatio: null,
+    inkMaskNeighborhoodRadius: 3,
+    inkMaskMaxDiffRatio: 0.01,
+    nonInkMaxDiffPixels: 0,
+    solidInkMaxDiffRatio: 0.03,
+  },
+  'PUA parity must retain its text-raster-only browser budget',
+);
+assert.equal(
   hwpxTabLeadersBaselineSample?.file,
   'tac-img-02.hwpx',
   'HWPX tab-leader parity must keep the checked-in TAC document',
@@ -649,6 +678,7 @@ for (const sampleId of [
   'paragraph-line-basic',
   'paragraph-basic',
   'paragraph-text-marks',
+  'pua-special-glyphs',
   'paragraph-mixed-style',
   'paragraph-spacing',
   'paragraph-multisize',

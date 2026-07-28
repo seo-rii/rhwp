@@ -49,6 +49,20 @@
       }
     },
     {
+      "id": "pua-special-glyphs",
+      "file": "pua-test.hwp",
+      "category": "font",
+      "page": 0,
+      "notes": "PUA and circled-character sample for positioned CanvasKit glyph fallback coverage.",
+      "browserParityThresholds": {
+        "maxDiffRatio": null,
+        "inkMaskNeighborhoodRadius": 3,
+        "inkMaskMaxDiffRatio": 0.01,
+        "nonInkMaxDiffPixels": 0,
+        "solidInkMaxDiffRatio": 0.03
+      }
+    },
+    {
       "id": "paragraph-mixed-style",
       "file": "lseg-02-mixed.hwp",
       "category": "paragraph",

@@ -1118,6 +1118,10 @@ line-end controls, while page 4 of `tac-img-02.hwpx` covers the document's real
 table-of-contents tab leaders. This keeps view-option visuals and HWPX
 positioned text in the same Canvas2D-versus-CanvasKit hard-safety workflow as
 ordinary page replay.
+The checked-in `pua-test.hwp` sample adds the corresponding real-document proof
+for PUA and circled-character fallback. It complements the synthetic
+`canvas-layer-text-script-parity` lifecycle fixture and keeps the original
+glyph-loss regression from issue #2394 in the representative browser baseline.
 Each later implementation commit should start from a concrete fixture, corpus
 document, backend proof, or malformed payload that the current branch does not
 already cover.
