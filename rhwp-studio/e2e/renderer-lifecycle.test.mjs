@@ -12175,7 +12175,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       shadow: null,
     };
     const tree = {
-      pageWidth: 96,
+      pageWidth: 160,
       pageHeight: 28,
       profile: 'screen',
       outputOptions: {
@@ -12201,10 +12201,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1912,
-        bounds: { x: 0, y: 0, width: 96, height: 28 },
+        bounds: { x: 0, y: 0, width: 160, height: 28 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 96, height: 28 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 160, height: 28 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'rectangle',
             bbox: { x: 4, y: 4, width: 24, height: 16 },
@@ -12233,6 +12233,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
             bbox: { x: 70, y: 6, width: 18, height: 12 },
             cornerRadius: 0,
             style: strokeStyle,
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'ellipse',
+            bbox: { x: 100, y: 4, width: 24, height: 16 },
+            style: fillStyle('#00ff00'),
+            gradient: null,
+            transform,
+          },
+          {
+            type: 'path',
+            bbox: { x: 132, y: 4, width: 24, height: 16 },
+            commands: [
+              { type: 'moveTo', x: 132, y: 4 },
+              { type: 'lineTo', x: 156, y: 4 },
+              { type: 'lineTo', x: 156, y: 20 },
+              { type: 'lineTo', x: 132, y: 20 },
+              { type: 'closePath' },
+            ],
+            style: fillStyle('#ff00ff'),
             gradient: null,
             transform,
           },
@@ -12268,6 +12289,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const shaderOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 44, 12);
   const strokeOpacityCanvas2d = pixelAt(shapeOpacityParityProbe.canvas2d, 80, 6);
   const strokeOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 80, 6);
+  const ellipseOpacityCanvas2d = pixelAt(shapeOpacityParityProbe.canvas2d, 112, 12);
+  const ellipseOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 112, 12);
+  const pathOpacityCanvas2d = pixelAt(shapeOpacityParityProbe.canvas2d, 144, 12);
+  const pathOpacityCanvaskit = pixelAt(shapeOpacityParityProbe.canvaskit, 144, 12);
+  const assertExpectedPixel = (actual, expected, label) => {
+    assert(
+      channelDelta(actual, expected) <= 4,
+      `${label} expected=${JSON.stringify(expected)}, actual=${JSON.stringify(actual)}`,
+    );
+  };
   assert(
     channelDelta(solidOpacityCanvas2d, solidOpacityCanvaskit) <= 4,
     `solid shape opacity parity canvas2d=${JSON.stringify(solidOpacityCanvas2d)}, canvaskit=${JSON.stringify(solidOpacityCanvaskit)}`,
@@ -12280,6 +12311,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
     channelDelta(strokeOpacityCanvas2d, strokeOpacityCanvaskit) <= 4,
     `stroke shape opacity parity canvas2d=${JSON.stringify(strokeOpacityCanvas2d)}, canvaskit=${JSON.stringify(strokeOpacityCanvaskit)}`,
   );
+  assert(
+    channelDelta(ellipseOpacityCanvas2d, ellipseOpacityCanvaskit) <= 4,
+    `ellipse shape opacity parity canvas2d=${JSON.stringify(ellipseOpacityCanvas2d)}, canvaskit=${JSON.stringify(ellipseOpacityCanvaskit)}`,
+  );
+  assert(
+    channelDelta(pathOpacityCanvas2d, pathOpacityCanvaskit) <= 4,
+    `path shape opacity parity canvas2d=${JSON.stringify(pathOpacityCanvas2d)}, canvaskit=${JSON.stringify(pathOpacityCanvaskit)}`,
+  );
+  assertExpectedPixel(solidOpacityCanvas2d, { red: 127, green: 127, blue: 255, alpha: 255 }, 'solid shape single opacity');
+  assertExpectedPixel(shaderOpacityCanvas2d, { red: 127, green: 127, blue: 127, alpha: 255 }, 'gradient shape single opacity');
+  assertExpectedPixel(strokeOpacityCanvas2d, { red: 255, green: 127, blue: 127, alpha: 255 }, 'shape stroke single opacity');
+  assertExpectedPixel(ellipseOpacityCanvas2d, { red: 127, green: 255, blue: 127, alpha: 255 }, 'ellipse single opacity');
+  assertExpectedPixel(pathOpacityCanvas2d, { red: 255, green: 127, blue: 255, alpha: 255 }, 'path single opacity');
 
   setTestCase('canvas-layer-svg-arc-path-parity');
   const svgArcPathParityProbe = await page.evaluate(async () => {

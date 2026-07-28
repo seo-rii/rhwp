@@ -1011,6 +1011,11 @@ assertTokensInOrder(
   'CanvasKit shape fill precedence must stay gradient, pattern, then solid color',
 );
 assert(
+  !extractMethodBody(canvas2dSource, 'makeShapeFillStyle').includes('applyCssAlpha(fillColor')
+    && !extractMethodBody(canvaskitSource, 'makeShapeFillPaint').includes('opacity * opacity'),
+  'Canvas2D and CanvasKit shape fills must apply ShapeStyle opacity exactly once',
+);
+assert(
   extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4')
     && extractMethodBody(canvaskitSource, 'makeGradientShader').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4'),
   'Canvas2D and CanvasKit radial gradient type mapping must stay aligned',

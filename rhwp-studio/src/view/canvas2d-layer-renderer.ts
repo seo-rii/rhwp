@@ -758,7 +758,6 @@ export class Canvas2DLayerRenderer {
       ctx,
       op.bbox,
       op.backgroundColor ?? null,
-      1,
       op.gradient,
       undefined,
     );
@@ -1223,7 +1222,7 @@ export class Canvas2DLayerRenderer {
 
   private renderRectangle(ctx: CanvasRenderingContext2D, op: LayerRectangleOp): void {
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
-      const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
+      const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.gradient, op.style.pattern);
       const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
 
       const draw = () => {
@@ -1237,10 +1236,13 @@ export class Canvas2DLayerRenderer {
           this.beginRectanglePath(ctx, op.bbox, op.cornerRadius);
         }
         if (op.style.strokeColor) {
+          ctx.save();
+          ctx.globalAlpha *= op.style.opacity;
           ctx.strokeStyle = op.style.strokeColor;
           ctx.lineWidth = strokeWidth;
           ctx.setLineDash(strokeDashPattern(op.style.strokeDash, strokeWidth));
           ctx.stroke();
+          ctx.restore();
         }
       };
 
@@ -1256,7 +1258,7 @@ export class Canvas2DLayerRenderer {
 
   private renderEllipse(ctx: CanvasRenderingContext2D, op: LayerEllipseOp): void {
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
-      const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
+      const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.gradient, op.style.pattern);
       const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
 
       const draw = () => {
@@ -1288,10 +1290,13 @@ export class Canvas2DLayerRenderer {
           );
         }
         if (op.style.strokeColor) {
+          ctx.save();
+          ctx.globalAlpha *= op.style.opacity;
           ctx.strokeStyle = op.style.strokeColor;
           ctx.lineWidth = strokeWidth;
           ctx.setLineDash(strokeDashPattern(op.style.strokeDash, strokeWidth));
           ctx.stroke();
+          ctx.restore();
         }
       };
 
@@ -1308,7 +1313,7 @@ export class Canvas2DLayerRenderer {
   private renderPath(ctx: CanvasRenderingContext2D, op: LayerPathOp): void {
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
       const pathBounds = computePathPaintBounds(op.commands, op.bbox);
-      const fill = this.makeShapeFillStyle(ctx, pathBounds, op.style.fillColor, op.style.opacity, op.gradient, op.style.pattern);
+      const fill = this.makeShapeFillStyle(ctx, pathBounds, op.style.fillColor, op.gradient, op.style.pattern);
       const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
 
       const draw = () => {
@@ -1324,10 +1329,13 @@ export class Canvas2DLayerRenderer {
           appendPathCommands(ctx, op.commands);
         }
         if (op.style.strokeColor) {
+          ctx.save();
+          ctx.globalAlpha *= op.style.opacity;
           ctx.strokeStyle = op.style.strokeColor;
           ctx.lineWidth = strokeWidth;
           ctx.setLineDash(strokeDashPattern(op.style.strokeDash, strokeWidth));
           ctx.stroke();
+          ctx.restore();
         }
       };
 
@@ -1999,7 +2007,6 @@ export class Canvas2DLayerRenderer {
     ctx: CanvasRenderingContext2D,
     bounds: LayerBounds,
     fillColor: string | null | undefined,
-    opacity: number,
     gradient?: LayerGradient,
     pattern?: LayerPatternFill,
   ): string | CanvasGradient | CanvasPattern | null {
@@ -2018,7 +2025,7 @@ export class Canvas2DLayerRenderer {
     if (!fillColor) {
       return null;
     }
-    return opacity < 1 ? applyCssAlpha(fillColor, opacity) : fillColor;
+    return fillColor;
   }
 
   private makeGradientStyle(

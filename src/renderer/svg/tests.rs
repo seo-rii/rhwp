@@ -92,6 +92,30 @@ fn test_svg_draw_path() {
 }
 
 #[test]
+fn test_svg_draw_path_applies_shape_opacity_once() {
+    let mut renderer = SvgRenderer::new();
+    renderer.begin_page(32.0, 24.0);
+    renderer.draw_path(
+        &[
+            PathCommand::MoveTo(2.0, 2.0),
+            PathCommand::LineTo(30.0, 2.0),
+            PathCommand::LineTo(30.0, 22.0),
+            PathCommand::ClosePath,
+        ],
+        &ShapeStyle {
+            fill_color: Some(0x00FF0000),
+            stroke_color: Some(0x00000000),
+            stroke_width: 2.0,
+            opacity: 0.5,
+            ..Default::default()
+        },
+    );
+    let output = renderer.output();
+    assert!(output.contains(" opacity=\"0.500\""));
+    assert_eq!(output.matches("opacity=\"0.500\"").count(), 1);
+}
+
+#[test]
 fn test_svg_text_decoration() {
     let mut renderer = SvgRenderer::new();
     renderer.begin_page(800.0, 600.0);

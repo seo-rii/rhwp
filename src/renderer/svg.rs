@@ -2911,6 +2911,9 @@ impl SvgRenderer {
                 _ => {}
             }
         }
+        if style.opacity < 1.0 {
+            attrs.push_str(&format!(" opacity=\"{:.3}\"", style.opacity));
+        }
 
         self.output.push_str(&format!("<path {}/>\n", attrs));
     }
