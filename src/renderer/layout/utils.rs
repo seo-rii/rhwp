@@ -11,25 +11,34 @@ use crate::model::footnote::NumberFormat;
 use crate::model::image::Picture;
 use crate::model::style::{HeadType, Numbering};
 
-/// bin_data_id(1-indexed 순번)로 BinDataContent를 찾는다.
-/// bin_data_id는 doc_info의 BinData 레코드 순번(1부터 시작)이며,
-/// BinDataContent 배열도 같은 순서로 저장되어 있다.
-///
-/// HWPX 차트처럼 sparse storage ID를 직접 참조하는 경우가 있으므로,
-/// 인덱스 범위 밖일 때만 storage ID 검색으로 fallback한다.
+/// 원본 형식이 `bin_data_id`를 해석하는 방식.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BinDataReferenceMode {
+    /// HWP5의 DocInfo BinData 레코드 순번을 우선하고 sparse storage ID를 보조로 사용한다.
+    DocumentIndex,
+    /// HWPX manifest의 정규화된 내부 ID만 정확히 일치시킨다.
+    ExactManifestId,
+}
+
+/// 원본 형식의 참조 규칙으로 `BinDataContent`를 찾는다.
 pub(crate) fn find_bin_data<'a>(
     bin_data_content: &'a [BinDataContent],
     bin_data_id: u16,
+    mode: BinDataReferenceMode,
 ) -> Option<&'a BinDataContent> {
     if bin_data_id == 0 {
         return None;
     }
 
-    if let Some(c) = bin_data_content.get((bin_data_id - 1) as usize) {
-        return Some(c);
+    if mode == BinDataReferenceMode::DocumentIndex {
+        if let Some(content) = bin_data_content.get((bin_data_id - 1) as usize) {
+            return Some(content);
+        }
     }
 
-    bin_data_content.iter().find(|c| c.id == bin_data_id)
+    bin_data_content
+        .iter()
+        .find(|content| content.id == bin_data_id)
 }
 
 /// Picture의 렌더 표시 크기(HWPUNIT)를 반환한다.
@@ -422,7 +431,7 @@ pub(crate) fn layout_rect_to_bbox(rect: &LayoutRect) -> BoundingBox {
 
 #[cfg(test)]
 mod tests {
-    use super::{find_bin_data, picture_display_size_hu};
+    use super::{find_bin_data, picture_display_size_hu, BinDataReferenceMode};
     use crate::model::bin_data::{BinDataBytes, BinDataContent};
     use crate::model::image::Picture;
 
@@ -436,14 +445,20 @@ mod tests {
 
     #[test]
     fn find_bin_data_rejects_zero_id() {
-        assert!(find_bin_data(&[bin_data(1, "png")], 0).is_none());
+        for mode in [
+            BinDataReferenceMode::DocumentIndex,
+            BinDataReferenceMode::ExactManifestId,
+        ] {
+            assert!(find_bin_data(&[bin_data(1, "png")], 0, mode).is_none());
+        }
     }
 
     #[test]
     fn find_bin_data_uses_document_index_before_storage_id() {
         let content = [bin_data(12, "png"), bin_data(1, "bmp"), bin_data(2, "bmp")];
 
-        let selected = find_bin_data(&content, 1).expect("document index should resolve");
+        let selected = find_bin_data(&content, 1, BinDataReferenceMode::DocumentIndex)
+            .expect("document index should resolve");
 
         assert_eq!(selected.id, 12);
         assert_eq!(selected.extension, "png");
@@ -455,7 +470,8 @@ mod tests {
 
         for bin_data_id in 1..=3 {
             assert_eq!(
-                find_bin_data(&content, bin_data_id).map(|item| item.id),
+                find_bin_data(&content, bin_data_id, BinDataReferenceMode::DocumentIndex,)
+                    .map(|item| item.id),
                 Some(bin_data_id)
             );
         }
@@ -471,12 +487,36 @@ mod tests {
         ];
 
         assert_eq!(
-            find_bin_data(&content, 60_001).map(|item| item.id),
+            find_bin_data(&content, 60_001, BinDataReferenceMode::DocumentIndex)
+                .map(|item| item.id),
             Some(60_001)
         );
         assert_eq!(
-            find_bin_data(&content, 60_002).map(|item| item.id),
+            find_bin_data(&content, 60_002, BinDataReferenceMode::DocumentIndex)
+                .map(|item| item.id),
             Some(60_002)
+        );
+    }
+
+    #[test]
+    fn find_bin_data_uses_exact_ids_for_sparse_hwpx_content() {
+        let content = [bin_data(2, "png"), bin_data(4, "jpg")];
+
+        assert!(
+            find_bin_data(&content, 1, BinDataReferenceMode::ExactManifestId).is_none(),
+            "external manifest item must not alias the first embedded item"
+        );
+        assert_eq!(
+            find_bin_data(&content, 2, BinDataReferenceMode::ExactManifestId).map(|item| item.id),
+            Some(2)
+        );
+        assert!(
+            find_bin_data(&content, 3, BinDataReferenceMode::ExactManifestId).is_none(),
+            "a missing manifest item must remain unresolved"
+        );
+        assert_eq!(
+            find_bin_data(&content, 4, BinDataReferenceMode::ExactManifestId).map(|item| item.id),
+            Some(4)
         );
     }
 
@@ -484,7 +524,7 @@ mod tests {
     fn find_bin_data_rejects_unknown_out_of_range_id() {
         let content = [bin_data(1, "png"), bin_data(2, "png")];
 
-        assert!(find_bin_data(&content, 99).is_none());
+        assert!(find_bin_data(&content, 99, BinDataReferenceMode::DocumentIndex).is_none());
     }
 
     #[test]

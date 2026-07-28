@@ -342,7 +342,7 @@ pub(crate) use text_measurement::{
 };
 pub(crate) use utils::{
     drawing_to_line_style, drawing_to_shape_style, find_bin_data, format_page_number,
-    layout_rect_to_bbox, picture_display_size_hu, resolve_numbering_id,
+    layout_rect_to_bbox, picture_display_size_hu, resolve_numbering_id, BinDataReferenceMode,
 };
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -432,6 +432,19 @@ impl LayoutEngine {
     /// HWPX 원본 소스 여부를 설정한다.
     pub fn set_hwpx_source(&self, enabled: bool) {
         self.is_hwpx_source.set(enabled);
+    }
+
+    fn resolve_bin_data<'a>(
+        &self,
+        bin_data_content: &'a [BinDataContent],
+        bin_data_id: u16,
+    ) -> Option<&'a BinDataContent> {
+        let mode = if self.is_hwpx_source.get() {
+            BinDataReferenceMode::ExactManifestId
+        } else {
+            BinDataReferenceMode::DocumentIndex
+        };
+        find_bin_data(bin_data_content, bin_data_id, mode)
     }
 
     /// 투명선 표시 여부를 설정한다.
@@ -838,15 +851,14 @@ impl LayoutEngine {
                 let bf_idx = (pbf.border_fill_id - 1) as usize;
                 if let Some(bs) = styles.border_styles.get(bf_idx) {
                     let img = bs.image_fill.as_ref().and_then(|img_fill| {
-                        find_bin_data(bin_data_content, img_fill.bin_data_id).map(|c| {
-                            PageBackgroundImage {
+                        self.resolve_bin_data(bin_data_content, img_fill.bin_data_id)
+                            .map(|c| PageBackgroundImage {
                                 data: c.data.load(),
                                 fill_mode: img_fill.fill_mode,
                                 brightness: img_fill.brightness,
                                 contrast: img_fill.contrast,
                                 effect: img_fill.effect,
-                            }
-                        })
+                            })
                     });
                     (bs.fill_color.or(Some(0x00FFFFFF)), bs.gradient.clone(), img)
                 } else {

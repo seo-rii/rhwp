@@ -15,7 +15,7 @@ use super::text_measurement::{
     find_next_tab_stop, resolved_to_text_style,
 };
 use super::utils::{
-    expand_numbering_format, find_bin_data, numbering_format_to_number_format, resolve_numbering_id,
+    expand_numbering_format, numbering_format_to_number_format, resolve_numbering_id,
 };
 use super::{CellContext, LayoutEngine};
 use crate::model::bin_data::BinDataContent;
@@ -1974,8 +1974,9 @@ impl LayoutEngine {
                                     let pic_h = hwpunit_to_px(pic.common.height as i32, self.dpi);
                                     let img_y = (y + baseline - pic_h).max(y);
                                     let bin_data_id = pic.image_attr.bin_data_id;
-                                    let image_data =
-                                        find_bin_data(bdc, bin_data_id).map(|c| c.data.load());
+                                    let image_data = self
+                                        .resolve_bin_data(bdc, bin_data_id)
+                                        .map(|c| c.data.load());
                                     let img_id = tree.next_id();
                                     let img_node = RenderNode::new(
                                         img_id,
@@ -2299,8 +2300,9 @@ impl LayoutEngine {
                                 let pic_h = hwpunit_to_px(pic.common.height as i32, self.dpi);
                                 let img_y = (y + baseline - pic_h).max(y);
                                 let bin_data_id = pic.image_attr.bin_data_id;
-                                let image_data =
-                                    find_bin_data(bdc, bin_data_id).map(|c| c.data.load());
+                                let image_data = self
+                                    .resolve_bin_data(bdc, bin_data_id)
+                                    .map(|c| c.data.load());
                                 let img_id = tree.next_id();
                                 let img_node = RenderNode::new(
                                     img_id,
@@ -2397,8 +2399,9 @@ impl LayoutEngine {
                                     let pic_h = hwpunit_to_px(pic.common.height as i32, self.dpi);
                                     let img_y = (y + baseline - pic_h).max(y);
                                     let bin_data_id = pic.image_attr.bin_data_id;
-                                    let image_data =
-                                        find_bin_data(bdc, bin_data_id).map(|c| c.data.load());
+                                    let image_data = self
+                                        .resolve_bin_data(bdc, bin_data_id)
+                                        .map(|c| c.data.load());
                                     let img_id = tree.next_id();
                                     let img_node = RenderNode::new(
                                         img_id,

@@ -171,10 +171,7 @@ impl DocumentCore {
                 if remaining == 0 {
                     continue;
                 }
-                let Some(content) = crate::renderer::layout::find_bin_data(
-                    &self.document.bin_data_content,
-                    bin_data_id,
-                ) else {
+                let Some(content) = self.resolve_bin_data(bin_data_id) else {
                     continue;
                 };
                 let Some(bytes) = content.data.load_limited(remaining) else {

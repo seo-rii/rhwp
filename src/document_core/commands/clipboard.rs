@@ -1253,14 +1253,7 @@ impl DocumentCore {
             return String::new();
         }
 
-        // 이미지 데이터 찾기 (bin_data_id는 1-indexed 순번)
-        let image_data = if bin_data_id > 0 {
-            self.document
-                .bin_data_content
-                .get((bin_data_id - 1) as usize)
-        } else {
-            None
-        };
+        let image_data = self.resolve_bin_data(bin_data_id);
 
         if let Some(bdc) = image_data {
             let bytes = bdc.data.load();
@@ -1318,13 +1311,9 @@ impl DocumentCore {
             ));
         }
 
-        let bdc = self
-            .document
-            .bin_data_content
-            .get((bin_data_id - 1) as usize)
-            .ok_or_else(|| {
-                HwpError::RenderError(format!("바이너리 데이터 {} 범위 초과", bin_data_id))
-            })?;
+        let bdc = self.resolve_bin_data(bin_data_id).ok_or_else(|| {
+            HwpError::RenderError(format!("바이너리 데이터 {} 범위 초과", bin_data_id))
+        })?;
 
         Ok(bdc.data.load())
     }
@@ -1366,13 +1355,9 @@ impl DocumentCore {
             ));
         }
 
-        let bdc = self
-            .document
-            .bin_data_content
-            .get((bin_data_id - 1) as usize)
-            .ok_or_else(|| {
-                HwpError::RenderError(format!("바이너리 데이터 {} 범위 초과", bin_data_id))
-            })?;
+        let bdc = self.resolve_bin_data(bin_data_id).ok_or_else(|| {
+            HwpError::RenderError(format!("바이너리 데이터 {} 범위 초과", bin_data_id))
+        })?;
 
         Ok(detect_clipboard_image_mime(&bdc.data.load()).to_string())
     }

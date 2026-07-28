@@ -11,7 +11,7 @@ use super::super::{
 };
 use super::border_rendering::border_width_to_px;
 use super::text_measurement::{estimate_text_width, resolved_to_text_style};
-use super::utils::{find_bin_data, picture_display_size_hu};
+use super::utils::picture_display_size_hu;
 use super::LayoutEngine;
 use crate::model::bin_data::BinDataContent;
 use crate::model::control::Control;
@@ -86,7 +86,9 @@ impl LayoutEngine {
 
         // BinData에서 이미지 데이터 찾기 (bin_data_id는 1-indexed 순번)
         let bin_data_id = picture.image_attr.bin_data_id;
-        let image_data = find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.load());
+        let image_data = self
+            .resolve_bin_data(bin_data_content, bin_data_id)
+            .map(|c| c.data.load());
 
         // 그림 자르기: crop 좌표를 그대로 저장 (렌더러에서 이미지 px 크기와 비교)
         let crop = super::picture_crop(picture);
@@ -295,7 +297,9 @@ impl LayoutEngine {
 
         // BinData에서 이미지 데이터 찾기 (bin_data_id는 1-indexed 순번)
         let bin_data_id = picture.image_attr.bin_data_id;
-        let image_data = find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.load());
+        let image_data = self
+            .resolve_bin_data(bin_data_content, bin_data_id)
+            .map(|c| c.data.load());
 
         // 그림 자르기
         let crop = super::picture_crop(picture);

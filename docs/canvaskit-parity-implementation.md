@@ -1190,6 +1190,12 @@ HWPX image-like `binaryItemIDRef` values are resolved through their exact
 and numeric IDs that do not match manifest position are normalized to the
 internal document index, while duplicate IDs remain unresolved and embedded
 font references retain their exact manifest identity.
+Resource lookup keeps the source formats distinct after that normalization:
+HWP5 references continue to prefer the one-based DocInfo record position and
+fall back to sparse storage IDs, while HWPX references require an exact
+normalized manifest ID. This prevents an omitted external or missing HWPX
+manifest item from aliasing a later embedded image, image fill, chart, or font
+resource in the compact `BinDataContent` vector.
 Each later implementation commit should start from a concrete fixture, corpus
 document, backend proof, or malformed payload that the current branch does not
 already cover.

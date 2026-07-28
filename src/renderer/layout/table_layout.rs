@@ -11,7 +11,6 @@ use super::border_rendering::{
     render_transparent_borders,
 };
 use super::text_measurement::{estimate_text_width, resolved_to_text_style};
-use super::utils::find_bin_data;
 use super::{CellContext, CellPathEntry, LayoutEngine};
 use crate::model::bin_data::BinDataContent;
 use crate::model::control::Control;
@@ -478,10 +477,9 @@ impl LayoutEngine {
                     ));
                     // 이미지 채우기
                     if let Some(ref img_fill) = zone_bs.image_fill {
-                        if let Some(img_content) = crate::renderer::layout::find_bin_data(
-                            bin_data_content,
-                            img_fill.bin_data_id,
-                        ) {
+                        if let Some(img_content) =
+                            self.resolve_bin_data(bin_data_content, img_fill.bin_data_id)
+                        {
                             let img_id = tree.next_id();
                             let img_node = RenderNode::new(
                                 img_id,

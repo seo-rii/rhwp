@@ -13,6 +13,7 @@ mod queries;
 pub mod table_calc;
 pub mod validation;
 
+use crate::model::bin_data::BinDataContent;
 use crate::model::document::Document;
 use crate::model::event::DocumentEvent;
 use crate::model::paragraph::Paragraph;
@@ -140,6 +141,15 @@ pub struct ActiveFieldInfo {
 }
 
 impl DocumentCore {
+    pub(crate) fn resolve_bin_data(&self, bin_data_id: u16) -> Option<&BinDataContent> {
+        let mode = if self.source_format == crate::parser::FileFormat::Hwpx {
+            crate::renderer::layout::BinDataReferenceMode::ExactManifestId
+        } else {
+            crate::renderer::layout::BinDataReferenceMode::DocumentIndex
+        };
+        crate::renderer::layout::find_bin_data(&self.document.bin_data_content, bin_data_id, mode)
+    }
+
     /// 총 페이지 수를 반환한다.
     pub fn page_count(&self) -> u32 {
         self.pagination
