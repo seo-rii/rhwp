@@ -17675,10 +17675,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.cacheHits === 1
       && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.cacheMisses === 1
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.failureCacheHits === 1
       && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.surfaceCreations === 0
-      && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.surfaceFailures === 1
+      && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.surfaceFailures === 2
       && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.imagesCreated === 0,
-    `CanvasKit pattern surface failure cache avoids repeated surface work=${JSON.stringify(
+    `CanvasKit pattern surface failure cache avoids repeated surface work and reports each failed replay=${JSON.stringify(
       imageEffectCropProbe.directPatternCacheReuse,
     )}`,
   );

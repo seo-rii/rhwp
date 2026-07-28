@@ -138,6 +138,20 @@ type CanvasKitClipState = {
   allowHorizontalOverflowControls: boolean;
 };
 
+export type CanvasKitTextReplayFailureDiagnostic = {
+  reason: 'textBlobConstructionFailed';
+  opId: string | null;
+  fontFamily: string;
+  clusterStartUtf16: number;
+  clusterLengthUtf16: number;
+};
+
+export type CanvasKitTextReplayDiagnostics = {
+  constructionFailures: number;
+  failureCacheHits: number;
+  failures: CanvasKitTextReplayFailureDiagnostic[];
+};
+
 export class CanvasKitLayerRenderer {
   // Prevent pathological tiled fills from monopolizing the render loop.
   private static readonly MAX_IMAGE_TILE_DRAWS = 4096;
@@ -155,6 +169,10 @@ export class CanvasKitLayerRenderer {
   private readonly textBlobCache = new Map<string, TextBlob>();
   private textBlobCacheHits = 0;
   private textBlobCacheMisses = 0;
+  private readonly failedTextBlobCacheKeys = new Set<string>();
+  private readonly textReplayFailureDiagnostics = new Map<string, CanvasKitTextReplayFailureDiagnostic>();
+  private textBlobConstructionFailures = 0;
+  private textBlobFailureCacheHits = 0;
   private readonly textFallbackFamilyCache = new Map<string, string>();
   private textFallbackFamilyCacheHits = 0;
   private textFallbackFamilyCacheMisses = 0;
@@ -280,6 +298,8 @@ export class CanvasKitLayerRenderer {
     this.currentProfile = tree.profile;
     this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
     this.resourceCache.resetImageDiagnostics();
+    this.resourceCache.beginPatternReplay();
+    this.resetTextReplayDiagnostics();
     this.resourceCache.setResources(tree.resources);
     this.fontRegistry.registerFontBlobsFromResources(tree.fontResources, tree.resources);
     this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
@@ -388,6 +408,14 @@ export class CanvasKitLayerRenderer {
     return this.resourceCache.getImageDiagnostics();
   }
 
+  getTextReplayDiagnostics(): Readonly<CanvasKitTextReplayDiagnostics> {
+    return {
+      constructionFailures: this.textBlobConstructionFailures,
+      failureCacheHits: this.textBlobFailureCacheHits,
+      failures: [...this.textReplayFailureDiagnostics.values()].map((failure) => ({ ...failure })),
+    };
+  }
+
   getPatternDiagnostics(): Readonly<CanvasKitPatternDiagnostics> {
     return this.resourceCache.getPatternDiagnostics();
   }
@@ -402,6 +430,13 @@ export class CanvasKitLayerRenderer {
 
   resetImageDiagnostics(): void {
     this.resourceCache.resetImageDiagnostics();
+  }
+
+  resetTextReplayDiagnostics(): void {
+    this.failedTextBlobCacheKeys.clear();
+    this.textReplayFailureDiagnostics.clear();
+    this.textBlobConstructionFailures = 0;
+    this.textBlobFailureCacheHits = 0;
   }
 
   resetPatternDiagnostics(): void {
@@ -551,6 +586,12 @@ export class CanvasKitLayerRenderer {
               return;
             }
 
+            const imageFailureAttemptsBefore =
+              this.resourceCache.getImageDiagnostics().failureAttempts;
+            const patternFailuresBefore =
+              this.resourceCache.getPatternDiagnostics().surfaceFailures;
+            const textFailureAttemptsBefore =
+              this.textBlobConstructionFailures + this.textBlobFailureCacheHits;
             const recorder = new this.canvasKit.PictureRecorder();
             try {
               const recordingCanvas = recorder.beginRecording(this.toRect(node.bounds), true);
@@ -558,8 +599,21 @@ export class CanvasKitLayerRenderer {
                 this.renderNode(recordingCanvas, child, replayPlane);
               }
               const picture = recorder.finishRecordingAsPicture();
-              this.staticPictureCache.set(cacheKey, picture);
+              const imageDiagnostics = this.resourceCache.getImageDiagnostics();
+              const patternDiagnostics = this.resourceCache.getPatternDiagnostics();
+              const textFailureAttempts =
+                this.textBlobConstructionFailures + this.textBlobFailureCacheHits;
+              const hasRuntimeReplayFailure =
+                imageDiagnostics.failureAttempts > imageFailureAttemptsBefore
+                || patternDiagnostics.surfaceFailures > patternFailuresBefore
+                || textFailureAttempts > textFailureAttemptsBefore;
+              if (!hasRuntimeReplayFailure) {
+                this.staticPictureCache.set(cacheKey, picture);
+              }
               canvas.drawPicture(picture);
+              if (hasRuntimeReplayFailure) {
+                picture.delete();
+              }
             } finally {
               recorder.delete();
             }
@@ -1217,6 +1271,7 @@ export class CanvasKitLayerRenderer {
         shadePaint.delete();
       }
 
+      const opId = 'id' in op && typeof op.id === 'string' ? op.id : null;
       const drawPass = (dx: number, dy: number, fillPaint: Paint, strokePaint?: Paint) => {
         for (const [index, cluster] of clusters.entries()) {
           if (cluster.text === ' ' || cluster.text === '\t' || cluster.text === '\u2007') {
@@ -1227,77 +1282,24 @@ export class CanvasKitLayerRenderer {
           }
           const x = originX + positions[cluster.start] + dx;
           const y = originY + dy;
-          const drawBlobAtOrigin = () => {
-            const cacheKey = `${clusterFontKeys[index]}|${cluster.text}`;
-            let blob = this.textBlobCache.get(cacheKey);
-            if (blob) {
-              this.textBlobCacheHits += 1;
-              this.textBlobCache.delete(cacheKey);
-              this.textBlobCache.set(cacheKey, blob);
-            } else {
-              let font = clusterFonts[index];
-              if (!font) {
-                const family = clusterFontFamilies[index];
-                let objects = textObjectsByFamily.get(family);
-                if (!objects) {
-                  objects = this.makeTextObjects(
-                    family,
-                    fontSize,
-                    op.style.bold,
-                    op.style.italic,
-                    op.style.color,
-                    1,
-                  );
-                  textObjectsByFamily.set(family, objects);
-                }
-                font = objects.font;
-                clusterFonts[index] = font;
-              }
-              blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, font);
-              if (!blob) {
-                return;
-              }
-              this.textBlobCacheMisses += 1;
-              this.textBlobCache.set(cacheKey, blob);
-              if (this.textBlobCache.size > MAX_TEXT_BLOB_CACHE_ENTRIES) {
-                const oldestKey = this.textBlobCache.keys().next().value;
-                if (oldestKey !== undefined) {
-                  const oldestBlob = this.textBlobCache.get(oldestKey);
-                  oldestBlob?.delete();
-                  this.textBlobCache.delete(oldestKey);
-                }
-              }
-            }
-            if (!blob) {
-              return;
-            }
-            canvas.drawTextBlob(blob, 0, 0, fillPaint);
-            if (strokePaint) {
-              canvas.drawTextBlob(blob, 0, 0, strokePaint);
-            }
-          };
-          if (isHalfwidthScaledCluster(cluster.text) && !hasRatio) {
-            canvas.save();
-            canvas.translate(x, y);
-            canvas.scale(0.5, 1);
-            drawBlobAtOrigin();
-            canvas.restore();
-            continue;
-          }
-          if (hasRatio) {
-            canvas.save();
-            canvas.translate(x, y);
-            canvas.scale(ratio, 1);
-            drawBlobAtOrigin();
-            canvas.restore();
-            continue;
-          }
           const cacheKey = `${clusterFontKeys[index]}|${cluster.text}`;
+          const failureKey = `${opId ?? 'anonymous'}:${cluster.start}:${cacheKey}`;
+          const failure = {
+            reason: 'textBlobConstructionFailed' as const,
+            opId,
+            fontFamily: clusterFontFamilies[index],
+            clusterStartUtf16: cluster.startUtf16,
+            clusterLengthUtf16: cluster.text.length,
+          };
           let blob = this.textBlobCache.get(cacheKey);
           if (blob) {
             this.textBlobCacheHits += 1;
             this.textBlobCache.delete(cacheKey);
             this.textBlobCache.set(cacheKey, blob);
+          } else if (this.failedTextBlobCacheKeys.has(cacheKey)) {
+            this.textBlobFailureCacheHits += 1;
+            this.textReplayFailureDiagnostics.set(failureKey, failure);
+            continue;
           } else {
             let font = clusterFonts[index];
             if (!font) {
@@ -1319,6 +1321,9 @@ export class CanvasKitLayerRenderer {
             }
             blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, font);
             if (!blob) {
+              this.failedTextBlobCacheKeys.add(cacheKey);
+              this.textBlobConstructionFailures += 1;
+              this.textReplayFailureDiagnostics.set(failureKey, failure);
               continue;
             }
             this.textBlobCacheMisses += 1;
@@ -1335,9 +1340,23 @@ export class CanvasKitLayerRenderer {
           if (!blob) {
             continue;
           }
-          canvas.drawTextBlob(blob, x, y, fillPaint);
-          if (strokePaint) {
-            canvas.drawTextBlob(blob, x, y, strokePaint);
+          const horizontalScale = isHalfwidthScaledCluster(cluster.text) && !hasRatio
+            ? 0.5
+            : hasRatio ? ratio : 1;
+          if (horizontalScale !== 1) {
+            canvas.save();
+            canvas.translate(x, y);
+            canvas.scale(horizontalScale, 1);
+            canvas.drawTextBlob(blob, 0, 0, fillPaint);
+            if (strokePaint) {
+              canvas.drawTextBlob(blob, 0, 0, strokePaint);
+            }
+            canvas.restore();
+          } else {
+            canvas.drawTextBlob(blob, x, y, fillPaint);
+            if (strokePaint) {
+              canvas.drawTextBlob(blob, x, y, strokePaint);
+            }
           }
         }
       };
@@ -3692,6 +3711,7 @@ export class CanvasKitLayerRenderer {
     this.textBlobCache.clear();
     this.textBlobCacheHits = 0;
     this.textBlobCacheMisses = 0;
+    this.resetTextReplayDiagnostics();
     this.textFallbackFamilyCache.clear();
     this.textFallbackFamilyCacheHits = 0;
     this.textFallbackFamilyCacheMisses = 0;

@@ -308,14 +308,23 @@ export function estimateDisplayTextPositions(text: string, style: LayerTextStyle
   return positions;
 }
 
-export function splitIntoClusters(text: string): Array<{ start: number; text: string }> {
+export function splitIntoClusters(
+  text: string,
+): Array<{ start: number; startUtf16: number; text: string }> {
   const chars = Array.from(text);
-  const clusters: Array<{ start: number; text: string }> = [];
+  const utf16Starts: number[] = [];
+  let utf16Offset = 0;
+  for (const char of chars) {
+    utf16Starts.push(utf16Offset);
+    utf16Offset += char.length;
+  }
+  const clusters: Array<{ start: number; startUtf16: number; text: string }> = [];
 
   let idx = 0;
   while (idx < chars.length) {
     if (isHangulChoseong(chars[idx])) {
       const start = idx;
+      const startUtf16 = utf16Starts[start];
       let cluster = chars[idx];
       idx += 1;
       if (idx < chars.length && isHangulJungseong(chars[idx])) {
@@ -326,11 +335,11 @@ export function splitIntoClusters(text: string): Array<{ start: number; text: st
           idx += 1;
         }
       }
-      clusters.push({ start, text: cluster });
+      clusters.push({ start, startUtf16, text: cluster });
       continue;
     }
 
-    clusters.push({ start: idx, text: chars[idx] });
+    clusters.push({ start: idx, startUtf16: utf16Starts[idx], text: chars[idx] });
     idx += 1;
   }
 

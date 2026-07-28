@@ -213,6 +213,7 @@ async function resetRendererDiagnostics(page) {
     pageRenderer?.canvas2dRenderer?.resetImageEffectDiagnostics?.();
     pageRenderer?.canvaskitRenderer?.resetImageEffectDiagnostics?.();
     pageRenderer?.canvaskitRenderer?.resetImageDiagnostics?.();
+    pageRenderer?.canvaskitRenderer?.resetTextReplayDiagnostics?.();
     pageRenderer?.canvaskitRenderer?.resetPatternDiagnostics?.();
   });
 }
@@ -224,6 +225,7 @@ async function readRendererDiagnostics(page, pageIndex, backendKey) {
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
     const canvaskit = canvaskitRenderer?.getImageEffectDiagnostics?.() ?? null;
     const imageDiagnostics = canvaskitRenderer?.getImageDiagnostics?.() ?? null;
+    const textReplayDiagnostics = canvaskitRenderer?.getTextReplayDiagnostics?.() ?? null;
     const patternDiagnostics = canvaskitRenderer?.getPatternDiagnostics?.() ?? null;
     const surfaceDiagnostics = canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null;
     const runtimeRenderer = captureBackend.startsWith('canvaskit')
@@ -266,6 +268,7 @@ async function readRendererDiagnostics(page, pageIndex, backendKey) {
         canvaskit,
       },
       imageDiagnostics,
+      textReplayDiagnostics,
       patternDiagnostics,
       surfaceDiagnostics,
       replayPlan,
@@ -535,6 +538,24 @@ try {
               profile,
               code: 'runtimeImageReplayFailure',
               detail: JSON.stringify(diagnostics.imageDiagnostics.failures),
+            });
+          }
+          if ((diagnostics.textReplayDiagnostics?.failures?.length ?? 0) > 0) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'runtimeTextReplayFailure',
+              detail: JSON.stringify(diagnostics.textReplayDiagnostics.failures),
+            });
+          }
+          if ((diagnostics.patternDiagnostics?.surfaceFailures ?? 0) > 0) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'runtimePatternReplayFailure',
+              detail: JSON.stringify(diagnostics.patternDiagnostics),
             });
           }
           if (diagnostics.textV2Validation.length > 0) {
@@ -828,6 +849,7 @@ for (const result of results) {
       hiddenOverlayViolations: 0,
       hardGateViolationCount: 0,
       runtimeImageFailures: 0,
+      runtimeTextReplayFailures: 0,
       patternSurfaceFailures: 0,
       textV2ValidationIssues: 0,
       runtimeDuplicateVariantReports: 0,
@@ -837,6 +859,7 @@ for (const result of results) {
       selectedReasonCounts: {},
       rejectedReasonCounts: {},
       runtimeImageFailureReasonCounts: {},
+      runtimeTextFailureReasonCounts: {},
       textV2IssueCounts: {},
     });
   }
@@ -861,6 +884,7 @@ for (const result of results) {
   }
   summary.patternSurfaceFailures += diagnostics.patternDiagnostics?.surfaceFailures ?? 0;
   summary.runtimeImageFailures += diagnostics.imageDiagnostics?.failures?.length ?? 0;
+  summary.runtimeTextReplayFailures += diagnostics.textReplayDiagnostics?.failures?.length ?? 0;
   summary.textV2ValidationIssues += diagnostics.textV2Validation?.length ?? 0;
   summary.runtimeDuplicateVariantReports += diagnostics.textVariantDuplicateReports ?? 0;
   summary.runtimeVariantSelectionConflicts += diagnostics.textVariantConflicts?.length ?? 0;
@@ -889,6 +913,12 @@ for (const result of results) {
     const reason = String(failure.reason ?? 'unknown');
     summary.runtimeImageFailureReasonCounts[reason] = (
       summary.runtimeImageFailureReasonCounts[reason] ?? 0
+    ) + 1;
+  }
+  for (const failure of diagnostics.textReplayDiagnostics?.failures ?? []) {
+    const reason = String(failure.reason ?? 'unknown');
+    summary.runtimeTextFailureReasonCounts[reason] = (
+      summary.runtimeTextFailureReasonCounts[reason] ?? 0
     ) + 1;
   }
   for (const issue of diagnostics.textV2Validation ?? []) {

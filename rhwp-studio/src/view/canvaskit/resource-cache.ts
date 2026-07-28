@@ -14,6 +14,7 @@ import { canvasKitEncodedImageIsReplayable } from './encoded-image-admission';
 export type CanvasKitPatternDiagnostics = {
   cacheHits: number;
   cacheMisses: number;
+  failureCacheHits: number;
   surfaceCreations: number;
   surfaceFailures: number;
   imagesCreated: number;
@@ -35,6 +36,7 @@ export type CanvasKitImageDiagnostics = {
   cacheHits: number;
   cacheMisses: number;
   failureCacheHits: number;
+  failureAttempts: number;
   imagesDecoded: number;
   failures: CanvasKitImageFailureDiagnostic[];
 };
@@ -51,6 +53,7 @@ export class CanvasKitResourceCache {
     cacheHits: 0,
     cacheMisses: 0,
     failureCacheHits: 0,
+    failureAttempts: 0,
     imagesDecoded: 0,
   };
   private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
@@ -71,6 +74,7 @@ export class CanvasKitResourceCache {
   private readonly patternDiagnostics: CanvasKitPatternDiagnostics = {
     cacheHits: 0,
     cacheMisses: 0,
+    failureCacheHits: 0,
     surfaceCreations: 0,
     surfaceFailures: 0,
     imagesCreated: 0,
@@ -303,6 +307,7 @@ export class CanvasKitResourceCache {
     this.imageDiagnostics.cacheHits = 0;
     this.imageDiagnostics.cacheMisses = 0;
     this.imageDiagnostics.failureCacheHits = 0;
+    this.imageDiagnostics.failureAttempts = 0;
     this.imageDiagnostics.imagesDecoded = 0;
     this.imageFailureDiagnostics.clear();
   }
@@ -315,7 +320,12 @@ export class CanvasKitResourceCache {
     const cacheKey = `${pattern.patternType}:${pattern.patternColor}:${pattern.backgroundColor}`;
     if (this.patternImageCache.has(cacheKey)) {
       this.patternDiagnostics.cacheHits += 1;
-      return this.patternImageCache.get(cacheKey) ?? null;
+      const cached = this.patternImageCache.get(cacheKey) ?? null;
+      if (!cached) {
+        this.patternDiagnostics.failureCacheHits += 1;
+        this.patternDiagnostics.surfaceFailures += 1;
+      }
+      return cached;
     }
 
     this.patternDiagnostics.cacheMisses += 1;
@@ -328,9 +338,19 @@ export class CanvasKitResourceCache {
     return { ...this.patternDiagnostics };
   }
 
+  beginPatternReplay(): void {
+    this.resetPatternDiagnostics();
+    for (const [cacheKey, image] of this.patternImageCache) {
+      if (!image) {
+        this.patternImageCache.delete(cacheKey);
+      }
+    }
+  }
+
   resetPatternDiagnostics(): void {
     this.patternDiagnostics.cacheHits = 0;
     this.patternDiagnostics.cacheMisses = 0;
+    this.patternDiagnostics.failureCacheHits = 0;
     this.patternDiagnostics.surfaceCreations = 0;
     this.patternDiagnostics.surfaceFailures = 0;
     this.patternDiagnostics.imagesCreated = 0;
@@ -370,6 +390,7 @@ export class CanvasKitResourceCache {
     base64: string | undefined,
     reason: CanvasKitImageFailureReason,
   ): void {
+    this.imageDiagnostics.failureAttempts += 1;
     if (cacheKey) {
       this.failedImageCacheKeys.add(cacheKey);
       this.failedImageReasons.set(cacheKey, reason);

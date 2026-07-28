@@ -937,6 +937,7 @@ assert(
 assert(
   extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getCanvasKitReplayPlan')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getImageDiagnostics')
+    && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextReplayDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getPatternDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextVariantSelectionDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextV2ValidationDiagnostics'),
@@ -950,21 +951,24 @@ assert(
     && rendererBaselineSource.includes("code: 'compatOverlayItem'")
     && rendererBaselineSource.includes("code: 'directRequiredItem'")
     && rendererBaselineSource.includes("code: 'runtimeImageReplayFailure'")
+    && rendererBaselineSource.includes("code: 'runtimeTextReplayFailure'")
+    && rendererBaselineSource.includes("code: 'runtimePatternReplayFailure'")
     && rendererBaselineSource.includes("code: 'textV2ValidationIssue'")
     && rendererBaselineSource.includes("code: 'runtimeVariantSelectionConflict'")
     && rendererBaselineSource.includes("code: 'planRuntimeVariantMismatch'")
     && rendererBaselineSource.includes('...planSelections.keys()')
     && rendererBaselineSource.includes('...runtimeSelections.keys()')
     && rendererBaselineSource.includes('hardSafetyGateAndReportInventory'),
-  'browser baseline must hard-gate invalid plans, missing images, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
+  'browser baseline must hard-gate invalid plans, runtime paint failures, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
 );
 assert(
   rendererBaselineDriverSource.includes('CanvasKit Replay Diagnostics')
     && rendererBaselineDriverSource.includes('Replay Reason Inventory')
     && rendererBaselineDriverSource.includes('planReasonCounts')
     && rendererBaselineDriverSource.includes('rejectedReasonCounts')
-    && rendererBaselineDriverSource.includes('runtimeImageFailureReasonCounts'),
-  'renderer baseline markdown report must expose CanvasKit fallback, image failure, and rejection reason inventories',
+    && rendererBaselineDriverSource.includes('runtimeImageFailureReasonCounts')
+    && rendererBaselineDriverSource.includes('runtimeTextFailureReasonCounts'),
+  'renderer baseline markdown report must expose CanvasKit fallback, runtime paint failure, and rejection reason inventories',
 );
 assert(
   packageJson.scripts['e2e:baseline:headless']?.includes('../scripts/renderer_baseline.py')
@@ -1494,9 +1498,42 @@ assert(
 assert(
   canvaskitResourceCacheSource.includes('getImageDiagnostics(): CanvasKitImageDiagnostics')
     && canvaskitResourceCacheSource.includes('resetImageDiagnostics(): void')
+    && canvaskitResourceCacheSource.includes('failureAttempts: number')
     && canvaskitSource.includes('this.resourceCache.resetImageDiagnostics()')
     && canvaskitSource.includes('getImageDiagnostics(): Readonly<CanvasKitImageDiagnostics>'),
   'CanvasKit must expose per-render encoded-image failure diagnostics',
+);
+assert(
+  canvaskitResourceCacheSource.includes('resetPatternDiagnostics(): void')
+    && canvaskitResourceCacheSource.includes('beginPatternReplay(): void')
+    && canvaskitSource.includes('this.resourceCache.beginPatternReplay()'),
+  'CanvasKit must reset pattern diagnostics and retry failed pattern surfaces at each render boundary',
+);
+assert(
+  canvaskitResourceCacheSource.includes('failureCacheHits: number')
+    && extractMethodBody(canvaskitResourceCacheSource, 'patternImage')
+      .includes('this.patternDiagnostics.failureCacheHits += 1')
+    && extractMethodBody(canvaskitResourceCacheSource, 'patternImage')
+      .includes('this.patternDiagnostics.surfaceFailures += 1'),
+  'CanvasKit pattern negative-cache hits must re-report surface failures for the active render',
+);
+const canvaskitRenderNodeBlock = extractMethodBody(canvaskitSource, 'renderNode');
+assertTokensInOrder(
+  canvaskitRenderNodeBlock,
+  [
+    'const imageFailureAttemptsBefore =',
+    'const patternFailuresBefore =',
+    'const textFailureAttemptsBefore =',
+    'const hasRuntimeReplayFailure =',
+    'imageDiagnostics.failureAttempts > imageFailureAttemptsBefore',
+    'patternDiagnostics.surfaceFailures > patternFailuresBefore',
+    'textFailureAttempts > textFailureAttemptsBefore',
+    'if (!hasRuntimeReplayFailure)',
+    'this.staticPictureCache.set(cacheKey, picture)',
+    'if (hasRuntimeReplayFailure)',
+    'picture.delete()',
+  ],
+  'CanvasKit must not cache static pictures that contain a silent runtime replay failure',
 );
 assert.equal(
   fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
@@ -1558,6 +1595,15 @@ assert(
   'CanvasKit TextRun fallback must mirror Canvas2D font-face registrations and synthesize bold only when no 700 face exists',
 );
 const canvaskitTextRunBlock = extractMethodBody(canvaskitSource, 'renderTextRun');
+assert(
+  canvaskitSource.includes('getTextReplayDiagnostics(): Readonly<CanvasKitTextReplayDiagnostics>')
+    && canvaskitSource.includes('resetTextReplayDiagnostics(): void')
+    && canvaskitTextRunBlock.includes("reason: 'textBlobConstructionFailed' as const")
+    && canvaskitTextRunBlock.includes('clusterStartUtf16: cluster.startUtf16')
+    && canvaskitTextRunBlock.includes('this.failedTextBlobCacheKeys.has(cacheKey)')
+    && canvaskitTextRunBlock.includes('this.textReplayFailureDiagnostics.set(failureKey, failure)'),
+  'CanvasKit TextRun replay must expose and negative-cache TextBlob construction failures',
+);
 assert(
   canvaskitSource.includes('const MAX_TEXT_FALLBACK_FAMILY_CACHE_ENTRIES = 4096')
     && canvaskitSource.includes('private readonly textFallbackFamilyCache = new Map<string, string>()')

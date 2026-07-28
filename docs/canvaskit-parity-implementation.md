@@ -287,7 +287,13 @@ CanvasKit parity is implemented through four layers:
    repeatedly entering the decoder. The cache also exposes per-render
    `CanvasKitImageDiagnostics`: missing resources, invalid base64, rejected
    encoded-image headers/limits, and CanvasKit decoder failures have distinct
-   reasons instead of becoming silent paint omissions.
+   reasons instead of becoming silent paint omissions. TextBlob construction
+   failures are likewise reported per render without exposing cluster text;
+   diagnostics retain only the op identity, resolved family, and UTF-16 cluster
+   range. A cached pattern-surface failure is re-reported on every attempted
+   replay rather than looking like a successful cache hit. Failed pattern
+   surfaces are retried once at the next render boundary, while successful
+   pattern images remain cached.
 4. Diagnostics explain every selection, rejection, fallback, and cache decision
    that affects faithful replay.
 
@@ -422,15 +428,20 @@ The working order is:
    performance/memory smoke results are stable enough to become hard gates.
 
 The browser baseline now records the Rust replay plan, CanvasKit runtime text
-variant selections/rejections, encoded-image diagnostics, v2 validation
-issues, pattern diagnostics, and surface diagnostics for every CanvasKit
-capture. Hidden-overlay items, hidden-overlay violations, invalid direct-only
-plan contracts, empty plans, direct-required image items, runtime image replay
-failures, and v2 validation issues are hard failures. Runtime reports are
-deduplicated by equivalence group; conflicting repeated selections and
-Rust-plan/runtime selected-variant mismatches also fail. Intentional TextRun
-fallback, unsupported items, and their exact reasons remain an inventory in the
-JSON and Markdown reports.
+variant selections/rejections, encoded-image diagnostics, TextBlob replay
+diagnostics, v2 validation issues, pattern diagnostics, and surface diagnostics
+for every CanvasKit capture. Hidden-overlay items, hidden-overlay violations,
+invalid direct-only plan contracts, empty plans, direct-required image items,
+runtime image/TextBlob/pattern replay failures, and v2 validation issues are
+hard failures. Runtime reports are deduplicated by equivalence group;
+conflicting repeated selections and Rust-plan/runtime selected-variant
+mismatches also fail. Intentional TextRun fallback, unsupported items, and their
+exact reasons remain an inventory in the JSON and Markdown reports. Static
+CanvasKit pictures that encounter any of these runtime replay failures are
+drawn for the current attempt but not cached, so a later diagnostic reset cannot
+turn a cached omission into a false pass. Cache admission compares diagnostics
+before and after each static subtree, so a failure in one subtree does not
+disable caching for unrelated siblings.
 
 CanvasKit fallback text now consumes the same `FONT_LIST` face catalog as the
 Canvas2D `FontFace` loader for the aliases it replays directly. This preserves

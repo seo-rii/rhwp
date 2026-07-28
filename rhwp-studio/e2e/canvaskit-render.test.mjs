@@ -1310,6 +1310,71 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       }
     }
 
+    let textBlobFailureProbe = null;
+    if (window.__canvaskitRenderMode === 'default') {
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = 80;
+      probeCanvas.height = 40;
+      const failureTextRun = {
+        ...simpleTextRun,
+        id: 'text-blob-failure-probe',
+        text: '😀B',
+        positions: [0, 18, 36],
+        bbox: { x: 4, y: 4, width: 42, height: 24 },
+        baseline: 18,
+        style: {
+          ...simpleTextRun.style,
+          fontSize: 17.125,
+          shadowType: 1,
+          shadowOffsetX: 1,
+          shadowOffsetY: 1,
+        },
+      };
+      const probeTree = {
+        pageWidth: 80,
+        pageHeight: 40,
+        profile: 'screen',
+        root: {
+          kind: 'group',
+          bounds: { x: 0, y: 0, width: 80, height: 40 },
+          cacheHint: 'staticSubtree',
+          children: [{
+            kind: 'leaf',
+            bounds: { x: 0, y: 0, width: 80, height: 40 },
+            cacheHint: 'none',
+            ops: [failureTextRun],
+          }],
+        },
+        resources: {
+          tableId: 902,
+          images: [],
+          imageHashes: [],
+          imageKeys: [],
+          svgFragments: [],
+          svgHashes: [],
+          svgKeys: [],
+        },
+      };
+      const originalMakeFromText = renderer.canvasKit.TextBlob.MakeFromText;
+      renderer.canvasKit.TextBlob.MakeFromText = function textBlobFailureProbeFactory(text) {
+        if (text === 'B') {
+          return null;
+        }
+        return originalMakeFromText.apply(this, arguments);
+      };
+      try {
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        const first = renderer.getTextReplayDiagnostics();
+        renderer.renderPage(probeTree, probeCanvas, 1);
+        textBlobFailureProbe = {
+          first,
+          second: renderer.getTextReplayDiagnostics(),
+        };
+      } finally {
+        renderer.canvasKit.TextBlob.MakeFromText = originalMakeFromText;
+      }
+    }
+
     let textEffectNativeProbe = null;
     if (typeof renderer.makePaint === 'function') {
       const probeCanvas = document.createElement('canvas');
@@ -1521,6 +1586,13 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       let missingResourceImageDiagnostics = null;
       let missingEffectResourceImage = null;
       let missingEffectResourceImageDiagnostics = null;
+      let patternSurfaceError = null;
+      let patternSurfaceFirst = null;
+      let patternSurfaceFirstDiagnostics = null;
+      let patternSurfaceSecond = null;
+      let patternSurfaceSecondDiagnostics = null;
+      let patternSurfaceRetry = null;
+      let patternSurfaceRetryDiagnostics = null;
       renderer.resetImageDiagnostics();
       try {
         invalidInlineImageFirst = renderer.resourceCache.image(undefined, '%%%');
@@ -1555,6 +1627,29 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         missingEffectResourceImageDiagnostics = renderer.getImageDiagnostics();
       } catch (error) {
         invalidInlineImageError = error?.message ?? String(error);
+      }
+
+      const originalMakeSurface = renderer.canvasKit.MakeSurface;
+      try {
+        renderer.canvasKit.MakeSurface = () => null;
+        const pattern = {
+          patternType: 97,
+          patternColor: '#123456',
+          backgroundColor: '#abcdef',
+        };
+        renderer.resetPatternDiagnostics();
+        patternSurfaceFirst = renderer.resourceCache.patternImage(pattern);
+        patternSurfaceFirstDiagnostics = renderer.getPatternDiagnostics();
+        renderer.resetPatternDiagnostics();
+        patternSurfaceSecond = renderer.resourceCache.patternImage(pattern);
+        patternSurfaceSecondDiagnostics = renderer.getPatternDiagnostics();
+        renderer.resourceCache.beginPatternReplay();
+        patternSurfaceRetry = renderer.resourceCache.patternImage(pattern);
+        patternSurfaceRetryDiagnostics = renderer.getPatternDiagnostics();
+      } catch (error) {
+        patternSurfaceError = error?.message ?? String(error);
+      } finally {
+        renderer.canvasKit.MakeSurface = originalMakeSurface;
       }
 
       let invalidFontBase64Error = null;
@@ -1674,6 +1769,13 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         missingResourceImageDiagnostics,
         missingEffectResourceImage,
         missingEffectResourceImageDiagnostics,
+        patternSurfaceError,
+        patternSurfaceFirst,
+        patternSurfaceFirstDiagnostics,
+        patternSurfaceSecond,
+        patternSurfaceSecondDiagnostics,
+        patternSurfaceRetry,
+        patternSurfaceRetryDiagnostics,
         invalidFontBase64Error,
         invalidFontParserReplayable: invalidFontParserStatus.replayable,
         invalidFontParserReason: invalidFontParserStatus.reason,
@@ -1970,6 +2072,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       corruptBitmapNativeProbe,
       corruptSvgNativeProbe,
       textBlobNativeProbe,
+      textBlobFailureProbe,
       textEffectNativeProbe,
       textProjectionNativeProbe,
       pageBackgroundImageNativeProbe,
@@ -2074,6 +2177,26 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     `missing image-effect resource reports a deterministic reason=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
   );
   assert(
+    nativeRouting.nativeResourceFailureProbe?.patternSurfaceError === null
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirst === null
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.failureCacheHits === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.surfaceFailures === 1
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecond === null
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.cacheHits === 1
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.failureCacheHits === 1
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.surfaceFailures === 1,
+    `pattern surface failures remain visible after negative-cache hits=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetry === null
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.cacheHits === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.failureCacheHits === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.surfaceFailures === 1,
+    `pattern surface failures are retried at the next render boundary=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
     nativeRouting.nativeResourceFailureProbe?.invalidFontBase64Error === null
       && nativeRouting.nativeResourceFailureProbe?.invalidFontParserReplayable === false
       && nativeRouting.nativeResourceFailureProbe?.invalidFontParserReason === 'fontFaceInstantiationFailed',
@@ -2115,6 +2238,18 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     `unparseable SvgGlyph keeps TextRun fallback=${JSON.stringify(nativeRouting.corruptSvgNativeProbe)}`,
   );
   if (CANVASKIT_MODE === 'default') {
+    assert(
+      nativeRouting.textBlobFailureProbe?.first?.constructionFailures === 1
+        && nativeRouting.textBlobFailureProbe?.first?.failureCacheHits >= 1
+        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.reason === 'textBlobConstructionFailed'
+        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.opId === 'text-blob-failure-probe'
+        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.clusterStartUtf16 === 2
+        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.clusterLengthUtf16 === 1
+        && nativeRouting.textBlobFailureProbe?.second?.constructionFailures === 1
+        && nativeRouting.textBlobFailureProbe?.second?.failureCacheHits >= 1
+        && nativeRouting.textBlobFailureProbe?.second?.failures?.[0]?.reason === 'textBlobConstructionFailed',
+      `TextBlob failures stay visible across static-picture retries=${JSON.stringify(nativeRouting.textBlobFailureProbe)}`,
+    );
     assert(
       nativeRouting.textBlobNativeProbe?.cacheSizeAfterSecond > 0,
       `text blob cache populated=${JSON.stringify(nativeRouting.textBlobNativeProbe)}`,
