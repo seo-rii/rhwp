@@ -881,6 +881,71 @@ fn body_clip_policy_allows_right_overflow_slop() {
 }
 
 #[test]
+fn body_overflow_controls_are_composited_once() {
+    let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
+    tree.root.node_type = RenderNodeType::Page(PageNode {
+        page_index: 0,
+        width: 120.0,
+        height: 60.0,
+        section_index: 0,
+    });
+    let mut body = RenderNode::new(
+        1,
+        RenderNodeType::Body {
+            clip_rect: Some(BoundingBox::new(10.0, 10.0, 70.0, 40.0)),
+        },
+        BoundingBox::new(10.0, 10.0, 70.0, 40.0),
+    );
+    let mut column = RenderNode::new(
+        2,
+        RenderNodeType::Column(0),
+        BoundingBox::new(10.0, 10.0, 70.0, 40.0),
+    );
+    column.children.push(RenderNode::new(
+        3,
+        RenderNodeType::Rectangle(RectangleNode::new(
+            0.0,
+            ShapeStyle {
+                fill_color: Some(0x00FF0000),
+                opacity: 0.5,
+                ..Default::default()
+            },
+            None,
+        )),
+        BoundingBox::new(70.0, 20.0, 30.0, 20.0),
+    ));
+    body.children.push(column);
+    tree.root.children.push(body);
+
+    let mut builder = LayerBuilder::new(RenderProfile::Screen);
+    let layer_tree = builder.build(&tree);
+    let renderer = SkiaLayerRenderer::new();
+    let output = renderer
+        .render_raster_with_options(
+            &layer_tree,
+            RasterRenderOptions {
+                transparent: true,
+                ..Default::default()
+            },
+        )
+        .expect("body overflow alpha render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let width = pixmap.width() as usize;
+    let inside_alpha = pixmap.pixels()[30 * width + 75].alpha();
+    let outside_alpha = pixmap.pixels()[30 * width + 90].alpha();
+
+    assert!(
+        inside_alpha.abs_diff(outside_alpha) <= 2,
+        "inside-body and overflow pixels must have the same single-pass alpha: \
+         inside={inside_alpha}, outside={outside_alpha}"
+    );
+    assert!(
+        (120..=136).contains(&inside_alpha),
+        "50% opacity should remain a single compositing pass, got alpha {inside_alpha}"
+    );
+}
+
+#[test]
 fn output_options_can_disable_clip_rect_replay() {
     let rect_bounds = BoundingBox::new(8.0, 8.0, 8.0, 4.0);
     let leaf = LayerNode::leaf(

@@ -1,6 +1,6 @@
 use crate::paint::layer_tree::{
-    CacheHint, ClipKind, LayerNode, LayerOutputOptions, LayerSemantic, LayerSemanticRole,
-    PageLayerTree,
+    CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic,
+    LayerSemanticRole, PageLayerTree,
 };
 use crate::paint::paint_op::{
     LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint,
@@ -15,7 +15,7 @@ use crate::paint::resources::ResourceArena;
 use crate::paint::{lower_font_native_glyph_sidecars, EmbeddedFontFace, TextFontSlot};
 use crate::renderer::layout::compute_char_positions;
 use crate::renderer::render_tree::{
-    FieldMarkerType, PageRenderTree, RenderNode, RenderNodeType, TextRunNode,
+    BoundingBox, FieldMarkerType, PageRenderTree, RenderNode, RenderNodeType, TextRunNode,
 };
 
 /// semantic render tree를 visual layer tree로 내린다.
@@ -79,6 +79,205 @@ impl LayerBuilder {
             .iter()
             .filter_map(|child| self.build_node(child))
             .collect()
+    }
+
+    fn visible_layer_bounds(node: &LayerNode) -> Option<BoundingBox> {
+        fn union(left: BoundingBox, right: BoundingBox) -> BoundingBox {
+            let x = left.x.min(right.x);
+            let y = left.y.min(right.y);
+            let right_edge = (left.x + left.width).max(right.x + right.width);
+            let bottom = (left.y + left.height).max(right.y + right.height);
+            BoundingBox::new(x, y, right_edge - x, bottom - y)
+        }
+
+        match &node.kind {
+            LayerNodeKind::Leaf { .. } => Some(node.bounds),
+            LayerNodeKind::Group { children, .. } => children
+                .iter()
+                .filter_map(Self::visible_layer_bounds)
+                .reduce(union),
+            LayerNodeKind::ClipRect {
+                clip,
+                clip_policy,
+                child,
+                ..
+            } => {
+                let child_bounds = Self::visible_layer_bounds(child)?;
+                let clip_right = clip.x + clip.width + clip_policy.right_overflow_slop;
+                let clip_bottom = clip.y + clip.height;
+                let left = child_bounds.x.max(clip.x);
+                let top = child_bounds.y.max(clip.y);
+                let right = (child_bounds.x + child_bounds.width).min(clip_right);
+                let bottom = (child_bounds.y + child_bounds.height).min(clip_bottom);
+                (right > left && bottom > top)
+                    .then(|| BoundingBox::new(left, top, right - left, bottom - top))
+            }
+        }
+    }
+
+    fn is_body_horizontal_overflow_control(node: &RenderNode) -> bool {
+        !matches!(
+            node.node_type,
+            RenderNodeType::TextLine(_)
+                | RenderNodeType::TextRun(_)
+                | RenderNodeType::FootnoteMarker(_)
+                | RenderNodeType::FootnoteArea
+                | RenderNodeType::Header
+                | RenderNodeType::Footer
+                | RenderNodeType::MasterPage
+                | RenderNodeType::Page(_)
+                | RenderNodeType::Body { .. }
+        )
+    }
+
+    fn is_body_floating_subtree(node: &RenderNode) -> bool {
+        matches!(
+            node.node_type,
+            RenderNodeType::Image(_)
+                | RenderNodeType::Group(_)
+                | RenderNodeType::Path(_)
+                | RenderNodeType::Ellipse(_)
+                | RenderNodeType::Rectangle(_)
+                | RenderNodeType::Line(_)
+                | RenderNodeType::TextBox
+                | RenderNodeType::Placeholder(_)
+                | RenderNodeType::RawSvg(_)
+        )
+    }
+
+    fn build_body_children(
+        &mut self,
+        node: &RenderNode,
+        authored_body: BoundingBox,
+        resolved_clip: BoundingBox,
+    ) -> Vec<LayerNode> {
+        let flow_clip = BoundingBox::new(
+            authored_body.x,
+            resolved_clip.y,
+            authored_body.width,
+            resolved_clip.height,
+        );
+        let resolved_bottom = resolved_clip.y + resolved_clip.height;
+        let floating_bottom = resolved_bottom.min(authored_body.y + authored_body.height + 10.0);
+        let floating_height = (floating_bottom - resolved_clip.y).max(0.0);
+        let mut routed = Vec::new();
+        let mut flow_segment = Vec::new();
+
+        for child in &node.children {
+            if matches!(child.node_type, RenderNodeType::Column(_)) {
+                if !flow_segment.is_empty() {
+                    let segment = LayerNode::group(
+                        node.bbox,
+                        Some(node.id),
+                        std::mem::take(&mut flow_segment),
+                        CacheHint::None,
+                        self.semantic_for(&node.node_type),
+                    );
+                    routed.push(LayerNode::clip_rect(
+                        node.bbox,
+                        Some(node.id),
+                        flow_clip,
+                        segment,
+                        ClipKind::Body,
+                    ));
+                }
+                routed.push(LayerNode::group(
+                    child.bbox,
+                    Some(child.id),
+                    self.build_body_children(child, authored_body, resolved_clip),
+                    self.cache_hint_for(&child.node_type),
+                    self.semantic_for(&child.node_type),
+                ));
+                continue;
+            }
+
+            let Some(layer) = self.build_node(child) else {
+                continue;
+            };
+            let visible_bounds = Self::visible_layer_bounds(&layer).unwrap_or(layer.bounds);
+            let is_floating = Self::is_body_floating_subtree(child);
+            let horizontal_bounds = if is_floating {
+                visible_bounds
+            } else {
+                child.bbox
+            };
+            let horizontal_overflow = Self::is_body_horizontal_overflow_control(child)
+                && (horizontal_bounds.x < authored_body.x
+                    || horizontal_bounds.x + horizontal_bounds.width
+                        > authored_body.x + authored_body.width);
+            let floating_overflow =
+                is_floating && visible_bounds.y + visible_bounds.height > floating_bottom;
+
+            if horizontal_overflow || floating_overflow {
+                if !flow_segment.is_empty() {
+                    let segment = LayerNode::group(
+                        node.bbox,
+                        Some(node.id),
+                        std::mem::take(&mut flow_segment),
+                        CacheHint::None,
+                        self.semantic_for(&node.node_type),
+                    );
+                    routed.push(LayerNode::clip_rect(
+                        node.bbox,
+                        Some(node.id),
+                        flow_clip,
+                        segment,
+                        ClipKind::Body,
+                    ));
+                }
+
+                let clip = BoundingBox::new(
+                    if horizontal_overflow {
+                        0.0
+                    } else {
+                        authored_body.x
+                    },
+                    resolved_clip.y,
+                    if horizontal_overflow {
+                        self.page_width
+                    } else {
+                        authored_body.width
+                    },
+                    if is_floating {
+                        floating_height
+                    } else {
+                        resolved_clip.height
+                    },
+                );
+                routed.push(LayerNode::clip_rect(
+                    layer.bounds,
+                    Some(child.id),
+                    clip,
+                    layer,
+                    if horizontal_overflow {
+                        ClipKind::Generic
+                    } else {
+                        ClipKind::Body
+                    },
+                ));
+            } else {
+                flow_segment.push(layer);
+            }
+        }
+
+        if !flow_segment.is_empty() {
+            let segment = LayerNode::group(
+                node.bbox,
+                Some(node.id),
+                flow_segment,
+                CacheHint::None,
+                self.semantic_for(&node.node_type),
+            );
+            routed.push(LayerNode::clip_rect(
+                node.bbox,
+                Some(node.id),
+                flow_clip,
+                segment,
+                ClipKind::Body,
+            ));
+        }
+
+        routed
     }
 
     fn build_text_control_marks(
@@ -550,65 +749,30 @@ impl LayerBuilder {
             RenderNodeType::Body {
                 clip_rect: Some(clip),
             } if self.output_options.clip_enabled => {
-                let children = self.build_children(node);
-                let child = LayerNode::group(
+                let children = self.build_body_children(node, node.bbox, *clip);
+                if children.is_empty() {
+                    let empty_body = LayerNode::group(
+                        node.bbox,
+                        Some(node.id),
+                        Vec::new(),
+                        self.cache_hint_for(&node.node_type),
+                        LayerSemantic::role(LayerSemanticRole::Body),
+                    );
+                    return Some(LayerNode::clip_rect(
+                        node.bbox,
+                        Some(node.id),
+                        BoundingBox::new(node.bbox.x, clip.y, node.bbox.width, clip.height),
+                        empty_body,
+                        ClipKind::Body,
+                    ));
+                }
+                Some(LayerNode::group(
                     node.bbox,
                     Some(node.id),
                     children,
                     self.cache_hint_for(&node.node_type),
                     LayerSemantic::role(LayerSemanticRole::Body),
-                );
-                let clipped_body =
-                    LayerNode::clip_rect(node.bbox, Some(node.id), *clip, child, ClipKind::Body);
-                let body_left = clip.x;
-                let body_right = clip.x + clip.width;
-                let mut overflow_nodes = Vec::new();
-                for column in &node.children {
-                    self.collect_body_overflow_nodes(
-                        column,
-                        body_left,
-                        body_right,
-                        &mut overflow_nodes,
-                    );
-                }
-                let overflow_children: Vec<LayerNode> = overflow_nodes
-                    .into_iter()
-                    .filter_map(|child| self.build_node(child))
-                    .collect();
-
-                if overflow_children.is_empty() {
-                    Some(clipped_body)
-                } else {
-                    let overflow_clip = crate::renderer::render_tree::BoundingBox::new(
-                        0.0,
-                        clip.y,
-                        self.page_width,
-                        clip.height,
-                    );
-                    let overflow_group = LayerNode::group(
-                        overflow_clip,
-                        Some(node.id),
-                        overflow_children,
-                        CacheHint::None,
-                        LayerSemantic::role(LayerSemanticRole::Body),
-                    );
-                    Some(LayerNode::group(
-                        node.bbox,
-                        Some(node.id),
-                        vec![
-                            clipped_body,
-                            LayerNode::clip_rect(
-                                overflow_clip,
-                                Some(node.id),
-                                overflow_clip,
-                                overflow_group,
-                                ClipKind::Generic,
-                            ),
-                        ],
-                        self.cache_hint_for(&node.node_type),
-                        LayerSemantic::role(LayerSemanticRole::Body),
-                    ))
-                }
+                ))
             }
             RenderNodeType::TableCell(cell) if cell.clip && self.output_options.clip_enabled => {
                 let child = LayerNode::group(
@@ -882,50 +1046,6 @@ impl LayerBuilder {
             _ => LayerSemantic::default(),
         }
     }
-
-    fn collect_body_overflow_nodes<'a>(
-        &self,
-        node: &'a RenderNode,
-        body_left: f64,
-        body_right: f64,
-        out: &mut Vec<&'a RenderNode>,
-    ) {
-        if matches!(
-            node.node_type,
-            RenderNodeType::TextLine(_)
-                | RenderNodeType::TextRun(_)
-                | RenderNodeType::FootnoteMarker(_)
-                | RenderNodeType::FootnoteArea
-                | RenderNodeType::Header
-                | RenderNodeType::Footer
-                | RenderNodeType::MasterPage
-                | RenderNodeType::Page(_)
-                | RenderNodeType::Body { .. }
-        ) {
-            return;
-        }
-
-        let is_structural = matches!(
-            node.node_type,
-            RenderNodeType::Column(_)
-                | RenderNodeType::Group(_)
-                | RenderNodeType::TextBox
-                | RenderNodeType::Table(_)
-                | RenderNodeType::TableCell(_)
-        );
-
-        if is_structural {
-            for child in &node.children {
-                self.collect_body_overflow_nodes(child, body_left, body_right, out);
-            }
-            return;
-        }
-
-        let overflows = node.bbox.x < body_left || node.bbox.x + node.bbox.width > body_right;
-        if overflows {
-            out.push(node);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -967,6 +1087,17 @@ mod tests {
             border_fill_id: 0,
             baseline: 12.0,
             field_marker: FieldMarkerType::None,
+        }
+    }
+
+    fn count_leaf_source_nodes(node: &LayerNode, source_node_id: u32) -> usize {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => children
+                .iter()
+                .map(|child| count_leaf_source_nodes(child, source_node_id))
+                .sum(),
+            LayerNodeKind::ClipRect { child, .. } => count_leaf_source_nodes(child, source_node_id),
+            LayerNodeKind::Leaf { .. } => usize::from(node.source_node_id == Some(source_node_id)),
         }
     }
 
@@ -1223,6 +1354,18 @@ mod tests {
             BoundingBox::new(100.0, 20.0, 600.0, 400.0),
         );
         column.children.push(RenderNode::new(
+            4,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    fill_color: Some(0x000000),
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(120.0, 40.0, 40.0, 40.0),
+        ));
+        column.children.push(RenderNode::new(
             3,
             RenderNodeType::Rectangle(RectangleNode::new(
                 0.0,
@@ -1234,6 +1377,18 @@ mod tests {
             )),
             BoundingBox::new(680.0, 40.0, 80.0, 40.0),
         ));
+        column.children.push(RenderNode::new(
+            5,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    fill_color: Some(0x000000),
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(180.0, 40.0, 40.0, 40.0),
+        ));
         body.children.push(column);
         tree.root.children.push(body);
 
@@ -1242,32 +1397,303 @@ mod tests {
 
         match &layer_tree.root.kind {
             LayerNodeKind::Group { children, .. } => match &children[0].kind {
-                LayerNodeKind::Group { children, .. } => {
-                    assert_eq!(children.len(), 2);
-                    assert!(matches!(
-                        &children[0].kind,
+                LayerNodeKind::Group {
+                    children: body_children,
+                    ..
+                } => {
+                    assert_eq!(body_children.len(), 1);
+                    let LayerNodeKind::Group {
+                        children: column_children,
+                        ..
+                    } = &body_children[0].kind
+                    else {
+                        panic!("expected routed column group");
+                    };
+                    assert_eq!(column_children.len(), 3);
+                    match &column_children[0].kind {
                         LayerNodeKind::ClipRect {
                             clip_kind: ClipKind::Body,
+                            child,
                             ..
-                        }
-                    ));
-                    match &children[1].kind {
+                        } => match &child.kind {
+                            LayerNodeKind::Group { children, .. } => {
+                                assert_eq!(children.len(), 1);
+                                assert_eq!(children[0].source_node_id, Some(4));
+                            }
+                            other => panic!("expected leading flow group, got {other:?}"),
+                        },
+                        other => panic!("expected leading body clip, got {other:?}"),
+                    }
+                    match &column_children[1].kind {
                         LayerNodeKind::ClipRect {
-                            clip, clip_kind, ..
+                            clip,
+                            clip_kind,
+                            child,
+                            ..
                         } => {
                             assert_eq!(*clip_kind, ClipKind::Generic);
                             assert_eq!(clip.x, 0.0);
                             assert_eq!(clip.width, 800.0);
                             assert_eq!(clip.y, 20.0);
                             assert_eq!(clip.height, 400.0);
+                            assert!(matches!(child.kind, LayerNodeKind::Leaf { .. }));
                         }
                         other => panic!("expected overflow clip rect, got {other:?}"),
                     }
+                    match &column_children[2].kind {
+                        LayerNodeKind::ClipRect {
+                            clip_kind: ClipKind::Body,
+                            child,
+                            ..
+                        } => match &child.kind {
+                            LayerNodeKind::Group { children, .. } => {
+                                assert_eq!(children.len(), 1);
+                                assert_eq!(children[0].source_node_id, Some(5));
+                            }
+                            other => panic!("expected trailing flow group, got {other:?}"),
+                        },
+                        other => panic!("expected trailing body clip, got {other:?}"),
+                    }
+                    assert_eq!(
+                        count_leaf_source_nodes(&children[0], 3),
+                        1,
+                        "overflow control must be lowered exactly once"
+                    );
+                    assert_eq!(count_leaf_source_nodes(&children[0], 4), 1);
+                    assert_eq!(count_leaf_source_nodes(&children[0], 5), 1);
                 }
-                other => panic!("expected body group with overflow replay, got {other:?}"),
+                other => panic!("expected routed body group, got {other:?}"),
             },
             other => panic!("expected root group, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn routes_body_controls_when_only_visual_bounds_overflow() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 800.0,
+            height: 600.0,
+            section_index: 0,
+        });
+        let mut body = RenderNode::new(
+            1,
+            RenderNodeType::Body {
+                clip_rect: Some(BoundingBox::new(100.0, 20.0, 600.0, 400.0)),
+            },
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        let mut column = RenderNode::new(
+            2,
+            RenderNodeType::Column(0),
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        column.children.push(RenderNode::new(
+            3,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    fill_color: Some(0x000000),
+                    stroke_color: Some(0x000000),
+                    stroke_width: 12.0,
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(640.0, 40.0, 60.0, 40.0),
+        ));
+        body.children.push(column);
+        tree.root.children.push(body);
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::Group {
+            children: body_children,
+            ..
+        } = &children[0].kind
+        else {
+            panic!("expected routed body group");
+        };
+        let LayerNodeKind::Group {
+            children: column_children,
+            ..
+        } = &body_children[0].kind
+        else {
+            panic!("expected routed column group");
+        };
+        let LayerNodeKind::ClipRect {
+            clip,
+            clip_kind,
+            child,
+            ..
+        } = &column_children[0].kind
+        else {
+            panic!("expected visual-overflow clip");
+        };
+
+        assert_eq!(*clip_kind, ClipKind::Generic);
+        assert_eq!((clip.x, clip.width), (0.0, 800.0));
+        assert!(
+            child.bounds.x + child.bounds.width > 700.0,
+            "stroke must expand the visual bounds beyond the authored body"
+        );
+        assert_eq!(count_leaf_source_nodes(&children[0], 3), 1);
+    }
+
+    #[test]
+    fn keeps_in_bounds_flow_structures_under_the_body_clip() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 800.0,
+            height: 600.0,
+            section_index: 0,
+        });
+        let mut body = RenderNode::new(
+            1,
+            RenderNodeType::Body {
+                clip_rect: Some(BoundingBox::new(100.0, 20.0, 600.0, 400.0)),
+            },
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        let mut column = RenderNode::new(
+            2,
+            RenderNodeType::Column(0),
+            BoundingBox::new(100.0, 20.0, 600.0, 400.0),
+        );
+        let mut table = RenderNode::new(
+            3,
+            RenderNodeType::Table(TableNode {
+                row_count: 1,
+                col_count: 1,
+                border_fill_id: 0,
+                section_index: None,
+                para_index: None,
+                control_index: None,
+            }),
+            BoundingBox::new(100.0, 40.0, 300.0, 80.0),
+        );
+        table.children.push(RenderNode::new(
+            4,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    stroke_color: Some(0x000000),
+                    stroke_width: 12.0,
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(100.0, 40.0, 300.0, 80.0),
+        ));
+        column.children.push(table);
+        body.children.push(column);
+        tree.root.children.push(body);
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::Group {
+            children: body_children,
+            ..
+        } = &children[0].kind
+        else {
+            panic!("expected routed body group");
+        };
+        let LayerNodeKind::Group {
+            children: column_children,
+            ..
+        } = &body_children[0].kind
+        else {
+            panic!("expected routed column group");
+        };
+
+        assert_eq!(column_children.len(), 1);
+        assert!(matches!(
+            column_children[0].kind,
+            LayerNodeKind::ClipRect {
+                clip_kind: ClipKind::Body,
+                ..
+            }
+        ));
+        assert_eq!(count_leaf_source_nodes(&children[0], 4), 1);
+    }
+
+    #[test]
+    fn caps_floating_body_controls_when_flow_expands_the_resolved_clip() {
+        let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+        tree.root.node_type = RenderNodeType::Page(PageNode {
+            page_index: 0,
+            width: 800.0,
+            height: 600.0,
+            section_index: 0,
+        });
+        let mut body = RenderNode::new(
+            1,
+            RenderNodeType::Body {
+                clip_rect: Some(BoundingBox::new(100.0, 20.0, 600.0, 200.0)),
+            },
+            BoundingBox::new(100.0, 20.0, 600.0, 100.0),
+        );
+        let mut column = RenderNode::new(
+            2,
+            RenderNodeType::Column(0),
+            BoundingBox::new(100.0, 20.0, 600.0, 200.0),
+        );
+        column.children.push(RenderNode::new(
+            3,
+            RenderNodeType::Rectangle(RectangleNode::new(
+                0.0,
+                ShapeStyle {
+                    fill_color: Some(0x000000),
+                    ..Default::default()
+                },
+                None,
+            )),
+            BoundingBox::new(140.0, 110.0, 80.0, 80.0),
+        ));
+        body.children.push(column);
+        tree.root.children.push(body);
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::Group {
+            children: body_children,
+            ..
+        } = &children[0].kind
+        else {
+            panic!("expected routed body group");
+        };
+        let LayerNodeKind::Group {
+            children: column_children,
+            ..
+        } = &body_children[0].kind
+        else {
+            panic!("expected routed column group");
+        };
+        let LayerNodeKind::ClipRect {
+            clip, clip_kind, ..
+        } = &column_children[0].kind
+        else {
+            panic!("expected capped floating control");
+        };
+
+        assert_eq!(*clip_kind, ClipKind::Body);
+        assert_eq!(clip.y, 20.0);
+        assert_eq!(clip.height, 110.0);
+        assert_eq!(count_leaf_source_nodes(&children[0], 3), 1);
     }
 
     #[test]
@@ -1333,32 +1759,39 @@ mod tests {
 
         match &layer_tree.root.kind {
             LayerNodeKind::Group { children, .. } => match &children[0].kind {
-                LayerNodeKind::Group { children, .. } => {
-                    assert_eq!(children.len(), 2);
-                    match &children[1].kind {
+                LayerNodeKind::Group {
+                    children: body_children,
+                    ..
+                } => {
+                    assert_eq!(body_children.len(), 1);
+                    let LayerNodeKind::Group {
+                        children: column_children,
+                        ..
+                    } = &body_children[0].kind
+                    else {
+                        panic!("expected routed column group");
+                    };
+                    assert_eq!(column_children.len(), 1);
+                    match &column_children[0].kind {
                         LayerNodeKind::ClipRect { child, .. } => match &child.kind {
                             LayerNodeKind::Group { children, .. } => {
                                 assert_eq!(
                                     children.len(),
-                                    1,
-                                    "nested overflow control should be replayed once"
+                                    2,
+                                    "the complete nested control should stay in one paint subtree"
                                 );
-                                assert!(
-                                    matches!(&children[0].kind, LayerNodeKind::Leaf { .. }),
-                                    "overflow replay should contain only the nested overflow leaf"
-                                );
-                                assert_eq!(
-                                    children[0].source_node_id,
-                                    Some(5),
-                                    "structural group overflow should not replay its non-overflow child"
-                                );
+                                assert!(children
+                                    .iter()
+                                    .all(|child| matches!(child.kind, LayerNodeKind::Leaf { .. })));
                             }
                             other => panic!("expected overflow group, got {other:?}"),
                         },
                         other => panic!("expected overflow clip rect, got {other:?}"),
                     }
+                    assert_eq!(count_leaf_source_nodes(&children[0], 4), 1);
+                    assert_eq!(count_leaf_source_nodes(&children[0], 5), 1);
                 }
-                other => panic!("expected body group with overflow replay, got {other:?}"),
+                other => panic!("expected routed body group, got {other:?}"),
             },
             other => panic!("expected root group, got {other:?}"),
         }

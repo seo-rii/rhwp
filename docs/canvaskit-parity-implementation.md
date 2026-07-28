@@ -503,6 +503,17 @@ retain the compatibility cap at 10px below the authored body bottom. The
 resolved rectangle is part of `PageRenderTree` before layer lowering, so
 Canvas2D, CanvasKit, SVG, PDF, and native Skia consume the same clip instead of
 applying backend-local overflow exceptions.
+Layer lowering preserves the authored body's horizontal clip for ordinary flow
+and text, but routes an eligible control that crosses that clip through a
+page-width horizontal clip at the control's original child position. Floating
+drawing controls use stroke- and shadow-expanded visual bounds for this
+decision; flow structures such as tables use their logical bounds so a border
+centered exactly on the body edge retains legacy clipping. A routed control is
+removed from the ordinary flow segment and lowered exactly once, so
+semi-transparent paint, resource diagnostics, and replay-plane ordering cannot
+be duplicated by a sibling overflow replay. Floating controls retain the
+authored-body-plus-10px vertical cap while non-floating flow can use the
+resolved post-layout height.
 Canvas2D and CanvasKit gradient replay also share the same stop normalization
 helper, including the Canvas2D behavior where missing explicit stops are
 materialized as `0` and stop pairs are ordered by offset before CanvasKit sees
