@@ -817,6 +817,32 @@ pub struct PageRenderTree {
     inline_shape_positions: std::collections::HashMap<InlineShapeKey, (f64, f64)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImageReplayPlane {
+    BehindText,
+    Flow,
+    InFrontOfText,
+}
+
+impl ImageReplayPlane {
+    fn from_text_wrap(text_wrap: Option<TextWrap>) -> Self {
+        match text_wrap {
+            Some(TextWrap::BehindText) => Self::BehindText,
+            Some(TextWrap::InFrontOfText) => Self::InFrontOfText,
+            _ => Self::Flow,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OverlapImageCandidate {
+    node_id: NodeId,
+    bbox: BoundingBox,
+    bin_data_id: u16,
+    crop: Option<(i32, i32, i32, i32)>,
+    replay_plane: ImageReplayPlane,
+}
+
 impl PageRenderTree {
     /// 새 페이지 렌더 트리 생성
     pub fn new(page_index: u32, width: f64, height: f64) -> Self {
@@ -897,6 +923,92 @@ impl PageRenderTree {
     /// 전체 트리를 clean으로 마킹
     pub fn mark_all_clean(&mut self) {
         self.root.mark_clean_recursive();
+    }
+
+    /// Removes the resampling seam between vertically overlapping slices of
+    /// the same image. Only candidates in the same replay plane are compared,
+    /// because plane replay can differ from render-tree traversal order.
+    pub fn clip_overlapping_same_bin_images(&mut self) {
+        let mut images = Vec::new();
+        Self::collect_overlap_image_candidates(&self.root, &mut images);
+        if images.len() < 2 {
+            return;
+        }
+
+        let mut clips = std::collections::HashMap::new();
+        for (index, lower) in images.iter().enumerate() {
+            for upper in &images[(index + 1)..] {
+                if lower.bin_data_id != upper.bin_data_id
+                    || lower.replay_plane != upper.replay_plane
+                    || (lower.bbox.x - upper.bbox.x).abs() > 1.0
+                    || (lower.bbox.width - upper.bbox.width).abs() > 1.0
+                    || lower.bbox.y >= upper.bbox.y
+                    || lower.bbox.y + lower.bbox.height <= upper.bbox.y
+                {
+                    continue;
+                }
+
+                let new_height = upper.bbox.y - lower.bbox.y;
+                if new_height <= 0.0 || new_height >= lower.bbox.height {
+                    continue;
+                }
+
+                let new_crop = lower.crop.map(|(left, top, right, bottom)| {
+                    let visible_ratio = new_height / lower.bbox.height;
+                    let source_height = f64::from(bottom - top);
+                    let clipped_bottom = top + (source_height * visible_ratio).round() as i32;
+                    (left, top, right, clipped_bottom)
+                });
+                let replacement = (new_height, new_crop);
+                clips
+                    .entry(lower.node_id)
+                    .and_modify(|current: &mut (f64, Option<(i32, i32, i32, i32)>)| {
+                        if new_height < current.0 {
+                            *current = replacement;
+                        }
+                    })
+                    .or_insert(replacement);
+            }
+        }
+
+        if !clips.is_empty() {
+            Self::apply_overlap_image_clips(&mut self.root, &clips);
+        }
+    }
+
+    fn collect_overlap_image_candidates(
+        node: &RenderNode,
+        candidates: &mut Vec<OverlapImageCandidate>,
+    ) {
+        if let RenderNodeType::Image(image) = &node.node_type {
+            candidates.push(OverlapImageCandidate {
+                node_id: node.id,
+                bbox: node.bbox,
+                bin_data_id: image.bin_data_id,
+                crop: image.crop,
+                replay_plane: ImageReplayPlane::from_text_wrap(image.text_wrap),
+            });
+        }
+        for child in &node.children {
+            Self::collect_overlap_image_candidates(child, candidates);
+        }
+    }
+
+    fn apply_overlap_image_clips(
+        node: &mut RenderNode,
+        clips: &std::collections::HashMap<NodeId, (f64, Option<(i32, i32, i32, i32)>)>,
+    ) {
+        if let Some((height, crop)) = clips.get(&node.id) {
+            node.bbox.height = *height;
+            if let RenderNodeType::Image(image) = &mut node.node_type {
+                if let Some(crop) = crop {
+                    image.crop = Some(*crop);
+                }
+            }
+        }
+        for child in &mut node.children {
+            Self::apply_overlap_image_clips(child, clips);
+        }
     }
 }
 
@@ -990,5 +1102,190 @@ mod tests {
         assert!((effective.y - bbox.y).abs() < 1e-9);
         assert!((effective.width - bbox.width).abs() < 1e-9);
         assert!((effective.height - bbox.height).abs() < 1e-9);
+    }
+
+    fn overlap_image(
+        id: NodeId,
+        bbox: BoundingBox,
+        bin_data_id: u16,
+        crop: Option<(i32, i32, i32, i32)>,
+        text_wrap: Option<TextWrap>,
+    ) -> RenderNode {
+        let mut image = ImageNode::new(bin_data_id, None);
+        image.crop = crop;
+        image.text_wrap = text_wrap;
+        RenderNode::new(id, RenderNodeType::Image(image), bbox)
+    }
+
+    fn image_node(node: &RenderNode) -> &ImageNode {
+        match &node.node_type {
+            RenderNodeType::Image(image) => image,
+            _ => panic!("expected image node"),
+        }
+    }
+
+    #[test]
+    fn clips_overlapping_slices_of_same_image() {
+        let mut tree = PageRenderTree::new(0, 1122.5, 1587.4);
+        let mut lower = overlap_image(
+            tree.next_id(),
+            BoundingBox::new(597.15, 243.59, 408.19, 256.09),
+            5,
+            Some((0, 0, 189_900, 120_958)),
+            Some(TextWrap::Square),
+        );
+        image_node_mut(&mut lower).original_size_hu = Some((189_900, 138_540));
+        tree.root.children.push(lower);
+        let upper_id = tree.next_id();
+        tree.root.children.push(overlap_image(
+            upper_id,
+            BoundingBox::new(597.15, 463.17, 408.19, 70.0),
+            5,
+            Some((0, 105_958, 189_900, 138_540)),
+            None,
+        ));
+
+        tree.clip_overlapping_same_bin_images();
+
+        let clipped = &tree.root.children[0];
+        assert!((clipped.bbox.height - 219.58).abs() < 0.01);
+        let image = image_node(clipped);
+        let expected_bottom = (120_958.0_f64 * (219.58 / 256.09)).round() as i32;
+        assert_eq!(image.crop, Some((0, 0, 189_900, expected_bottom)));
+        assert_eq!(image.original_size_hu, Some((189_900, 138_540)));
+        assert_eq!(tree.root.children[1].bbox.height, 70.0);
+    }
+
+    fn image_node_mut(node: &mut RenderNode) -> &mut ImageNode {
+        match &mut node.node_type {
+            RenderNodeType::Image(image) => image,
+            _ => panic!("expected image node"),
+        }
+    }
+
+    #[test]
+    fn clips_to_nearest_later_slice() {
+        let mut tree = PageRenderTree::new(0, 500.0, 500.0);
+        for (y, height) in [(0.0, 200.0), (100.0, 150.0), (180.0, 100.0)] {
+            let id = tree.next_id();
+            tree.root.children.push(overlap_image(
+                id,
+                BoundingBox::new(10.0, y, 200.0, height),
+                1,
+                Some((0, y as i32 * 10, 1000, (y + height) as i32 * 10)),
+                None,
+            ));
+        }
+
+        tree.clip_overlapping_same_bin_images();
+
+        assert_eq!(tree.root.children[0].bbox.height, 100.0);
+        assert_eq!(tree.root.children[1].bbox.height, 80.0);
+        assert_eq!(tree.root.children[2].bbox.height, 100.0);
+    }
+
+    #[test]
+    fn clips_nested_image_nodes() {
+        let mut tree = PageRenderTree::new(0, 500.0, 500.0);
+        let mut body = RenderNode::new(
+            tree.next_id(),
+            RenderNodeType::Body { clip_rect: None },
+            BoundingBox::new(0.0, 0.0, 500.0, 500.0),
+        );
+        body.children.push(overlap_image(
+            tree.next_id(),
+            BoundingBox::new(10.0, 20.0, 100.0, 100.0),
+            7,
+            None,
+            None,
+        ));
+        body.children.push(overlap_image(
+            tree.next_id(),
+            BoundingBox::new(10.0, 80.0, 100.0, 100.0),
+            7,
+            None,
+            None,
+        ));
+        tree.root.children.push(body);
+
+        tree.clip_overlapping_same_bin_images();
+
+        assert_eq!(tree.root.children[0].children[0].bbox.height, 60.0);
+    }
+
+    #[test]
+    fn skips_images_in_different_replay_planes() {
+        let mut tree = PageRenderTree::new(0, 500.0, 500.0);
+        let flow_id = tree.next_id();
+        tree.root.children.push(overlap_image(
+            flow_id,
+            BoundingBox::new(10.0, 20.0, 100.0, 100.0),
+            7,
+            None,
+            Some(TextWrap::Square),
+        ));
+        let behind_text_id = tree.next_id();
+        tree.root.children.push(overlap_image(
+            behind_text_id,
+            BoundingBox::new(10.0, 80.0, 100.0, 100.0),
+            7,
+            None,
+            Some(TextWrap::BehindText),
+        ));
+
+        tree.clip_overlapping_same_bin_images();
+
+        assert_eq!(tree.root.children[0].bbox.height, 100.0);
+        assert_eq!(tree.root.children[1].bbox.height, 100.0);
+    }
+
+    #[test]
+    fn skips_nonmatching_or_nonoverlapping_images() {
+        let cases = [
+            (
+                BoundingBox::new(10.0, 80.0, 100.0, 100.0),
+                8,
+                "different resource",
+            ),
+            (BoundingBox::new(12.0, 80.0, 100.0, 100.0), 7, "different x"),
+            (
+                BoundingBox::new(10.0, 80.0, 102.0, 100.0),
+                7,
+                "different width",
+            ),
+            (BoundingBox::new(10.0, 120.0, 100.0, 100.0), 7, "no overlap"),
+            (
+                BoundingBox::new(10.0, 10.0, 100.0, 100.0),
+                7,
+                "later node is above",
+            ),
+        ];
+
+        for (candidate_bbox, candidate_bin, label) in cases {
+            let mut tree = PageRenderTree::new(0, 500.0, 500.0);
+            let lower_id = tree.next_id();
+            tree.root.children.push(overlap_image(
+                lower_id,
+                BoundingBox::new(10.0, 20.0, 100.0, 100.0),
+                7,
+                None,
+                None,
+            ));
+            let upper_id = tree.next_id();
+            tree.root.children.push(overlap_image(
+                upper_id,
+                candidate_bbox,
+                candidate_bin,
+                None,
+                None,
+            ));
+
+            tree.clip_overlapping_same_bin_images();
+
+            assert_eq!(
+                tree.root.children[0].bbox.height, 100.0,
+                "unexpected clip for {label}"
+            );
+        }
     }
 }

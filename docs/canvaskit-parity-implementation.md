@@ -1178,6 +1178,13 @@ The checked-in `pua-test.hwp` sample adds the corresponding real-document proof
 for PUA and circled-character fallback. It complements the synthetic
 `canvas-layer-text-script-parity` lifecycle fixture and keeps the original
 glyph-loss regression from issue #2394 in the representative browser baseline.
+Final page-tree construction also clips vertically overlapping slices that
+reference the same `BinData` image and share the same horizontal placement.
+The correction runs once after master-page composition, proportionally shortens
+the earlier slice's crop while retaining its `originalSizeHu` coordinate
+reference, and is shared by SVG, Canvas2D, native Skia, and CanvasKit lowering.
+Pairs in different replay planes are deliberately excluded because page-tree
+traversal order does not define their actual paint order.
 Each later implementation commit should start from a concrete fixture, corpus
 document, backend proof, or malformed payload that the current branch does not
 already cover.

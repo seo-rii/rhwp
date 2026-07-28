@@ -2473,6 +2473,9 @@ impl DocumentCore {
                 page_content.page_number,
             );
         }
+        // Apply once after every page/master-page node is present so all
+        // direct backends receive the same seam-free image geometry.
+        tree.clip_overlapping_same_bin_images();
         Ok(tree)
     }
 
