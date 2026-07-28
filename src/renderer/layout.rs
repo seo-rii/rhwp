@@ -216,6 +216,75 @@ fn force_para_end_on_last_run(col_node: &mut RenderNode) {
     }
 }
 
+fn expanded_body_clip(body_bbox: BoundingBox, children: &[RenderNode]) -> BoundingBox {
+    fn is_floating_object(node: &RenderNode) -> bool {
+        matches!(
+            node.node_type,
+            RenderNodeType::Image(_)
+                | RenderNodeType::Group(_)
+                | RenderNodeType::Path(_)
+                | RenderNodeType::Ellipse(_)
+                | RenderNodeType::Rectangle(_)
+                | RenderNodeType::Line(_)
+                | RenderNodeType::TextBox
+                | RenderNodeType::Placeholder(_)
+                | RenderNodeType::RawSvg(_)
+        )
+    }
+
+    fn expand_clip(
+        flow_clip: &mut BoundingBox,
+        floating_clip: &mut BoundingBox,
+        node: &RenderNode,
+        floating_subtree: bool,
+    ) {
+        let target = if floating_subtree || is_floating_object(node) {
+            &mut *floating_clip
+        } else {
+            &mut *flow_clip
+        };
+        let child_right = node.bbox.x + node.bbox.width;
+        let child_bottom = node.bbox.y + node.bbox.height;
+
+        if child_right > target.x + target.width {
+            target.width = child_right - target.x;
+        }
+        if child_bottom > target.y + target.height {
+            target.height = child_bottom - target.y;
+        }
+        if node.bbox.x < target.x {
+            target.width += target.x - node.bbox.x;
+            target.x = node.bbox.x;
+        }
+        if node.bbox.y < target.y {
+            target.height += target.y - node.bbox.y;
+            target.y = node.bbox.y;
+        }
+
+        let floating_subtree = floating_subtree || is_floating_object(node);
+        for child in &node.children {
+            expand_clip(flow_clip, floating_clip, child, floating_subtree);
+        }
+    }
+
+    let mut flow_clip = body_bbox;
+    let mut floating_clip = body_bbox;
+    for child in children {
+        expand_clip(&mut flow_clip, &mut floating_clip, child, false);
+    }
+
+    let max_floating_bottom = body_bbox.y + body_bbox.height + 10.0;
+    if floating_clip.y + floating_clip.height > max_floating_bottom {
+        floating_clip.height = max_floating_bottom - floating_clip.y;
+    }
+
+    let left = flow_clip.x.min(floating_clip.x);
+    let top = flow_clip.y.min(floating_clip.y);
+    let right = (flow_clip.x + flow_clip.width).max(floating_clip.x + floating_clip.width);
+    let bottom = (flow_clip.y + flow_clip.height).max(floating_clip.y + floating_clip.height);
+    BoundingBox::new(left, top, right - left, bottom - top)
+}
+
 pub struct LayoutEngine {
     /// DPI
     dpi: f64,
@@ -480,19 +549,11 @@ impl LayoutEngine {
             );
         }
 
-        // 본문 영역 노드
+        // 본문 영역 노드. 콘텐츠가 배치된 뒤 실제 clip 범위를 확정한다.
         let body_id = tree.next_id();
-        let mut body_node = RenderNode::new(
-            body_id,
-            RenderNodeType::Body {
-                clip_rect: if self.clip_enabled.get() {
-                    Some(layout_rect_to_bbox(&layout.body_area))
-                } else {
-                    None
-                },
-            },
-            layout_rect_to_bbox(&layout.body_area),
-        );
+        let body_bbox = layout_rect_to_bbox(&layout.body_area);
+        let mut body_node =
+            RenderNode::new(body_id, RenderNodeType::Body { clip_rect: None }, body_bbox);
 
         // 단별 콘텐츠 레이아웃
         let mut paper_images: Vec<RenderNode> = Vec::new();
@@ -513,6 +574,12 @@ impl LayoutEngine {
 
         // 단 구분선
         self.build_column_separators(&mut tree, &mut body_node, layout);
+
+        if self.clip_enabled.get() {
+            body_node.node_type = RenderNodeType::Body {
+                clip_rect: Some(expanded_body_clip(body_bbox, &body_node.children)),
+            };
+        }
 
         // 용지 기준 이미지: body clip 바깥에 배치 (배경 이미지 등)
         for img_node in paper_images {

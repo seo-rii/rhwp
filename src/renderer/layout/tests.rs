@@ -25,6 +25,50 @@ fn a4_page_def() -> PageDef {
 }
 
 #[test]
+fn body_clip_preserves_flow_content_below_body_area() {
+    let body_bbox = BoundingBox::new(100.0, 20.0, 600.0, 400.0);
+    let mut column = RenderNode::new(1, RenderNodeType::Column(0), body_bbox);
+    column.children.push(RenderNode::new(
+        2,
+        RenderNodeType::TextLine(TextLineNode::new(100.0, 80.0)),
+        BoundingBox::new(100.0, 400.0, 600.0, 100.0),
+    ));
+
+    let clip = expanded_body_clip(body_bbox, &[column]);
+
+    assert_eq!(clip.x, 100.0);
+    assert_eq!(clip.y, 20.0);
+    assert_eq!(clip.width, 600.0);
+    assert_eq!(clip.height, 480.0);
+}
+
+#[test]
+fn body_clip_caps_floating_subtrees_below_body_area() {
+    let body_bbox = BoundingBox::new(100.0, 20.0, 600.0, 400.0);
+    let mut group = RenderNode::new(
+        1,
+        RenderNodeType::Group(GroupNode {
+            section_index: None,
+            para_index: None,
+            control_index: None,
+        }),
+        BoundingBox::new(40.0, 40.0, 720.0, 680.0),
+    );
+    group.children.push(RenderNode::new(
+        2,
+        RenderNodeType::TextLine(TextLineNode::new(100.0, 80.0)),
+        BoundingBox::new(40.0, 620.0, 720.0, 100.0),
+    ));
+
+    let clip = expanded_body_clip(body_bbox, &[group]);
+
+    assert_eq!(clip.x, 40.0);
+    assert_eq!(clip.y, 20.0);
+    assert_eq!(clip.width, 720.0);
+    assert_eq!(clip.height, 410.0);
+}
+
+#[test]
 fn test_build_empty_page() {
     let engine = LayoutEngine::with_default_dpi();
     let layout = PageLayoutInfo::from_page_def_default(&a4_page_def(), &ColumnDef::default());

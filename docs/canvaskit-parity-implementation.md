@@ -496,6 +496,13 @@ not explicitly provide `rightOverflowSlop`, while explicit clip policy values
 remain authoritative. `textBox` render nodes lower to direct layer `ClipRect`
 nodes with no implicit right pad, so Canvas2D, CanvasKit, SVG, and native Skia
 can replay textbox overflow without a browser overlay.
+The body clip itself is resolved after body layout. Flow subtrees may extend
+the clip below the authored body area so an over-height paragraph, table, cell,
+or text line is not lost by strict clip consumers. Floating drawing subtrees
+retain the compatibility cap at 10px below the authored body bottom. The
+resolved rectangle is part of `PageRenderTree` before layer lowering, so
+Canvas2D, CanvasKit, SVG, PDF, and native Skia consume the same clip instead of
+applying backend-local overflow exceptions.
 Canvas2D and CanvasKit gradient replay also share the same stop normalization
 helper, including the Canvas2D behavior where missing explicit stops are
 materialized as `0` and stop pairs are ordered by offset before CanvasKit sees
