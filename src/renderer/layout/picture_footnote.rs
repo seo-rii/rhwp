@@ -89,17 +89,7 @@ impl LayoutEngine {
         let image_data = find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.load());
 
         // 그림 자르기: crop 좌표를 그대로 저장 (렌더러에서 이미지 px 크기와 비교)
-        let crop = {
-            let c = &picture.crop;
-            if c.right > c.left
-                && c.bottom > c.top
-                && (c.left != 0 || c.top != 0 || c.right != 0 || c.bottom != 0)
-            {
-                Some((c.left, c.top, c.right, c.bottom))
-            } else {
-                None
-            }
-        };
+        let crop = super::picture_crop(picture);
 
         // 이미지 노드 생성
         let img_id = tree.next_id();
@@ -111,6 +101,7 @@ impl LayoutEngine {
                 control_index,
                 text_wrap: Some(picture.common.text_wrap),
                 crop,
+                original_size_hu: picture.crop_reference_size(),
                 effect: picture.image_attr.effect,
                 brightness: picture.image_attr.brightness,
                 contrast: picture.image_attr.contrast,
@@ -307,14 +298,7 @@ impl LayoutEngine {
         let image_data = find_bin_data(bin_data_content, bin_data_id).map(|c| c.data.load());
 
         // 그림 자르기
-        let crop = {
-            let c = &picture.crop;
-            if c.right > c.left && c.bottom > c.top {
-                Some((c.left, c.top, c.right, c.bottom))
-            } else {
-                None
-            }
-        };
+        let crop = super::picture_crop(picture);
 
         // 이미지 노드 생성
         let img_id = tree.next_id();
@@ -326,6 +310,7 @@ impl LayoutEngine {
                 control_index: Some(control_index),
                 text_wrap: Some(picture.common.text_wrap),
                 crop,
+                original_size_hu: picture.crop_reference_size(),
                 effect: picture.image_attr.effect,
                 brightness: picture.image_attr.brightness,
                 contrast: picture.image_attr.contrast,

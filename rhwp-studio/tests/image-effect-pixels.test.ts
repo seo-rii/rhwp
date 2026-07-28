@@ -71,6 +71,59 @@ test('resolveLayerImageCropSource normalizes HWP crop bounds to source pixels', 
   );
 });
 
+test('resolveLayerImageCropSource uses imgDim instead of cropped bounds as the full coordinate range', () => {
+  assert.deepEqual(
+    resolveLayerImageCropSource(
+      100,
+      80,
+      {
+        left: 100,
+        top: 100,
+        right: 900,
+        bottom: 700,
+      },
+      [1000, 800],
+    ),
+    {
+      x: 10,
+      y: 10,
+      width: 80,
+      height: 60,
+    },
+  );
+  assert.equal(
+    resolveLayerImageCropSource(
+      100,
+      80,
+      {
+        left: 0,
+        top: 0,
+        right: 1000,
+        bottom: 800,
+      },
+      [1000, 800],
+    ),
+    null,
+  );
+});
+
+test('resolveLayerImageCropSource retains the fixed HWPUNIT fallback without a full range', () => {
+  assert.deepEqual(
+    resolveLayerImageCropSource(100, 80, {
+      left: -750,
+      top: 0,
+      right: 0,
+      bottom: 750,
+    }),
+    {
+      x: -10,
+      y: 0,
+      width: 10,
+      height: 10,
+    },
+  );
+});
+
 test('canPreprocessCroppedLayerImageEffect matches deterministic image fill modes', () => {
   assert.equal(canPreprocessCroppedLayerImageEffect(), true);
   assert.equal(canPreprocessCroppedLayerImageEffect('fitToSize'), true);

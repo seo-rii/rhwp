@@ -272,6 +272,7 @@ impl WebCanvasRenderer {
                                         Some(image.fill_mode),
                                         None,
                                         None,
+                                        None,
                                         image.effect,
                                         image.brightness,
                                         image.contrast,
@@ -291,6 +292,7 @@ impl WebCanvasRenderer {
                                         image.fill_mode,
                                         image.original_size,
                                         image.crop,
+                                        image.original_size_hu,
                                         image.effect,
                                         image.brightness,
                                         image.contrast,
@@ -760,6 +762,7 @@ impl WebCanvasRenderer {
                         Some(img.fill_mode),
                         None,
                         None,
+                        None,
                         img.effect,
                         img.brightness,
                         img.contrast,
@@ -890,6 +893,7 @@ impl WebCanvasRenderer {
                         img.fill_mode,
                         img.original_size,
                         img.crop,
+                        img.original_size_hu,
                         img.effect,
                         img.brightness,
                         img.contrast,
@@ -2892,6 +2896,7 @@ impl WebCanvasRenderer {
         fill_mode: Option<ImageFillMode>,
         original_size: Option<(f64, f64)>,
         crop: Option<(i32, i32, i32, i32)>,
+        crop_reference_size: Option<(u32, u32)>,
         effect: ImageEffect,
         brightness: i8,
         contrast: i8,
@@ -2946,15 +2951,12 @@ impl WebCanvasRenderer {
             let (img_w, img_h) = parse_image_dimensions_canvas(data)?;
             let img_w = img_w as f64;
             let img_h = img_h as f64;
-            let scale_x = cr as f64 / img_w;
-            let scale_y = cb as f64 / img_h;
-            if scale_x <= 0.0 || scale_y <= 0.0 {
-                return None;
-            }
-            let src_x = cl as f64 / scale_x;
-            let src_y = ct as f64 / scale_y;
-            let src_w = (cr - cl) as f64 / scale_x;
-            let src_h = (cb - ct) as f64 / scale_y;
+            let (src_x, src_y, src_w, src_h) = crate::renderer::image_crop::compute_image_crop_src(
+                (cl, ct, cr, cb),
+                crop_reference_size,
+                img_w,
+                img_h,
+            );
             let is_cropped = src_x > 0.5
                 || src_y > 0.5
                 || (src_w - img_w).abs() > 1.0

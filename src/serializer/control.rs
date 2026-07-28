@@ -788,8 +788,13 @@ fn serialize_picture_data(pic: &Picture) -> Vec<u8> {
         w.write_u32(pic.instance_id).unwrap();
         w.write_u32(0).unwrap(); // image_effect_extra
                                  // 원본 이미지 크기(HWPUNIT) + 플래그(1): 한컴 호환 추가 9바이트
-        w.write_u32(pic.crop.right as u32).unwrap(); // original width in HWPUNIT
-        w.write_u32(pic.crop.bottom as u32).unwrap(); // original height in HWPUNIT
+        let (dim_width, dim_height) = if pic.img_dim != (0, 0) {
+            pic.img_dim
+        } else {
+            (pic.crop.right.max(0) as u32, pic.crop.bottom.max(0) as u32)
+        };
+        w.write_u32(dim_width).unwrap(); // original width in HWPUNIT
+        w.write_u32(dim_height).unwrap(); // original height in HWPUNIT
         w.write_u8(0).unwrap(); // flag
     }
 

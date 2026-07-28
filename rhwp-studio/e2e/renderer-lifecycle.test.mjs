@@ -17210,7 +17210,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
           fillMode: 'fitToSize',
           effect: 'pattern8x8',
           originalSize: { width: 64, height: 64 },
-          crop: { left: 56, top: 56, right: 64, bottom: 64 },
+          crop: { left: 4800, top: 4800, right: 5600, bottom: 5600 },
+          originalSizeHu: [6400, 6400],
           transform: { rotation: 0, horzFlip: false, vertFlip: false },
         }],
       },
@@ -17306,7 +17307,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ops: [{
           ...tree.root.ops[0],
           fillMode: 'none',
-          crop: { left: 48, top: 48, right: 64, bottom: 64 },
+          crop: { left: 4000, top: 4000, right: 5600, bottom: 5600 },
         }],
       },
     };

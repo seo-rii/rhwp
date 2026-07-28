@@ -31,8 +31,8 @@ use super::equation_conv::render_equation_with_resolver;
 use super::font_resolver::SkiaFontResolver;
 use super::form_replay;
 use super::image_conv::{
-    decode_image_bytes, draw_decoded_image, draw_missing_image_placeholder,
-    rasterize_svg_fragment_with_view_box, ImageSampling,
+    decode_image_bytes, draw_decoded_image, draw_decoded_image_with_crop_reference,
+    draw_missing_image_placeholder, rasterize_svg_fragment_with_view_box, ImageSampling,
 };
 use super::paint_conv::{
     colorref_to_skia, make_background_fill_paint, make_fill_paint, make_font, make_line_paint,
@@ -2500,7 +2500,7 @@ impl SkiaLayerRenderer {
                                         } else {
                                             (&decoded, image.effect, replay.image_sampling())
                                         };
-                                    let diagnostics = draw_decoded_image(
+                                    let diagnostics = draw_decoded_image_with_crop_reference(
                                         canvas,
                                         draw_image,
                                         effective_bbox.x as f32,
@@ -2510,6 +2510,7 @@ impl SkiaLayerRenderer {
                                         image.fill_mode,
                                         image.original_size,
                                         image.crop,
+                                        image.original_size_hu,
                                         effect,
                                         image.brightness,
                                         image.contrast,

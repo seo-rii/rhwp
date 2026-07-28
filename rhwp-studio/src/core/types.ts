@@ -1301,6 +1301,8 @@ export interface LayerImageOp {
     right: number;
     bottom: number;
   };
+  /** Full HWP/HWPX crop coordinate range from `imgDim`. */
+  originalSizeHu?: [number, number];
   transform: LayerTransform;
 }
 

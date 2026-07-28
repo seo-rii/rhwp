@@ -1440,7 +1440,7 @@ export class Canvas2DLayerRenderer {
     this.withCanvasTransform(ctx, bbox, op.transform, () => {
       const { width: imageWidth, height: imageHeight } = layerCanvasImageSourceSize(image);
       const effectCropSource = canPreprocessCroppedLayerImageEffect(op.fillMode)
-        ? resolveLayerImageCropSource(imageWidth, imageHeight, op.crop)
+        ? resolveLayerImageCropSource(imageWidth, imageHeight, op.crop, op.originalSizeHu)
         : null;
       const source = applyLayerImageEffect(
         image,
@@ -1459,6 +1459,7 @@ export class Canvas2DLayerRenderer {
         op.originalSize,
         source !== image && effectCropSource ? undefined : op.crop,
         source !== image,
+        op.originalSizeHu,
       );
     });
   }
@@ -1749,6 +1750,7 @@ export class Canvas2DLayerRenderer {
     originalSize?: { width: number; height: number },
     crop?: { left: number; top: number; right: number; bottom: number },
     forceNearestSampling = false,
+    originalSizeHu?: [number, number],
   ): void {
     const { width: imageWidth, height: imageHeight } = layerCanvasImageSourceSize(image);
     if (!imageWidth || !imageHeight) {
@@ -1764,7 +1766,12 @@ export class Canvas2DLayerRenderer {
     ) {
       return;
     }
-    const cropSource = resolveLayerImageCropSource(imageWidth, imageHeight, crop);
+    const cropSource = resolveLayerImageCropSource(
+      imageWidth,
+      imageHeight,
+      crop,
+      originalSizeHu,
+    );
     const previousImageSmoothingEnabled = ctx.imageSmoothingEnabled;
     if (forceNearestSampling) {
       ctx.imageSmoothingEnabled = false;

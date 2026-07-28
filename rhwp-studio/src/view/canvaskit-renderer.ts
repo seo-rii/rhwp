@@ -2436,6 +2436,7 @@ export class CanvasKitLayerRenderer {
         op.effect,
         op.brightness ?? 0,
         op.contrast ?? 0,
+        op.originalSizeHu,
       );
     });
   }
@@ -3261,6 +3262,7 @@ export class CanvasKitLayerRenderer {
     effect: LayerImageOp['effect'] = 'realPic',
     brightness = 0,
     contrast = 0,
+    originalSizeHu?: [number, number],
   ): void {
     const imageDimension = (source: Image, dimension: 'width' | 'height'): number | null => {
       const value = (source as Image & { width?: unknown; height?: unknown })[dimension];
@@ -3301,7 +3303,7 @@ export class CanvasKitLayerRenderer {
       return;
     }
     const effectCropSource = (usesImageEffect || usesImageTone) && canPreprocessCroppedLayerImageEffect(fillMode)
-      ? resolveLayerImageCropSource(baseWidth, baseHeight, crop)
+      ? resolveLayerImageCropSource(baseWidth, baseHeight, crop, originalSizeHu)
       : null;
     const effectImage = usesImageEffect || usesImageTone
       ? this.resourceCache.imageWithEffect(resourceId, base64, effect, effectCropSource, brightness, contrast)
@@ -3322,7 +3324,9 @@ export class CanvasKitLayerRenderer {
     const cropWasPreprocessed = !!effectCropSource
       && Math.abs(sourceWidth - Math.max(1, Math.round(effectCropSource.width))) <= 1
       && Math.abs(sourceHeight - Math.max(1, Math.round(effectCropSource.height))) <= 1;
-    const cropSource = cropWasPreprocessed ? null : resolveLayerImageCropSource(sourceWidth, sourceHeight, crop);
+    const cropSource = cropWasPreprocessed
+      ? null
+      : resolveLayerImageCropSource(sourceWidth, sourceHeight, crop, originalSizeHu);
     const drawImageRect = (
       srcX: number,
       srcY: number,

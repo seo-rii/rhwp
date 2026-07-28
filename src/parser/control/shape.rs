@@ -905,6 +905,13 @@ fn parse_picture(common: CommonObjAttr, shape_attr: ShapeComponentAttr, data: &[
     // 남은 바이트 보존 (라운드트립용)
     if r.remaining() > 0 {
         pic.raw_picture_extra = r.read_bytes(r.remaining()).unwrap_or_default().to_vec();
+        if pic.raw_picture_extra.len() >= 17 {
+            let extra = &pic.raw_picture_extra;
+            pic.img_dim = (
+                u32::from_le_bytes([extra[9], extra[10], extra[11], extra[12]]),
+                u32::from_le_bytes([extra[13], extra[14], extra[15], extra[16]]),
+            );
+        }
     }
 
     pic

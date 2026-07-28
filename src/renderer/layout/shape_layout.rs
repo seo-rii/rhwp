@@ -1325,6 +1325,8 @@ impl LayoutEngine {
                     img_id,
                     RenderNodeType::Image(ImageNode {
                         transform,
+                        crop: super::picture_crop(pic),
+                        original_size_hu: pic.crop_reference_size(),
                         effect: pic.image_attr.effect,
                         brightness: pic.image_attr.brightness,
                         contrast: pic.image_attr.contrast,

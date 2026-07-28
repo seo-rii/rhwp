@@ -135,6 +135,40 @@ pub fn draw_decoded_image(
     contrast: i8,
     sampling: ImageSampling,
 ) -> ImageDrawDiagnostics {
+    draw_decoded_image_with_crop_reference(
+        canvas,
+        image,
+        x,
+        y,
+        width,
+        height,
+        fill_mode,
+        original_size,
+        crop,
+        None,
+        effect,
+        brightness,
+        contrast,
+        sampling,
+    )
+}
+
+pub fn draw_decoded_image_with_crop_reference(
+    canvas: &Canvas,
+    image: &Image,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    fill_mode: Option<ImageFillMode>,
+    original_size: Option<(f64, f64)>,
+    crop: Option<(i32, i32, i32, i32)>,
+    crop_reference_size: Option<(u32, u32)>,
+    effect: ImageEffect,
+    brightness: i8,
+    contrast: i8,
+    sampling: ImageSampling,
+) -> ImageDrawDiagnostics {
     draw_decoded_image_impl(
         canvas,
         image,
@@ -145,6 +179,7 @@ pub fn draw_decoded_image(
         fill_mode,
         original_size,
         crop,
+        crop_reference_size,
         effect,
         brightness,
         contrast,
@@ -169,6 +204,7 @@ fn draw_decoded_image_impl(
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
+    crop_reference_size: Option<(u32, u32)>,
     effect: ImageEffect,
     brightness: i8,
     contrast: i8,
@@ -217,19 +253,17 @@ fn draw_decoded_image_impl(
     let mode = fill_mode.unwrap_or(ImageFillMode::FitToSize);
     let decoded_width = image.width() as f32;
     let decoded_height = image.height() as f32;
-    let crop_src = crop.and_then(|(left, top, right, bottom)| {
+    let crop_src = crop.and_then(|crop_rect| {
         if decoded_width <= 0.0 || decoded_height <= 0.0 {
             return None;
         }
-        let scale_x = right as f32 / decoded_width;
-        let scale_y = bottom as f32 / decoded_height;
-        if scale_x <= 0.0 || scale_y <= 0.0 {
-            return None;
-        }
-        let src_x = left as f32 / scale_x;
-        let src_y = top as f32 / scale_y;
-        let src_w = (right - left) as f32 / scale_x;
-        let src_h = (bottom - top) as f32 / scale_y;
+        let (src_x, src_y, src_w, src_h) = crate::renderer::image_crop::compute_image_crop_src(
+            crop_rect,
+            crop_reference_size,
+            decoded_width as f64,
+            decoded_height as f64,
+        );
+        let (src_x, src_y, src_w, src_h) = (src_x as f32, src_y as f32, src_w as f32, src_h as f32);
         let is_cropped = src_x > 0.5
             || src_y > 0.5
             || (src_w - decoded_width).abs() > 1.0
@@ -499,6 +533,7 @@ fn draw_decoded_image_without_shader_for_test(
         fill_mode,
         original_size,
         crop,
+        None,
         effect,
         0,
         0,
@@ -891,6 +926,20 @@ mod tests {
         source.encode_png().expect("source png")
     }
 
+    fn four_color_row_png() -> Vec<u8> {
+        let mut source = tiny_skia::Pixmap::new(4, 1).expect("source pixmap");
+        for (pixel, rgba) in source.pixels_mut().iter_mut().zip([
+            (255, 0, 0, 255),
+            (0, 255, 0, 255),
+            (0, 0, 255, 255),
+            (255, 255, 0, 255),
+        ]) {
+            *pixel =
+                tiny_skia::PremultipliedColorU8::from_rgba(rgba.0, rgba.1, rgba.2, rgba.3).unwrap();
+        }
+        source.encode_png().expect("source png")
+    }
+
     #[test]
     fn svg_text_uses_portable_korean_fallback() {
         let image = rasterize_svg_fragment(
@@ -952,6 +1001,39 @@ mod tests {
         for pixel in pixmap.pixels() {
             assert!(pixel.blue() > pixel.red());
         }
+    }
+
+    #[test]
+    fn applies_img_dim_crop_reference_to_native_replay() {
+        let image = decode_image_bytes(&four_color_row_png()).expect("decode source image");
+        let mut surface = surfaces::raster_n32_premul((4, 1)).expect("surface");
+        surface.canvas().clear(Color::TRANSPARENT);
+
+        draw_decoded_image_with_crop_reference(
+            surface.canvas(),
+            &image,
+            0.0,
+            0.0,
+            4.0,
+            1.0,
+            Some(ImageFillMode::FitToSize),
+            None,
+            Some((100, 0, 300, 100)),
+            Some((400, 100)),
+            ImageEffect::RealPic,
+            0,
+            0,
+            ImageSampling::nearest(),
+        );
+
+        let rendered = surface
+            .image_snapshot()
+            .encode(None, EncodedImageFormat::PNG, None)
+            .expect("render png");
+        let pixmap = tiny_skia::Pixmap::decode_png(rendered.as_bytes()).expect("decode render");
+        let pixels = pixmap.pixels();
+        assert!(pixels[0].green() > pixels[0].red());
+        assert!(pixels[3].blue() > pixels[3].red());
     }
 
     #[test]

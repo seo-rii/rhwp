@@ -1972,6 +1972,12 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                 set_number(&crop, "bottom", bottom as f64);
                 set_value(&value, "crop", crop.into());
             }
+            if let Some((width, height)) = image.original_size_hu {
+                let original_size_hu = Array::new();
+                original_size_hu.push(&JsValue::from_f64(width as f64));
+                original_size_hu.push(&JsValue::from_f64(height as f64));
+                set_value(&value, "originalSizeHu", original_size_hu.into());
+            }
             if image.brightness != 0 {
                 set_number(&value, "brightness", image.brightness as f64);
             }
@@ -3867,6 +3873,12 @@ mod tests {
             &prop(&js_image, "crop"),
             "bottom",
         );
+        let json_crop_reference = Array::from(&prop(&json_image, "originalSizeHu"));
+        let js_crop_reference = Array::from(&prop(&js_image, "originalSizeHu"));
+        assert_eq!(json_crop_reference.length(), 2);
+        assert_eq!(js_crop_reference.length(), 2);
+        assert_eq!(json_crop_reference.get(0), js_crop_reference.get(0));
+        assert_eq!(json_crop_reference.get(1), js_crop_reference.get(1));
 
         let json_equation = json_ops.get(2);
         let js_equation = js_ops.get(2);
@@ -5159,6 +5171,7 @@ mod tests {
                             fill_mode: Some(ImageFillMode::Center),
                             original_size: Some((32.0, 24.0)),
                             crop: Some((1, 2, 31, 22)),
+                            original_size_hu: Some((32, 24)),
                             brightness: 0,
                             contrast: 0,
                             effect: ImageEffect::BlackWhite,

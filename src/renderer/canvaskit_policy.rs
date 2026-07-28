@@ -2265,6 +2265,7 @@ fn image_item(
         image.fill_mode,
         image.original_size,
         image.crop,
+        image.original_size_hu,
         Some(image.effect),
         image.brightness,
         image.contrast,
@@ -2299,6 +2300,7 @@ fn page_background_item(
         .map_or(CanvasKitImageAdmission::Missing, image_admission);
     let detail = Some(image_replay_detail(
         Some(image.fill_mode),
+        None,
         None,
         None,
         Some(image.effect),
@@ -2354,6 +2356,7 @@ fn image_replay_detail(
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
+    crop_reference_size: Option<(u32, u32)>,
     effect: Option<ImageEffect>,
     brightness: i8,
     contrast: i8,
@@ -2376,6 +2379,11 @@ fn image_replay_detail(
         let _ = write!(detail, ";crop={left},{top},{right},{bottom}");
     } else {
         detail.push_str(";crop=none");
+    }
+    if let Some((width, height)) = crop_reference_size {
+        let _ = write!(detail, ";originalSizeHu={width}x{height}");
+    } else {
+        detail.push_str(";originalSizeHu=none");
     }
 
     if let Some(effect) = effect {
@@ -3269,6 +3277,7 @@ mod tests {
                             fill_mode: Some(ImageFillMode::CenterBottom),
                             original_size: Some((40.0, 30.0)),
                             crop: Some((75, 150, 225, 300)),
+                            original_size_hu: Some((300, 400)),
                             brightness: 15,
                             contrast: -5,
                             effect: ImageEffect::Pattern8x8,
@@ -3313,6 +3322,7 @@ mod tests {
         assert!(image_detail.contains("fillMode=centerBottom"));
         assert!(image_detail.contains("originalSize=40.000x30.000"));
         assert!(image_detail.contains("crop=75,150,225,300"));
+        assert!(image_detail.contains("originalSizeHu=300x400"));
         assert!(image_detail.contains("effect=pattern8x8"));
         assert!(image_detail.contains("tone=brightness:15,contrast:-5"));
         assert!(image_detail.contains("transform=rotation:12.500,horzFlip:true,vertFlip:false"));
@@ -3340,6 +3350,7 @@ mod tests {
                         fill_mode: None,
                         original_size: None,
                         crop: None,
+                        original_size_hu: None,
                         brightness: 0,
                         contrast: 0,
                         effect: ImageEffect::RealPic,
@@ -3376,6 +3387,7 @@ mod tests {
                         fill_mode: None,
                         original_size: None,
                         crop: None,
+                        original_size_hu: None,
                         brightness: 0,
                         contrast: 0,
                         effect: ImageEffect::RealPic,
@@ -3414,6 +3426,7 @@ mod tests {
                         fill_mode: None,
                         original_size: None,
                         crop: None,
+                        original_size_hu: None,
                         brightness: 0,
                         contrast: 0,
                         effect: ImageEffect::RealPic,
@@ -3473,6 +3486,7 @@ mod tests {
                             fill_mode: None,
                             original_size: None,
                             crop: None,
+                            original_size_hu: None,
                             brightness: 0,
                             contrast: 0,
                             effect: ImageEffect::RealPic,
@@ -3580,6 +3594,7 @@ mod tests {
                             fill_mode: None,
                             original_size: None,
                             crop: None,
+                            original_size_hu: None,
                             brightness: 0,
                             contrast: 0,
                             effect: ImageEffect::RealPic,

@@ -1334,11 +1334,15 @@ impl DocumentCore {
 
         // crop: 비크롭 시 이미지 원본 범위 (원본 크기 = 디스플레이 크기일 때)
         // crop: 이미지 원본 픽셀 크기 × 75 (HWPUNIT/pixel at 96DPI)
+        let img_dim = (
+            natural_width_px.saturating_mul(75),
+            natural_height_px.saturating_mul(75),
+        );
         let crop = CropInfo {
             left: 0,
             top: 0,
-            right: (natural_width_px * 75) as i32,
-            bottom: (natural_height_px * 75) as i32,
+            right: img_dim.0.min(i32::MAX as u32) as i32,
+            bottom: img_dim.1.min(i32::MAX as u32) as i32,
         };
 
         let pic = Picture {
@@ -1347,6 +1351,7 @@ impl DocumentCore {
             border_x: bx,
             border_y: by,
             crop,
+            img_dim,
             image_attr: ImageAttr {
                 bin_data_id: next_id,
                 brightness: 0,
@@ -4583,5 +4588,26 @@ mod resize_clamp_tests {
         let common = shape_common(&core, para, ctrl);
         assert_eq!(common.width, 12000);
         assert_eq!(common.height, 8000);
+    }
+
+    #[test]
+    fn inserted_picture_preserves_natural_size_as_crop_reference() {
+        let mut core = make_test_core();
+        core.insert_picture_native(0, 0, 0, &[1], 9000, 6750, 320, 200, "png", "fixture")
+            .expect("insert picture");
+
+        let picture = core.document.sections[0]
+            .paragraphs
+            .iter()
+            .flat_map(|paragraph| &paragraph.controls)
+            .find_map(|control| match control {
+                Control::Picture(picture) => Some(picture.as_ref()),
+                _ => None,
+            })
+            .expect("inserted picture");
+
+        assert_eq!(picture.img_dim, (24_000, 15_000));
+        assert_eq!(picture.crop.right, 24_000);
+        assert_eq!(picture.crop.bottom, 15_000);
     }
 }

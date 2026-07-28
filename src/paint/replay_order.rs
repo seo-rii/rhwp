@@ -99,6 +99,7 @@ mod tests {
                 fill_mode: None,
                 original_size: None,
                 crop: None,
+                original_size_hu: None,
                 brightness: 0,
                 contrast: 0,
                 effect: ImageEffect::RealPic,

@@ -587,6 +587,7 @@ fn raster_output_accumulates_tile_fallback_diagnostics() {
                     fill_mode: Some(ImageFillMode::TileAll),
                     original_size: Some((1.0, 1.0)),
                     crop: None,
+                    original_size_hu: None,
                     brightness: 0,
                     contrast: 0,
                     effect: ImageEffect::RealPic,
@@ -626,6 +627,7 @@ fn raster_output_accumulates_binary_image_effect_cache_diagnostics() {
             fill_mode: Some(ImageFillMode::FitToSize),
             original_size: Some((8.0, 8.0)),
             crop: None,
+            original_size_hu: None,
             brightness: 0,
             contrast: 0,
             effect: ImageEffect::Pattern8x8,
@@ -737,6 +739,7 @@ fn raster_output_accumulates_binary_image_effect_cache_eviction_diagnostics() {
                 fill_mode: Some(ImageFillMode::FitToSize),
                 original_size: Some((1.0, 1.0)),
                 crop: None,
+                original_size_hu: None,
                 brightness: 0,
                 contrast: 0,
                 effect: ImageEffect::Pattern8x8,
@@ -796,6 +799,7 @@ fn raster_output_accumulates_binary_image_effect_cache_byte_budget_diagnostics()
                 fill_mode: Some(ImageFillMode::FitToSize),
                 original_size: Some((4.0, 4.0)),
                 crop: None,
+                original_size_hu: None,
                 brightness: 0,
                 contrast: 0,
                 effect: ImageEffect::Pattern8x8,
@@ -1438,6 +1442,7 @@ fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
                     fill_mode: Some(ImageFillMode::FitToSize),
                     original_size: Some((4.0, 4.0)),
                     crop: None,
+                    original_size_hu: None,
                     brightness: 0,
                     contrast: 0,
                     effect: ImageEffect::RealPic,
@@ -1524,6 +1529,51 @@ fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
             > 40,
         "image, path, and text static subtree fixture should produce visible ink"
     );
+}
+
+#[test]
+fn static_subtree_cache_key_includes_image_crop_reference_size() {
+    use crate::model::style::ImageFillMode;
+
+    let make_tree = |crop_reference_size| {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(b"same-image");
+        let bbox = BoundingBox::new(0.0, 0.0, 16.0, 16.0);
+        let root = LayerNode::leaf_with_hint(
+            bbox,
+            Some(41),
+            vec![PaintOp::Image {
+                bbox,
+                image: LayerImagePaint {
+                    resource_id: Some(image_id),
+                    external_path: None,
+                    text_wrap: None,
+                    fill_mode: Some(ImageFillMode::FitToSize),
+                    original_size: Some((16.0, 16.0)),
+                    crop: Some((100, 100, 900, 700)),
+                    original_size_hu: crop_reference_size,
+                    brightness: 0,
+                    contrast: 0,
+                    effect: ImageEffect::RealPic,
+                    transform: ShapeTransform::default(),
+                },
+            }],
+            CacheHint::StaticSubtree,
+        );
+        PageLayerTree::with_resources(16.0, 16.0, root, resources)
+    };
+    let cache_key = |tree: &PageLayerTree| {
+        let mut key = StaticSubtreeCacheKey::new();
+        key.mix_layer_node(&tree.root, &tree.resources);
+        key.finish()
+    };
+
+    let first = make_tree(Some((1000, 800)));
+    let equal = make_tree(Some((1000, 800)));
+    let changed = make_tree(Some((1200, 800)));
+
+    assert_eq!(cache_key(&first), cache_key(&equal));
+    assert_ne!(cache_key(&first), cache_key(&changed));
 }
 
 #[test]

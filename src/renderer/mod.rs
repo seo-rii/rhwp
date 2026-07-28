@@ -17,6 +17,7 @@ pub mod font_paths;
 pub(crate) mod form_caption;
 pub mod height_measurer;
 pub mod html;
+pub(crate) mod image_crop;
 pub(crate) mod image_header;
 pub mod layer_renderer;
 pub mod layout;

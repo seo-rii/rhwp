@@ -738,6 +738,8 @@ pub struct ImageNode {
     /// 렌더러에서 이미지 원본 px 크기와 비교하여 source rect 계산
     /// None이면 전체 이미지 표시
     pub crop: Option<(i32, i32, i32, i32)>,
+    /// Full coordinate range used by `crop`, preserved from HWP/HWPX `imgDim`.
+    pub original_size_hu: Option<(u32, u32)>,
     /// 그림 효과 (실사/그레이스케일/흑백/패턴)
     pub effect: ImageEffect,
     /// 밝기
@@ -760,6 +762,7 @@ impl ImageNode {
             original_size: None,
             transform: ShapeTransform::default(),
             crop: None,
+            original_size_hu: None,
             effect: ImageEffect::RealPic,
             brightness: 0,
             contrast: 0,

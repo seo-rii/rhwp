@@ -1176,6 +1176,7 @@ impl PaintOp {
                         Some(image.fill_mode),
                         None,
                         None,
+                        None,
                         image.brightness,
                         image.contrast,
                         Some(image.effect),
@@ -1548,6 +1549,7 @@ impl PaintOp {
                     image.fill_mode,
                     image.original_size,
                     image.crop,
+                    image.original_size_hu,
                     image.brightness,
                     image.contrast,
                     Some(image.effect),
@@ -1607,6 +1609,7 @@ fn write_layer_image_fields(
     fill_mode: Option<ImageFillMode>,
     original_size: Option<(f64, f64)>,
     crop: Option<(i32, i32, i32, i32)>,
+    original_size_hu: Option<(u32, u32)>,
     brightness: i8,
     contrast: i8,
     effect: Option<ImageEffect>,
@@ -1654,6 +1657,10 @@ fn write_layer_image_fields(
             "\"crop\":{{\"left\":{},\"top\":{},\"right\":{},\"bottom\":{}}}",
             left, top, right, bottom
         );
+    }
+    if let Some((width, height)) = original_size_hu {
+        push_prefix(buf);
+        let _ = write!(buf, "\"originalSizeHu\":[{},{}]", width, height);
     }
     if let Some(effect) = effect {
         push_prefix(buf);
@@ -3841,6 +3848,7 @@ mod tests {
                         fill_mode: Some(ImageFillMode::FitToSize),
                         original_size: Some((10.0, 10.0)),
                         crop: Some((0, 0, 10, 10)),
+                        original_size_hu: Some((10, 10)),
                         brightness: -10,
                         contrast: 20,
                         effect: ImageEffect::GrayScale,
@@ -3856,6 +3864,7 @@ mod tests {
         assert!(json.contains("\"effect\":\"grayScale\""));
         assert!(json.contains("\"brightness\":-10"));
         assert!(json.contains("\"contrast\":20"));
+        assert!(json.contains("\"originalSizeHu\":[10,10]"));
     }
 
     #[test]

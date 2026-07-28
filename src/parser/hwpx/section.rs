@@ -1184,6 +1184,7 @@ fn parse_picture(
     let mut padding = crate::model::Padding::default();
     let mut border_x = [0i32; 4];
     let mut border_y = [0i32; 4];
+    let mut img_dim = (0u32, 0u32);
     let mut picture_instance_id = 0;
     let mut effects = PictureEffects::default();
 
@@ -1381,6 +1382,15 @@ fn parse_picture(
                             }
                         }
                     }
+                    b"imgDim" => {
+                        for attr in ce.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"dimwidth" => img_dim.0 = parse_u32(&attr),
+                                b"dimheight" => img_dim.1 = parse_u32(&attr),
+                                _ => {}
+                            }
+                        }
+                    }
                     b"img" | b"image" => {
                         for attr in ce.attributes().flatten() {
                             match attr.key.as_ref() {
@@ -1463,6 +1473,7 @@ fn parse_picture(
     pic.common = common;
     pic.shape_attr = shape_attr;
     pic.crop = crop;
+    pic.img_dim = img_dim;
     pic.padding = padding;
     pic.border_x = border_x;
     pic.border_y = border_y;
@@ -4137,6 +4148,32 @@ mod tests {
             panic!("expected picture control");
         };
         assert_eq!(pic.image_attr.effect, ImageEffect::Pattern8x8);
+    }
+
+    #[test]
+    fn test_parse_picture_preserves_img_dim_crop_reference() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p paraPrIDRef="0" styleIDRef="0">
+    <hp:pic zOrder="0" textWrap="SQUARE" instid="1">
+      <hp:sz width="1000" height="800"/>
+      <hp:imgClip left="100" top="100" right="900" bottom="700"/>
+      <hp:imgDim dimwidth="1000" dimheight="800"/>
+      <hp:img binaryItemIDRef="image1"/>
+    </hp:pic>
+  </hp:p>
+</hs:sec>"#;
+
+        let section = parse_hwpx_section(xml).unwrap();
+        let Control::Picture(pic) = &section.paragraphs[0].controls[0] else {
+            panic!("expected picture control");
+        };
+
+        assert_eq!(pic.img_dim, (1000, 800));
+        assert_eq!(pic.crop_reference_size(), Some((1000, 800)));
+        assert_eq!(pic.crop.left, 100);
+        assert_eq!(pic.crop.bottom, 700);
     }
 
     #[test]

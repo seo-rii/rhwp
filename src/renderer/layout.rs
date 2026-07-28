@@ -27,6 +27,14 @@ use crate::model::style::{
 };
 use crate::model::table::VerticalAlign;
 
+pub(super) fn picture_crop(picture: &crate::model::image::Picture) -> Option<(i32, i32, i32, i32)> {
+    let crop = picture.crop;
+    (crop.right > crop.left
+        && crop.bottom > crop.top
+        && (crop.left != 0 || crop.top != 0 || crop.right != 0 || crop.bottom != 0))
+        .then_some((crop.left, crop.top, crop.right, crop.bottom))
+}
+
 /// layout_column_item의 읽기 전용 컨텍스트 (파라미터 묶음)
 struct ColumnItemCtx<'a> {
     page_content: &'a PageContent,

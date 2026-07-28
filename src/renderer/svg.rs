@@ -2043,6 +2043,7 @@ impl SvgRenderer {
         temp.original_size = image.original_size;
         temp.transform = image.transform;
         temp.crop = image.crop;
+        temp.original_size_hu = image.original_size_hu;
         temp.effect = image.effect;
         temp.brightness = image.brightness;
         temp.contrast = image.contrast;
@@ -3062,15 +3063,12 @@ impl SvgRenderer {
             let (img_w, img_h) = parse_image_dimensions(&render_data)?;
             let img_w = img_w as f64;
             let img_h = img_h as f64;
-            let scale_x = cr as f64 / img_w;
-            let scale_y = cb as f64 / img_h;
-            if scale_x <= 0.0 || scale_y <= 0.0 {
-                return None;
-            }
-            let src_x = cl as f64 / scale_x;
-            let src_y = ct as f64 / scale_y;
-            let src_w = (cr - cl) as f64 / scale_x;
-            let src_h = (cb - ct) as f64 / scale_y;
+            let (src_x, src_y, src_w, src_h) = crate::renderer::image_crop::compute_image_crop_src(
+                (cl, ct, cr, cb),
+                img.original_size_hu,
+                img_w,
+                img_h,
+            );
             let is_cropped = src_x > 0.5
                 || src_y > 0.5
                 || (src_w - img_w).abs() > 1.0

@@ -23,6 +23,11 @@ pub struct Picture {
     pub border_y: [i32; 4],
     /// 자르기 정보
     pub crop: CropInfo,
+    /// HWPX `<hp:imgDim>` crop coordinate reference size.
+    ///
+    /// This is distinct from `shape_attr.original_width/height`, which describe
+    /// the placed object rather than the full coordinate range of `crop`.
+    pub img_dim: (u32, u32),
     /// 안쪽 여백
     pub padding: Padding,
     /// 그림 속성
@@ -37,6 +42,12 @@ pub struct Picture {
     pub effects: PictureEffects,
     /// 캡션
     pub caption: Option<super::shape::Caption>,
+}
+
+impl Picture {
+    pub fn crop_reference_size(&self) -> Option<(u32, u32)> {
+        (self.img_dim.0 > 0 && self.img_dim.1 > 0).then_some(self.img_dim)
+    }
 }
 
 /// 자르기 정보
@@ -156,6 +167,19 @@ mod tests {
         let pic = Picture::default();
         assert_eq!(pic.image_attr.effect, ImageEffect::RealPic);
         assert_eq!(pic.border_width, 0);
+        assert_eq!(pic.crop_reference_size(), None);
+    }
+
+    #[test]
+    fn test_picture_crop_reference_requires_both_img_dim_axes() {
+        let mut pic = Picture {
+            img_dim: (1000, 800),
+            ..Picture::default()
+        };
+        assert_eq!(pic.crop_reference_size(), Some((1000, 800)));
+
+        pic.img_dim.1 = 0;
+        assert_eq!(pic.crop_reference_size(), None);
     }
 
     #[test]

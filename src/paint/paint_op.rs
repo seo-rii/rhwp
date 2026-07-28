@@ -1934,6 +1934,7 @@ pub struct LayerImagePaint {
     pub fill_mode: Option<ImageFillMode>,
     pub original_size: Option<(f64, f64)>,
     pub crop: Option<(i32, i32, i32, i32)>,
+    pub original_size_hu: Option<(u32, u32)>,
     pub brightness: i8,
     pub contrast: i8,
     pub effect: ImageEffect,

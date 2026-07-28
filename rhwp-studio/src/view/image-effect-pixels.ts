@@ -96,6 +96,7 @@ export function resolveLayerImageCropSource(
   imageWidth: number,
   imageHeight: number,
   crop?: LayerImageOp['crop'],
+  cropReferenceSize?: LayerImageOp['originalSizeHu'],
 ): LayerImageEffectSourceRect | null {
   if (!crop) {
     return null;
@@ -113,11 +114,25 @@ export function resolveLayerImageCropSource(
     return null;
   }
 
-  const scaleX = crop.right / imageWidth;
-  const scaleY = crop.bottom / imageHeight;
-  if (scaleX <= 0 || scaleY <= 0) {
-    return null;
-  }
+  const referenceWidth = cropReferenceSize?.[0];
+  const referenceHeight = cropReferenceSize?.[1];
+  const hasValidReference = typeof referenceWidth === 'number'
+    && typeof referenceHeight === 'number'
+    && Number.isFinite(referenceWidth)
+    && Number.isFinite(referenceHeight)
+    && referenceWidth > 0
+    && referenceHeight > 0;
+  const hasAdaptiveRange = crop.right > 0 && crop.bottom > 0;
+  const scaleX = hasValidReference
+    ? referenceWidth / imageWidth
+    : hasAdaptiveRange
+      ? crop.right / imageWidth
+      : 75;
+  const scaleY = hasValidReference
+    ? referenceHeight / imageHeight
+    : hasAdaptiveRange
+      ? crop.bottom / imageHeight
+      : 75;
 
   const srcX = crop.left / scaleX;
   const srcY = crop.top / scaleY;

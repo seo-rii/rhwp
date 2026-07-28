@@ -471,6 +471,14 @@ impl StaticSubtreeCacheKey {
                     }
                     None => self.mix_bool(false),
                 }
+                match image.original_size_hu {
+                    Some((width, height)) => {
+                        self.mix_bool(true);
+                        self.mix_u32(width);
+                        self.mix_u32(height);
+                    }
+                    None => self.mix_bool(false),
+                }
                 self.mix_i8(image.brightness);
                 self.mix_i8(image.contrast);
                 self.mix_image_effect(image.effect);

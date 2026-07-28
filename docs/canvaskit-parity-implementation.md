@@ -387,6 +387,18 @@ The HWPX header and shape parsers also preserve the image child's resource id,
 brightness, contrast, and effect attributes so replay policy and runtime
 receive the same operation. Fill-mode parity fixtures cover both values.
 
+Picture crop coordinates now retain the HWP/HWPX `imgDim` full-coordinate
+reference as `originalSizeHu` through the model, render tree, paint IR, and
+public browser payload. `imgDim` is a crop-coordinate range, not the picture's
+`orgSz` placement size. Canvas2D, CanvasKit, SVG, WebCanvas, and native Skia use
+the same conversion order: a valid `imgDim` reference first, the historical
+crop right/bottom adaptive range second, and the fixed 75 HU-per-pixel
+compatibility scale only when neither range is usable. HWPX serialization
+roundtrips `imgDim` verbatim, newly inserted pictures initialize it from the
+decoded natural pixel size, and native static-picture keys plus CanvasKit
+capability details include the reference so crop changes cannot reuse stale
+replay state.
+
 #### P2 Execution Update: CanvasKit As A Canvas2D-Compatible Backend
 
 The current task is not to add a second hidden renderer behind CanvasKit. It is

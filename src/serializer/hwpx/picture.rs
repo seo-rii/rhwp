@@ -194,13 +194,8 @@ fn write_in_margin<W: Write>(w: &mut Writer<W>, p: &Picture) -> Result<(), Seria
 }
 
 fn write_img_dim<W: Write>(w: &mut Writer<W>, p: &Picture) -> Result<(), SerializeError> {
-    // imgDim은 원본 크기의 clip 적용 결과. 간이 구현.
-    let dw = (p.common.width as i32 - p.crop.left - p.crop.right)
-        .max(0)
-        .to_string();
-    let dh = (p.common.height as i32 - p.crop.top - p.crop.bottom)
-        .max(0)
-        .to_string();
+    let dw = p.img_dim.0.to_string();
+    let dh = p.img_dim.1.to_string();
     empty_tag(w, "hp:imgDim", &[("dimwidth", &dw), ("dimheight", &dh)])
 }
 
@@ -562,6 +557,24 @@ mod tests {
         assert_eq!(image_effect_str(ImageEffect::GrayScale), "GRAY_SCALE");
         assert_eq!(image_effect_str(ImageEffect::BlackWhite), "BLACK_WHITE");
         assert_eq!(image_effect_str(ImageEffect::Pattern8x8), "PATTERN_8_8");
+    }
+
+    #[test]
+    fn img_dim_is_serialized_verbatim_instead_of_derived_from_crop() {
+        let doc = make_doc_with_bin(1, "png");
+        let ctx = SerializeContext::collect_from_document(&doc);
+        let mut pic = make_picture(1);
+        pic.crop = crate::model::image::CropInfo {
+            left: 100,
+            top: 100,
+            right: 900,
+            bottom: 700,
+        };
+        pic.img_dim = (1000, 800);
+
+        let xml = serialize(&pic, &ctx);
+
+        assert!(xml.contains(r#"<hp:imgDim dimwidth="1000" dimheight="800"/>"#));
     }
 
     #[test]
