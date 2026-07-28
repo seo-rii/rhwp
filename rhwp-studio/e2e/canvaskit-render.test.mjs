@@ -1511,9 +1511,48 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       let invalidInlineImageError = null;
       let invalidInlineImageFirst = null;
       let invalidInlineImageSecond = null;
+      let afterFirst = null;
+      let afterSecond = null;
+      let rejectedEncodedImage = null;
+      let rejectedEncodedImageDiagnostics = null;
+      let decoderFailedImage = null;
+      let decoderFailedImageDiagnostics = null;
+      let missingResourceImage = null;
+      let missingResourceImageDiagnostics = null;
+      let missingEffectResourceImage = null;
+      let missingEffectResourceImageDiagnostics = null;
+      renderer.resetImageDiagnostics();
       try {
         invalidInlineImageFirst = renderer.resourceCache.image(undefined, '%%%');
+        afterFirst = renderer.getImageDiagnostics();
         invalidInlineImageSecond = renderer.resourceCache.image(undefined, '%%%');
+        afterSecond = renderer.getImageDiagnostics();
+        renderer.resetImageDiagnostics();
+        rejectedEncodedImage = renderer.resourceCache.image(undefined, 'AQIDBA==');
+        rejectedEncodedImageDiagnostics = renderer.getImageDiagnostics();
+        const truncatedPng = new Uint8Array([
+          0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+          0x00, 0x00, 0x00, 0x0d,
+          0x49, 0x48, 0x44, 0x52,
+          0x00, 0x00, 0x00, 0x01,
+          0x00, 0x00, 0x00, 0x01,
+          0x08, 0x06, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00,
+        ]);
+        const truncatedPngBase64 = btoa(String.fromCharCode(...truncatedPng));
+        renderer.resetImageDiagnostics();
+        decoderFailedImage = renderer.resourceCache.image(undefined, truncatedPngBase64);
+        decoderFailedImageDiagnostics = renderer.getImageDiagnostics();
+        renderer.resetImageDiagnostics();
+        missingResourceImage = renderer.resourceCache.image(0x7fffffff);
+        missingResourceImageDiagnostics = renderer.getImageDiagnostics();
+        renderer.resetImageDiagnostics();
+        missingEffectResourceImage = renderer.resourceCache.imageWithEffect(
+          0x7fffffff,
+          undefined,
+          'grayScale',
+        );
+        missingEffectResourceImageDiagnostics = renderer.getImageDiagnostics();
       } catch (error) {
         invalidInlineImageError = error?.message ?? String(error);
       }
@@ -1625,6 +1664,16 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         invalidInlineImageFirst,
         invalidInlineImageSecond,
         invalidInlineImageNegativeCached: renderer.resourceCache.failedImageCacheKeys.has('b64:%%%'),
+        afterFirst,
+        afterSecond,
+        rejectedEncodedImage,
+        rejectedEncodedImageDiagnostics,
+        decoderFailedImage,
+        decoderFailedImageDiagnostics,
+        missingResourceImage,
+        missingResourceImageDiagnostics,
+        missingEffectResourceImage,
+        missingEffectResourceImageDiagnostics,
         invalidFontBase64Error,
         invalidFontParserReplayable: invalidFontParserStatus.replayable,
         invalidFontParserReason: invalidFontParserStatus.reason,
@@ -1987,8 +2036,42 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     nativeRouting.nativeResourceFailureProbe?.invalidInlineImageError === null
       && nativeRouting.nativeResourceFailureProbe?.invalidInlineImageFirst === null
       && nativeRouting.nativeResourceFailureProbe?.invalidInlineImageSecond === null
-      && nativeRouting.nativeResourceFailureProbe?.invalidInlineImageNegativeCached === true,
+      && nativeRouting.nativeResourceFailureProbe?.invalidInlineImageNegativeCached === true
+      && nativeRouting.nativeResourceFailureProbe?.afterFirst?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.afterFirst?.failureCacheHits === 0
+      && nativeRouting.nativeResourceFailureProbe?.afterFirst?.failures?.[0]?.reason === 'base64DecodeFailed'
+      && nativeRouting.nativeResourceFailureProbe?.afterSecond?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.afterSecond?.failureCacheHits === 1
+      && nativeRouting.nativeResourceFailureProbe?.afterSecond?.failures?.length === 1,
     `invalid inline image base64 is contained and memoized=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.rejectedEncodedImage === null
+      && nativeRouting.nativeResourceFailureProbe?.rejectedEncodedImageDiagnostics?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.rejectedEncodedImageDiagnostics?.failures?.[0]?.reason
+        === 'encodedImageRejected',
+    `inadmissible encoded image reports a deterministic reason=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.decoderFailedImage === null
+      && nativeRouting.nativeResourceFailureProbe?.decoderFailedImageDiagnostics?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.decoderFailedImageDiagnostics?.failures?.[0]?.reason
+        === 'imageDecodeFailed',
+    `CanvasKit decoder failure reports a deterministic reason=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.missingResourceImage === null
+      && nativeRouting.nativeResourceFailureProbe?.missingResourceImageDiagnostics?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.missingResourceImageDiagnostics?.failures?.[0]?.reason
+        === 'resourceUnavailable',
+    `missing image resource reports a deterministic reason=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.missingEffectResourceImage === null
+      && nativeRouting.nativeResourceFailureProbe?.missingEffectResourceImageDiagnostics?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.missingEffectResourceImageDiagnostics?.failures?.[0]?.reason
+        === 'resourceUnavailable',
+    `missing image-effect resource reports a deterministic reason=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
   );
   assert(
     nativeRouting.nativeResourceFailureProbe?.invalidFontBase64Error === null

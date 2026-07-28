@@ -936,10 +936,11 @@ assert(
 );
 assert(
   extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getCanvasKitReplayPlan')
+    && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getImageDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getPatternDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextVariantSelectionDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextV2ValidationDiagnostics'),
-  'browser baseline must capture replay-plan, pattern, runtime variant, and v2 validation diagnostics',
+  'browser baseline must capture replay-plan, image, pattern, runtime variant, and v2 validation diagnostics',
 );
 assert(
   rendererBaselineSource.includes("code: 'replayPlanUnavailable'")
@@ -947,20 +948,23 @@ assert(
     && rendererBaselineSource.includes("code: 'replayPlanContractMismatch'")
     && rendererBaselineSource.includes("code: 'hiddenOverlayViolation'")
     && rendererBaselineSource.includes("code: 'compatOverlayItem'")
+    && rendererBaselineSource.includes("code: 'directRequiredItem'")
+    && rendererBaselineSource.includes("code: 'runtimeImageReplayFailure'")
     && rendererBaselineSource.includes("code: 'textV2ValidationIssue'")
     && rendererBaselineSource.includes("code: 'runtimeVariantSelectionConflict'")
     && rendererBaselineSource.includes("code: 'planRuntimeVariantMismatch'")
     && rendererBaselineSource.includes('...planSelections.keys()')
     && rendererBaselineSource.includes('...runtimeSelections.keys()')
     && rendererBaselineSource.includes('hardSafetyGateAndReportInventory'),
-  'browser baseline must hard-gate invalid plans, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
+  'browser baseline must hard-gate invalid plans, missing images, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
 );
 assert(
   rendererBaselineDriverSource.includes('CanvasKit Replay Diagnostics')
     && rendererBaselineDriverSource.includes('Replay Reason Inventory')
     && rendererBaselineDriverSource.includes('planReasonCounts')
-    && rendererBaselineDriverSource.includes('rejectedReasonCounts'),
-  'renderer baseline markdown report must expose CanvasKit fallback and rejection reason inventories',
+    && rendererBaselineDriverSource.includes('rejectedReasonCounts')
+    && rendererBaselineDriverSource.includes('runtimeImageFailureReasonCounts'),
+  'renderer baseline markdown report must expose CanvasKit fallback, image failure, and rejection reason inventories',
 );
 assert(
   packageJson.scripts['e2e:baseline:headless']?.includes('../scripts/renderer_baseline.py')
@@ -1459,29 +1463,40 @@ assert(
 assertTokensInOrder(
   canvaskitResourceCacheSource,
   [
-    'if (this.failedImageCacheKeys.has(cacheKey)) return null',
+    'if (this.failedImageCacheKeys.has(cacheKey))',
+    'this.imageDiagnostics.failureCacheHits += 1',
     'let bytes: Uint8Array | undefined',
     'bytes = this.imageBytes(resourceId, base64)',
     '} catch {',
-    'this.failedImageCacheKeys.add(cacheKey)',
+    "this.recordImageFailure(cacheKey, resourceId, base64, 'base64DecodeFailed')",
     'return null',
-    'if (!bytes) return null',
+    'if (!bytes)',
+    "this.recordImageFailure(cacheKey, resourceId, base64, 'resourceUnavailable')",
     'if (!canvasKitEncodedImageIsReplayable(bytes))',
-    'this.failedImageCacheKeys.add(cacheKey)',
+    "this.recordImageFailure(cacheKey, resourceId, base64, 'encodedImageRejected')",
     'return null',
     'try {',
     'image = this.canvasKit.MakeImageFromEncoded(bytes)',
     '} catch {',
     'image = null',
-    'this.failedImageCacheKeys.add(cacheKey)',
+    "this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed')",
   ],
-  'CanvasKit resource cache must contain and memoize encoded-image decode failures',
+  'CanvasKit resource cache must contain, diagnose, and memoize encoded-image decode failures',
 );
 assert(
   canvaskitResourceCacheSource.includes('this.failedImageCacheKeys.clear()')
+    && canvaskitResourceCacheSource.includes('this.failedImageReasons.clear()')
     && canvaskitResourceCacheSource.includes("if (key.startsWith('res:')) {")
-    && canvaskitResourceCacheSource.includes('this.failedImageCacheKeys.delete(key)'),
+    && canvaskitResourceCacheSource.includes('this.failedImageCacheKeys.delete(key)')
+    && canvaskitResourceCacheSource.includes('this.failedImageReasons.delete(key)'),
   'CanvasKit image decode failure cache must clear on dispose and resource-table replacement',
+);
+assert(
+  canvaskitResourceCacheSource.includes('getImageDiagnostics(): CanvasKitImageDiagnostics')
+    && canvaskitResourceCacheSource.includes('resetImageDiagnostics(): void')
+    && canvaskitSource.includes('this.resourceCache.resetImageDiagnostics()')
+    && canvaskitSource.includes('getImageDiagnostics(): Readonly<CanvasKitImageDiagnostics>'),
+  'CanvasKit must expose per-render encoded-image failure diagnostics',
 );
 assert.equal(
   fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')

@@ -118,7 +118,11 @@ import {
   type CanvasKitReplayPlane,
   layerPaintOpReplayPlane,
 } from './canvaskit/replay-plane';
-import { CanvasKitResourceCache, type CanvasKitPatternDiagnostics } from './canvaskit/resource-cache';
+import {
+  CanvasKitResourceCache,
+  type CanvasKitImageDiagnostics,
+  type CanvasKitPatternDiagnostics,
+} from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
 import { CanvasKitSurfaceCache, type CanvasKitSurfaceDiagnostics } from './canvaskit/surface-cache';
 
@@ -275,6 +279,7 @@ export class CanvasKitLayerRenderer {
     this.lastScale = scale;
     this.currentProfile = tree.profile;
     this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
+    this.resourceCache.resetImageDiagnostics();
     this.resourceCache.setResources(tree.resources);
     this.fontRegistry.registerFontBlobsFromResources(tree.fontResources, tree.resources);
     this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
@@ -379,6 +384,10 @@ export class CanvasKitLayerRenderer {
     return this.resourceCache.getImageEffectDiagnostics();
   }
 
+  getImageDiagnostics(): Readonly<CanvasKitImageDiagnostics> {
+    return this.resourceCache.getImageDiagnostics();
+  }
+
   getPatternDiagnostics(): Readonly<CanvasKitPatternDiagnostics> {
     return this.resourceCache.getPatternDiagnostics();
   }
@@ -389,6 +398,10 @@ export class CanvasKitLayerRenderer {
 
   resetImageEffectDiagnostics(): void {
     this.resourceCache.resetImageEffectDiagnostics();
+  }
+
+  resetImageDiagnostics(): void {
+    this.resourceCache.resetImageDiagnostics();
   }
 
   resetPatternDiagnostics(): void {

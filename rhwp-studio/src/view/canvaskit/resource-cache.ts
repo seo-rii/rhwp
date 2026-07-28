@@ -19,12 +19,40 @@ export type CanvasKitPatternDiagnostics = {
   imagesCreated: number;
 };
 
+export type CanvasKitImageFailureReason =
+  | 'resourceUnavailable'
+  | 'base64DecodeFailed'
+  | 'encodedImageRejected'
+  | 'imageDecodeFailed';
+
+export type CanvasKitImageFailureDiagnostic = {
+  source: 'resource' | 'inline' | 'missing';
+  resourceId: number | null;
+  reason: CanvasKitImageFailureReason;
+};
+
+export type CanvasKitImageDiagnostics = {
+  cacheHits: number;
+  cacheMisses: number;
+  failureCacheHits: number;
+  imagesDecoded: number;
+  failures: CanvasKitImageFailureDiagnostic[];
+};
+
 export class CanvasKitResourceCache {
   readonly imageCache = new Map<string, CanvasKitImage>();
   readonly mipmappedImageCache = new Map<string, CanvasKitImage>();
   readonly imageEffectCache = new Map<string, CanvasKitImage>();
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
   readonly failedImageCacheKeys = new Set<string>();
+  private readonly failedImageReasons = new Map<string, CanvasKitImageFailureReason>();
+  private readonly imageFailureDiagnostics = new Map<string, CanvasKitImageFailureDiagnostic>();
+  private readonly imageDiagnostics: Omit<CanvasKitImageDiagnostics, 'failures'> = {
+    cacheHits: 0,
+    cacheMisses: 0,
+    failureCacheHits: 0,
+    imagesDecoded: 0,
+  };
   private readonly imageEffectDiagnostics: LayerImageEffectDiagnostics = {
     cacheHits: 0,
     cacheMisses: 0,
@@ -68,6 +96,8 @@ export class CanvasKitResourceCache {
   image(resourceId?: number, base64?: string, withMipmaps = false): CanvasKitImage | null {
     const cacheKey = this.imageResourceCacheKey(resourceId, base64);
     if (!cacheKey) {
+      this.imageDiagnostics.cacheMisses += 1;
+      this.recordImageFailure(null, resourceId, base64, 'resourceUnavailable');
       return null;
     }
 
@@ -84,19 +114,35 @@ export class CanvasKitResourceCache {
     }
 
     const cached = this.imageCache.get(cacheKey);
-    if (cached) return cached;
-    if (this.failedImageCacheKeys.has(cacheKey)) return null;
+    if (cached) {
+      this.imageDiagnostics.cacheHits += 1;
+      return cached;
+    }
+    if (this.failedImageCacheKeys.has(cacheKey)) {
+      this.imageDiagnostics.failureCacheHits += 1;
+      this.recordImageFailure(
+        cacheKey,
+        resourceId,
+        base64,
+        this.failedImageReasons.get(cacheKey) ?? 'imageDecodeFailed',
+      );
+      return null;
+    }
+    this.imageDiagnostics.cacheMisses += 1;
 
     let bytes: Uint8Array | undefined;
     try {
       bytes = this.imageBytes(resourceId, base64);
     } catch {
-      this.failedImageCacheKeys.add(cacheKey);
+      this.recordImageFailure(cacheKey, resourceId, base64, 'base64DecodeFailed');
       return null;
     }
-    if (!bytes) return null;
+    if (!bytes) {
+      this.recordImageFailure(cacheKey, resourceId, base64, 'resourceUnavailable');
+      return null;
+    }
     if (!canvasKitEncodedImageIsReplayable(bytes)) {
-      this.failedImageCacheKeys.add(cacheKey);
+      this.recordImageFailure(cacheKey, resourceId, base64, 'encodedImageRejected');
       return null;
     }
     let image: CanvasKitImage | null;
@@ -106,10 +152,11 @@ export class CanvasKitResourceCache {
       image = null;
     }
     if (!image) {
-      this.failedImageCacheKeys.add(cacheKey);
+      this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
       return null;
     }
     this.imageCache.set(cacheKey, image);
+    this.imageDiagnostics.imagesDecoded += 1;
     return image;
   }
 
@@ -129,7 +176,7 @@ export class CanvasKitResourceCache {
 
     const cacheKey = this.imageResourceCacheKey(resourceId, base64);
     if (!cacheKey) {
-      return null;
+      return this.image(resourceId, base64);
     }
 
     const sourceRectKey = sourceRect
@@ -245,6 +292,21 @@ export class CanvasKitResourceCache {
     return { ...this.imageEffectDiagnostics };
   }
 
+  getImageDiagnostics(): CanvasKitImageDiagnostics {
+    return {
+      ...this.imageDiagnostics,
+      failures: [...this.imageFailureDiagnostics.values()].map((failure) => ({ ...failure })),
+    };
+  }
+
+  resetImageDiagnostics(): void {
+    this.imageDiagnostics.cacheHits = 0;
+    this.imageDiagnostics.cacheMisses = 0;
+    this.imageDiagnostics.failureCacheHits = 0;
+    this.imageDiagnostics.imagesDecoded = 0;
+    this.imageFailureDiagnostics.clear();
+  }
+
   resetImageEffectDiagnostics(): void {
     resetLayerImageEffectDiagnostics(this.imageEffectDiagnostics);
   }
@@ -298,7 +360,29 @@ export class CanvasKitResourceCache {
     }
     this.imageCache.clear();
     this.failedImageCacheKeys.clear();
+    this.failedImageReasons.clear();
+    this.resetImageDiagnostics();
+  }
 
+  private recordImageFailure(
+    cacheKey: string | null,
+    resourceId: number | undefined,
+    base64: string | undefined,
+    reason: CanvasKitImageFailureReason,
+  ): void {
+    if (cacheKey) {
+      this.failedImageCacheKeys.add(cacheKey);
+      this.failedImageReasons.set(cacheKey, reason);
+    }
+    const diagnosticKey = cacheKey ?? `missing:${resourceId ?? (base64 ? 'inline' : 'source')}`;
+    if (this.imageFailureDiagnostics.has(diagnosticKey)) {
+      return;
+    }
+    this.imageFailureDiagnostics.set(diagnosticKey, {
+      source: typeof resourceId === 'number' ? 'resource' : base64 ? 'inline' : 'missing',
+      resourceId: typeof resourceId === 'number' ? resourceId : null,
+      reason,
+    });
   }
 
   private imageResourceCacheKey(resourceId?: number, base64?: string): string | null {
@@ -402,6 +486,7 @@ export class CanvasKitResourceCache {
     for (const key of this.failedImageCacheKeys) {
       if (key.startsWith('res:')) {
         this.failedImageCacheKeys.delete(key);
+        this.failedImageReasons.delete(key);
       }
     }
   }
