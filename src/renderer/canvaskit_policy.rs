@@ -1280,6 +1280,7 @@ impl CanvasKitDocumentPreflightAccumulator {
     fn finish(self) -> CanvasKitDocumentPreflight {
         let eligible = self.complete
             && self.summary.hidden_overlay_violations == 0
+            && self.summary.direct_required_items == 0
             && self.summary.unsupported_items == 0
             && self.summary.text_fallback_items == 0
             && self.summary.compat_overlay_items == 0;
@@ -1355,7 +1356,12 @@ fn blocker_code_for_item(
         CanvasKitReplayStatus::Unsupported => {
             Some(CanvasKitDocumentPreflightBlockerCode::Unsupported)
         }
-        CanvasKitReplayStatus::Direct | CanvasKitReplayStatus::DirectRequired => None,
+        // Keep the v1 blocker vocabulary stable while preserving the more
+        // specific replay-plan status and summary count.
+        CanvasKitReplayStatus::DirectRequired => {
+            Some(CanvasKitDocumentPreflightBlockerCode::Unsupported)
+        }
+        CanvasKitReplayStatus::Direct => None,
     }
 }
 
@@ -2493,10 +2499,11 @@ mod tests {
         analyze_canvaskit_document_preflight_with_limits, analyze_canvaskit_replay_plan,
         canvaskit_glyph_outline_payload_status, canvaskit_glyph_run_replay_status,
         canvaskit_static_svg_fragment_has_path_layer, estimate_canvaskit_page_lowering_work,
-        CanvasKitBoundedWorkCount, CanvasKitDocumentPreflightLimits,
-        CanvasKitDocumentPreflightStatus, CanvasKitPreflightPageBuild, CanvasKitReplayMode,
-        CanvasKitReplayStatus, CanvasKitTextVariantPartReport, CanvasKitTextVariantReport,
-        GlyphOutlinePayloadKind, VariantRejectReason, CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES,
+        CanvasKitBoundedWorkCount, CanvasKitDocumentPreflightBlockerCode,
+        CanvasKitDocumentPreflightLimits, CanvasKitDocumentPreflightStatus,
+        CanvasKitPreflightPageBuild, CanvasKitReplayMode, CanvasKitReplayStatus,
+        CanvasKitTextVariantPartReport, CanvasKitTextVariantReport, GlyphOutlinePayloadKind,
+        VariantRejectReason, CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::ImageFillMode;
@@ -3430,7 +3437,7 @@ mod tests {
     }
 
     #[test]
-    fn canvaskit_replay_plan_rejects_undecodable_image_resources() {
+    fn canvaskit_replay_plan_and_preflight_reject_undecodable_image_resources() {
         let mut resources = ResourceArena::default();
         let image_id = resources.intern_image_bytes(&[0x89, b'P', b'N', b'G']);
         let tree = PageLayerTree::builder(
@@ -3487,6 +3494,53 @@ mod tests {
                     .as_deref()
                     .is_some_and(|detail| detail.contains("imageDecodeFailed"))
         }));
+
+        let preflight = analyze_canvaskit_document_preflight_with_limits(
+            1,
+            CanvasKitReplayMode::Default,
+            RenderProfile::Screen,
+            CanvasKitDocumentPreflightLimits {
+                max_pages: 1,
+                max_work_units: 16,
+                max_blockers: 4,
+                max_required_font_families: 1,
+            },
+            move |_, _| {
+                Ok::<_, &'static str>(CanvasKitPreflightPageBuild::Complete {
+                    tree: Box::new(tree.clone()),
+                    prelower_work_units: 0,
+                })
+            },
+        );
+
+        assert_eq!(
+            preflight.status,
+            CanvasKitDocumentPreflightStatus::Ineligible
+        );
+        assert!(!preflight.eligible);
+        assert!(preflight.complete);
+        assert_eq!(preflight.summary.direct_required_items, 2);
+        assert_eq!(preflight.summary.unsupported_items, 0);
+        assert_eq!(preflight.blockers.len(), 2);
+        assert_eq!(
+            preflight.blockers[0].code,
+            CanvasKitDocumentPreflightBlockerCode::Unsupported
+        );
+        assert_eq!(preflight.blockers[0].op_type, Some("pageBackground"));
+        assert_eq!(
+            preflight.blockers[1].code,
+            CanvasKitDocumentPreflightBlockerCode::Unsupported
+        );
+        assert_eq!(preflight.blockers[1].op_type, Some("image"));
+        assert!(preflight.blockers.iter().all(|blocker| blocker
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("imageDecodeFailed"))));
+
+        let json = preflight.to_json();
+        assert!(json.contains("\"directRequiredItems\":2"));
+        assert!(json.contains("\"code\":\"unsupported\",\"opType\":\"pageBackground\""));
+        assert!(json.contains("\"code\":\"unsupported\",\"opType\":\"image\""));
     }
 
     #[test]
