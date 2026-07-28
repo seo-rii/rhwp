@@ -396,8 +396,8 @@ export class CanvasKitLayerRenderer {
     this.drawMarginGuidesOnSurface(fallbackSurface, pageInfo, scale);
   }
 
-  setAsyncResourceReadyCallback(_callback: (() => void) | null): void {
-    void _callback;
+  setAsyncResourceReadyCallback(callback: (() => void) | null): void {
+    this.resourceCache.setAsyncResourceReadyCallback(callback);
   }
 
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
@@ -588,6 +588,8 @@ export class CanvasKitLayerRenderer {
 
             const imageFailureAttemptsBefore =
               this.resourceCache.getImageDiagnostics().failureAttempts;
+            const pendingImageAccessesBefore =
+              this.resourceCache.getImageDiagnostics().pendingAccesses;
             const patternFailuresBefore =
               this.resourceCache.getPatternDiagnostics().surfaceFailures;
             const textFailureAttemptsBefore =
@@ -607,11 +609,17 @@ export class CanvasKitLayerRenderer {
                 imageDiagnostics.failureAttempts > imageFailureAttemptsBefore
                 || patternDiagnostics.surfaceFailures > patternFailuresBefore
                 || textFailureAttempts > textFailureAttemptsBefore;
+              const hasPendingImageReplay =
+                imageDiagnostics.pendingAccesses > pendingImageAccessesBefore;
               if (!hasRuntimeReplayFailure) {
-                this.staticPictureCache.set(cacheKey, picture);
+                if (!hasPendingImageReplay) {
+                  this.staticPictureCache.set(cacheKey, picture);
+                }
               }
               canvas.drawPicture(picture);
               if (hasRuntimeReplayFailure) {
+                picture.delete();
+              } else if (hasPendingImageReplay) {
                 picture.delete();
               }
             } finally {

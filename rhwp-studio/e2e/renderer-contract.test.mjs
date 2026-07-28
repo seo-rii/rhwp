@@ -121,6 +121,12 @@ const forbiddenCanvas2dApiPatterns = [
   [/\bCanvas2DLayerRenderer\b/, 'Canvas2DLayerRenderer'],
   [/canvas2d-layer-renderer/, 'canvas2d-layer-renderer import'],
 ];
+const canvaskitSvgDecodeBridgeApis = new Set([
+  'HTMLImageElement',
+  'new Image',
+  'URL.createObjectURL',
+]);
+const canvaskitSvgDecodeBridgeFile = 'src/view/canvaskit/resource-cache.ts';
 const implementationPlanTouchpoints = [
   {
     docToken: 'src/paint/text_v2.rs',
@@ -2391,12 +2397,37 @@ assert.equal(
 
 for (const { label, source } of canvaskitSourceFiles) {
   for (const [pattern, apiName] of forbiddenCanvas2dApiPatterns) {
+    if (
+      label === canvaskitSvgDecodeBridgeFile
+      && canvaskitSvgDecodeBridgeApis.has(apiName)
+    ) {
+      continue;
+    }
     assert.equal(
       pattern.test(source),
       false,
       `CanvasKit renderer source must not depend on ${apiName}: ${label}`,
     );
   }
+}
+assert.equal(
+  canvaskitResourceCacheSource.includes('MakeImageFromCanvasImageSource(image)')
+    && canvaskitResourceCacheSource.includes("new Blob([svgBytes], { type: 'image/svg+xml' })")
+    && canvaskitResourceCacheSource.includes("imageHeader.format === 'svg'"),
+  true,
+  'the bounded embedded-SVG browser decode bridge must terminate in a direct CanvasKit image',
+);
+for (const forbiddenOverlayToken of [
+  'document.createElement',
+  '.getContext(',
+  '.drawImage(',
+  'Canvas2DLayerRenderer',
+]) {
+  assert.equal(
+    canvaskitResourceCacheSource.includes(forbiddenOverlayToken),
+    false,
+    `the embedded-SVG decode bridge must not composite through Canvas2D: ${forbiddenOverlayToken}`,
+  );
 }
 
 console.log('renderer backend contract parity passed');
