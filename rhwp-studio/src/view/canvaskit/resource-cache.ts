@@ -1,4 +1,4 @@
-import type { CanvasKit, Image as CanvasKitImage } from 'canvaskit-wasm';
+import type { CanvasKit, Image as CanvasKitImage, Paint as CanvasKitPaint } from 'canvaskit-wasm';
 
 import { decodeBase64 } from '@/core/base64';
 import type { LayerImageOp, LayerPatternFill, PageLayerTree } from '@/core/types';
@@ -20,6 +20,7 @@ export type CanvasKitPatternDiagnostics = {
   cacheMisses: number;
   failureCacheHits: number;
   surfaceCreations: number;
+  directImageCreations: number;
   surfaceFailures: number;
   imagesCreated: number;
 };
@@ -124,6 +125,7 @@ export class CanvasKitResourceCache {
     cacheMisses: 0,
     failureCacheHits: 0,
     surfaceCreations: 0,
+    directImageCreations: 0,
     surfaceFailures: 0,
     imagesCreated: 0,
   };
@@ -540,6 +542,7 @@ export class CanvasKitResourceCache {
     this.patternDiagnostics.cacheMisses = 0;
     this.patternDiagnostics.failureCacheHits = 0;
     this.patternDiagnostics.surfaceCreations = 0;
+    this.patternDiagnostics.directImageCreations = 0;
     this.patternDiagnostics.surfaceFailures = 0;
     this.patternDiagnostics.imagesCreated = 0;
   }
@@ -799,54 +802,139 @@ export class CanvasKitResourceCache {
   }
 
   private makePatternImage(pattern: LayerPatternFill): CanvasKitImage | null {
-    const surface = this.canvasKit.MakeSurface(6, 6);
-    if (!surface) {
+    let surface: ReturnType<CanvasKit['MakeSurface']> = null;
+    try {
+      surface = this.canvasKit.MakeSurface(6, 6);
+    } catch {
+      surface = null;
+    }
+    if (surface) {
+      this.patternDiagnostics.surfaceCreations += 1;
+      let fillPaint: CanvasKitPaint | null = null;
+      let strokePaint: CanvasKitPaint | null = null;
+      try {
+        const canvas = surface.getCanvas();
+        fillPaint = new this.canvasKit.Paint();
+        fillPaint.setStyle(this.canvasKit.PaintStyle.Fill);
+        fillPaint.setColor(parseCanvasKitCssColor(this.canvasKit, pattern.backgroundColor));
+        canvas.drawRect(this.canvasKit.XYWHRect(0, 0, 6, 6), fillPaint);
+
+        strokePaint = new this.canvasKit.Paint();
+        strokePaint.setStyle(this.canvasKit.PaintStyle.Stroke);
+        strokePaint.setStrokeWidth(1);
+        strokePaint.setColor(parseCanvasKitCssColor(this.canvasKit, pattern.patternColor));
+
+        switch (pattern.patternType) {
+          case 0:
+            canvas.drawLine(0, 3, 6, 3, strokePaint);
+            break;
+          case 1:
+            canvas.drawLine(3, 0, 3, 6, strokePaint);
+            break;
+          case 2:
+            canvas.drawLine(6, 0, 0, 6, strokePaint);
+            break;
+          case 3:
+            canvas.drawLine(0, 0, 6, 6, strokePaint);
+            break;
+          case 4:
+            canvas.drawLine(3, 0, 3, 6, strokePaint);
+            canvas.drawLine(0, 3, 6, 3, strokePaint);
+            break;
+          case 5:
+            canvas.drawLine(0, 0, 6, 6, strokePaint);
+            canvas.drawLine(6, 0, 0, 6, strokePaint);
+            break;
+          default:
+            break;
+        }
+
+        surface.flush();
+        const image = surface.makeImageSnapshot();
+        this.patternDiagnostics.imagesCreated += 1;
+        return image;
+      } catch {
+        // Fall through to the deterministic raw-pixel tile.
+      } finally {
+        strokePaint?.delete();
+        fillPaint?.delete();
+        surface.delete();
+      }
+    }
+
+    const background = parseCanvasKitCssColor(this.canvasKit, pattern.backgroundColor);
+    const foreground = parseCanvasKitCssColor(this.canvasKit, pattern.patternColor);
+    const pixels = new Uint8Array(6 * 6 * 4);
+    for (let y = 0; y < 6; y += 1) {
+      for (let x = 0; x < 6; x += 1) {
+        let patternPasses = 0;
+        switch (pattern.patternType) {
+          case 0:
+            patternPasses = Number(y === 3);
+            break;
+          case 1:
+            patternPasses = Number(x === 3);
+            break;
+          case 2:
+            patternPasses = Number(x === 5 - y);
+            break;
+          case 3:
+            patternPasses = Number(x === y);
+            break;
+          case 4:
+            patternPasses = Number(x === 3) + Number(y === 3);
+            break;
+          case 5:
+            patternPasses = Number(x === y || x === 5 - y);
+            break;
+          default:
+            break;
+        }
+        let outputAlpha = background[3];
+        const premultiplied = [
+          background[0] * outputAlpha,
+          background[1] * outputAlpha,
+          background[2] * outputAlpha,
+        ];
+        for (let pass = 0; pass < patternPasses; pass += 1) {
+          const foregroundAlpha = foreground[3];
+          for (let channel = 0; channel < 3; channel += 1) {
+            premultiplied[channel] = foreground[channel] * foregroundAlpha
+              + premultiplied[channel] * (1 - foregroundAlpha);
+          }
+          outputAlpha = foregroundAlpha + outputAlpha * (1 - foregroundAlpha);
+        }
+        const offset = (y * 6 + x) * 4;
+        for (let channel = 0; channel < 3; channel += 1) {
+          pixels[offset + channel] = Math.round(
+            Math.max(
+              0,
+              Math.min(1, outputAlpha > 0 ? premultiplied[channel] / outputAlpha : 0),
+            ) * 255,
+          );
+        }
+        pixels[offset + 3] = Math.round(Math.max(0, Math.min(1, outputAlpha)) * 255);
+      }
+    }
+
+    const imageInfo = {
+      width: 6,
+      height: 6,
+      colorType: this.canvasKit.ColorType.RGBA_8888,
+      alphaType: this.canvasKit.AlphaType.Unpremul,
+      colorSpace: this.canvasKit.ColorSpace.SRGB,
+    };
+    let image: CanvasKitImage | null;
+    try {
+      image = this.canvasKit.MakeImage(imageInfo, pixels, 6 * 4);
+    } catch {
+      image = null;
+    }
+    if (!image) {
       this.patternDiagnostics.surfaceFailures += 1;
       return null;
     }
-    this.patternDiagnostics.surfaceCreations += 1;
-
-    const canvas = surface.getCanvas();
-    const fillPaint = new this.canvasKit.Paint();
-    fillPaint.setStyle(this.canvasKit.PaintStyle.Fill);
-    fillPaint.setColor(parseCanvasKitCssColor(this.canvasKit, pattern.backgroundColor));
-    canvas.drawRect(this.canvasKit.XYWHRect(0, 0, 6, 6), fillPaint);
-    fillPaint.delete();
-
-    const strokePaint = new this.canvasKit.Paint();
-    strokePaint.setStyle(this.canvasKit.PaintStyle.Stroke);
-    strokePaint.setStrokeWidth(1);
-    strokePaint.setColor(parseCanvasKitCssColor(this.canvasKit, pattern.patternColor));
-
-    switch (pattern.patternType) {
-      case 0:
-        canvas.drawLine(0, 3, 6, 3, strokePaint);
-        break;
-      case 1:
-        canvas.drawLine(3, 0, 3, 6, strokePaint);
-        break;
-      case 2:
-        canvas.drawLine(6, 0, 0, 6, strokePaint);
-        break;
-      case 3:
-        canvas.drawLine(0, 0, 6, 6, strokePaint);
-        break;
-      case 4:
-        canvas.drawLine(3, 0, 3, 6, strokePaint);
-        canvas.drawLine(0, 3, 6, 3, strokePaint);
-        break;
-      case 5:
-        canvas.drawLine(0, 0, 6, 6, strokePaint);
-        canvas.drawLine(6, 0, 0, 6, strokePaint);
-        break;
-      default:
-        break;
-    }
-
-    strokePaint.delete();
-    surface.flush();
-    const image = surface.makeImageSnapshot();
-    surface.delete();
+    this.patternDiagnostics.directImageCreations += 1;
     this.patternDiagnostics.imagesCreated += 1;
     return image;
   }

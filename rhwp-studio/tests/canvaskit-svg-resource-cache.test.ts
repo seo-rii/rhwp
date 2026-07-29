@@ -123,6 +123,143 @@ test('does not approximate fractional image-effect sampling without a surface', 
   assert.equal(harness.cache.getImageEffectDiagnostics().directImageReadbackPreprocesses, 0);
 });
 
+test('creates deterministic pattern images without offscreen surfaces', () => {
+  const harness = makeHarness();
+  const directImage = fakeCanvasKitImage(6, 6);
+  const makeImageCalls = [];
+  harness.canvasKit.MakeSurface = () => {
+    throw new Error('surface unavailable');
+  };
+  harness.canvasKit.ColorType = { RGBA_8888: 'rgba8888' };
+  harness.canvasKit.AlphaType = { Unpremul: 'unpremul' };
+  harness.canvasKit.ColorSpace = { SRGB: 'srgb' };
+  harness.canvasKit.MakeImage = (imageInfo, pixels, rowBytes) => {
+    makeImageCalls.push({ imageInfo, pixels: pixels.slice(), rowBytes });
+    return directImage;
+  };
+  const pattern = {
+    patternType: 5,
+    patternColor: '#aabbcc',
+    backgroundColor: '#112233',
+  };
+
+  assert.equal(harness.cache.patternImage(pattern), directImage);
+  assert.equal(harness.cache.patternImage(pattern), directImage);
+  assert.equal(makeImageCalls.length, 1);
+  assert.equal(makeImageCalls[0].rowBytes, 24);
+  assert.deepEqual(
+    {
+      width: makeImageCalls[0].imageInfo.width,
+      height: makeImageCalls[0].imageInfo.height,
+      colorType: makeImageCalls[0].imageInfo.colorType,
+      alphaType: makeImageCalls[0].imageInfo.alphaType,
+      colorSpace: makeImageCalls[0].imageInfo.colorSpace,
+    },
+    {
+      width: 6,
+      height: 6,
+      colorType: 'rgba8888',
+      alphaType: 'unpremul',
+      colorSpace: 'srgb',
+    },
+  );
+  const expectedPixels = [];
+  for (let y = 0; y < 6; y += 1) {
+    for (let x = 0; x < 6; x += 1) {
+      expectedPixels.push(
+        ...(x === y || x === 5 - y
+          ? [0xaa, 0xbb, 0xcc, 0xff]
+          : [0x11, 0x22, 0x33, 0xff]),
+      );
+    }
+  }
+  assert.deepEqual([...makeImageCalls[0].pixels], expectedPixels);
+  assert.deepEqual(harness.cache.getPatternDiagnostics(), {
+    cacheHits: 1,
+    cacheMisses: 1,
+    failureCacheHits: 0,
+    surfaceCreations: 0,
+    directImageCreations: 1,
+    surfaceFailures: 0,
+    imagesCreated: 1,
+  });
+});
+
+test('uses the CanvasKit integer mask for every direct pattern type', () => {
+  const harness = makeHarness();
+  const makeImagePixels = [];
+  harness.canvasKit.MakeSurface = () => null;
+  harness.canvasKit.ColorType = { RGBA_8888: 'rgba8888' };
+  harness.canvasKit.AlphaType = { Unpremul: 'unpremul' };
+  harness.canvasKit.ColorSpace = { SRGB: 'srgb' };
+  harness.canvasKit.MakeImage = (_imageInfo, pixels) => {
+    makeImagePixels.push(pixels.slice());
+    return fakeCanvasKitImage(6, 6);
+  };
+
+  for (let patternType = 0; patternType < 6; patternType += 1) {
+    assert.notEqual(harness.cache.patternImage({
+      patternType,
+      patternColor: '#ffffff',
+      backgroundColor: '#000000',
+    }), null);
+  }
+
+  assert.equal(makeImagePixels.length, 6);
+  for (let patternType = 0; patternType < 6; patternType += 1) {
+    const pixels = makeImagePixels[patternType];
+    for (let y = 0; y < 6; y += 1) {
+      for (let x = 0; x < 6; x += 1) {
+        const expectedForeground = patternType === 0
+          ? y === 3
+          : patternType === 1
+            ? x === 3
+            : patternType === 2
+              ? x === 5 - y
+              : patternType === 3
+                ? x === y
+                : patternType === 4
+                  ? x === 3 || y === 3
+                  : x === y || x === 5 - y;
+        const offset = (y * 6 + x) * 4;
+        assert.deepEqual(
+          [...pixels.slice(offset, offset + 4)],
+          expectedForeground ? [255, 255, 255, 255] : [0, 0, 0, 255],
+          `pattern=${patternType}, x=${x}, y=${y}`,
+        );
+      }
+    }
+  }
+  assert.equal(harness.cache.getPatternDiagnostics().directImageCreations, 6);
+  assert.equal(harness.cache.getPatternDiagnostics().surfaceFailures, 0);
+});
+
+test('negative-caches pattern images only when surface and direct creation both fail', () => {
+  const harness = makeHarness();
+  harness.canvasKit.MakeSurface = () => null;
+  harness.canvasKit.ColorType = { RGBA_8888: 'rgba8888' };
+  harness.canvasKit.AlphaType = { Unpremul: 'unpremul' };
+  harness.canvasKit.ColorSpace = { SRGB: 'srgb' };
+  harness.canvasKit.MakeImage = () => null;
+  const pattern = {
+    patternType: 0,
+    patternColor: '#aabbcc',
+    backgroundColor: '#112233',
+  };
+
+  assert.equal(harness.cache.patternImage(pattern), null);
+  assert.equal(harness.cache.patternImage(pattern), null);
+  assert.deepEqual(harness.cache.getPatternDiagnostics(), {
+    cacheHits: 1,
+    cacheMisses: 1,
+    failureCacheHits: 1,
+    surfaceCreations: 0,
+    directImageCreations: 0,
+    surfaceFailures: 2,
+    imagesCreated: 0,
+  });
+});
+
 test('recovers encoded raster decoder failures through a direct CanvasKit browser image', async () => {
   const harness = makeHarness();
   const decodedImage = fakeCanvasKitImage(16, 12);

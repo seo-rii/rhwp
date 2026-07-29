@@ -356,10 +356,16 @@ CanvasKit parity is implemented through four layers:
    retry is reported as a text replay recovery; only failure of both paths is a
    runtime text replay failure. Neither diagnostic exposes cluster text:
    diagnostics retain only the op identity, resolved family, and UTF-16 cluster
-   range. A cached pattern-surface failure is re-reported on every attempted
-   replay rather than looking like a successful cache hit. Failed pattern
-   surfaces are retried once at the next render boundary, while successful
-   pattern images remain cached.
+   range. Pattern tiles normally use a 6-by-6 CanvasKit surface. If that surface
+   is unavailable, the same integer row, column, and diagonal masks are
+   source-over composited into an unpremultiplied RGBA buffer and passed to
+   CanvasKit `MakeImage`; the browser fixture requires exact pixels for
+   semi-transparent colors, including the double-painted cross intersection.
+   `directImageCreations` reports this successful native-ready recovery. A
+   cached failure of both pattern paths is re-reported on every attempted replay
+   rather than looking like a successful cache hit. Failed pattern images are
+   retried once at the next render boundary, while successful surface or direct
+   images remain cached.
 4. Diagnostics explain every selection, rejection, fallback, and cache decision
    that affects faithful replay.
 
@@ -457,7 +463,7 @@ explicit unsupported diagnostic, and a targeted lifecycle/parity fixture.
 | --- | --- | --- |
 | traversal and clips | save/restore and clip semantics match Canvas2D ordering | dispatch case parity and clip lifecycle fixture |
 | paths, strokes, arrows, line styles | CanvasKit `Path` / `Paint` replay covers Canvas2D path commands and line style branches | command and style case parity plus visual fixture |
-| gradients and patterns | CanvasKit shaders or offscreen CanvasKit picture/image resources | shared stop-position normalization plus no CSS or Canvas2D pattern object dependency |
+| gradients and patterns | CanvasKit shaders or deterministic CanvasKit image resources | shared stop-position normalization plus exact surface/direct pattern pixels and no CSS or Canvas2D pattern object dependency |
 | images and image fills | encoded resource bytes decoded into CanvasKit images | deterministic resource key, cache diagnostics, and shared effective bbox correction for 90/270 degree image rotations |
 | image effects and shadows | CanvasKit image filters, paints, or native-ready pixel preprocessing | no hidden browser pre-pass without a resource contract |
 | form and equation objects | direct CanvasKit geometry and text/path drawing | branch parity and fixture for geometry bounds |
@@ -657,8 +663,8 @@ The working order is:
 
 The browser baseline now records the Rust replay plan, CanvasKit runtime text
 variant selections/rejections, encoded-image recovery/failure diagnostics,
-TextBlob replay diagnostics, v2 validation issues, pattern diagnostics, and
-surface diagnostics for every CanvasKit capture. Hidden-overlay items,
+TextBlob replay diagnostics, v2 validation issues, pattern surface/direct-image
+diagnostics, and surface diagnostics for every CanvasKit capture. Hidden-overlay items,
 hidden-overlay violations,
 invalid direct-only plan contracts, empty plans, direct-required image items,
 runtime image/image-effect/TextBlob/pattern replay failures, and v2 validation

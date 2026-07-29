@@ -803,8 +803,8 @@ def write_reports(
                 f"- mode: `{browser_replay_diagnostics.get('mode', '-')}`",
                 f"- hard-gate violations: {browser_replay_diagnostics.get('hardGateViolationCount', 0)}",
                 "",
-                "| Backend | Profile | Captures | Items | Direct | Direct Required | Text Fallback | Unsupported | Compat Overlay | Hidden Overlay Violations | Runtime Image Recoveries | Runtime Image Failures | Image Effect Readbacks | Runtime Text Recoveries | Runtime Text Failures | Pattern Surface Failures | Runtime Duplicate Reports | Runtime Selection Conflicts | v2 Issues |",
-                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| Backend | Profile | Captures | Items | Direct | Direct Required | Text Fallback | Unsupported | Compat Overlay | Hidden Overlay Violations | Runtime Image Recoveries | Runtime Image Failures | Image Effect Readbacks | Runtime Text Recoveries | Runtime Text Failures | Pattern Direct Images | Pattern Surface Failures | Runtime Duplicate Reports | Runtime Selection Conflicts | v2 Issues |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in replay_summary_rows:
@@ -827,6 +827,7 @@ def write_reports(
                         format_count(item.get("runtimeImageEffectReadbackPreprocesses")),
                         format_count(item.get("runtimeTextReplayRecoveries")),
                         format_count(item.get("runtimeTextReplayFailures")),
+                        format_count(item.get("runtimePatternDirectImageCreations")),
                         format_count(item.get("patternSurfaceFailures")),
                         format_count(item.get("runtimeDuplicateVariantReports")),
                         format_count(item.get("runtimeVariantSelectionConflicts")),

@@ -1105,6 +1105,7 @@ assert(
     && rendererBaselineDriverSource.includes('runtimeImageRecoveryReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeImageFailureReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeImageEffectReadbackPreprocesses')
+    && rendererBaselineDriverSource.includes('runtimePatternDirectImageCreations')
     && rendererBaselineDriverSource.includes('runtimeTextRecoveryReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeTextFailureReasonCounts'),
   'renderer baseline markdown report must expose CanvasKit fallback, runtime paint recovery/failure, and rejection reason inventories',
@@ -1824,7 +1825,18 @@ assert(
   canvaskitResourceCacheSource.includes('resetPatternDiagnostics(): void')
     && canvaskitResourceCacheSource.includes('beginPatternReplay(): void')
     && canvaskitSource.includes('this.resourceCache.beginPatternReplay()'),
-  'CanvasKit must reset pattern diagnostics and retry failed pattern surfaces at each render boundary',
+  'CanvasKit must reset pattern diagnostics and retry unrecoverable pattern images at each render boundary',
+);
+assertTokensInOrder(
+  extractMethodBody(canvaskitResourceCacheSource, 'makePatternImage'),
+  [
+    'this.canvasKit.MakeSurface(6, 6)',
+    'const pixels = new Uint8Array(6 * 6 * 4)',
+    'this.canvasKit.MakeImage(imageInfo, pixels, 6 * 4)',
+    'this.patternDiagnostics.directImageCreations += 1',
+    'this.patternDiagnostics.imagesCreated += 1',
+  ],
+  'CanvasKit patterns must recover through deterministic raw images when offscreen surfaces fail',
 );
 assert(
   canvaskitResourceCacheSource.includes('failureCacheHits: number')
@@ -1832,7 +1844,7 @@ assert(
       .includes('this.patternDiagnostics.failureCacheHits += 1')
     && extractMethodBody(canvaskitResourceCacheSource, 'patternImage')
       .includes('this.patternDiagnostics.surfaceFailures += 1'),
-  'CanvasKit pattern negative-cache hits must re-report surface failures for the active render',
+  'CanvasKit pattern negative-cache hits must re-report unrecoverable creation failures for the active render',
 );
 const canvaskitRenderNodeBlock = extractMethodBody(canvaskitSource, 'renderNode');
 assertTokensInOrder(

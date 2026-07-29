@@ -899,6 +899,7 @@ for (const result of results) {
       runtimeImageRecoveries: 0,
       runtimeImageFailures: 0,
       runtimeImageEffectReadbackPreprocesses: 0,
+      runtimePatternDirectImageCreations: 0,
       runtimeTextReplayRecoveries: 0,
       runtimeTextReplayFailures: 0,
       equationSvgReplays: 0,
@@ -945,6 +946,8 @@ for (const result of results) {
   summary.runtimeImageFailures += diagnostics.imageDiagnostics?.failures?.length ?? 0;
   summary.runtimeImageEffectReadbackPreprocesses +=
     diagnostics.imageEffects?.canvaskit?.directImageReadbackPreprocesses ?? 0;
+  summary.runtimePatternDirectImageCreations +=
+    diagnostics.patternDiagnostics?.directImageCreations ?? 0;
   summary.runtimeTextReplayRecoveries +=
     diagnostics.textReplayDiagnostics?.recoveries?.length ?? 0;
   summary.runtimeTextReplayFailures += diagnostics.textReplayDiagnostics?.failures?.length ?? 0;

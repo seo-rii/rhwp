@@ -1843,11 +1843,11 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         missingEffectResourceImage,
         missingEffectResourceImageDiagnostics,
         patternSurfaceError,
-        patternSurfaceFirst,
+        patternSurfaceFirstAvailable: patternSurfaceFirst !== null,
         patternSurfaceFirstDiagnostics,
-        patternSurfaceSecond,
+        patternSurfaceSecondAvailable: patternSurfaceSecond !== null,
         patternSurfaceSecondDiagnostics,
-        patternSurfaceRetry,
+        patternSurfaceRetryAvailable: patternSurfaceRetry !== null,
         patternSurfaceRetryDiagnostics,
         invalidFontBase64Error,
         invalidFontParserReplayable: invalidFontParserStatus.replayable,
@@ -2278,23 +2278,27 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
   );
   assert(
     nativeRouting.nativeResourceFailureProbe?.patternSurfaceError === null
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirst === null
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstAvailable
       && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.cacheMisses === 1
       && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.failureCacheHits === 0
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.surfaceFailures === 1
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecond === null
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.surfaceCreations === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.directImageCreations === 1
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceFirstDiagnostics?.surfaceFailures === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondAvailable
       && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.cacheHits === 1
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.failureCacheHits === 1
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.surfaceFailures === 1,
-    `pattern surface failures remain visible after negative-cache hits=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.failureCacheHits === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.directImageCreations === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceSecondDiagnostics?.surfaceFailures === 0,
+    `pattern surface failures recover through a direct image=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
   );
   assert(
-    nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetry === null
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.cacheHits === 0
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.cacheMisses === 1
+    nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryAvailable
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.cacheHits === 1
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.cacheMisses === 0
       && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.failureCacheHits === 0
-      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.surfaceFailures === 1,
-    `pattern surface failures are retried at the next render boundary=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.directImageCreations === 0
+      && nativeRouting.nativeResourceFailureProbe?.patternSurfaceRetryDiagnostics?.surfaceFailures === 0,
+    `direct pattern images remain cached across render boundaries=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
   );
   assert(
     nativeRouting.nativeResourceFailureProbe?.invalidFontBase64Error === null
