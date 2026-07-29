@@ -19,6 +19,15 @@ export function isHalfwidthScaledCluster(text: string): boolean {
   return (code >= 0x2018 && code <= 0x2027) || code === 0x00b7;
 }
 
+export function containsOldHangulJamo(text: string): boolean {
+  return Array.from(text).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return (codePoint >= 0x1100 && codePoint <= 0x11ff)
+      || (codePoint >= 0xa960 && codePoint <= 0xa97f)
+      || (codePoint >= 0xd7b0 && codePoint <= 0xd7ff);
+  });
+}
+
 export function allowsTextControlMark(
   showParagraphMarks: boolean,
   showControlCodes: boolean,

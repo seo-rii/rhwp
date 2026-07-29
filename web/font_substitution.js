@@ -57,6 +57,7 @@
         'Noto Sans KR',
         'Noto Serif CJK KR',
         'Noto Serif KR',
+        'Source Han Serif K Old Hangul',
         'Pretendard',
         'Pretendard Thin',
         'Pretendard ExtraLight',
@@ -298,12 +299,12 @@
             return fontName;
         }
         if (/굴림체|바탕체|gulimche|batangche|coding|courier/i.test(fontName)) {
-            return '"' + fontName + '", "GulimChe", "D2Coding", "NanumGothicCoding", "나눔고딕코딩", "Noto Sans Mono", monospace';
+            return '"' + fontName + '", "GulimChe", "D2Coding", "NanumGothicCoding", "나눔고딕코딩", "Noto Sans Mono", "Source Han Serif K Old Hangul", monospace';
         }
         if (/[바탕명조궁서]|hymjre|times|palatino|georgia|batang|gungsuh/i.test(fontName)) {
-            return '"' + fontName + '", "Batang", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "NanumMyeongjo", "나눔명조", serif';
+            return '"' + fontName + '", "Batang", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "NanumMyeongjo", "나눔명조", "Source Han Serif K Old Hangul", serif';
         }
-        return '"' + fontName + '", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", sans-serif';
+        return '"' + fontName + '", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", "Source Han Serif K Old Hangul", sans-serif';
     }
 
     globalThis.FontSubstitution = {

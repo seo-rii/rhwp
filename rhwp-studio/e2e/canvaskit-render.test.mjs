@@ -933,6 +933,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         malgun: loadedFamilies.includes('Malgun Gothic'),
         malgunKr: loadedFamilies.includes('맑은 고딕'),
       },
+      oldHangul: loadedFamilies.includes('Source Han Serif K Old Hangul'),
     };
 }, { skipLoadApp: true });
   assert(
@@ -954,6 +955,10 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
   assert(
     preloadedFonts.currencyFonts.malgunKr,
     `canvaskit currency fallback font preload=${JSON.stringify(preloadedFonts.currencyFonts)}`,
+  );
+  assert(
+    preloadedFonts.oldHangul,
+    `canvaskit old-Hangul fallback font preload=${JSON.stringify(preloadedFonts)}`,
   );
 
   setTestCase('canvaskit-layer-tree-value-and-footnote-routing');

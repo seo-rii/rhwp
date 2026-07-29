@@ -2,11 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  containsOldHangulJamo,
   mapPuaBulletChar,
   mapPuaDisplayText,
   puaToDisplayText,
   splitIntoClusters,
 } from '../src/view/text-replay-utils.ts';
+
+test('old-Hangul detection covers modern and extended jamo anywhere in a cluster', () => {
+  assert.equal(containsOldHangulJamo('ᄒᆞᆫ'), true);
+  assert.equal(containsOldHangulJamo(`x${String.fromCodePoint(0xa960)}`), true);
+  assert.equal(containsOldHangulJamo(String.fromCodePoint(0xd7b0)), true);
+  assert.equal(containsOldHangulJamo('한글'), false);
+});
 
 test('text replay clusters preserve grapheme boundaries and scalar positions', () => {
   assert.deepEqual(

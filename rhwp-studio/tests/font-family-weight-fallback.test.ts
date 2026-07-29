@@ -95,6 +95,29 @@ test('Dotum aliases and generic sans fallbacks use the independent ExtraLight fa
   }
 });
 
+test('old-Hangul fallback is range-limited, preloaded, and shared across family classes', () => {
+  assert.deepEqual(
+    FONT_LIST.filter((entry) => entry.name === 'Source Han Serif K Old Hangul'),
+    [{
+      name: 'Source Han Serif K Old Hangul',
+      file: 'fonts/SourceHanSerifK-OldHangul-subset.woff2',
+      weight: '400',
+      unicodeRange: 'U+1100-11FF, U+A960-A97F, U+D7B0-D7FF',
+      loadText: 'ᄒᆞᆫ',
+    }],
+  );
+  for (const family of ['없는 산세리프', '없는 명조', '없는 coding']) {
+    assert.ok(
+      canvasFontFamilyFallbackCandidates(family).includes('Source Han Serif K Old Hangul'),
+      `${family} should retain the range-limited old-Hangul fallback`,
+    );
+    assert.ok(
+      fontFamilyFallbackCandidates(family).includes('Source Han Serif K Old Hangul'),
+      `${family} should retain the system old-Hangul fallback`,
+    );
+  }
+});
+
 test('measured HFT families retain their source identity and fallback class', () => {
   for (const family of ['한양신명조', '한양견명조', '휴먼명조']) {
     assert.deepEqual(
@@ -128,6 +151,10 @@ test('CanvasKit consumes the shared family and weight fallback semantics', () =>
   }
   assert.match(registrySource, /NotoSansKR-ExtraLight\.woff2/);
   assert.match(registrySource, /'Noto Sans KR ExtraLight'/);
+  assert.match(registrySource, /SourceHanSerifK-OldHangul-subset\.woff2/);
+  assert.match(registrySource, /OLD_HANGUL_FONT_FAMILY/);
+  assert.match(rendererSource, /fallbackClass = needsOldHangulFallback/);
+  assert.match(rendererSource, /preferredFallbackFamilies = needsOldHangulFallback/);
   assert.match(rendererSource, /resolveRenderFontWeight\(op\.style\.fontFamily, op\.style\.bold\)/);
   assert.match(rendererSource, /this\.canvasKit\.FontWeight\.Light/);
   assert.match(rendererSource, /this\.canvasKit\.FontWeight\.Medium/);

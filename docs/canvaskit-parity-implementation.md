@@ -720,16 +720,23 @@ rather than pretending it is a weight variant of `Noto Sans KR`. The expanded
 Regular face remains registered for CanvasKit symbol and box-drawing coverage.
 Catalog parity tests pin the alias mapping, and the CanvasKit font-coverage
 smoke verifies both the Regular symbol subset and ExtraLight Korean/Latin
-coverage. The same ExtraLight face contains the old-Hangul jamo needed for
-`ᄒᆞᆫ`. CanvasKit routes Hangul-jamo grapheme clusters through its existing
-font-provider Paragraph path, so HarfBuzz shapes the cluster once while each
-cluster still starts at the producer-authored HWP position. The smoke pins the
-three source jamo and one-cluster Paragraph result, and browser parity keeps
-Canvas2D and CanvasKit on the same checked-in fallback without adding a second
-old-Hangul font asset. Document preflight uses the same PUA-expanded display
-projection as browser replay: bounded work counts include both preserved source
-text and a differing display projection, and old-Hangul projection records the
-ExtraLight face as a required family before automatic CanvasKit selection.
+coverage. Old-Hangul jamo use the checked-in Source Han Serif K subset instead
+of relying on incidental coverage in the ExtraLight face. Its browser
+`@font-face` is limited to `U+1100-11FF`, `U+A960-A97F`, and `U+D7B0-D7FF`;
+the preload supplies `ᄒᆞᆫ` as representative text so the range-limited face is
+ready before direct Canvas2D replay. Canvas2D and CanvasKit share the same
+grapheme predicate and explicitly select that family for any cluster containing
+old-Hangul jamo, even when the authored face also exposes those codepoints.
+CanvasKit registers the same bytes in its font provider. Its existing Paragraph
+path therefore shapes the complete cluster once while retaining the
+producer-authored HWP cluster position. The smoke pins all three source jamo and
+the one-cluster Paragraph result, and browser lifecycle coverage verifies that
+runtime selection actually reaches the dedicated face. Native strict replay
+still requires a portable document font blob or a separately verified native
+face; the bundled browser WOFF2 is not claimed as a native Skia font resource.
+Document preflight continues to use the same PUA-expanded display projection:
+bounded work counts include both preserved source text and a differing display
+projection.
 
 Shared HWP text measurement applies authored percentage letter spacing to each
 glyph's measured advance rather than to the font size. Full-width glyphs keep

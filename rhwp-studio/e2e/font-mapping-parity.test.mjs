@@ -38,13 +38,15 @@ function normalizeFontEntries(entries) {
     file: entry.file,
     format: entry.format ?? null,
     weight: entry.weight ?? null,
+    unicodeRange: entry.unicodeRange ?? null,
+    loadText: entry.loadText ?? null,
   }));
 }
 
 function loadStudioFontList() {
   const source = read('rhwp-studio/src/core/font-loader.ts');
   const constants = new Map(
-    [...source.matchAll(/^const (\w+) = '([^']+)';$/gm)].map((match) => [match[1], match[2]]),
+    [...source.matchAll(/^(?:export )?const (\w+) = '([^']+)';$/gm)].map((match) => [match[1], match[2]]),
   );
   let literal = extractAssignedLiteral(
     source,
@@ -99,12 +101,12 @@ function canonicalFallback(fontName) {
     return fontName;
   }
   if (/굴림체|바탕체|gulimche|batangche|coding|courier/i.test(fontName)) {
-    return `"${fontName}", "GulimChe", "D2Coding", "NanumGothicCoding", "나눔고딕코딩", "Noto Sans Mono", monospace`;
+    return `"${fontName}", "GulimChe", "D2Coding", "NanumGothicCoding", "나눔고딕코딩", "Noto Sans Mono", "Source Han Serif K Old Hangul", monospace`;
   }
   if (/[바탕명조궁서]|hymjre|times|palatino|georgia|batang|gungsuh/i.test(fontName)) {
-    return `"${fontName}", "Batang", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "NanumMyeongjo", "나눔명조", serif`;
+    return `"${fontName}", "Batang", "AppleMyungjo", "Noto Serif KR", "Noto Serif CJK KR", "NanumMyeongjo", "나눔명조", "Source Han Serif K Old Hangul", serif`;
   }
-  return `"${fontName}", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", sans-serif`;
+  return `"${fontName}", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight", "Noto Sans KR", "Noto Sans CJK KR", "NanumGothic", "나눔고딕", "Pretendard", "Source Han Serif K Old Hangul", sans-serif`;
 }
 
 const studioFontList = loadStudioFontList();
@@ -120,6 +122,9 @@ for (const [family, expectedFaces] of [
   ]],
   ['Noto Sans KR ExtraLight', [
     { file: 'fonts/NotoSansKR-ExtraLight.woff2', weight: '400' },
+  ]],
+  ['Source Han Serif K Old Hangul', [
+    { file: 'fonts/SourceHanSerifK-OldHangul-subset.woff2', weight: '400' },
   ]],
   ['돋움', [
     { file: 'fonts/NotoSansKR-ExtraLight.woff2', weight: '400' },
@@ -139,6 +144,18 @@ for (const [family, expectedFaces] of [
     `Canvas2D/CanvasKit shared face catalog mismatch for ${family}`,
   );
 }
+assert.deepStrictEqual(
+  studioFontList.find((entry) => entry.name === 'Source Han Serif K Old Hangul'),
+  {
+    name: 'Source Han Serif K Old Hangul',
+    file: 'fonts/SourceHanSerifK-OldHangul-subset.woff2',
+    format: null,
+    weight: '400',
+    unicodeRange: 'U+1100-11FF, U+A960-A97F, U+D7B0-D7FF',
+    loadText: 'ᄒᆞᆫ',
+  },
+  'old-Hangul face must keep its unicode-range and deterministic preload text',
+);
 
 const studioTables = loadStudioSubstTables();
 const legacyTables = loadLegacySubstTables();

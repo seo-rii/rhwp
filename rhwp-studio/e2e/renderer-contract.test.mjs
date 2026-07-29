@@ -1958,16 +1958,22 @@ assert.equal(
 );
 assert(
   fontLoaderSource.includes('export const FONT_LIST')
-    && canvaskitFontsSource.includes("import { FONT_LIST } from '@/core/font-loader'")
+    && fontLoaderSource.includes("export const OLD_HANGUL_FONT_FAMILY = 'Source Han Serif K Old Hangul'")
+    && fontLoaderSource.includes("unicodeRange: OLD_HANGUL_FONT_UNICODE_RANGE")
+    && fontLoaderSource.includes("loadText: OLD_HANGUL_FONT_LOAD_TEXT")
+    && canvaskitFontsSource.includes("import { FONT_LIST, OLD_HANGUL_FONT_FAMILY } from '@/core/font-loader'")
     && canvaskitFontsSource.includes('new URL(file, document.baseURI).href')
     && canvaskitFontsSource.includes("entry.weight === '700' || /(?:^|[-_])bold(?:[-_.]|$)/i.test(entry.file)")
     && canvaskitFontsSource.includes('await Promise.all([...catalogFontUrls].map((url) => loadFontFile(url)))')
     && canvaskitFontsSource.includes('BUNDLED_FONT_URLS.get(file)')
+    && canvaskitFontsSource.includes('SourceHanSerifK-OldHangul-subset.woff2')
+    && canvaskitFontsSource.includes('registerCatalogAliases(OLD_HANGUL_ALIASES)')
     && canvaskitFontsSource.includes("'Palatino Linotype'")
     && canvaskitSource.includes('weight === 700 && this.fontRegistry.shouldSynthesizeBold(family)'),
   'CanvasKit TextRun fallback must mirror Canvas2D font-face registrations and synthesize bold only when no 700 face exists',
 );
 const canvaskitTextRunBlock = extractMethodBody(canvaskitSource, 'renderTextRun');
+const canvas2dTextRunBlock = extractMethodBody(canvas2dSource, 'renderTextRun');
 assert(
   canvaskitSource.includes('getTextReplayDiagnostics(): Readonly<CanvasKitTextReplayDiagnostics>')
     && canvaskitSource.includes('resetTextReplayDiagnostics(): void')
@@ -1975,11 +1981,21 @@ assert(
     && canvaskitTextRunBlock.includes("fallback: 'drawText'")
     && canvaskitTextRunBlock.includes("reason: 'simpleTextFallbackFailed'")
     && canvaskitTextRunBlock.includes('clusterStartUtf16: cluster.startUtf16')
+    && canvaskitTextRunBlock.includes('const needsOldHangulFallback = containsOldHangulJamo(cluster.text)')
+    && canvaskitTextRunBlock.includes('? [OLD_HANGUL_FONT_FAMILY]')
+    && canvaskitTextRunBlock.includes("? 'oldHangul'")
     && canvaskitTextRunBlock.includes('this.failedTextBlobCacheKeys.has(cacheKey)')
     && canvaskitTextRunBlock.includes('canvas.drawText(cluster.text, drawX, drawY, fillPaint, fallbackFont)')
     && canvaskitTextRunBlock.includes('this.textReplayRecoveryDiagnostics.set(failureKey, recovery)')
     && canvaskitTextRunBlock.includes('this.textReplayFailureDiagnostics.set(failureKey, failure)'),
   'CanvasKit TextRun replay must recover negative-cached TextBlob failures through direct CanvasKit text and expose unrecovered failures',
+);
+assert(
+  importBlockFrom(canvas2dSource, './text-replay-utils').includes('containsOldHangulJamo')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('containsOldHangulJamo')
+    && canvas2dTextRunBlock.includes('if (containsOldHangulJamo(cluster.text))')
+    && canvas2dTextRunBlock.includes('return oldHangulFallbackFont'),
+  'Canvas2D and CanvasKit must share old-Hangul grapheme detection and select the dedicated face before generic fallback',
 );
 assert(
   canvaskitTextRunBlock.includes('strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round)')

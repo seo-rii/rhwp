@@ -15,6 +15,7 @@ import {
   buildCanvasTextFont,
   resolveRenderFontWeight,
 } from '@/core/font-substitution';
+import { OLD_HANGUL_FONT_FAMILY } from '@/core/font-loader';
 import { resolveLayerResourceIndex } from '@/core/layer-resource-store';
 import { assertNeverLayerPaintOp } from '@/core/types';
 import type { CanvasKitRenderMode } from './render-backend';
@@ -90,6 +91,7 @@ import {
 } from './canvaskit/replay-plane';
 import {
   TEXT_CONTROL_MARK_FONT_FAMILY,
+  containsOldHangulJamo,
   tabLeaderLineSegments,
   textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
@@ -894,7 +896,17 @@ export class Canvas2DLayerRenderer {
       op.style.italic,
       renderFontWeight,
     );
+    const oldHangulFallbackFont = buildCanvasTextFont(
+      OLD_HANGUL_FONT_FAMILY,
+      fontSize,
+      op.style.bold,
+      op.style.italic,
+      renderFontWeight,
+    );
     const clusterFonts = clusters.map((cluster) => {
+      if (containsOldHangulJamo(cluster.text)) {
+        return oldHangulFallbackFont;
+      }
       const ch = cluster.text.codePointAt(0) ?? 0;
       const needsCurrencyFallback =
         ch === 0x20A9 || ch === 0x20AC || ch === 0x00A3 || ch === 0x00A5;

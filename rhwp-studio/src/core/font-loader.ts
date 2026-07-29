@@ -13,6 +13,10 @@ export interface FontEntry {
   format?: 'woff2' | 'woff';
   /** CSS/FontFace font-weight descriptor */
   weight?: string;
+  /** CSS unicode-range descriptor */
+  unicodeRange?: string;
+  /** document.fonts.load()가 unicode-range face를 실제로 요청할 대표 문자열 */
+  loadText?: string;
 }
 
 // 함초롬 aliases는 번들된 로컬 서체로 안정적으로 치환한다.
@@ -21,6 +25,9 @@ const HAMCHOROM_BATANG_BOLD = 'fonts/NotoSerifKR-Bold.woff2';
 const HAMCHOROM_DOTUM_REGULAR = 'fonts/NotoSansKR-Regular.woff2';
 const HAMCHOROM_DOTUM_BOLD = 'fonts/NotoSansKR-Bold.woff2';
 const NOTO_SANS_KR_EXTRALIGHT = 'fonts/NotoSansKR-ExtraLight.woff2';
+export const OLD_HANGUL_FONT_FAMILY = 'Source Han Serif K Old Hangul';
+const OLD_HANGUL_FONT_UNICODE_RANGE = 'U+1100-11FF, U+A960-A97F, U+D7B0-D7FF';
+const OLD_HANGUL_FONT_LOAD_TEXT = 'ᄒᆞᆫ';
 
 // 한컴 webhwp CSS(@font-face) 매핑 기준 + HWP 문서에서 사용하는 별칭
 export const FONT_LIST: FontEntry[] = [
@@ -94,6 +101,13 @@ export const FONT_LIST: FontEntry[] = [
   { name: 'Noto Sans KR', file: 'fonts/NotoSansKR-Bold.woff2', weight: '700' },
   { name: 'Noto Serif CJK KR', file: 'fonts/NotoSerifKR-Regular.woff2' },
   { name: 'Noto Serif KR', file: 'fonts/NotoSerifKR-Regular.woff2' },
+  {
+    name: OLD_HANGUL_FONT_FAMILY,
+    file: 'fonts/SourceHanSerifK-OldHangul-subset.woff2',
+    weight: '400',
+    unicodeRange: OLD_HANGUL_FONT_UNICODE_RANGE,
+    loadText: OLD_HANGUL_FONT_LOAD_TEXT,
+  },
   // === Pretendard ===
   { name: 'Pretendard', file: 'fonts/Pretendard-Regular.woff2' },
   { name: 'Pretendard Thin', file: 'fonts/Pretendard-Thin.woff2' },
@@ -141,6 +155,7 @@ const DIRECT_RENDERER_FALLBACK_FONTS = new Set([
   'GulimChe',
   'D2Coding',
   'Latin Modern Math',
+  OLD_HANGUL_FONT_FAMILY,
 ]);
 
 interface LoadWebFontsOptions {
@@ -213,7 +228,8 @@ export async function loadWebFonts(
     const style = document.createElement('style');
     style.textContent = FONT_LIST.map(f => {
       const fmt = f.format ?? 'woff2';
-      return `@font-face { font-family: "${f.name}"; src: url("${f.file}") format("${fmt}"); font-display: swap; font-weight: ${f.weight ?? '400'}; }`;
+      const unicodeRange = f.unicodeRange ? ` unicode-range: ${f.unicodeRange};` : '';
+      return `@font-face { font-family: "${f.name}"; src: url("${f.file}") format("${fmt}"); font-display: swap; font-weight: ${f.weight ?? '400'};${unicodeRange} }`;
     }).join('\n');
     document.head.appendChild(style);
     fontFaceRegistered = true;
@@ -248,7 +264,7 @@ export async function loadWebFonts(
     await Promise.all(batch.map(async (f) => {
       try {
         const weight = f.weight ?? '400';
-        await document.fonts.load(`${weight} 16px "${f.name}"`);
+        await document.fonts.load(`${weight} 16px "${f.name}"`, f.loadText);
         loadedFaceKeys.add(`${f.name}::${weight}`);
         loaded++;
       } catch {

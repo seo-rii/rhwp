@@ -22,6 +22,7 @@ import {
   resolveRenderFontWeight,
   type RenderFontWeight,
 } from '@/core/font-substitution';
+import { OLD_HANGUL_FONT_FAMILY } from '@/core/font-loader';
 import {
   hasStaticSanitizedSvgGlyphContract,
   hasStrictBitmapGlyphContract,
@@ -101,6 +102,7 @@ import {
   TEXT_CONTROL_MARK_FONT_FAMILY,
   allowsTextControlMark,
   charOverlapInnerSizeRatio,
+  containsOldHangulJamo,
   decodePuaOverlapNumber,
   estimateDisplayTextPositions,
   isHalfwidthScaledCluster,
@@ -1160,6 +1162,7 @@ export class CanvasKitLayerRenderer {
     const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
     const fallbackFamilies = [
       op.style.fontFamily,
+      OLD_HANGUL_FONT_FAMILY,
       'Noto Sans KR ExtraLight',
       'Noto Sans KR',
       'Noto Sans CJK KR',
@@ -1185,20 +1188,25 @@ export class CanvasKitLayerRenderer {
         || (codePoint >= 0x25A0 && codePoint <= 0x25FF)
         || (codePoint >= 0x2600 && codePoint <= 0x27BF);
       const needsSupplementaryFallback = codePoint > 0xffff;
-      const preferredFallbackFamilies = needsCurrencyFallback
-        ? ['Malgun Gothic', '맑은 고딕', 'Noto Sans KR']
-        : needsSymbolFallback
-          ? ['GulimChe', '굴림체', 'D2Coding', 'NanumGothicCoding', 'Noto Sans Mono']
-          : needsSupplementaryFallback
-            ? ['Latin Modern Math']
-            : [];
-      const fallbackClass = needsCurrencyFallback
-        ? 'currency'
-        : needsSymbolFallback
-          ? 'symbol'
-          : needsSupplementaryFallback
-            ? 'supplementary'
-            : 'general';
+      const needsOldHangulFallback = containsOldHangulJamo(cluster.text);
+      const preferredFallbackFamilies = needsOldHangulFallback
+        ? [OLD_HANGUL_FONT_FAMILY]
+        : needsCurrencyFallback
+          ? ['Malgun Gothic', '맑은 고딕', 'Noto Sans KR']
+          : needsSymbolFallback
+            ? ['GulimChe', '굴림체', 'D2Coding', 'NanumGothicCoding', 'Noto Sans Mono']
+            : needsSupplementaryFallback
+              ? ['Latin Modern Math']
+              : [];
+      const fallbackClass = needsOldHangulFallback
+        ? 'oldHangul'
+        : needsCurrencyFallback
+          ? 'currency'
+          : needsSymbolFallback
+            ? 'symbol'
+            : needsSupplementaryFallback
+              ? 'supplementary'
+              : 'general';
       const familyCacheKey = JSON.stringify([
         resolvedPrimaryFamily,
         renderFontWeight,
@@ -1230,7 +1238,7 @@ export class CanvasKitLayerRenderer {
         selectedFont = primaryObjects.font;
         const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
         const primaryGlyphMissing = primaryGlyphs?.some((glyphId) => glyphId === 0) ?? true;
-        if (needsCurrencyFallback || needsSymbolFallback || primaryGlyphMissing) {
+        if (needsOldHangulFallback || needsCurrencyFallback || needsSymbolFallback || primaryGlyphMissing) {
           const candidateFamilies = [...preferredFallbackFamilies, ...fallbackFamilies]
             .filter((family, index, all) => all.indexOf(family) === index);
           for (const family of candidateFamilies) {

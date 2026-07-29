@@ -18225,6 +18225,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
   setTestCase('canvas-layer-text-fallback-font-parity');
   const textFallbackFontProbe = await page.evaluate(async () => {
+    const { loadWebFonts } = await import('/src/core/font-loader.ts');
+    await loadWebFonts([], undefined, { includeDirectRendererFallbacks: true });
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
@@ -18365,7 +18367,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         supplementaryGlyphIds: fontFamily === 'Latin Modern Math'
           ? Array.from(objects.font.getGlyphIDs(supplementaryMathLetter))
           : undefined,
-        oldHangulGlyphIds: fontFamily === 'Noto Sans KR ExtraLight'
+        oldHangulGlyphIds: fontFamily === 'Source Han Serif K Old Hangul'
           ? Array.from(objects.font.getGlyphIDs(oldHangulText))
           : undefined,
         squareMetreGlyphIds: fontFamily === 'D2Coding'
@@ -18384,7 +18386,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           supplementaryMathLetter,
         ),
         oldHangulFontLoaded: document.fonts.check(
-          '400 18px "Noto Sans KR ExtraLight"',
+          '400 18px "Source Han Serif K Old Hangul"',
           oldHangulText,
         ),
         squareMetreFontLoaded: document.fonts.check(
@@ -18429,7 +18431,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     textFallbackFontProbe.oldHangulFontLoaded === true
       && textFallbackFontProbe.makeTextRequests.some(
         ({ fontFamily, oldHangulGlyphIds }) => (
-          fontFamily === 'Noto Sans KR ExtraLight'
+          fontFamily === 'Source Han Serif K Old Hangul'
           && oldHangulGlyphIds?.length === 3
           && oldHangulGlyphIds.every((glyphId) => glyphId !== 0)
         ),

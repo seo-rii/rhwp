@@ -1,6 +1,6 @@
 import type { CanvasKit, Font, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
 
-import { FONT_LIST } from '@/core/font-loader';
+import { FONT_LIST, OLD_HANGUL_FONT_FAMILY } from '@/core/font-loader';
 import {
   baseFamilyWithoutWeightSuffix,
   canvasFontFamilyFallbackCandidates,
@@ -23,6 +23,7 @@ const FONT_SERIF_REGULAR_URL = new URL('../../../../web/fonts/NotoSerifKR-Regula
 const FONT_SERIF_BOLD_URL = new URL('../../../../web/fonts/NotoSerifKR-Bold.woff2', import.meta.url).href;
 const FONT_MONO_REGULAR_URL = new URL('../../../../web/fonts/D2Coding-Regular.woff2', import.meta.url).href;
 const FONT_MATH_REGULAR_URL = new URL('../../../../web/fonts/LatinModernMath-Regular.woff2', import.meta.url).href;
+const FONT_OLD_HANGUL_URL = new URL('../../../../web/fonts/SourceHanSerifK-OldHangul-subset.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_DOTUM_URL = new URL('../../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_DOTUM_BOLD_URL = new URL('../../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
 const FONT_HAMCHOROM_BATANG_URL = new URL('../../../../web/fonts/NotoSerifKR-Regular.woff2', import.meta.url).href;
@@ -35,6 +36,7 @@ const BUNDLED_FONT_URLS = new Map<string, string>([
   ['fonts/NotoSerifKR-Bold.woff2', FONT_SERIF_BOLD_URL],
   ['fonts/D2Coding-Regular.woff2', FONT_MONO_REGULAR_URL],
   ['fonts/LatinModernMath-Regular.woff2', FONT_MATH_REGULAR_URL],
+  ['fonts/SourceHanSerifK-OldHangul-subset.woff2', FONT_OLD_HANGUL_URL],
 ]);
 
 const HAMCHOROM_DOTUM_FAMILY = 'HCR Dotum';
@@ -120,6 +122,7 @@ const MATH_ALIASES = [
   'STIX Two Math',
   'Cambria Math',
 ];
+const OLD_HANGUL_ALIASES = [OLD_HANGUL_FONT_FAMILY];
 
 export interface CanvasKitGlyphRunReplayReport {
   replayEligibility: LayerGlyphRunOp['diagnostics']['replayEligibility'];
@@ -211,6 +214,7 @@ export class CanvasKitFontRegistry {
       ...SERIF_ALIASES,
       ...MONO_ALIASES,
       ...MATH_ALIASES,
+      ...OLD_HANGUL_ALIASES,
     ]);
     const resolveCatalogFontUrl = (file: string): string => (
       BUNDLED_FONT_URLS.get(file) ?? new URL(file, document.baseURI).href
@@ -224,6 +228,10 @@ export class CanvasKitFontRegistry {
 
     await registerAliases([HAMCHOROM_DOTUM_FAMILY], FONT_HAMCHOROM_DOTUM_URL, FONT_HAMCHOROM_DOTUM_BOLD_URL);
     await registerAliases([HAMCHOROM_BATANG_FAMILY], FONT_HAMCHOROM_BATANG_URL, FONT_HAMCHOROM_BATANG_BOLD_URL);
+    const missingOldHangulAliases = await registerCatalogAliases(OLD_HANGUL_ALIASES);
+    if (missingOldHangulAliases.length > 0) {
+      throw new Error(`CanvasKit old-Hangul font aliases missing from catalog: ${missingOldHangulAliases.join(', ')}`);
+    }
     await registerAliases(
       await registerCatalogAliases(SANS_ALIASES),
       FONT_SANS_REGULAR_URL,

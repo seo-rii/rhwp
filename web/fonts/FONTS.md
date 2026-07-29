@@ -46,6 +46,7 @@
 | NanumMyeongjo-ExtraBold.woff2 | 나눔명조 ExtraBold | SIL OFL 1.1 | Google Fonts | HY명조 ExtraBold |
 | GowunBatang-Regular.woff2 | 고운바탕 Regular | SIL OFL 1.1 | Google Fonts | 궁서 대체 |
 | GowunBatang-Bold.woff2 | 고운바탕 Bold | SIL OFL 1.1 | Google Fonts | 궁서 Bold |
+| SourceHanSerifK-OldHangul-subset.woff2 | Source Han Serif K Old Hangul | SIL OFL 1.1 | Adobe Source Han Serif | 옛한글 자모 조합 |
 
 ### Sans-serif (고딕체 계열)
 
@@ -67,6 +68,13 @@ weight class가 `400`인 독립 face다. Canvas2D와 CanvasKit은 돋움·굴림
 `ttfs/opensource/NotoSansKR-ExtraLight.ttf`를 sans fallback에서 Regular보다 먼저
 선택한다. 기하 도형과 box-drawing 범위를 확장한 Regular asset은 CanvasKit의 심볼
 폴백으로 계속 유지한다.
+
+`SourceHanSerifK-OldHangul-subset.woff2`는 Source Han Serif K에서 옛한글
+자모 범위(`U+1100-11FF`, `U+A960-A97F`, `U+D7B0-D7FF`)와 조합용 OpenType
+기능을 보존한 239,628-byte subset이다. CSS `unicode-range`가 일반 현대 한글
+선택을 격리하고, Canvas2D와 CanvasKit은 공유 판정으로 옛한글 grapheme
+cluster에 이 face를 명시적으로 우선한다. 라이선스 전문은
+`SourceHanSerifK-OFL.txt`에 동봉한다.
 
 ### Noto Sans KR Regular 서브셋 재생성
 
