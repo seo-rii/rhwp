@@ -71,6 +71,7 @@ import type {
   LayerTextControlMarkOp,
   PageLayerTree,
 } from '@/core/types';
+import { isStaticSvgPathDataValid } from './static-svg-path-data';
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
@@ -2797,6 +2798,9 @@ export class CanvasKitLayerRenderer {
     const textLayers = parseStaticSvgTextLayers(fragment);
     if (!staticSvgLayersHaveDrawableContent(pathLayers, textLayers)) {
       return { replayed: false, reason: 'svgPayloadUnsupported' };
+    }
+    if (pathLayers.some((layer) => !isStaticSvgPathDataValid(layer.pathData))) {
+      return { replayed: false, reason: 'svgPathDecodeFailed' };
     }
     const { x, y, width, height } = op.bbox;
     if (

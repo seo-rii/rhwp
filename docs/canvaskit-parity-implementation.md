@@ -476,9 +476,12 @@ The working order is:
    a parsed fragment is direct-replayable only when it contains a visible
    fill, stroke, or text paint. Paintless and fully transparent fragments use
    the equation layout fallback instead of suppressing it merely because an
-   SVG path parsed successfully. This equation routing rule does not change the
-   strict `SvgGlyph` contract, where an intentionally invisible glyph payload
-   may still be a valid selected visual variant.
+   SVG path parsed successfully. Both browser backends also validate the
+   supported SVG path command grammar before drawing, so incomplete path data
+   routes to the same visible layout fallback instead of being accepted as an
+   empty browser `Path2D`. This equation routing rule does not change the strict
+   `SvgGlyph` contract, where an intentionally invisible glyph payload may
+   still be a valid selected visual variant.
    Text inside a supported static SVG fragment is shaped as one paragraph
    through the registered CanvasKit font provider before its measured width and
    alphabetic baseline are used to apply SVG anchors; cluster-by-cluster drawing

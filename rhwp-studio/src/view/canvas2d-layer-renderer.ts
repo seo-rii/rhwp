@@ -74,6 +74,7 @@ import {
   startsWithInvalidControl,
 } from './layer-canvas-utils';
 import { arrowHeadShape, gradientColorStops, resolveImagePlacement, strokeDashPattern } from './layer-geometry-utils';
+import { isStaticSvgPathDataValid } from './static-svg-path-data';
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
@@ -1626,6 +1627,9 @@ export class Canvas2DLayerRenderer {
     const pathLayers = parseStaticSvgPathLayers(fragment);
     const textLayers = parseStaticSvgTextLayers(fragment);
     if (!staticSvgLayersHaveDrawableContent(pathLayers, textLayers)) {
+      return false;
+    }
+    if (pathLayers.some((layer) => !isStaticSvgPathDataValid(layer.pathData))) {
       return false;
     }
     const { x, y, width, height } = op.bbox;

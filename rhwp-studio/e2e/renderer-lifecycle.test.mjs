@@ -16079,8 +16079,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation SVG resource parity exact=${equationSvgResourceDiff.exactDiffPixels}, tolerant=${equationSvgResourceDiff.rawTolerantDiffPixels}, ink=${equationSvgResourceDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationSvgResourceDiff.maxChannelDelta}`,
   );
 
-  setTestCase('canvas-layer-equation-paintless-svg-fallback-parity');
-  const equationPaintlessSvgFallbackProbe = await page.evaluate(async () => {
+  setTestCase('canvas-layer-equation-invalid-svg-fallback-parity');
+  const equationInvalidSvgFallbackProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
@@ -16096,7 +16096,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       kind: { type: 'empty' },
     });
     const tree = {
-      pageWidth: 52,
+      pageWidth: 108,
       pageHeight: 32,
       profile: 'screen',
       outputOptions: {
@@ -16122,12 +16122,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1974,
-        bounds: { x: 0, y: 0, width: 52, height: 32 },
+        bounds: { x: 0, y: 0, width: 108, height: 32 },
         cacheHint: 'none',
         ops: [
           {
             type: 'pageBackground',
-            bbox: { x: 0, y: 0, width: 52, height: 32 },
+            bbox: { x: 0, y: 0, width: 108, height: 32 },
             backgroundColor: '#ffffff',
             borderWidth: 0,
           },
@@ -16140,6 +16140,25 @@ runTest('Renderer lifecycle', async ({ page }) => {
               '<path d="M0 0H44V24H0Z" fill="none"/>',
               '<path d="M0 0H44" fill="none" stroke="transparent" stroke-width="2"/>',
             ].join(''),
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 44,
+              height: 24,
+              baseline: 12,
+              kind: {
+                type: 'fraction',
+                numer: emptyBox(2, 0, 40, 8, 6),
+                denom: emptyBox(2, 16, 40, 8, 6),
+              },
+            },
+          },
+          {
+            type: 'equation',
+            bbox: { x: 60, y: 4, width: 44, height: 24 },
+            color: '#111111',
+            fontSize: 20,
+            svgContent: '<path d="M0 0L" fill="#111111"/>',
             layoutBox: {
               x: 0,
               y: 0,
@@ -16177,35 +16196,55 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
   });
   assert(
-    !equationPaintlessSvgFallbackProbe.error,
-    equationPaintlessSvgFallbackProbe.error || 'equation paintless SVG fallback parity probe available',
+    !equationInvalidSvgFallbackProbe.error,
+    equationInvalidSvgFallbackProbe.error || 'equation invalid SVG fallback parity probe available',
   );
-  const equationPaintlessFallbackInk = (dataUrl) => countPixels(
+  const equationInvalidFallbackInk = (dataUrl, minX, maxX) => countPixels(
     dataUrl,
-    (pixel) => pixel.alpha > 16 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+    (pixel) => (
+      pixel.x >= minX
+      && pixel.x < maxX
+      && pixel.alpha > 16
+      && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245)
+    ),
   );
-  const equationPaintlessCanvas2dInk = equationPaintlessFallbackInk(
-    equationPaintlessSvgFallbackProbe.canvas2d,
-  );
-  const equationPaintlessCanvaskitInk = equationPaintlessFallbackInk(
-    equationPaintlessSvgFallbackProbe.canvaskit,
-  );
+  for (const [label, minX, maxX] of [
+    ['paintless', 4, 48],
+    ['malformed path', 60, 104],
+  ]) {
+    const canvas2dInk = equationInvalidFallbackInk(
+      equationInvalidSvgFallbackProbe.canvas2d,
+      minX,
+      maxX,
+    );
+    const canvaskitInk = equationInvalidFallbackInk(
+      equationInvalidSvgFallbackProbe.canvaskit,
+      minX,
+      maxX,
+    );
+    assert(
+      canvas2dInk > 20 && canvaskitInk > 20,
+      `${label} equation SVG uses visible layout fallback `
+        + `canvas2d=${canvas2dInk}, canvaskit=${canvaskitInk}`,
+    );
+  }
   assert(
-    equationPaintlessCanvas2dInk > 20 && equationPaintlessCanvaskitInk > 20,
-    `paintless equation SVG uses visible layout fallback canvas2d=${equationPaintlessCanvas2dInk}, canvaskit=${equationPaintlessCanvaskitInk}`,
+    equationInvalidSvgFallbackProbe.diagnostics?.layoutReplays === 2
+      && JSON.stringify(
+        equationInvalidSvgFallbackProbe.diagnostics?.routes?.map(
+          ({ route, reason }) => `${route}:${reason}`,
+        ),
+      ) === JSON.stringify([
+        'layout:svgPayloadUnsupported',
+        'layout:svgPathDecodeFailed',
+      ]),
+    `invalid equation SVG reports deterministic layout fallback=${JSON.stringify(equationInvalidSvgFallbackProbe.diagnostics)}`,
   );
-  assert(
-    equationPaintlessSvgFallbackProbe.diagnostics?.layoutReplays === 1
-      && equationPaintlessSvgFallbackProbe.diagnostics?.routes?.length === 1
-      && equationPaintlessSvgFallbackProbe.diagnostics.routes[0].route === 'layout'
-      && equationPaintlessSvgFallbackProbe.diagnostics.routes[0].reason === 'svgPayloadUnsupported',
-    `paintless equation SVG reports deterministic layout fallback=${JSON.stringify(equationPaintlessSvgFallbackProbe.diagnostics)}`,
-  );
-  const equationPaintlessSvgFallbackDiff = await comparePngBuffers(
-    pngBufferFromDataUrl(equationPaintlessSvgFallbackProbe.canvas2d),
-    pngBufferFromDataUrl(equationPaintlessSvgFallbackProbe.canvaskit),
+  const equationInvalidSvgFallbackDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(equationInvalidSvgFallbackProbe.canvas2d),
+    pngBufferFromDataUrl(equationInvalidSvgFallbackProbe.canvaskit),
     {
-      diffName: 'canvas-layer-equation-paintless-svg-fallback-parity',
+      diffName: 'canvas-layer-equation-invalid-svg-fallback-parity',
       ignoreChannelDelta: 24,
       maxDiffRatio: 0.04,
       inkMaskMaxDiffRatio: 0.04,
@@ -16213,8 +16252,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     },
   );
   assert(
-    equationPaintlessSvgFallbackDiff.passed,
-    `equation paintless SVG fallback parity exact=${equationPaintlessSvgFallbackDiff.exactDiffPixels}, tolerant=${equationPaintlessSvgFallbackDiff.rawTolerantDiffPixels}, ink=${equationPaintlessSvgFallbackDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationPaintlessSvgFallbackDiff.maxChannelDelta}`,
+    equationInvalidSvgFallbackDiff.passed,
+    `equation invalid SVG fallback parity exact=${equationInvalidSvgFallbackDiff.exactDiffPixels}, tolerant=${equationInvalidSvgFallbackDiff.rawTolerantDiffPixels}, ink=${equationInvalidSvgFallbackDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationInvalidSvgFallbackDiff.maxChannelDelta}`,
   );
 
   setTestCase('canvas-layer-equation-svg-text-shaping-parity');
