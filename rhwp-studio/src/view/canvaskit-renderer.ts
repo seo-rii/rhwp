@@ -3667,6 +3667,7 @@ export class CanvasKitLayerRenderer {
       ? this.resourceCache.imageWithEffect(resourceId, base64, effect, effectCropSource, brightness, contrast)
       : baseImage;
     const image = effectImage ?? baseImage;
+    const effectWasApplied = image !== baseImage;
     const sourceWidth = imageDimension(image, 'width');
     const sourceHeight = imageDimension(image, 'height');
     if (
@@ -3679,7 +3680,8 @@ export class CanvasKitLayerRenderer {
     ) {
       return;
     }
-    const cropWasPreprocessed = !!effectCropSource
+    const cropWasPreprocessed = effectWasApplied
+      && !!effectCropSource
       && Math.abs(sourceWidth - Math.max(1, Math.round(effectCropSource.width))) <= 1
       && Math.abs(sourceHeight - Math.max(1, Math.round(effectCropSource.height))) <= 1;
     const cropSource = cropWasPreprocessed
@@ -3712,8 +3714,7 @@ export class CanvasKitLayerRenderer {
         return;
       }
       const useMipmaps =
-        !usesImageEffect
-        && !usesImageTone
+        !effectWasApplied
         && this.currentProfile !== 'fast-preview'
         && !this.hasActiveCacheHint('preferRaster')
         && (
@@ -3728,7 +3729,7 @@ export class CanvasKitLayerRenderer {
         sampledImage,
         this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),
         this.canvasKit.XYWHRect(dstX, dstY, dstW, dstH),
-        (usesImageEffect || usesImageTone) ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
+        effectWasApplied ? this.canvasKit.FilterMode.Nearest : this.canvasKit.FilterMode.Linear,
         useMipmaps ? this.canvasKit.MipmapMode.Linear : this.canvasKit.MipmapMode.None,
         paint,
       );

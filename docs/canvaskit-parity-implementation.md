@@ -557,7 +557,10 @@ invalid direct-only plan contracts, empty plans, direct-required image items,
 runtime image/image-effect/TextBlob/pattern replay failures, and v2 validation
 issues are hard failures. An image-effect preprocessing failure may draw the
 original image for the current compatibility attempt, but it is reported as a
-replay failure and is never admitted to the static picture cache. Runtime
+replay failure and is never admitted to the static picture cache. That fallback
+uses the original image's crop and linear/mipmap sampling path; an unmaterialized
+effect request must not force nearest-neighbor sampling or claim that a crop was
+already preprocessed. Runtime
 reports are deduplicated by equivalence group;
 conflicting repeated selections and Rust-plan/runtime selected-variant
 mismatches also fail. Intentional TextRun fallback, unsupported items, and their

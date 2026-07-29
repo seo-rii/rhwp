@@ -953,8 +953,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     if (!sourceContext) {
       return { error: 'image effect fixture canvas unavailable' };
     }
-    sourceContext.fillStyle = '#1257a8';
-    sourceContext.fillRect(0, 0, 8, 8);
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        sourceContext.fillStyle = (x + y) % 2 === 0 ? '#000000' : '#ffffff';
+        sourceContext.fillRect(x, y, 1, 1);
+      }
+    }
     const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
     const tree = {
       pageWidth: 32,
@@ -994,12 +998,34 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const targetCanvas = document.createElement('canvas');
     targetCanvas.width = 32;
     targetCanvas.height = 32;
+    const referenceCanvas = document.createElement('canvas');
+    referenceCanvas.width = 32;
+    referenceCanvas.height = 32;
     const originalMakeSurface = renderer.canvasKit?.MakeSurface;
     if (!originalMakeSurface) {
       return { error: 'CanvasKit MakeSurface unavailable' };
     }
 
     try {
+      const referenceTree = {
+        ...tree,
+        resources: {
+          ...tree.resources,
+          tableId: 81,
+        },
+        root: {
+          ...tree.root,
+          children: [{
+            ...tree.root.children[0],
+            ops: [{
+              ...tree.root.children[0].ops[0],
+              effect: 'realPic',
+            }],
+          }],
+        },
+      };
+      renderer.renderPage(referenceTree, referenceCanvas, 1);
+      const normalSamplingPng = referenceCanvas.toDataURL('image/png');
       renderer.renderPage({
         ...tree,
         root: {
@@ -1007,24 +1033,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           sourceNodeId: 7999,
           bounds: { x: 0, y: 0, width: 32, height: 32 },
           cacheHint: 'none',
-          ops: [{
-            type: 'path',
-            bbox: { x: 0, y: 0, width: 1, height: 1 },
-            transform: { rotation: 0, horzFlip: false, vertFlip: false },
-            commands: [
-              { type: 'moveTo', x: 0, y: 0 },
-              { type: 'lineTo', x: 1, y: 0 },
-              { type: 'lineTo', x: 1, y: 1 },
-              { type: 'closePath' },
-            ],
-            style: {
-              fillColor: '#000000',
-              strokeColor: null,
-              strokeWidth: 0,
-              strokeDash: 'solid',
-              opacity: 1,
-            },
-          }],
+          ops: [],
         },
       }, targetCanvas, 1);
       renderer.clearStaticPictureCache?.();
@@ -1035,6 +1044,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       } finally {
         renderer.canvasKit.MakeSurface = originalMakeSurface;
       }
+      const failureSamplingPng = targetCanvas.toDataURL('image/png');
       const afterFailure = renderer.getImageEffectDiagnostics?.();
       const cacheSizeAfterFailure = renderer.staticPictureCache?.size ?? -1;
 
@@ -1053,11 +1063,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
         cacheSizeAfterFailure,
         cacheSizeAfterRecovery,
         cacheSizeAfterCacheHit,
+        normalSamplingPng,
+        failureSamplingPng,
       };
     } finally {
       renderer.canvasKit.MakeSurface = originalMakeSurface;
       renderer.clearStaticPictureCache?.();
       targetCanvas.remove();
+      referenceCanvas.remove();
     }
   });
 
@@ -1073,6 +1086,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `failed CanvasKit image effect is visible and not cached=${JSON.stringify(
       staticPictureImageEffectFailureProbe,
     )}`,
+  );
+  const imageEffectFailureSamplingDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(staticPictureImageEffectFailureProbe.normalSamplingPng),
+    pngBufferFromDataUrl(staticPictureImageEffectFailureProbe.failureSamplingPng),
+    {
+      diffName: 'canvaskit-image-effect-failure-sampling',
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    imageEffectFailureSamplingDiff.passed,
+    `failed CanvasKit image effect preserves original-image sampling exact=${imageEffectFailureSamplingDiff.exactDiffPixels}, tolerant=${imageEffectFailureSamplingDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectFailureSamplingDiff.maxChannelDelta}`,
   );
   assert(
     staticPictureImageEffectFailureProbe.afterRecovery.preprocessedPixels === 64
