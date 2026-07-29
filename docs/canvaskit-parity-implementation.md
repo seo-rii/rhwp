@@ -479,7 +479,10 @@ The working order is:
    opacity before replay, matching the Canvas2D `globalAlpha` composition
    contract for rectangle, ellipse, and path fill/stroke shadows. Shape fill
    selection also falls through in Canvas2D order: an unusable gradient tries
-   the authored pattern before the solid fill color.
+   the authored pattern before the solid fill color. Path connectors derive
+   start and end arrow directions from the first and last usable line or cubic
+   tangent, and a paired arrow/no-arrow fixture verifies endpoint ink in both
+   Canvas2D and CanvasKit.
 4. Keep `GlyphRun` and `GlyphOutline` strict replay gated by exact resource
    proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
    bitmap/SVG/color glyph payloads, and fallback-free profiles must not be

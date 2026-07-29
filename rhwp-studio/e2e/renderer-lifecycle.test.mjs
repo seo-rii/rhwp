@@ -13177,6 +13177,162 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `line arrow variant parity exact=${lineArrowDiff.exactDiffPixels}, tolerant=${lineArrowDiff.rawTolerantDiffPixels}, ink=${lineArrowDiff.rawInkMaskDiffPixels}, max_channel_delta=${lineArrowDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-path-connector-arrow-parity');
+  const pathConnectorArrowProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const connector = (offsetY, startArrow, endArrow) => ({
+      type: 'path',
+      bbox: { x: 6, y: offsetY, width: 100, height: 44 },
+      commands: [
+        { type: 'moveTo', x: 20, y: offsetY + 22 },
+        {
+          type: 'curveTo',
+          x1: 20,
+          y1: offsetY + 5,
+          x2: 90,
+          y2: offsetY + 39,
+          x3: 90,
+          y3: offsetY + 22,
+        },
+      ],
+      style: {
+        fillColor: null,
+        strokeColor: '#7c2d12',
+        strokeWidth: 3,
+        strokeDash: 'solid',
+        opacity: 1,
+        pattern: null,
+        shadow: null,
+      },
+      gradient: null,
+      connectorEndpoints: {
+        x1: 20,
+        y1: offsetY + 22,
+        x2: 90,
+        y2: offsetY + 22,
+      },
+      lineStyle: {
+        color: '#7c2d12',
+        width: 3,
+        dash: 'solid',
+        lineType: 'single',
+        startArrow,
+        endArrow,
+        startArrowSize: 8,
+        endArrowSize: 8,
+        shadow: null,
+      },
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+    });
+    const tree = {
+      pageWidth: 112,
+      pageHeight: 100,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1974,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1974,
+        bounds: { x: 0, y: 0, width: 112, height: 100 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 112, height: 100 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          connector(0, 'diamond', 'openCircle'),
+          connector(50, 'none', 'none'),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !pathConnectorArrowProbe.error,
+    pathConnectorArrowProbe.error || 'path connector arrow parity probe available',
+  );
+  for (const [backend, dataUrl] of [
+    ['canvas2d', pathConnectorArrowProbe.canvas2d],
+    ['canvaskit', pathConnectorArrowProbe.canvaskit],
+  ]) {
+    const regionInk = (left, top, right, bottom) => countPixels(
+      dataUrl,
+      (pixel) =>
+        pixel.x >= left
+        && pixel.x < right
+        && pixel.y >= top
+        && pixel.y < bottom
+        && pixel.alpha > 32
+        && (pixel.red < 220 || pixel.green < 220 || pixel.blue < 220),
+    );
+    const arrowStartInk = regionInk(10, 2, 31, 24);
+    const controlStartInk = regionInk(10, 52, 31, 74);
+    const arrowEndInk = regionInk(79, 20, 101, 43);
+    const controlEndInk = regionInk(79, 70, 101, 93);
+    assert(
+      arrowStartInk > controlStartInk + 12,
+      `${backend} path connector start arrow follows the first cubic tangent arrow=${arrowStartInk}, control=${controlStartInk}`,
+    );
+    assert(
+      arrowEndInk > controlEndInk + 6,
+      `${backend} path connector end arrow follows the last cubic tangent arrow=${arrowEndInk}, control=${controlEndInk}`,
+    );
+  }
+  const pathConnectorArrowDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(pathConnectorArrowProbe.canvas2d),
+    pngBufferFromDataUrl(pathConnectorArrowProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-path-connector-arrow-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.05,
+      inkMaskMaxDiffRatio: 0.03,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    pathConnectorArrowDiff.passed,
+    `path connector arrow parity exact=${pathConnectorArrowDiff.exactDiffPixels}, tolerant=${pathConnectorArrowDiff.rawTolerantDiffPixels}, ink=${pathConnectorArrowDiff.rawInkMaskDiffPixels}, max_channel_delta=${pathConnectorArrowDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-line-shadow-dash-parity');
   const lineShadowDashProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

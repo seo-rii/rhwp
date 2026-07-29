@@ -487,6 +487,31 @@ for (const [opType, rustOp, runtimeCall] of [
     runtimeCall,
   });
 }
+for (const [label, source, drawArrowCall] of [
+  ['Canvas2D', canvas2dSource, 'drawCanvasArrowHead('],
+  ['CanvasKit', canvaskitSource, 'drawArrowHead('],
+]) {
+  const renderPath = extractMethodBody(source, 'renderPath');
+  assertTokensInOrder(
+    renderPath,
+    [
+      'if (op.lineStyle && op.connectorEndpoints)',
+      'for (const command of op.commands.slice(1))',
+      "command.type === 'lineTo'",
+      "command.type === 'curveTo'",
+      'command.x1',
+      'calculateArrowDimensions(',
+      drawArrowCall,
+      'const points:',
+      'command.x2',
+      'command.x3',
+      'for (let index = points.length - 1',
+      'calculateArrowDimensions(',
+      drawArrowCall,
+    ],
+    `${label} path connector arrows must derive both endpoint directions from path tangents`,
+  );
+}
 assertTokensInOrder(
   rustCanvaskitPolicySource,
   [
