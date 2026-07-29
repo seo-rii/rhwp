@@ -491,6 +491,11 @@ The working order is:
    internal provider families. Direct text and Paragraph replay resolve the
    requested weight to that physical family before matching, so an available
    bold face cannot silently resolve to the first registered regular file.
+   Non-ASCII superscript and subscript shaping keeps that provider path without
+   replacing HWP placement: grapheme Paragraphs are prepared before drawing,
+   positioned at their authored cluster offsets, and aligned by each
+   Paragraph's alphabetic baseline. A construction failure falls back before
+   any Paragraph is painted.
 3. Continue root `TextRun` effect parity fixture by fixture: vertical and
    rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
    dots, tab leaders, control marks, character overlap, field markers, and

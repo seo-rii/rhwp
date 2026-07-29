@@ -4,6 +4,7 @@ import type {
   Font,
   Image,
   Paint,
+  Paragraph,
   Path,
   PathBuilder,
   Shader,
@@ -1354,15 +1355,21 @@ export class CanvasKitLayerRenderer {
         && (!('tabLeaders' in op) || !op.tabLeaders?.length)
         && (!('controlMarks' in op) || !op.controlMarks?.length);
       if (canUseScriptParagraph) {
-        let paragraphDrawn = false;
+        let paragraphsReady = false;
+        const paragraphs: Array<{
+          paragraph: Paragraph;
+          x: number;
+          baseline: number;
+        }> = [];
         try {
           const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
+          const fontFamilies = fallbackFamilies
+            .map((family) => this.fontRegistry.resolveProviderFamily(family, renderFontWeight))
+            .filter((family, index, all) => all.indexOf(family) === index);
           const textStyle = new this.canvasKit.TextStyle({
             color: parseCanvasKitCssColor(this.canvasKit, op.style.color),
             fontSize,
-            fontFamilies: [
-              this.fontRegistry.resolveProviderFamily(op.style.fontFamily, renderFontWeight),
-            ],
+            fontFamilies,
             fontStyle: {
               weight: renderFontWeight === 700
                 ? this.canvasKit.FontWeight.Bold
@@ -1380,28 +1387,63 @@ export class CanvasKitLayerRenderer {
             maxLines: 1,
             textStyle,
           });
-          const builder = this.canvasKit.ParagraphBuilder.MakeFromFontProvider(
-            paragraphStyle,
-            this.fontProvider,
-          );
-          try {
-            builder.addText(text);
-            const paragraph = builder.build();
+          for (const cluster of clusters) {
+            if (
+              cluster.text === ' '
+              || cluster.text === '\t'
+              || cluster.text === '\u2007'
+              || startsWithInvalidControl(cluster.text)
+            ) {
+              continue;
+            }
+            const x = positions[cluster.start];
+            if (!Number.isFinite(x)) {
+              throw new Error('invalid script text position');
+            }
+            const builder = this.canvasKit.ParagraphBuilder.MakeFromFontProvider(
+              paragraphStyle,
+              this.fontProvider,
+            );
             try {
-              paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH);
-              canvas.drawParagraph(paragraph, originX, originY - fontSize);
-              paragraphDrawn = true;
+              builder.addText(cluster.text);
+              const paragraph = builder.build();
+              try {
+                paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH);
+                const baseline = paragraph.getAlphabeticBaseline();
+                if (!Number.isFinite(baseline)) {
+                  throw new Error('invalid script text baseline');
+                }
+                paragraphs.push({ paragraph, x, baseline });
+              } catch (error) {
+                paragraph.delete();
+                throw error;
+              }
             } finally {
-              paragraph.delete();
+              builder.delete();
+            }
+          }
+          paragraphsReady = true;
+        } catch {
+          paragraphsReady = false;
+        }
+        if (paragraphsReady) {
+          try {
+            for (const entry of paragraphs) {
+              canvas.drawParagraph(
+                entry.paragraph,
+                originX + entry.x,
+                originY - entry.baseline,
+              );
             }
           } finally {
-            builder.delete();
+            for (const entry of paragraphs) {
+              entry.paragraph.delete();
+            }
           }
-        } catch {
-          paragraphDrawn = false;
-        }
-        if (paragraphDrawn) {
           return;
+        }
+        for (const entry of paragraphs) {
+          entry.paragraph.delete();
         }
       }
 

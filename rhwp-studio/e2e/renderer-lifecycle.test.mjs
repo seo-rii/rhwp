@@ -17516,6 +17516,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       color,
       superscript = false,
       subscript = false,
+      bold = false,
+      italic = false,
       positions,
       displayText,
       displayPositions,
@@ -17534,8 +17536,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
           fontFamily: 'Noto Sans KR',
           fontSize: 22,
           color,
-          bold: false,
-          italic: false,
+          bold,
+          italic,
           superscript,
           subscript,
           ratio: 1,
@@ -17569,8 +17571,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       return op;
     };
     const tree = {
-      pageWidth: 244,
-      pageHeight: 100,
+      pageWidth: 320,
+      pageHeight: 148,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: false,
@@ -17595,10 +17597,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 2191,
-        bounds: { x: 0, y: 0, width: 244, height: 100 },
+        bounds: { x: 0, y: 0, width: 320, height: 148 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 244, height: 100 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 320, height: 148 }, backgroundColor: '#ffffff', borderWidth: 0 },
           textRun({
             text: 'ABC',
             x: 8,
@@ -17653,6 +17655,26 @@ runTest('Renderer lifecycle', async ({ page }) => {
             superscript: true,
             positions: [0, 35, 35],
             displayPositions: [0, 9, 27, 36],
+          }),
+          textRun({
+            text: '한글',
+            x: 8,
+            y: 102,
+            width: 132,
+            color: '#006060',
+            superscript: true,
+            positions: [0, 62, 86],
+          }),
+          textRun({
+            text: '한글',
+            x: 168,
+            y: 102,
+            width: 132,
+            color: '#600060',
+            superscript: true,
+            bold: true,
+            italic: true,
+            positions: [0, 62, 86],
           }),
         ],
       },
@@ -17734,6 +17756,47 @@ runTest('Renderer lifecycle', async ({ page }) => {
     assert(
       stats.complexInk.every((count) => count > 12),
       `${backend} script shaping draws Korean/combining/PUA runs ink=${stats.complexInk.join(',')}`,
+    );
+  }
+  const positionedScriptInk = (dataUrl) => {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    const windows = [
+      { minX: 4, maxX: 42 },
+      { minX: 64, maxX: 108 },
+      { minX: 160, maxX: 208 },
+      { minX: 224, maxX: 276 },
+    ];
+    const counts = windows.map(() => 0);
+    for (let y = 96; y < png.height; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        if (
+          png.data[offset + 3] <= 32
+          || (png.data[offset] >= 230 && png.data[offset + 1] >= 230 && png.data[offset + 2] >= 230)
+        ) {
+          continue;
+        }
+        windows.forEach((window, index) => {
+          if (x >= window.minX && x < window.maxX) {
+            counts[index] += 1;
+          }
+        });
+      }
+    }
+    return counts;
+  };
+  const positionedScriptInkByBackend = {
+    canvas2d: positionedScriptInk(textScriptParityProbe.canvas2d),
+    canvaskit: positionedScriptInk(textScriptParityProbe.canvaskit),
+  };
+  for (const [backend, counts] of Object.entries(positionedScriptInkByBackend)) {
+    assert(
+      counts.every((count) => count > 12),
+      `${backend} script graphemes preserve authored gaps ink=${counts.join(',')}`,
+    );
+    assert(
+      counts[2] + counts[3] > (counts[0] + counts[1]) * 1.08,
+      `${backend} script paragraph preserves bold+italic style regular=${counts[0] + counts[1]}, boldItalic=${counts[2] + counts[3]}`,
     );
   }
   const textScriptDiff = await comparePngBuffers(

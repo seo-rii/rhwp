@@ -1,6 +1,9 @@
 import type { LayerTextControlMark, LayerTextStyle } from '@/core/types';
 
 export const TEXT_CONTROL_MARK_FONT_FAMILY = 'D2Coding';
+const GRAPHEME_SEGMENTER = typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  : null;
 
 export function startsWithInvalidControl(text: string): boolean {
   if (!text) {
@@ -505,6 +508,16 @@ export function splitIntoClusters(
   for (const char of chars) {
     utf16Starts.push(utf16Offset);
     utf16Offset += char.length;
+  }
+  if (GRAPHEME_SEGMENTER) {
+    const characterIndexByUtf16Start = new Map(
+      utf16Starts.map((startUtf16, start) => [startUtf16, start]),
+    );
+    return Array.from(GRAPHEME_SEGMENTER.segment(text), ({ segment, index }) => ({
+      start: characterIndexByUtf16Start.get(index) ?? 0,
+      startUtf16: index,
+      text: segment,
+    }));
   }
   const clusters: Array<{ start: number; startUtf16: number; text: string }> = [];
 

@@ -2247,6 +2247,11 @@ assert.equal(
   true,
   'script font scaling and baseline policy must live in shared native-ready text helpers',
 );
+assert.equal(
+  textReplayUtilsSource.includes("new Intl.Segmenter(undefined, { granularity: 'grapheme' })"),
+  true,
+  'browser text replay must preserve grapheme clusters before applying authored positions',
+);
 for (const [label, source] of [
   ['Canvas2D', canvas2dSource],
   ['CanvasKit', canvaskitSource],
@@ -2270,15 +2275,24 @@ assertTokensInOrder(
   [
     'const requiresScriptShaping = (op.style.superscript || op.style.subscript)',
     'const canUseScriptParagraph = requiresScriptShaping',
+    'const fontFamilies = fallbackFamilies',
+    'this.fontRegistry.resolveProviderFamily(family, renderFontWeight)',
+    'for (const cluster of clusters)',
+    'const x = positions[cluster.start]',
     'this.canvasKit.ParagraphBuilder.MakeFromFontProvider(',
     'this.fontProvider',
-    'builder.addText(text)',
+    'builder.addText(cluster.text)',
     'paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH)',
-    'canvas.drawParagraph(paragraph, originX, originY - fontSize)',
-    'paragraph.delete()',
+    'const baseline = paragraph.getAlphabeticBaseline()',
+    'paragraphs.push({ paragraph, x, baseline })',
     'builder.delete()',
+    'if (paragraphsReady)',
+    'canvas.drawParagraph(',
+    'originX + entry.x',
+    'originY - entry.baseline',
+    'entry.paragraph.delete()',
   ],
-  'CanvasKit must shape complex superscript/subscript text through the registered font provider',
+  'CanvasKit must shape positioned grapheme scripts through the registered font provider',
 );
 for (const geometryHelperName of [
   'angleToCanvasCoords',
