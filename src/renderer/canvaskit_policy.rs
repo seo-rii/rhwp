@@ -1174,6 +1174,7 @@ struct CanvasKitDocumentPreflightAccumulator {
     scanned_work_units: u32,
     summary: CanvasKitReplaySummary,
     blockers: Vec<CanvasKitDocumentPreflightBlocker>,
+    has_capability_blocker: bool,
     required_font_families: BTreeSet<String>,
     digest: CanvasKitCapabilityDigest,
 }
@@ -1195,6 +1196,7 @@ impl CanvasKitDocumentPreflightAccumulator {
             scanned_work_units: 0,
             summary: CanvasKitReplaySummary::default(),
             blockers: Vec::new(),
+            has_capability_blocker: false,
             required_font_families: BTreeSet::new(),
             digest: CanvasKitCapabilityDigest::new(mode, profile, page_count, limits),
         }
@@ -1219,6 +1221,23 @@ impl CanvasKitDocumentPreflightAccumulator {
                 continue;
             }
             self.required_font_families.insert(font_family);
+        }
+
+        for report in &plan.text_variants {
+            if report.selected_reason
+                != selected_reason_as_str(VariantSelectedReason::NoSupportedVariant)
+            {
+                continue;
+            }
+            self.push_capability_blocker(CanvasKitDocumentPreflightBlocker {
+                page_index,
+                code: CanvasKitDocumentPreflightBlockerCode::Unsupported,
+                op_type: Some("textVariant"),
+                detail: Some(bounded_blocker_detail(format!(
+                    "equivalenceGroup={};reason=noSupportedVariant",
+                    report.equivalence_group
+                ))),
+            });
         }
 
         for item in plan.items {
@@ -1248,6 +1267,7 @@ impl CanvasKitDocumentPreflightAccumulator {
     }
 
     fn push_capability_blocker(&mut self, blocker: CanvasKitDocumentPreflightBlocker) {
+        self.has_capability_blocker = true;
         if self.blockers.len() < self.limits.max_blockers as usize {
             self.blockers.push(blocker);
         }
@@ -1282,8 +1302,8 @@ impl CanvasKitDocumentPreflightAccumulator {
             && self.summary.hidden_overlay_violations == 0
             && self.summary.direct_required_items == 0
             && self.summary.unsupported_items == 0
-            && self.summary.text_fallback_items == 0
-            && self.summary.compat_overlay_items == 0;
+            && self.summary.compat_overlay_items == 0
+            && !self.has_capability_blocker;
         let status = if !self.complete {
             CanvasKitDocumentPreflightStatus::Incomplete
         } else if eligible {
@@ -1350,9 +1370,7 @@ fn blocker_code_for_item(
         CanvasKitReplayStatus::CompatOverlay => {
             Some(CanvasKitDocumentPreflightBlockerCode::CompatOverlay)
         }
-        CanvasKitReplayStatus::TextFallback => {
-            Some(CanvasKitDocumentPreflightBlockerCode::TextFallback)
-        }
+        CanvasKitReplayStatus::TextFallback => None,
         CanvasKitReplayStatus::Unsupported => {
             Some(CanvasKitDocumentPreflightBlockerCode::Unsupported)
         }
@@ -4694,7 +4712,7 @@ mod tests {
     }
 
     #[test]
-    fn document_preflight_aggregates_text_fallback_and_fonts() {
+    fn document_preflight_keeps_text_fallback_inventory_eligible() {
         let mut text = text_run_op("text-0");
         let PaintOp::TextRun { run, .. } = &mut text else {
             unreachable!("helper returns textRun");
@@ -4726,19 +4744,112 @@ mod tests {
 
         assert_eq!(
             preflight.status,
+            CanvasKitDocumentPreflightStatus::Eligible,
+            "{preflight:?}"
+        );
+        assert!(preflight.eligible);
+        assert!(preflight.complete);
+        assert_eq!(preflight.scanned_pages, 1);
+        assert_eq!(preflight.scanned_work_units, 2);
+        assert_eq!(preflight.summary.text_fallback_items, 1);
+        assert!(preflight.blockers.is_empty(), "{preflight:?}");
+        assert_eq!(preflight.required_font_families, ["Test Family"]);
+        assert!(preflight.capability_digest.starts_with("blake3:"));
+        let json = preflight.to_json();
+        assert!(json.contains("\"profile\":\"fast-preview\""));
+        assert!(json.contains("\"status\":\"eligible\""));
+    }
+
+    #[test]
+    fn document_preflight_allows_rejected_glyph_run_with_text_fallback() {
+        let text = text_run_op("text-0");
+        let glyph = PaintOp::GlyphRun {
+            bbox: valid_bbox(),
+            run: glyph_run(FontFaceKey("missing-face".to_string()), Vec::new()),
+        };
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text, glyph]),
+        );
+        let preflight = analyze_canvaskit_document_preflight_with_limits(
+            1,
+            CanvasKitReplayMode::Default,
+            RenderProfile::Screen,
+            CanvasKitDocumentPreflightLimits {
+                max_pages: 4,
+                max_work_units: 16,
+                max_blockers: 4,
+                max_required_font_families: 8,
+            },
+            move |_, _| {
+                Ok::<_, &'static str>(CanvasKitPreflightPageBuild::Complete {
+                    tree: Box::new(tree.clone()),
+                    prelower_work_units: 0,
+                })
+            },
+        );
+
+        assert_eq!(
+            preflight.status,
+            CanvasKitDocumentPreflightStatus::Eligible,
+            "{preflight:?}"
+        );
+        assert!(preflight.eligible);
+        assert!(preflight.complete);
+        assert_eq!(preflight.summary.text_fallback_items, 2);
+        assert_eq!(preflight.summary.unsupported_items, 0);
+        assert!(preflight.blockers.is_empty(), "{preflight:?}");
+    }
+
+    #[test]
+    fn document_preflight_rejects_text_group_without_supported_variant() {
+        let glyph = PaintOp::GlyphRun {
+            bbox: valid_bbox(),
+            run: glyph_run(FontFaceKey("missing-face".to_string()), Vec::new()),
+        };
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![glyph]),
+        );
+        let preflight = analyze_canvaskit_document_preflight_with_limits(
+            1,
+            CanvasKitReplayMode::Default,
+            RenderProfile::Screen,
+            CanvasKitDocumentPreflightLimits {
+                max_pages: 4,
+                max_work_units: 16,
+                max_blockers: 4,
+                max_required_font_families: 8,
+            },
+            move |_, _| {
+                Ok::<_, &'static str>(CanvasKitPreflightPageBuild::Complete {
+                    tree: Box::new(tree.clone()),
+                    prelower_work_units: 0,
+                })
+            },
+        );
+
+        assert_eq!(
+            preflight.status,
             CanvasKitDocumentPreflightStatus::Ineligible,
             "{preflight:?}"
         );
         assert!(!preflight.eligible);
         assert!(preflight.complete);
-        assert_eq!(preflight.scanned_pages, 1);
-        assert_eq!(preflight.scanned_work_units, 2);
         assert_eq!(preflight.summary.text_fallback_items, 1);
-        assert_eq!(preflight.required_font_families, ["Test Family"]);
-        assert!(preflight.capability_digest.starts_with("blake3:"));
-        let json = preflight.to_json();
-        assert!(json.contains("\"profile\":\"fast-preview\""));
-        assert!(json.contains("\"status\":\"ineligible\""));
+        assert_eq!(preflight.summary.unsupported_items, 0);
+        assert_eq!(preflight.blockers.len(), 1, "{preflight:?}");
+        assert_eq!(
+            preflight.blockers[0].code,
+            CanvasKitDocumentPreflightBlockerCode::Unsupported
+        );
+        assert_eq!(preflight.blockers[0].op_type, Some("textVariant"));
+        assert_eq!(
+            preflight.blockers[0].detail.as_deref(),
+            Some("equivalenceGroup=text-0;reason=noSupportedVariant")
+        );
     }
 
     #[test]

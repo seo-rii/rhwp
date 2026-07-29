@@ -406,6 +406,12 @@ that can only decode from the exported resource arena. `directRequired` remains
 a distinct replay-plan status and count, but it now makes document preflight
 ineligible. Schema-v1 blocker JSON uses the existing `unsupported` code so the
 public blocker vocabulary remains stable.
+`textFallbackItems` is different: it inventories compatible direct CanvasKit
+`TextRun` selection when a strict glyph variant is unavailable, so it does not
+make document preflight ineligible. A variant group with neither a replayable
+strict variant nor a default `TextRun` fallback reports `noSupportedVariant`
+and adds an `unsupported` preflight blocker. This keeps ordinary compatibility
+fallback eligible while fallback-free strict text still fails closed.
 
 HWPX image-fill modes remain distinct in the parser and paint IR even when
 their current replay geometry is identical. In particular, `TOTAL` is exported
