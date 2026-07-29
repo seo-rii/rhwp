@@ -27,6 +27,8 @@ const HEAVY_DISPLAY_FAMILIES = new Set([
   'HY견고딕',
   'HY견명조',
   'HY견명조B',
+  '한양견고딕',
+  '한양견명조',
   'HY그래픽',
   'HY그래픽M',
 ]);

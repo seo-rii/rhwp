@@ -160,6 +160,13 @@ for (const fontName of ['GulimChe', '궁서', '맑은 고딕', 'serif', 'monospa
 for (const { fontName, altType, langId, expected } of [
   { fontName: '가는안상수체', altType: 1, langId: 0, expected: '함초롬돋움' },
   { fontName: '태 가는 헤드라인T', altType: 2, langId: 0, expected: 'HY헤드라인M' },
+  // Raw-font APIs still apply the legacy HFT table. PageLayerTree renderers
+  // receive already-resolved family names and preserve these identities.
+  { fontName: '한양신명조', altType: 2, langId: 0, expected: 'HY신명조' },
+  { fontName: '한양중고딕', altType: 2, langId: 0, expected: 'HY중고딕' },
+  { fontName: '한양견명조', altType: 2, langId: 0, expected: 'HY견명조' },
+  { fontName: '한양견고딕', altType: 2, langId: 0, expected: 'HY견고딕' },
+  { fontName: '휴먼명조', altType: 2, langId: 0, expected: 'HY신명조' },
   { fontName: 'HCI Poppy', altType: 2, langId: 1, expected: 'Palatino Linotype' },
   { fontName: 'Gulimche', altType: 1, langId: 6, expected: '굴림체' },
   { fontName: '없는폰트', altType: 0, langId: 0, expected: '없는폰트' },

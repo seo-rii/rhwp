@@ -90,6 +90,20 @@ fn resolve_metric_alias(name: &str) -> &str {
         "굴림체" => "GulimChe",
         "돋움체" => "DotumChe",
         "궁서체" => "GungsuhChe",
+        // HY 계열 한국어 정규명 → 메트릭 DB 영문명.
+        "HY중고딕" => "HYGothic-Medium",
+        "HY견고딕" => "HYGothic-Extra",
+        "HY헤드라인M" => "HYHeadLine-Medium",
+        "HY견명조" => "HYMyeongJo-Extra",
+        "HY신명조" => "HYSinMyeongJo-Medium",
+        "HY그래픽" => "HYGraphic-Medium",
+        "HY궁서" => "HYGungSo-Bold",
+        // 한양·휴먼 계열은 HY 대응 폰트와 ASCII 폭이 다른 별개 페이스다.
+        "한양신명조" | "신명조" => "HanyangSinMyeongJo",
+        "한양중고딕" => "HanyangJungGothic",
+        "한양견명조" => "HanyangKyunMyeongJo",
+        "한양견고딕" => "HanyangKyunGothic",
+        "휴먼명조" => "HumanMyeongJo",
         // HY 계열 한국어 사용명
         "HY수평선B" => "HYsupB",
         "HY수평선M" => "HYsupM",
@@ -148,6 +162,13 @@ mod tests {
     #[test]
     fn hy_korean_metric_aliases_resolve() {
         for (korean_name, expected_metric_name) in [
+            ("HY중고딕", "HYGothic-Medium"),
+            ("HY견고딕", "HYGothic-Extra"),
+            ("HY헤드라인M", "HYHeadLine-Medium"),
+            ("HY견명조", "HYMyeongJo-Extra"),
+            ("HY신명조", "HYSinMyeongJo-Medium"),
+            ("HY그래픽", "HYGraphic-Medium"),
+            ("HY궁서", "HYGungSo-Bold"),
             ("HY수평선B", "HYsupB"),
             ("HY수평선M", "HYsupM"),
             ("HY울릉도B", "HYwulB"),
@@ -160,6 +181,51 @@ mod tests {
             let metric = find_metric(korean_name, false, false)
                 .unwrap_or_else(|| panic!("missing metric alias for {korean_name}"));
             assert_eq!(metric.metric.name, expected_metric_name);
+        }
+    }
+
+    #[test]
+    fn hanyang_and_human_faces_keep_measured_ascii_metrics() {
+        for (name, expected_metric_name, expected_zero_width) in [
+            ("한양신명조", "HanyangSinMyeongJo", 509),
+            ("신명조", "HanyangSinMyeongJo", 509),
+            ("한양중고딕", "HanyangJungGothic", 509),
+            ("한양견명조", "HanyangKyunMyeongJo", 579),
+            ("한양견고딕", "HanyangKyunGothic", 579),
+            ("휴먼명조", "HumanMyeongJo", 509),
+        ] {
+            let metric = find_metric(name, false, false)
+                .unwrap_or_else(|| panic!("missing measured metric for {name}"));
+            assert_eq!(metric.metric.name, expected_metric_name);
+            assert_eq!(metric.metric.em_size, 1024);
+            assert_eq!(metric.metric.get_width('0'), Some(expected_zero_width));
+        }
+
+        assert_ne!(
+            find_metric("한양신명조", false, false)
+                .unwrap()
+                .metric
+                .get_width('0'),
+            find_metric("HY신명조", false, false)
+                .unwrap()
+                .metric
+                .get_width('0')
+        );
+        let human = find_metric("휴먼명조", false, false).unwrap().metric;
+        assert_eq!(human.get_width('"'), Some(364));
+        assert_eq!(human.get_width('\''), Some(219));
+
+        for (measured_name, hy_name) in [
+            ("한양신명조", "HY신명조"),
+            ("한양중고딕", "HY중고딕"),
+            ("한양견명조", "HY견명조"),
+            ("한양견고딕", "HY견고딕"),
+            ("휴먼명조", "HY신명조"),
+        ] {
+            let measured = find_metric(measured_name, false, false).unwrap().metric;
+            let hy = find_metric(hy_name, false, false).unwrap().metric;
+            assert_eq!(measured.get_width('é'), hy.get_width('é'));
+            assert_eq!(measured.get_width('가'), hy.get_width('가'));
         }
     }
 }
@@ -41049,7 +41115,238 @@ static FONT_594_HANGUL: HangulMetric = HangulMetric {
     widths: &FONT_594_HANGUL_WIDTHS,
 };
 
-pub static FONT_METRICS: [FontMetric; 595] = [
+// 한양신명조 실측 ASCII. 다른 범위와 한글 메트릭은 HY신명조와 공유한다.
+static HANYANGSINMYEONGJO_LATIN_0: [u16; 95] = [
+    518, 333, 401, 465, 614, 939, 833, 241, 404, 386, 535, 579, 237, 588, 246, 404, 509, 509, 509,
+    509, 509, 509, 509, 509, 509, 509, 281, 298, 746, 588, 754, 526, 939, 816, 719, 711, 763, 693,
+    667, 763, 798, 342, 465, 807, 658, 983, 798, 763, 640, 772, 719, 667, 790, 790, 798, 1061, 772,
+    790, 614, 368, 404, 360, 439, 509, 395, 518, 570, 500, 553, 491, 360, 605, 570, 281, 325, 570,
+    281, 877, 579, 526, 544, 561, 412, 500, 360, 579, 596, 860, 605, 588, 483, 430, 290, 430, 509,
+];
+static HANYANGSINMYEONGJO_LATIN_RANGES: [LatinRange; 7] = [
+    LatinRange {
+        start: 0x0020,
+        end: 0x007E,
+        widths: &HANYANGSINMYEONGJO_LATIN_0,
+    },
+    LatinRange {
+        start: 0x00A0,
+        end: 0x00FF,
+        widths: &FONT_276_LATIN_1,
+    },
+    LatinRange {
+        start: 0x2000,
+        end: 0x206F,
+        widths: &FONT_276_LATIN_2,
+    },
+    LatinRange {
+        start: 0x2200,
+        end: 0x22FF,
+        widths: &FONT_276_LATIN_3,
+    },
+    LatinRange {
+        start: 0x3000,
+        end: 0x303F,
+        widths: &FONT_276_LATIN_4,
+    },
+    LatinRange {
+        start: 0x3130,
+        end: 0x318F,
+        widths: &FONT_276_LATIN_5,
+    },
+    LatinRange {
+        start: 0xFF00,
+        end: 0xFF5E,
+        widths: &FONT_276_LATIN_6,
+    },
+];
+
+// 한양중고딕 실측 ASCII. 다른 범위와 한글 메트릭은 HY중고딕과 공유한다.
+static HANYANGJUNGGOTHIC_LATIN_0: [u16; 95] = [
+    518, 254, 371, 544, 544, 886, 658, 223, 298, 290, 377, 526, 254, 526, 254, 272, 509, 509, 509,
+    509, 509, 509, 509, 509, 509, 509, 254, 254, 596, 535, 596, 535, 1026, 649, 640, 719, 711, 667,
+    605, 772, 702, 254, 483, 649, 553, 825, 711, 763, 649, 772, 711, 649, 596, 702, 649, 921, 632,
+    632, 596, 263, 290, 263, 456, 509, 263, 544, 535, 491, 544, 544, 263, 544, 544, 202, 202, 483,
+    202, 825, 544, 553, 544, 544, 316, 491, 263, 544, 491, 711, 483, 474, 500, 316, 246, 316, 509,
+];
+static HANYANGJUNGGOTHIC_LATIN_RANGES: [LatinRange; 7] = [
+    LatinRange {
+        start: 0x0020,
+        end: 0x007E,
+        widths: &HANYANGJUNGGOTHIC_LATIN_0,
+    },
+    LatinRange {
+        start: 0x00A0,
+        end: 0x00FF,
+        widths: &FONT_267_LATIN_1,
+    },
+    LatinRange {
+        start: 0x2000,
+        end: 0x206F,
+        widths: &FONT_267_LATIN_2,
+    },
+    LatinRange {
+        start: 0x2200,
+        end: 0x22FF,
+        widths: &FONT_267_LATIN_3,
+    },
+    LatinRange {
+        start: 0x3000,
+        end: 0x303F,
+        widths: &FONT_267_LATIN_4,
+    },
+    LatinRange {
+        start: 0x3130,
+        end: 0x318F,
+        widths: &FONT_267_LATIN_5,
+    },
+    LatinRange {
+        start: 0xFF00,
+        end: 0xFF5E,
+        widths: &FONT_267_LATIN_6,
+    },
+];
+
+// 한양견명조 실측 ASCII. 다른 범위와 한글 메트릭은 HY견명조와 공유한다.
+static HANYANGKYUNMYEONGJO_LATIN_0: [u16; 95] = [
+    509, 412, 544, 474, 649, 974, 860, 388, 412, 395, 544, 649, 290, 658, 325, 430, 579, 579, 579,
+    579, 579, 579, 579, 579, 579, 579, 342, 351, 754, 658, 754, 579, 956, 833, 825, 772, 816, 737,
+    719, 833, 851, 386, 526, 877, 711, 1009, 833, 816, 693, 833, 763, 702, 842, 833, 825, 1097,
+    816, 816, 667, 404, 430, 395, 430, 509, 395, 561, 605, 535, 596, 535, 447, 640, 614, 316, 333,
+    614, 316, 912, 632, 570, 596, 596, 456, 535, 395, 614, 640, 886, 649, 623, 526, 465, 316, 465,
+    509,
+];
+static HANYANGKYUNMYEONGJO_LATIN_RANGES: [LatinRange; 7] = [
+    LatinRange {
+        start: 0x0020,
+        end: 0x007E,
+        widths: &HANYANGKYUNMYEONGJO_LATIN_0,
+    },
+    LatinRange {
+        start: 0x00A0,
+        end: 0x00FF,
+        widths: &FONT_271_LATIN_1,
+    },
+    LatinRange {
+        start: 0x2000,
+        end: 0x206F,
+        widths: &FONT_271_LATIN_2,
+    },
+    LatinRange {
+        start: 0x2200,
+        end: 0x22FF,
+        widths: &FONT_271_LATIN_3,
+    },
+    LatinRange {
+        start: 0x3000,
+        end: 0x303F,
+        widths: &FONT_271_LATIN_4,
+    },
+    LatinRange {
+        start: 0x3130,
+        end: 0x318F,
+        widths: &FONT_271_LATIN_5,
+    },
+    LatinRange {
+        start: 0xFF00,
+        end: 0xFF5E,
+        widths: &FONT_271_LATIN_6,
+    },
+];
+
+// 한양견고딕 실측 ASCII. 다른 범위와 한글 메트릭은 HY견고딕과 공유한다.
+static HANYANGKYUNGOTHIC_LATIN_0: [u16; 95] = [
+    509, 342, 540, 596, 570, 930, 728, 308, 377, 386, 430, 535, 333, 526, 333, 351, 579, 579, 579,
+    579, 579, 579, 579, 579, 579, 579, 333, 333, 737, 535, 719, 623, 1026, 737, 737, 737, 737, 684,
+    623, 798, 737, 281, 570, 737, 623, 851, 737, 798, 684, 790, 737, 684, 623, 737, 684, 965, 684,
+    684, 623, 342, 351, 342, 439, 509, 272, 570, 623, 570, 623, 570, 342, 623, 623, 281, 281, 570,
+    281, 912, 623, 623, 623, 623, 395, 570, 342, 623, 570, 798, 570, 570, 509, 412, 307, 412, 509,
+];
+static HANYANGKYUNGOTHIC_LATIN_RANGES: [LatinRange; 7] = [
+    LatinRange {
+        start: 0x0020,
+        end: 0x007E,
+        widths: &HANYANGKYUNGOTHIC_LATIN_0,
+    },
+    LatinRange {
+        start: 0x00A0,
+        end: 0x00FF,
+        widths: &FONT_266_LATIN_1,
+    },
+    LatinRange {
+        start: 0x2000,
+        end: 0x206F,
+        widths: &FONT_266_LATIN_2,
+    },
+    LatinRange {
+        start: 0x2200,
+        end: 0x22FF,
+        widths: &FONT_266_LATIN_3,
+    },
+    LatinRange {
+        start: 0x3000,
+        end: 0x303F,
+        widths: &FONT_266_LATIN_4,
+    },
+    LatinRange {
+        start: 0x3130,
+        end: 0x318F,
+        widths: &FONT_266_LATIN_5,
+    },
+    LatinRange {
+        start: 0xFF00,
+        end: 0xFF5E,
+        widths: &FONT_266_LATIN_6,
+    },
+];
+
+// 휴먼명조 실측 ASCII. 다른 범위와 한글 메트릭은 HY신명조와 공유한다.
+static HUMANMYEONGJO_LATIN_0: [u16; 95] = [
+    518, 211, 364, 675, 518, 772, 790, 219, 316, 316, 509, 509, 272, 509, 272, 316, 509, 509, 509,
+    509, 509, 509, 509, 509, 509, 509, 272, 272, 509, 509, 509, 439, 798, 675, 614, 658, 693, 640,
+    596, 719, 693, 263, 404, 658, 588, 798, 711, 728, 588, 702, 667, 509, 640, 693, 675, 956, 728,
+    684, 614, 325, 316, 325, 368, 509, 333, 518, 553, 500, 518, 535, 404, 526, 570, 254, 272, 535,
+    254, 816, 561, 526, 553, 553, 412, 421, 351, 553, 553, 737, 500, 526, 465, 298, 211, 298, 509,
+];
+static HUMANMYEONGJO_LATIN_RANGES: [LatinRange; 7] = [
+    LatinRange {
+        start: 0x0020,
+        end: 0x007E,
+        widths: &HUMANMYEONGJO_LATIN_0,
+    },
+    LatinRange {
+        start: 0x00A0,
+        end: 0x00FF,
+        widths: &FONT_276_LATIN_1,
+    },
+    LatinRange {
+        start: 0x2000,
+        end: 0x206F,
+        widths: &FONT_276_LATIN_2,
+    },
+    LatinRange {
+        start: 0x2200,
+        end: 0x22FF,
+        widths: &FONT_276_LATIN_3,
+    },
+    LatinRange {
+        start: 0x3000,
+        end: 0x303F,
+        widths: &FONT_276_LATIN_4,
+    },
+    LatinRange {
+        start: 0x3130,
+        end: 0x318F,
+        widths: &FONT_276_LATIN_5,
+    },
+    LatinRange {
+        start: 0xFF00,
+        end: 0xFF5E,
+        widths: &FONT_276_LATIN_6,
+    },
+];
+
+pub static FONT_METRICS: [FontMetric; 600] = [
     FontMetric {
         name: "HCR Batang",
         bold: false,
@@ -45810,5 +46107,45 @@ pub static FONT_METRICS: [FontMetric; 595] = [
         em_size: 2048,
         latin_ranges: &FONT_594_LATIN_RANGES,
         hangul: Some(&FONT_594_HANGUL),
+    },
+    FontMetric {
+        name: "HanyangSinMyeongJo",
+        bold: false,
+        italic: false,
+        em_size: 1024,
+        latin_ranges: &HANYANGSINMYEONGJO_LATIN_RANGES,
+        hangul: Some(&FONT_276_HANGUL),
+    },
+    FontMetric {
+        name: "HanyangJungGothic",
+        bold: false,
+        italic: false,
+        em_size: 1024,
+        latin_ranges: &HANYANGJUNGGOTHIC_LATIN_RANGES,
+        hangul: Some(&FONT_267_HANGUL),
+    },
+    FontMetric {
+        name: "HanyangKyunMyeongJo",
+        bold: false,
+        italic: false,
+        em_size: 1024,
+        latin_ranges: &HANYANGKYUNMYEONGJO_LATIN_RANGES,
+        hangul: Some(&FONT_271_HANGUL),
+    },
+    FontMetric {
+        name: "HanyangKyunGothic",
+        bold: false,
+        italic: false,
+        em_size: 1024,
+        latin_ranges: &HANYANGKYUNGOTHIC_LATIN_RANGES,
+        hangul: Some(&FONT_266_HANGUL),
+    },
+    FontMetric {
+        name: "HumanMyeongJo",
+        bold: false,
+        italic: false,
+        em_size: 1024,
+        latin_ranges: &HUMANMYEONGJO_LATIN_RANGES,
+        hangul: Some(&FONT_276_HANGUL),
     },
 ];

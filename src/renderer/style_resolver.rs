@@ -474,10 +474,8 @@ pub(crate) fn resolve_font_substitution(
 fn resolve_hft_font(name: &str, lang_index: usize) -> Option<&'static str> {
     // === 직접 TTF 매핑 (모든 언어 공통) ===
     let common = match name {
-        "한양중고딕" => Some("HY중고딕"),
-        "한양신명조" => Some("HY신명조"),
-        "한양견명조" => Some("HY견명조"),
-        "한양견고딕" => Some("HY견고딕"),
+        // 한양 4종과 휴먼명조는 HY 대응 폰트와 ASCII 폭이 다른 별개
+        // 페이스이므로 치환하지 않고 원명을 유지한다.
         "한양그래픽" => Some("굴림"),
         "한양궁서" => Some("궁서"),
         "신명 태고딕" => Some("HY중고딕"),
@@ -492,7 +490,6 @@ fn resolve_hft_font(name: &str, lang_index: usize) -> Option<&'static str> {
         // 명조 계열 → HY견명조
         "명조" => Some("HY견명조"),
         // 체인 평탄화: 다단계 HFT→HFT→...→TTF 체인의 최종 결과
-        "휴먼명조" => Some("HY신명조"),
         "문화바탕" | "문화바탕제목" | "문화쓰기" | "문화쓰기흘림" => {
             Some("HY신명조")
         }
@@ -981,6 +978,25 @@ mod tests {
         assert_eq!(styles.char_styles.len(), 2);
         assert_eq!(styles.char_styles[0].font_family, "함초롬돋움");
         assert_eq!(styles.char_styles[1].font_family, "함초롬바탕");
+    }
+
+    #[test]
+    fn measured_hanyang_and_human_hft_faces_keep_their_source_names() {
+        for name in [
+            "한양중고딕",
+            "한양신명조",
+            "한양견명조",
+            "한양견고딕",
+            "휴먼명조",
+        ] {
+            assert_eq!(
+                resolve_font_substitution(name, 2, 0),
+                None,
+                "{name} must not inherit an HY face's different ASCII metrics"
+            );
+        }
+
+        assert_eq!(resolve_font_substitution("한양그래픽", 2, 0), Some("굴림"));
     }
 
     #[test]

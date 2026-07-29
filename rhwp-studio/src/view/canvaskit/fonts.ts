@@ -53,6 +53,13 @@ const HAMCHOROM_BATANG_ALIASES = new Set([
   '새바탕',
   HAMCHOROM_BATANG_FAMILY,
 ]);
+const MEASURED_HFT_LAYER_FAMILIES = new Set([
+  '한양신명조',
+  '한양중고딕',
+  '한양견명조',
+  '한양견고딕',
+  '휴먼명조',
+]);
 
 const SANS_ALIASES = [
   'Noto Sans KR',
@@ -75,6 +82,8 @@ const SANS_ALIASES = [
   'HYHeadLine M',
   'HYHeadLine Medium',
   'HY헤드라인M',
+  '한양중고딕',
+  '한양견고딕',
   'SpoqaHanSans',
 ];
 
@@ -90,6 +99,9 @@ const SERIF_ALIASES = [
   '새궁서',
   'HY신명조',
   'HY견명조',
+  '한양신명조',
+  '한양견명조',
+  '휴먼명조',
   'Palatino Linotype',
   'Batang',
 ];
@@ -233,7 +245,12 @@ export class CanvasKitFontRegistry {
   }
 
   resolveFamily(fontFamily: string): string {
-    const resolved = resolveFont(fontFamily, 0, 0);
+    // PageLayerTree families have already passed through the Rust style
+    // resolver. Preserve measured HFT identities instead of feeding them
+    // through the raw-document substitution table a second time.
+    const resolved = MEASURED_HFT_LAYER_FAMILIES.has(fontFamily)
+      ? fontFamily
+      : resolveFont(fontFamily, 0, 0);
     if (HAMCHOROM_DOTUM_ALIASES.has(resolved) || HAMCHOROM_DOTUM_ALIASES.has(fontFamily)) {
       return HAMCHOROM_DOTUM_FAMILY;
     }

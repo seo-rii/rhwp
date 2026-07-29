@@ -881,6 +881,17 @@ If static admission finds no replayable path or rejects any path command, the
 variant keeps `unsupportedSvgGlyph` as its category and records
 `pathDecodeFailed` as the deterministic detail before selecting the `TextRun`
 fallback.
+
+Shared text layout now keeps the measured HFT identities `한양신명조`,
+`한양중고딕`, `한양견명조`, `한양견고딕`, and `휴먼명조` instead of
+collapsing them onto HY faces with different ASCII widths. CanvasKit treats
+these PageLayerTree names as already resolved, registers portable serif/sans
+aliases for direct replay, and preserves the heavy-family weight hints. The
+raw HWP substitution table remains available to APIs that still receive
+unresolved document font names; it is not applied twice to resolved layer
+output. Canvas2D may still use a locally installed original HFT face, while
+CanvasKit's portable TextRun fallback uses the registered bundled face until
+an exact font blob is available.
 Schema-v2 strict
 GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
 the selected strict payload uses the static sanitized vector contract. A

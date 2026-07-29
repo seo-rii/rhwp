@@ -43,6 +43,9 @@ test('Studio render weights follow the Rust renderer fallback hints', () => {
   assert.equal(resolveRenderFontWeight('KoPub바탕체 Bold', false), 700);
   assert.equal(resolveRenderFontWeight('HY헤드라인M', false), 700);
   assert.equal(resolveRenderFontWeight('HY견명조', false), 700);
+  assert.equal(resolveRenderFontWeight('한양견명조', false), 700);
+  assert.equal(resolveRenderFontWeight('한양견고딕', false), 700);
+  assert.equal(resolveRenderFontWeight('한양중고딕', false), 500);
   assert.equal(resolveRenderFontWeight('KoPub돋움체 Light', true), 700);
   assert.equal(resolveRenderFontWeight('맑은 고딕', false), 400);
 });
@@ -92,6 +95,21 @@ test('Dotum aliases and generic sans fallbacks use the independent ExtraLight fa
   }
 });
 
+test('measured HFT families retain their source identity and fallback class', () => {
+  for (const family of ['한양신명조', '한양견명조', '휴먼명조']) {
+    assert.deepEqual(
+      canvasFontFamilyFallbackCandidates(family).slice(0, 3),
+      [family, 'Batang', '바탕'],
+    );
+  }
+  for (const family of ['한양중고딕', '한양견고딕']) {
+    assert.deepEqual(
+      canvasFontFamilyFallbackCandidates(family).slice(0, 3),
+      [family, 'Malgun Gothic', '맑은 고딕'],
+    );
+  }
+});
+
 test('CanvasKit consumes the shared family and weight fallback semantics', () => {
   const registrySource = readFileSync(
     new URL('../src/view/canvaskit/fonts.ts', import.meta.url),
@@ -104,6 +122,10 @@ test('CanvasKit consumes the shared family and weight fallback semantics', () =>
 
   assert.match(registrySource, /baseFamilyWithoutWeightSuffix\(candidate\)/);
   assert.match(registrySource, /canvasFontFamilyFallbackCandidates\(resolved\)/);
+  assert.match(registrySource, /MEASURED_HFT_LAYER_FAMILIES\.has\(fontFamily\)/);
+  for (const family of ['한양신명조', '한양중고딕', '한양견명조', '한양견고딕', '휴먼명조']) {
+    assert.match(registrySource, new RegExp(`'${family}'`));
+  }
   assert.match(registrySource, /NotoSansKR-ExtraLight\.woff2/);
   assert.match(registrySource, /'Noto Sans KR ExtraLight'/);
   assert.match(rendererSource, /resolveRenderFontWeight\(op\.style\.fontFamily, op\.style\.bold\)/);

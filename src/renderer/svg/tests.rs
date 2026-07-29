@@ -23,6 +23,16 @@ use crate::renderer::render_tree::TextRunNode;
 use crate::renderer::{ArrowStyle, LineRenderType};
 
 #[test]
+fn measured_hanyang_faces_keep_existing_native_font_candidates() {
+    assert_eq!(
+        known_font_filenames("한양신명조"),
+        vec!["HYSNMJ.TTF", "hamchob-r.ttf"]
+    );
+    assert_eq!(known_font_filenames("한양견명조"), vec!["HYMJRE.TTF"]);
+    assert_eq!(known_font_filenames("한양견고딕"), vec!["HYGTRE.TTF"]);
+}
+
+#[test]
 fn test_svg_begin_end_page() {
     let mut renderer = SvgRenderer::new();
     renderer.begin_page(800.0, 600.0);

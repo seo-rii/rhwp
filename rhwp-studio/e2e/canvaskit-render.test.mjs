@@ -2068,6 +2068,10 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       highQualityProfileOnTree: window.__wasm?.getPageLayerTree?.(0, 'high-quality')?.profile,
       fastPreviewHasPreferRasterHint: JSON.stringify(window.__wasm?.getPageLayerTree?.(0, 'fast-preview') ?? {}).includes('"cacheHint":"preferRaster"'),
       batangcheFamily: renderer.resolveCanvasKitFontFamily?.('바탕체'),
+      measuredHftFamilies: Object.fromEntries(
+        ['한양신명조', '한양중고딕', '한양견명조', '한양견고딕', '휴먼명조']
+          .map((family) => [family, renderer.resolveCanvasKitFontFamily?.(family)]),
+      ),
       equationSvgNativeProbe,
       corruptBitmapNativeProbe,
       corruptSvgNativeProbe,
@@ -2094,6 +2098,11 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
   assert(
     nativeRouting.batangcheFamily === '바탕체' || nativeRouting.batangcheFamily === 'Noto Serif KR',
     `바탕체 family=${nativeRouting.batangcheFamily}`,
+  );
+  assert(
+    Object.entries(nativeRouting.measuredHftFamilies ?? {})
+      .every(([requested, selected]) => selected === requested),
+    `measured HFT layer identities=${JSON.stringify(nativeRouting.measuredHftFamilies)}`,
   );
   assert(
     nativeRouting.textProjectionNativeProbe?.nativeTextRunCalls === 2,
