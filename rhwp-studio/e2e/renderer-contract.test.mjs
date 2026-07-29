@@ -1154,6 +1154,26 @@ assert(
     && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgTextLayers(fragment)'),
   'Canvas2D and CanvasKit equation SVG resource replay must use the same static path/text parser',
 );
+const canvaskitStaticSvgTextBlock =
+  extractMethodBody(canvaskitSource, 'renderStaticSvgTextLayer');
+assertTokensInOrder(
+  canvaskitStaticSvgTextBlock,
+  [
+    'this.canvasKit.ParagraphBuilder.MakeFromFontProvider(',
+    'this.fontProvider',
+    'builder.addText(layer.text)',
+    'paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH)',
+    'const textWidth = paragraph.getLongestLine()',
+    'canvas.drawParagraph(',
+    'baselineY - paragraph.getAlphabeticBaseline()',
+    'paragraphDrawn = true',
+    'paragraph.delete()',
+    'builder.delete()',
+    'if (paragraphDrawn)',
+    'const clusters = splitIntoClusters(layer.text)',
+  ],
+  'CanvasKit static SVG text must shape the complete string before using its direct-text fallback',
+);
 assert(
   extractSwitchCaseBlock(extractMethodBody(canvas2dSource, 'renderOp'), 'equation')
     .includes('this.renderEquationSvgResource(ctx, op)')

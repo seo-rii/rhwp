@@ -465,6 +465,10 @@ The working order is:
    resources, unsupported static payloads, invalid bounds, and CanvasKit path
    decode failures. Static-picture entries retain those route diagnostics so a
    cache hit reports the same fallback inventory as the recording render.
+   Text inside a supported static SVG fragment is shaped as one paragraph
+   through the registered CanvasKit font provider before its measured width and
+   alphabetic baseline are used to apply SVG anchors; cluster-by-cluster drawing
+   remains only a failure fallback so kerning, ligatures, and joining survive.
 3. Continue root `TextRun` effect parity fixture by fixture: vertical and
    rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
    dots, tab leaders, control marks, character overlap, field markers, and

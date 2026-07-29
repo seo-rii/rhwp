@@ -2923,8 +2923,6 @@ export class CanvasKitLayerRenderer {
         }
         return objects;
       };
-      const primaryObjects = makeSvgTextObjects(layer.fontFamily);
-      textObjectsByFamily.set(layer.fontFamily, primaryObjects);
       const fallbackFamilies = [
         layer.fontFamily,
         'Noto Sans KR',
@@ -2936,6 +2934,67 @@ export class CanvasKitLayerRenderer {
         'Noto Serif CJK KR',
       ].filter((family, index, all) => all.indexOf(family) === index);
       try {
+        let paragraphDrawn = false;
+        try {
+          const fontFamilies = fallbackFamilies
+            .map((family) => this.fontRegistry.resolveFamily(family))
+            .filter((family, index, all) => all.indexOf(family) === index);
+          const textStyle = new this.canvasKit.TextStyle({
+            color: parseCanvasKitCssColor(this.canvasKit, layer.fill, layer.opacity),
+            fontFamilies,
+            fontSize: layer.fontSize,
+            fontStyle: {
+              weight: layer.fontWeight === 'bold'
+                ? this.canvasKit.FontWeight.Bold
+                : this.canvasKit.FontWeight.Normal,
+              slant: layer.fontStyle === 'italic'
+                ? this.canvasKit.FontSlant.Italic
+                : this.canvasKit.FontSlant.Upright,
+            },
+          });
+          const paragraphStyle = new this.canvasKit.ParagraphStyle({
+            maxLines: 1,
+            textStyle,
+          });
+          const builder = this.canvasKit.ParagraphBuilder.MakeFromFontProvider(
+            paragraphStyle,
+            this.fontProvider,
+          );
+          try {
+            builder.addText(layer.text);
+            const paragraph = builder.build();
+            try {
+              paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH);
+              const textWidth = paragraph.getLongestLine();
+              const drawX = layer.textAnchor === 'middle'
+                ? layer.x - textWidth / 2
+                : layer.textAnchor === 'end'
+                  ? layer.x - textWidth
+                  : layer.x;
+              const baselineY = layer.dominantBaseline === 'middle'
+                ? layer.y + layer.fontSize * 0.35
+                : layer.y;
+              canvas.drawParagraph(
+                paragraph,
+                drawX,
+                baselineY - paragraph.getAlphabeticBaseline(),
+              );
+              paragraphDrawn = true;
+            } finally {
+              paragraph.delete();
+            }
+          } finally {
+            builder.delete();
+          }
+        } catch {
+          paragraphDrawn = false;
+        }
+        if (paragraphDrawn) {
+          return;
+        }
+
+        const primaryObjects = makeSvgTextObjects(layer.fontFamily);
+        textObjectsByFamily.set(layer.fontFamily, primaryObjects);
         const clusters = splitIntoClusters(layer.text);
         const clusterObjects: Array<{ typeface: Typeface; font: Font; paint: Paint }> = [];
         const clusterWidths: number[] = [];

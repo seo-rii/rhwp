@@ -15368,6 +15368,126 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation SVG resource parity exact=${equationSvgResourceDiff.exactDiffPixels}, tolerant=${equationSvgResourceDiff.rawTolerantDiffPixels}, ink=${equationSvgResourceDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationSvgResourceDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-equation-svg-text-shaping-parity');
+  const equationSvgTextShapingProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 236,
+      pageHeight: 72,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1973,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [[
+          '<text x="6" y="18" font-family="Noto Sans KR" font-size="16" fill="#111111" text-anchor="start">AV office</text>',
+          '<text x="118" y="42" font-family="Noto Sans KR" font-size="16" font-weight="700" fill="#0057b8" text-anchor="middle">AVATAR office</text>',
+          '<text x="230" y="66" font-family="Noto Sans KR" font-size="16" fill="#b00020" text-anchor="end">office AV</text>',
+        ].join('')],
+        svgHashes: ['fixture-equation-svg-text-shaping'],
+        svgKeys: ['svg:fixture-equation-svg-text-shaping'],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1973,
+        bounds: { x: 0, y: 0, width: 236, height: 72 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 236, height: 72 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          {
+            type: 'equation',
+            bbox: { x: 0, y: 0, width: 236, height: 72 },
+            color: '#111111',
+            fontSize: 16,
+            svgResourceId: 0,
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 236,
+              height: 72,
+              baseline: 0,
+              kind: { type: 'empty' },
+            },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !equationSvgTextShapingProbe.error,
+    equationSvgTextShapingProbe.error || 'equation SVG text shaping parity probe available',
+  );
+  for (const [name, predicate] of [
+    ['start anchor', (pixel) =>
+      pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80],
+    ['middle anchor', (pixel) =>
+      pixel.alpha > 32 && pixel.blue > 100 && pixel.red < 80 && pixel.green < 140],
+    ['end anchor', (pixel) =>
+      pixel.alpha > 32 && pixel.red > 100 && pixel.green < 80 && pixel.blue < 100],
+  ]) {
+    const canvas2dInk = countPixels(equationSvgTextShapingProbe.canvas2d, predicate);
+    const canvaskitInk = countPixels(equationSvgTextShapingProbe.canvaskit, predicate);
+    assert(
+      canvas2dInk > 20 && canvaskitInk > 20,
+      `equation SVG shaped text paints ${name} canvas2d=${canvas2dInk}, canvaskit=${canvaskitInk}`,
+    );
+  }
+  const equationSvgTextShapingDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(equationSvgTextShapingProbe.canvas2d),
+    pngBufferFromDataUrl(equationSvgTextShapingProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-equation-svg-text-shaping-parity',
+      ignoreChannelDelta: 24,
+      inkMaskMaxDiffRatio: 0.01,
+      nonInkMaxDiffRatio: 0,
+      solidInkMaxDiffRatio: 0.005,
+    },
+  );
+  assert(
+    equationSvgTextShapingDiff.passed,
+    `equation SVG text shaping parity exact=${equationSvgTextShapingDiff.exactDiffPixels}, tolerant=${equationSvgTextShapingDiff.rawTolerantDiffPixels}, ink=${equationSvgTextShapingDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationSvgTextShapingDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvaskit-equation-replay-route-diagnostics');
   const equationReplayRouteProbe = await page.evaluate(async () => {
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
