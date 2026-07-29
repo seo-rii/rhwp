@@ -5139,6 +5139,9 @@ mod tests {
         assert!(!canvaskit_static_svg_fragment_has_path_layer(
             "<path d=\"M0 0 L16 16\"/><path d=\"not-a-path\"/>"
         ));
+        assert!(!canvaskit_static_svg_fragment_has_path_layer(
+            "<path d=\"M0 0 L16 16\" transform=\"scale(1e308) scale(1e308)\"/>"
+        ));
     }
 
     #[test]

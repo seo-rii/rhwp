@@ -227,6 +227,52 @@ fn static_svg_attributes_are_static_safe(raw_attributes: &str) -> bool {
             }
             &raw_attributes[value_start..cursor]
         };
+        if attr_name == "transform" {
+            if value.trim().is_empty() {
+                return false;
+            }
+            let mut transform = [1.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0];
+            let mut saw_transform = false;
+            for token in svgtypes::TransformListParser::from(value) {
+                let Ok(token) = token else {
+                    return false;
+                };
+                saw_transform = true;
+                let next = match token {
+                    svgtypes::TransformListToken::Matrix { a, b, c, d, e, f } => [a, b, c, d, e, f],
+                    svgtypes::TransformListToken::Translate { tx, ty } => {
+                        [1.0, 0.0, 0.0, 1.0, tx, ty]
+                    }
+                    svgtypes::TransformListToken::Scale { sx, sy } => [sx, 0.0, 0.0, sy, 0.0, 0.0],
+                    svgtypes::TransformListToken::Rotate { angle } => {
+                        let radians = angle.to_radians();
+                        let (sin, cos) = radians.sin_cos();
+                        [cos, sin, -sin, cos, 0.0, 0.0]
+                    }
+                    svgtypes::TransformListToken::SkewX { angle } => {
+                        [1.0, 0.0, angle.to_radians().tan(), 1.0, 0.0, 0.0]
+                    }
+                    svgtypes::TransformListToken::SkewY { angle } => {
+                        [1.0, angle.to_radians().tan(), 0.0, 1.0, 0.0, 0.0]
+                    }
+                };
+                let composed = [
+                    transform[0] * next[0] + transform[2] * next[1],
+                    transform[1] * next[0] + transform[3] * next[1],
+                    transform[0] * next[2] + transform[2] * next[3],
+                    transform[1] * next[2] + transform[3] * next[3],
+                    transform[0] * next[4] + transform[2] * next[5] + transform[4],
+                    transform[1] * next[4] + transform[3] * next[5] + transform[5],
+                ];
+                if !composed.iter().all(|value| value.is_finite()) {
+                    return false;
+                }
+                transform = composed;
+            }
+            if !saw_transform {
+                return false;
+            }
+        }
         if static_svg_attribute_is_unsafe(&attr_name, value) {
             return false;
         }
@@ -369,6 +415,9 @@ mod tests {
         ));
         assert!(!static_svg_fragment_has_path_layer(
             "<path d=\"M0 0 L16 16\"/><path d=\"not-a-path\"/>"
+        ));
+        assert!(!static_svg_fragment_has_path_layer(
+            "<path d=\"M0 0 L16 16\" transform=\"scale(1e308) scale(1e308)\"/>"
         ));
     }
 }

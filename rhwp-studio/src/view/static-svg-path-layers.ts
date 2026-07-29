@@ -220,11 +220,15 @@ function parseStaticSvgFragmentLayers(fragment: string): {
     }
     if (elementName === 'svg' || elementName === 'g') {
       if (!isSelfClosing) {
-        paintStateStack.push(staticSvgPaintStateFromMap(
+        const state = staticSvgPaintStateFromMap(
           paintStateStack[paintStateStack.length - 1],
           attributes,
           true,
-        ));
+        );
+        if (!state) {
+          return { paths: [], texts: [] };
+        }
+        paintStateStack.push(state);
       }
       continue;
     }
@@ -315,10 +319,11 @@ function parseStaticSvgFragmentLayers(fragment: string): {
       shapeColor,
     );
     const shouldFill = elementName !== 'line' && resolvedFill.trim().toLowerCase() !== 'none';
-    const transform = staticSvgComposeTransforms(
-      currentState.transform,
-      parseStaticSvgTransform(attributes.get('transform')),
-    );
+    const localTransform = parseStaticSvgTransform(attributes.get('transform'));
+    const transform = staticSvgComposeTransforms(currentState.transform, localTransform);
+    if (currentState.transform && localTransform && !transform) {
+      return { paths: [], texts: [] };
+    }
     paths.push({
       pathData,
       fill: shouldFill ? resolvedFill : null,
@@ -493,10 +498,19 @@ function staticSvgPaintStateFromMap(
   parent: StaticSvgPaintState,
   attributes: Map<string, string>,
   allowTransform: boolean,
-): StaticSvgPaintState {
+): StaticSvgPaintState | null {
   const fillOpacityValue = staticSvgMapPresentationAttribute(attributes, 'fill-opacity');
   const strokeDashArray = svgStrokeDashArray(staticSvgMapPresentationAttribute(attributes, 'stroke-dasharray'));
   const strokeDashOffset = svgStrokeDashOffset(staticSvgMapPresentationAttribute(attributes, 'stroke-dashoffset'));
+  const localTransform = allowTransform
+    ? parseStaticSvgTransform(attributes.get('transform'))
+    : undefined;
+  const transform = allowTransform
+    ? staticSvgComposeTransforms(parent.transform, localTransform)
+    : parent.transform;
+  if (allowTransform && parent.transform && localTransform && !transform) {
+    return null;
+  }
   return {
     color: staticSvgMapPresentationAttribute(attributes, 'color') ?? parent.color,
     fill: staticSvgMapPresentationAttribute(attributes, 'fill') ?? parent.fill,
@@ -522,9 +536,7 @@ function staticSvgPaintStateFromMap(
     textAnchor: svgTextAnchor(staticSvgMapPresentationAttribute(attributes, 'text-anchor')) ?? parent.textAnchor,
     dominantBaseline: svgDominantBaseline(staticSvgMapPresentationAttribute(attributes, 'dominant-baseline'))
       ?? parent.dominantBaseline,
-    transform: allowTransform
-      ? staticSvgComposeTransforms(parent.transform, parseStaticSvgTransform(attributes.get('transform')))
-      : parent.transform,
+    transform,
   };
 }
 
@@ -542,6 +554,9 @@ function staticSvgTextLayer(
     return null;
   }
   const state = staticSvgPaintStateFromMap(parentState, attributes, true);
+  if (!state) {
+    return null;
+  }
   const x = svgNumber(attributes.get('x') ?? '0') ?? 0;
   const y = svgNumber(attributes.get('y') ?? '0') ?? 0;
   const opacity = svgOpacity(staticSvgMapPresentationAttribute(attributes, 'opacity'))
@@ -621,7 +636,7 @@ function staticSvgComposeTransforms(
   if (!child) {
     return parent;
   }
-  return {
+  const composed = {
     a: parent.a * child.a + parent.c * child.b,
     b: parent.b * child.a + parent.d * child.b,
     c: parent.a * child.c + parent.c * child.d,
@@ -629,6 +644,9 @@ function staticSvgComposeTransforms(
     e: parent.a * child.e + parent.c * child.f + parent.e,
     f: parent.b * child.e + parent.d * child.f + parent.f,
   };
+  return Object.values(composed).every((number) => Number.isFinite(number))
+    ? composed
+    : undefined;
 }
 
 function staticSvgRectPathData(
@@ -980,7 +998,11 @@ function parseStaticSvgTransform(value: string | null | undefined): LayerAffineT
     if (!Object.values(next).every((number) => Number.isFinite(number))) {
       return undefined;
     }
-    transform = staticSvgComposeTransforms(transform, next) ?? transform;
+    const composed = staticSvgComposeTransforms(transform, next);
+    if (!composed) {
+      return undefined;
+    }
+    transform = composed;
   }
   if (!/^[\s,]*$/.test(source.slice(cursor)) || cursor === 0) {
     return undefined;

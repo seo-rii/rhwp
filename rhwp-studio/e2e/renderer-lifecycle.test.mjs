@@ -8070,6 +8070,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     malformedPathSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-malformed-path';
+    const overflowTransformSvgResourceTree = treeFor(svgOutline);
+    overflowTransformSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" transform="scale(1e308) scale(1e308)" fill="#ff00cc"/>',
+      '</svg>',
+    ].join('');
+    overflowTransformSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-overflow-transform';
     const strokedSvgResourceTree = treeFor(svgOutline);
     strokedSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -8741,6 +8748,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsafeSvgGlyphResource: await render(unsafeSvgResourceTree),
       unsupportedSvgGlyphTextLayerResource: await render(textLayerSvgResourceTree),
       unsupportedSvgGlyphMalformedPathResource: await render(malformedPathSvgResourceTree),
+      unsupportedSvgGlyphOverflowTransformResource: await render(overflowTransformSvgResourceTree),
       unsupportedSvgGlyphStrokeResource: await render(unsupportedSvgStrokeTree),
       unsupportedSvgGlyphOpacityResource: await render(unsupportedSvgOpacityTree),
       unsupportedSvgGlyphGroupOpacityResource: await render(unsupportedSvgGroupOpacityTree),
@@ -9982,6 +9990,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsupportedSvgGlyphMalformedPathResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgOverflowTransformResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphOverflowTransformResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitUnsupportedSvgStrokeResourceReport = canvaskitGlyphOutlineProbe
     .unsupportedSvgGlyphStrokeResource
     ?.diagnostics
@@ -10152,6 +10164,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
       && canvaskitGlyphOutlineProbe.unsupportedSvgGlyphMalformedPathResource.redPixels > 0
+      && canvaskitUnsupportedSvgOverflowTransformResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgOverflowTransformResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitGlyphOutlineProbe.unsupportedSvgGlyphOverflowTransformResource.redPixels > 0
       && canvaskitUnsupportedSvgStrokeResourceReport?.selectedVariantId === 'textRun'
       && canvaskitUnsupportedSvgStrokeResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
