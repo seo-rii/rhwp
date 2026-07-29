@@ -91,3 +91,16 @@ test('CanvasKit renderer source does not introduce Canvas2D overlay replay', () 
   assert.equal(source.includes('rhwpOverlay'), false);
   assert.match(source, /for \(const replayPlane of CANVASKIT_REPLAY_PLANES\)/);
 });
+
+test('CanvasKit and Canvas2D preserve fractional page bitmap edges', () => {
+  const source = readFileSync(new URL('../src/view/page-renderer.ts', import.meta.url), 'utf8');
+
+  assert.match(
+    source,
+    /canvasWidth\s*=\s*Math\.max\(1,\s*Math\.ceil\(pageInfo\.width \* appliedScale\)\)/,
+  );
+  assert.match(
+    source,
+    /canvasHeight\s*=\s*Math\.max\(1,\s*Math\.ceil\(pageInfo\.height \* appliedScale\)\)/,
+  );
+});

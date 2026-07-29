@@ -75,8 +75,10 @@ export class PageRenderer {
   ): number {
     const appliedScale = clampRenderScale(pageInfo, scale);
 
-    const canvasWidth = Math.max(1, Math.floor(pageInfo.width * appliedScale));
-    const canvasHeight = Math.max(1, Math.floor(pageInfo.height * appliedScale));
+    // Keep CanvasKit and Canvas2D on the same integer bitmap boundary without
+    // dropping the last fractional page pixel.
+    const canvasWidth = Math.max(1, Math.ceil(pageInfo.width * appliedScale));
+    const canvasHeight = Math.max(1, Math.ceil(pageInfo.height * appliedScale));
     if (canvas.width !== canvasWidth) {
       canvas.width = canvasWidth;
     }

@@ -57,6 +57,13 @@ fn normalize_canvas_scale(
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+fn scaled_canvas_extent(page_extent: f64, scale: f64) -> u32 {
+    (page_extent * scale)
+        .ceil()
+        .clamp(1.0, MAX_CANVAS_DIMENSION) as u32
+}
+
 #[wasm_bindgen]
 impl HwpDocument {
     /// 특정 페이지를 SVG 문자열로 렌더링한다.
@@ -113,13 +120,10 @@ impl HwpDocument {
         let scale = normalize_canvas_scale(tree.page_width, tree.page_height, scale)
             .map_err(JsValue::from_str)?;
 
-        // 캔버스 크기 = 페이지 크기 × scale
-        canvas.set_width((tree.page_width * scale).max(1.0).min(MAX_CANVAS_DIMENSION) as u32);
-        canvas.set_height(
-            (tree.page_height * scale)
-                .max(1.0)
-                .min(MAX_CANVAS_DIMENSION) as u32,
-        );
+        // Preserve the final fractional page pixel instead of truncating the
+        // right and bottom edges of the bitmap.
+        canvas.set_width(scaled_canvas_extent(tree.page_width, scale));
+        canvas.set_height(scaled_canvas_extent(tree.page_height, scale));
 
         let mut renderer = WebCanvasRenderer::new(canvas)?;
         renderer.show_paragraph_marks = self.show_paragraph_marks;
@@ -475,7 +479,7 @@ impl HwpDocument {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_canvas_scale;
+    use super::{normalize_canvas_scale, scaled_canvas_extent};
 
     #[test]
     fn normalize_canvas_scale_rejects_invalid_page_dimensions() {
@@ -507,5 +511,12 @@ mod tests {
         let scale = normalize_canvas_scale(20_000.0, 10_000.0, 1.0)
             .expect("large finite page should be scaled down");
         assert!((scale - (16_384.0 / 20_000.0)).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn scaled_canvas_extent_preserves_fractional_page_edges() {
+        assert_eq!(scaled_canvas_extent(793.700_787, 1.5), 1191);
+        assert_eq!(scaled_canvas_extent(1122.519_685, 1.5), 1684);
+        assert_eq!(scaled_canvas_extent(16_384.25, 1.0), 16_384);
     }
 }
