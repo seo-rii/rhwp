@@ -1057,6 +1057,9 @@ therefore expose a report separate from the immutable layer export:
   `glyphOutlinePayloadContractInvalid`,
   `positionAdjustedResidualTooLarge`, or `backendDoesNotSupportVariant`;
 - per-part replay status for multi-part variant sets;
+- selected runtime conditions plus an optional per-part `runtimeCondition`
+  when static producer-side admission cannot prove a browser CanvasKit
+  constructor or decoder result;
 - optional font verification and outline eligibility details when a backend
   evaluated `GlyphRun` or `GlyphOutline` candidates.
 
@@ -1077,7 +1080,11 @@ valid. A portable `GlyphRun` is not advertised as direct replay from metadata
 alone: the replay plan must resolve the referenced font blob bytes and match
 their resource digest. Missing bytes report `fontBlobNotVerified`; mismatched
 bytes report `fontDigestMismatch`. CanvasKit Typeface construction remains the
-runtime proof and may still select the `TextRun` fallback.
+runtime proof and may still select the `TextRun` fallback. A `BitmapGlyph`
+similarly requires statically admitted encoded raster bytes; the plan marks the
+selected part and item with `canvasKitEncodedImageDecode`, while Studio performs
+the actual CanvasKit decode before suppressing the `TextRun` fallback. SVG
+bytes are not accepted as a bitmap strike.
 
 The Studio selector uses the same report shape for CanvasKit and Canvas2D strict
 outline replay. Canvas2D reports `GlyphRun` rejection as

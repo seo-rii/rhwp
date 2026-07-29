@@ -363,6 +363,7 @@ pub struct CanvasKitTextVariantReport {
     pub selected_variant_id: String,
     pub selected_variant_kind: &'static str,
     pub selected_reason: &'static str,
+    pub selected_runtime_conditions: Vec<CanvasKitReplayRuntimeCondition>,
     pub anchor_op_id: Option<String>,
     pub parts_expected: u32,
     pub parts_replayed: u32,
@@ -381,6 +382,7 @@ pub struct CanvasKitTextVariantPartReport {
     pub part_count: u32,
     pub replayable: bool,
     pub reason: Option<&'static str>,
+    pub runtime_condition: Option<CanvasKitReplayRuntimeCondition>,
     pub details: Option<String>,
     pub font_verification: Option<VariantFontVerificationReport>,
     pub outline_eligibility: Option<VariantOutlineEligibilityReport>,
@@ -496,6 +498,14 @@ impl CanvasKitTextVariantReport {
         push_json_str(out, self.selected_variant_kind);
         out.push_str(",\"selectedReason\":");
         push_json_str(out, self.selected_reason);
+        out.push_str(",\"selectedRuntimeConditions\":[");
+        for (index, runtime_condition) in self.selected_runtime_conditions.iter().enumerate() {
+            if index != 0 {
+                out.push(',');
+            }
+            push_json_str(out, runtime_condition.as_str());
+        }
+        out.push(']');
         if let Some(anchor_op_id) = &self.anchor_op_id {
             out.push_str(",\"anchorOpId\":");
             push_json_str(out, anchor_op_id);
@@ -551,6 +561,10 @@ impl CanvasKitTextVariantPartReport {
         if let Some(reason) = self.reason {
             out.push_str(",\"reason\":");
             push_json_str(out, reason);
+        }
+        if let Some(runtime_condition) = self.runtime_condition {
+            out.push_str(",\"runtimeCondition\":");
+            push_json_str(out, runtime_condition.as_str());
         }
         if let Some(details) = &self.details {
             out.push_str(",\"details\":");
@@ -1627,7 +1641,9 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 );
                 let selected = selection.selected;
                 self.text_variants
-                    .extend(selection.reports.into_iter().map(text_variant_report));
+                    .extend(selection.reports.into_iter().map(|report| {
+                        text_variant_report(report, &selection_ops, &self.tree.resources)
+                    }));
                 for (index, op) in ops.iter().enumerate() {
                     self.push(self.item_for_op(op, &selected, format!("{path}/leaf/{index}")));
                 }
@@ -1710,7 +1726,17 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 self.text_variant_item(path, "glyphRun", &run.variant, selected_variants)
             }
             PaintOp::GlyphOutline { outline, .. } => {
-                self.text_variant_item(path, "glyphOutline", &outline.variant, selected_variants)
+                let mut item = self.text_variant_item(
+                    path,
+                    "glyphOutline",
+                    &outline.variant,
+                    selected_variants,
+                );
+                if item.status == CanvasKitReplayStatus::Direct {
+                    item.runtime_condition =
+                        canvaskit_text_variant_runtime_condition(op, &self.tree.resources);
+                }
+                item
             }
             PaintOp::CharOverlap { .. }
             | PaintOp::TextControlMark { .. }
@@ -1796,23 +1822,21 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
     }
 }
 
-fn text_variant_report(report: VariantSelectionReport) -> CanvasKitTextVariantReport {
-    CanvasKitTextVariantReport {
-        backend: report.backend.as_str(),
-        render_profile: report.render_profile,
-        equivalence_group: report.equivalence_group,
-        selected_variant_id: report.selected_variant_id,
-        selected_variant_kind: report.selected_variant_kind.as_str(),
-        selected_reason: selected_reason_as_str(report.selected_reason),
-        anchor_op_id: report.anchor_op_id,
-        parts_expected: report.parts_expected,
-        parts_replayed: report.parts_replayed,
-        font_verification: report.font_verification,
-        outline_eligibility: report.outline_eligibility,
-        parts: report
-            .parts
-            .into_iter()
-            .map(|part| CanvasKitTextVariantPartReport {
+fn text_variant_report(
+    report: VariantSelectionReport,
+    selection_ops: &[PaintOp],
+    resources: &ResourceArena,
+) -> CanvasKitTextVariantReport {
+    let selected_variant_id = report.selected_variant_id.clone();
+    let parts = report
+        .parts
+        .into_iter()
+        .map(|part| {
+            let runtime_condition = selection_ops
+                .iter()
+                .find(|op| text_variant_part_matches_op(&part, op))
+                .and_then(|op| canvaskit_text_variant_runtime_condition(op, resources));
+            CanvasKitTextVariantPartReport {
                 equivalence_group: part.equivalence_group,
                 variant_id: part.variant_id,
                 variant_kind: part.variant_kind.as_str(),
@@ -1820,11 +1844,37 @@ fn text_variant_report(report: VariantSelectionReport) -> CanvasKitTextVariantRe
                 part_count: part.part_count,
                 replayable: part.replayable,
                 reason: part.reason.map(|reason| reason.as_str()),
+                runtime_condition,
                 details: part.details,
                 font_verification: part.font_verification,
                 outline_eligibility: part.outline_eligibility,
-            })
-            .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut selected_runtime_conditions = Vec::new();
+    for runtime_condition in parts
+        .iter()
+        .filter(|part| part.variant_id == selected_variant_id)
+        .filter_map(|part| part.runtime_condition)
+    {
+        if !selected_runtime_conditions.contains(&runtime_condition) {
+            selected_runtime_conditions.push(runtime_condition);
+        }
+    }
+    CanvasKitTextVariantReport {
+        backend: report.backend.as_str(),
+        render_profile: report.render_profile,
+        equivalence_group: report.equivalence_group,
+        selected_variant_id,
+        selected_variant_kind: report.selected_variant_kind.as_str(),
+        selected_reason: selected_reason_as_str(report.selected_reason),
+        selected_runtime_conditions,
+        anchor_op_id: report.anchor_op_id,
+        parts_expected: report.parts_expected,
+        parts_replayed: report.parts_replayed,
+        font_verification: report.font_verification,
+        outline_eligibility: report.outline_eligibility,
+        parts,
         rejected_variants: report
             .rejected_variants
             .into_iter()
@@ -1839,6 +1889,50 @@ fn text_variant_report(report: VariantSelectionReport) -> CanvasKitTextVariantRe
                 details: rejected.details,
             })
             .collect(),
+    }
+}
+
+fn text_variant_part_matches_op(
+    part: &crate::renderer::layer_renderer::VariantPartReplayReport,
+    op: &PaintOp,
+) -> bool {
+    let variant = match op {
+        PaintOp::TextRun { run, .. } => run.variant.as_ref(),
+        PaintOp::GlyphRun { run, .. } => Some(&run.variant),
+        PaintOp::GlyphOutline { outline, .. } => Some(&outline.variant),
+        _ => None,
+    };
+    variant.is_some_and(|variant| {
+        variant.equivalence_group == part.equivalence_group
+            && variant.variant_id == part.variant_id
+            && variant.part_index == part.part_index
+            && variant.part_count == part.part_count
+    })
+}
+
+fn canvaskit_text_variant_runtime_condition(
+    op: &PaintOp,
+    resources: &ResourceArena,
+) -> Option<CanvasKitReplayRuntimeCondition> {
+    let PaintOp::GlyphOutline { outline, .. } = op else {
+        return None;
+    };
+    if outline.payload_kind != GlyphOutlinePayloadKind::BitmapGlyph {
+        return None;
+    }
+    let bytes = outline
+        .bitmap_glyph
+        .as_ref()
+        .and_then(|payload| resources.image_bytes(payload.image_resource_id))?;
+    match image_admission(bytes) {
+        CanvasKitImageAdmission::HeaderAdmitted(
+            CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode,
+        ) => Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode),
+        CanvasKitImageAdmission::Missing
+        | CanvasKitImageAdmission::StaticRejected
+        | CanvasKitImageAdmission::HeaderAdmitted(
+            CanvasKitReplayRuntimeCondition::BrowserSvgImageDecode,
+        ) => None,
     }
 }
 
@@ -2188,7 +2282,10 @@ fn canvaskit_glyph_outline_payload_status(
             };
             if bbox.is_none_or(|bbox| !glyph_payload_bbox_is_replayable(bbox))
                 || !payload.has_strict_visual_contract()
-                || !canvaskit_encoded_image_is_replayable(bytes)
+                || image_admission(bytes)
+                    != CanvasKitImageAdmission::HeaderAdmitted(
+                        CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode,
+                    )
             {
                 return (false, Some(VariantRejectReason::UnsupportedBitmapGlyph));
             }
@@ -3073,6 +3170,9 @@ mod tests {
             selected_variant_id: "glyphOutline".to_string(),
             selected_variant_kind: "glyphOutline",
             selected_reason: "glyphOutlineStrictProfile",
+            selected_runtime_conditions: vec![
+                CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode,
+            ],
             anchor_op_id: Some("op-text-0".to_string()),
             parts_expected: 1,
             parts_replayed: 1,
@@ -3092,6 +3192,9 @@ mod tests {
                 part_count: 1,
                 replayable: true,
                 reason: None,
+                runtime_condition: Some(
+                    CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode,
+                ),
                 details: Some("colorSpaceDefaulted=srgb".to_string()),
                 font_verification: None,
                 outline_eligibility: Some(VariantOutlineEligibilityReport {
@@ -3109,6 +3212,8 @@ mod tests {
 
         assert!(json.contains("\"parts\":[{"));
         assert!(json.contains("\"variantId\":\"glyphOutline\""));
+        assert!(json.contains("\"selectedRuntimeConditions\":[\"canvasKitEncodedImageDecode\"]"));
+        assert!(json.contains("\"runtimeCondition\":\"canvasKitEncodedImageDecode\""));
         assert!(json.contains("\"details\":\"colorSpaceDefaulted=srgb\""));
         assert!(json.contains("\"outlineEligibility\":{\"strictVisualEligible\":true"));
         assert!(json.contains("\"partsReplayed\":1"));
@@ -3217,15 +3322,84 @@ mod tests {
             .expect("bitmap sidecar variant report");
 
         assert_eq!(report.selected_variant_id, "glyphOutline");
+        assert_eq!(
+            report.selected_runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode]
+        );
         assert!(report.parts.iter().any(|part| {
             part.variant_id == "glyphOutline"
                 && part.replayable
+                && part.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
                 && part.details.as_deref() == Some("colorSpaceDefaulted=srgb")
         }));
         assert!(plan.items.iter().any(|item| {
             item.path == "root/leaf/variantOps/0"
                 && item.op_type == "glyphOutline"
                 && item.status == CanvasKitReplayStatus::Direct
+                && item.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+        }));
+        assert!(plan
+            .to_json()
+            .contains("\"selectedRuntimeConditions\":[\"canvasKitEncodedImageDecode\"]"));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_marks_truncated_bitmap_glyph_as_runtime_conditional() {
+        let text = text_run_op("text-0");
+        let anchor_op_id = match &text {
+            PaintOp::TextRun { run, .. } => run
+                .variant
+                .as_ref()
+                .expect("text fallback variant")
+                .stable_op_id(),
+            _ => unreachable!("helper returns textRun"),
+        };
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(&FIXTURE_PNG[..33]);
+        let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        outline.variant.anchor_op_id = Some(anchor_op_id);
+        outline.variant.requires = vec![
+            "text.glyphOutline.bitmapGlyph".to_string(),
+            "text.strictVisualFallbackFree".to_string(),
+        ];
+        outline.bitmap_glyph = Some(bitmap_payload(image_id));
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        )
+        .resources(resources)
+        .variant_ops(vec![PaintOp::GlyphOutline {
+            bbox: valid_bbox(),
+            outline: Box::new(outline),
+        }])
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let report = plan
+            .text_variants
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("bitmap sidecar variant report");
+
+        assert_eq!(report.selected_variant_id, "glyphOutline");
+        assert_eq!(
+            report.selected_runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode]
+        );
+        assert!(report.parts.iter().any(|part| {
+            part.variant_id == "glyphOutline"
+                && part.replayable
+                && part.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+        }));
+        assert!(plan.items.iter().any(|item| {
+            item.op_type == "glyphOutline"
+                && item.status == CanvasKitReplayStatus::Direct
+                && item.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
         }));
     }
 
@@ -4799,6 +4973,15 @@ mod tests {
         assert_eq!(
             canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
             (true, None)
+        );
+
+        let svg_image_id = resources.intern_image_bytes(
+            br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 0 L16 16"/></svg>"#,
+        );
+        outline.bitmap_glyph = Some(bitmap_payload(svg_image_id));
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::UnsupportedBitmapGlyph))
         );
     }
 
