@@ -17351,6 +17351,155 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text style parity exact=${textStyleDiff.exactDiffPixels}, tolerant=${textStyleDiff.rawTolerantDiffPixels}, ink=${textStyleDiff.rawInkMaskDiffPixels}, max_channel_delta=${textStyleDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-physical-font-face-parity');
+  const physicalFontFaceProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const textRun = (y, bold, italic) => ({
+      type: 'textRun',
+      bbox: { x: 8, y, width: 144, height: 32 },
+      text: '한글AB',
+      baseline: 27,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      style: {
+        fontFamily: 'Noto Sans KR',
+        fontSize: 28,
+        color: '#101010',
+        bold,
+        italic,
+        ratio: 1,
+        underline: 'none',
+        underlineShape: 0,
+        strikethrough: false,
+        strikeShape: 0,
+        outlineType: 0,
+        shadowType: 0,
+        shadowColor: '#000000',
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        emboss: false,
+        engrave: false,
+        emphasisDot: 0,
+        underlineColor: '#101010',
+        strikeColor: '#101010',
+        shadeColor: '#ffffff',
+      },
+      positions: [0, 30, 60, 82, 104],
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const tree = {
+      pageWidth: 160,
+      pageHeight: 140,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1919,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1919,
+        bounds: { x: 0, y: 0, width: 160, height: 140 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 160, height: 140 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          textRun(2, false, false),
+          textRun(36, true, false),
+          textRun(70, false, true),
+          textRun(104, true, true),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !physicalFontFaceProbe.error,
+    physicalFontFaceProbe.error || 'physical font face parity probe available',
+  );
+  const physicalFontFaceInk = (dataUrl) => {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    const rows = [0, 0, 0, 0];
+    for (let y = 0; y < png.height; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        if (
+          png.data[offset + 3] > 32
+          && (png.data[offset] < 220 || png.data[offset + 1] < 220 || png.data[offset + 2] < 220)
+        ) {
+          rows[Math.min(3, Math.floor(y / 34))] += 1;
+        }
+      }
+    }
+    return rows;
+  };
+  const physicalFontFaceInkByBackend = {
+    canvas2d: physicalFontFaceInk(physicalFontFaceProbe.canvas2d),
+    canvaskit: physicalFontFaceInk(physicalFontFaceProbe.canvaskit),
+  };
+  for (const [backend, [regular, bold, italic, boldItalic]] of Object.entries(
+    physicalFontFaceInkByBackend,
+  )) {
+    assert(
+      regular > 180 && italic > 180,
+      `${backend} regular and italic font faces draw ink=${regular},${italic}`,
+    );
+    assert(
+      bold > regular * 1.1 && boldItalic > italic * 1.1,
+      `${backend} physical bold faces are visibly heavier regular=${regular}, bold=${bold}, italic=${italic}, boldItalic=${boldItalic}`,
+    );
+  }
+  const physicalFontFaceDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(physicalFontFaceProbe.canvas2d),
+    pngBufferFromDataUrl(physicalFontFaceProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-physical-font-face-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.2,
+      inkMaskMaxDiffRatio: 0.12,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    physicalFontFaceDiff.passed,
+    `physical font face parity exact=${physicalFontFaceDiff.exactDiffPixels}, tolerant=${physicalFontFaceDiff.rawTolerantDiffPixels}, ink=${physicalFontFaceDiff.rawInkMaskDiffPixels}, max_channel_delta=${physicalFontFaceDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-script-parity');
   const textScriptParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

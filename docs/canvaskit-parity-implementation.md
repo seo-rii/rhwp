@@ -486,6 +486,11 @@ The working order is:
    through the registered CanvasKit font provider before its measured width and
    alphabetic baseline are used to apply SVG anchors; cluster-by-cluster drawing
    remains only a failure fallback so kerning, ligatures, and joining survive.
+   Logical fallback family names remain stable in the public replay contract,
+   while CanvasKit registers bundled regular and bold files under distinct
+   internal provider families. Direct text and Paragraph replay resolve the
+   requested weight to that physical family before matching, so an available
+   bold face cannot silently resolve to the first registered regular file.
 3. Continue root `TextRun` effect parity fixture by fixture: vertical and
    rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
    dots, tab leaders, control marks, character overlap, field markers, and

@@ -5,6 +5,7 @@ import {
   baseFamilyWithoutWeightSuffix,
   canvasFontFamilyFallbackCandidates,
   resolveFont,
+  type RenderFontWeight,
 } from '@/core/font-substitution';
 import type {
   LayerFontBlobResource,
@@ -139,6 +140,8 @@ export class CanvasKitFontRegistry {
   private readonly glyphRunTypefaces = new Map<string, Typeface>();
   private readonly glyphRunFonts = new Map<string, Font>();
   private readonly familiesWithBoldFace = new Set<string>();
+  private readonly providerFamilies = new Map<string, { regular?: string; bold?: string }>();
+  private nextProviderFamilyId = 0;
 
   constructor(
     private readonly canvasKit: CanvasKit,
@@ -168,11 +171,9 @@ export class CanvasKitFontRegistry {
       const boldBytes = boldUrl ? await loadFontFile(boldUrl) : null;
 
       for (const alias of aliases) {
-        this.fontProvider.registerFont(regularBytes, alias);
-        this.aliases.add(alias);
+        this.registerProviderFace(alias, regularBytes, false);
         if (boldBytes) {
-          this.fontProvider.registerFont(boldBytes, alias);
-          this.familiesWithBoldFace.add(alias);
+          this.registerProviderFace(alias, boldBytes, true);
         }
       }
     };
@@ -186,12 +187,9 @@ export class CanvasKitFontRegistry {
         }
         const fontUrl = resolveCatalogFontUrl(entry.file);
         const bytes = await loadFontFile(fontUrl);
-        this.fontProvider.registerFont(bytes, entry.name);
-        this.aliases.add(entry.name);
+        const isBold = entry.weight === '700' || /(?:^|[-_])bold(?:[-_.]|$)/i.test(entry.file);
+        this.registerProviderFace(entry.name, bytes, isBold);
         registeredAliases.add(entry.name);
-        if (entry.weight === '700' || /(?:^|[-_])bold(?:[-_.]|$)/i.test(entry.file)) {
-          this.familiesWithBoldFace.add(entry.name);
-        }
       }
       return aliases.filter((alias) => !registeredAliases.has(alias));
     };
@@ -261,6 +259,18 @@ export class CanvasKitFontRegistry {
 
   shouldSynthesizeBold(fontFamily: string): boolean {
     return !this.familiesWithBoldFace.has(this.resolveFamily(fontFamily));
+  }
+
+  resolveProviderFamily(fontFamily: string, weight: RenderFontWeight): string {
+    const family = this.resolveFamily(fontFamily);
+    const providerFaces = this.providerFamilies.get(family);
+    if (!providerFaces) {
+      return family;
+    }
+    if (weight === 700 && providerFaces.bold) {
+      return providerFaces.bold;
+    }
+    return providerFaces.regular ?? providerFaces.bold ?? family;
   }
 
   registerVerifiedFontBlob(blobId: string, digestValue: string, bytes: ArrayBuffer | Uint8Array): void {
@@ -513,7 +523,27 @@ export class CanvasKitFontRegistry {
 
   clear(): void {
     this.aliases.clear();
+    this.providerFamilies.clear();
+    this.familiesWithBoldFace.clear();
+    this.nextProviderFamilyId = 0;
     this.clearDocumentResources();
+  }
+
+  private registerProviderFace(alias: string, bytes: Uint8Array, bold: boolean): void {
+    const faceKind = bold ? 'bold' : 'regular';
+    const providerFaces = this.providerFamilies.get(alias) ?? {};
+    if (providerFaces[faceKind]) {
+      return;
+    }
+    const providerFamily = `__rhwp_canvas_font_${this.nextProviderFamilyId}_${faceKind}`;
+    this.nextProviderFamilyId += 1;
+    this.fontProvider.registerFont(bytes, providerFamily);
+    providerFaces[faceKind] = providerFamily;
+    this.providerFamilies.set(alias, providerFaces);
+    this.aliases.add(alias);
+    if (bold) {
+      this.familiesWithBoldFace.add(alias);
+    }
   }
 
   private typefaceForGlyphRun(face: LayerFontFaceResource, blob: LayerFontBlobResource): Typeface | null {

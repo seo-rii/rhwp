@@ -1356,10 +1356,25 @@ export class CanvasKitLayerRenderer {
       if (canUseScriptParagraph) {
         let paragraphDrawn = false;
         try {
+          const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
           const textStyle = new this.canvasKit.TextStyle({
             color: parseCanvasKitCssColor(this.canvasKit, op.style.color),
             fontSize,
-            fontFamilies: [this.fontRegistry.resolveFamily(op.style.fontFamily)],
+            fontFamilies: [
+              this.fontRegistry.resolveProviderFamily(op.style.fontFamily, renderFontWeight),
+            ],
+            fontStyle: {
+              weight: renderFontWeight === 700
+                ? this.canvasKit.FontWeight.Bold
+                : renderFontWeight === 300
+                  ? this.canvasKit.FontWeight.Light
+                  : renderFontWeight === 500
+                    ? this.canvasKit.FontWeight.Medium
+                    : this.canvasKit.FontWeight.Normal,
+              slant: op.style.italic
+                ? this.canvasKit.FontSlant.Italic
+                : this.canvasKit.FontSlant.Upright,
+            },
           });
           const paragraphStyle = new this.canvasKit.ParagraphStyle({
             maxLines: 1,
@@ -2951,7 +2966,10 @@ export class CanvasKitLayerRenderer {
         let paragraphDrawn = false;
         try {
           const fontFamilies = fallbackFamilies
-            .map((family) => this.fontRegistry.resolveFamily(family))
+            .map((family) => this.fontRegistry.resolveProviderFamily(
+              family,
+              layer.fontWeight === 'bold' ? 700 : 400,
+            ))
             .filter((family, index, all) => all.indexOf(family) === index);
           const textStyle = new this.canvasKit.TextStyle({
             color: parseCanvasKitCssColor(this.canvasKit, layer.fill, layer.opacity),
@@ -3946,7 +3964,8 @@ export class CanvasKitLayerRenderer {
   ): { typeface: Typeface; font: Font; paint: Paint } {
     const family = this.fontRegistry.resolveFamily(fontFamily);
     const weight = weightOverride ?? resolveRenderFontWeight(fontFamily, bold);
-    const typeface = this.fontProvider.matchFamilyStyle(family, {
+    const providerFamily = this.fontRegistry.resolveProviderFamily(family, weight);
+    const typeface = this.fontProvider.matchFamilyStyle(providerFamily, {
       weight: weight === 300
         ? this.canvasKit.FontWeight.Light
         : weight === 500
