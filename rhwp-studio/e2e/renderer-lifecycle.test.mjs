@@ -8044,6 +8044,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
     duplicateBitmapResourceTree.resources.images.push(pixelBytes);
     duplicateBitmapResourceTree.resources.imageHashes.push('bitmap-glyph-pixel-duplicate');
     duplicateBitmapResourceTree.resources.imageKeys.push('bitmap-glyph-pixel');
+    const truncatedBitmapResourceTree = treeFor(bitmapOutline);
+    truncatedBitmapResourceTree.resources.images[0] = pixelBytes.slice(0, 33);
+    truncatedBitmapResourceTree.resources.imageHashes[0] = 'bitmap-glyph-truncated-png';
     const duplicateSvgResourceTree = treeFor(svgOutline);
     duplicateSvgResourceTree.resources.svgFragments.push('<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#00ffff"/>');
     duplicateSvgResourceTree.resources.svgHashes.push('svg-glyph-magenta-square-duplicate');
@@ -8625,6 +8628,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       strikeReselectionBitmapGlyph: await render(treeFor(strikeReselectionBitmapOutline)),
       missingResourceBitmapGlyph: await render(treeFor(missingResourceBitmapOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
+      truncatedBitmapGlyph: await render(truncatedBitmapResourceTree),
       svgGlyph: await render(treeFor(svgOutline)),
       missingResourceSvgGlyph: await render(treeFor(missingResourceSvgOutline)),
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
@@ -8836,6 +8840,23 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitBitmapReport?.selectedVariantId === 'glyphOutline'
       && canvaskitBitmapReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects BitmapGlyph GlyphOutline=${JSON.stringify(canvaskitBitmapReport)}`,
+  );
+  const canvaskitTruncatedBitmapReport = canvaskitGlyphOutlineProbe
+    .truncatedBitmapGlyph
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-bitmap');
+  assert(
+    canvaskitTruncatedBitmapReport?.selectedVariantId === 'textRun'
+      && canvaskitTruncatedBitmapReport?.selectedVariantKind === 'textRun'
+      && canvaskitTruncatedBitmapReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.details?.includes('imageDecodeFailed'),
+      )
+      && canvaskitGlyphOutlineProbe.truncatedBitmapGlyph.redPixels > 0,
+    `CanvasKit BitmapGlyph runtime decode failure preserves TextRun fallback=${JSON.stringify({
+      report: canvaskitTruncatedBitmapReport,
+      redPixels: canvaskitGlyphOutlineProbe.truncatedBitmapGlyph?.redPixels,
+    })}`,
   );
   const canvaskitNonpositiveBitmapBBoxReport = canvaskitGlyphOutlineProbe
     .nonpositiveBitmapBBoxGlyph
