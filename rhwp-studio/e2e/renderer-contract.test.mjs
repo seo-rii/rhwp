@@ -1077,10 +1077,7 @@ for (const token of [
   "case '{':",
   "case '}':",
   'builder.quadTo(',
-  'const path = builder.detach()',
-  'builder.delete()',
-  'canvas.drawPath(path, paint)',
-  'path.delete()',
+  'this.drawEquationStrokePath(canvas, builder, color, fontSize * 0.04)',
 ]) {
   assert.equal(
     canvaskitEquationBracketBlock.includes(token),
@@ -1088,6 +1085,38 @@ for (const token of [
     `CanvasKit equation stretch brackets must use direct CanvasKit paths: ${token}`,
   );
 }
+const canvaskitEquationStrokePathBlock =
+  extractMethodBody(canvaskitSource, 'drawEquationStrokePath');
+assertTokensInOrder(
+  canvaskitEquationStrokePathBlock,
+  [
+    'const path = builder.detach()',
+    'builder.delete()',
+    'canvas.drawPath(path, paint)',
+    'paint.delete()',
+    'path.delete()',
+  ],
+  'CanvasKit equation paths must release builders, paths, and paints after direct replay',
+);
+const canvaskitEquationSqrtBlock =
+  extractSwitchCaseBlock(extractMethodBody(canvaskitSource, 'renderEquationBox'), 'sqrt');
+assert(
+  canvaskitEquationSqrtBlock.includes('const radical = new this.canvasKit.PathBuilder()')
+    && canvaskitEquationSqrtBlock.includes('radical.lineTo(startX, startY)')
+    && canvaskitEquationSqrtBlock.includes('radical.lineTo(midX, midY)')
+    && canvaskitEquationSqrtBlock.includes('radical.lineTo(bodyLeft, y)')
+    && canvaskitEquationSqrtBlock.includes('this.drawEquationStrokePath('),
+  'CanvasKit equation radicals must preserve the connected Canvas2D path topology',
+);
+const canvaskitEquationDecorationBlock =
+  extractMethodBody(canvaskitSource, 'drawEquationDecoration');
+assert(
+  canvaskitEquationDecorationBlock.includes('const hat = new this.canvasKit.PathBuilder()')
+    && canvaskitEquationDecorationBlock.includes('const arrowHead = new this.canvasKit.PathBuilder()')
+    && canvaskitEquationDecorationBlock.includes('const tilde = new this.canvasKit.PathBuilder()')
+    && canvaskitEquationDecorationBlock.includes('tilde.quadTo('),
+  'CanvasKit equation hats, vector arrowheads, and tildes must preserve connected and curved Canvas2D topology',
+);
 assert(
   extractMethodBody(canvaskitSource, 'makeEquationStrokePaint')
     .includes('paint.setStrokeWidth(strokeWidth)')

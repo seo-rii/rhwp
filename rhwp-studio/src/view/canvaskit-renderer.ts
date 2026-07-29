@@ -5,6 +5,7 @@ import type {
   Image,
   Paint,
   Path,
+  PathBuilder,
   Shader,
   Surface,
   StrokeCap,
@@ -3092,10 +3093,13 @@ export class CanvasKitLayerRenderer {
         const startY = y + signHeight * 0.6;
         const tickX = startX - fontSize * 0.1;
         const tickY = startY - fontSize * 0.05;
-        this.drawEquationLine(canvas, tickX, tickY, startX, startY, color, fontSize * 0.04);
-        this.drawEquationLine(canvas, startX, startY, midX, midY, color, fontSize * 0.04);
-        this.drawEquationLine(canvas, midX, midY, bodyLeft, y, color, fontSize * 0.04);
-        this.drawEquationLine(canvas, bodyLeft, y, x + layout.width, y, color, fontSize * 0.04);
+        const radical = new this.canvasKit.PathBuilder();
+        radical.moveTo(tickX, tickY);
+        radical.lineTo(startX, startY);
+        radical.lineTo(midX, midY);
+        radical.lineTo(bodyLeft, y);
+        radical.lineTo(x + layout.width, y);
+        this.drawEquationStrokePath(canvas, radical, color, fontSize * 0.04);
         if (layout.kind.index) {
           this.renderEquationBox(
             canvas,
@@ -3417,18 +3421,30 @@ export class CanvasKitLayerRenderer {
         );
         return;
     }
-    const path = builder.detach();
-    builder.delete();
-    const paint = this.makeEquationStrokePaint(color, fontSize * 0.04);
-    canvas.drawPath(path, paint);
-    paint.delete();
-    path.delete();
+    this.drawEquationStrokePath(canvas, builder, color, fontSize * 0.04);
   }
 
   private makeEquationStrokePaint(color: string, strokeWidth: number): Paint {
     const paint = this.makePaint(color, 'stroke');
     paint.setStrokeWidth(strokeWidth);
     return paint;
+  }
+
+  private drawEquationStrokePath(
+    canvas: ReturnType<Surface['getCanvas']>,
+    builder: PathBuilder,
+    color: string,
+    strokeWidth: number,
+  ): void {
+    const path = builder.detach();
+    builder.delete();
+    const paint = this.makeEquationStrokePaint(color, strokeWidth);
+    try {
+      canvas.drawPath(path, paint);
+    } finally {
+      paint.delete();
+      path.delete();
+    }
   }
 
   private drawEquationDecoration(
@@ -3443,10 +3459,14 @@ export class CanvasKitLayerRenderer {
     const strokeWidth = fontSize * 0.03;
     const halfWidth = width / 2;
     switch (decoration) {
-      case 'hat':
-        this.drawEquationLine(canvas, midX - halfWidth * 0.6, y + fontSize * 0.15, midX, y, color, strokeWidth);
-        this.drawEquationLine(canvas, midX, y, midX + halfWidth * 0.6, y + fontSize * 0.15, color, strokeWidth);
+      case 'hat': {
+        const hat = new this.canvasKit.PathBuilder();
+        hat.moveTo(midX - halfWidth * 0.6, y + fontSize * 0.15);
+        hat.lineTo(midX, y);
+        hat.lineTo(midX + halfWidth * 0.6, y + fontSize * 0.15);
+        this.drawEquationStrokePath(canvas, hat, color, strokeWidth);
         return;
+      }
       case 'bar':
       case 'overline':
         this.drawEquationLine(canvas, midX - halfWidth, y + fontSize * 0.05, midX + halfWidth, y + fontSize * 0.05, color, strokeWidth);
@@ -3454,20 +3474,36 @@ export class CanvasKitLayerRenderer {
       case 'vec': {
         const arrowY = y + fontSize * 0.05;
         this.drawEquationLine(canvas, midX - halfWidth, arrowY, midX + halfWidth, arrowY, color, strokeWidth);
-        this.drawEquationLine(canvas, midX + halfWidth - fontSize * 0.1, arrowY - fontSize * 0.06, midX + halfWidth, arrowY, color, strokeWidth);
-        this.drawEquationLine(canvas, midX + halfWidth, arrowY, midX + halfWidth - fontSize * 0.1, arrowY + fontSize * 0.06, color, strokeWidth);
+        const arrowHead = new this.canvasKit.PathBuilder();
+        arrowHead.moveTo(
+          midX + halfWidth - fontSize * 0.1,
+          arrowY - fontSize * 0.06,
+        );
+        arrowHead.lineTo(midX + halfWidth, arrowY);
+        arrowHead.lineTo(
+          midX + halfWidth - fontSize * 0.1,
+          arrowY + fontSize * 0.06,
+        );
+        this.drawEquationStrokePath(canvas, arrowHead, color, strokeWidth);
         return;
       }
       case 'tilde': {
-        const leftX = midX - halfWidth * 0.6;
-        const rightX = midX + halfWidth * 0.6;
-        const midLeftX = midX - halfWidth * 0.2;
-        const midRightX = midX + halfWidth * 0.2;
-        const baseY = y + fontSize * 0.08;
-        this.drawEquationLine(canvas, leftX, baseY, midLeftX, baseY - fontSize * 0.08, color, strokeWidth);
-        this.drawEquationLine(canvas, midLeftX, baseY - fontSize * 0.08, midX, baseY, color, strokeWidth);
-        this.drawEquationLine(canvas, midX, baseY, midRightX, baseY + fontSize * 0.08, color, strokeWidth);
-        this.drawEquationLine(canvas, midRightX, baseY + fontSize * 0.08, rightX, baseY, color, strokeWidth);
+        const tildeY = y + fontSize * 0.08;
+        const tilde = new this.canvasKit.PathBuilder();
+        tilde.moveTo(midX - halfWidth * 0.6, tildeY);
+        tilde.quadTo(
+          midX - halfWidth * 0.2,
+          tildeY - fontSize * 0.08,
+          midX,
+          tildeY,
+        );
+        tilde.quadTo(
+          midX + halfWidth * 0.2,
+          tildeY + fontSize * 0.08,
+          midX + halfWidth * 0.6,
+          tildeY,
+        );
+        this.drawEquationStrokePath(canvas, tilde, color, strokeWidth);
         return;
       }
       case 'dot':

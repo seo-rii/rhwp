@@ -457,6 +457,9 @@ The working order is:
    advances instead of scaling every token to its layout box, centers only the
    token kinds that Canvas2D centers, constructs `()[]{}` stretch delimiters as
    direct Skia paths, and preserves the authored equation stroke widths.
+   Radicals, hats, and vector arrowheads retain connected path joins, while
+   tildes use the same two quadratic segments as Canvas2D, including
+   subpixel-width equation strokes.
    `getEquationReplayDiagnostics()` reports whether each equation used direct
    SVG or layout replay and distinguishes requested layout from missing SVG
    resources, unsupported static payloads, invalid bounds, and CanvasKit path

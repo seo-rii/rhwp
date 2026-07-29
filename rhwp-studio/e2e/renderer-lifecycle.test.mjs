@@ -15064,6 +15064,197 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation geometry parity exact=${equationGeometryDiff.exactDiffPixels}, tolerant=${equationGeometryDiff.rawTolerantDiffPixels}, ink=${equationGeometryDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationGeometryDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-equation-path-topology-parity');
+  const equationPathTopologyProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const emptyBox = (x, y, width, height) => ({
+      x,
+      y,
+      width,
+      height,
+      baseline: 0,
+      kind: { type: 'empty' },
+    });
+    const decorationBox = (x, decoration) => ({
+      x,
+      y: 8,
+      width: 20,
+      height: 18,
+      baseline: 12,
+      kind: {
+        type: 'decoration',
+        decoration,
+        body: emptyBox(0, 8, 20, 8),
+      },
+    });
+    const parenBox = (x, left, right) => ({
+      x,
+      y: 3,
+      width: 26,
+      height: 28,
+      baseline: 16,
+      kind: {
+        type: 'paren',
+        left,
+        right,
+        body: emptyBox(8, 8, 10, 10),
+      },
+    });
+    const tree = {
+      pageWidth: 204,
+      pageHeight: 68,
+      profile: 'screen',
+      resources: { tableId: 1913, images: [], svgFragments: [] },
+      root: {
+        kind: 'leaf',
+        bounds: { x: 0, y: 0, width: 204, height: 68 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 204, height: 68 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          {
+            type: 'equation',
+            bbox: { x: 2, y: 2, width: 200, height: 34 },
+            color: '#111111',
+            fontSize: 18,
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 200,
+              height: 34,
+              baseline: 18,
+              kind: {
+                type: 'row',
+                children: [
+                  decorationBox(4, 'hat'),
+                  decorationBox(30, 'vec'),
+                  decorationBox(56, 'tilde'),
+                  decorationBox(82, 'dot'),
+                  decorationBox(108, 'dDot'),
+                  parenBox(134, '[', ']'),
+                  parenBox(166, '{', '}'),
+                ],
+              },
+            },
+          },
+          {
+            type: 'equation',
+            bbox: { x: 4, y: 46, width: 58, height: 16 },
+            color: '#111111',
+            fontSize: 6,
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 58,
+              height: 16,
+              baseline: 8,
+              kind: {
+                type: 'row',
+                children: [
+                  {
+                    x: 0,
+                    y: 1,
+                    width: 28,
+                    height: 12,
+                    baseline: 7,
+                    kind: {
+                      type: 'sqrt',
+                      body: emptyBox(8, 3, 18, 7),
+                    },
+                  },
+                  {
+                    x: 34,
+                    y: 2,
+                    width: 20,
+                    height: 10,
+                    baseline: 6,
+                    kind: {
+                      type: 'decoration',
+                      decoration: 'tilde',
+                      body: emptyBox(0, 4, 20, 6),
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !equationPathTopologyProbe.error,
+    equationPathTopologyProbe.error || 'equation path topology parity probe available',
+  );
+  const equationTopologyRegions = [
+    { name: 'hat', left: 4, top: 5, right: 28, bottom: 18, minimum: 2 },
+    { name: 'vector', left: 30, top: 5, right: 54, bottom: 18, minimum: 4 },
+    { name: 'tilde', left: 56, top: 5, right: 80, bottom: 18, minimum: 2 },
+    { name: 'dots', left: 82, top: 5, right: 130, bottom: 18, minimum: 2 },
+    { name: 'brackets', left: 134, top: 3, right: 202, bottom: 35, minimum: 20 },
+    { name: 'subpixel', left: 4, top: 46, right: 64, bottom: 64, minimum: 4 },
+  ];
+  for (const region of equationTopologyRegions) {
+    const countInk = (dataUrl) => countPixels(
+      dataUrl,
+      (pixel) =>
+        pixel.x >= region.left
+        && pixel.x < region.right
+        && pixel.y >= region.top
+        && pixel.y < region.bottom
+        && pixel.alpha > 16
+        && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+    );
+    const canvas2dInk = countInk(equationPathTopologyProbe.canvas2d);
+    const canvaskitInk = countInk(equationPathTopologyProbe.canvaskit);
+    assert(
+      canvas2dInk >= region.minimum && canvaskitInk >= region.minimum,
+      `equation ${region.name} path topology paints its region canvas2d=${canvas2dInk}, canvaskit=${canvaskitInk}`,
+    );
+  }
+  const equationPathTopologyDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(equationPathTopologyProbe.canvas2d),
+    pngBufferFromDataUrl(equationPathTopologyProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-equation-path-topology-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.04,
+      inkMaskMaxDiffRatio: 0.03,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    equationPathTopologyDiff.passed,
+    `equation path topology parity exact=${equationPathTopologyDiff.exactDiffPixels}, tolerant=${equationPathTopologyDiff.rawTolerantDiffPixels}, ink=${equationPathTopologyDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationPathTopologyDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-equation-svg-resource-parity');
   const equationSvgResourceParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
