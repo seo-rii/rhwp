@@ -219,6 +219,12 @@ type CanvasKitPreparedSvgGlyphPathLayer = {
   path: Path;
 };
 
+type CanvasKitShapedSingleLine = {
+  paragraph: Paragraph;
+  width: number;
+  alphabeticBaseline: number;
+};
+
 export class CanvasKitLayerRenderer {
   // Prevent pathological tiled fills from monopolizing the render loop.
   private static readonly MAX_IMAGE_TILE_DRAWS = 4096;
@@ -2796,6 +2802,12 @@ export class CanvasKitLayerRenderer {
   ): void {
     const { x, y, width: w, height: h } = op.bbox;
     const palette = formObjectPalette(op);
+    let formText: {
+      text: string;
+      fontSize: number;
+      anchorX: number;
+      centered: boolean;
+    } | null = null;
 
     switch (op.formType) {
       case 'pushButton': {
@@ -2807,22 +2819,14 @@ export class CanvasKitLayerRenderer {
         strokePaint.delete();
 
         if (op.caption) {
-          const fontSize = Math.min(Math.max(h * 0.5, 8), 12);
-          const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
-          const metrics = font.getMetrics();
-          const glyphIds = font.getGlyphIDs(op.caption);
-          const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
-          const textWidth = glyphWidths.length > 0
-            ? glyphWidths.reduce((sum, width) => sum + width, 0)
-            : op.caption.length * fontSize * 0.55;
-          const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
-          canvas.drawText(op.caption, x + w / 2 - textWidth / 2, baselineY, paint, font);
-          paint.delete();
-          font.delete();
-          typeface.delete();
+          formText = {
+            text: op.caption,
+            fontSize: Math.min(Math.max(h * 0.5, 8), 12),
+            anchorX: x + w / 2,
+            centered: true,
+          };
         }
-        return;
+        break;
       }
       case 'checkBox': {
         const boxSize = Math.min(h, 14);
@@ -2849,17 +2853,14 @@ export class CanvasKitLayerRenderer {
         }
 
         if (op.caption) {
-          const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
-          const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
-          const metrics = font.getMetrics();
-          const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
-          canvas.drawText(op.caption, boxX + boxSize + 4, baselineY, paint, font);
-          paint.delete();
-          font.delete();
-          typeface.delete();
+          formText = {
+            text: op.caption,
+            fontSize: Math.min(Math.max(h * 0.7, 8), 12),
+            anchorX: boxX + boxSize + 4,
+            centered: false,
+          };
         }
-        return;
+        break;
       }
       case 'radioButton': {
         const r = Math.min(h, 14) / 2;
@@ -2879,17 +2880,14 @@ export class CanvasKitLayerRenderer {
         }
 
         if (op.caption) {
-          const fontSize = Math.min(Math.max(h * 0.7, 8), 12);
-          const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
-          const metrics = font.getMetrics();
-          const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
-          canvas.drawText(op.caption, x + r * 2 + 4, baselineY, paint, font);
-          paint.delete();
-          font.delete();
-          typeface.delete();
+          formText = {
+            text: op.caption,
+            fontSize: Math.min(Math.max(h * 0.7, 8), 12),
+            anchorX: x + r * 2 + 4,
+            centered: false,
+          };
         }
-        return;
+        break;
       }
       case 'comboBox': {
         const btnW = Math.min(h, 20);
@@ -2901,40 +2899,14 @@ export class CanvasKitLayerRenderer {
         strokePaint.delete();
 
         if (op.text) {
-          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
-          const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
-          const metrics = font.getMetrics();
-          const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
-          canvas.drawText(op.text, x + 2, baselineY, paint, font);
-          paint.delete();
-          font.delete();
-          typeface.delete();
+          formText = {
+            text: op.text,
+            fontSize: Math.min(Math.max(h * 0.6, 8), 12),
+            anchorX: x + 2,
+            centered: false,
+          };
         }
-
-        const buttonRect = this.canvasKit.XYWHRect(x + w - btnW, y, btnW, h);
-        const buttonFill = this.makePaint(palette.buttonFaceColor, 'fill');
-        const buttonStroke = this.makeLinePaint(palette.borderColor, 1, 'solid');
-        canvas.drawRect(buttonRect, buttonFill);
-        canvas.drawRect(buttonRect, buttonStroke);
-        buttonFill.delete();
-        buttonStroke.delete();
-
-        const arrowCx = x + w - btnW / 2;
-        const arrowCy = y + h / 2;
-        const arrowSize = btnW * 0.3;
-        const arrowPath = new this.canvasKit.PathBuilder();
-        arrowPath.moveTo(arrowCx - arrowSize, arrowCy - arrowSize / 2);
-        arrowPath.lineTo(arrowCx + arrowSize, arrowCy - arrowSize / 2);
-        arrowPath.lineTo(arrowCx, arrowCy + arrowSize / 2);
-        arrowPath.close();
-        const arrowPaint = this.makePaint(palette.foreColor, 'fill');
-        const arrowShape = arrowPath.detach();
-        canvas.drawPath(arrowShape, arrowPaint);
-        arrowPaint.delete();
-        arrowShape.delete();
-        arrowPath.delete();
-        return;
+        break;
       }
       case 'edit': {
         const fillPaint = this.makePaint(palette.backColor, 'fill');
@@ -2945,17 +2917,101 @@ export class CanvasKitLayerRenderer {
         strokePaint.delete();
 
         if (op.text) {
-          const fontSize = Math.min(Math.max(h * 0.6, 8), 12);
-          const family = this.fontRegistry.resolveFamily('sans-serif');
-          const { font, paint, typeface } = this.makeTextObjects(family, fontSize, false, false, palette.foreColor);
-          const metrics = font.getMetrics();
-          const baselineY = y + h / 2 - ((metrics.ascent ?? -fontSize * 0.8) + (metrics.descent ?? fontSize * 0.2)) / 2;
-          canvas.drawText(op.text, x + 2, baselineY, paint, font);
-          paint.delete();
-          font.delete();
-          typeface.delete();
+          formText = {
+            text: op.text,
+            fontSize: Math.min(Math.max(h * 0.6, 8), 12),
+            anchorX: x + 2,
+            centered: false,
+          };
         }
+        break;
       }
+    }
+
+    if (formText) {
+      const family = this.fontRegistry.resolveFamily('sans-serif');
+      const { font, paint, typeface } = this.makeTextObjects(
+        family,
+        formText.fontSize,
+        false,
+        false,
+        palette.foreColor,
+      );
+      try {
+        const metrics = font.getMetrics();
+        const baselineY = y + h / 2 - (
+          (metrics.ascent ?? -formText.fontSize * 0.8)
+          + (metrics.descent ?? formText.fontSize * 0.2)
+        ) / 2;
+        const shaped = this.buildShapedSingleLineParagraph(
+          formText.text,
+          [family, 'Noto Sans KR', 'Noto Sans CJK KR'],
+          formText.fontSize,
+          400,
+          false,
+          palette.foreColor,
+          1,
+        );
+        let shapedDrawn = false;
+        if (shaped) {
+          try {
+            const drawX = formText.centered
+              ? formText.anchorX - shaped.width / 2
+              : formText.anchorX;
+            canvas.drawParagraph(
+              shaped.paragraph,
+              drawX,
+              baselineY - shaped.alphabeticBaseline,
+            );
+            shapedDrawn = true;
+          } catch {
+            shapedDrawn = false;
+          } finally {
+            shaped.paragraph.delete();
+          }
+        }
+        if (!shapedDrawn) {
+          const glyphIds = font.getGlyphIDs(formText.text);
+          const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
+          const measuredWidth = glyphWidths.length > 0
+            ? glyphWidths.reduce((sum, width) => sum + width, 0)
+            : formText.text.length * formText.fontSize * 0.55;
+          const drawX = formText.centered
+            ? formText.anchorX - measuredWidth / 2
+            : formText.anchorX;
+          canvas.drawText(formText.text, drawX, baselineY, paint, font);
+        }
+      } finally {
+        paint.delete();
+        font.delete();
+        typeface.delete();
+      }
+    }
+
+    if (op.formType === 'comboBox') {
+      const btnW = Math.min(h, 20);
+      const buttonRect = this.canvasKit.XYWHRect(x + w - btnW, y, btnW, h);
+      const buttonFill = this.makePaint(palette.buttonFaceColor, 'fill');
+      const buttonStroke = this.makeLinePaint(palette.borderColor, 1, 'solid');
+      canvas.drawRect(buttonRect, buttonFill);
+      canvas.drawRect(buttonRect, buttonStroke);
+      buttonFill.delete();
+      buttonStroke.delete();
+
+      const arrowCx = x + w - btnW / 2;
+      const arrowCy = y + h / 2;
+      const arrowSize = btnW * 0.3;
+      const arrowPath = new this.canvasKit.PathBuilder();
+      arrowPath.moveTo(arrowCx - arrowSize, arrowCy - arrowSize / 2);
+      arrowPath.lineTo(arrowCx + arrowSize, arrowCy - arrowSize / 2);
+      arrowPath.lineTo(arrowCx, arrowCy + arrowSize / 2);
+      arrowPath.close();
+      const arrowPaint = this.makePaint(palette.foreColor, 'fill');
+      const arrowShape = arrowPath.detach();
+      canvas.drawPath(arrowShape, arrowPaint);
+      arrowPaint.delete();
+      arrowShape.delete();
+      arrowPath.delete();
     }
   }
 
@@ -3112,6 +3168,67 @@ export class CanvasKitLayerRenderer {
     });
   }
 
+  private buildShapedSingleLineParagraph(
+    text: string,
+    fallbackFamilies: readonly string[],
+    fontSize: number,
+    fontWeight: RenderFontWeight,
+    italic: boolean,
+    color: string,
+    opacity: number,
+  ): CanvasKitShapedSingleLine | null {
+    let paragraph: Paragraph | null = null;
+    try {
+      const fontFamilies = fallbackFamilies
+        .map((family) => this.fontRegistry.resolveProviderFamily(family, fontWeight))
+        .filter((family, index, all) => all.indexOf(family) === index);
+      const textStyle = new this.canvasKit.TextStyle({
+        color: parseCanvasKitCssColor(this.canvasKit, color, opacity),
+        fontFamilies,
+        fontSize,
+        fontStyle: {
+          weight: fontWeight === 700
+            ? this.canvasKit.FontWeight.Bold
+            : this.canvasKit.FontWeight.Normal,
+          slant: italic
+            ? this.canvasKit.FontSlant.Italic
+            : this.canvasKit.FontSlant.Upright,
+        },
+      });
+      const paragraphStyle = new this.canvasKit.ParagraphStyle({
+        maxLines: 1,
+        textStyle,
+      });
+      const builder = this.canvasKit.ParagraphBuilder.MakeFromFontProvider(
+        paragraphStyle,
+        this.fontProvider,
+      );
+      try {
+        builder.addText(text);
+        paragraph = builder.build();
+      } finally {
+        builder.delete();
+      }
+      if (!paragraph) {
+        throw new Error('single-line paragraph construction failed');
+      }
+      paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH);
+      const width = paragraph.getLongestLine();
+      const alphabeticBaseline = paragraph.getAlphabeticBaseline();
+      if (!Number.isFinite(width) || !Number.isFinite(alphabeticBaseline)) {
+        throw new Error('invalid single-line paragraph metrics');
+      }
+      return {
+        paragraph,
+        width,
+        alphabeticBaseline,
+      };
+    } catch {
+      paragraph?.delete();
+      return null;
+    }
+  }
+
   private renderStaticSvgTextLayer(
     canvas: ReturnType<Surface['getCanvas']>,
     layer: StaticSvgTextLayer,
@@ -3156,66 +3273,40 @@ export class CanvasKitLayerRenderer {
         'Noto Serif CJK KR',
       ].filter((family, index, all) => all.indexOf(family) === index);
       try {
-        let paragraphDrawn = false;
-        try {
-          const fontFamilies = fallbackFamilies
-            .map((family) => this.fontRegistry.resolveProviderFamily(
-              family,
-              layer.fontWeight === 'bold' ? 700 : 400,
-            ))
-            .filter((family, index, all) => all.indexOf(family) === index);
-          const textStyle = new this.canvasKit.TextStyle({
-            color: parseCanvasKitCssColor(this.canvasKit, layer.fill, layer.opacity),
-            fontFamilies,
-            fontSize: layer.fontSize,
-            fontStyle: {
-              weight: layer.fontWeight === 'bold'
-                ? this.canvasKit.FontWeight.Bold
-                : this.canvasKit.FontWeight.Normal,
-              slant: layer.fontStyle === 'italic'
-                ? this.canvasKit.FontSlant.Italic
-                : this.canvasKit.FontSlant.Upright,
-            },
-          });
-          const paragraphStyle = new this.canvasKit.ParagraphStyle({
-            maxLines: 1,
-            textStyle,
-          });
-          const builder = this.canvasKit.ParagraphBuilder.MakeFromFontProvider(
-            paragraphStyle,
-            this.fontProvider,
-          );
+        const shaped = this.buildShapedSingleLineParagraph(
+          layer.text,
+          fallbackFamilies,
+          layer.fontSize,
+          layer.fontWeight === 'bold' ? 700 : 400,
+          layer.fontStyle === 'italic',
+          layer.fill,
+          layer.opacity,
+        );
+        if (shaped) {
+          let paragraphDrawn = false;
           try {
-            builder.addText(layer.text);
-            const paragraph = builder.build();
-            try {
-              paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH);
-              const textWidth = paragraph.getLongestLine();
-              const drawX = layer.textAnchor === 'middle'
-                ? layer.x - textWidth / 2
-                : layer.textAnchor === 'end'
-                  ? layer.x - textWidth
-                  : layer.x;
-              const baselineY = layer.dominantBaseline === 'middle'
-                ? layer.y + layer.fontSize * 0.35
-                : layer.y;
-              canvas.drawParagraph(
-                paragraph,
-                drawX,
-                baselineY - paragraph.getAlphabeticBaseline(),
-              );
-              paragraphDrawn = true;
-            } finally {
-              paragraph.delete();
-            }
+            const drawX = layer.textAnchor === 'middle'
+              ? layer.x - shaped.width / 2
+              : layer.textAnchor === 'end'
+                ? layer.x - shaped.width
+                : layer.x;
+            const baselineY = layer.dominantBaseline === 'middle'
+              ? layer.y + layer.fontSize * 0.35
+              : layer.y;
+            canvas.drawParagraph(
+              shaped.paragraph,
+              drawX,
+              baselineY - shaped.alphabeticBaseline,
+            );
+            paragraphDrawn = true;
+          } catch {
+            paragraphDrawn = false;
           } finally {
-            builder.delete();
+            shaped.paragraph.delete();
           }
-        } catch {
-          paragraphDrawn = false;
-        }
-        if (paragraphDrawn) {
-          return;
+          if (paragraphDrawn) {
+            return;
+          }
         }
 
         const primaryObjects = makeSvgTextObjects(layer.fontFamily);

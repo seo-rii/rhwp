@@ -582,6 +582,11 @@ The working order is:
    through the registered CanvasKit font provider before its measured width and
    alphabetic baseline are used to apply SVG anchors; cluster-by-cluster drawing
    remains only a failure fallback so kerning, ligatures, and joining survive.
+   Form-object captions and values use the same single-line Paragraph builder.
+   Their Canvas2D-compatible font metrics still own vertical centering, the
+   shaped line width owns push-button centering, and direct `drawText` remains
+   only a construction/draw failure fallback. Combo-box buttons are painted
+   after the shaped value so they retain Canvas2D's overflow-covering order.
    Logical fallback family names remain stable in the public replay contract,
    while CanvasKit registers bundled regular and bold files under distinct
    internal provider families. Direct text and Paragraph replay resolve the

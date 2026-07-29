@@ -1321,23 +1321,57 @@ assertTokensInOrder(
 );
 const canvaskitStaticSvgTextBlock =
   extractMethodBody(canvaskitSource, 'renderStaticSvgTextLayer');
+const canvaskitShapedSingleLineBlock =
+  extractMethodBody(canvaskitSource, 'buildShapedSingleLineParagraph');
+assertTokensInOrder(
+  canvaskitShapedSingleLineBlock,
+  [
+    'this.fontRegistry.resolveProviderFamily(family, fontWeight)',
+    'this.canvasKit.ParagraphBuilder.MakeFromFontProvider(',
+    'this.fontProvider',
+    'builder.addText(text)',
+    'paragraph = builder.build()',
+    'builder.delete()',
+    'paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH)',
+    'const width = paragraph.getLongestLine()',
+    'const alphabeticBaseline = paragraph.getAlphabeticBaseline()',
+    'paragraph?.delete()',
+  ],
+  'CanvasKit shared single-line shaping must use the registered provider and release failed paragraphs',
+);
 assertTokensInOrder(
   canvaskitStaticSvgTextBlock,
   [
-    'this.canvasKit.ParagraphBuilder.MakeFromFontProvider(',
-    'this.fontProvider',
-    'builder.addText(layer.text)',
-    'paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH)',
-    'const textWidth = paragraph.getLongestLine()',
+    'this.buildShapedSingleLineParagraph(',
+    'layer.text',
+    'if (shaped)',
     'canvas.drawParagraph(',
-    'baselineY - paragraph.getAlphabeticBaseline()',
+    'baselineY - shaped.alphabeticBaseline',
     'paragraphDrawn = true',
-    'paragraph.delete()',
-    'builder.delete()',
+    'shaped.paragraph.delete()',
     'if (paragraphDrawn)',
     'const clusters = splitIntoClusters(layer.text)',
   ],
   'CanvasKit static SVG text must shape the complete string before using its direct-text fallback',
+);
+const canvaskitFormObjectBlock =
+  extractMethodBody(canvaskitSource, 'renderFormObject');
+assertTokensInOrder(
+  canvaskitFormObjectBlock,
+  [
+    'const shaped = this.buildShapedSingleLineParagraph(',
+    'formText.text',
+    'formText.centered',
+    'formText.anchorX - shaped.width / 2',
+    'canvas.drawParagraph(',
+    'shapedDrawn = true',
+    'shaped.paragraph.delete()',
+    'if (!shapedDrawn)',
+    'canvas.drawText(formText.text',
+    "if (op.formType === 'comboBox')",
+    'canvas.drawRect(buttonRect',
+  ],
+  'CanvasKit form text must shape one line before direct fallback and retain combo-button overdraw order',
 );
 assert(
   extractSwitchCaseBlock(extractMethodBody(canvas2dSource, 'renderOp'), 'equation')

@@ -12272,15 +12272,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `form object CJK text parity exact=${formObjectCjkTextDiff.exactDiffPixels}, tolerant=${formObjectCjkTextDiff.rawTolerantDiffPixels}, ink=${formObjectCjkTextDiff.rawInkMaskDiffPixels}, max_channel_delta=${formObjectCjkTextDiff.maxChannelDelta}`,
   );
 
-  setTestCase('canvaskit-form-caption-direct-measurement');
-  const formCaptionDirectMeasurementProbe = await page.evaluate(async () => {
+  setTestCase('canvaskit-form-caption-paragraph-shaping');
+  const formCaptionParagraphShapingProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
     if (!canvaskitRenderer) {
       return { error: 'CanvasKit renderer unavailable' };
     }
+    const paragraphBuilder = canvaskitRenderer.canvasKit?.ParagraphBuilder;
+    const originalMakeFromFontProvider = paragraphBuilder?.MakeFromFontProvider;
+    if (!paragraphBuilder || typeof originalMakeFromFontProvider !== 'function') {
+      return { error: 'CanvasKit ParagraphBuilder unavailable' };
+    }
     const tree = {
-      pageWidth: 52,
+      pageWidth: 116,
       pageHeight: 24,
       profile: 'screen',
       outputOptions: {
@@ -12306,15 +12311,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1917,
-        bounds: { x: 0, y: 0, width: 52, height: 24 },
+        bounds: { x: 0, y: 0, width: 116, height: 24 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 52, height: 24 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 116, height: 24 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'formObject',
-            bbox: { x: 4, y: 4, width: 44, height: 16 },
+            bbox: { x: 4, y: 4, width: 108, height: 16 },
             formType: 'pushButton',
-            caption: 'OK',
+            caption: 'AVATAR office',
             text: '',
             foreColor: '#0040cc',
             backColor: '#d6d6d6',
@@ -12326,9 +12331,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     };
     const originalMeasureTextWidth = globalThis.measureTextWidth;
     let measureCalls = 0;
+    let paragraphBuildCalls = 0;
     globalThis.measureTextWidth = () => {
       measureCalls += 1;
       return 999;
+    };
+    paragraphBuilder.MakeFromFontProvider = function (...args) {
+      paragraphBuildCalls += 1;
+      return originalMakeFromFontProvider.apply(this, args);
     };
     try {
       const canvas = document.createElement('canvas');
@@ -12339,8 +12349,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       await new Promise((resolve) => requestAnimationFrame(resolve));
       const png = canvas.toDataURL('image/png');
       canvas.remove();
-      return { measureCalls, png };
+      return { measureCalls, paragraphBuildCalls, png };
     } finally {
+      paragraphBuilder.MakeFromFontProvider = originalMakeFromFontProvider;
       if (originalMeasureTextWidth) {
         globalThis.measureTextWidth = originalMeasureTextWidth;
       } else {
@@ -12349,20 +12360,24 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
   });
   assert(
-    !formCaptionDirectMeasurementProbe.error,
-    formCaptionDirectMeasurementProbe.error || 'CanvasKit form caption direct measurement probe available',
+    !formCaptionParagraphShapingProbe.error,
+    formCaptionParagraphShapingProbe.error || 'CanvasKit form caption Paragraph shaping probe available',
   );
   const formCaptionBluePixels = countPixels(
-    formCaptionDirectMeasurementProbe.png,
+    formCaptionParagraphShapingProbe.png,
     (pixel) => pixel.alpha > 32 && pixel.blue > 120 && pixel.red < 120 && pixel.green < 150,
   );
   assert(
-    formCaptionDirectMeasurementProbe.measureCalls === 0,
-    `CanvasKit form caption does not call browser measureTextWidth calls=${formCaptionDirectMeasurementProbe.measureCalls}`,
+    formCaptionParagraphShapingProbe.measureCalls === 0,
+    `CanvasKit form caption does not call browser measureTextWidth calls=${formCaptionParagraphShapingProbe.measureCalls}`,
+  );
+  assert(
+    formCaptionParagraphShapingProbe.paragraphBuildCalls > 0,
+    `CanvasKit form caption shapes through Paragraph calls=${formCaptionParagraphShapingProbe.paragraphBuildCalls}`,
   );
   assert(
     formCaptionBluePixels > 10,
-    `CanvasKit form caption still draws text without browser measurement pixels=${formCaptionBluePixels}`,
+    `CanvasKit form caption draws shaped text pixels=${formCaptionBluePixels}`,
   );
 
   setTestCase('canvas-layer-form-object-disabled-parity');
