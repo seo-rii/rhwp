@@ -33,6 +33,7 @@ test('KoPub Batang remains proportional serif after removing its weight suffix',
   const candidates = canvasFontFamilyFallbackCandidates('KoPub바탕체 Light');
   assert.deepEqual(candidates.slice(0, 3), ['KoPub바탕체 Light', 'KoPub바탕체', 'Batang']);
   assert.equal(candidates.includes('GulimChe'), false);
+  assert.deepEqual(candidates.slice(-2), ['Latin Modern Math', 'serif']);
   assert.equal(candidates.at(-1), 'serif');
 });
 
@@ -62,6 +63,10 @@ test('Canvas2D shorthand combines inferred weight with the shared family chain',
   assert.match(
     buildCanvasTextFont('', 10, false, false),
     /"Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR ExtraLight"/,
+  );
+  assert.match(
+    buildCanvasTextFont('없는 산세리프', 10, false, false),
+    /"Latin Modern Math", sans-serif$/,
   );
 });
 

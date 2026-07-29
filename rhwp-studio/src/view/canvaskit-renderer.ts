@@ -1110,12 +1110,21 @@ export class CanvasKitLayerRenderer {
         (codePoint >= 0x2460 && codePoint <= 0x24FF)
         || (codePoint >= 0x25A0 && codePoint <= 0x25FF)
         || (codePoint >= 0x2600 && codePoint <= 0x27BF);
+      const needsSupplementaryFallback = codePoint > 0xffff;
       const preferredFallbackFamilies = needsCurrencyFallback
         ? ['Malgun Gothic', '맑은 고딕', 'Noto Sans KR']
         : needsSymbolFallback
           ? ['GulimChe', '굴림체', 'D2Coding', 'NanumGothicCoding', 'Noto Sans Mono']
-          : [];
-      const fallbackClass = needsCurrencyFallback ? 'currency' : needsSymbolFallback ? 'symbol' : 'general';
+          : needsSupplementaryFallback
+            ? ['Latin Modern Math']
+            : [];
+      const fallbackClass = needsCurrencyFallback
+        ? 'currency'
+        : needsSymbolFallback
+          ? 'symbol'
+          : needsSupplementaryFallback
+            ? 'supplementary'
+            : 'general';
       const familyCacheKey = JSON.stringify([
         resolvedPrimaryFamily,
         renderFontWeight,
@@ -1146,8 +1155,10 @@ export class CanvasKitLayerRenderer {
         }
         selectedFont = primaryObjects.font;
         const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
-        if (preferredFallbackFamilies.length > 0 || primaryGlyphs?.some((glyphId) => glyphId === 0)) {
-          const candidateFamilies = preferredFallbackFamilies.length > 0 ? preferredFallbackFamilies : fallbackFamilies;
+        const primaryGlyphMissing = primaryGlyphs?.some((glyphId) => glyphId === 0) ?? true;
+        if (needsCurrencyFallback || needsSymbolFallback || primaryGlyphMissing) {
+          const candidateFamilies = [...preferredFallbackFamilies, ...fallbackFamilies]
+            .filter((family, index, all) => all.indexOf(family) === index);
           for (const family of candidateFamilies) {
             let candidate = textObjectsByFamily.get(family);
             if (!candidate) {

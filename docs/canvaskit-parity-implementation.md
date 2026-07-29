@@ -510,6 +510,11 @@ The working order is:
    baseline from the selected glyph bounds, with the CanvasKit font ascent and
    descent as a fallback, instead of a font-size constant. This matches
    Canvas2D `textBaseline = "middle"` placement.
+   Supplementary-plane root text keeps the authored family first, then uses the
+   checked-in `Latin Modern Math` face before generic fallback. CanvasKit probes
+   the authored face and the math face by glyph id, while Canvas2D uses the same
+   ordered CSS family chain; this makes supported non-BMP mathematical letters
+   deterministic without replacing glyphs supplied by the authored font.
    All six HWP emphasis-mark variants use shared
    circle, line, and quadratic geometry in both browser backends, avoiding
    browser-only symbol-font fallback for the less common marks. Tab leaders

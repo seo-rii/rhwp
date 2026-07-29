@@ -17978,7 +17978,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
     if (!canvas2dRenderer || !canvaskitRenderer) {
       return { error: 'renderers unavailable' };
     }
-    const text = 'A₩①◆☀€';
+    const supplementaryMathLetter = '\u{1D400}';
+    const text = `A₩①◆☀€${supplementaryMathLetter}`;
     const tree = {
       pageWidth: 128,
       pageHeight: 40,
@@ -18041,7 +18042,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
               emphasisDot: 0,
               shadeColor: '#ffffff',
             },
-            positions: Array.from({ length: text.length + 1 }, (_, index) => index * 17),
+            positions: Array.from(
+              { length: Array.from(text).length + 1 },
+              (_, index) => index * 17,
+            ),
             controlMarks: [],
             tabLeaders: [],
           },
@@ -18064,17 +18068,25 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const makeTextRequests = [];
     const originalMakeTextObjects = canvaskitRenderer.makeTextObjects;
     canvaskitRenderer.makeTextObjects = function makeTextObjectsProbe(fontFamily) {
+      const objects = originalMakeTextObjects.apply(this, arguments);
       makeTextRequests.push({
         fontFamily,
         weight: arguments[6],
+        supplementaryGlyphIds: fontFamily === 'Latin Modern Math'
+          ? Array.from(objects.font.getGlyphIDs(supplementaryMathLetter))
+          : undefined,
       });
-      return originalMakeTextObjects.apply(this, arguments);
+      return objects;
     };
     try {
       return {
         canvas2d,
         canvaskit: await render(canvaskitRenderer),
         makeTextRequests,
+        supplementaryFontLoaded: document.fonts.check(
+          '400 16px "Latin Modern Math"',
+          supplementaryMathLetter,
+        ),
       };
     } finally {
       canvaskitRenderer.makeTextObjects = originalMakeTextObjects;
@@ -18098,6 +18110,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
     ),
     `CanvasKit text fallback keeps the inferred weight for currency and symbol clusters=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
   );
+  assert(
+    textFallbackFontProbe.supplementaryFontLoaded === true
+      && textFallbackFontProbe.makeTextRequests.some(
+        ({ fontFamily, weight, supplementaryGlyphIds }) => (
+          fontFamily === 'Latin Modern Math'
+          && weight === 700
+          && supplementaryGlyphIds?.every((glyphId) => glyphId !== 0)
+        ),
+      ),
+    `both browser renderers load the checked-in supplementary fallback and CanvasKit resolves its glyph loaded=${textFallbackFontProbe.supplementaryFontLoaded}, requests=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
+  );
   const textFallbackCanvas2dInkPixels = countPixels(
     textFallbackFontProbe.canvas2d,
     (pixel) => pixel.alpha > 32 && pixel.red < 245 && pixel.green < 245 && pixel.blue < 245,
@@ -18109,6 +18132,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     textFallbackCanvas2dInkPixels > 160 && textFallbackCanvaskitInkPixels > 160,
     `text fallback font replay draws glyphs canvas2d=${textFallbackCanvas2dInkPixels}, canvaskit=${textFallbackCanvaskitInkPixels}`,
+  );
+  const supplementaryFallbackInkPixels = {};
+  for (const backend of ['canvas2d', 'canvaskit']) {
+    const png = PNG.sync.read(pngBufferFromDataUrl(textFallbackFontProbe[backend]));
+    let inkPixels = 0;
+    for (let y = 0; y < png.height; y += 1) {
+      for (let x = 106; x < png.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        if (
+          png.data[offset + 3] > 32
+          && (png.data[offset] < 245 || png.data[offset + 1] < 245 || png.data[offset + 2] < 245)
+        ) {
+          inkPixels += 1;
+        }
+      }
+    }
+    supplementaryFallbackInkPixels[backend] = inkPixels;
+  }
+  assert(
+    supplementaryFallbackInkPixels.canvas2d > 20
+      && supplementaryFallbackInkPixels.canvaskit > 20,
+    `supplementary-plane fallback draws the final math letter=${JSON.stringify(supplementaryFallbackInkPixels)}`,
   );
   const textFallbackFontDiff = await comparePngBuffers(
     pngBufferFromDataUrl(textFallbackFontProbe.canvas2d),

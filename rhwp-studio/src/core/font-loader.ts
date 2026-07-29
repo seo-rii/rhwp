@@ -133,8 +133,15 @@ export const REGISTERED_FONTS = new Set(FONT_LIST.map(f => f.name));
 
 /** 초기 렌더링에 필수인 폰트 (대부분의 HWP 문서 기본 서체) */
 const CRITICAL_FONTS = new Set(['함초롬바탕', '함초롬돋움']);
-/** CanvasKit/Skia 직접 렌더러가 심볼/통화 기호 렌더링에 즉시 사용하는 폰트 */
-const DIRECT_RENDERER_FALLBACK_FONTS = new Set(['Malgun Gothic', '맑은 고딕', '굴림체', 'GulimChe', 'D2Coding']);
+/** Direct renderers가 심볼, 통화 기호, supplementary-plane fallback에 사용하는 폰트 */
+const DIRECT_RENDERER_FALLBACK_FONTS = new Set([
+  'Malgun Gothic',
+  '맑은 고딕',
+  '굴림체',
+  'GulimChe',
+  'D2Coding',
+  'Latin Modern Math',
+]);
 
 interface LoadWebFontsOptions {
   includeDirectRendererFallbacks?: boolean;

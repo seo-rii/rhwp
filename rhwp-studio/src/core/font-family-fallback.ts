@@ -100,6 +100,7 @@ function systemFallbackFamilies(fontName: string): string[] {
       'Noto Serif CJK KR',
       'NanumMyeongjo',
       '나눔명조',
+      'Latin Modern Math',
       'serif',
     ];
   }
@@ -110,6 +111,7 @@ function systemFallbackFamilies(fontName: string): string[] {
       'NanumGothicCoding',
       '나눔고딕코딩',
       'Noto Sans Mono',
+      'Latin Modern Math',
       'monospace',
     ];
   }
@@ -121,6 +123,7 @@ function systemFallbackFamilies(fontName: string): string[] {
       'Noto Serif CJK KR',
       'NanumMyeongjo',
       '나눔명조',
+      'Latin Modern Math',
       'serif',
     ];
   }
@@ -133,6 +136,7 @@ function systemFallbackFamilies(fontName: string): string[] {
     'NanumGothic',
     '나눔고딕',
     'Pretendard',
+    'Latin Modern Math',
     'sans-serif',
   ];
 }
@@ -148,6 +152,7 @@ function canvasRenderFallbackFamilies(fontName: string): string[] {
       'NanumMyeongjo',
       '나눔명조',
       'Noto Serif KR',
+      'Latin Modern Math',
       'serif',
     ];
   }
@@ -159,6 +164,7 @@ function canvasRenderFallbackFamilies(fontName: string): string[] {
       'NanumGothicCoding',
       '나눔고딕코딩',
       'Noto Sans Mono',
+      'Latin Modern Math',
       'monospace',
     ];
   }
@@ -171,6 +177,7 @@ function canvasRenderFallbackFamilies(fontName: string): string[] {
       'NanumMyeongjo',
       '나눔명조',
       'Noto Serif KR',
+      'Latin Modern Math',
       'serif',
     ];
   }
@@ -184,6 +191,7 @@ function canvasRenderFallbackFamilies(fontName: string): string[] {
     '나눔고딕',
     'Noto Sans KR',
     'Pretendard',
+    'Latin Modern Math',
     'sans-serif',
   ];
 }
