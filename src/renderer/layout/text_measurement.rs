@@ -246,6 +246,8 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                 w
             } else if cluster_len[i] > 1 || is_cjk_char(c) || is_fullwidth_symbol(c) {
                 font_size
+            } else if is_narrow_paren_for_font(&style.font_family, c) {
+                font_size * 0.3
             } else {
                 font_size * 0.5
             };
@@ -400,6 +402,8 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                 w
             } else if cluster_len[i] > 1 || is_cjk_char(c) || is_fullwidth_symbol(c) {
                 font_size
+            } else if is_narrow_paren_for_font(&style.font_family, c) {
+                font_size * 0.3
             } else {
                 font_size * 0.5
             };
@@ -665,6 +669,10 @@ mod wasm_internals {
         // 2차: 한글 음절 → '가' 대리 측정값 재사용 (이미 HWP 단위)
         if c >= '\u{AC00}' && c <= '\u{D7A3}' {
             return hangul_width_hwp as f64 / 75.0;
+        }
+
+        if super::is_narrow_paren_for_font(font_family, c) {
+            return font_size * 0.3;
         }
 
         // 3차: JS 폴백 (미등록 폰트)
@@ -1075,6 +1083,18 @@ fn quantize_hwp_px(px: f64) -> f64 {
     hwp as f64 / 75.0
 }
 
+/// Parentheses use the measured narrow fallback only for font families whose
+/// Hancom advance has been verified at roughly 0.3em.
+fn is_narrow_paren_for_font(font_family: &str, c: char) -> bool {
+    if !matches!(c, '(' | ')') {
+        return false;
+    }
+    let primary_name = font_family.split(',').next().unwrap_or(font_family).trim();
+    primary_name.contains("휴먼명조")
+        || primary_name.contains("한양중고딕")
+        || primary_name.contains("HY중고딕")
+}
+
 fn kopub_char_width(primary_name: &str, c: char, font_size: f64) -> Option<f64> {
     let lower = primary_name.to_lowercase();
     let is_dotum = primary_name.contains("KoPub돋움체") || lower.contains("kopub dotum");
@@ -1103,6 +1123,10 @@ fn kopub_char_width(primary_name: &str, c: char, font_size: f64) -> Option<f64> 
     ) {
         return Some(quantize_hwp_px(font_size * 0.3));
     }
+    // KoPub parentheses are also verified at roughly 0.3em.
+    if matches!(c, '(' | ')') {
+        return Some(quantize_hwp_px(font_size * 0.3));
+    }
     if c.is_ascii() {
         return Some(quantize_hwp_px(font_size * 0.5));
     }
@@ -1111,6 +1135,40 @@ fn kopub_char_width(primary_name: &str, c: char, font_size: f64) -> Option<f64> 
         return Some(quantize_hwp_px(font_size * factor));
     }
 
+    None
+}
+
+/// Haansoft Batang ASCII advance ratios used by Hancom when rendering the
+/// Latin and punctuation subset of HCR Batang text.
+///
+/// Space keeps the existing fixed 0.5em contract and is therefore excluded
+/// from the override.
+const HAANSOFT_BATANG_ASCII: [f64; 95] = [
+    0.3330, 0.4160, 0.4160, 0.8330, 0.6250, 0.9160, 0.8330, 0.2500, // ` !"#$%&'`
+    0.5000, 0.5000, 0.5000, 0.8330, 0.2910, 0.8330, 0.2910, 0.3330, // `()*+,-./`
+    0.5830, 0.5830, 0.5830, 0.5830, 0.5830, 0.5830, 0.5830, 0.5830, // `01234567`
+    0.5830, 0.5830, 0.3330, 0.3330, 0.8330, 0.8330, 0.8330, 0.5000, // `89:;<=>?`
+    1.0000, 0.7500, 0.6660, 0.6660, 0.7080, 0.6660, 0.6250, 0.7080, // `@ABCDEFG`
+    0.7500, 0.3750, 0.4580, 0.7500, 0.6250, 0.9160, 0.7500, 0.7080, // `HIJKLMNO`
+    0.6250, 0.7080, 0.6660, 0.6250, 0.7500, 0.7500, 0.7080, 0.9580, // `PQRSTUVW`
+    0.6660, 0.6660, 0.6250, 0.5000, 0.3330, 0.5000, 1.0000, 0.5000, // `XYZ[\]^_`
+    0.5830, 0.5000, 0.5410, 0.5000, 0.5410, 0.5410, 0.3750, 0.5410, // '`abcdefg'
+    0.5410, 0.2910, 0.2910, 0.5410, 0.2910, 0.8330, 0.5410, 0.5410, // `hijklmno`
+    0.5410, 0.5410, 0.4160, 0.5000, 0.3750, 0.5410, 0.5410, 0.7910, // `pqrstuvw`
+    0.5830, 0.5830, 0.4580, 0.5830, 0.5830, 0.5830, 0.7910, // `xyz{|}~`
+];
+
+fn haansoft_latin_override(primary_name: &str, c: char) -> Option<f64> {
+    if !matches!(primary_name, "함초롬바탕" | "HCR Batang") {
+        return None;
+    }
+    if c == '\u{00B7}' {
+        return Some(0.3330);
+    }
+    let code_point = c as u32;
+    if (0x21..0x7F).contains(&code_point) {
+        return Some(HAANSOFT_BATANG_ASCII[(code_point - 0x20) as usize]);
+    }
     None
 }
 
@@ -1123,6 +1181,9 @@ fn measure_char_width_embedded(
 ) -> Option<f64> {
     // CSS font-family 체인에서 첫 번째 폰트명으로 메트릭 조회
     let primary_name = font_family.split(',').next().unwrap_or(font_family).trim();
+    if let Some(ratio) = haansoft_latin_override(primary_name, c) {
+        return Some(quantize_hwp_px(ratio * font_size));
+    }
     if let Some(w) = kopub_char_width(primary_name, c, font_size) {
         return Some(w);
     }
@@ -1200,6 +1261,8 @@ pub(crate) fn estimate_text_width_unrounded(text: &str, style: &TextStyle) -> f6
             w
         } else if cluster_len[i] > 1 || is_cjk_char(c) || is_fullwidth_symbol(c) {
             font_size
+        } else if is_narrow_paren_for_font(&style.font_family, c) {
+            font_size * 0.3
         } else {
             font_size * 0.5
         };
@@ -1447,6 +1510,71 @@ mod tests {
             }
             positions
         }
+    }
+
+    #[test]
+    fn issue_2156_hcr_batang_latin_uses_haansoft_metrics() {
+        let font_size = 40.0 / 3.0;
+        let width = |family: &str, c: char| {
+            measure_char_width_embedded(family, false, false, c, font_size)
+                .unwrap_or_else(|| panic!("missing metric for {family} {c:?}"))
+        };
+
+        for (c, ratio) in [
+            ('(', 0.5000),
+            (',', 0.2910),
+            ('0', 0.5830),
+            ('A', 0.7500),
+            ('·', 0.3330),
+        ] {
+            assert!(
+                (width("함초롬바탕", c) - font_size * ratio).abs() < 0.05,
+                "unexpected 함초롬바탕 metric for {c:?}"
+            );
+            assert_eq!(
+                width("함초롬바탕", c),
+                width("HCR Batang", c),
+                "HCR Batang alias must use the same substitute metric for {c:?}"
+            );
+        }
+
+        for family in [
+            "함초롬돋움",
+            "HCR Dotum",
+            "함초롬바탕 확장",
+            "HCR Batang Ext",
+            "바탕",
+        ] {
+            assert!(
+                haansoft_latin_override(family, '(').is_none(),
+                "unverified family must keep its own metric: {family}"
+            );
+        }
+        assert!(haansoft_latin_override("함초롬바탕", '가').is_none());
+        assert!(haansoft_latin_override("함초롬바탕", ' ').is_none());
+    }
+
+    #[test]
+    fn parenthesis_narrow_fallback_is_font_conditioned() {
+        let measurer = EmbeddedTextMeasurer;
+        let advance = |family: &str| {
+            let style = TextStyle {
+                font_family: family.to_string(),
+                font_size: 20.0,
+                ..Default::default()
+            };
+            let positions = measurer.compute_char_positions("A(B", &style);
+            positions[2] - positions[1]
+        };
+
+        assert!((advance("__rhwp_unregistered_font__") - 10.0).abs() < 0.05);
+        assert!((advance("휴먼명조 missing-face") - 6.0).abs() < 0.05);
+        assert!((advance("KoPub바탕체") - 6.0).abs() < 0.05);
+        assert!((advance("HCR Batang") - 10.0).abs() < 0.05);
+        assert!(is_narrow_paren_for_font("한양중고딕", '('));
+        assert!(is_narrow_paren_for_font("HY중고딕", ')'));
+        assert!(!is_narrow_paren_for_font("바탕", '('));
+        assert!(!is_narrow_paren_for_font("휴먼명조", '['));
     }
 
     // ── #2279 한컴돋움/한컴바탕 = Haansoft 실메트릭 ──

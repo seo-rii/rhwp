@@ -773,6 +773,15 @@ width, preventing both browser backends from clipping the final glyph at the
 cell edge. Layout tests pin the narrow-space progression and the complete
 split-line occupied width.
 
+The shared font matrix also models Hancom's verified HCR Batang substitution:
+ASCII punctuation, digits, Latin letters, and `U+00B7` use Haansoft Batang
+advances for the exact `함초롬바탕` and `HCR Batang` aliases, while space,
+Hangul, HCR Dotum, and extension faces keep their own metrics. Parentheses use
+the 0.3em fallback only for the measured Human Myeongjo/Hanyang Jung Gothic
+families and KoPub; HCR Batang and unverified faces retain 0.5em behavior.
+Because these decisions live in the embedded measurement gateway and its WASM
+fallback, Canvas2D and CanvasKit receive identical authored run bounds.
+
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload
