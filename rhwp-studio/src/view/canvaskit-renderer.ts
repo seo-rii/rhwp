@@ -2327,7 +2327,12 @@ export class CanvasKitLayerRenderer {
       const rect = this.toRect(op.bbox);
       const drawRect = (paint: Paint) => {
         if (op.cornerRadius > 0) {
-          canvas.drawRRect(this.canvasKit.RRectXY(rect, op.cornerRadius, op.cornerRadius), paint);
+          const radius = Math.min(
+            op.cornerRadius,
+            op.bbox.width / 2,
+            op.bbox.height / 2,
+          );
+          canvas.drawRRect(this.canvasKit.RRectXY(rect, radius, radius), paint);
           return;
         }
         canvas.drawRect(rect, paint);

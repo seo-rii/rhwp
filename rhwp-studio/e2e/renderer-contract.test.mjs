@@ -1076,6 +1076,22 @@ assert(
     && extractMethodBody(canvaskitSource, 'renderPath').includes('op.style.opacity'),
   'CanvasKit shape shadows must compose shadow alpha with the source ShapeStyle opacity',
 );
+assertTokensInOrder(
+  extractMethodBody(canvas2dSource, 'beginRectanglePath'),
+  ['Math.min(cornerRadius, bounds.width / 2, bounds.height / 2)', 'ctx.quadraticCurveTo('],
+  'Canvas2D rounded rectangles must clamp authored radii to their bounds',
+);
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'renderRectangle'),
+  [
+    'const radius = Math.min(',
+    'op.cornerRadius',
+    'op.bbox.width / 2',
+    'op.bbox.height / 2',
+    'this.canvasKit.RRectXY(rect, radius, radius)',
+  ],
+  'CanvasKit rounded rectangles must use the same bounded radius as Canvas2D',
+);
 assert(
   extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4')
     && extractMethodBody(canvaskitSource, 'makeGradientShader').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4'),

@@ -13333,6 +13333,171 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `path connector arrow parity exact=${pathConnectorArrowDiff.exactDiffPixels}, tolerant=${pathConnectorArrowDiff.rawTolerantDiffPixels}, ink=${pathConnectorArrowDiff.rawInkMaskDiffPixels}, max_channel_delta=${pathConnectorArrowDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-rounded-rectangle-parity');
+  const roundedRectangleProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const rectangle = (bbox, cornerRadius, fillColor, strokeColor, shadow = null) => ({
+      type: 'rectangle',
+      bbox,
+      cornerRadius,
+      style: {
+        fillColor,
+        strokeColor,
+        strokeWidth: 2,
+        strokeDash: 'solid',
+        opacity: 1,
+        pattern: null,
+        shadow,
+      },
+      gradient: null,
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+    });
+    const tree = {
+      pageWidth: 128,
+      pageHeight: 48,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1975,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1975,
+        bounds: { x: 0, y: 0, width: 128, height: 48 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 128, height: 48 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          rectangle(
+            { x: 6, y: 8, width: 32, height: 28 },
+            7,
+            '#ef4444',
+            '#7f1d1d',
+          ),
+          rectangle(
+            { x: 48, y: 8, width: 32, height: 28 },
+            100,
+            '#3b82f6',
+            '#1e3a8a',
+          ),
+          rectangle(
+            { x: 90, y: 8, width: 28, height: 26 },
+            100,
+            '#22c55e',
+            '#14532d',
+            {
+              shadowType: 1,
+              color: '#111111',
+              offsetX: 3,
+              offsetY: 3,
+              alpha: 96,
+            },
+          ),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !roundedRectangleProbe.error,
+    roundedRectangleProbe.error || 'rounded rectangle parity probe available',
+  );
+  for (const [backend, dataUrl] of [
+    ['canvas2d', roundedRectangleProbe.canvas2d],
+    ['canvaskit', roundedRectangleProbe.canvaskit],
+  ]) {
+    const normalCorner = pixelAt(dataUrl, 6, 8);
+    const oversizedCorner = pixelAt(dataUrl, 48, 8);
+    const normalFillPixels = countPixels(
+      dataUrl,
+      (pixel) =>
+        pixel.x >= 6
+        && pixel.x < 38
+        && pixel.y >= 8
+        && pixel.y < 36
+        && pixel.red > 160
+        && pixel.green < 120
+        && pixel.blue < 120,
+    );
+    const oversizedFillPixels = countPixels(
+      dataUrl,
+      (pixel) =>
+        pixel.x >= 48
+        && pixel.x < 80
+        && pixel.y >= 8
+        && pixel.y < 36
+        && pixel.blue > 140
+        && pixel.red < 120
+        && pixel.green > 70,
+    );
+    assert(
+      normalCorner.red > 245 && normalCorner.green > 245 && normalCorner.blue > 245,
+      `${backend} normal rounded rectangle leaves its square corner clear=${JSON.stringify(normalCorner)}`,
+    );
+    assert(
+      oversizedCorner.red > 245 && oversizedCorner.green > 245 && oversizedCorner.blue > 245,
+      `${backend} oversized rounded rectangle clamps to a clear pill corner=${JSON.stringify(oversizedCorner)}`,
+    );
+    assert(
+      normalFillPixels > 500 && oversizedFillPixels > 450,
+      `${backend} rounded rectangle fill remains visible normal=${normalFillPixels}, oversized=${oversizedFillPixels}`,
+    );
+  }
+  const roundedRectangleDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(roundedRectangleProbe.canvas2d),
+    pngBufferFromDataUrl(roundedRectangleProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-rounded-rectangle-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.05,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    roundedRectangleDiff.passed,
+    `rounded rectangle parity exact=${roundedRectangleDiff.exactDiffPixels}, tolerant=${roundedRectangleDiff.rawTolerantDiffPixels}, ink=${roundedRectangleDiff.rawInkMaskDiffPixels}, max_channel_delta=${roundedRectangleDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-line-shadow-dash-parity');
   const lineShadowDashProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
