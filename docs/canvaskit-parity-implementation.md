@@ -877,6 +877,10 @@ path once per render, uses that same decoded path for variant selection and
 drawing (including GPU-to-software retry), and releases all prepared paths at
 the end of the render so a later decode failure cannot leave a suppressed
 fallback or partially painted strict variant.
+If static admission finds no replayable path or rejects any path command, the
+variant keeps `unsupportedSvgGlyph` as its category and records
+`pathDecodeFailed` as the deterministic detail before selecting the `TextRun`
+fallback.
 Schema-v2 strict
 GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
 the selected strict payload uses the static sanitized vector contract. A

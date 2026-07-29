@@ -180,4 +180,7 @@ test('SvgGlyph admission keeps strict payloads path-only', () => {
   assert.match(body, /pathLayers\.length > 0/);
   assert.match(body, /pathLayers\.every\(\(layer\) => isStaticSvgPathDataValid\(layer\.pathData\)\)/);
   assert.match(body, /textLayers\.length === 0/);
+  assert.match(body, /const pathDecodeFailed = typeof fragment === 'string'/);
+  assert.match(body, /pathLayers\.some\(\(layer\) => !isStaticSvgPathDataValid\(layer\.pathData\)\)/);
+  assert.match(body, /details: pathDecodeFailed \? 'pathDecodeFailed' : undefined/);
 });

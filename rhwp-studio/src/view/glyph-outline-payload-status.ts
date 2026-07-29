@@ -86,6 +86,12 @@ export function glyphOutlinePayloadStatus(
     const fragment = resourceIndex === undefined ? undefined : resources?.svgFragments?.[resourceIndex];
     const pathLayers = typeof fragment === 'string' ? parseStaticSvgPathLayers(fragment) : [];
     const textLayers = typeof fragment === 'string' ? parseStaticSvgTextLayers(fragment) : [];
+    const pathDecodeFailed = typeof fragment === 'string'
+      && textLayers.length === 0
+      && (
+        pathLayers.length === 0
+        || pathLayers.some((layer) => !isStaticSvgPathDataValid(layer.pathData))
+      );
     return {
       supported: hasStaticSanitizedSvgGlyphContract(op)
         && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
@@ -94,6 +100,7 @@ export function glyphOutlinePayloadStatus(
         && pathLayers.every((layer) => isStaticSvgPathDataValid(layer.pathData))
         && textLayers.length === 0,
       reason: 'unsupportedSvgGlyph',
+      details: pathDecodeFailed ? 'pathDecodeFailed' : undefined,
     };
   }
   return { supported: false, reason: 'unsupportedOutlinePayload' };
