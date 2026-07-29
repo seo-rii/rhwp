@@ -1863,6 +1863,10 @@ const canvaskitUnsupportedGlyphRunPaintBlock = extractMethodBody(
   canvaskitFontsSource,
   'unsupportedGlyphRunPaintReason',
 );
+const glyphOutlineFillOnlyStyleBlock = extractFunctionBody(
+  textVariantsSource,
+  'isFillOnlyGlyphOutlineStyle',
+);
 const canvaskitGlyphRunTypefaceBlock = extractMethodBody(canvaskitFontsSource, 'typefaceForGlyphRun');
 const canvaskitFontBlobBytesBlock = extractMethodBody(canvaskitFontsSource, 'fontBlobBytesForRef');
 assertTokensInOrder(
@@ -1924,6 +1928,11 @@ assertTokensInOrder(
   ],
   'CanvasKit GlyphRun replay must keep range, variation, and face-index gates before portable replay',
 );
+assert(
+  canvaskitGlyphRunReplayStatusBlock.includes('Number.isFinite(run.placement.baselineY)')
+    && canvaskitUnsupportedGlyphRunPaintBlock.includes('style.tabLeaders?.length'),
+  'CanvasKit GlyphRun eligibility must match Rust finite-baseline and tab-leader gates',
+);
 assertTokensInOrder(
   canvaskitUnsupportedGlyphRunPaintBlock,
   [
@@ -1934,6 +1943,16 @@ assertTokensInOrder(
   ],
   'CanvasKit GlyphRun replay must preserve TextRun script metrics through explicit fallback',
 );
+for (const requiredToken of [
+  'style.tabLeaders?.length',
+  '!style.superscript',
+  '!style.subscript',
+]) {
+  assert(
+    glyphOutlineFillOnlyStyleBlock.includes(requiredToken),
+    `GlyphOutline fill-only eligibility must preserve Rust paint gate: ${requiredToken}`,
+  );
+}
 for (const requiredToken of [
   'variationSupported: false',
   'faceIndexSupported: false',

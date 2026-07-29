@@ -1958,6 +1958,10 @@ fn write_paint_text_style(buf: &mut String, style: &PaintTextStyle) {
         json_escape(&color_ref_to_css(style.strike_color)),
         json_escape(&color_ref_to_css(style.shade_color)),
     );
+    if !style.tab_leaders.is_empty() {
+        buf.push_str(",\"tabLeaders\":");
+        write_tab_leaders(buf, &style.tab_leaders);
+    }
     buf.push('}');
 }
 
@@ -4165,11 +4169,19 @@ mod tests {
                     anchor_op_id: None,
                     local_paint_order: None,
                 },
-                paint_style: PaintTextStyle::from(&TextStyle {
-                    font_family: "Test".to_string(),
-                    font_size: 12.0,
-                    ..Default::default()
-                }),
+                paint_style: {
+                    let mut style = PaintTextStyle::from(&TextStyle {
+                        font_family: "Test".to_string(),
+                        font_size: 12.0,
+                        ..Default::default()
+                    });
+                    style.tab_leaders.push(TabLeaderInfo {
+                        start_x: 2.0,
+                        end_x: 10.0,
+                        fill_type: 3,
+                    });
+                    style
+                },
                 shape_key,
                 placement: TextRunPlacement {
                     run_to_page: LayerAffineTransform {
@@ -4228,6 +4240,8 @@ mod tests {
         assert!(json.contains("\"variants\":[\"textRun\",\"glyphRun\"]"));
         assert!(json.contains("\"variantId\":\"glyphRun\""));
         assert!(json.contains("\"glyphIds\":[42]"));
+        assert!(json
+            .contains("\"tabLeaders\":[{\"startX\":2.000000,\"endX\":10.000000,\"fillType\":3}]"));
         assert!(json.contains("\"replayEligibility\":\"portable\""));
         assert!(json.contains("\"strictVisualEligible\":true"));
     }

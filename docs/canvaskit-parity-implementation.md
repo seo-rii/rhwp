@@ -500,6 +500,11 @@ The working order is:
    proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
    bitmap/SVG/color glyph payloads, and fallback-free profiles must not be
    widened until the corresponding proof fixtures exist.
+   Finite baseline placement and paint-style eligibility are identical in the
+   Rust replay plan and browser runtime. The shared paint projection carries
+   tab leaders explicitly so strict glyph variants cannot silently omit them;
+   superscript and subscript remain ineligible for fill-only outlines until
+   their transformed geometry is canonical.
    The proved single-face CanvasKit `GlyphRun` subset includes fill, finite
    offset shadow, and the current binary outline pass. Rust lowering, replay
    planning, and the browser font registry use the same subset; underline,

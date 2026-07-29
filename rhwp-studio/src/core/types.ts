@@ -440,6 +440,7 @@ export interface LayerTextStyle {
   bold: boolean;
   italic: boolean;
   ratio: number;
+  tabLeaders?: LayerTabLeader[];
   underline: 'none' | 'bottom' | 'top';
   underlineShape: number;
   strikethrough: boolean;

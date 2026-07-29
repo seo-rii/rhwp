@@ -3207,6 +3207,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ['strikethrough', (style) => ({ ...style, strikethrough: true })],
       ['emphasis', (style) => ({ ...style, emphasisDot: 1 })],
       ['ratio', (style) => ({ ...style, ratio: 0.8 })],
+      ['tabLeaders', (style) => ({
+        ...style,
+        tabLeaders: [{ startX: 0, endX: 20, fillType: 1 }],
+      })],
       ['emboss', (style) => ({ ...style, emboss: true })],
       ['engrave', (style) => ({ ...style, engrave: true })],
       ['superscript', (style) => ({ ...style, superscript: true })],
@@ -3262,6 +3266,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outOfRangeTree.fontResources,
     );
     const outOfRangePng = renderTree(outOfRangeTree);
+
+    const nonFiniteBaselineTree = structuredClone(tree);
+    glyphOp(nonFiniteBaselineTree).placement.baselineY = Number.NaN;
+    const nonFiniteBaselineStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(nonFiniteBaselineTree),
+      nonFiniteBaselineTree.fontResources,
+    );
 
     const variationTree = structuredClone(tree);
     assignFontIdentity(variationTree, 'variation', 'fixture-font-digest-variation');
@@ -3515,6 +3526,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       nonPortablePng,
       outOfRangeStatus,
       outOfRangePng,
+      nonFiniteBaselineStatus,
       variationStatus,
       variationNegativeStatuses,
       variationSelectionDiagnostics,
@@ -3717,6 +3729,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       strikethrough: 'glyphRunStrikethroughUnsupported',
       emphasis: 'glyphRunEmphasisUnsupported',
       ratio: 'glyphRunRatioUnsupported',
+      tabLeaders: 'glyphRunTabLeadersUnsupported',
       emboss: 'glyphRunEmbossUnsupported',
       engrave: 'glyphRunEngraveUnsupported',
       superscript: 'glyphRunSuperscriptUnsupported',
@@ -3724,6 +3737,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       shade: 'glyphRunShadeUnsupported',
     }),
     `CanvasKit GlyphRun reports precise unsupported effect reasons=${JSON.stringify(portableGlyphRunProbe.unsupportedEffectReasons)}`,
+  );
+  assert(
+    portableGlyphRunProbe.nonFiniteBaselineStatus?.replayable === false
+      && portableGlyphRunProbe.nonFiniteBaselineStatus?.reason === 'nonFiniteGlyphBaseline',
+    `CanvasKit GlyphRun rejects non-finite baseline placement=${JSON.stringify(
+      portableGlyphRunProbe.nonFiniteBaselineStatus,
+    )}`,
   );
   const defaultRatioSelectionReport = portableGlyphRunProbe.defaultRatioSelectionDiagnostics?.find(
     (report) => report.equivalenceGroup === 'glyph-fixture-0',

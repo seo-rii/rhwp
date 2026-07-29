@@ -355,6 +355,9 @@ export class CanvasKitFontRegistry {
         return this.glyphRunReplayFailure(run, 'nonFiniteGlyphPosition');
       }
     }
+    if (!Number.isFinite(run.placement.baselineY)) {
+      return this.glyphRunReplayFailure(run, 'nonFiniteGlyphBaseline');
+    }
     const transform = run.placement.runToPage;
     if (
       !Number.isFinite(transform.a)
@@ -613,6 +616,9 @@ export class CanvasKitFontRegistry {
     const hasSupportedOutline = Number.isFinite(outlineType) && outlineType >= 0;
     if (Math.abs(ratio - 1) > 0.001) {
       return 'glyphRunRatioUnsupported';
+    }
+    if (style.tabLeaders?.length) {
+      return 'glyphRunTabLeadersUnsupported';
     }
     if (style.underline !== 'none') {
       return 'glyphRunUnderlineUnsupported';

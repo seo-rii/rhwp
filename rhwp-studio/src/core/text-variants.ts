@@ -831,12 +831,15 @@ export function isFillOnlyGlyphOutlineStyle(op: LayerGlyphOutlineOp): boolean {
   const ratio = typeof style.ratio === 'number' && style.ratio > 0 ? style.ratio : 1;
   const shadeColor = (typeof style.shadeColor === 'string' ? style.shadeColor : '#ffffff').toLowerCase();
   return Math.abs(ratio - 1) <= 0.001
+    && !(style.tabLeaders?.length)
     && style.underline === 'none'
     && !style.strikethrough
     && (style.outlineType ?? 0) === 0
     && (style.shadowType ?? 0) === 0
     && !style.emboss
     && !style.engrave
+    && !style.superscript
+    && !style.subscript
     && (style.emphasisDot ?? 0) === 0
     && shadeColor === '#ffffff';
 }

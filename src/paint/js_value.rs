@@ -2035,6 +2035,13 @@ fn paint_text_style_to_value(style: &PaintTextStyle) -> JsValue {
     set_bool(&value, "bold", style.bold);
     set_bool(&value, "italic", style.italic);
     set_number(&value, "ratio", style.ratio);
+    if !style.tab_leaders.is_empty() {
+        set_value(
+            &value,
+            "tabLeaders",
+            tab_leaders_to_value(&style.tab_leaders),
+        );
+    }
     set_string(&value, "underline", underline_type_str(style.underline));
     set_number(&value, "underlineShape", style.underline_shape as f64);
     set_bool(&value, "strikethrough", style.strikethrough);

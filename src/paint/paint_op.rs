@@ -2253,6 +2253,22 @@ mod tests {
 
         style.emboss = true;
         assert!(!style.is_simple_glyph_run_replay());
+
+        style.emboss = false;
+        style.tab_leaders.push(TabLeaderInfo {
+            start_x: 0.0,
+            end_x: 20.0,
+            fill_type: 1,
+        });
+        assert!(!style.is_simple_glyph_run_replay());
+
+        style.tab_leaders.clear();
+        style.superscript = true;
+        assert!(!style.is_simple_glyph_run_replay());
+
+        style.superscript = false;
+        style.subscript = true;
+        assert!(!style.is_simple_glyph_run_replay());
     }
 
     #[test]
