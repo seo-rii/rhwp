@@ -1413,6 +1413,7 @@ export class CanvasKitLayerRenderer {
           const fillPaint = this.makePaint('#ffffff', 'fill');
           const strokePaint = this.makePaint(op.style.color, 'stroke');
           strokePaint.setStrokeWidth(Math.max(fontSize / 25, 0.5));
+          strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round);
           drawPass(0, 0, fillPaint, strokePaint);
           fillPaint.delete();
           strokePaint.delete();
@@ -1532,6 +1533,7 @@ export class CanvasKitLayerRenderer {
       const fillPaint = this.makePaint('#ffffff', 'fill');
       const strokePaint = this.makePaint(op.paintStyle.color, 'stroke');
       strokePaint.setStrokeWidth(Math.max(op.paintStyle.fontSize / 25, 0.5));
+      strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round);
       drawGlyphs(0, 0, fillPaint);
       drawGlyphs(0, 0, strokePaint);
       fillPaint.delete();
@@ -2197,6 +2199,7 @@ export class CanvasKitLayerRenderer {
             'stroke',
             op.style.shadow.color,
             strokeWidth,
+            1,
             (shadowPaint) => canvas.drawLine(lineX1 + offsetX, lineY1 + offsetY, lineX2 + offsetX, lineY2 + offsetY, shadowPaint),
             op.style.dash,
           );
@@ -2252,6 +2255,7 @@ export class CanvasKitLayerRenderer {
             'fill',
             op.style.shadow.color,
             op.style.strokeWidth,
+            op.style.opacity,
             drawRect,
           );
         }
@@ -2262,6 +2266,7 @@ export class CanvasKitLayerRenderer {
             'stroke',
             op.style.shadow.color,
             op.style.strokeWidth,
+            op.style.opacity,
             drawRect,
             op.style.strokeDash,
           );
@@ -2297,6 +2302,7 @@ export class CanvasKitLayerRenderer {
             'fill',
             op.style.shadow.color,
             op.style.strokeWidth,
+            op.style.opacity,
             drawOval,
           );
         }
@@ -2307,6 +2313,7 @@ export class CanvasKitLayerRenderer {
             'stroke',
             op.style.shadow.color,
             op.style.strokeWidth,
+            op.style.opacity,
             drawOval,
             op.style.strokeDash,
           );
@@ -2343,6 +2350,7 @@ export class CanvasKitLayerRenderer {
             'fill',
             op.style.shadow.color,
             op.style.strokeWidth,
+            op.style.opacity,
             drawPath,
           );
         }
@@ -2353,6 +2361,7 @@ export class CanvasKitLayerRenderer {
             'stroke',
             op.style.shadow.color,
             op.style.strokeWidth,
+            op.style.opacity,
             drawPath,
             op.style.strokeDash,
           );
@@ -3670,6 +3679,7 @@ export class CanvasKitLayerRenderer {
     style: 'fill' | 'stroke',
     color: string,
     strokeWidth: number,
+    sourceOpacity: number,
     draw: (paint: Paint) => void,
     dash = 'solid',
   ): void {
@@ -3677,7 +3687,7 @@ export class CanvasKitLayerRenderer {
       return;
     }
 
-    const opacity = shadow.alpha > 0 ? 1 - (shadow.alpha / 255) : 1;
+    const opacity = (shadow.alpha > 0 ? 1 - (shadow.alpha / 255) : 1) * sourceOpacity;
     const paint = style === 'stroke'
       ? this.makeLinePaint(color, strokeWidth, dash, opacity)
       : this.makePaint(color, style, opacity);

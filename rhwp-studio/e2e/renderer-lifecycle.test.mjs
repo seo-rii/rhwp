@@ -12308,11 +12308,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       strokeColor,
       strokeWidth: 4,
       strokeDash,
-      opacity: 1,
+      opacity: 0.5,
       pattern: null,
       shadow: {
         color: '#009900',
-        alpha: 0,
+        alpha: 64,
         offsetX: 8,
         offsetY: 2,
       },
@@ -12401,11 +12401,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   const shapeShadowCanvas2dGreenPixels = countPixels(
     shapeShadowFillStrokeProbe.canvas2d,
-    (pixel) => pixel.alpha > 32 && pixel.green > 80 && pixel.red < 120 && pixel.blue < 120,
+    (pixel) => pixel.alpha > 32 && pixel.green > pixel.red + 15 && pixel.green > pixel.blue + 15,
   );
   const shapeShadowCanvaskitGreenPixels = countPixels(
     shapeShadowFillStrokeProbe.canvaskit,
-    (pixel) => pixel.alpha > 32 && pixel.green > 80 && pixel.red < 120 && pixel.blue < 120,
+    (pixel) => pixel.alpha > 32 && pixel.green > pixel.red + 15 && pixel.green > pixel.blue + 15,
   );
   assert(
     shapeShadowCanvas2dGreenPixels > 200 && shapeShadowCanvaskitGreenPixels > 200,

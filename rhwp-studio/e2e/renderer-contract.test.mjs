@@ -1031,6 +1031,14 @@ assert(
   'Canvas2D and CanvasKit shape fills must apply ShapeStyle opacity exactly once',
 );
 assert(
+  extractMethodBody(canvaskitSource, 'drawShadow')
+    .includes('* sourceOpacity')
+    && extractMethodBody(canvaskitSource, 'renderRectangle').includes('op.style.opacity')
+    && extractMethodBody(canvaskitSource, 'renderEllipse').includes('op.style.opacity')
+    && extractMethodBody(canvaskitSource, 'renderPath').includes('op.style.opacity'),
+  'CanvasKit shape shadows must compose shadow alpha with the source ShapeStyle opacity',
+);
+assert(
   extractMethodBody(canvas2dSource, 'makeGradientStyle').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4')
     && extractMethodBody(canvaskitSource, 'makeGradientShader').includes('gradient.gradientType === 2 || gradient.gradientType === 3 || gradient.gradientType === 4'),
   'Canvas2D and CanvasKit radial gradient type mapping must stay aligned',
@@ -1620,6 +1628,12 @@ assert(
     && canvaskitTextRunBlock.includes('this.failedTextBlobCacheKeys.has(cacheKey)')
     && canvaskitTextRunBlock.includes('this.textReplayFailureDiagnostics.set(failureKey, failure)'),
   'CanvasKit TextRun replay must expose and negative-cache TextBlob construction failures',
+);
+assert(
+  canvaskitTextRunBlock.includes('strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round)')
+    && extractMethodBody(canvaskitSource, 'renderGlyphRun')
+      .includes('strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round)'),
+  'CanvasKit TextRun and GlyphRun outline replay must match the Canvas2D round join',
 );
 assert(
   canvaskitSource.includes('const MAX_TEXT_FALLBACK_FAMILY_CACHE_ENTRIES = 4096')

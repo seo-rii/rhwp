@@ -458,7 +458,11 @@ The working order is:
    rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
    dots, tab leaders, control marks, character overlap, field markers, and
    line-break-sensitive cases. These remain `hwpCompat` visual replay work, not
-   shapedModern layout authority changes.
+   shapedModern layout authority changes. CanvasKit text outline Paints use the
+   same round stroke join as Canvas2D for both root `TextRun` and selected
+   `GlyphRun` replay. Shape shadow alpha is multiplied by the authored shape
+   opacity before replay, matching the Canvas2D `globalAlpha` composition
+   contract for rectangle, ellipse, and path fill/stroke shadows.
 4. Keep `GlyphRun` and `GlyphOutline` strict replay gated by exact resource
    proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
    bitmap/SVG/color glyph payloads, and fallback-free profiles must not be
