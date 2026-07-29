@@ -1226,6 +1226,25 @@ assert(
     && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgTextLayers(fragment)'),
   'Canvas2D and CanvasKit equation SVG resource replay must use the same static path/text parser',
 );
+assert(
+  extractMethodBody(canvas2dSource, 'renderEquationSvgResource')
+    .includes('staticSvgLayersHaveDrawableContent(pathLayers, textLayers)')
+    && extractMethodBody(canvaskitSource, 'renderEquationSvgResource')
+      .includes('staticSvgLayersHaveDrawableContent(pathLayers, textLayers)'),
+  'Canvas2D and CanvasKit equation SVG replay must share the drawable-content fallback gate',
+);
+assertTokensInOrder(
+  extractFunctionBody(staticSvgPathLayersSource, 'staticSvgLayersHaveDrawableContent'),
+  [
+    'layer.fill !== null',
+    'staticSvgPaintIsVisible(layer.fill, layer.opacity)',
+    'layer.stroke !== undefined',
+    'layer.stroke.width > 0',
+    'staticSvgPaintIsVisible(layer.stroke.color, layer.stroke.opacity)',
+    'staticSvgPaintIsVisible(layer.fill, layer.opacity)',
+  ],
+  'static SVG drawable-content detection must reject paintless and transparent path/text layers',
+);
 const canvaskitStaticSvgTextBlock =
   extractMethodBody(canvaskitSource, 'renderStaticSvgTextLayer');
 assertTokensInOrder(

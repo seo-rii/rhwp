@@ -74,6 +74,7 @@ import type {
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
+  staticSvgLayersHaveDrawableContent,
   type StaticSvgPathLayer,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
@@ -2794,10 +2795,7 @@ export class CanvasKitLayerRenderer {
     }
     const pathLayers = parseStaticSvgPathLayers(fragment);
     const textLayers = parseStaticSvgTextLayers(fragment);
-    const hasDrawablePath = pathLayers.some(
-      (layer) => layer.fill !== null || layer.stroke !== undefined,
-    );
-    if (!hasDrawablePath && textLayers.length === 0) {
+    if (!staticSvgLayersHaveDrawableContent(pathLayers, textLayers)) {
       return { replayed: false, reason: 'svgPayloadUnsupported' };
     }
     const { x, y, width, height } = op.bbox;

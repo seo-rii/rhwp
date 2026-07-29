@@ -77,6 +77,7 @@ import { arrowHeadShape, gradientColorStops, resolveImagePlacement, strokeDashPa
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
+  staticSvgLayersHaveDrawableContent,
   type StaticSvgTextLayer,
 } from './static-svg-path-layers';
 import { replayColorPaintGraph, resolvedColorToCss } from './glyph-outline-color-graph-utils';
@@ -1573,7 +1574,7 @@ export class Canvas2DLayerRenderer {
     }
     const pathLayers = parseStaticSvgPathLayers(fragment);
     const textLayers = parseStaticSvgTextLayers(fragment);
-    if (pathLayers.length === 0 && textLayers.length === 0) {
+    if (!staticSvgLayersHaveDrawableContent(pathLayers, textLayers)) {
       return false;
     }
     const { x, y, width, height } = op.bbox;

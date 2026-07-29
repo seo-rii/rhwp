@@ -80,6 +80,30 @@ export function parseStaticSvgTextLayers(fragment: string): StaticSvgTextLayer[]
   return parseStaticSvgFragmentLayers(fragment).texts;
 }
 
+export function staticSvgLayersHaveDrawableContent(
+  paths: readonly StaticSvgPathLayer[],
+  texts: readonly StaticSvgTextLayer[],
+): boolean {
+  return paths.some((layer) => (
+    (layer.fill !== null && staticSvgPaintIsVisible(layer.fill, layer.opacity))
+    || (
+      layer.stroke !== undefined
+      && layer.stroke.width > 0
+      && staticSvgPaintIsVisible(layer.stroke.color, layer.stroke.opacity)
+    )
+  )) || texts.some((layer) => (
+    layer.text.length > 0 && staticSvgPaintIsVisible(layer.fill, layer.opacity)
+  ));
+}
+
+function staticSvgPaintIsVisible(color: string, opacity: number): boolean {
+  const parsed = parseSupportedCssColor(color);
+  return Number.isFinite(opacity)
+    && opacity > 0
+    && parsed !== null
+    && parsed[3] > 0;
+}
+
 function parseStaticSvgFragmentLayers(fragment: string): {
   paths: StaticSvgPathLayer[];
   texts: StaticSvgTextLayer[];

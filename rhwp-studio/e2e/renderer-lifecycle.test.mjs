@@ -16044,6 +16044,144 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation SVG resource parity exact=${equationSvgResourceDiff.exactDiffPixels}, tolerant=${equationSvgResourceDiff.rawTolerantDiffPixels}, ink=${equationSvgResourceDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationSvgResourceDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-equation-paintless-svg-fallback-parity');
+  const equationPaintlessSvgFallbackProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const emptyBox = (x, y, width, height, baseline) => ({
+      x,
+      y,
+      width,
+      height,
+      baseline,
+      kind: { type: 'empty' },
+    });
+    const tree = {
+      pageWidth: 52,
+      pageHeight: 32,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1974,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1974,
+        bounds: { x: 0, y: 0, width: 52, height: 32 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 52, height: 32 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          {
+            type: 'equation',
+            bbox: { x: 4, y: 4, width: 44, height: 24 },
+            color: '#111111',
+            fontSize: 20,
+            svgContent: [
+              '<path d="M0 0H44V24H0Z" fill="none"/>',
+              '<path d="M0 0H44" fill="none" stroke="transparent" stroke-width="2"/>',
+            ].join(''),
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 44,
+              height: 24,
+              baseline: 12,
+              kind: {
+                type: 'fraction',
+                numer: emptyBox(2, 0, 40, 8, 6),
+                denom: emptyBox(2, 16, 40, 8, 6),
+              },
+            },
+          },
+        ],
+      },
+    };
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await nextFrame();
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    const canvas2d = await render(canvas2dRenderer);
+    const canvaskit = await render(canvaskitRenderer);
+    return {
+      canvas2d,
+      canvaskit,
+      diagnostics: canvaskitRenderer.getEquationReplayDiagnostics(),
+    };
+  });
+  assert(
+    !equationPaintlessSvgFallbackProbe.error,
+    equationPaintlessSvgFallbackProbe.error || 'equation paintless SVG fallback parity probe available',
+  );
+  const equationPaintlessFallbackInk = (dataUrl) => countPixels(
+    dataUrl,
+    (pixel) => pixel.alpha > 16 && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const equationPaintlessCanvas2dInk = equationPaintlessFallbackInk(
+    equationPaintlessSvgFallbackProbe.canvas2d,
+  );
+  const equationPaintlessCanvaskitInk = equationPaintlessFallbackInk(
+    equationPaintlessSvgFallbackProbe.canvaskit,
+  );
+  assert(
+    equationPaintlessCanvas2dInk > 20 && equationPaintlessCanvaskitInk > 20,
+    `paintless equation SVG uses visible layout fallback canvas2d=${equationPaintlessCanvas2dInk}, canvaskit=${equationPaintlessCanvaskitInk}`,
+  );
+  assert(
+    equationPaintlessSvgFallbackProbe.diagnostics?.layoutReplays === 1
+      && equationPaintlessSvgFallbackProbe.diagnostics?.routes?.length === 1
+      && equationPaintlessSvgFallbackProbe.diagnostics.routes[0].route === 'layout'
+      && equationPaintlessSvgFallbackProbe.diagnostics.routes[0].reason === 'svgPayloadUnsupported',
+    `paintless equation SVG reports deterministic layout fallback=${JSON.stringify(equationPaintlessSvgFallbackProbe.diagnostics)}`,
+  );
+  const equationPaintlessSvgFallbackDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(equationPaintlessSvgFallbackProbe.canvas2d),
+    pngBufferFromDataUrl(equationPaintlessSvgFallbackProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-equation-paintless-svg-fallback-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.04,
+      inkMaskMaxDiffRatio: 0.04,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    equationPaintlessSvgFallbackDiff.passed,
+    `equation paintless SVG fallback parity exact=${equationPaintlessSvgFallbackDiff.exactDiffPixels}, tolerant=${equationPaintlessSvgFallbackDiff.rawTolerantDiffPixels}, ink=${equationPaintlessSvgFallbackDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationPaintlessSvgFallbackDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-equation-svg-text-shaping-parity');
   const equationSvgTextShapingProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
