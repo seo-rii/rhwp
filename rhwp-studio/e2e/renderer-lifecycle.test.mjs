@@ -12610,14 +12610,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
             type: 'rectangle',
             bbox: { x: 6, y: 8, width: 26, height: 16 },
             cornerRadius: 0,
-            style: style('#fdfdfd', '#003300', 'dash'),
+            style: style('#ff0000', '#003300', 'dash'),
             gradient: null,
             transform,
           },
           {
             type: 'ellipse',
             bbox: { x: 42, y: 8, width: 24, height: 16 },
-            style: style('#fdfdfd', '#003300', 'dot'),
+            style: style('#0000ff', '#003300', 'dot'),
             gradient: null,
             transform,
           },
@@ -12630,7 +12630,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               { type: 'lineTo', x: 97, y: 25 },
               { type: 'closePath' },
             ],
-            style: style('#fdfdfd', '#003300', 'dashDot'),
+            style: style('#ff00ff', '#003300', 'dashDot'),
             gradient: null,
             transform,
           },
@@ -12669,6 +12669,41 @@ runTest('Renderer lifecycle', async ({ page }) => {
     shapeShadowCanvas2dGreenPixels > 200 && shapeShadowCanvaskitGreenPixels > 200,
     `shape shadow replay draws fill/stroke shadow canvas2d=${shapeShadowCanvas2dGreenPixels}, canvaskit=${shapeShadowCanvaskitGreenPixels}`,
   );
+  const shapeShadowSourcePixels = [
+    [
+      'rectangle',
+      pixelAt(shapeShadowFillStrokeProbe.canvas2d, 10, 16),
+      pixelAt(shapeShadowFillStrokeProbe.canvaskit, 10, 16),
+      { red: 255, green: 127, blue: 127, alpha: 255 },
+    ],
+    [
+      'ellipse',
+      pixelAt(shapeShadowFillStrokeProbe.canvas2d, 47, 16),
+      pixelAt(shapeShadowFillStrokeProbe.canvaskit, 47, 16),
+      { red: 127, green: 127, blue: 255, alpha: 255 },
+    ],
+    [
+      'path',
+      pixelAt(shapeShadowFillStrokeProbe.canvas2d, 82, 22),
+      pixelAt(shapeShadowFillStrokeProbe.canvaskit, 82, 22),
+      { red: 255, green: 127, blue: 255, alpha: 255 },
+    ],
+  ];
+  for (const [shape, canvas2dPixel, canvaskitPixel, expected] of shapeShadowSourcePixels) {
+    const delta = (actual, target) => Math.max(
+      Math.abs(actual.red - target.red),
+      Math.abs(actual.green - target.green),
+      Math.abs(actual.blue - target.blue),
+      Math.abs(actual.alpha - target.alpha),
+    );
+    assert(
+      delta(canvas2dPixel, canvaskitPixel) <= 4
+        && delta(canvas2dPixel, expected) <= 16
+        && delta(canvaskitPixel, expected) <= 16,
+      `${shape} shadow keeps single source opacity `
+        + `canvas2d=${JSON.stringify(canvas2dPixel)}, canvaskit=${JSON.stringify(canvaskitPixel)}`,
+    );
+  }
   const shapeShadowFillStrokeDiff = await comparePngBuffers(
     pngBufferFromDataUrl(shapeShadowFillStrokeProbe.canvas2d),
     pngBufferFromDataUrl(shapeShadowFillStrokeProbe.canvaskit),

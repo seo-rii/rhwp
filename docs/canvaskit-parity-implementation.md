@@ -502,12 +502,15 @@ The working order is:
    shape values 0 through 12, including dash, round-dot, compound, wave, and
    double-wave geometry in both inline and externalized decoration paths. Shape
    shadow alpha is multiplied by the authored shape opacity before replay,
-   matching the Canvas2D `globalAlpha` composition
-   contract for rectangle, ellipse, and path fill/stroke shadows. Shape fill
-   selection also falls through in Canvas2D order: an unusable gradient tries
-   the authored pattern before the solid fill color. Path connectors derive
-   start and end arrow directions from the first and last usable line or cubic
-   tangent, and a paired arrow/no-arrow fixture verifies endpoint ink in both
+   matching the Canvas2D `globalAlpha` composition contract. Canvas2D uses an
+   explicit shadow-only blur pass, like CanvasKit, so rectangle, ellipse, and
+   path sources are composited exactly once after their fill/stroke shadows
+   instead of being repainted by a native shadow pass.
+   Shape fill selection also falls through in Canvas2D order: an unusable
+   gradient tries the authored pattern before the solid fill color. Path
+   connectors derive start and end arrow directions from the first and last
+   usable line or cubic tangent, and a paired arrow/no-arrow fixture verifies
+   endpoint ink in both
    Canvas2D and CanvasKit. Rounded rectangles clamp authored corner radii to
    half the smaller bound before either direct fill/stroke or shadow replay.
    SVG-style paths that begin with an `arcTo` command establish their current

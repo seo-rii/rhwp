@@ -1324,16 +1324,17 @@ export class Canvas2DLayerRenderer {
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
       const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.gradient, op.style.pattern);
       const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
+      const beginPath = () => this.beginRectanglePath(ctx, op.bbox, op.cornerRadius);
 
       const draw = () => {
-        this.beginRectanglePath(ctx, op.bbox, op.cornerRadius);
+        beginPath();
         if (fill) {
           ctx.save();
           ctx.globalAlpha *= op.style.opacity;
           ctx.fillStyle = fill;
           ctx.fill();
           ctx.restore();
-          this.beginRectanglePath(ctx, op.bbox, op.cornerRadius);
+          beginPath();
         }
         if (op.style.strokeColor) {
           ctx.save();
@@ -1347,10 +1348,28 @@ export class Canvas2DLayerRenderer {
       };
 
       if (op.style.shadow) {
-        ctx.save();
-        this.applyCanvasShadow(ctx, op.style.shadow);
-        draw();
-        ctx.restore();
+        if (fill) {
+          this.drawCanvasShapeShadow(
+            ctx,
+            op.style.shadow,
+            op.style.opacity,
+            'fill',
+            strokeWidth,
+            op.style.strokeDash,
+            beginPath,
+          );
+        }
+        if (op.style.strokeColor) {
+          this.drawCanvasShapeShadow(
+            ctx,
+            op.style.shadow,
+            op.style.opacity,
+            'stroke',
+            strokeWidth,
+            op.style.strokeDash,
+            beginPath,
+          );
+        }
       }
       draw();
     });
@@ -1360,8 +1379,7 @@ export class Canvas2DLayerRenderer {
     this.withCanvasTransform(ctx, op.bbox, op.transform, () => {
       const fill = this.makeShapeFillStyle(ctx, op.bbox, op.style.fillColor, op.gradient, op.style.pattern);
       const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
-
-      const draw = () => {
+      const beginPath = () => {
         ctx.beginPath();
         ctx.ellipse(
           op.bbox.x + op.bbox.width / 2,
@@ -1372,22 +1390,17 @@ export class Canvas2DLayerRenderer {
           0,
           Math.PI * 2,
         );
+      };
+
+      const draw = () => {
+        beginPath();
         if (fill) {
           ctx.save();
           ctx.globalAlpha *= op.style.opacity;
           ctx.fillStyle = fill;
           ctx.fill();
           ctx.restore();
-          ctx.beginPath();
-          ctx.ellipse(
-            op.bbox.x + op.bbox.width / 2,
-            op.bbox.y + op.bbox.height / 2,
-            op.bbox.width / 2,
-            op.bbox.height / 2,
-            0,
-            0,
-            Math.PI * 2,
-          );
+          beginPath();
         }
         if (op.style.strokeColor) {
           ctx.save();
@@ -1401,10 +1414,28 @@ export class Canvas2DLayerRenderer {
       };
 
       if (op.style.shadow) {
-        ctx.save();
-        this.applyCanvasShadow(ctx, op.style.shadow);
-        draw();
-        ctx.restore();
+        if (fill) {
+          this.drawCanvasShapeShadow(
+            ctx,
+            op.style.shadow,
+            op.style.opacity,
+            'fill',
+            strokeWidth,
+            op.style.strokeDash,
+            beginPath,
+          );
+        }
+        if (op.style.strokeColor) {
+          this.drawCanvasShapeShadow(
+            ctx,
+            op.style.shadow,
+            op.style.opacity,
+            'stroke',
+            strokeWidth,
+            op.style.strokeDash,
+            beginPath,
+          );
+        }
       }
       draw();
     });
@@ -1415,18 +1446,20 @@ export class Canvas2DLayerRenderer {
       const pathBounds = computePathPaintBounds(op.commands, op.bbox);
       const fill = this.makeShapeFillStyle(ctx, pathBounds, op.style.fillColor, op.gradient, op.style.pattern);
       const strokeWidth = Math.max(op.style.strokeWidth, 0.5);
-
-      const draw = () => {
+      const beginPath = () => {
         ctx.beginPath();
         appendPathCommands(ctx, op.commands);
+      };
+
+      const draw = () => {
+        beginPath();
         if (fill) {
           ctx.save();
           ctx.globalAlpha *= op.style.opacity;
           ctx.fillStyle = fill;
           ctx.fill();
           ctx.restore();
-          ctx.beginPath();
-          appendPathCommands(ctx, op.commands);
+          beginPath();
         }
         if (op.style.strokeColor) {
           ctx.save();
@@ -1440,10 +1473,28 @@ export class Canvas2DLayerRenderer {
       };
 
       if (op.style.shadow) {
-        ctx.save();
-        this.applyCanvasShadow(ctx, op.style.shadow);
-        draw();
-        ctx.restore();
+        if (fill) {
+          this.drawCanvasShapeShadow(
+            ctx,
+            op.style.shadow,
+            op.style.opacity,
+            'fill',
+            strokeWidth,
+            op.style.strokeDash,
+            beginPath,
+          );
+        }
+        if (op.style.strokeColor) {
+          this.drawCanvasShapeShadow(
+            ctx,
+            op.style.shadow,
+            op.style.opacity,
+            'stroke',
+            strokeWidth,
+            op.style.strokeDash,
+            beginPath,
+          );
+        }
       }
       draw();
 
@@ -2219,6 +2270,32 @@ export class Canvas2DLayerRenderer {
     ctx.shadowBlur = 1;
     ctx.shadowOffsetX = shadow.offsetX;
     ctx.shadowOffsetY = shadow.offsetY;
+  }
+
+  private drawCanvasShapeShadow(
+    ctx: CanvasRenderingContext2D,
+    shadow: LayerShapeShadow,
+    sourceOpacity: number,
+    style: 'fill' | 'stroke',
+    strokeWidth: number,
+    strokeDash: string,
+    beginPath: () => void,
+  ): void {
+    ctx.save();
+    ctx.translate(shadow.offsetX, shadow.offsetY);
+    ctx.filter = 'blur(1px)';
+    ctx.globalAlpha *= (shadow.alpha > 0 ? 1 - (shadow.alpha / 255) : 1) * sourceOpacity;
+    beginPath();
+    if (style === 'fill') {
+      ctx.fillStyle = shadow.color;
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = shadow.color;
+      ctx.lineWidth = strokeWidth;
+      ctx.setLineDash(strokeDashPattern(strokeDash, strokeWidth));
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   private beginRectanglePath(
