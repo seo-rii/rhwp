@@ -939,8 +939,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(staticPictureProbe.afterClear === 0, `static picture cache released with layer tree cache=${staticPictureProbe.afterClear}`);
 
-  setTestCase('canvaskit-static-picture-image-effect-failure-admission');
-  const staticPictureImageEffectFailureProbe = await page.evaluate(() => {
+  setTestCase('canvaskit-static-picture-image-effect-readback-recovery');
+  const staticPictureImageEffectReadbackProbe = await page.evaluate(() => {
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     if (!renderer) {
       return { error: 'canvaskit renderer unavailable' };
@@ -955,7 +955,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
     for (let y = 0; y < 8; y += 1) {
       for (let x = 0; x < 8; x += 1) {
-        sourceContext.fillStyle = (x + y) % 2 === 0 ? '#000000' : '#ffffff';
+        sourceContext.fillStyle = (x + y) % 2 === 0 ? '#cc2040' : '#20b060';
         sourceContext.fillRect(x, y, 1, 1);
       }
     }
@@ -1007,25 +1007,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
 
     try {
-      const referenceTree = {
-        ...tree,
-        resources: {
-          ...tree.resources,
-          tableId: 81,
-        },
-        root: {
-          ...tree.root,
-          children: [{
-            ...tree.root.children[0],
-            ops: [{
-              ...tree.root.children[0].ops[0],
-              effect: 'realPic',
-            }],
-          }],
-        },
-      };
-      renderer.renderPage(referenceTree, referenceCanvas, 1);
-      const normalSamplingPng = referenceCanvas.toDataURL('image/png');
+      renderer.clearStaticPictureCache?.();
+      renderer.resetImageEffectDiagnostics?.();
+      renderer.renderPage(tree, referenceCanvas, 1);
+      const surfaceSamplingPng = referenceCanvas.toDataURL('image/png');
+      const afterSurface = renderer.getImageEffectDiagnostics?.();
+
       renderer.renderPage({
         ...tree,
         root: {
@@ -1037,6 +1024,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         },
       }, targetCanvas, 1);
       renderer.clearStaticPictureCache?.();
+      for (const image of renderer.resourceCache?.imageEffectCache?.values?.() ?? []) {
+        image.delete?.();
+      }
+      renderer.resourceCache?.imageEffectCache?.clear?.();
       renderer.resetImageEffectDiagnostics?.();
       renderer.canvasKit.MakeSurface = () => null;
       try {
@@ -1044,27 +1035,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
       } finally {
         renderer.canvasKit.MakeSurface = originalMakeSurface;
       }
-      const failureSamplingPng = targetCanvas.toDataURL('image/png');
-      const afterFailure = renderer.getImageEffectDiagnostics?.();
-      const cacheSizeAfterFailure = renderer.staticPictureCache?.size ?? -1;
-
-      renderer.renderPage(tree, targetCanvas, 1);
-      const afterRecovery = renderer.getImageEffectDiagnostics?.();
-      const cacheSizeAfterRecovery = renderer.staticPictureCache?.size ?? -1;
+      const readbackSamplingPng = targetCanvas.toDataURL('image/png');
+      const afterReadback = renderer.getImageEffectDiagnostics?.();
+      const cacheSizeAfterReadback = renderer.staticPictureCache?.size ?? -1;
 
       renderer.renderPage(tree, targetCanvas, 1);
       const afterCacheHit = renderer.getImageEffectDiagnostics?.();
       const cacheSizeAfterCacheHit = renderer.staticPictureCache?.size ?? -1;
 
       return {
-        afterFailure,
-        afterRecovery,
+        afterSurface,
+        afterReadback,
         afterCacheHit,
-        cacheSizeAfterFailure,
-        cacheSizeAfterRecovery,
+        cacheSizeAfterReadback,
         cacheSizeAfterCacheHit,
-        normalSamplingPng,
-        failureSamplingPng,
+        surfaceSamplingPng,
+        readbackSamplingPng,
       };
     } finally {
       renderer.canvasKit.MakeSurface = originalMakeSurface;
@@ -1075,44 +1061,50 @@ runTest('Renderer lifecycle', async ({ page }) => {
   });
 
   assert(
-    !staticPictureImageEffectFailureProbe.error,
-    staticPictureImageEffectFailureProbe.error
+    !staticPictureImageEffectReadbackProbe.error,
+    staticPictureImageEffectReadbackProbe.error
       || 'canvaskit image-effect static picture admission probe available',
   );
   assert(
-    staticPictureImageEffectFailureProbe.afterFailure.preprocessFailures === 1
-      && staticPictureImageEffectFailureProbe.afterFailure.fallbackToOriginal === 1
-      && staticPictureImageEffectFailureProbe.cacheSizeAfterFailure === 0,
-    `failed CanvasKit image effect is visible and not cached=${JSON.stringify(
-      staticPictureImageEffectFailureProbe,
+    staticPictureImageEffectReadbackProbe.afterSurface.preprocessFailures === 0
+      && staticPictureImageEffectReadbackProbe.afterSurface.fallbackToOriginal === 0
+      && staticPictureImageEffectReadbackProbe.afterSurface.preprocessedPixels === 64
+      && staticPictureImageEffectReadbackProbe.afterSurface.directImageReadbackPreprocesses === 0,
+    `CanvasKit surface image effect establishes a reference=${JSON.stringify(
+      staticPictureImageEffectReadbackProbe,
     )}`,
   );
-  const imageEffectFailureSamplingDiff = await comparePngBuffers(
-    pngBufferFromDataUrl(staticPictureImageEffectFailureProbe.normalSamplingPng),
-    pngBufferFromDataUrl(staticPictureImageEffectFailureProbe.failureSamplingPng),
+  const imageEffectReadbackSamplingDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(staticPictureImageEffectReadbackProbe.surfaceSamplingPng),
+    pngBufferFromDataUrl(staticPictureImageEffectReadbackProbe.readbackSamplingPng),
     {
-      diffName: 'canvaskit-image-effect-failure-sampling',
+      diffName: 'canvaskit-image-effect-readback-sampling',
       maxDiffPixels: 0,
     },
   );
   assert(
-    imageEffectFailureSamplingDiff.passed,
-    `failed CanvasKit image effect preserves original-image sampling exact=${imageEffectFailureSamplingDiff.exactDiffPixels}, tolerant=${imageEffectFailureSamplingDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectFailureSamplingDiff.maxChannelDelta}`,
+    imageEffectReadbackSamplingDiff.passed,
+    `direct CanvasKit image-effect readback matches surface preprocessing exact=${imageEffectReadbackSamplingDiff.exactDiffPixels}, tolerant=${imageEffectReadbackSamplingDiff.rawTolerantDiffPixels}, max_channel_delta=${imageEffectReadbackSamplingDiff.maxChannelDelta}`,
   );
   assert(
-    staticPictureImageEffectFailureProbe.afterRecovery.preprocessedPixels === 64
-      && staticPictureImageEffectFailureProbe.cacheSizeAfterRecovery === 1,
-    `CanvasKit image effect recovers and admits a successful picture=${JSON.stringify(
-      staticPictureImageEffectFailureProbe,
+    staticPictureImageEffectReadbackProbe.afterReadback.preprocessFailures === 0
+      && staticPictureImageEffectReadbackProbe.afterReadback.fallbackToOriginal === 0
+      && staticPictureImageEffectReadbackProbe.afterReadback.preprocessedPixels === 64
+      && staticPictureImageEffectReadbackProbe.afterReadback.directImageReadbackPreprocesses === 1
+      && staticPictureImageEffectReadbackProbe.cacheSizeAfterReadback === 1,
+    `CanvasKit image readback preserves the effect and admits the picture=${JSON.stringify(
+      staticPictureImageEffectReadbackProbe,
     )}`,
   );
   assert(
-    staticPictureImageEffectFailureProbe.afterCacheHit.preprocessedPixels
-      === staticPictureImageEffectFailureProbe.afterRecovery.preprocessedPixels
-      && staticPictureImageEffectFailureProbe.cacheSizeAfterCacheHit
-        === staticPictureImageEffectFailureProbe.cacheSizeAfterRecovery,
-    `successful CanvasKit image-effect picture is reused=${JSON.stringify(
-      staticPictureImageEffectFailureProbe,
+    staticPictureImageEffectReadbackProbe.afterCacheHit.preprocessedPixels
+      === staticPictureImageEffectReadbackProbe.afterReadback.preprocessedPixels
+      && staticPictureImageEffectReadbackProbe.afterCacheHit.directImageReadbackPreprocesses
+        === staticPictureImageEffectReadbackProbe.afterReadback.directImageReadbackPreprocesses
+      && staticPictureImageEffectReadbackProbe.cacheSizeAfterCacheHit
+        === staticPictureImageEffectReadbackProbe.cacheSizeAfterReadback,
+    `readback-recovered CanvasKit image-effect picture is reused=${JSON.stringify(
+      staticPictureImageEffectReadbackProbe,
     )}`,
   );
 

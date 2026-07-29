@@ -1104,6 +1104,7 @@ assert(
     && rendererBaselineDriverSource.includes('rejectedReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeImageRecoveryReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeImageFailureReasonCounts')
+    && rendererBaselineDriverSource.includes('runtimeImageEffectReadbackPreprocesses')
     && rendererBaselineDriverSource.includes('runtimeTextRecoveryReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeTextFailureReasonCounts'),
   'renderer baseline markdown report must expose CanvasKit fallback, runtime paint recovery/failure, and rejection reason inventories',
@@ -2165,6 +2166,18 @@ assert.equal(
   canvaskitSource.includes("from './image-effect-pixels'"),
   true,
   'CanvasKit renderer must import shared image helpers from the native-ready module',
+);
+assertTokensInOrder(
+  canvaskitResourceCacheSource,
+  [
+    "let surface: ReturnType<CanvasKit['MakeSurface']> = null",
+    'this.canvasKit.MakeSurface(outputWidth, outputHeight)',
+    'if (!pixels)',
+    'const directReadIsExact',
+    'original.readPixels(directX, directY, imageInfo)',
+    'this.imageEffectDiagnostics.directImageReadbackPreprocesses += 1',
+  ],
+  'CanvasKit image effects must recover exact integer sampling through direct image readback when offscreen surfaces fail',
 );
 for (const textHelperName of [
   'allowsTextControlMark',

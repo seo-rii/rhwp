@@ -117,6 +117,7 @@ export class CanvasKitResourceCache {
     maxHeapDeltaBytes: 0,
     offscreenCanvasPreprocesses: 0,
     htmlCanvasPreprocesses: 0,
+    directImageReadbackPreprocesses: 0,
   };
   private readonly patternDiagnostics: CanvasKitPatternDiagnostics = {
     cacheHits: 0,
@@ -333,25 +334,6 @@ export class CanvasKitResourceCache {
 
     const outputWidth = Math.max(1, Math.round(sw));
     const outputHeight = Math.max(1, Math.round(sh));
-    const surface = this.canvasKit.MakeSurface(outputWidth, outputHeight);
-    if (!surface) {
-      this.imageEffectDiagnostics.preprocessFailures += 1;
-      this.imageEffectDiagnostics.fallbackToOriginal += 1;
-      return original;
-    }
-
-    const paint = new this.canvasKit.Paint();
-    const canvas = surface.getCanvas();
-    canvas.drawImageRect(
-      original,
-      this.canvasKit.XYWHRect(sx, sy, sw, sh),
-      this.canvasKit.XYWHRect(0, 0, outputWidth, outputHeight),
-      paint,
-      false,
-    );
-    paint.delete();
-    surface.flush();
-
     const imageInfo = {
       width: outputWidth,
       height: outputHeight,
@@ -359,10 +341,70 @@ export class CanvasKitResourceCache {
       alphaType: this.canvasKit.AlphaType.Unpremul,
       colorSpace: this.canvasKit.ColorSpace.SRGB,
     };
-    const snapshot = surface.makeImageSnapshot();
-    const pixels = snapshot.readPixels(0, 0, imageInfo);
-    snapshot.delete();
-    surface.delete();
+    let pixels: Uint8Array | null = null;
+    let usedDirectImageReadback = false;
+    let surface: ReturnType<CanvasKit['MakeSurface']> = null;
+    try {
+      surface = this.canvasKit.MakeSurface(outputWidth, outputHeight);
+    } catch {
+      surface = null;
+    }
+    if (surface) {
+      try {
+        const paint = new this.canvasKit.Paint();
+        try {
+          const canvas = surface.getCanvas();
+          canvas.drawImageRect(
+            original,
+            this.canvasKit.XYWHRect(sx, sy, sw, sh),
+            this.canvasKit.XYWHRect(0, 0, outputWidth, outputHeight),
+            paint,
+            false,
+          );
+          surface.flush();
+          const snapshot = surface.makeImageSnapshot();
+          try {
+            const surfacePixels = snapshot.readPixels(0, 0, imageInfo);
+            pixels = surfacePixels instanceof Uint8Array ? surfacePixels : null;
+          } finally {
+            snapshot.delete();
+          }
+        } finally {
+          paint.delete();
+        }
+      } catch {
+        pixels = null;
+      } finally {
+        surface.delete();
+      }
+    }
+
+    if (!pixels) {
+      const directX = Math.round(sx);
+      const directY = Math.round(sy);
+      const directWidth = Math.round(sw);
+      const directHeight = Math.round(sh);
+      const directReadIsExact = Math.abs(sx - directX) <= 1e-6
+        && Math.abs(sy - directY) <= 1e-6
+        && Math.abs(sw - directWidth) <= 1e-6
+        && Math.abs(sh - directHeight) <= 1e-6
+        && directWidth === outputWidth
+        && directHeight === outputHeight
+        && directX >= 0
+        && directY >= 0
+        && directX + directWidth <= imageWidth
+        && directY + directHeight <= imageHeight;
+      if (directReadIsExact) {
+        try {
+          const directPixels = original.readPixels(directX, directY, imageInfo);
+          pixels = directPixels instanceof Uint8Array ? directPixels : null;
+          usedDirectImageReadback = pixels !== null;
+        } catch {
+          pixels = null;
+        }
+      }
+    }
+
     if (!(pixels instanceof Uint8Array)) {
       this.imageEffectDiagnostics.preprocessFailures += 1;
       this.imageEffectDiagnostics.fallbackToOriginal += 1;
@@ -378,7 +420,12 @@ export class CanvasKitResourceCache {
       brightness,
       contrast,
     );
-    const image = this.canvasKit.MakeImage(imageInfo, pixels, outputWidth * 4);
+    let image: CanvasKitImage | null;
+    try {
+      image = this.canvasKit.MakeImage(imageInfo, pixels, outputWidth * 4);
+    } catch {
+      image = null;
+    }
     if (!image) {
       this.imageEffectDiagnostics.preprocessFailures += 1;
       this.imageEffectDiagnostics.fallbackToOriginal += 1;
@@ -399,6 +446,9 @@ export class CanvasKitResourceCache {
       this.imageEffectDiagnostics.maxPreprocessTimeMs,
       elapsedMs,
     );
+    if (usedDirectImageReadback) {
+      this.imageEffectDiagnostics.directImageReadbackPreprocesses += 1;
+    }
     this.imageEffectCache.set(effectCacheKey, image);
     return image;
   }

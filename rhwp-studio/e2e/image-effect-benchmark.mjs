@@ -89,6 +89,7 @@ try {
       maxHeapDeltaBytes: 0,
       offscreenCanvasPreprocesses: 0,
       htmlCanvasPreprocesses: 0,
+      directImageReadbackPreprocesses: 0,
     });
 
     const makeCanvas = (width, height) => {

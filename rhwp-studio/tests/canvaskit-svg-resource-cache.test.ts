@@ -40,6 +40,89 @@ test('keeps encoded raster decoding synchronous', () => {
   assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 0);
 });
 
+test('preprocesses integer image effects by direct readback when surfaces are unavailable', () => {
+  const harness = makeHarness();
+  const original = fakeCanvasKitImage(3, 1);
+  const processed = fakeCanvasKitImage(1, 1);
+  const sourcePixels = Uint8Array.of(
+    220, 10, 30, 255,
+    20, 200, 40, 192,
+    30, 40, 230, 128,
+  );
+  const readCalls = [];
+  const makeImageCalls = [];
+  original.readPixels = (x, y, imageInfo) => {
+    readCalls.push({ x, y, imageInfo });
+    return sourcePixels.slice(x * 4, (x + imageInfo.width) * 4);
+  };
+  harness.canvasKit.encodedResult = original;
+  harness.canvasKit.MakeSurface = () => {
+    throw new Error('surface unavailable');
+  };
+  harness.canvasKit.ColorType = { RGBA_8888: 'rgba8888' };
+  harness.canvasKit.AlphaType = { Unpremul: 'unpremul' };
+  harness.canvasKit.ColorSpace = { SRGB: 'srgb' };
+  harness.canvasKit.MakeImage = (imageInfo, pixels, rowBytes) => {
+    makeImageCalls.push({ imageInfo, pixels: pixels.slice(), rowBytes });
+    return processed;
+  };
+
+  const result = harness.cache.imageWithEffect(
+    undefined,
+    base64(png(3, 1)),
+    'grayScale',
+    { x: 1, y: 0, width: 1, height: 1 },
+  );
+
+  assert.equal(result, processed);
+  assert.deepEqual(readCalls.map(({ x, y, imageInfo }) => ({
+    x,
+    y,
+    width: imageInfo.width,
+    height: imageInfo.height,
+  })), [{ x: 1, y: 0, width: 1, height: 1 }]);
+  assert.deepEqual([...makeImageCalls[0].pixels], [128, 128, 128, 192]);
+  assert.equal(makeImageCalls[0].rowBytes, 4);
+  const diagnostics = harness.cache.getImageEffectDiagnostics();
+  assert.equal(diagnostics.cacheHits, 0);
+  assert.equal(diagnostics.cacheMisses, 1);
+  assert.equal(diagnostics.preprocessFailures, 0);
+  assert.equal(diagnostics.fallbackToOriginal, 0);
+  assert.equal(diagnostics.preprocessedPixels, 1);
+  assert.equal(diagnostics.preprocessedBytes, 4);
+  assert.equal(diagnostics.directImageReadbackPreprocesses, 1);
+});
+
+test('does not approximate fractional image-effect sampling without a surface', () => {
+  const harness = makeHarness();
+  const original = fakeCanvasKitImage(3, 1);
+  let readCalls = 0;
+  original.readPixels = () => {
+    readCalls += 1;
+    return new Uint8Array(4);
+  };
+  harness.canvasKit.encodedResult = original;
+  harness.canvasKit.MakeSurface = () => null;
+  harness.canvasKit.ColorType = { RGBA_8888: 'rgba8888' };
+  harness.canvasKit.AlphaType = { Unpremul: 'unpremul' };
+  harness.canvasKit.ColorSpace = { SRGB: 'srgb' };
+
+  assert.equal(
+    harness.cache.imageWithEffect(
+      undefined,
+      base64(png(3, 1)),
+      'grayScale',
+      { x: 0.25, y: 0, width: 1.5, height: 1 },
+    ),
+    original,
+  );
+  assert.equal(readCalls, 0);
+  assert.equal(harness.cache.getImageEffectDiagnostics().preprocessFailures, 1);
+  assert.equal(harness.cache.getImageEffectDiagnostics().fallbackToOriginal, 1);
+  assert.equal(harness.cache.getImageEffectDiagnostics().preprocessedPixels, 0);
+  assert.equal(harness.cache.getImageEffectDiagnostics().directImageReadbackPreprocesses, 0);
+});
+
 test('recovers encoded raster decoder failures through a direct CanvasKit browser image', async () => {
   const harness = makeHarness();
   const decodedImage = fakeCanvasKitImage(16, 12);

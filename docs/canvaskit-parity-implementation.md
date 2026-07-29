@@ -341,7 +341,15 @@ CanvasKit parity is implemented through four layers:
    negative-cached by resource identity until that resource table is replaced.
    Missing resources, invalid base64, rejected encoded-image headers/limits,
    successful browser recoveries, and final decode failures therefore remain
-   distinct instead of becoming silent paint omissions. TextBlob construction
+   distinct instead of becoming silent paint omissions. Image-effect
+   preprocessing normally uses a CanvasKit offscreen surface so fractional
+   crop sampling retains Skia semantics. If that surface cannot be created,
+   an integer-aligned, in-bounds source rectangle is read directly from the
+   CanvasKit `Image`, transformed by the shared pixel-effect implementation,
+   and rebuilt as a CanvasKit `Image`. Fractional or scaled source rectangles
+   are not approximated by this recovery path. Successful recoveries increment
+   `directImageReadbackPreprocesses` and remain visible in the browser baseline
+   without being classified as replay failures. TextBlob construction
    failures are negative-cached without dropping the affected cluster.
    CanvasKit retries that cluster through direct `drawText`, which reaches
    `_drawSimpleText` without constructing a public `TextBlob`. A successful
@@ -654,12 +662,15 @@ surface diagnostics for every CanvasKit capture. Hidden-overlay items,
 hidden-overlay violations,
 invalid direct-only plan contracts, empty plans, direct-required image items,
 runtime image/image-effect/TextBlob/pattern replay failures, and v2 validation
-issues are hard failures. An image-effect preprocessing failure may draw the
-original image for the current compatibility attempt, but it is reported as a
-replay failure and is never admitted to the static picture cache. That fallback
-uses the original image's crop and linear/mipmap sampling path; an unmaterialized
-effect request must not force nearest-neighbor sampling or claim that a crop was
-already preprocessed. Runtime
+issues are hard failures. Failure to create an image-effect surface is not
+itself a replay failure when exact integer source pixels can be read directly;
+the recovered effect remains cacheable and must match the surface path in the
+browser fixture. If exact readback is unavailable, an image-effect
+preprocessing failure may draw the original image for the current compatibility
+attempt, but it is reported as a replay failure and is never admitted to the
+static picture cache. That fallback uses the original image's crop and
+linear/mipmap sampling path; an unmaterialized effect request must not force
+nearest-neighbor sampling or claim that a crop was already preprocessed. Runtime
 reports are deduplicated by equivalence group;
 conflicting repeated selections and Rust-plan/runtime selected-variant
 mismatches also fail. The sole exception is an explicitly declared plan

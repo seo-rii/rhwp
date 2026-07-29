@@ -16,6 +16,7 @@ export type LayerImageEffectDiagnostics = {
   maxHeapDeltaBytes: number;
   offscreenCanvasPreprocesses: number;
   htmlCanvasPreprocesses: number;
+  directImageReadbackPreprocesses: number;
 };
 
 const ORDERED_DITHER_8X8 = [
@@ -43,6 +44,7 @@ export function resetLayerImageEffectDiagnostics(diagnostics: LayerImageEffectDi
   diagnostics.maxHeapDeltaBytes = 0;
   diagnostics.offscreenCanvasPreprocesses = 0;
   diagnostics.htmlCanvasPreprocesses = 0;
+  diagnostics.directImageReadbackPreprocesses = 0;
 }
 
 export function resolveLayerImageCropSource(
