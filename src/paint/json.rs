@@ -3462,11 +3462,10 @@ mod tests {
             font_size: 16.0,
             ..Default::default()
         };
-        let text = "\u{F012B}\u{F03C5}(Signature)";
-        let display_text = "(인)□(Signature)";
-        let source_positions = vec![
-            0.0, 16.0, 24.0, 32.0, 40.0, 48.0, 56.0, 64.0, 72.0, 80.0, 88.0, 96.0, 104.0,
-        ];
+        let text = "\u{F012B}\u{F03A0}\u{F03C5}\
+                    \u{F03EF}\u{F03F0}\u{F03F1}\u{F03F2}\u{F03F3}\u{F03F4}";
+        let display_text = "(인)↵□한글과컴퓨터";
+        let source_positions = compute_char_positions(text, &style);
         let display_positions = compute_char_positions(display_text, &style);
         let text_run = PaintOp::TextRun {
             bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),

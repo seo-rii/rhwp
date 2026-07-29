@@ -15,6 +15,7 @@ pub mod font_metrics_data;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod font_paths;
 pub(crate) mod form_caption;
+pub(crate) mod hancom_pua;
 pub mod height_measurer;
 pub mod html;
 pub(crate) mod image_crop;

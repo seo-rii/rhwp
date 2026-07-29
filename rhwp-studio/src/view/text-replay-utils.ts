@@ -329,13 +329,25 @@ export function charOverlapInnerSizeRatio(innerCharSize: number): number {
   return 1;
 }
 
+const VERIFIED_HANCOM_PUA_DISPLAY = new Map<number, string>([
+  [0xF012B, '(\uC778)'],
+  [0xF02FC, '\u25BA'],
+  [0xF031C, '\u25A0'],
+  [0xF03A0, '\u21B5'],
+  [0xF03C5, '\u25A1'],
+  [0xF03EF, '\uD55C'],
+  [0xF03F0, '\uAE00'],
+  [0xF03F1, '\uACFC'],
+  [0xF03F2, '\uCEF4'],
+  [0xF03F3, '\uD4E8'],
+  [0xF03F4, '\uD130'],
+]);
+
 export function puaToDisplayText(ch: string): string | null {
   const cp = ch.codePointAt(0) ?? 0;
-  if (cp === 0xF012B) {
-    return '(\uC778)';
-  }
-  if (cp === 0xF03C5) {
-    return '\u25A1';
+  const verified = VERIFIED_HANCOM_PUA_DISPLAY.get(cp);
+  if (verified !== undefined) {
+    return verified;
   }
   if (cp >= 0xF02B1 && cp <= 0xF02C4) {
     return String(cp - 0xF02B0);

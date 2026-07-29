@@ -6,6 +6,18 @@ fn expand_pua_display_text_maps_hanyang_old_hangul() {
     assert_eq!(expand_pua_display_text("A\u{E1A7}Z"), "A\u{1100}\u{119E}Z");
 }
 
+#[test]
+fn expand_pua_display_text_maps_only_verified_hancom_symbols() {
+    assert_eq!(
+        expand_pua_display_text(
+            "\u{F012B}\u{F02FC}\u{F031C}\u{F03A0}\u{F03C5}\
+             \u{F03EF}\u{F03F0}\u{F03F1}\u{F03F2}\u{F03F3}\u{F03F4}"
+        ),
+        "(인)►■↵□한글과컴퓨터"
+    );
+    assert_eq!(expand_pua_display_text("\u{F03E0}"), "\u{F03E0}");
+}
+
 /// 단일 줄, 단일 스타일 문단
 #[test]
 fn test_compose_single_line_single_style() {

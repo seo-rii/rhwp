@@ -243,6 +243,16 @@ runtime again. A broad `devel` merge remains inappropriate because upstream
 has already reapplied many `skia` batches under different commits while both
 trees continued to evolve independently.
 
+The 2026-07-29 remote `devel` audit selectively ports the verified display
+table from upstream `44cabad97` without importing its HWP3 parser, page
+background, or layout-specific changes. Eleven Hancom PUA symbols now project
+to public-font text only after document/PDF verification, including the
+company-name header and Enter pictogram; unknown neighboring PUA remains
+unchanged. Rust JSON/WASM emits the projected `displayText`, while the shared
+Studio fallback applies the same table when an older tree lacks that field.
+The lifecycle fixture feeds raw company-name PUA to both Canvas2D and CanvasKit
+and requires visible ink plus fuzzy raster parity.
+
 No broad upstream or `render-p23` cherry-pick should be applied to this `skia`
 branch just to stay current. The branches have diverged substantially: this
 branch already carries CanvasKit/native Skia parity work that is ahead of

@@ -1151,11 +1151,7 @@ fn pua_enclosed_border_type(ch: char) -> Option<u8> {
 }
 
 fn pua_plain_text_display(ch: char) -> Option<&'static str> {
-    match ch as u32 {
-        0xF012B => Some("(인)"),
-        0xF03C5 => Some("□"),
-        _ => None,
-    }
+    super::hancom_pua::verified_hancom_pua_display(ch)
 }
 
 /// 일반 텍스트 렌더링/paint contract 경로에서 한컴 PUA 문자를 표시 문자열로 확장한다.

@@ -18081,6 +18081,146 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text script parity exact=${textScriptDiff.exactDiffPixels}, tolerant=${textScriptDiff.rawTolerantDiffPixels}, ink=${textScriptDiff.rawInkMaskDiffPixels}, max_channel_delta=${textScriptDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-hancom-pua-display-parity');
+  const hancomPuaDisplayProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const rawText = [
+      0xF03EF,
+      0xF03F0,
+      0xF03F1,
+      0xF03F2,
+      0xF03F3,
+      0xF03F4,
+    ].map((codePoint) => String.fromCodePoint(codePoint)).join('');
+    const tree = {
+      pageWidth: 180,
+      pageHeight: 52,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 2192,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 2192,
+        bounds: { x: 0, y: 0, width: 180, height: 52 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 180, height: 52 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          {
+            type: 'textRun',
+            bbox: { x: 8, y: 6, width: 156, height: 38 },
+            text: rawText,
+            baseline: 30,
+            rotation: 0,
+            isVertical: false,
+            orientation: 'horizontal',
+            isParaEnd: false,
+            isLineBreakEnd: false,
+            style: {
+              fontFamily: 'Noto Sans KR',
+              fontSize: 22,
+              color: '#202020',
+              bold: false,
+              italic: false,
+              ratio: 1,
+              underline: 'none',
+              underlineShape: 0,
+              strikethrough: false,
+              strikeShape: 0,
+              outlineType: 0,
+              shadowType: 0,
+              shadowColor: '#000000',
+              shadowOffsetX: 0,
+              shadowOffsetY: 0,
+              emboss: false,
+              engrave: false,
+              emphasisDot: 0,
+              underlineColor: '#202020',
+              strikeColor: '#202020',
+              shadeColor: '#ffffff',
+            },
+            positions: Array.from({ length: 7 }, (_, index) => index * 22),
+            controlMarks: [],
+            tabLeaders: [],
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !hancomPuaDisplayProbe.error,
+    hancomPuaDisplayProbe.error || 'Hancom PUA display parity probe available',
+  );
+  for (const [backend, dataUrl] of Object.entries(hancomPuaDisplayProbe)) {
+    const inkPixels = countPixels(
+      dataUrl,
+      ({ red, green, blue, alpha }) => (
+        alpha > 32 && (red < 220 || green < 220 || blue < 220)
+      ),
+    );
+    assert(
+      inkPixels > 150,
+      `${backend} maps raw Hancom company-name PUA through the shared display policy ink=${inkPixels}`,
+    );
+  }
+  const hancomPuaDisplayDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(hancomPuaDisplayProbe.canvas2d),
+    pngBufferFromDataUrl(hancomPuaDisplayProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-hancom-pua-display-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.24,
+      inkMaskMaxDiffRatio: 0.16,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    hancomPuaDisplayDiff.passed,
+    `Hancom PUA display parity exact=${hancomPuaDisplayDiff.exactDiffPixels}, tolerant=${hancomPuaDisplayDiff.rawTolerantDiffPixels}, ink=${hancomPuaDisplayDiff.rawInkMaskDiffPixels}, max_channel_delta=${hancomPuaDisplayDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-fallback-font-parity');
   const textFallbackFontProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
