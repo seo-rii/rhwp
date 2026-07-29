@@ -5,6 +5,7 @@ use super::utils::{expand_numbering_format, numbering_format_to_number_format};
 use super::*;
 use crate::model::page::{ColumnDef, PageDef};
 use crate::model::paragraph::{CharShapeRef, LineSeg, Paragraph};
+use crate::model::shape::{RectangleShape, ShapeObject, TextWrap};
 use crate::model::style::{Bullet, HeadType, Numbering, NumberingHead};
 use crate::renderer::composer::compose_paragraph;
 use crate::renderer::style_resolver::{ResolvedCharStyle, ResolvedParaStyle, ResolvedStyleSet};
@@ -104,6 +105,78 @@ fn test_build_empty_page() {
     );
     // 페이지 노드 + 배경 + 머리말 + 본문 + 각주 + 꼬리말
     assert!(tree.root.children.len() >= 4);
+}
+
+#[test]
+fn master_page_para_relative_shape_uses_body_x_and_paper_y() {
+    let engine = LayoutEngine::with_default_dpi();
+    let layout = PageLayoutInfo::from_page_def_default(&a4_page_def(), &ColumnDef::default());
+    let offset_hu = 7200_u32;
+    let offset_px = hwpunit_to_px(offset_hu as i32, DEFAULT_DPI);
+    let shape = ShapeObject::Rectangle(RectangleShape {
+        common: CommonObjAttr {
+            horizontal_offset: offset_hu,
+            vertical_offset: offset_hu,
+            width: 7200,
+            height: 3600,
+            horz_rel_to: HorzRelTo::Para,
+            vert_rel_to: VertRelTo::Para,
+            horz_align: HorzAlign::Left,
+            vert_align: VertAlign::Top,
+            text_wrap: TextWrap::InFrontOfText,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let master_page = MasterPage {
+        paragraphs: vec![Paragraph {
+            controls: vec![Control::Shape(Box::new(shape))],
+            para_shape_id: 0,
+            ..Default::default()
+        }],
+        text_width: 1,
+        text_height: 1,
+        ..Default::default()
+    };
+    let styles = ResolvedStyleSet {
+        para_styles: vec![ResolvedParaStyle::default()],
+        ..Default::default()
+    };
+    let mut tree = PageRenderTree::new(0, layout.page_width, layout.page_height);
+
+    engine.build_master_page_into(
+        &mut tree,
+        Some(&master_page),
+        &layout,
+        &[],
+        &styles,
+        &[],
+        0,
+        1,
+    );
+
+    let master = tree
+        .root
+        .children
+        .iter()
+        .find(|node| matches!(node.node_type, RenderNodeType::MasterPage))
+        .expect("master page node");
+    let rectangle = master
+        .children
+        .iter()
+        .find(|node| matches!(node.node_type, RenderNodeType::Rectangle(_)))
+        .expect("master page rectangle");
+
+    assert!(
+        (rectangle.bbox.x - (layout.body_area.x + offset_px)).abs() < 0.01,
+        "Para-relative horizontal placement must use the body area: {:?}",
+        rectangle.bbox
+    );
+    assert!(
+        (rectangle.bbox.y - offset_px).abs() < 0.01,
+        "Para-relative vertical placement must keep the paper origin: {:?}",
+        rectangle.bbox
+    );
 }
 
 #[test]

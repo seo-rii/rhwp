@@ -1050,6 +1050,15 @@ impl LayoutEngine {
                     height: layout.page_height,
                 };
                 let body_area = &layout.body_area;
+                // Master pages have no flowing column. Para/Column-relative horizontal
+                // placement follows the body margins, while the existing vertical
+                // coordinate system remains paper-relative.
+                let master_col_area = LayoutRect {
+                    x: body_area.x,
+                    y: paper_area.y,
+                    width: body_area.width,
+                    height: paper_area.height,
+                };
                 let mut mp_node = RenderNode::new(
                     mp_id,
                     RenderNodeType::MasterPage,
@@ -1072,10 +1081,10 @@ impl LayoutEngine {
                                         ci,
                                         section_index,
                                         styles,
-                                        body_area,
+                                        &master_col_area,
                                         body_area,
                                         &paper_area,
-                                        body_area.y,
+                                        paper_area.y,
                                         Alignment::Left,
                                         bin_data_content,
                                         &std::collections::HashMap::new(),
