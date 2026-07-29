@@ -957,12 +957,15 @@ implicitly change schema authority:
   negative-cached, malformed embedded font base64 is ignored, and exceptions
   from either CanvasKit typeface constructor leave the `GlyphRun` ineligible so
   its `TextRun` fallback remains selected. Resource parser failures must not
-  abort the page or bypass variant selection. The Rust replay plan also rejects
-  image resources with no recognized encoded-image signature and validates
-  PNG/BMP payloads with the available decoder; those items report
-  `imageDecodeFailed` instead of being advertised as direct replay solely
-  because resource bytes exist. Other recognized encoded formats remain under
-  the runtime CanvasKit decoder gate.
+  abort the page or bypass variant selection. The Rust replay plan rejects
+  image resources with no recognized encoded-image signature or an invalid
+  statically inspectable header as `encodedImageRejected`. Header-admitted
+  images remain direct candidates but carry an explicit runtime condition:
+  `canvasKitEncodedImageDecode` for encoded image bytes and
+  `browserSvgImageDecode` for SVG images. Studio resolves that condition before
+  drawing and reports `imageDecodeFailed` if the selected runtime decoder
+  rejects the bytes. Static plan admission must not claim that runtime decode
+  has already succeeded.
 - Variation, TTC, and OTC strict replay are backend capability additions. A
   backend must keep reporting `variationUnsupported` or `faceIndexUnsupported`
   and select the fallback variant until exact construction is proven for that

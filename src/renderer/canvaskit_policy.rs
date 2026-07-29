@@ -260,6 +260,7 @@ pub struct CanvasKitReplayItem {
     pub feature: CanvasKitReplayFeature,
     pub status: CanvasKitReplayStatus,
     pub reason: CanvasKitReplayReason,
+    pub runtime_condition: Option<CanvasKitReplayRuntimeCondition>,
     pub compat_overlay_allowed: bool,
     pub detail: Option<String>,
 }
@@ -312,6 +313,21 @@ impl CanvasKitReplayStatus {
             Self::CompatOverlay => "compatOverlay",
             Self::TextFallback => "textFallback",
             Self::Unsupported => "unsupported",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanvasKitReplayRuntimeCondition {
+    CanvasKitEncodedImageDecode,
+    BrowserSvgImageDecode,
+}
+
+impl CanvasKitReplayRuntimeCondition {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::CanvasKitEncodedImageDecode => "canvasKitEncodedImageDecode",
+            Self::BrowserSvgImageDecode => "browserSvgImageDecode",
         }
     }
 }
@@ -451,6 +467,10 @@ impl CanvasKitReplayItem {
         push_json_str(out, self.status.as_str());
         out.push_str(",\"reason\":");
         push_json_str(out, self.reason.as_str());
+        if let Some(runtime_condition) = self.runtime_condition {
+            out.push_str(",\"runtimeCondition\":");
+            push_json_str(out, runtime_condition.as_str());
+        }
         out.push_str(",\"compatOverlayAllowed\":");
         out.push_str(bool_json(self.compat_overlay_allowed));
         if let Some(detail) = &self.detail {
@@ -1430,6 +1450,10 @@ impl CanvasKitCapabilityDigest {
         self.record_str(item.feature.as_str());
         self.record_str(item.status.as_str());
         self.record_str(item.reason.as_str());
+        if let Some(runtime_condition) = item.runtime_condition {
+            self.0.update(b"runtime-condition\0");
+            self.record_str(runtime_condition.as_str());
+        }
         self.record_optional_str(item.detail.as_deref());
     }
 
@@ -1566,6 +1590,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                     feature: CanvasKitReplayFeature::Clip,
                     status: CanvasKitReplayStatus::Direct,
                     reason: CanvasKitReplayReason::DirectReplaySupported,
+                    runtime_condition: None,
                     compat_overlay_allowed: false,
                     detail: Some(clip_kind_detail(*clip_kind).to_string()),
                 });
@@ -1734,6 +1759,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 feature: CanvasKitReplayFeature::TextVariant,
                 status: CanvasKitReplayStatus::TextFallback,
                 reason: CanvasKitReplayReason::ExplicitTextRunFallback,
+                runtime_condition: None,
                 compat_overlay_allowed: false,
                 detail: Some("TextRun fallback selected for this equivalence group".to_string()),
             }
@@ -1748,6 +1774,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             feature: CanvasKitReplayFeature::CacheHint,
             status: CanvasKitReplayStatus::Direct,
             reason: CanvasKitReplayReason::DirectReplaySupported,
+            runtime_condition: None,
             compat_overlay_allowed: false,
             detail: Some(cache_hint_detail(cache_hint).to_string()),
         });
@@ -2251,6 +2278,7 @@ fn direct_item_with_detail(
         feature,
         status: CanvasKitReplayStatus::Direct,
         reason: CanvasKitReplayReason::DirectReplaySupported,
+        runtime_condition: None,
         compat_overlay_allowed: false,
         detail,
     }
@@ -2269,6 +2297,7 @@ fn direct_required_item_with_detail(
         feature,
         status: CanvasKitReplayStatus::DirectRequired,
         reason: CanvasKitReplayReason::DirectReplayRequired,
+        runtime_condition: None,
         compat_overlay_allowed: false,
         detail,
     }
@@ -2297,10 +2326,21 @@ fn image_item(
         image.text_wrap,
     ));
 
-    if admission == CanvasKitImageAdmission::Replayable {
-        direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
-    } else {
-        direct_required_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)
+    match admission {
+        CanvasKitImageAdmission::HeaderAdmitted(runtime_condition) => {
+            let mut item =
+                direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail);
+            item.runtime_condition = Some(runtime_condition);
+            item
+        }
+        CanvasKitImageAdmission::Missing | CanvasKitImageAdmission::StaticRejected => {
+            direct_required_item_with_detail(
+                path,
+                "image",
+                CanvasKitReplayFeature::RasterImage,
+                detail,
+            )
+        }
     }
 }
 
@@ -2333,36 +2373,46 @@ fn page_background_item(
         admission,
         None,
     ));
-    if admission == CanvasKitImageAdmission::Replayable {
-        direct_item_with_detail(
-            path,
-            "pageBackground",
-            CanvasKitReplayFeature::PageBackground,
-            detail,
-        )
-    } else {
-        direct_required_item_with_detail(
-            path,
-            "pageBackground",
-            CanvasKitReplayFeature::PageBackground,
-            detail,
-        )
+    match admission {
+        CanvasKitImageAdmission::HeaderAdmitted(runtime_condition) => {
+            let mut item = direct_item_with_detail(
+                path,
+                "pageBackground",
+                CanvasKitReplayFeature::PageBackground,
+                detail,
+            );
+            item.runtime_condition = Some(runtime_condition);
+            item
+        }
+        CanvasKitImageAdmission::Missing | CanvasKitImageAdmission::StaticRejected => {
+            direct_required_item_with_detail(
+                path,
+                "pageBackground",
+                CanvasKitReplayFeature::PageBackground,
+                detail,
+            )
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CanvasKitImageAdmission {
     Missing,
-    DecodeFailed,
-    Replayable,
+    StaticRejected,
+    HeaderAdmitted(CanvasKitReplayRuntimeCondition),
 }
 
 fn image_admission(bytes: &[u8]) -> CanvasKitImageAdmission {
-    if canvaskit_encoded_image_is_replayable(bytes) {
-        CanvasKitImageAdmission::Replayable
-    } else {
-        CanvasKitImageAdmission::DecodeFailed
+    if !canvaskit_encoded_image_is_replayable(bytes) {
+        return CanvasKitImageAdmission::StaticRejected;
     }
+    let runtime_condition =
+        if canvaskit_encoded_image_header(bytes).is_some_and(|header| header.is_svg()) {
+            CanvasKitReplayRuntimeCondition::BrowserSvgImageDecode
+        } else {
+            CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode
+        };
+    CanvasKitImageAdmission::HeaderAdmitted(runtime_condition)
 }
 
 fn canvaskit_encoded_image_is_replayable(bytes: &[u8]) -> bool {
@@ -2435,8 +2485,10 @@ fn image_replay_detail(
     }
     match admission {
         CanvasKitImageAdmission::Missing => detail.push_str(";missingImageData"),
-        CanvasKitImageAdmission::DecodeFailed => detail.push_str(";imageDecodeFailed"),
-        CanvasKitImageAdmission::Replayable => detail.push_str(";injectedImageData"),
+        CanvasKitImageAdmission::StaticRejected => detail.push_str(";encodedImageRejected"),
+        CanvasKitImageAdmission::HeaderAdmitted(_) => {
+            detail.push_str(";imageHeaderAdmitted;runtimeDecodeRequired");
+        }
     }
 
     detail
@@ -2536,9 +2588,9 @@ mod tests {
         estimate_canvaskit_page_lowering_work, CanvasKitBoundedWorkCount,
         CanvasKitDocumentPreflightBlockerCode, CanvasKitDocumentPreflightLimits,
         CanvasKitDocumentPreflightStatus, CanvasKitPreflightPageBuild, CanvasKitReplayMode,
-        CanvasKitReplayStatus, CanvasKitTextVariantPartReport, CanvasKitTextVariantReport,
-        GlyphOutlinePayloadKind, VariantRejectReason, CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES,
-        CANVASKIT_MAX_SVG_BYTES,
+        CanvasKitReplayRuntimeCondition, CanvasKitReplayStatus, CanvasKitTextVariantPartReport,
+        CanvasKitTextVariantReport, GlyphOutlinePayloadKind, VariantRejectReason,
+        CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES, CANVASKIT_MAX_SVG_BYTES,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::ImageFillMode;
@@ -3345,11 +3397,19 @@ mod tests {
         assert_eq!(plan.summary.direct_items, 1);
         assert_eq!(plan.summary.direct_required_items, 1);
 
-        let page_background_detail = plan
+        let page_background_item = plan
             .items
             .iter()
             .find(|item| item.op_type == "pageBackground")
-            .and_then(|item| item.detail.as_deref())
+            .expect("page background image replay item");
+        assert_eq!(page_background_item.status, CanvasKitReplayStatus::Direct);
+        assert_eq!(
+            page_background_item.runtime_condition,
+            Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+        );
+        let page_background_detail = page_background_item
+            .detail
+            .as_deref()
             .expect("page background image replay detail");
         assert!(page_background_detail.contains("fillMode=tileHorzBottom"));
         assert!(page_background_detail.contains("originalSize=source"));
@@ -3375,10 +3435,11 @@ mod tests {
         let json = plan.to_json();
         assert!(json.contains("\"detail\":\"fillMode=tileHorzBottom"));
         assert!(json.contains("effect=pattern8x8"));
+        assert!(json.contains("\"runtimeCondition\":\"canvasKitEncodedImageDecode\""));
     }
 
     #[test]
-    fn canvaskit_replay_plan_reports_external_image_missing_and_injected_data() {
+    fn canvaskit_replay_plan_reports_external_image_missing_and_header_admission() {
         let missing_tree = PageLayerTree::builder(
             100.0,
             100.0,
@@ -3412,6 +3473,7 @@ mod tests {
             .find(|item| item.op_type == "image")
             .expect("missing external image item");
         assert_eq!(missing_item.status, CanvasKitReplayStatus::DirectRequired);
+        assert_eq!(missing_item.runtime_condition, None);
         let detail = missing_item.detail.as_deref().expect("image detail");
         assert!(detail.contains("externalImage"));
         assert!(detail.contains("missingImageData"));
@@ -3449,6 +3511,7 @@ mod tests {
             .find(|item| item.op_type == "image")
             .expect("dangling image resource item");
         assert_eq!(dangling_item.status, CanvasKitReplayStatus::DirectRequired);
+        assert_eq!(dangling_item.runtime_condition, None);
         let detail = dangling_item.detail.as_deref().expect("image detail");
         assert!(detail.contains("externalImage"));
         assert!(detail.contains("missingImageData"));
@@ -3489,13 +3552,21 @@ mod tests {
             .find(|item| item.op_type == "image")
             .expect("injected external image item");
         assert_eq!(injected_item.status, CanvasKitReplayStatus::Direct);
+        assert_eq!(
+            injected_item.runtime_condition,
+            Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+        );
         let detail = injected_item.detail.as_deref().expect("image detail");
         assert!(detail.contains("externalImage"));
-        assert!(detail.contains("injectedImageData"));
+        assert!(detail.contains("imageHeaderAdmitted"));
+        assert!(detail.contains("runtimeDecodeRequired"));
+        assert!(injected_plan
+            .to_json()
+            .contains("\"runtimeCondition\":\"canvasKitEncodedImageDecode\""));
     }
 
     #[test]
-    fn canvaskit_replay_plan_and_preflight_reject_undecodable_image_resources() {
+    fn canvaskit_replay_plan_and_preflight_reject_statically_invalid_image_resources() {
         let mut resources = ResourceArena::default();
         let image_id = resources.intern_image_bytes(&[0x89, b'P', b'N', b'G']);
         let tree = PageLayerTree::builder(
@@ -3551,7 +3622,7 @@ mod tests {
                 && item
                     .detail
                     .as_deref()
-                    .is_some_and(|detail| detail.contains("imageDecodeFailed"))
+                    .is_some_and(|detail| detail.contains("encodedImageRejected"))
         }));
 
         let preflight = analyze_canvaskit_document_preflight_with_limits(
@@ -3594,12 +3665,129 @@ mod tests {
         assert!(preflight.blockers.iter().all(|blocker| blocker
             .detail
             .as_deref()
-            .is_some_and(|detail| detail.contains("imageDecodeFailed"))));
+            .is_some_and(|detail| detail.contains("encodedImageRejected"))));
 
         let json = preflight.to_json();
         assert!(json.contains("\"directRequiredItems\":2"));
         assert!(json.contains("\"code\":\"unsupported\",\"opType\":\"pageBackground\""));
         assert!(json.contains("\"code\":\"unsupported\",\"opType\":\"image\""));
+    }
+
+    #[test]
+    fn canvaskit_marks_header_admitted_images_as_runtime_conditional() {
+        let truncated_png = &FIXTURE_PNG[..33];
+        assert!(canvaskit_encoded_image_is_replayable(truncated_png));
+
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(truncated_png);
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![
+                    PaintOp::PageBackground {
+                        bbox: valid_bbox(),
+                        background: LayerPageBackgroundPaint {
+                            background_color: None,
+                            border_color: None,
+                            border_width: 0.0,
+                            gradient: None,
+                            image: Some(LayerPageBackgroundImagePaint {
+                                resource_id: image_id,
+                                fill_mode: ImageFillMode::FitToSize,
+                                brightness: 0,
+                                contrast: 0,
+                                effect: ImageEffect::RealPic,
+                            }),
+                        },
+                    },
+                    PaintOp::Image {
+                        bbox: valid_bbox(),
+                        image: LayerImagePaint {
+                            resource_id: Some(image_id),
+                            external_path: None,
+                            text_wrap: None,
+                            fill_mode: None,
+                            original_size: None,
+                            crop: None,
+                            original_size_hu: None,
+                            brightness: 0,
+                            contrast: 0,
+                            effect: ImageEffect::RealPic,
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                ],
+            ),
+        )
+        .resources(resources)
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        assert_eq!(plan.summary.direct_items, 2);
+        assert_eq!(plan.summary.direct_required_items, 0);
+        assert!(plan.items.iter().all(|item| {
+            item.status == CanvasKitReplayStatus::Direct
+                && item.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+                && item.detail.as_deref().is_some_and(|detail| {
+                    detail.contains("imageHeaderAdmitted")
+                        && detail.contains("runtimeDecodeRequired")
+                })
+        }));
+        let json = plan.to_json();
+        assert_eq!(
+            json.matches("\"runtimeCondition\":\"canvasKitEncodedImageDecode\"")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn canvaskit_marks_svg_images_as_browser_decode_conditional() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(
+            br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 0 L16 16"/></svg>"#,
+        );
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![PaintOp::Image {
+                    bbox: valid_bbox(),
+                    image: LayerImagePaint {
+                        resource_id: Some(image_id),
+                        external_path: None,
+                        text_wrap: None,
+                        fill_mode: None,
+                        original_size: None,
+                        crop: None,
+                        original_size_hu: None,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        transform: ShapeTransform::default(),
+                    },
+                }],
+            ),
+        )
+        .resources(resources)
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let item = plan.items.first().expect("SVG image replay item");
+        assert_eq!(item.status, CanvasKitReplayStatus::Direct);
+        assert_eq!(
+            item.runtime_condition,
+            Some(CanvasKitReplayRuntimeCondition::BrowserSvgImageDecode)
+        );
+        assert!(plan
+            .to_json()
+            .contains("\"runtimeCondition\":\"browserSvgImageDecode\""));
     }
 
     #[test]
@@ -3658,7 +3846,7 @@ mod tests {
                 && item
                     .detail
                     .as_deref()
-                    .is_some_and(|detail| detail.contains("imageDecodeFailed"))
+                    .is_some_and(|detail| detail.contains("encodedImageRejected"))
         }));
 
         let mut outline = outline(GlyphOutlinePayloadKind::BitmapGlyph);
@@ -3697,11 +3885,16 @@ mod tests {
             image_item.reason,
             super::CanvasKitReplayReason::DirectReplaySupported
         );
+        assert_eq!(
+            image_item.runtime_condition,
+            Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+        );
         assert!(
             image_item
                 .detail
                 .as_deref()
-                .is_some_and(|detail| detail.contains("injectedImageData")
+                .is_some_and(|detail| detail.contains("imageHeaderAdmitted")
+                    && detail.contains("runtimeDecodeRequired")
                     && !detail.contains("missingImageData")),
             "CanvasKit plan should report replayable image data detail: {image_item:?}"
         );

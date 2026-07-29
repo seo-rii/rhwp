@@ -449,6 +449,14 @@ The working order is:
    fallback/reject. The browser contract test now pins this relationship for
    page backgrounds, images, equations, form objects, text-special ops, vector
    shapes, `GlyphRun`, and `GlyphOutline`.
+   Encoded-image plan admission is intentionally two-stage. Rust validates only
+   the format header, dimensions, and resource-size bounds; an admitted raster
+   item remains `direct` but carries
+   `runtimeCondition=canvasKitEncodedImageDecode`, while an admitted SVG image
+   carries `runtimeCondition=browserSvgImageDecode`. Studio then records the
+   actual codec result. Missing resources remain `missingImageData`, and bytes
+   rejected by static admission report `encodedImageRejected`; the plan does
+   not mislabel either case as a runtime decode failure.
    Browser replay ordering is also one shared contract: Canvas2D and CanvasKit
    traverse `background`, `behindText`, `flow`, and `inFrontOfText` planes in
    the same order as native Skia and layered SVG. Source order remains stable
