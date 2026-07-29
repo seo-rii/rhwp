@@ -15,9 +15,9 @@ pub struct LayerTreeSchema {
 
 pub const LAYER_TREE_SCHEMA: LayerTreeSchema = LayerTreeSchema {
     schema_version: 1,
-    schema_minor_version: 13,
+    schema_minor_version: 20,
     resource_table_version: 1,
-    resource_table_minor_version: 3,
+    resource_table_minor_version: 5,
     unit: "px",
     coordinate_system: "page-top-left-y-down",
 };
@@ -37,9 +37,9 @@ mod tests {
     #[test]
     fn layer_tree_schema_contract_is_stable() {
         assert_eq!(LAYER_TREE_SCHEMA.schema_version, 1);
-        assert_eq!(LAYER_TREE_SCHEMA.schema_minor_version, 13);
+        assert_eq!(LAYER_TREE_SCHEMA.schema_minor_version, 20);
         assert_eq!(LAYER_TREE_SCHEMA.resource_table_version, 1);
-        assert_eq!(LAYER_TREE_SCHEMA.resource_table_minor_version, 3);
+        assert_eq!(LAYER_TREE_SCHEMA.resource_table_minor_version, 5);
         assert_eq!(LAYER_TREE_SCHEMA.unit, "px");
         assert_eq!(LAYER_TREE_SCHEMA.coordinate_system, "page-top-left-y-down");
         assert_eq!(

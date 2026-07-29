@@ -345,6 +345,11 @@ SVG, and portable font data. Canvas2D and CanvasKit document caches reset in
 the same step; visible pages then repopulate the new table. Compaction is not
 performed during page traversal, so an unseen page can never lose a resource id
 while an older tree remains cached.
+The v1 compatibility export advertises additive schema revision `1.20` and
+resource-table revision `1.5`. Those revisions cover the implemented advanced
+glyph payload gates, split output/build/debug options, externalized bounded text
+visuals, and image, static-SVG, and portable-font resources. Schema v2 keeps its
+own `2.0` envelope while reusing the same `1.5` resource-table contract.
 CanvasKit fallback-font initialization deduplicates bundled Noto/D2/math URLs
 and prefetches the remaining unique catalog files in parallel; registration
 order and family/style matching remain deterministic.
