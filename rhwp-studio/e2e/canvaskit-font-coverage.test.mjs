@@ -8,16 +8,20 @@ import CanvasKitInit from 'canvaskit-wasm/bin/full/canvaskit.js';
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const regularFontPath = path.resolve(studioRoot, '../web/fonts/NotoSansKR-Regular.woff2');
 const extraLightFontPath = path.resolve(studioRoot, '../web/fonts/NotoSansKR-ExtraLight.woff2');
+const d2CodingFontPath = path.resolve(studioRoot, '../web/fonts/D2Coding-Regular.woff2');
 const canvasKitBundle = path.resolve(studioRoot, 'node_modules/canvaskit-wasm/bin/full');
 const CanvasKit = await CanvasKitInit({
   locateFile: (file) => path.join(canvasKitBundle, file),
 });
 const regularBytes = fs.readFileSync(regularFontPath);
 const extraLightBytes = fs.readFileSync(extraLightFontPath);
+const d2CodingBytes = fs.readFileSync(d2CodingFontPath);
 const regularTypeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(regularBytes);
 const extraLightTypeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(extraLightBytes);
+const d2CodingTypeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(d2CodingBytes);
 assert.ok(regularTypeface, 'Noto Sans KR Regular typeface를 만들 수 있어야 한다');
 assert.ok(extraLightTypeface, 'Noto Sans KR ExtraLight typeface를 만들 수 있어야 한다');
+assert.ok(d2CodingTypeface, 'D2Coding Regular typeface를 만들 수 있어야 한다');
 
 const regularFontManager = CanvasKit.FontMgr.FromData(regularBytes);
 assert.equal(regularFontManager?.getFamilyName(0), 'Noto Sans KR', 'Regular 번들은 올바른 family name을 노출해야 한다');
@@ -29,9 +33,16 @@ assert.equal(
   'Noto Sans KR ExtraLight',
   'ExtraLight 번들은 독립 family name을 노출해야 한다',
 );
+const d2CodingFontManager = CanvasKit.FontMgr.FromData(d2CodingBytes);
+assert.equal(
+  d2CodingFontManager?.getFamilyName(0),
+  'D2Coding',
+  'D2Coding 번들은 올바른 fallback family name을 노출해야 한다',
+);
 
 const regularFont = new CanvasKit.Font(regularTypeface, 16);
 const extraLightFont = new CanvasKit.Font(extraLightTypeface, 16);
+const d2CodingFont = new CanvasKit.Font(d2CodingTypeface, 16);
 try {
   for (const [character, codepoint] of [
     ['■', 'U+25A0'],
@@ -54,6 +65,11 @@ try {
     const glyphId = extraLightFont.getGlyphIDs(character, 1)[0];
     assert.notEqual(glyphId, 0, `${codepoint} ${character}는 Noto Sans KR ExtraLight에 있어야 한다`);
   }
+  assert.notEqual(
+    d2CodingFont.getGlyphIDs('㎡', 1)[0],
+    0,
+    'U+33A1 ㎡는 공유 D2Coding fallback에 있어야 한다',
+  );
 
   const paragraphStyle = new CanvasKit.ParagraphStyle({
     textStyle: {
@@ -92,9 +108,12 @@ try {
 } finally {
   regularFont.delete();
   extraLightFont.delete();
+  d2CodingFont.delete();
   regularTypeface.delete();
   extraLightTypeface.delete();
+  d2CodingTypeface.delete();
   extraLightFontManager?.delete();
+  d2CodingFontManager?.delete();
 }
 
-console.log('CanvasKit Noto Sans KR Regular/ExtraLight and old-Hangul shaping coverage passed');
+console.log('CanvasKit Noto Sans KR, old-Hangul, and D2Coding unit-symbol coverage passed');

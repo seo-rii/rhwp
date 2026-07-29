@@ -18091,10 +18091,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
     const supplementaryMathLetter = '\u{1D400}';
     const oldHangulText = 'ᄒᆞᆫ';
+    const squareMetreText = '㎡';
     const text = `A₩①◆☀€${supplementaryMathLetter}${oldHangulText}`;
     const tree = {
       pageWidth: 184,
-      pageHeight: 40,
+      pageHeight: 70,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: false,
@@ -18119,10 +18120,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1936,
-        bounds: { x: 0, y: 0, width: 184, height: 40 },
+        bounds: { x: 0, y: 0, width: 184, height: 70 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 184, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 184, height: 70 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'textRun',
             bbox: { x: 8, y: 6, width: 168, height: 26 },
@@ -18161,6 +18162,41 @@ runTest('Renderer lifecycle', async ({ page }) => {
             controlMarks: [],
             tabLeaders: [],
           },
+          {
+            type: 'textRun',
+            bbox: { x: 8, y: 38, width: 32, height: 26 },
+            text: squareMetreText,
+            baseline: 20,
+            rotation: 0,
+            isVertical: false,
+            orientation: 'horizontal',
+            isParaEnd: false,
+            isLineBreakEnd: false,
+            style: {
+              fontFamily: 'Noto Serif KR Extra Bold',
+              fontSize: 18,
+              color: '#111111',
+              bold: false,
+              italic: false,
+              ratio: 1,
+              underline: 'none',
+              underlineShape: 0,
+              strikethrough: false,
+              strikeShape: 0,
+              outlineType: 0,
+              shadowType: 0,
+              shadowColor: '#000000',
+              shadowOffsetX: 0,
+              shadowOffsetY: 0,
+              emboss: false,
+              engrave: false,
+              emphasisDot: 0,
+              shadeColor: '#ffffff',
+            },
+            positions: [0, 24],
+            controlMarks: [],
+            tabLeaders: [],
+          },
         ],
       },
     };
@@ -18190,6 +18226,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         oldHangulGlyphIds: fontFamily === 'Noto Sans KR ExtraLight'
           ? Array.from(objects.font.getGlyphIDs(oldHangulText))
           : undefined,
+        squareMetreGlyphIds: fontFamily === 'D2Coding'
+          ? Array.from(objects.font.getGlyphIDs(squareMetreText))
+          : undefined,
       });
       return objects;
     };
@@ -18205,6 +18244,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         oldHangulFontLoaded: document.fonts.check(
           '400 18px "Noto Sans KR ExtraLight"',
           oldHangulText,
+        ),
+        squareMetreFontLoaded: document.fonts.check(
+          '400 18px "D2Coding"',
+          squareMetreText,
         ),
       };
     } finally {
@@ -18250,6 +18293,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ),
       ),
     `both browser renderers load the old-Hangul fallback and CanvasKit resolves every jamo loaded=${textFallbackFontProbe.oldHangulFontLoaded}, requests=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
+  );
+  assert(
+    textFallbackFontProbe.squareMetreFontLoaded === true
+      && textFallbackFontProbe.makeTextRequests.some(
+        ({ fontFamily, squareMetreGlyphIds }) => (
+          fontFamily === 'D2Coding'
+          && squareMetreGlyphIds?.length === 1
+          && squareMetreGlyphIds[0] !== 0
+        ),
+      ),
+    `both browser renderers load the square-metre fallback and CanvasKit resolves U+33A1 loaded=${textFallbackFontProbe.squareMetreFontLoaded}, requests=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
   );
   const textFallbackCanvas2dInkPixels = countPixels(
     textFallbackFontProbe.canvas2d,
@@ -18310,6 +18364,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && oldHangulInk.canvas2d.maxX < 160
       && oldHangulInk.canvaskit.maxX < 160,
     `old-Hangul fallback shapes one compact cluster=${JSON.stringify(oldHangulInk)}`,
+  );
+  const squareMetreInkPixels = {};
+  for (const backend of ['canvas2d', 'canvaskit']) {
+    const png = PNG.sync.read(pngBufferFromDataUrl(textFallbackFontProbe[backend]));
+    let inkPixels = 0;
+    for (let y = 34; y < png.height; y += 1) {
+      for (let x = 4; x < 42; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        if (
+          png.data[offset + 3] > 32
+          && (png.data[offset] < 245 || png.data[offset + 1] < 245 || png.data[offset + 2] < 245)
+        ) {
+          inkPixels += 1;
+        }
+      }
+    }
+    squareMetreInkPixels[backend] = inkPixels;
+  }
+  assert(
+    squareMetreInkPixels.canvas2d > 20 && squareMetreInkPixels.canvaskit > 20,
+    `square-metre fallback draws U+33A1 in both renderers=${JSON.stringify(squareMetreInkPixels)}`,
   );
   const textFallbackFontDiff = await comparePngBuffers(
     pngBufferFromDataUrl(textFallbackFontProbe.canvas2d),

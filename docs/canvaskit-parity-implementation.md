@@ -1404,6 +1404,10 @@ The checked-in `pua-test.hwp` sample adds the corresponding real-document proof
 for PUA and circled-character fallback. It complements the synthetic
 `canvas-layer-text-script-parity` lifecycle fixture and keeps the original
 glyph-loss regression from issue #2394 in the representative browser baseline.
+The shared font matrix also pins U+33A1 `㎡`: the direct CanvasKit coverage test
+verifies the D2Coding glyph, while the browser lifecycle fixture verifies
+Canvas2D and CanvasKit selection plus visible replay. This closes the remaining
+issue #2394 unit-symbol regression without relying on a host system font.
 Final page-tree construction also clips vertically overlapping slices that
 reference the same `BinData` image and share the same horizontal placement.
 The correction runs once after master-page composition, proportionally shortens
