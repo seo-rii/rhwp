@@ -271,9 +271,6 @@ pub fn decode_font_svg_glyph_payload(
     let fragment = std::str::from_utf8(&svg_bytes)
         .map_err(|_| FontSvgGlyphDecodeError::InvalidUtf8)?
         .trim();
-    if !crate::renderer::static_svg::static_svg_fragment_has_path_layer(fragment) {
-        return Err(FontSvgGlyphDecodeError::UnsafeStaticSvg);
-    }
 
     let mut reader = Reader::from_str(fragment);
     reader.config_mut().trim_text(true);
@@ -319,6 +316,9 @@ pub fn decode_font_svg_glyph_payload(
             Ok(_) => {}
             Err(_) => return Err(FontSvgGlyphDecodeError::InvalidSvgXml),
         }
+    }
+    if !crate::renderer::static_svg::static_svg_fragment_has_path_layer(fragment) {
+        return Err(FontSvgGlyphDecodeError::UnsafeStaticSvg);
     }
     let view_box = view_box.ok_or(FontSvgGlyphDecodeError::MissingViewBox)?;
     let mut payload = SvgGlyphPayload {
