@@ -2297,6 +2297,12 @@ assert.equal(
   true,
   'CanvasKit renderer must import shared replay plane ordering and op classification',
 );
+assert.equal(
+  importBlockFrom(canvas2dSource, './canvaskit/replay-plane').includes('LAYER_REPLAY_PLANES')
+    && importBlockFrom(canvas2dSource, './canvaskit/replay-plane').includes('layerPaintOpReplayPlane'),
+  true,
+  'Canvas2D renderer must import the same replay plane ordering and op classification',
+);
 assertTokensInOrder(
   canvaskitReplayPlaneSource,
   [
@@ -2317,6 +2323,26 @@ assertTokensInOrder(
     'this.renderNode(canvas, tree.root, replayPlane)',
   ],
   'CanvasKit renderSurface must replay the layer tree once per z-order plane',
+);
+assertTokensInOrder(
+  extractMethodBody(canvas2dSource, 'renderPage'),
+  [
+    'for (const replayPlane of LAYER_REPLAY_PLANES)',
+    'this.renderNode(ctx, tree.root, replayPlane)',
+  ],
+  'Canvas2D renderPage must replay the layer tree once per z-order plane',
+);
+assertTokensInOrder(
+  extractMethodBody(canvas2dSource, 'renderLeafNode'),
+  [
+    "replayPlane === 'flow'",
+    'this.textVariantSelectionDiagnostics.push(...selectedResult.reports)',
+    'layerPaintOpReplayPlane(op) !== replayPlane',
+    'continue',
+    'shouldRenderLayerTextVariant(op, selectedTextVariants)',
+    'this.renderOp(ctx, op)',
+  ],
+  'Canvas2D leaf replay must select text once and filter paint ops by replay plane',
 );
 assertTokensInOrder(
   extractMethodBody(canvaskitSource, 'renderLeafNode'),

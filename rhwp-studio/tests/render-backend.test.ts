@@ -10,6 +10,7 @@ import {
 } from '../src/view/render-backend.ts';
 import {
   CANVASKIT_REPLAY_PLANES,
+  LAYER_REPLAY_PLANES,
   layerPaintOpReplayPlane,
 } from '../src/view/canvaskit/replay-plane.ts';
 import type { LayerPaintOp } from '../src/core/types.ts';
@@ -57,11 +58,12 @@ test('render profile resolver keeps screen as the stable browser default', () =>
   assert.equal(resolveRenderProfile('?renderProfile=highQuality'), 'high-quality');
 });
 
-test('CanvasKit replay planes match direct z-order contract', () => {
+test('browser replay planes match the native HWP z-order contract', () => {
   assert.deepEqual(
-    [...CANVASKIT_REPLAY_PLANES],
+    [...LAYER_REPLAY_PLANES],
     ['background', 'behindText', 'flow', 'inFrontOfText'],
   );
+  assert.equal(CANVASKIT_REPLAY_PLANES, LAYER_REPLAY_PLANES);
 });
 
 test('CanvasKit replay plane helper classifies PageLayerTree ops by wrap', () => {

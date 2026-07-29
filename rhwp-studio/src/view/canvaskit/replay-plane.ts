@@ -1,15 +1,18 @@
 import type { LayerPaintOp } from '@/core/types';
 
-export type CanvasKitReplayPlane = 'background' | 'behindText' | 'flow' | 'inFrontOfText';
+export type LayerReplayPlane = 'background' | 'behindText' | 'flow' | 'inFrontOfText';
 
-export const CANVASKIT_REPLAY_PLANES = [
+export const LAYER_REPLAY_PLANES = [
   'background',
   'behindText',
   'flow',
   'inFrontOfText',
-] as const satisfies readonly CanvasKitReplayPlane[];
+] as const satisfies readonly LayerReplayPlane[];
 
-export function layerPaintOpReplayPlane(op: LayerPaintOp): CanvasKitReplayPlane {
+export type CanvasKitReplayPlane = LayerReplayPlane;
+export const CANVASKIT_REPLAY_PLANES = LAYER_REPLAY_PLANES;
+
+export function layerPaintOpReplayPlane(op: LayerPaintOp): LayerReplayPlane {
   if (op.type === 'pageBackground') {
     return 'background';
   }

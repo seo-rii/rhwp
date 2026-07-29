@@ -329,6 +329,158 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `CanvasKit render dispatch avoids Canvas2D overlay=${JSON.stringify(noCanvas2DOverlayProbe)}`,
   );
 
+  setTestCase('canvas-replay-plane-order-parity');
+  const replayPlaneOrderProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 4;
+    sourceCanvas.height = 4;
+    const sourceContext = sourceCanvas.getContext('2d');
+    if (!sourceContext) {
+      return { error: 'image fixture canvas unavailable' };
+    }
+    sourceContext.fillStyle = '#0000ff';
+    sourceContext.fillRect(0, 0, 4, 4);
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const bounds = { x: 0, y: 0, width: 24, height: 24 };
+    const imageOp = (wrap) => ({
+      type: 'image',
+      bbox: bounds,
+      base64,
+      wrap,
+      fillMode: 'fitToSize',
+      effect: 'realPic',
+      originalSize: { width: 4, height: 4 },
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+    });
+    const rectangleOp = {
+      type: 'rectangle',
+      bbox: bounds,
+      cornerRadius: 0,
+      style: {
+        fillColor: '#ff0000',
+        strokeColor: null,
+        strokeWidth: 0,
+        strokeDash: 'solid',
+        opacity: 1,
+      },
+      transform: { rotation: 0, horzFlip: false, vertFlip: false },
+    };
+    const makeTree = (ops, tableId) => ({
+      pageWidth: 24,
+      pageHeight: 24,
+      profile: 'screen',
+      resources: {
+        tableId,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: tableId,
+        bounds,
+        cacheHint: 'none',
+        ops,
+      },
+    });
+    const nextFrame = () => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+    const isColor = (pixel, expected) => expected === 'blue'
+      ? pixel[2] > 220 && pixel[0] < 40 && pixel[1] < 40 && pixel[3] > 220
+      : pixel[0] > 220 && pixel[1] < 40 && pixel[2] < 40 && pixel[3] > 220;
+    const renderCenter = async (renderer, tree, expected) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 24;
+      canvas.height = 24;
+      document.body.appendChild(canvas);
+      const context = canvas.getContext('2d');
+      if (!context) {
+        canvas.remove();
+        return null;
+      }
+      let pixel = [0, 0, 0, 0];
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        renderer.renderPage(tree, canvas, 1);
+        await nextFrame();
+        pixel = Array.from(context.getImageData(12, 12, 1, 1).data);
+        if (isColor(pixel, expected)) {
+          break;
+        }
+      }
+      canvas.remove();
+      return pixel;
+    };
+    const cases = [
+      {
+        name: 'behind-image-first',
+        expected: 'red',
+        tree: makeTree([imageOp('behindText'), rectangleOp], 2101),
+      },
+      {
+        name: 'behind-image-last',
+        expected: 'red',
+        tree: makeTree([rectangleOp, imageOp('behindText')], 2102),
+      },
+      {
+        name: 'front-image-first',
+        expected: 'blue',
+        tree: makeTree([imageOp('inFrontOfText'), rectangleOp], 2103),
+      },
+      {
+        name: 'front-image-last',
+        expected: 'blue',
+        tree: makeTree([rectangleOp, imageOp('inFrontOfText')], 2104),
+      },
+    ];
+    const warmTree = makeTree([imageOp('topAndBottom')], 2100);
+    const result = {
+      warm: {
+        canvas2d: await renderCenter(canvas2dRenderer, warmTree, 'blue'),
+        canvaskit: await renderCenter(canvaskitRenderer, warmTree, 'blue'),
+      },
+      cases: [],
+    };
+    for (const testCase of cases) {
+      result.cases.push({
+        name: testCase.name,
+        expected: testCase.expected,
+        canvas2d: await renderCenter(canvas2dRenderer, testCase.tree, testCase.expected),
+        canvaskit: await renderCenter(canvaskitRenderer, testCase.tree, testCase.expected),
+      });
+    }
+    return result;
+  });
+  assert(
+    !replayPlaneOrderProbe.error,
+    replayPlaneOrderProbe.error || 'canvas replay-plane order probe available',
+  );
+  const replayPlaneColorMatches = (pixel, expected) => expected === 'blue'
+    ? pixel?.[2] > 220 && pixel?.[0] < 40 && pixel?.[1] < 40 && pixel?.[3] > 220
+    : pixel?.[0] > 220 && pixel?.[1] < 40 && pixel?.[2] < 40 && pixel?.[3] > 220;
+  assert(
+    replayPlaneColorMatches(replayPlaneOrderProbe.warm.canvas2d, 'blue')
+      && replayPlaneColorMatches(replayPlaneOrderProbe.warm.canvaskit, 'blue'),
+    `canvas replay-plane image fixture warmed=${JSON.stringify(replayPlaneOrderProbe.warm)}`,
+  );
+  for (const result of replayPlaneOrderProbe.cases) {
+    assert(
+      replayPlaneColorMatches(result.canvas2d, result.expected)
+        && replayPlaneColorMatches(result.canvaskit, result.expected),
+      `canvas replay-plane order ${result.name}=${JSON.stringify(result)}`,
+    );
+  }
+
   setTestCase('canvaskit-margin-guide-gpu-fallback-rerenders-content');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default&canvaskitSurface=software');
   const marginGuideFallbackProbe = await page.evaluate(() => {

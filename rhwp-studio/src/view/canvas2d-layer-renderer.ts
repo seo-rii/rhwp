@@ -82,6 +82,11 @@ import {
 import { replayColorPaintGraph, resolvedColorToCss } from './glyph-outline-color-graph-utils';
 import { formObjectPalette } from './form-replay-utils';
 import {
+  LAYER_REPLAY_PLANES,
+  layerPaintOpReplayPlane,
+  type LayerReplayPlane,
+} from './canvaskit/replay-plane';
+import {
   TEXT_CONTROL_MARK_FONT_FAMILY,
   tabLeaderLineSegments,
   textDecorationEmphasisGeometry,
@@ -168,7 +173,9 @@ export class Canvas2DLayerRenderer {
     ctx.save();
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.textBaseline = 'alphabetic';
-    this.renderNode(ctx, tree.root);
+    for (const replayPlane of LAYER_REPLAY_PLANES) {
+      this.renderNode(ctx, tree.root, replayPlane);
+    }
     ctx.restore();
   }
 
@@ -266,25 +273,33 @@ export class Canvas2DLayerRenderer {
     resetLayerImageEffectDiagnostics(this.imageEffectDiagnostics);
   }
 
-  private renderNode(ctx: CanvasRenderingContext2D, node: LayerNode): void {
+  private renderNode(
+    ctx: CanvasRenderingContext2D,
+    node: LayerNode,
+    replayPlane: LayerReplayPlane,
+  ): void {
     switch (node.kind) {
       case 'group':
         for (const child of node.children) {
-          this.renderNode(ctx, child);
+          this.renderNode(ctx, child, replayPlane);
         }
         return;
       case 'clipRect':
-        this.renderClipNode(ctx, node);
+        this.renderClipNode(ctx, node, replayPlane);
         return;
       case 'leaf':
-        this.renderLeafNode(ctx, node);
+        this.renderLeafNode(ctx, node, replayPlane);
         return;
     }
   }
 
-  private renderClipNode(ctx: CanvasRenderingContext2D, node: LayerClipNode): void {
+  private renderClipNode(
+    ctx: CanvasRenderingContext2D,
+    node: LayerClipNode,
+    replayPlane: LayerReplayPlane,
+  ): void {
     if (!this.currentClipEnabled) {
-      this.renderNode(ctx, node.child);
+      this.renderNode(ctx, node.child, replayPlane);
       return;
     }
     const clip = {
@@ -304,27 +319,37 @@ export class Canvas2DLayerRenderer {
     );
     ctx.clip();
     try {
-      this.renderNode(ctx, node.child);
+      this.renderNode(ctx, node.child, replayPlane);
     } finally {
       ctx.restore();
       this.currentClipStack.pop();
     }
   }
 
-  private renderLeafNode(ctx: CanvasRenderingContext2D, node: LayerLeafNode): void {
+  private renderLeafNode(
+    ctx: CanvasRenderingContext2D,
+    node: LayerLeafNode,
+    replayPlane: LayerReplayPlane,
+  ): void {
     const ops = layerTextVariantOpsForLeaf(node.ops, this.lastRenderedTree?.variantOps);
-    const selectedResult = selectLayerTextVariantSetsWithReport(
-      ops,
-      () => ({ replayable: false, reason: 'backendDoesNotSupportVariant' }),
-      (op) => this.glyphOutlineReplayStatus(op),
-      {
-        backend: 'canvas2d',
-        renderProfile: this.lastRenderedTree?.profile,
-      },
-    );
-    this.textVariantSelectionDiagnostics.push(...selectedResult.reports);
-    const selectedTextVariants = selectedResult.selected;
+    let selectedTextVariants: ReadonlyMap<string, string> = new Map();
+    if (replayPlane === 'flow') {
+      const selectedResult = selectLayerTextVariantSetsWithReport(
+        ops,
+        () => ({ replayable: false, reason: 'backendDoesNotSupportVariant' }),
+        (op) => this.glyphOutlineReplayStatus(op),
+        {
+          backend: 'canvas2d',
+          renderProfile: this.lastRenderedTree?.profile,
+        },
+      );
+      this.textVariantSelectionDiagnostics.push(...selectedResult.reports);
+      selectedTextVariants = selectedResult.selected;
+    }
     for (const op of ops) {
+      if (layerPaintOpReplayPlane(op) !== replayPlane) {
+        continue;
+      }
       if (!shouldRenderLayerTextVariant(op, selectedTextVariants)) {
         continue;
       }

@@ -449,6 +449,13 @@ The working order is:
    fallback/reject. The browser contract test now pins this relationship for
    page backgrounds, images, equations, form objects, text-special ops, vector
    shapes, `GlyphRun`, and `GlyphOutline`.
+   Browser replay ordering is also one shared contract: Canvas2D and CanvasKit
+   traverse `background`, `behindText`, `flow`, and `inFrontOfText` planes in
+   the same order as native Skia and layered SVG. Source order remains stable
+   inside a plane, while wrapped images cannot move above or below flow content
+   merely because their source op was emitted earlier or later. Text variant
+   selection diagnostics are collected only during the flow-plane traversal,
+   so plane replay does not duplicate selection reports.
 2. Close high-priority direct replay gaps before opening broader text or
    authority changes: page background image/gradient fill, image effects,
    equation replay parity, form object bounds/parity, raw SVG or placeholder
