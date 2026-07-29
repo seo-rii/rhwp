@@ -2354,6 +2354,19 @@ assertTokensInOrder(
   ],
   'CanvasKit leaf replay must filter by replay plane before selected text variant rendering',
 );
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'makePath'),
+  [
+    'let hasCurrentPoint = false',
+    "case 'moveTo'",
+    'hasCurrentPoint = true',
+    "case 'arcTo'",
+    'if (!hasCurrentPoint)',
+    'builder.moveTo(command.x, command.y)',
+    'builder.arcToRotated',
+  ],
+  'CanvasKit path replay must normalize an initial SVG arc to its endpoint current point',
+);
 assert.equal(
   staticPictureCacheSource.includes('replayPlane: CanvasKitReplayPlane')
     && staticPictureCacheSource.includes('profile,')

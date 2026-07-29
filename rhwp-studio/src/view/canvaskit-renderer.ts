@@ -3888,18 +3888,27 @@ export class CanvasKitLayerRenderer {
 
   private makePath(commands: LayerPathCommand[]) {
     const builder = new this.canvasKit.PathBuilder();
+    let hasCurrentPoint = false;
     for (const command of commands) {
       switch (command.type) {
         case 'moveTo':
           builder.moveTo(command.x, command.y);
+          hasCurrentPoint = true;
           break;
         case 'lineTo':
           builder.lineTo(command.x, command.y);
+          hasCurrentPoint = true;
           break;
         case 'curveTo':
           builder.cubicTo(command.x1, command.y1, command.x2, command.y2, command.x3, command.y3);
+          hasCurrentPoint = true;
           break;
         case 'arcTo':
+          if (!hasCurrentPoint) {
+            builder.moveTo(command.x, command.y);
+            hasCurrentPoint = true;
+            break;
+          }
           builder.arcToRotated(command.rx, command.ry, command.rotation, !command.largeArc, !command.sweep, command.x, command.y);
           break;
         case 'closePath':

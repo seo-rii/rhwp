@@ -13086,6 +13086,103 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `SVG arc path parity exact=${svgArcPathDiff.exactDiffPixels}, tolerant=${svgArcPathDiff.rawTolerantDiffPixels}, ink=${svgArcPathDiff.rawInkMaskDiffPixels}, max_channel_delta=${svgArcPathDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-initial-svg-arc-path-parity');
+  const initialArcPathProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 70,
+      pageHeight: 40,
+      profile: 'screen',
+      resources: {
+        tableId: 1917,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1917,
+        bounds: { x: 0, y: 0, width: 70, height: 40 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 70, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'path',
+            bbox: { x: 0, y: 0, width: 70, height: 40 },
+            commands: [
+              { type: 'arcTo', rx: 12, ry: 8, rotation: 0, largeArc: false, sweep: true, x: 20, y: 10 },
+              { type: 'lineTo', x: 55, y: 30 },
+            ],
+            style: {
+              fillColor: null,
+              strokeColor: '#000000',
+              strokeWidth: 2,
+              strokeDash: 'solid',
+              opacity: 1,
+            },
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !initialArcPathProbe.error,
+    initialArcPathProbe.error || 'initial SVG arc path parity probe available',
+  );
+  const initialArcOriginInk = (dataUrl) => countPixels(
+    dataUrl,
+    (pixel) => pixel.x < 5
+      && pixel.y < 5
+      && pixel.alpha > 220
+      && pixel.red < 180
+      && pixel.green < 180
+      && pixel.blue < 180,
+  );
+  assert(
+    initialArcOriginInk(initialArcPathProbe.canvas2d) === 0
+      && initialArcOriginInk(initialArcPathProbe.canvaskit) === 0,
+    `initial SVG arc does not paint from an implicit origin canvas2d=${initialArcOriginInk(initialArcPathProbe.canvas2d)}, canvaskit=${initialArcOriginInk(initialArcPathProbe.canvaskit)}`,
+  );
+  const initialArcPathDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(initialArcPathProbe.canvas2d),
+    pngBufferFromDataUrl(initialArcPathProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-initial-svg-arc-path-parity',
+      ignoreChannelDelta: 8,
+      maxDiffRatio: 0.01,
+      inkMaskMaxDiffRatio: 0.01,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    initialArcPathDiff.passed,
+    `initial SVG arc path parity exact=${initialArcPathDiff.exactDiffPixels}, tolerant=${initialArcPathDiff.rawTolerantDiffPixels}, ink=${initialArcPathDiff.rawInkMaskDiffPixels}, max_channel_delta=${initialArcPathDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-transformed-vector-parity');
   const transformedVectorParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;
