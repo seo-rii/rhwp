@@ -717,6 +717,17 @@
       }
     },
     {
+      "id": "image-page-scale-bmp",
+      "file": "hwpspec.hwp",
+      "category": "image",
+      "page": 0,
+      "notes": "Whole-page 16x13 BMP enlargement; CanvasKit and Canvas2D geometry matches while low-amplitude sampler differences stay within nine channel levels.",
+      "browserParityThresholds": {
+        "ignoreChannelDelta": 9,
+        "maxDiffRatio": 0
+      }
+    },
+    {
       "id": "image-in-table",
       "file": "pic-in-table-01.hwp",
       "category": "image",

@@ -664,6 +664,9 @@ assert.deepEqual(
   'image fill-mode replay branches must stay aligned between Canvas2D and CanvasKit',
 );
 const imageCropBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'image-crop');
+const pageScaleBmpBaselineSample = rendererBaselineManifest.samples.find(
+  (sample) => sample.id === 'image-page-scale-bmp',
+);
 const paragraphBaselineSample = rendererBaselineManifest.samples.find((sample) => sample.id === 'paragraph-basic');
 const paragraphMarksBaselineSample = rendererBaselineManifest.samples.find(
   (sample) => sample.id === 'paragraph-text-marks',
@@ -687,6 +690,11 @@ assert.equal(
   imageCropBaselineSample?.browserParityThresholds?.maxDiffRatio,
   0.0065,
   'image-crop baseline budget must stay aligned with the renderer sweep pic-crop-01 budget',
+);
+assert.deepEqual(
+  pageScaleBmpBaselineSample?.browserParityThresholds,
+  { ignoreChannelDelta: 9, maxDiffRatio: 0 },
+  'whole-page BMP scaling must keep its narrow raster-only CanvasKit budget',
 );
 assert.equal(
   paragraphBaselineSample?.browserParityThresholds?.maxDiffRatio,
@@ -792,6 +800,7 @@ for (const sampleId of [
   'multi-table-002',
   'table-ipc',
   'image-crop',
+  'image-page-scale-bmp',
   'image-in-table',
   'image-object',
   'image-start',
@@ -887,13 +896,6 @@ assert(
     && !rendererBaselineSource.includes('browser baseline currently supports only page=0 samples'),
   'browser baseline must settle async resources and capture scale-1 intrinsic pixels for the requested manifest page',
 );
-for (const watchSample of ['hwpspec.hwp']) {
-  assert.equal(
-    rendererBaselineManifest.samples.some((sample) => sample.file === watchSample),
-    false,
-    `renderer baseline manifest must not include '${watchSample}' until its CanvasKit selected diff is understood`,
-  );
-}
 for (const category of [
   'paragraph',
   'positioned-text',

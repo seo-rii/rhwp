@@ -192,6 +192,16 @@ These runs cover the current browser CanvasKit parity target across paragraph,
 font, table, image, equation, field, control, form, shape, HWPX, header/footer,
 and mixed real-document samples.
 
+A focused 2026-07-29 `hwpspec.hwp` rerun after the shared fractional page
+bitmap-boundary correction classified the remaining whole-page 16 by 13 BMP
+enlargement difference. Canvas2D and CanvasKit produced identical ink masks,
+non-ink masks, and solid-ink masks under the promoted budget. At the previous
+default channel tolerance of `8`, only one of `891662` output pixels remained,
+and the maximum channel delta was `9`.
+The sample is therefore part of the representative manifest with a narrow
+`ignoreChannelDelta = 9`, `maxDiffRatio = 0` raster-only budget instead of
+remaining an unclassified watch item.
+
 ## Upstream Tracking Check (2026-06-12)
 
 The latest upstream check used `upstream/main` at `bc38ff55`,
@@ -1272,19 +1282,14 @@ Fixture-ready lanes:
    contract fixture is needed unless it captures a newly discovered malformed
    payload or unsupported lowering case. Add only real producer-output strict
    payload fixtures that exercise lowering paths beyond those hand-authored
-   contracts, one payload family at a time. A focused 2026-06-29 browser
-   baseline probe for `samples/hwpspec.hwp` completed with Canvas2D, CanvasKit
-   compat, and CanvasKit default captures, but both CanvasKit comparisons still
-   failed the selected diff budget with `selectedDiffRatio=0.118492`. Keep
-   `hwpspec.hwp` out of the checked-in manifest until that selected diff is
-   narrowed to a concrete renderer gap or an explicit sample-specific budget is
-   justified by artifact review. Follow-up inspection classified the current
-   gap as a whole-page `LayerImageOp` that stretches one 16 by 13 BMP resource
-   across the page. CanvasKit `FilterMode.Linear` is the closest available
-   native-ready sampler; `FilterMode.Nearest`, mipmaps, and tested cubic
-   resamplers all increased the isolated image diff from the Canvas2D baseline.
-   This is not evidence of a missing paint operation, so do not add a hidden
-   Canvas2D pre-pass to force the sample through the budget.
+   contracts, one payload family at a time. `samples/hwpspec.hwp` now keeps the
+   whole-page 16 by 13 BMP enlargement in the checked-in representative
+   manifest. Its image geometry and solid-ink mask match, while the remaining
+   Canvas2D/CanvasKit sampler delta is bounded to nine channel levels.
+   CanvasKit `FilterMode.Linear` remains the closest native-ready sampler;
+   `FilterMode.Nearest`, mipmaps, and tested cubic resamplers all increased the
+   isolated image diff. This remains rasterizer classification, not evidence of
+   a missing paint operation, so do not add a hidden Canvas2D pre-pass.
 2. Strict payload validation hardening: add only targeted malformed-payload or
    unsupported graph-node fixtures that exercise already-declared v2
    vocabulary and are backed by a concrete failing input or audit finding. Do
@@ -1638,17 +1643,13 @@ budgets instead, matching the native-text sweep behavior where geometry and
 non-ink drift are the failure signals and glyph anti-aliasing deltas are
 classified separately. Samples with tiny Canvas2D replay baselines and stable
 native dispatch/pixel parity may also carry scoped replay-performance budgets
-instead of loosening the global CanvasKit guard; `hwpspec.hwp` is the current
-watch item for software-surface variance in that category and remains outside
-the checked-in manifest until its selected diff is understood. The current
-candidate sweep measured `hwpspec.hwp` at about `0.113` selected diff and
-`0.117` tolerant diff against Canvas2D, while the saved screenshots show the
-same page structure with large image-sampling differences. A focused layer-tree
-probe found a single 886 byte BMP resource decoded as 16 by 13 pixels and drawn
-as a page-scale `image` op; isolated Canvas2D-vs-CanvasKit sampling checks kept
-linear filtering as the closest CanvasKit path, with nearest and cubic variants
-performing worse. Treat this as a sampling-classified watch item, not a
-remaining direct-replay coverage gap. The Markdown report
+instead of loosening the global CanvasKit guard. `hwpspec.hwp` is now a
+checked-in example: a focused layer-tree probe found one 886 byte BMP decoded
+as 16 by 13 pixels and drawn as a page-scale `image` op, and the current sweep
+shows matching geometry with only a bounded low-amplitude sampler delta.
+Linear filtering remains the closest CanvasKit path; nearest, mipmap, and
+tested cubic variants perform worse. Treat this as a sampling-classified
+corpus case, not a remaining direct-replay coverage gap. The Markdown report
 mirrors target-backend/profile summaries, applied per-comparison thresholds, and
 the worst browser comparisons so large sweeps do not require scanning every
 screenshot row first.
