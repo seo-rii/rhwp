@@ -243,15 +243,37 @@ export class WasmBridge {
   }
 
   getCanvasKitReplayPlan(pageNum: number, mode: 'default' | 'compat' = 'default'): string {
+    return this.getCanvasKitReplayPlanWithProfile(pageNum, mode, 'screen');
+  }
+
+  getCanvasKitReplayPlanWithProfile(
+    pageNum: number,
+    mode: 'default' | 'compat' = 'default',
+    profile: LayerRenderProfile = 'screen',
+  ): string {
     if (!this.doc) throw new Error('문서가 로드되지 않았습니다');
     const d = this.doc as unknown as {
+      getCanvasKitReplayPlanWithProfile?: (
+        p: number,
+        mode: string,
+        profile: string,
+      ) => string;
       getCanvasKitReplayPlan?: (p: number, mode: string) => string;
     };
-    if (typeof d.getCanvasKitReplayPlan === 'function') {
+    if (typeof d.getCanvasKitReplayPlanWithProfile === 'function') {
+      return d.getCanvasKitReplayPlanWithProfile(pageNum, mode, profile);
+    }
+    if (profile === 'screen' && typeof d.getCanvasKitReplayPlan === 'function') {
       return d.getCanvasKitReplayPlan(pageNum, mode);
+    }
+    if (profile !== 'screen') {
+      throw new Error(
+        `[WasmBridge] 현재 WASM은 ${profile} 프로필 CanvasKit replay plan을 지원하지 않습니다`,
+      );
     }
     return JSON.stringify({
       mode,
+      renderProfile: profile,
       hiddenCanvas2dOverlayAllowed: false,
       directReplayRequired: true,
       summary: {

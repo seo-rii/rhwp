@@ -71,6 +71,8 @@ pub struct SvgRenderer {
     pub show_control_codes: bool,
     /// 디버그 오버레이 표시 여부
     pub debug_overlay: bool,
+    /// 편집 화면 전용 render node를 출력할지 여부.
+    pub show_editor_only_nodes: bool,
     /// 레이어 ClipRect 적용 여부
     clip_enabled: bool,
     /// 디버그 오버레이용: 문단별 경계 수집 (pi → bbox)
@@ -132,6 +134,7 @@ impl SvgRenderer {
             show_paragraph_marks: false,
             show_control_codes: false,
             debug_overlay: false,
+            show_editor_only_nodes: true,
             clip_enabled: true,
             overlay_para_bounds: std::collections::HashMap::new(),
             overlay_table_bounds: Vec::new(),
@@ -1262,7 +1265,7 @@ impl SvgRenderer {
 
     /// 개별 노드를 SVG로 렌더링
     fn render_node(&mut self, node: &RenderNode) {
-        if !node.visible {
+        if !node.visible || (node.editor_only && !self.show_editor_only_nodes) {
             return;
         }
 

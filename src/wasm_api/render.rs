@@ -160,6 +160,19 @@ impl HwpDocument {
             .map_err(|e| e.into())
     }
 
+    /// 명시한 render profile로 CanvasKit direct replay 정책 진단을 생성한다.
+    #[wasm_bindgen(js_name = getCanvasKitReplayPlanWithProfile)]
+    pub fn get_canvaskit_replay_plan_with_profile(
+        &self,
+        page_num: u32,
+        mode: &str,
+        profile_name: &str,
+    ) -> Result<String, JsValue> {
+        let profile = Self::parse_layer_render_profile(profile_name, RenderProfile::Screen)?;
+        self.get_canvaskit_replay_plan_with_profile_native(page_num, mode, profile)
+            .map_err(|e| e.into())
+    }
+
     /// 문서 전체의 bounded CanvasKit direct replay capability를 반환한다.
     #[wasm_bindgen(js_name = getCanvasKitDocumentPreflight)]
     pub fn get_canvaskit_document_preflight(

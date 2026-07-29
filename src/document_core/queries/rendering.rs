@@ -233,9 +233,20 @@ impl DocumentCore {
     }
 
     pub fn render_page_svg_legacy_native(&self, page_num: u32) -> Result<String, HwpError> {
+        self.render_page_svg_legacy_with_profile_native(page_num, RenderProfile::Screen)
+    }
+
+    pub(crate) fn render_page_svg_legacy_with_profile_native(
+        &self,
+        page_num: u32,
+        default_profile: RenderProfile,
+    ) -> Result<String, HwpError> {
         let tree = self.build_page_tree_for_output(page_num)?;
         let mut renderer = SvgRenderer::new();
         self.configure_svg_renderer(&mut renderer);
+        renderer.show_editor_only_nodes = self
+            .resolve_layer_render_profile(default_profile)
+            .shows_editor_visuals();
         renderer.render_tree(&tree);
         Ok(renderer.output().to_string())
     }
@@ -269,7 +280,15 @@ impl DocumentCore {
 
         let mut svg_pages = Vec::with_capacity(pages.len());
         for &page_num in pages {
-            svg_pages.push(self.render_page_svg_native(page_num)?);
+            let svg = if matches!(
+                std::env::var("RHWP_RENDER_PATH").ok().as_deref(),
+                Some("layer-svg")
+            ) {
+                self.render_page_svg_layer_native(page_num)?
+            } else {
+                self.render_page_svg_legacy_with_profile_native(page_num, RenderProfile::Print)?
+            };
+            svg_pages.push(svg);
         }
 
         crate::renderer::pdf::svgs_to_pdf(&svg_pages)
@@ -392,6 +411,16 @@ impl DocumentCore {
         page_num: u32,
         mode: &str,
     ) -> Result<String, HwpError> {
+        let profile = self.resolve_layer_render_profile(RenderProfile::Screen);
+        self.get_canvaskit_replay_plan_with_profile_native(page_num, mode, profile)
+    }
+
+    pub fn get_canvaskit_replay_plan_with_profile_native(
+        &self,
+        page_num: u32,
+        mode: &str,
+        profile: RenderProfile,
+    ) -> Result<String, HwpError> {
         use crate::renderer::canvaskit_policy::{
             analyze_canvaskit_replay_plan, CanvasKitReplayMode,
         };
@@ -401,7 +430,7 @@ impl DocumentCore {
                 "지원하지 않는 CanvasKit replay mode입니다: {mode}. allowed modes: default, compat"
             ))
         })?;
-        let tree = self.build_page_layer_tree_for_output(page_num, RenderProfile::Screen)?;
+        let tree = self.build_page_layer_tree_cached(page_num, profile)?;
         let plan = analyze_canvaskit_replay_plan(&tree, mode);
         Ok(plan.to_json())
     }

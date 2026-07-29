@@ -101,6 +101,7 @@ fn test_canvaskit_replay_plan_export_uses_mode_policy() {
         .get_canvaskit_replay_plan_native(0, "default")
         .expect("default CanvasKit replay plan should export");
     assert!(default_plan.contains("\"mode\":\"default\""));
+    assert!(default_plan.contains("\"renderProfile\":\"screen\""));
     assert!(default_plan.contains("\"hiddenCanvas2dOverlayAllowed\":false"));
     assert!(default_plan.contains("\"directReplayRequired\":true"));
     assert!(default_plan.contains("\"requiredFontFamilies\""));
@@ -110,6 +111,7 @@ fn test_canvaskit_replay_plan_export_uses_mode_policy() {
         .get_canvaskit_replay_plan_native(0, "compat")
         .expect("compat CanvasKit replay plan should export");
     assert!(compat_plan.contains("\"mode\":\"compat\""));
+    assert!(compat_plan.contains("\"renderProfile\":\"screen\""));
     assert!(compat_plan.contains("\"hiddenCanvas2dOverlayAllowed\":false"));
     assert!(compat_plan.contains("\"directReplayRequired\":true"));
 
@@ -119,6 +121,11 @@ fn test_canvaskit_replay_plan_export_uses_mode_policy() {
     let message = invalid.to_string();
     assert!(message.contains("canvas2d"));
     assert!(message.contains("allowed modes: default, compat"));
+
+    let print_plan = doc
+        .get_canvaskit_replay_plan_with_profile_native(0, "default", RenderProfile::Print)
+        .expect("print CanvasKit replay plan should export");
+    assert!(print_plan.contains("\"renderProfile\":\"print\""));
 }
 
 #[test]

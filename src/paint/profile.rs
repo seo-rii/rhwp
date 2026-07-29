@@ -27,6 +27,11 @@ impl RenderProfile {
             Self::HighQuality => "high-quality",
         }
     }
+
+    /// 편집 화면 전용 안내 요소를 포함하는 프로필인지 반환한다.
+    pub const fn shows_editor_visuals(self) -> bool {
+        matches!(self, Self::FastPreview | Self::Screen)
+    }
 }
 
 #[cfg(test)]
@@ -60,5 +65,13 @@ mod tests {
         assert_eq!(RenderProfile::Screen.as_str(), "screen");
         assert_eq!(RenderProfile::Print.as_str(), "print");
         assert_eq!(RenderProfile::HighQuality.as_str(), "high-quality");
+    }
+
+    #[test]
+    fn editor_visuals_are_limited_to_interactive_profiles() {
+        assert!(RenderProfile::FastPreview.shows_editor_visuals());
+        assert!(RenderProfile::Screen.shows_editor_visuals());
+        assert!(!RenderProfile::Print.shows_editor_visuals());
+        assert!(!RenderProfile::HighQuality.shows_editor_visuals());
     }
 }

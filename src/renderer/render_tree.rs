@@ -45,6 +45,8 @@ pub struct RenderNode {
     pub dirty: bool,
     /// 가시성
     pub visible: bool,
+    /// 편집 화면에서만 표시하고 인쇄 등가 프로필에서는 생략하는 노드.
+    pub editor_only: bool,
 }
 
 impl RenderNode {
@@ -56,7 +58,13 @@ impl RenderNode {
             children: Vec::new(),
             dirty: true,
             visible: true,
+            editor_only: false,
         }
+    }
+
+    pub fn with_editor_only(mut self) -> Self {
+        self.editor_only = true;
+        self
     }
 
     /// dirty 플래그 설정 (변경된 노드만 재렌더링)
@@ -153,6 +161,9 @@ impl RenderNode {
             type_str, self.bbox.x, self.bbox.y, self.bbox.width, self.bbox.height
         ));
         buf.push_str(&extra);
+        if self.editor_only {
+            buf.push_str(",\"editorOnly\":true");
+        }
         if !self.children.is_empty() {
             buf.push_str(",\"children\":[");
             for (i, child) in self.children.iter().enumerate() {

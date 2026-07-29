@@ -202,6 +202,19 @@ The sample is therefore part of the representative manifest with a narrow
 `ignoreChannelDelta = 9`, `maxDiffRatio = 0` raster-only budget instead of
 remaining an unclassified watch item.
 
+Profile-specific editor visuals are filtered before backend replay. Empty field
+guides are marked `editor_only` in the semantic render tree; `LayerBuilder`
+keeps them for `screen` and `fast-preview`, and omits them for `print` and
+`high-quality`. Canvas2D, CanvasKit, SVG layer replay, and native Skia therefore
+consume the same profile-resolved PageLayerTree. Raw profile-unaware legacy SVG
+traversal retains its prior screen-style behavior, while the legacy SVG path
+used by PDF export receives the print profile and suppresses the same nodes.
+CanvasKit replay plans are profile-bound as well: plan JSON records
+`renderProfile`, the WASM API accepts an explicit profile, and the browser
+baseline rejects a plan whose profile differs from the runtime tree. The older
+two-argument plan API remains a screen-profile compatibility entry point only;
+non-screen diagnostics fail closed when used with a stale WASM build.
+
 ## Upstream Tracking Check (2026-06-12)
 
 The latest upstream check used `upstream/main` at `bc38ff55`,

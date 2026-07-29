@@ -2640,7 +2640,8 @@ impl LayoutEngine {
                                         field_marker: FieldMarkerType::None,
                                     }),
                                     BoundingBox::new(guide_x, y, guide_width, line_height),
-                                );
+                                )
+                                .with_editor_only();
                                 markers.push(MarkerInsert {
                                     marker_x: guide_x,
                                     marker_w: guide_width,

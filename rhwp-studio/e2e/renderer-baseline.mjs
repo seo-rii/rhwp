@@ -220,8 +220,8 @@ async function resetRendererDiagnostics(page) {
   });
 }
 
-async function readRendererDiagnostics(page, pageIndex, backendKey) {
-  return await page.evaluate(({ capturePageIndex, captureBackend }) => {
+async function readRendererDiagnostics(page, pageIndex, backendKey, profile) {
+  return await page.evaluate(({ capturePageIndex, captureBackend, captureProfile }) => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvas2d = pageRenderer?.canvas2dRenderer?.getImageEffectDiagnostics?.() ?? null;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
@@ -260,7 +260,14 @@ async function readRendererDiagnostics(page, pageIndex, backendKey) {
     if (captureBackend.startsWith('canvaskit')) {
       try {
         const mode = captureBackend === 'canvaskit-compat' ? 'compat' : 'default';
-        const rawPlan = window.__wasm?.getCanvasKitReplayPlan?.(capturePageIndex, mode);
+        const rawPlan = window.__wasm?.getCanvasKitReplayPlanWithProfile?.(
+          capturePageIndex,
+          mode,
+          captureProfile,
+        );
+        if (rawPlan == null) {
+          throw new Error('profile-aware CanvasKit replay plan API is unavailable');
+        }
         replayPlan = typeof rawPlan === 'string' ? JSON.parse(rawPlan) : rawPlan ?? null;
       } catch (error) {
         replayPlanError = error instanceof Error ? error.message : String(error);
@@ -283,7 +290,11 @@ async function readRendererDiagnostics(page, pageIndex, backendKey) {
       textVariantConflicts,
       textV2Validation,
     };
-  }, { capturePageIndex: pageIndex, captureBackend: backendKey });
+  }, {
+    capturePageIndex: pageIndex,
+    captureBackend: backendKey,
+    captureProfile: profile,
+  });
 }
 
 const options = parseArgs();
@@ -468,7 +479,12 @@ try {
           );
         }
         const screenshotMs = performance.now() - screenshotStartedAt;
-        const diagnostics = await readRendererDiagnostics(page, sample.page, backend.key);
+        const diagnostics = await readRendererDiagnostics(
+          page,
+          sample.page,
+          backend.key,
+          profile,
+        );
         diagnostics.capture = {
           width: selectedPageState.width,
           height: selectedPageState.height,
@@ -492,6 +508,18 @@ try {
               profile,
               code: 'replayPlanEmpty',
               detail: JSON.stringify(replayPlan),
+            });
+          }
+          if (replayPlan && replayPlan.renderProfile !== profile) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'replayPlanProfileMismatch',
+              detail: JSON.stringify({
+                expected: profile,
+                actual: replayPlan.renderProfile ?? null,
+              }),
             });
           }
           if (

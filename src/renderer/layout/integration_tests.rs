@@ -2526,6 +2526,86 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_empty_field_guide_is_editor_only_across_layer_profiles() {
+        fn svg_text(svg: &str) -> String {
+            let mut text = String::new();
+            let mut rest = svg;
+            while let Some(open) = rest.find("<text") {
+                let after_open = &rest[open..];
+                let Some(tag_end) = after_open.find('>') else {
+                    break;
+                };
+                let body = &after_open[tag_end + 1..];
+                let Some(close) = body.find("</text>") else {
+                    break;
+                };
+                text.push_str(&body[..close]);
+                rest = &body[close + "</text>".len()..];
+            }
+            text.chars()
+                .filter(|character| !character.is_whitespace())
+                .collect()
+        }
+
+        let Some(core) = load_document("samples/field-01.hwp") else {
+            return;
+        };
+
+        let _guard = lock_render_path_env();
+        std::env::remove_var("RHWP_RENDER_PROFILE");
+        let screen = core
+            .get_page_layer_tree_with_profile_native(0, RenderProfile::Screen)
+            .expect("screen profile 레이어 트리 직렬화 실패");
+        let fast_preview = core
+            .get_page_layer_tree_with_profile_native(0, RenderProfile::FastPreview)
+            .expect("fast-preview profile 레이어 트리 직렬화 실패");
+        let print = core
+            .get_page_layer_tree_with_profile_native(0, RenderProfile::Print)
+            .expect("print profile 레이어 트리 직렬화 실패");
+        let high_quality = core
+            .get_page_layer_tree_with_profile_native(0, RenderProfile::HighQuality)
+            .expect("high-quality profile 레이어 트리 직렬화 실패");
+        let legacy_screen = core
+            .render_page_svg_legacy_with_profile_native(0, RenderProfile::Screen)
+            .expect("screen profile legacy SVG 렌더링 실패");
+        let legacy_print = core
+            .render_page_svg_legacy_with_profile_native(0, RenderProfile::Print)
+            .expect("print profile legacy SVG 렌더링 실패");
+
+        const GUIDE: &str = "여기에 입력";
+        let guide_needle = GUIDE
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        let legacy_screen_text = svg_text(&legacy_screen);
+        let legacy_print_text = svg_text(&legacy_print);
+        assert!(
+            screen.contains(GUIDE),
+            "screen profile은 빈 누름틀 안내문을 유지해야 함"
+        );
+        assert!(
+            fast_preview.contains(GUIDE),
+            "fast-preview profile은 빈 누름틀 안내문을 유지해야 함"
+        );
+        assert!(
+            !print.contains(GUIDE),
+            "print profile은 빈 누름틀 안내문을 제거해야 함"
+        );
+        assert!(
+            !high_quality.contains(GUIDE),
+            "high-quality profile은 빈 누름틀 안내문을 제거해야 함"
+        );
+        assert!(
+            legacy_screen_text.contains(&guide_needle),
+            "profile-unaware legacy SVG의 screen 기본 동작은 안내문을 유지해야 함"
+        );
+        assert!(
+            !legacy_print_text.contains(&guide_needle),
+            "PDF와 같은 print-profile legacy SVG는 안내문을 제거해야 함"
+        );
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_render_page_svg_with_fonts_respects_layer_svg_path() {

@@ -1002,7 +1002,10 @@ assert(
   'renderer baseline report must preserve per-surface CanvasKit failure reasons',
 );
 assert(
-  extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getCanvasKitReplayPlan')
+  extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics')
+    .includes('getCanvasKitReplayPlanWithProfile')
+    && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics')
+      .includes('captureProfile')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getImageDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextReplayDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getEquationReplayDiagnostics')
@@ -1021,6 +1024,7 @@ assert(
 assert(
   rendererBaselineSource.includes("code: 'replayPlanUnavailable'")
     && rendererBaselineSource.includes("code: 'replayPlanEmpty'")
+    && rendererBaselineSource.includes("code: 'replayPlanProfileMismatch'")
     && rendererBaselineSource.includes("code: 'replayPlanContractMismatch'")
     && rendererBaselineSource.includes("code: 'hiddenOverlayViolation'")
     && rendererBaselineSource.includes("code: 'compatOverlayItem'")

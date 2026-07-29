@@ -71,6 +71,7 @@ impl CanvasKitReplayPolicy {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasKitReplayPlan {
     pub mode: CanvasKitReplayMode,
+    pub render_profile: RenderProfile,
     pub hidden_canvas2d_overlay_allowed: bool,
     pub direct_replay_required: bool,
     pub summary: CanvasKitReplaySummary,
@@ -405,6 +406,8 @@ impl CanvasKitReplayPlan {
         out.push('{');
         out.push_str("\"mode\":");
         push_json_str(&mut out, self.mode.as_str());
+        out.push_str(",\"renderProfile\":");
+        push_json_str(&mut out, self.render_profile.as_str());
         out.push_str(",\"hiddenCanvas2dOverlayAllowed\":");
         out.push_str(bool_json(self.hidden_canvas2d_overlay_allowed));
         out.push_str(",\"directReplayRequired\":");
@@ -1590,6 +1593,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
     fn finish(self) -> CanvasKitReplayPlan {
         CanvasKitReplayPlan {
             mode: self.mode,
+            render_profile: self.tree.profile,
             hidden_canvas2d_overlay_allowed: self.policy.hidden_canvas2d_overlay_allowed,
             direct_replay_required: self.policy.direct_replay_required,
             summary: self.summary,

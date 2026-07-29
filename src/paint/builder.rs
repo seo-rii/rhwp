@@ -164,6 +164,9 @@ impl LayerBuilder {
         let mut flow_segment = Vec::new();
 
         for child in &node.children {
+            if !self.should_emit_node(child) {
+                continue;
+            }
             if matches!(child.node_type, RenderNodeType::Column(_)) {
                 if !flow_segment.is_empty() {
                     let segment = LayerNode::group(
@@ -348,7 +351,7 @@ impl LayerBuilder {
     }
 
     fn build_node(&mut self, node: &RenderNode) -> Option<LayerNode> {
-        if !node.visible {
+        if !self.should_emit_node(node) {
             return None;
         }
 
@@ -814,6 +817,10 @@ impl LayerBuilder {
                 self.semantic_for(&node.node_type),
             )),
         }
+    }
+
+    fn should_emit_node(&self, node: &RenderNode) -> bool {
+        node.visible && (!node.editor_only || self.profile.shows_editor_visuals())
     }
 
     fn build_paint_node(&mut self, node: &RenderNode, op: PaintOp) -> LayerNode {
@@ -2822,6 +2829,43 @@ mod tests {
             }
             other => panic!("expected root group, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn drops_editor_only_nodes_from_print_equivalent_profiles() {
+        fn child_ids(profile: RenderProfile) -> Vec<Option<u32>> {
+            let mut tree = PageRenderTree::new(0, 800.0, 600.0);
+            tree.root.children.push(
+                RenderNode::new(
+                    10,
+                    RenderNodeType::Header,
+                    BoundingBox::new(0.0, 0.0, 800.0, 48.0),
+                )
+                .with_editor_only(),
+            );
+            tree.root.children.push(RenderNode::new(
+                11,
+                RenderNodeType::Footer,
+                BoundingBox::new(0.0, 552.0, 800.0, 48.0),
+            ));
+
+            let mut builder = LayerBuilder::new(profile);
+            let layer_tree = builder.build(&tree);
+            match &layer_tree.root.kind {
+                LayerNodeKind::Group { children, .. } => {
+                    children.iter().map(|child| child.source_node_id).collect()
+                }
+                other => panic!("expected root group, got {other:?}"),
+            }
+        }
+
+        assert_eq!(
+            child_ids(RenderProfile::FastPreview),
+            vec![Some(10), Some(11)]
+        );
+        assert_eq!(child_ids(RenderProfile::Screen), vec![Some(10), Some(11)]);
+        assert_eq!(child_ids(RenderProfile::Print), vec![Some(11)]);
+        assert_eq!(child_ids(RenderProfile::HighQuality), vec![Some(11)]);
     }
 
     #[test]
