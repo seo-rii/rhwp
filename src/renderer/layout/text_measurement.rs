@@ -48,6 +48,15 @@ fn build_cluster_len(chars: &[char]) -> Vec<u8> {
     cluster_len
 }
 
+/// HWP letter spacing is proportional to each glyph's advance, not font size.
+#[inline]
+fn glyph_letter_spacing(letter_spacing_px: f64, glyph_base_px: f64, font_size: f64) -> f64 {
+    if font_size <= 0.0 {
+        return letter_spacing_px;
+    }
+    letter_spacing_px * (glyph_base_px / font_size)
+}
+
 /// 스타일에서 공통 파라미터 추출 (font_size, ratio, tab_w)
 fn style_params(style: &TextStyle) -> (f64, f64, f64) {
     let font_size = if style.font_size > 0.0 {
@@ -216,7 +225,13 @@ impl TextMeasurer for EmbeddedTextMeasurer {
         let char_width = |i: usize| -> f64 {
             let c = chars[i];
             if c == '\u{2007}' {
-                return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+                return font_size * 0.5 * ratio
+                    + glyph_letter_spacing(
+                        style.letter_spacing,
+                        font_size * 0.5 * ratio,
+                        font_size,
+                    )
+                    + style.extra_char_spacing;
             }
             if c == '\u{FFFC}' {
                 return 0.0;
@@ -234,7 +249,9 @@ impl TextMeasurer for EmbeddedTextMeasurer {
             } else {
                 font_size * 0.5
             };
-            let mut w = base_w * ratio + style.letter_spacing + style.extra_char_spacing;
+            let mut w = base_w * ratio
+                + glyph_letter_spacing(style.letter_spacing, base_w * ratio, font_size)
+                + style.extra_char_spacing;
             if c == ' ' {
                 w += style.extra_word_spacing;
             }
@@ -362,7 +379,13 @@ impl TextMeasurer for EmbeddedTextMeasurer {
         let char_width = |i: usize| -> f64 {
             let c = chars[i];
             if c == '\u{2007}' {
-                return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+                return font_size * 0.5 * ratio
+                    + glyph_letter_spacing(
+                        style.letter_spacing,
+                        font_size * 0.5 * ratio,
+                        font_size,
+                    )
+                    + style.extra_char_spacing;
             }
             if c == '\u{FFFC}' {
                 return 0.0;
@@ -380,7 +403,9 @@ impl TextMeasurer for EmbeddedTextMeasurer {
             } else {
                 font_size * 0.5
             };
-            let mut w = base_w * ratio + style.letter_spacing + style.extra_char_spacing;
+            let mut w = base_w * ratio
+                + glyph_letter_spacing(style.letter_spacing, base_w * ratio, font_size)
+                + style.extra_char_spacing;
             if c == ' ' {
                 w += style.extra_word_spacing;
             }
@@ -699,7 +724,13 @@ impl TextMeasurer for WasmTextMeasurer {
         let char_width = |i: usize| -> f64 {
             let c = chars[i];
             if c == '\u{2007}' {
-                return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+                return font_size * 0.5 * ratio
+                    + glyph_letter_spacing(
+                        style.letter_spacing,
+                        font_size * 0.5 * ratio,
+                        font_size,
+                    )
+                    + style.extra_char_spacing;
             }
             if c == '\u{FFFC}' {
                 return 0.0;
@@ -717,7 +748,9 @@ impl TextMeasurer for WasmTextMeasurer {
                     font_size,
                 )
             };
-            let mut w = char_px * ratio + style.letter_spacing + style.extra_char_spacing;
+            let mut w = char_px * ratio
+                + glyph_letter_spacing(style.letter_spacing, char_px * ratio, font_size)
+                + style.extra_char_spacing;
             if c == ' ' {
                 w += style.extra_word_spacing;
             }
@@ -832,7 +865,13 @@ impl TextMeasurer for WasmTextMeasurer {
         let char_width = |i: usize| -> f64 {
             let c = chars[i];
             if c == '\u{2007}' {
-                return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+                return font_size * 0.5 * ratio
+                    + glyph_letter_spacing(
+                        style.letter_spacing,
+                        font_size * 0.5 * ratio,
+                        font_size,
+                    )
+                    + style.extra_char_spacing;
             }
             if c == '\u{FFFC}' {
                 return 0.0;
@@ -850,7 +889,9 @@ impl TextMeasurer for WasmTextMeasurer {
                     font_size,
                 )
             };
-            let mut w = char_px * ratio + style.letter_spacing + style.extra_char_spacing;
+            let mut w = char_px * ratio
+                + glyph_letter_spacing(style.letter_spacing, char_px * ratio, font_size)
+                + style.extra_char_spacing;
             if c == ' ' {
                 w += style.extra_word_spacing;
             }
@@ -1146,7 +1187,9 @@ pub(crate) fn estimate_text_width_unrounded(text: &str, style: &TextStyle) -> f6
     let char_width = |i: usize| -> f64 {
         let c = chars[i];
         if c == '\u{2007}' {
-            return font_size * 0.5 * ratio + style.letter_spacing + style.extra_char_spacing;
+            return font_size * 0.5 * ratio
+                + glyph_letter_spacing(style.letter_spacing, font_size * 0.5 * ratio, font_size)
+                + style.extra_char_spacing;
         }
         if c == '\u{FFFC}' {
             return 0.0;
@@ -1160,7 +1203,9 @@ pub(crate) fn estimate_text_width_unrounded(text: &str, style: &TextStyle) -> f6
         } else {
             font_size * 0.5
         };
-        let mut w = base_w * ratio + style.letter_spacing + style.extra_char_spacing;
+        let mut w = base_w * ratio
+            + glyph_letter_spacing(style.letter_spacing, base_w * ratio, font_size)
+            + style.extra_char_spacing;
         if c == ' ' {
             w += style.extra_word_spacing;
         }

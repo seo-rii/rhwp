@@ -1261,6 +1261,31 @@ impl LayoutEngine {
                 .map(|r| r.text.chars().filter(|c| *c != '\t').count())
                 .sum();
 
+            // Negative letter spacing shortens the final advance but not the
+            // glyph's ink. Split alignment must reserve that trailing ink
+            // before distributing the remaining width.
+            let trailing_glyph_ink_overhang = || -> f64 {
+                for run in comp_line.runs.iter().rev() {
+                    if let Some(last_visible) = run.text.chars().rev().find(|c| *c != ' ') {
+                        if last_visible == '\t' || last_visible == '\u{FFFC}' {
+                            return 0.0;
+                        }
+                        let mut with_spacing =
+                            resolved_to_text_style(styles, run.char_style_id, run.lang_index);
+                        with_spacing.default_tab_width = tab_width;
+                        if with_spacing.letter_spacing >= 0.0 {
+                            return 0.0;
+                        }
+                        let glyph = last_visible.to_string();
+                        let spaced_width = estimate_text_width(&glyph, &with_spacing);
+                        with_spacing.letter_spacing = 0.0;
+                        let ink_advance = estimate_text_width(&glyph, &with_spacing);
+                        return (ink_advance - spaced_width).max(0.0);
+                    }
+                }
+                0.0
+            };
+
             let (extra_word_sp, extra_char_sp) = if needs_justify {
                 // 양쪽 정렬: 후행 공백 제외한 내부 공백에 분배
                 let all_chars: Vec<char> =
@@ -1316,9 +1341,15 @@ impl LayoutEngine {
                 }
             } else if needs_distribute && total_char_count > 1 {
                 // 배분/나눔 정렬: 모든 글자에 균등 분배 (음수 허용으로 압축 가능)
+                let split_ink_overhang = if alignment == Alignment::Split {
+                    trailing_glyph_ink_overhang()
+                } else {
+                    0.0
+                };
                 (
                     0.0,
-                    (available_width - total_text_width) / total_char_count as f64,
+                    (available_width - total_text_width - split_ink_overhang)
+                        / total_char_count as f64,
                 )
             } else if total_text_width > available_width && total_char_count > 1 && !has_tabs {
                 // 비정렬(왼쪽/오른쪽/가운데) 텍스트가 오버플로우할 때 글자 간격 압축

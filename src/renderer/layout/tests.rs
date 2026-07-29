@@ -1592,6 +1592,120 @@ fn test_square_bullet_with_space_preserves_layout() {
     let positions = compute_char_positions("□ 가", &style);
     assert_eq!(positions.len(), 4);
     assert!((positions[1] - 18.4).abs() < 0.01);
-    assert!((positions[2] - 26.8).abs() < 0.01);
-    assert!((positions[3] - 45.2).abs() < 0.01);
+    assert!((positions[2] - 27.6).abs() < 0.01);
+    assert!((positions[3] - 46.0).abs() < 0.01);
+}
+
+#[test]
+fn split_alignment_reserves_negative_letter_spacing_ink_overhang() {
+    let engine = LayoutEngine::with_default_dpi();
+    let layout = PageLayoutInfo::from_page_def_default(&a4_page_def(), &ColumnDef::default());
+    let paragraphs = vec![Paragraph {
+        text: "다 같 이끝".to_string(),
+        char_offsets: (0..6).collect(),
+        char_count: 7,
+        char_shapes: vec![CharShapeRef {
+            start_pos: 0,
+            char_shape_id: 0,
+        }],
+        line_segs: vec![
+            LineSeg {
+                text_start: 0,
+                line_height: 800,
+                baseline_distance: 640,
+                ..Default::default()
+            },
+            LineSeg {
+                text_start: 5,
+                vertical_pos: 800,
+                line_height: 800,
+                baseline_distance: 640,
+                ..Default::default()
+            },
+        ],
+        para_shape_id: 0,
+        ..Default::default()
+    }];
+    let composed: Vec<_> = paragraphs.iter().map(compose_paragraph).collect();
+    let styles = ResolvedStyleSet {
+        char_styles: vec![ResolvedCharStyle {
+            font_size: 20.0,
+            letter_spacing: -8.0,
+            ..Default::default()
+        }],
+        para_styles: vec![ResolvedParaStyle {
+            alignment: Alignment::Split,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let page_content = PageContent {
+        page_index: 0,
+        page_number: 0,
+        section_index: 0,
+        layout,
+        column_contents: vec![ColumnContent {
+            column_index: 0,
+            items: vec![PageItem::FullParagraph { para_index: 0 }],
+            zone_layout: None,
+            zone_y_offset: 0.0,
+            wrap_around_paras: Vec::new(),
+        }],
+        active_header: None,
+        active_footer: None,
+        page_number_pos: None,
+        page_hide: None,
+        footnotes: Vec::new(),
+        active_master_page: None,
+        extra_master_pages: Vec::new(),
+    };
+    let tree = engine.build_render_tree(
+        &page_content,
+        &paragraphs,
+        &paragraphs,
+        &paragraphs,
+        &composed,
+        &styles,
+        &FootnoteShape::default(),
+        &[],
+        None,
+        &[],
+        None,
+        0,
+        &[],
+    );
+
+    let body = tree
+        .root
+        .children
+        .iter()
+        .find(|node| matches!(node.node_type, RenderNodeType::Body { .. }))
+        .expect("body");
+    let first_line = body.children[0]
+        .children
+        .iter()
+        .find(|node| matches!(node.node_type, RenderNodeType::TextLine(_)))
+        .expect("first text line");
+    let run = first_line
+        .children
+        .iter()
+        .find_map(|node| match &node.node_type {
+            RenderNodeType::TextRun(run) => Some(run),
+            _ => None,
+        })
+        .expect("split text run");
+
+    let advance = estimate_text_width(&run.text, &run.style);
+    let mut trailing_style = run.style.clone();
+    trailing_style.extra_char_spacing = 0.0;
+    let spaced_trailing = estimate_text_width("이", &trailing_style);
+    trailing_style.letter_spacing = 0.0;
+    let trailing_ink = estimate_text_width("이", &trailing_style);
+    let occupied_width = advance + (trailing_ink - spaced_trailing).max(0.0);
+
+    assert!(
+        (occupied_width - first_line.bbox.width).abs() < 1.1,
+        "split line must reserve the final glyph ink: occupied={occupied_width}, width={}",
+        first_line.bbox.width,
+    );
 }

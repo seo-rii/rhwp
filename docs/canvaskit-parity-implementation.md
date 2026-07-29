@@ -731,6 +731,17 @@ projection as browser replay: bounded work counts include both preserved source
 text and a differing display projection, and old-Hangul projection records the
 ExtraLight face as a required family before automatic CanvasKit selection.
 
+Shared HWP text measurement applies authored percentage letter spacing to each
+glyph's measured advance rather than to the font size. Full-width glyphs keep
+their previous behavior, while spaces, punctuation, and other narrow glyphs no
+longer receive full-em compression or expansion. The resulting positions are
+authored once in the page tree and consumed unchanged by Canvas2D, CanvasKit,
+SVG, and native Skia. Split-aligned lines with negative letter spacing also
+reserve the last visible glyph's ink overhang before distributing remaining
+width, preventing both browser backends from clipping the final glyph at the
+cell edge. Layout tests pin the narrow-space progression and the complete
+split-line occupied width.
+
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
 must not carry sibling color/bitmap/SVG/stroke fields, and mixed payload
