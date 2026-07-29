@@ -957,6 +957,7 @@ assert(
     && rendererBaselineSource.includes("code: 'compatOverlayItem'")
     && rendererBaselineSource.includes("code: 'directRequiredItem'")
     && rendererBaselineSource.includes("code: 'runtimeImageReplayFailure'")
+    && rendererBaselineSource.includes("code: 'runtimeImageEffectReplayFailure'")
     && rendererBaselineSource.includes("code: 'runtimeTextReplayFailure'")
     && rendererBaselineSource.includes("code: 'runtimePatternReplayFailure'")
     && rendererBaselineSource.includes("code: 'textV2ValidationIssue'")

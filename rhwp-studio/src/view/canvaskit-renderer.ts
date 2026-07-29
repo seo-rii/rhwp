@@ -606,6 +606,8 @@ export class CanvasKitLayerRenderer {
               this.resourceCache.getImageDiagnostics().failureAttempts;
             const pendingImageAccessesBefore =
               this.resourceCache.getImageDiagnostics().pendingAccesses;
+            const imageEffectDiagnosticsBefore =
+              this.resourceCache.getImageEffectDiagnostics();
             const patternFailuresBefore =
               this.resourceCache.getPatternDiagnostics().surfaceFailures;
             const textFailureAttemptsBefore =
@@ -618,11 +620,17 @@ export class CanvasKitLayerRenderer {
               }
               const picture = recorder.finishRecordingAsPicture();
               const imageDiagnostics = this.resourceCache.getImageDiagnostics();
+              const imageEffectDiagnostics =
+                this.resourceCache.getImageEffectDiagnostics();
               const patternDiagnostics = this.resourceCache.getPatternDiagnostics();
               const textFailureAttempts =
                 this.textBlobConstructionFailures + this.textBlobFailureCacheHits;
               const hasRuntimeReplayFailure =
                 imageDiagnostics.failureAttempts > imageFailureAttemptsBefore
+                || imageEffectDiagnostics.preprocessFailures
+                  > imageEffectDiagnosticsBefore.preprocessFailures
+                || imageEffectDiagnostics.fallbackToOriginal
+                  > imageEffectDiagnosticsBefore.fallbackToOriginal
                 || patternDiagnostics.surfaceFailures > patternFailuresBefore
                 || textFailureAttempts > textFailureAttemptsBefore;
               const hasPendingImageReplay =

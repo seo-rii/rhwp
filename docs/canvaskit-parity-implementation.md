@@ -480,8 +480,11 @@ variant selections/rejections, encoded-image diagnostics, TextBlob replay
 diagnostics, v2 validation issues, pattern diagnostics, and surface diagnostics
 for every CanvasKit capture. Hidden-overlay items, hidden-overlay violations,
 invalid direct-only plan contracts, empty plans, direct-required image items,
-runtime image/TextBlob/pattern replay failures, and v2 validation issues are
-hard failures. Runtime reports are deduplicated by equivalence group;
+runtime image/image-effect/TextBlob/pattern replay failures, and v2 validation
+issues are hard failures. An image-effect preprocessing failure may draw the
+original image for the current compatibility attempt, but it is reported as a
+replay failure and is never admitted to the static picture cache. Runtime
+reports are deduplicated by equivalence group;
 conflicting repeated selections and Rust-plan/runtime selected-variant
 mismatches also fail. Intentional TextRun fallback, unsupported items, and their
 exact reasons remain an inventory in the JSON and Markdown reports. Static

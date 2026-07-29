@@ -540,6 +540,18 @@ try {
               detail: JSON.stringify(diagnostics.imageDiagnostics.failures),
             });
           }
+          if (
+            (diagnostics.imageEffects?.canvaskit?.preprocessFailures ?? 0) > 0
+            || (diagnostics.imageEffects?.canvaskit?.fallbackToOriginal ?? 0) > 0
+          ) {
+            hardGateViolations.push({
+              sampleId: sample.id,
+              backend: backend.key,
+              profile,
+              code: 'runtimeImageEffectReplayFailure',
+              detail: JSON.stringify(diagnostics.imageEffects.canvaskit),
+            });
+          }
           if ((diagnostics.textReplayDiagnostics?.failures?.length ?? 0) > 0) {
             hardGateViolations.push({
               sampleId: sample.id,

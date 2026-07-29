@@ -701,6 +701,158 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(staticPictureProbe.afterClear === 0, `static picture cache released with layer tree cache=${staticPictureProbe.afterClear}`);
 
+  setTestCase('canvaskit-static-picture-image-effect-failure-admission');
+  const staticPictureImageEffectFailureProbe = await page.evaluate(() => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!renderer) {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 8;
+    sourceCanvas.height = 8;
+    const sourceContext = sourceCanvas.getContext('2d');
+    if (!sourceContext) {
+      return { error: 'image effect fixture canvas unavailable' };
+    }
+    sourceContext.fillStyle = '#1257a8';
+    sourceContext.fillRect(0, 0, 8, 8);
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const tree = {
+      pageWidth: 32,
+      pageHeight: 32,
+      profile: 'screen',
+      resources: {
+        tableId: 80,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'group',
+        sourceNodeId: 8000,
+        semantic: { role: 'page' },
+        bounds: { x: 0, y: 0, width: 32, height: 32 },
+        cacheHint: 'staticSubtree',
+        children: [{
+          kind: 'leaf',
+          sourceNodeId: 8001,
+          bounds: { x: 0, y: 0, width: 32, height: 32 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'image',
+            bbox: { x: 4, y: 4, width: 24, height: 24 },
+            base64,
+            fillMode: 'stretch',
+            effect: 'grayScale',
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          }],
+        }],
+      },
+    };
+    const targetCanvas = document.createElement('canvas');
+    targetCanvas.width = 32;
+    targetCanvas.height = 32;
+    const originalMakeSurface = renderer.canvasKit?.MakeSurface;
+    if (!originalMakeSurface) {
+      return { error: 'CanvasKit MakeSurface unavailable' };
+    }
+
+    try {
+      renderer.renderPage({
+        ...tree,
+        root: {
+          kind: 'leaf',
+          sourceNodeId: 7999,
+          bounds: { x: 0, y: 0, width: 32, height: 32 },
+          cacheHint: 'none',
+          ops: [{
+            type: 'path',
+            bbox: { x: 0, y: 0, width: 1, height: 1 },
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+            commands: [
+              { type: 'moveTo', x: 0, y: 0 },
+              { type: 'lineTo', x: 1, y: 0 },
+              { type: 'lineTo', x: 1, y: 1 },
+              { type: 'closePath' },
+            ],
+            style: {
+              fillColor: '#000000',
+              strokeColor: null,
+              strokeWidth: 0,
+              strokeDash: 'solid',
+              opacity: 1,
+            },
+          }],
+        },
+      }, targetCanvas, 1);
+      renderer.clearStaticPictureCache?.();
+      renderer.resetImageEffectDiagnostics?.();
+      renderer.canvasKit.MakeSurface = () => null;
+      try {
+        renderer.renderPage(tree, targetCanvas, 1);
+      } finally {
+        renderer.canvasKit.MakeSurface = originalMakeSurface;
+      }
+      const afterFailure = renderer.getImageEffectDiagnostics?.();
+      const cacheSizeAfterFailure = renderer.staticPictureCache?.size ?? -1;
+
+      renderer.renderPage(tree, targetCanvas, 1);
+      const afterRecovery = renderer.getImageEffectDiagnostics?.();
+      const cacheSizeAfterRecovery = renderer.staticPictureCache?.size ?? -1;
+
+      renderer.renderPage(tree, targetCanvas, 1);
+      const afterCacheHit = renderer.getImageEffectDiagnostics?.();
+      const cacheSizeAfterCacheHit = renderer.staticPictureCache?.size ?? -1;
+
+      return {
+        afterFailure,
+        afterRecovery,
+        afterCacheHit,
+        cacheSizeAfterFailure,
+        cacheSizeAfterRecovery,
+        cacheSizeAfterCacheHit,
+      };
+    } finally {
+      renderer.canvasKit.MakeSurface = originalMakeSurface;
+      renderer.clearStaticPictureCache?.();
+      targetCanvas.remove();
+    }
+  });
+
+  assert(
+    !staticPictureImageEffectFailureProbe.error,
+    staticPictureImageEffectFailureProbe.error
+      || 'canvaskit image-effect static picture admission probe available',
+  );
+  assert(
+    staticPictureImageEffectFailureProbe.afterFailure.preprocessFailures === 1
+      && staticPictureImageEffectFailureProbe.afterFailure.fallbackToOriginal === 1
+      && staticPictureImageEffectFailureProbe.cacheSizeAfterFailure === 0,
+    `failed CanvasKit image effect is visible and not cached=${JSON.stringify(
+      staticPictureImageEffectFailureProbe,
+    )}`,
+  );
+  assert(
+    staticPictureImageEffectFailureProbe.afterRecovery.preprocessedPixels === 64
+      && staticPictureImageEffectFailureProbe.cacheSizeAfterRecovery === 1,
+    `CanvasKit image effect recovers and admits a successful picture=${JSON.stringify(
+      staticPictureImageEffectFailureProbe,
+    )}`,
+  );
+  assert(
+    staticPictureImageEffectFailureProbe.afterCacheHit.preprocessedPixels
+      === staticPictureImageEffectFailureProbe.afterRecovery.preprocessedPixels
+      && staticPictureImageEffectFailureProbe.cacheSizeAfterCacheHit
+        === staticPictureImageEffectFailureProbe.cacheSizeAfterRecovery,
+    `successful CanvasKit image-effect picture is reused=${JSON.stringify(
+      staticPictureImageEffectFailureProbe,
+    )}`,
+  );
+
   setTestCase('canvaskit-static-picture-cache-resource-payload-invalidation');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const staticPictureResourceProbe = await page.evaluate(() => {
