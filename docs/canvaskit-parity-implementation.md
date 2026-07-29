@@ -856,7 +856,8 @@ intrinsic sizes and non-finite `viewBox`/intrinsic geometry, rejects non-static
 security modes, and rejects missing or ambiguous vector resources. Static
 vector admission is path-only and atomic: every path must pass the shared path
 grammar, and both transform-list and nested-transform composition must remain
-finite before the strict variant can suppress its `TextRun` fallback.
+finite; opening and closing element names must also balance before the strict
+variant can suppress its `TextRun` fallback.
 Schema-v2 strict
 GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
 the selected strict payload uses the static sanitized vector contract. A

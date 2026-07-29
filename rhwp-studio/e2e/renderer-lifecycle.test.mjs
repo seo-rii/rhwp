@@ -8266,6 +8266,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsupportedSvgClosingTagTree = treeFor(svgOutline);
     unsupportedSvgClosingTagTree.resources.svgFragments[0] = '</script><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsupportedSvgClosingTagTree.resources.svgHashes[0] = 'svg-glyph-unsupported-closing-tag';
+    const unsupportedSvgCrossedClosingTagTree = treeFor(svgOutline);
+    unsupportedSvgCrossedClosingTagTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<g><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/></svg></g>',
+    ].join('');
+    unsupportedSvgCrossedClosingTagTree.resources.svgHashes[0] = 'svg-glyph-crossed-closing-tag';
     const unsupportedSvgDanglingShapeClosingTagTree = treeFor(svgOutline);
     unsupportedSvgDanglingShapeClosingTagTree.resources.svgFragments[0] = '</path><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsupportedSvgDanglingShapeClosingTagTree.resources.svgHashes[0] = 'svg-glyph-unsupported-dangling-shape-closing-tag';
@@ -8767,6 +8773,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       unsupportedSvgGlyphClipPathResource: await render(unsupportedSvgClipPathTree),
       noDomParserUnsupportedSvgClipPathResource,
       unsupportedSvgGlyphInvalidColorResource: await render(unsupportedSvgInvalidColorTree),
+      unsupportedSvgGlyphCrossedClosingTagResource: await render(unsupportedSvgCrossedClosingTagTree),
       noDomParserUnsupportedSvgDoctypeResource,
       noDomParserUnsupportedSvgClosingTagResource,
       unsupportedSvgGlyphDanglingShapeClosingTagResource: await render(unsupportedSvgDanglingShapeClosingTagTree),
@@ -10074,6 +10081,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .noDomParserUnsupportedSvgClosingTagResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgCrossedClosingTagResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphCrossedClosingTagResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitUnsupportedSvgDanglingShapeClosingTagResourceReport = canvaskitGlyphOutlineProbe
     .unsupportedSvgGlyphDanglingShapeClosingTagResource
     ?.diagnostics
@@ -10267,6 +10278,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
       )
       && canvaskitNoDomParserUnsupportedSvgClosingTagResourceReport?.selectedVariantId === 'textRun'
       && canvaskitNoDomParserUnsupportedSvgClosingTagResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitUnsupportedSvgCrossedClosingTagResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgCrossedClosingTagResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )

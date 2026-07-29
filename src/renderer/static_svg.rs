@@ -10,7 +10,7 @@ pub(crate) fn static_svg_fragment_has_path_layer(fragment: &str) -> bool {
     let mut cursor = 0;
     let mut has_path_layer = false;
     let mut ignored_element_depth = 0usize;
-    let mut open_element_depth = 0usize;
+    let mut open_elements = Vec::new();
     while cursor < bytes.len() {
         let Some(relative_start) = markup[cursor..].find('<') else {
             break;
@@ -31,12 +31,29 @@ pub(crate) fn static_svg_fragment_has_path_layer(fragment: &str) -> bool {
             return false;
         }
         if bytes[tag_cursor] == b'/' {
+            tag_cursor += 1;
+            while tag_cursor < tag_end && bytes[tag_cursor].is_ascii_whitespace() {
+                tag_cursor += 1;
+            }
+            let name_start = tag_cursor;
+            while tag_cursor < tag_end
+                && (bytes[tag_cursor].is_ascii_alphanumeric()
+                    || matches!(bytes[tag_cursor], b':' | b'-' | b'_'))
+            {
+                tag_cursor += 1;
+            }
+            if tag_cursor == name_start {
+                return false;
+            }
+            let name = markup[name_start..tag_cursor].to_ascii_lowercase();
+            while tag_cursor < tag_end && bytes[tag_cursor].is_ascii_whitespace() {
+                tag_cursor += 1;
+            }
+            if tag_cursor != tag_end || open_elements.pop().as_deref() != Some(name.as_str()) {
+                return false;
+            }
             if ignored_element_depth > 0 {
                 ignored_element_depth -= 1;
-            } else if open_element_depth > 0 {
-                open_element_depth -= 1;
-            } else {
-                return false;
             }
             cursor = tag_end + 1;
             continue;
@@ -65,6 +82,7 @@ pub(crate) fn static_svg_fragment_has_path_layer(fragment: &str) -> bool {
         if ignored_element_depth > 0 {
             if !is_self_closing {
                 ignored_element_depth += 1;
+                open_elements.push(name);
             }
             cursor = tag_end + 1;
             continue;
@@ -72,12 +90,13 @@ pub(crate) fn static_svg_fragment_has_path_layer(fragment: &str) -> bool {
         if static_svg_tag_is_ignored_subtree(&name) {
             if !is_self_closing {
                 ignored_element_depth = 1;
+                open_elements.push(name);
             }
             cursor = tag_end + 1;
             continue;
         }
         if !is_self_closing {
-            open_element_depth += 1;
+            open_elements.push(name.clone());
         }
         match static_svg_tag_path_layer_status(&name, raw_attributes) {
             Ok(false) => {}
@@ -86,7 +105,7 @@ pub(crate) fn static_svg_fragment_has_path_layer(fragment: &str) -> bool {
         }
         cursor = tag_end + 1;
     }
-    has_path_layer && ignored_element_depth == 0 && open_element_depth == 0
+    has_path_layer && ignored_element_depth == 0 && open_elements.is_empty()
 }
 
 fn static_svg_markup_without_comments(fragment: &str) -> Option<String> {
@@ -418,6 +437,9 @@ mod tests {
         ));
         assert!(!static_svg_fragment_has_path_layer(
             "<path d=\"M0 0 L16 16\" transform=\"scale(1e308) scale(1e308)\"/>"
+        ));
+        assert!(!static_svg_fragment_has_path_layer(
+            "<svg><g><path d=\"M0 0 L16 16\"/></svg></g>"
         ));
     }
 }
