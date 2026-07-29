@@ -19772,6 +19772,127 @@ runTest('Renderer lifecycle', async ({ page }) => {
     'Canvas2D clip constrains a static group child with a transformed op',
   );
 
+  setTestCase('page-background-image-opacity-parity');
+  const pageBackgroundOpacityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = 1;
+    sourceCanvas.height = 1;
+    const sourceContext = sourceCanvas.getContext('2d');
+    if (!sourceContext) {
+      return { error: 'source canvas unavailable' };
+    }
+    sourceContext.fillStyle = '#000000';
+    sourceContext.fillRect(0, 0, 1, 1);
+    const base64 = sourceCanvas.toDataURL('image/png').split(',')[1];
+    const tree = {
+      pageWidth: 16,
+      pageHeight: 16,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 991,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1,
+        bounds: { x: 0, y: 0, width: 16, height: 16 },
+        cacheHint: 'none',
+        ops: [{
+          type: 'pageBackground',
+          bbox: { x: 0, y: 0, width: 16, height: 16 },
+          backgroundColor: '#ffffff',
+          borderWidth: 0,
+          image: {
+            base64,
+            fillMode: 'fitToSize',
+            effect: 'realPic',
+            opacity: 0.25,
+          },
+        }],
+      },
+    };
+
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 16;
+      canvas.height = 16;
+      document.body.appendChild(canvas);
+      const context = canvas.getContext('2d');
+      if (!context) {
+        canvas.remove();
+        return null;
+      }
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        renderer.renderPage(tree, canvas, 1);
+        await nextFrame();
+        const pixel = context.getImageData(8, 8, 1, 1).data;
+        if (pixel[0] < 230 && pixel[3] > 250) {
+          break;
+        }
+      }
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !pageBackgroundOpacityProbe.error
+      && pageBackgroundOpacityProbe.canvas2d
+      && pageBackgroundOpacityProbe.canvaskit,
+    pageBackgroundOpacityProbe.error || 'page background opacity probe available',
+  );
+  const pageBackgroundOpacityDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(pageBackgroundOpacityProbe.canvas2d),
+    pngBufferFromDataUrl(pageBackgroundOpacityProbe.canvaskit),
+    {
+      diffName: 'page-background-image-opacity-parity',
+      ignoreChannelDelta: 2,
+      maxDiffPixels: 0,
+    },
+  );
+  assert(
+    pageBackgroundOpacityDiff.passed,
+    `page background opacity parity exact=${pageBackgroundOpacityDiff.exactDiffPixels}, tolerant=${pageBackgroundOpacityDiff.rawTolerantDiffPixels}, max_channel_delta=${pageBackgroundOpacityDiff.maxChannelDelta}`,
+  );
+  for (const backend of ['canvas2d', 'canvaskit']) {
+    const pixel = pixelAt(pageBackgroundOpacityProbe[backend], 8, 8);
+    assert(
+      pixel.red >= 188
+        && pixel.red <= 194
+        && pixel.green >= 188
+        && pixel.green <= 194
+        && pixel.blue >= 188
+        && pixel.blue <= 194
+        && pixel.alpha === 255,
+      `${backend} page background opacity composited rgba=${JSON.stringify(pixel)}`,
+    );
+  }
+
   setTestCase('image-effect-pattern-reference');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const imageEffectReferenceProbe = await page.evaluate(async ({ luma }) => {

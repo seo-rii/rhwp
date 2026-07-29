@@ -818,15 +818,24 @@ export class Canvas2DLayerRenderer {
           op.image.brightness ?? 0,
           op.image.contrast ?? 0,
         );
-        this.drawDomImage(
-          ctx,
-          source,
-          op.bbox,
-          op.image.fillMode,
-          undefined,
-          undefined,
-          source !== image,
-        );
+        const opacity = Number.isFinite(op.image.opacity)
+          ? Math.min(1, Math.max(0, op.image.opacity ?? 1))
+          : 1;
+        ctx.save();
+        try {
+          ctx.globalAlpha *= opacity;
+          this.drawDomImage(
+            ctx,
+            source,
+            op.bbox,
+            op.image.fillMode,
+            undefined,
+            undefined,
+            source !== image,
+          );
+        } finally {
+          ctx.restore();
+        }
       }
     }
 

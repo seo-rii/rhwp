@@ -426,6 +426,15 @@ The HWPX header and shape parsers also preserve the image child's resource id,
 brightness, contrast, and effect attributes so replay policy and runtime
 receive the same operation. Fill-mode parity fixtures cover both values.
 
+Page-background images preserve the legacy HWP `ImageFill` storage order in
+the parser/render tree, then normalize it once at PageLayerTree lowering.
+Layer `brightness` and `contrast` are display-space values, while `opacity`
+records page compositing explicitly. The verified RealPic watermark preset
+uses opacity `0.26`, legacy non-RealPic watermarks use `0.17`, and ordinary
+RealPic tone adjustments remain opaque. Canvas2D, direct CanvasKit, SVG,
+WebCanvas, and native Skia consume that same lowered contract; the browser
+lifecycle fixture compares the Canvas2D and CanvasKit composited pixels.
+
 Picture crop coordinates now retain the HWP/HWPX `imgDim` full-coordinate
 reference as `originalSizeHu` through the model, render tree, paint IR, and
 public browser payload. `imgDim` is a crop-coordinate range, not the picture's

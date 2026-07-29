@@ -1289,12 +1289,19 @@ impl SvgRenderer {
                 }
                 // 이미지 (최상위)
                 if let Some(img) = &bg.image {
+                    let image_opacity = img.display_opacity();
+                    if image_opacity < 1.0 {
+                        self.output
+                            .push_str(&format!("<g opacity=\"{image_opacity:.6}\">\n"));
+                    }
                     let mut temp = ImageNode::new(0, Some(img.data.clone()));
                     temp.fill_mode = Some(img.fill_mode);
                     temp.effect = img.effect;
-                    temp.brightness = img.brightness;
-                    temp.contrast = img.contrast;
+                    (temp.brightness, temp.contrast) = img.display_brightness_contrast();
                     self.render_image_node(&temp, &node.bbox);
+                    if image_opacity < 1.0 {
+                        self.output.push_str("</g>\n");
+                    }
                 }
             }
             RenderNodeType::TextRun(run) => {
@@ -1700,6 +1707,15 @@ impl SvgRenderer {
                 let tone_filter_id =
                     self.ensure_brightness_contrast_filter(image.brightness, image.contrast);
                 let effect_filter_id = self.ensure_image_effect_filter(image.effect);
+                let image_opacity = if image.opacity.is_finite() {
+                    image.opacity.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                if image_opacity < 1.0 {
+                    self.output
+                        .push_str(&format!("<g opacity=\"{image_opacity:.6}\">\n"));
+                }
                 if let Some(ref fid) = tone_filter_id {
                     self.output
                         .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
@@ -1739,6 +1755,9 @@ impl SvgRenderer {
                     self.output.push_str("</g>\n");
                 }
                 if tone_filter_id.is_some() {
+                    self.output.push_str("</g>\n");
+                }
+                if image_opacity < 1.0 {
                     self.output.push_str("</g>\n");
                 }
             }

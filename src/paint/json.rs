@@ -1182,6 +1182,7 @@ impl PaintOp {
                         Some(image.effect),
                         false,
                     );
+                    let _ = write!(buf, ",\"opacity\":{:.6}", image.opacity);
                     buf.push('}');
                 }
                 buf.push('}');

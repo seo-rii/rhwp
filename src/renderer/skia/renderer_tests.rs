@@ -692,6 +692,7 @@ fn raster_output_applies_page_background_binary_image_effect() {
                         brightness: 0,
                         contrast: 0,
                         effect: ImageEffect::Pattern8x8,
+                        opacity: 1.0,
                     }),
                 },
             }],
@@ -708,6 +709,60 @@ fn raster_output_applies_page_background_binary_image_effect() {
     assert_eq!(
         output.diagnostics.image_effect_preprocessed_bytes,
         8 * 8 * 4
+    );
+}
+
+#[test]
+fn raster_output_composites_page_background_image_opacity() {
+    use crate::model::style::ImageFillMode;
+
+    let mut pixmap = tiny_skia::Pixmap::new(1, 1).expect("source pixmap");
+    pixmap.pixels_mut()[0] = tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 0, 255).unwrap();
+    let image_bytes = pixmap.encode_png().expect("source png");
+    let mut resources = ResourceArena::default();
+    let resource_id = resources.intern_image_bytes(&image_bytes);
+    let tree = PageLayerTree::with_resources(
+        1.0,
+        1.0,
+        LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 1.0, 1.0),
+            None,
+            vec![PaintOp::PageBackground {
+                bbox: BoundingBox::new(0.0, 0.0, 1.0, 1.0),
+                background: LayerPageBackgroundPaint {
+                    background_color: Some(0x00FF_FFFF),
+                    border_color: None,
+                    border_width: 0.0,
+                    gradient: None,
+                    image: Some(LayerPageBackgroundImagePaint {
+                        resource_id,
+                        fill_mode: ImageFillMode::FitToSize,
+                        brightness: 0,
+                        contrast: 0,
+                        effect: ImageEffect::RealPic,
+                        opacity: 0.25,
+                    }),
+                },
+            }],
+        ),
+        resources,
+    );
+    let output = SkiaLayerRenderer::new()
+        .render_raster_with_options(&tree, RasterRenderOptions::default())
+        .expect("render raster");
+    let rendered = tiny_skia::Pixmap::decode_png(&output.bytes).expect("png decode");
+    let pixel = rendered.pixels()[0];
+
+    assert!(
+        (188..=194).contains(&pixel.red())
+            && (188..=194).contains(&pixel.green())
+            && (188..=194).contains(&pixel.blue())
+            && pixel.alpha() == 255,
+        "25% black over white should composite to light gray, got rgba({}, {}, {}, {})",
+        pixel.red(),
+        pixel.green(),
+        pixel.blue(),
+        pixel.alpha()
     );
 }
 

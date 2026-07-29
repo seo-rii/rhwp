@@ -1089,6 +1089,8 @@ export class CanvasKitLayerRenderer {
         op.image.effect,
         op.image.brightness ?? 0,
         op.image.contrast ?? 0,
+        undefined,
+        op.image.opacity ?? 1,
       );
     }
 
@@ -3737,6 +3739,7 @@ export class CanvasKitLayerRenderer {
     brightness = 0,
     contrast = 0,
     originalSizeHu?: [number, number],
+    opacity = 1,
   ): void {
     const imageDimension = (source: Image, dimension: 'width' | 'height'): number | null => {
       const value = (source as Image & { width?: unknown; height?: unknown })[dimension];
@@ -3747,6 +3750,7 @@ export class CanvasKitLayerRenderer {
     };
     const usesImageEffect = !!effect && effect !== 'realPic';
     const usesImageTone = brightness !== 0 || contrast !== 0;
+    const imageOpacity = Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 1;
     const baseImage = this.resourceCache.image(resourceId, base64);
     if (!baseImage) return;
     if (
@@ -3772,6 +3776,7 @@ export class CanvasKitLayerRenderer {
     ) {
       const paint = new this.canvasKit.Paint();
       paint.setAntiAlias?.(true);
+      paint.setAlphaf(imageOpacity);
       canvas.drawImage(baseImage, bbox.x, bbox.y, paint);
       paint.delete();
       return;
@@ -3841,6 +3846,7 @@ export class CanvasKitLayerRenderer {
         && (srcW > dstW * 1.2 || srcH > dstH * 1.2);
       const sampledImage = useMipmaps ? this.resourceCache.image(resourceId, base64, true) ?? image : image;
       const paint = new this.canvasKit.Paint();
+      paint.setAlphaf(imageOpacity);
       canvas.drawImageRectOptions(
         sampledImage,
         this.canvasKit.XYWHRect(srcX, srcY, srcW, srcH),

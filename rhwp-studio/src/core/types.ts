@@ -813,6 +813,7 @@ export interface LayerPageBackgroundOp {
     effect?: LayerImageOp['effect'];
     brightness?: number;
     contrast?: number;
+    opacity?: number;
     resourceId?: number;
     base64?: string;
   };

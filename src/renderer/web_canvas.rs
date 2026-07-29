@@ -266,6 +266,13 @@ impl WebCanvasRenderer {
                             }
                             if let Some(image) = &background.image {
                                 if let Some(bytes) = resources.image_bytes(image.resource_id) {
+                                    let image_opacity = if image.opacity.is_finite() {
+                                        image.opacity.clamp(0.0, 1.0)
+                                    } else {
+                                        1.0
+                                    };
+                                    self.ctx.save();
+                                    self.ctx.set_global_alpha(image_opacity);
                                     self.draw_image_with_fill_mode(
                                         bytes,
                                         bbox,
@@ -277,6 +284,7 @@ impl WebCanvasRenderer {
                                         image.brightness,
                                         image.contrast,
                                     );
+                                    self.ctx.restore();
                                 }
                             }
                             continue;
@@ -756,6 +764,9 @@ impl WebCanvasRenderer {
                 }
                 // 이미지 배경
                 if let Some(img) = &bg.image {
+                    let (brightness, contrast) = img.display_brightness_contrast();
+                    self.ctx.save();
+                    self.ctx.set_global_alpha(img.display_opacity());
                     self.draw_image_with_fill_mode(
                         &img.data,
                         &node.bbox,
@@ -764,9 +775,10 @@ impl WebCanvasRenderer {
                         None,
                         None,
                         img.effect,
-                        img.brightness,
-                        img.contrast,
+                        brightness,
+                        contrast,
                     );
+                    self.ctx.restore();
                 }
             }
             RenderNodeType::TextRun(run) => {

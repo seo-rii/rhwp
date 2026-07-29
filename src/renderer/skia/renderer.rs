@@ -1947,6 +1947,14 @@ impl SkiaLayerRenderer {
                                 } else {
                                     (&decoded, image.effect, replay.image_sampling())
                                 };
+                            let image_opacity = if image.opacity.is_finite() {
+                                image.opacity.clamp(0.0, 1.0) as f32
+                            } else {
+                                1.0
+                            };
+                            if image_opacity < 1.0 {
+                                canvas.save_layer_alpha_f(Some(background_rect), image_opacity);
+                            }
                             let diagnostics = draw_decoded_image(
                                 canvas,
                                 draw_image,
@@ -1962,6 +1970,9 @@ impl SkiaLayerRenderer {
                                 image.contrast,
                                 sampling,
                             );
+                            if image_opacity < 1.0 {
+                                canvas.restore();
+                            }
                             replay.record_image_draw(diagnostics);
                         } else {
                             draw_missing_image_placeholder(
@@ -2766,6 +2777,7 @@ mod embedded_svg_image_tests {
                         brightness: 0,
                         contrast: 0,
                         effect: ImageEffect::RealPic,
+                        opacity: 1.0,
                     }),
                 },
             }],
@@ -2797,6 +2809,7 @@ mod embedded_svg_image_tests {
                         brightness: 0,
                         contrast: 0,
                         effect: ImageEffect::RealPic,
+                        opacity: 1.0,
                     }),
                 },
             }],

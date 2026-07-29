@@ -1619,6 +1619,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
                     set_number(&image_value, "contrast", image.contrast as f64);
                 }
                 set_string(&image_value, "effect", image_effect_str(image.effect));
+                set_number(&image_value, "opacity", image.opacity);
                 set_value(&value, "image", image_value.into());
             }
         }

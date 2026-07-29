@@ -383,6 +383,7 @@ fn test_svg_layer_page_background_image_uses_fill_mode_and_effect() {
                     brightness: 0,
                     contrast: 0,
                     effect: crate::model::image::ImageEffect::GrayScale,
+                    opacity: 0.26,
                 }),
             },
         }],
@@ -399,6 +400,10 @@ fn test_svg_layer_page_background_image_uses_fill_mode_and_effect() {
     assert!(
         output.contains("<pattern id=\"tile-pat-"),
         "page background fillMode should use the layer image tiling path:\n{output}"
+    );
+    assert!(
+        output.contains("<g opacity=\"0.260000\">"),
+        "page background image opacity should wrap the rendered image:\n{output}"
     );
 }
 

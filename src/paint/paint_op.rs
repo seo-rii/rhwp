@@ -1921,9 +1921,12 @@ pub struct LayerPageBackgroundPaint {
 pub struct LayerPageBackgroundImagePaint {
     pub resource_id: ImageResourceId,
     pub fill_mode: ImageFillMode,
+    /// Display-space tone value; PageBackground raw storage order is normalized by the builder.
     pub brightness: i8,
+    /// Display-space tone value; PageBackground raw storage order is normalized by the builder.
     pub contrast: i8,
     pub effect: ImageEffect,
+    pub opacity: f64,
 }
 
 #[derive(Debug, Clone)]

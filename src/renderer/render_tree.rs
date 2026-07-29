@@ -11,6 +11,19 @@ use crate::model::shape::TextWrap;
 use crate::model::style::ImageFillMode;
 use crate::model::{ColorRef, Rect};
 
+/// Opacity used by the verified RealPic page-watermark tone preset.
+pub const REAL_PICTURE_WATERMARK_PAGE_OPACITY: f64 = 0.26;
+/// Opacity retained for legacy non-RealPic page watermarks.
+pub const LEGACY_IMAGE_WATERMARK_OPACITY: f64 = 0.17;
+
+pub const fn is_real_picture_watermark_tone_preset(
+    effect: ImageEffect,
+    brightness: i8,
+    contrast: i8,
+) -> bool {
+    matches!(effect, ImageEffect::RealPic) && brightness == -50 && contrast == 70
+}
+
 /// 렌더 노드 고유 ID
 pub type NodeId = u32;
 
@@ -388,6 +401,32 @@ pub struct PageBackgroundImage {
     pub contrast: i8,
     /// 그림 효과 (실사/그레이스케일/흑백/패턴)
     pub effect: ImageEffect,
+}
+
+impl PageBackgroundImage {
+    /// Converts legacy `ImageFill` storage order into display tone arguments.
+    pub const fn display_brightness_contrast(&self) -> (i8, i8) {
+        (self.contrast, self.brightness)
+    }
+
+    pub const fn is_watermark(&self) -> bool {
+        self.brightness != 0 && self.contrast != 0
+    }
+
+    pub const fn is_real_picture_watermark_tone_preset(&self) -> bool {
+        is_real_picture_watermark_tone_preset(self.effect, self.brightness, self.contrast)
+    }
+
+    /// Returns the page-compositing opacity without changing parser/IR storage.
+    pub const fn display_opacity(&self) -> f64 {
+        if self.is_real_picture_watermark_tone_preset() {
+            REAL_PICTURE_WATERMARK_PAGE_OPACITY
+        } else if !matches!(self.effect, ImageEffect::RealPic) && self.is_watermark() {
+            LEGACY_IMAGE_WATERMARK_OPACITY
+        } else {
+            1.0
+        }
+    }
 }
 
 /// 텍스트 줄 노드
@@ -1015,6 +1054,51 @@ impl PageRenderTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn page_background_image_projects_display_tone_and_watermark_opacity() {
+        let real_picture_watermark = PageBackgroundImage {
+            data: Vec::new(),
+            fill_mode: ImageFillMode::FitToSize,
+            brightness: -50,
+            contrast: 70,
+            effect: ImageEffect::RealPic,
+        };
+        assert_eq!(
+            real_picture_watermark.display_brightness_contrast(),
+            (70, -50)
+        );
+        assert_eq!(
+            real_picture_watermark.display_opacity(),
+            REAL_PICTURE_WATERMARK_PAGE_OPACITY
+        );
+
+        let ordinary_real_picture = PageBackgroundImage {
+            brightness: -15,
+            contrast: 50,
+            ..real_picture_watermark.clone()
+        };
+        assert_eq!(
+            ordinary_real_picture.display_brightness_contrast(),
+            (50, -15)
+        );
+        assert_eq!(ordinary_real_picture.display_opacity(), 1.0);
+
+        let legacy_watermark = PageBackgroundImage {
+            effect: ImageEffect::GrayScale,
+            ..ordinary_real_picture.clone()
+        };
+        assert_eq!(
+            legacy_watermark.display_opacity(),
+            LEGACY_IMAGE_WATERMARK_OPACITY
+        );
+
+        let partial_tone = PageBackgroundImage {
+            contrast: 0,
+            ..legacy_watermark
+        };
+        assert_eq!(partial_tone.display_opacity(), 1.0);
+    }
 
     #[test]
     fn test_bounding_box_intersects() {

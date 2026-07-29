@@ -870,16 +870,17 @@ impl LayerBuilder {
             border_color: background.border_color,
             border_width: background.border_width,
             gradient: background.gradient.clone(),
-            image: background
-                .image
-                .as_ref()
-                .map(|image| LayerPageBackgroundImagePaint {
+            image: background.image.as_ref().map(|image| {
+                let (brightness, contrast) = image.display_brightness_contrast();
+                LayerPageBackgroundImagePaint {
                     resource_id: self.resources.intern_image_bytes(&image.data),
                     fill_mode: image.fill_mode,
-                    brightness: image.brightness,
-                    contrast: image.contrast,
+                    brightness,
+                    contrast,
                     effect: image.effect,
-                }),
+                    opacity: image.display_opacity(),
+                }
+            }),
         }
     }
 
@@ -1853,6 +1854,51 @@ mod tests {
             }
             other => panic!("expected root group, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn normalizes_page_background_image_display_semantics() {
+        let mut tree = PageRenderTree::new(0, 80.0, 60.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::PageBackground(PageBackgroundNode {
+                background_color: Some(0x00FF_FFFF),
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: Some(crate::renderer::render_tree::PageBackgroundImage {
+                    data: vec![0x89, b'P', b'N', b'G'],
+                    fill_mode: crate::model::style::ImageFillMode::FitToSize,
+                    brightness: -50,
+                    contrast: 70,
+                    effect: crate::model::image::ImageEffect::RealPic,
+                }),
+            }),
+            BoundingBox::new(0.0, 0.0, 80.0, 60.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::Leaf { ops, .. } = &children[0].kind else {
+            panic!("expected page background leaf");
+        };
+        let PaintOp::PageBackground { background, .. } = &ops[0] else {
+            panic!("expected page background op");
+        };
+        let image = background.image.as_ref().expect("page background image");
+        assert_eq!((image.brightness, image.contrast), (70, -50));
+        assert_eq!(
+            image.opacity,
+            crate::renderer::render_tree::REAL_PICTURE_WATERMARK_PAGE_OPACITY
+        );
+
+        let json = layer_tree.to_json();
+        assert!(json.contains("\"brightness\":70"));
+        assert!(json.contains("\"contrast\":-50"));
+        assert!(json.contains("\"opacity\":0.260000"));
     }
 
     #[test]
