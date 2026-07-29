@@ -144,17 +144,27 @@ type CanvasKitClipState = {
   allowHorizontalOverflowControls: boolean;
 };
 
-export type CanvasKitTextReplayFailureDiagnostic = {
-  reason: 'textBlobConstructionFailed';
+type CanvasKitTextReplayDiagnosticBase = {
   opId: string | null;
   fontFamily: string;
   clusterStartUtf16: number;
   clusterLengthUtf16: number;
 };
 
+export type CanvasKitTextReplayRecoveryDiagnostic = CanvasKitTextReplayDiagnosticBase & {
+  reason: 'textBlobConstructionFailed';
+  fallback: 'drawText';
+};
+
+export type CanvasKitTextReplayFailureDiagnostic = CanvasKitTextReplayDiagnosticBase & {
+  reason: 'simpleTextFallbackFailed';
+};
+
 export type CanvasKitTextReplayDiagnostics = {
   constructionFailures: number;
   failureCacheHits: number;
+  fallbackDraws: number;
+  recoveries: CanvasKitTextReplayRecoveryDiagnostic[];
   failures: CanvasKitTextReplayFailureDiagnostic[];
 };
 
@@ -224,10 +234,13 @@ export class CanvasKitLayerRenderer {
   private textBlobCacheHits = 0;
   private textBlobCacheMisses = 0;
   private readonly failedTextBlobCacheKeys = new Set<string>();
+  private readonly textReplayRecoveryDiagnostics =
+    new Map<string, CanvasKitTextReplayRecoveryDiagnostic>();
   private readonly textReplayFailureDiagnostics = new Map<string, CanvasKitTextReplayFailureDiagnostic>();
   private readonly equationReplayDiagnostics: CanvasKitEquationReplayDiagnostic[] = [];
   private textBlobConstructionFailures = 0;
   private textBlobFailureCacheHits = 0;
+  private textBlobFallbackDraws = 0;
   private readonly textFallbackFamilyCache = new Map<string, string>();
   private textFallbackFamilyCacheHits = 0;
   private textFallbackFamilyCacheMisses = 0;
@@ -494,6 +507,9 @@ export class CanvasKitLayerRenderer {
     return {
       constructionFailures: this.textBlobConstructionFailures,
       failureCacheHits: this.textBlobFailureCacheHits,
+      fallbackDraws: this.textBlobFallbackDraws,
+      recoveries: [...this.textReplayRecoveryDiagnostics.values()]
+        .map((recovery) => ({ ...recovery })),
       failures: [...this.textReplayFailureDiagnostics.values()].map((failure) => ({ ...failure })),
     };
   }
@@ -533,9 +549,11 @@ export class CanvasKitLayerRenderer {
 
   resetTextReplayDiagnostics(): void {
     this.failedTextBlobCacheKeys.clear();
+    this.textReplayRecoveryDiagnostics.clear();
     this.textReplayFailureDiagnostics.clear();
     this.textBlobConstructionFailures = 0;
     this.textBlobFailureCacheHits = 0;
+    this.textBlobFallbackDraws = 0;
   }
 
   resetEquationReplayDiagnostics(): void {
@@ -1546,13 +1564,22 @@ export class CanvasKitLayerRenderer {
           const y = originY + dy;
           const cacheKey = `${clusterFontKeys[index]}|${cluster.text}`;
           const failureKey = `${opId ?? 'anonymous'}:${cluster.start}:${cacheKey}`;
-          const failure = {
-            reason: 'textBlobConstructionFailed' as const,
+          const diagnosticBase = {
             opId,
             fontFamily: clusterFontFamilies[index],
             clusterStartUtf16: cluster.startUtf16,
             clusterLengthUtf16: cluster.text.length,
           };
+          const recovery: CanvasKitTextReplayRecoveryDiagnostic = {
+            reason: 'textBlobConstructionFailed' as const,
+            fallback: 'drawText',
+            ...diagnosticBase,
+          };
+          const failure: CanvasKitTextReplayFailureDiagnostic = {
+            reason: 'simpleTextFallbackFailed',
+            ...diagnosticBase,
+          };
+          let font = clusterFonts[index];
           let blob = this.textBlobCache.get(cacheKey);
           if (blob) {
             this.textBlobCacheHits += 1;
@@ -1560,10 +1587,7 @@ export class CanvasKitLayerRenderer {
             this.textBlobCache.set(cacheKey, blob);
           } else if (this.failedTextBlobCacheKeys.has(cacheKey)) {
             this.textBlobFailureCacheHits += 1;
-            this.textReplayFailureDiagnostics.set(failureKey, failure);
-            continue;
           } else {
-            let font = clusterFonts[index];
             if (!font) {
               const family = clusterFontFamilies[index];
               let objects = textObjectsByFamily.get(family);
@@ -1585,40 +1609,81 @@ export class CanvasKitLayerRenderer {
             if (!blob) {
               this.failedTextBlobCacheKeys.add(cacheKey);
               this.textBlobConstructionFailures += 1;
-              this.textReplayFailureDiagnostics.set(failureKey, failure);
-              continue;
-            }
-            this.textBlobCacheMisses += 1;
-            this.textBlobCache.set(cacheKey, blob);
-            if (this.textBlobCache.size > MAX_TEXT_BLOB_CACHE_ENTRIES) {
-              const oldestKey = this.textBlobCache.keys().next().value;
-              if (oldestKey !== undefined) {
-                const oldestBlob = this.textBlobCache.get(oldestKey);
-                oldestBlob?.delete();
-                this.textBlobCache.delete(oldestKey);
+            } else {
+              this.textBlobCacheMisses += 1;
+              this.textBlobCache.set(cacheKey, blob);
+              if (this.textBlobCache.size > MAX_TEXT_BLOB_CACHE_ENTRIES) {
+                const oldestKey = this.textBlobCache.keys().next().value;
+                if (oldestKey !== undefined) {
+                  const oldestBlob = this.textBlobCache.get(oldestKey);
+                  oldestBlob?.delete();
+                  this.textBlobCache.delete(oldestKey);
+                }
               }
             }
           }
-          if (!blob) {
-            continue;
+
+          if (!blob && !font) {
+            const family = clusterFontFamilies[index];
+            let objects = textObjectsByFamily.get(family);
+            if (!objects) {
+              objects = this.makeTextObjects(
+                family,
+                fontSize,
+                op.style.bold,
+                op.style.italic,
+                op.style.color,
+                1,
+              );
+              textObjectsByFamily.set(family, objects);
+            }
+            font = objects.font;
+            clusterFonts[index] = font;
           }
+
+          const drawText = (drawX: number, drawY: number) => {
+            if (blob) {
+              canvas.drawTextBlob(blob, drawX, drawY, fillPaint);
+              if (strokePaint) {
+                canvas.drawTextBlob(blob, drawX, drawY, strokePaint);
+              }
+              return;
+            }
+
+            const fallbackFont = font;
+            if (!fallbackFont) {
+              this.textReplayRecoveryDiagnostics.delete(failureKey);
+              this.textReplayFailureDiagnostics.set(failureKey, failure);
+              return;
+            }
+            try {
+              canvas.drawText(cluster.text, drawX, drawY, fillPaint, fallbackFont);
+              if (strokePaint) {
+                canvas.drawText(cluster.text, drawX, drawY, strokePaint, fallbackFont);
+              }
+              this.textBlobFallbackDraws += 1;
+              this.textReplayFailureDiagnostics.delete(failureKey);
+              this.textReplayRecoveryDiagnostics.set(failureKey, recovery);
+            } catch {
+              this.textReplayRecoveryDiagnostics.delete(failureKey);
+              this.textReplayFailureDiagnostics.set(failureKey, failure);
+            }
+          };
+
           const horizontalScale = isHalfwidthScaledCluster(cluster.text) && !hasRatio
             ? 0.5
             : hasRatio ? ratio : 1;
           if (horizontalScale !== 1) {
             canvas.save();
-            canvas.translate(x, y);
-            canvas.scale(horizontalScale, 1);
-            canvas.drawTextBlob(blob, 0, 0, fillPaint);
-            if (strokePaint) {
-              canvas.drawTextBlob(blob, 0, 0, strokePaint);
+            try {
+              canvas.translate(x, y);
+              canvas.scale(horizontalScale, 1);
+              drawText(0, 0);
+            } finally {
+              canvas.restore();
             }
-            canvas.restore();
           } else {
-            canvas.drawTextBlob(blob, x, y, fillPaint);
-            if (strokePaint) {
-              canvas.drawTextBlob(blob, x, y, strokePaint);
-            }
+            drawText(x, y);
           }
         }
       };

@@ -2250,14 +2250,21 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     assert(
       nativeRouting.textBlobFailureProbe?.first?.constructionFailures === 1
         && nativeRouting.textBlobFailureProbe?.first?.failureCacheHits >= 1
-        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.reason === 'textBlobConstructionFailed'
-        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.opId === 'text-blob-failure-probe'
-        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.clusterStartUtf16 === 2
-        && nativeRouting.textBlobFailureProbe?.first?.failures?.[0]?.clusterLengthUtf16 === 1
+        && nativeRouting.textBlobFailureProbe?.first?.fallbackDraws >= 2
+        && nativeRouting.textBlobFailureProbe?.first?.recoveries?.[0]?.reason === 'textBlobConstructionFailed'
+        && nativeRouting.textBlobFailureProbe?.first?.recoveries?.[0]?.fallback === 'drawText'
+        && nativeRouting.textBlobFailureProbe?.first?.recoveries?.[0]?.opId === 'text-blob-failure-probe'
+        && nativeRouting.textBlobFailureProbe?.first?.recoveries?.[0]?.clusterStartUtf16 === 2
+        && nativeRouting.textBlobFailureProbe?.first?.recoveries?.[0]?.clusterLengthUtf16 === 1
+        && nativeRouting.textBlobFailureProbe?.first?.failures?.length === 0
         && nativeRouting.textBlobFailureProbe?.second?.constructionFailures === 1
         && nativeRouting.textBlobFailureProbe?.second?.failureCacheHits >= 1
-        && nativeRouting.textBlobFailureProbe?.second?.failures?.[0]?.reason === 'textBlobConstructionFailed',
-      `TextBlob failures stay visible across static-picture retries=${JSON.stringify(nativeRouting.textBlobFailureProbe)}`,
+        && nativeRouting.textBlobFailureProbe?.second?.fallbackDraws >= 2
+        && nativeRouting.textBlobFailureProbe?.second?.recoveries?.[0]?.reason === 'textBlobConstructionFailed'
+        && nativeRouting.textBlobFailureProbe?.second?.recoveries?.[0]?.fallback === 'drawText'
+        && nativeRouting.textBlobFailureProbe?.second?.recoveries?.[0]?.opId === 'text-blob-failure-probe'
+        && nativeRouting.textBlobFailureProbe?.second?.failures?.length === 0,
+      `TextBlob failures use visible direct-text recovery across static-picture retries=${JSON.stringify(nativeRouting.textBlobFailureProbe)}`,
     );
     assert(
       nativeRouting.textBlobNativeProbe?.cacheSizeAfterSecond > 0,

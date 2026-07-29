@@ -1103,8 +1103,9 @@ assert(
     && rendererBaselineDriverSource.includes('planReasonCounts')
     && rendererBaselineDriverSource.includes('rejectedReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeImageFailureReasonCounts')
+    && rendererBaselineDriverSource.includes('runtimeTextRecoveryReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeTextFailureReasonCounts'),
-  'renderer baseline markdown report must expose CanvasKit fallback, runtime paint failure, and rejection reason inventories',
+  'renderer baseline markdown report must expose CanvasKit fallback, runtime paint recovery/failure, and rejection reason inventories',
 );
 assert(
   packageJson.scripts['e2e:baseline:headless']?.includes('../scripts/renderer_baseline.py')
@@ -1930,10 +1931,14 @@ assert(
   canvaskitSource.includes('getTextReplayDiagnostics(): Readonly<CanvasKitTextReplayDiagnostics>')
     && canvaskitSource.includes('resetTextReplayDiagnostics(): void')
     && canvaskitTextRunBlock.includes("reason: 'textBlobConstructionFailed' as const")
+    && canvaskitTextRunBlock.includes("fallback: 'drawText'")
+    && canvaskitTextRunBlock.includes("reason: 'simpleTextFallbackFailed'")
     && canvaskitTextRunBlock.includes('clusterStartUtf16: cluster.startUtf16')
     && canvaskitTextRunBlock.includes('this.failedTextBlobCacheKeys.has(cacheKey)')
+    && canvaskitTextRunBlock.includes('canvas.drawText(cluster.text, drawX, drawY, fillPaint, fallbackFont)')
+    && canvaskitTextRunBlock.includes('this.textReplayRecoveryDiagnostics.set(failureKey, recovery)')
     && canvaskitTextRunBlock.includes('this.textReplayFailureDiagnostics.set(failureKey, failure)'),
-  'CanvasKit TextRun replay must expose and negative-cache TextBlob construction failures',
+  'CanvasKit TextRun replay must recover negative-cached TextBlob failures through direct CanvasKit text and expose unrecovered failures',
 );
 assert(
   canvaskitTextRunBlock.includes('strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round)')

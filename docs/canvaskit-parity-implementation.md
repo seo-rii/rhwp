@@ -333,7 +333,11 @@ CanvasKit parity is implemented through four layers:
    `CanvasKitImageDiagnostics`: missing resources, invalid base64, rejected
    encoded-image headers/limits, and CanvasKit decoder failures have distinct
    reasons instead of becoming silent paint omissions. TextBlob construction
-   failures are likewise reported per render without exposing cluster text;
+   failures are negative-cached without dropping the affected cluster.
+   CanvasKit retries that cluster through direct `drawText`, which reaches
+   `_drawSimpleText` without constructing a public `TextBlob`. A successful
+   retry is reported as a text replay recovery; only failure of both paths is a
+   runtime text replay failure. Neither diagnostic exposes cluster text:
    diagnostics retain only the op identity, resolved family, and UTF-16 cluster
    range. A cached pattern-surface failure is re-reported on every attempted
    replay rather than looking like a successful cache hit. Failed pattern
@@ -653,11 +657,14 @@ by an `imageDecodeFailed` rejection of that selected strict variant; an
 undeclared mismatch, an unknown failure, or a fallback-free mismatch remains a
 hard failure. Resolved conditions remain visible in
 `runtimeConditionResolutions`. Intentional TextRun fallback, unsupported items,
-and their exact reasons remain an inventory in the JSON and Markdown reports. Static
-CanvasKit pictures that encounter any of these runtime replay failures are
-drawn for the current attempt but not cached, so a later diagnostic reset cannot
-turn a cached omission into a false pass. Cache admission compares diagnostics
-before and after each static subtree, so a failure in one subtree does not
+direct-text recoveries, and their exact reasons remain an inventory in the JSON
+and Markdown reports. Static CanvasKit pictures that encounter any runtime
+replay failure are drawn for the current attempt but not cached, so a later
+diagnostic reset cannot turn a cached omission into a false pass. A recovered
+TextBlob construction failure is also kept out of the picture cache, ensuring
+that direct-text recovery stays observable on each retry instead of disappearing
+behind cached picture metadata. Cache admission compares diagnostics before and
+after each static subtree, so a failure or recovery in one subtree does not
 disable caching for unrelated siblings.
 
 CanvasKit fallback text now consumes the same `FONT_LIST` face catalog as the
