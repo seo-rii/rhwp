@@ -18090,15 +18090,25 @@ runTest('Renderer lifecycle', async ({ page }) => {
       return { error: 'renderers unavailable' };
     }
     const rawText = [
+      0xF0A0,
+      0xF0E8,
+      0xF003B,
+      0xF02EF,
       0xF03EF,
       0xF03F0,
       0xF03F1,
       0xF03F2,
       0xF03F3,
       0xF03F4,
+      0xF080F,
+      0xF0811,
+      0xF0817,
+      0xF081A,
+      0xF0854,
+      0xF0855,
     ].map((codePoint) => String.fromCodePoint(codePoint)).join('');
     const tree = {
-      pageWidth: 180,
+      pageWidth: 420,
       pageHeight: 52,
       profile: 'screen',
       outputOptions: {
@@ -18124,18 +18134,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 2192,
-        bounds: { x: 0, y: 0, width: 180, height: 52 },
+        bounds: { x: 0, y: 0, width: 420, height: 52 },
         cacheHint: 'none',
         ops: [
           {
             type: 'pageBackground',
-            bbox: { x: 0, y: 0, width: 180, height: 52 },
+            bbox: { x: 0, y: 0, width: 420, height: 52 },
             backgroundColor: '#ffffff',
             borderWidth: 0,
           },
           {
             type: 'textRun',
-            bbox: { x: 8, y: 6, width: 156, height: 38 },
+            bbox: { x: 8, y: 6, width: 404, height: 38 },
             text: rawText,
             baseline: 30,
             rotation: 0,
@@ -18166,7 +18176,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
               strikeColor: '#202020',
               shadeColor: '#ffffff',
             },
-            positions: Array.from({ length: 7 }, (_, index) => index * 22),
+            positions: Array.from({ length: 17 }, (_, index) => index * 22),
             controlMarks: [],
             tabLeaders: [],
           },
@@ -18202,7 +18212,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     );
     assert(
       inkPixels > 150,
-      `${backend} maps raw Hancom company-name PUA through the shared display policy ink=${inkPixels}`,
+      `${backend} maps raw verified Hancom PUA through the shared display policy ink=${inkPixels}`,
     );
   }
   const hancomPuaDisplayDiff = await comparePngBuffers(

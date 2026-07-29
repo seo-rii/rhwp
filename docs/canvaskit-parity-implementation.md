@@ -253,6 +253,15 @@ Studio fallback applies the same table when an older tree lacks that field.
 The lifecycle fixture feeds raw company-name PUA to both Canvas2D and CanvasKit
 and requires visible ink plus fuzzy raster parity.
 
+The same shared table also carries ten earlier upstream mappings with
+document/PDF or embedded-outline evidence: the corrected basic-PUA middle dot
+and right arrow, a supplementary down arrow and middle dot, HWP3 line glyphs,
+and Korean book-title brackets. Single-scalar entries also override the legacy
+bullet fallback so numbering and body text cannot disagree. The tentative
+`U+F00DA` and `U+F0827` guesses remain raw, as do the overlap-only boxed-number
+ranges in ordinary text. The browser fixture now covers both BMP and
+supplementary-PUA entries through Canvas2D and direct CanvasKit replay.
+
 No broad upstream or `render-p23` cherry-pick should be applied to this `skia`
 branch just to stay current. The branches have diverged substantially: this
 branch already carries CanvasKit/native Skia parity work that is ahead of

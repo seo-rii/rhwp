@@ -330,7 +330,11 @@ export function charOverlapInnerSizeRatio(innerCharSize: number): number {
 }
 
 const VERIFIED_HANCOM_PUA_DISPLAY = new Map<number, string>([
+  [0xF0A0, '\u00B7'],
+  [0xF0E8, '\u2794'],
+  [0xF003B, '\u2193'],
   [0xF012B, '(\uC778)'],
+  [0xF02EF, '\u00B7'],
   [0xF02FC, '\u25BA'],
   [0xF031C, '\u25A0'],
   [0xF03A0, '\u21B5'],
@@ -341,6 +345,12 @@ const VERIFIED_HANCOM_PUA_DISPLAY = new Map<number, string>([
   [0xF03F2, '\uCEF4'],
   [0xF03F3, '\uD4E8'],
   [0xF03F4, '\uD130'],
+  [0xF080F, '\u2501'],
+  [0xF0811, '\u250C'],
+  [0xF0817, '\u2514'],
+  [0xF081A, '\u2500'],
+  [0xF0854, '\u300A'],
+  [0xF0855, '\u300B'],
 ]);
 
 export function puaToDisplayText(ch: string): string | null {
@@ -360,6 +370,10 @@ export function puaToDisplayText(ch: string): string | null {
 
 export function mapPuaBulletChar(ch: string): string {
   const cp = ch.codePointAt(0) ?? 0;
+  const verified = VERIFIED_HANCOM_PUA_DISPLAY.get(cp);
+  if (verified !== undefined && Array.from(verified).length === 1) {
+    return verified;
+  }
   if (cp < 0xF020 || cp > 0xF0FF) {
     return ch;
   }
@@ -389,6 +403,7 @@ export function mapPuaBulletChar(ch: string): string {
     case 0x9f:
       return '\u2022';
     case 0xa0:
+      return '\u00B7';
     case 0xa7:
       return '\u25AA';
     case 0xa1:

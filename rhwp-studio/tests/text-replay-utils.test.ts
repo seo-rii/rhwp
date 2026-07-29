@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  mapPuaBulletChar,
   mapPuaDisplayText,
   puaToDisplayText,
   splitIntoClusters,
@@ -27,7 +28,11 @@ test('text replay clusters preserve grapheme boundaries and scalar positions', (
 
 test('Hancom PUA fallback uses only the verified display table', () => {
   const cases = [
+    [0xF0A0, '\u00B7'],
+    [0xF0E8, '\u2794'],
+    [0xF003B, '\u2193'],
     [0xF012B, '(\uC778)'],
+    [0xF02EF, '\u00B7'],
     [0xF02FC, '\u25BA'],
     [0xF031C, '\u25A0'],
     [0xF03A0, '\u21B5'],
@@ -38,6 +43,12 @@ test('Hancom PUA fallback uses only the verified display table', () => {
     [0xF03F2, '\uCEF4'],
     [0xF03F3, '\uD4E8'],
     [0xF03F4, '\uD130'],
+    [0xF080F, '\u2501'],
+    [0xF0811, '\u250C'],
+    [0xF0817, '\u2514'],
+    [0xF081A, '\u2500'],
+    [0xF0854, '\u300A'],
+    [0xF0855, '\u300B'],
   ] as const;
 
   for (const [codePoint, display] of cases) {
@@ -45,11 +56,22 @@ test('Hancom PUA fallback uses only the verified display table', () => {
   }
   assert.equal(
     mapPuaDisplayText(cases.map(([codePoint]) => String.fromCodePoint(codePoint)).join('')),
-    '(\uC778)\u25BA\u25A0\u21B5\u25A1\uD55C\uAE00\uACFC\uCEF4\uD4E8\uD130',
+    '\u00B7\u2794\u2193(\uC778)\u00B7\u25BA\u25A0\u21B5\u25A1'
+      + '\uD55C\uAE00\uACFC\uCEF4\uD4E8\uD130\u2501\u250C\u2514\u2500\u300A\u300B',
   );
-  assert.equal(puaToDisplayText(String.fromCodePoint(0xF03E0)), null);
-  assert.equal(
-    mapPuaDisplayText(String.fromCodePoint(0xF03E0)),
-    String.fromCodePoint(0xF03E0),
-  );
+  for (const codePoint of [0xF00DA, 0xF03E0, 0xF0827]) {
+    assert.equal(puaToDisplayText(String.fromCodePoint(codePoint)), null);
+    assert.equal(
+      mapPuaDisplayText(String.fromCodePoint(codePoint)),
+      String.fromCodePoint(codePoint),
+    );
+  }
+  assert.equal(mapPuaBulletChar(String.fromCodePoint(0xF0A0)), '\u00B7');
+  assert.equal(mapPuaBulletChar(String.fromCodePoint(0xF0A7)), '\u25AA');
+  for (const codePoint of [0xF00DA, 0xF0827, 0xF02B1, 0xF02C4]) {
+    assert.equal(
+      mapPuaBulletChar(String.fromCodePoint(codePoint)),
+      String.fromCodePoint(codePoint),
+    );
+  }
 });

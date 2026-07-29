@@ -3462,9 +3462,11 @@ mod tests {
             font_size: 16.0,
             ..Default::default()
         };
-        let text = "\u{F012B}\u{F03A0}\u{F03C5}\
-                    \u{F03EF}\u{F03F0}\u{F03F1}\u{F03F2}\u{F03F3}\u{F03F4}";
-        let display_text = "(인)↵□한글과컴퓨터";
+        let text = "\u{F0A0}\u{F0E8}\u{F003B}\u{F012B}\u{F02EF}\
+                    \u{F03A0}\u{F03C5}\u{F03EF}\u{F03F0}\u{F03F1}\
+                    \u{F03F2}\u{F03F3}\u{F03F4}\u{F080F}\u{F0811}\
+                    \u{F0817}\u{F081A}\u{F0854}\u{F0855}";
+        let display_text = "·➔↓(인)·↵□한글과컴퓨터━┌└─《》";
         let source_positions = compute_char_positions(text, &style);
         let display_positions = compute_char_positions(display_text, &style);
         let text_run = PaintOp::TextRun {

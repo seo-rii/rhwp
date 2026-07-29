@@ -3134,6 +3134,13 @@ impl LayoutEngine {
 /// 기준: Wingdings 폰트 → Unicode 매핑 (alanwood.net/demos/wingdings.html)
 /// HWP 글머리표는 Wingdings 폰트 문자를 PUA(0xF000+code)로 저장
 pub(crate) fn map_pua_bullet_char(ch: char) -> char {
+    if let Some(display) = crate::renderer::hancom_pua::verified_hancom_pua_display(ch) {
+        let mut chars = display.chars();
+        if let (Some(mapped), None) = (chars.next(), chars.next()) {
+            return mapped;
+        }
+    }
+
     let code = ch as u32;
     if !(0xF020..=0xF0FF).contains(&code) {
         return ch;
@@ -3156,7 +3163,7 @@ pub(crate) fn map_pua_bullet_char(ch: char) -> char {
         // 체크/별/점 (0x9E~0xAF)
         0x9E => '\u{00B7}', // · Middle dot
         0x9F => '\u{2022}', // • Bullet
-        0xA0 => '\u{25AA}', // ▪ Black small square
+        0xA0 => '\u{00B7}', // · Middle dot (Hancom PDF verified)
         0xA1 => '\u{26AA}', // ⚪ Medium white circle
         0xA2 => '\u{25CB}', // ○ (Heavy large circle → 근사값)
         0xA3 => '\u{25CB}', // ○ (Very heavy white circle → 근사값)
@@ -3204,4 +3211,41 @@ fn form_color_to_css(color: u32) -> String {
     let g = (color >> 8) & 0xFF;
     let r = color & 0xFF;
     format!("#{:02x}{:02x}{:02x}", r, g, b)
+}
+
+#[cfg(test)]
+mod pua_mapping_tests {
+    use super::map_pua_bullet_char;
+
+    #[test]
+    fn verified_hancom_symbols_override_generic_bullet_fallbacks() {
+        let cases = [
+            (0xF0A0, '·'),
+            (0xF0E8, '➔'),
+            (0xF003B, '↓'),
+            (0xF02EF, '·'),
+            (0xF080F, '━'),
+            (0xF0811, '┌'),
+            (0xF0817, '└'),
+            (0xF081A, '─'),
+            (0xF0854, '《'),
+            (0xF0855, '》'),
+        ];
+        for (code_point, expected) in cases {
+            assert_eq!(
+                map_pua_bullet_char(char::from_u32(code_point).unwrap()),
+                expected,
+                "U+{code_point:05X}"
+            );
+        }
+        assert_eq!(map_pua_bullet_char('\u{F0A7}'), '▪');
+    }
+
+    #[test]
+    fn tentative_and_overlap_only_pua_remain_unmapped() {
+        for code_point in [0xF00DA, 0xF0827, 0xF02B1, 0xF02C4] {
+            let ch = char::from_u32(code_point).unwrap();
+            assert_eq!(map_pua_bullet_char(ch), ch, "U+{code_point:05X}");
+        }
+    }
 }

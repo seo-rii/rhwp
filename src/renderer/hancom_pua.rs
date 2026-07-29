@@ -10,8 +10,15 @@
 ///
 /// 원문 IR은 바꾸지 않고 paint 및 폭 측정 경로에서만 사용한다.
 static VERIFIED_HANCOM_PUA_DISPLAY: &[(u32, &str)] = &[
+    // Task #509 Hancom PDF bullet verification.
+    (0xF0A0, "·"),
+    (0xF0E8, "➔"),
+    // Task #588 embedded HCRBatang outline verification.
+    (0xF003B, "↓"),
     // `복학원서.hwp` 서명란.
     (0xF012B, "(인)"),
+    // Task #509 KTX regression origin.
+    (0xF02EF, "·"),
     // 2025 행정업무운영 편람 callout 및 TOC bullet.
     (0xF02FC, "►"),
     (0xF031C, "■"),
@@ -26,6 +33,14 @@ static VERIFIED_HANCOM_PUA_DISPLAY: &[(u32, &str)] = &[
     (0xF03F2, "컴"),
     (0xF03F3, "퓨"),
     (0xF03F4, "터"),
+    // HWP3 graphic-line and relation-diagram glyphs.
+    (0xF080F, "━"),
+    (0xF0811, "┌"),
+    (0xF0817, "└"),
+    (0xF081A, "─"),
+    // `exam_kor.hwp` book-title brackets.
+    (0xF0854, "《"),
+    (0xF0855, "》"),
 ];
 
 /// 검증된 한컴 PUA 기호의 공개 글꼴용 표시 대체값.
@@ -46,14 +61,42 @@ mod tests {
         for pair in VERIFIED_HANCOM_PUA_DISPLAY.windows(2) {
             assert!(pair[0].0 < pair[1].0, "PUA 표시표는 오름차순이어야 함");
         }
-        for code_point in [
-            0xF012B, 0xF02FC, 0xF031C, 0xF03A0, 0xF03C5, 0xF03EF, 0xF03F4,
-        ] {
-            assert!(
-                verified_hancom_pua_display(char::from_u32(code_point).unwrap()).is_some(),
-                "검증된 U+{code_point:05X}가 표에서 누락됨"
+        let expected = [
+            (0xF0A0, "·"),
+            (0xF0E8, "➔"),
+            (0xF003B, "↓"),
+            (0xF012B, "(인)"),
+            (0xF02EF, "·"),
+            (0xF02FC, "►"),
+            (0xF031C, "■"),
+            (0xF03A0, "↵"),
+            (0xF03C5, "□"),
+            (0xF03EF, "한"),
+            (0xF03F0, "글"),
+            (0xF03F1, "과"),
+            (0xF03F2, "컴"),
+            (0xF03F3, "퓨"),
+            (0xF03F4, "터"),
+            (0xF080F, "━"),
+            (0xF0811, "┌"),
+            (0xF0817, "└"),
+            (0xF081A, "─"),
+            (0xF0854, "《"),
+            (0xF0855, "》"),
+        ];
+        for (code_point, display) in expected {
+            assert_eq!(
+                verified_hancom_pua_display(char::from_u32(code_point).unwrap()),
+                Some(display),
+                "검증된 U+{code_point:05X} 표시값이 일치해야 함"
             );
         }
-        assert_eq!(verified_hancom_pua_display('\u{F03E0}'), None);
+        for code_point in [0xF00DA, 0xF03E0, 0xF0827] {
+            assert_eq!(
+                verified_hancom_pua_display(char::from_u32(code_point).unwrap()),
+                None,
+                "잠정 또는 미검증 U+{code_point:05X}는 변환하면 안 됨"
+            );
+        }
     }
 }
