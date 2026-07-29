@@ -457,6 +457,11 @@ The working order is:
    advances instead of scaling every token to its layout box, centers only the
    token kinds that Canvas2D centers, constructs `()[]{}` stretch delimiters as
    direct Skia paths, and preserves the authored equation stroke widths.
+   `getEquationReplayDiagnostics()` reports whether each equation used direct
+   SVG or layout replay and distinguishes requested layout from missing SVG
+   resources, unsupported static payloads, invalid bounds, and CanvasKit path
+   decode failures. Static-picture entries retain those route diagnostics so a
+   cache hit reports the same fallback inventory as the recording render.
 3. Continue root `TextRun` effect parity fixture by fixture: vertical and
    rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
    dots, tab leaders, control marks, character overlap, field markers, and

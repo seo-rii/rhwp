@@ -214,6 +214,7 @@ async function resetRendererDiagnostics(page) {
     pageRenderer?.canvaskitRenderer?.resetImageEffectDiagnostics?.();
     pageRenderer?.canvaskitRenderer?.resetImageDiagnostics?.();
     pageRenderer?.canvaskitRenderer?.resetTextReplayDiagnostics?.();
+    pageRenderer?.canvaskitRenderer?.resetEquationReplayDiagnostics?.();
     pageRenderer?.canvaskitRenderer?.resetPatternDiagnostics?.();
   });
 }
@@ -226,6 +227,8 @@ async function readRendererDiagnostics(page, pageIndex, backendKey) {
     const canvaskit = canvaskitRenderer?.getImageEffectDiagnostics?.() ?? null;
     const imageDiagnostics = canvaskitRenderer?.getImageDiagnostics?.() ?? null;
     const textReplayDiagnostics = canvaskitRenderer?.getTextReplayDiagnostics?.() ?? null;
+    const equationReplayDiagnostics =
+      canvaskitRenderer?.getEquationReplayDiagnostics?.() ?? null;
     const patternDiagnostics = canvaskitRenderer?.getPatternDiagnostics?.() ?? null;
     const surfaceDiagnostics = canvaskitRenderer?.getSurfaceDiagnostics?.() ?? null;
     const runtimeRenderer = captureBackend.startsWith('canvaskit')
@@ -269,6 +272,7 @@ async function readRendererDiagnostics(page, pageIndex, backendKey) {
       },
       imageDiagnostics,
       textReplayDiagnostics,
+      equationReplayDiagnostics,
       patternDiagnostics,
       surfaceDiagnostics,
       replayPlan,
@@ -862,6 +866,9 @@ for (const result of results) {
       hardGateViolationCount: 0,
       runtimeImageFailures: 0,
       runtimeTextReplayFailures: 0,
+      equationSvgReplays: 0,
+      equationLayoutReplays: 0,
+      equationFallbackReplays: 0,
       patternSurfaceFailures: 0,
       textV2ValidationIssues: 0,
       runtimeDuplicateVariantReports: 0,
@@ -872,6 +879,7 @@ for (const result of results) {
       rejectedReasonCounts: {},
       runtimeImageFailureReasonCounts: {},
       runtimeTextFailureReasonCounts: {},
+      equationRouteReasonCounts: {},
       textV2IssueCounts: {},
     });
   }
@@ -897,6 +905,9 @@ for (const result of results) {
   summary.patternSurfaceFailures += diagnostics.patternDiagnostics?.surfaceFailures ?? 0;
   summary.runtimeImageFailures += diagnostics.imageDiagnostics?.failures?.length ?? 0;
   summary.runtimeTextReplayFailures += diagnostics.textReplayDiagnostics?.failures?.length ?? 0;
+  summary.equationSvgReplays += diagnostics.equationReplayDiagnostics?.svgReplays ?? 0;
+  summary.equationLayoutReplays += diagnostics.equationReplayDiagnostics?.layoutReplays ?? 0;
+  summary.equationFallbackReplays += diagnostics.equationReplayDiagnostics?.fallbackReplays ?? 0;
   summary.textV2ValidationIssues += diagnostics.textV2Validation?.length ?? 0;
   summary.runtimeDuplicateVariantReports += diagnostics.textVariantDuplicateReports ?? 0;
   summary.runtimeVariantSelectionConflicts += diagnostics.textVariantConflicts?.length ?? 0;
@@ -931,6 +942,12 @@ for (const result of results) {
     const reason = String(failure.reason ?? 'unknown');
     summary.runtimeTextFailureReasonCounts[reason] = (
       summary.runtimeTextFailureReasonCounts[reason] ?? 0
+    ) + 1;
+  }
+  for (const route of diagnostics.equationReplayDiagnostics?.routes ?? []) {
+    const reason = String(route.reason ?? 'unknown');
+    summary.equationRouteReasonCounts[reason] = (
+      summary.equationRouteReasonCounts[reason] ?? 0
     ) + 1;
   }
   for (const issue of diagnostics.textV2Validation ?? []) {

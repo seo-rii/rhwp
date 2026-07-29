@@ -152,6 +152,48 @@ export type CanvasKitTextReplayDiagnostics = {
   failures: CanvasKitTextReplayFailureDiagnostic[];
 };
 
+export type CanvasKitEquationReplayReason =
+  | 'svgReplayed'
+  | 'layoutRequested'
+  | 'svgResourceMissing'
+  | 'svgPayloadUnsupported'
+  | 'invalidEquationBounds'
+  | 'svgPathDecodeFailed';
+
+type CanvasKitEquationReplayIdentity = {
+  svgResourceId: number | null;
+  hasInlineSvg: boolean;
+  bbox: LayerBounds;
+};
+
+type CanvasKitEquationReplayRouteResult =
+  | { route: 'svg'; reason: 'svgReplayed' }
+  | {
+    route: 'layout';
+    reason: Exclude<CanvasKitEquationReplayReason, 'svgReplayed'>;
+  };
+
+export type CanvasKitEquationReplayDiagnostic =
+  CanvasKitEquationReplayIdentity & CanvasKitEquationReplayRouteResult;
+
+export type CanvasKitEquationReplayDiagnostics = {
+  svgReplays: number;
+  layoutReplays: number;
+  fallbackReplays: number;
+  routes: CanvasKitEquationReplayDiagnostic[];
+};
+
+type CanvasKitEquationSvgReplayResult =
+  | { replayed: true; reason: 'svgReplayed' }
+  | {
+    replayed: false;
+    reason: Exclude<CanvasKitEquationReplayReason, 'svgReplayed'>;
+  };
+
+type CanvasKitStaticPictureMetadata = {
+  equationReplayDiagnostics: CanvasKitEquationReplayDiagnostic[];
+};
+
 export class CanvasKitLayerRenderer {
   // Prevent pathological tiled fills from monopolizing the render loop.
   private static readonly MAX_IMAGE_TILE_DRAWS = 4096;
@@ -165,12 +207,14 @@ export class CanvasKitLayerRenderer {
   private readonly mipmappedImageCache: Map<string, Image>;
   private readonly patternImageCache: Map<string, Image | null>;
   private readonly fontAliases: Set<string>;
-  private readonly staticPictureCache = new CanvasKitStaticPictureCache();
+  private readonly staticPictureCache =
+    new CanvasKitStaticPictureCache<CanvasKitStaticPictureMetadata>();
   private readonly textBlobCache = new Map<string, TextBlob>();
   private textBlobCacheHits = 0;
   private textBlobCacheMisses = 0;
   private readonly failedTextBlobCacheKeys = new Set<string>();
   private readonly textReplayFailureDiagnostics = new Map<string, CanvasKitTextReplayFailureDiagnostic>();
+  private readonly equationReplayDiagnostics: CanvasKitEquationReplayDiagnostic[] = [];
   private textBlobConstructionFailures = 0;
   private textBlobFailureCacheHits = 0;
   private readonly textFallbackFamilyCache = new Map<string, string>();
@@ -300,6 +344,7 @@ export class CanvasKitLayerRenderer {
     this.resourceCache.resetImageDiagnostics();
     this.resourceCache.beginPatternReplay();
     this.resetTextReplayDiagnostics();
+    this.resetEquationReplayDiagnostics();
     this.resourceCache.setResources(tree.resources);
     this.fontRegistry.registerFontBlobsFromResources(tree.fontResources, tree.resources);
     this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
@@ -362,6 +407,7 @@ export class CanvasKitLayerRenderer {
       throw renderError;
     }
 
+    this.resetEquationReplayDiagnostics();
     this.renderSurface(fallbackSurface, tree, scale, pageInfo);
   }
 
@@ -409,6 +455,7 @@ export class CanvasKitLayerRenderer {
     this.currentLayerTreeCacheKey = 'none';
     this.textVariantSelectionDiagnostics.length = 0;
     this.textV2ValidationDiagnostics.length = 0;
+    this.equationReplayDiagnostics.length = 0;
   }
 
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
@@ -424,6 +471,23 @@ export class CanvasKitLayerRenderer {
       constructionFailures: this.textBlobConstructionFailures,
       failureCacheHits: this.textBlobFailureCacheHits,
       failures: [...this.textReplayFailureDiagnostics.values()].map((failure) => ({ ...failure })),
+    };
+  }
+
+  getEquationReplayDiagnostics(): Readonly<CanvasKitEquationReplayDiagnostics> {
+    const routes = this.equationReplayDiagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      bbox: { ...diagnostic.bbox },
+    }));
+    return {
+      svgReplays: routes.filter((diagnostic) => diagnostic.route === 'svg').length,
+      layoutReplays: routes.filter((diagnostic) => diagnostic.route === 'layout').length,
+      fallbackReplays: routes.filter(
+        (diagnostic) =>
+          diagnostic.route === 'layout'
+          && diagnostic.reason !== 'layoutRequested',
+      ).length,
+      routes,
     };
   }
 
@@ -448,6 +512,10 @@ export class CanvasKitLayerRenderer {
     this.textReplayFailureDiagnostics.clear();
     this.textBlobConstructionFailures = 0;
     this.textBlobFailureCacheHits = 0;
+  }
+
+  resetEquationReplayDiagnostics(): void {
+    this.equationReplayDiagnostics.length = 0;
   }
 
   resetPatternDiagnostics(): void {
@@ -598,10 +666,20 @@ export class CanvasKitLayerRenderer {
             );
             const cachedPicture = this.staticPictureCache.get(cacheKey);
             if (cachedPicture) {
+              const metadata = this.staticPictureCache.getMetadata(cacheKey);
+              if (metadata) {
+                this.equationReplayDiagnostics.push(
+                  ...metadata.equationReplayDiagnostics.map((diagnostic) => ({
+                    ...diagnostic,
+                    bbox: { ...diagnostic.bbox },
+                  })),
+                );
+              }
               canvas.drawPicture(cachedPicture);
               return;
             }
 
+            const equationDiagnosticsStart = this.equationReplayDiagnostics.length;
             const imageFailureAttemptsBefore =
               this.resourceCache.getImageDiagnostics().failureAttempts;
             const pendingImageAccessesBefore =
@@ -637,7 +715,14 @@ export class CanvasKitLayerRenderer {
                 imageDiagnostics.pendingAccesses > pendingImageAccessesBefore;
               if (!hasRuntimeReplayFailure) {
                 if (!hasPendingImageReplay) {
-                  this.staticPictureCache.set(cacheKey, picture);
+                  this.staticPictureCache.set(cacheKey, picture, {
+                    equationReplayDiagnostics: this.equationReplayDiagnostics
+                      .slice(equationDiagnosticsStart)
+                      .map((diagnostic) => ({
+                        ...diagnostic,
+                        bbox: { ...diagnostic.bbox },
+                      })),
+                  });
                 }
               }
               canvas.drawPicture(picture);
@@ -2655,9 +2740,18 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
   ): void {
-    if (this.renderEquationSvgResource(canvas, op)) {
+    const svgReplay = this.renderEquationSvgResource(canvas, op);
+    if (svgReplay.replayed) {
+      this.recordEquationReplayDiagnostic(op, {
+        route: 'svg',
+        reason: svgReplay.reason,
+      });
       return;
     }
+    this.recordEquationReplayDiagnostic(op, {
+      route: 'layout',
+      reason: svgReplay.reason,
+    });
     this.renderEquationBox(
       canvas,
       op.layoutBox,
@@ -2673,18 +2767,25 @@ export class CanvasKitLayerRenderer {
   private renderEquationSvgResource(
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerEquationOp,
-  ): boolean {
+  ): CanvasKitEquationSvgReplayResult {
     const svgResourceId = op.svgResourceId;
+    const hasInlineSvg = typeof op.svgContent === 'string';
+    if (typeof svgResourceId !== 'number' && !hasInlineSvg) {
+      return { replayed: false, reason: 'layoutRequested' };
+    }
     const fragment = typeof svgResourceId === 'number'
       ? this.lastRenderedTree?.resources?.svgFragments?.[svgResourceId]
       : op.svgContent;
     if (typeof fragment !== 'string') {
-      return false;
+      return { replayed: false, reason: 'svgResourceMissing' };
     }
     const pathLayers = parseStaticSvgPathLayers(fragment);
     const textLayers = parseStaticSvgTextLayers(fragment);
-    if (pathLayers.length === 0 && textLayers.length === 0) {
-      return false;
+    const hasDrawablePath = pathLayers.some(
+      (layer) => layer.fill !== null || layer.stroke !== undefined,
+    );
+    if (!hasDrawablePath && textLayers.length === 0) {
+      return { replayed: false, reason: 'svgPayloadUnsupported' };
     }
     const { x, y, width, height } = op.bbox;
     if (
@@ -2695,7 +2796,7 @@ export class CanvasKitLayerRenderer {
       || width <= 0
       || height <= 0
     ) {
-      return false;
+      return { replayed: false, reason: 'invalidEquationBounds' };
     }
 
     const decodedPathLayers: Array<{ layer: StaticSvgPathLayer; path: Path }> = [];
@@ -2710,7 +2811,7 @@ export class CanvasKitLayerRenderer {
         for (const decoded of decodedPathLayers) {
           decoded.path.delete();
         }
-        return false;
+        return { replayed: false, reason: 'svgPathDecodeFailed' };
       }
       decodedPathLayers.push({ layer, path });
     }
@@ -2771,7 +2872,21 @@ export class CanvasKitLayerRenderer {
         decoded.path.delete();
       }
     }
-    return replayed;
+    return replayed
+      ? { replayed: true, reason: 'svgReplayed' }
+      : { replayed: false, reason: 'svgPayloadUnsupported' };
+  }
+
+  private recordEquationReplayDiagnostic(
+    op: LayerEquationOp,
+    result: CanvasKitEquationReplayRouteResult,
+  ): void {
+    this.equationReplayDiagnostics.push({
+      ...result,
+      svgResourceId: typeof op.svgResourceId === 'number' ? op.svgResourceId : null,
+      hasInlineSvg: typeof op.svgContent === 'string',
+      bbox: { ...op.bbox },
+    });
   }
 
   private renderStaticSvgTextLayer(
@@ -3851,6 +3966,7 @@ export class CanvasKitLayerRenderer {
     this.textBlobCacheHits = 0;
     this.textBlobCacheMisses = 0;
     this.resetTextReplayDiagnostics();
+    this.resetEquationReplayDiagnostics();
     this.textFallbackFamilyCache.clear();
     this.textFallbackFamilyCacheHits = 0;
     this.textFallbackFamilyCacheMisses = 0;

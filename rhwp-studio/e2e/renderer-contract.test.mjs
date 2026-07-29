@@ -944,10 +944,18 @@ assert(
   extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getCanvasKitReplayPlan')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getImageDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextReplayDiagnostics')
+    && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getEquationReplayDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getPatternDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextVariantSelectionDiagnostics')
     && extractFunctionBody(rendererBaselineSource, 'readRendererDiagnostics').includes('getTextV2ValidationDiagnostics'),
-  'browser baseline must capture replay-plan, image, pattern, runtime variant, and v2 validation diagnostics',
+  'browser baseline must capture replay-plan, image, equation, pattern, runtime variant, and v2 validation diagnostics',
+);
+assert(
+  extractFunctionBody(rendererBaselineSource, 'resetRendererDiagnostics')
+    .includes('resetEquationReplayDiagnostics')
+    && rendererBaselineSource.includes('equationFallbackReplays')
+    && rendererBaselineSource.includes('equationRouteReasonCounts'),
+  'browser baseline must reset and summarize CanvasKit equation route diagnostics',
 );
 assert(
   rendererBaselineSource.includes("code: 'replayPlanUnavailable'")
@@ -1086,6 +1094,30 @@ assert(
     && !extractMethodBody(canvaskitSource, 'makeEquationStrokePaint').includes('Math.max('),
   'CanvasKit equation geometry must preserve the same authored stroke width as Canvas2D',
 );
+const canvaskitEquationReplayBlock = extractMethodBody(canvaskitSource, 'renderEquation');
+assert(
+  canvaskitEquationReplayBlock.includes("route: 'svg'")
+    && canvaskitEquationReplayBlock.includes("route: 'layout'")
+    && canvaskitEquationReplayBlock.includes('reason: svgReplay.reason')
+    && extractMethodBody(canvaskitSource, 'getEquationReplayDiagnostics')
+      .includes("diagnostic.reason !== 'layoutRequested'"),
+  'CanvasKit equation replay must expose SVG, requested layout, and SVG-to-layout fallback routes',
+);
+const canvaskitEquationSvgBlock = extractMethodBody(canvaskitSource, 'renderEquationSvgResource');
+for (const reason of [
+  'layoutRequested',
+  'svgResourceMissing',
+  'svgPayloadUnsupported',
+  'invalidEquationBounds',
+  'svgPathDecodeFailed',
+  'svgReplayed',
+]) {
+  assert.equal(
+    canvaskitEquationSvgBlock.includes(`reason: '${reason}'`),
+    true,
+    `CanvasKit equation SVG replay must report ${reason}`,
+  );
+}
 assert(
   extractMethodBody(canvas2dSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)')
     && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)')
@@ -1108,7 +1140,7 @@ assertTokensInOrder(
     'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
     '} catch {',
     'for (const decoded of decodedPathLayers)',
-    'return false',
+    "return { replayed: false, reason: 'svgPathDecodeFailed' }",
     'for (const { layer, path } of decodedPathLayers)',
     'for (const decoded of decodedPathLayers)',
     'decoded.path.delete()',
@@ -1577,11 +1609,20 @@ assertTokensInOrder(
     'patternDiagnostics.surfaceFailures > patternFailuresBefore',
     'textFailureAttempts > textFailureAttemptsBefore',
     'if (!hasRuntimeReplayFailure)',
-    'this.staticPictureCache.set(cacheKey, picture)',
+    'this.staticPictureCache.set(',
     'if (hasRuntimeReplayFailure)',
     'picture.delete()',
   ],
   'CanvasKit must not cache static pictures that contain a silent runtime replay failure',
+);
+assert(
+  canvaskitRenderNodeBlock.includes('this.staticPictureCache.getMetadata(cacheKey)')
+    && canvaskitRenderNodeBlock.includes('metadata.equationReplayDiagnostics')
+    && canvaskitRenderNodeBlock.includes('.slice(equationDiagnosticsStart)')
+    && staticPictureCacheSource.includes('getMetadata(cacheKey: string): Metadata | null')
+    && staticPictureCacheSource.includes('this.metadata.delete(key)')
+    && staticPictureCacheSource.includes('this.metadata.clear()'),
+  'CanvasKit static pictures must retain equation route diagnostics and release their metadata with the picture',
 );
 assert(
   staticPictureCacheSource.includes('staticSubtreeReplayDependencies(')

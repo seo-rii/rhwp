@@ -590,6 +590,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
       controlMarks: [],
       tabLeaders: [],
     });
+    const staticEquationOp = (bbox, svg) => ({
+      type: 'equation',
+      bbox,
+      color: '#111111',
+      fontSize: 10,
+      ...svg,
+      layoutBox: {
+        x: 0,
+        y: 0,
+        width: bbox.width,
+        height: bbox.height,
+        baseline: 0,
+        kind: { type: 'empty' },
+      },
+    });
     pageRenderer.wasm.getPageLayerTree = (pageIdx, profile = 'screen') => ({
       pageWidth: 100,
       pageHeight: 100,
@@ -613,7 +628,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
               sourceNodeId: 3000 + pageIdx,
               bounds: { x: 0, y: 0, width: 50, height: 50 },
               cacheHint: 'none',
-              ops: [staticPathOp(4, 4, '#000000'), staticTextOp(pageIdx)],
+              ops: [
+                staticPathOp(4, 4, '#000000'),
+                staticTextOp(pageIdx),
+                staticEquationOp(
+                  { x: 4, y: 48, width: 18, height: 8 },
+                  { svgContent: '<path d="M0 0H18V8H0Z" fill="#008000"/>' },
+                ),
+              ],
             }],
           },
           {
@@ -627,7 +649,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
               sourceNodeId: 4000 + pageIdx,
               bounds: { x: 0, y: 0, width: 50, height: 50 },
               cacheHint: 'none',
-              ops: [staticPathOp(24, 24, '#444444')],
+              ops: [
+                staticPathOp(24, 24, '#444444'),
+                staticEquationOp(
+                  { x: 26, y: 4, width: 18, height: 8 },
+                  { svgResourceId: 0 },
+                ),
+              ],
             }],
           },
         ],
@@ -648,6 +676,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       marginFooter: 0,
     };
 
+    const originalRenderEquationSvgResource = renderer.renderEquationSvgResource;
+    let equationSvgReplayCalls = 0;
+    renderer.renderEquationSvgResource = function (...args) {
+      equationSvgReplayCalls += 1;
+      return originalRenderEquationSvgResource.apply(this, args);
+    };
+
     try {
       pageRenderer.clearLayerTreeCache();
       renderer.clearStaticPictureCache?.();
@@ -656,18 +691,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const afterFirstPage = renderer.staticPictureCache?.size ?? -1;
       const firstVariantGroups = renderer.getTextVariantSelectionDiagnostics()
         .map((report) => report.equivalenceGroup);
+      const firstEquationDiagnostics = renderer.getEquationReplayDiagnostics();
+      const equationSvgReplayCallsAfterFirst = equationSvgReplayCalls;
       pageRenderer.renderPage(0, { ...pageInfo, pageIndex: 0 }, canvas, 1);
       pageRenderer.cancelReRender(0);
       const cachedVariantGroups = renderer.getTextVariantSelectionDiagnostics()
         .map((report) => report.equivalenceGroup);
+      const cachedEquationDiagnostics = renderer.getEquationReplayDiagnostics();
+      const equationSvgReplayCallsAfterCacheHit = equationSvgReplayCalls;
       pageRenderer.renderPage(1, { ...pageInfo, pageIndex: 1 }, canvas, 1);
       pageRenderer.cancelReRender(1);
       const afterSecondPage = renderer.staticPictureCache?.size ?? -1;
       const secondVariantGroups = renderer.getTextVariantSelectionDiagnostics()
         .map((report) => report.equivalenceGroup);
+      const secondEquationDiagnostics = renderer.getEquationReplayDiagnostics();
+      const equationSvgReplayCallsAfterSecondPage = equationSvgReplayCalls;
       const cacheKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
       pageRenderer.clearLayerTreeCache();
       const afterClear = renderer.staticPictureCache?.size ?? -1;
+      const metadataAfterClear = cacheKeys.map(
+        (cacheKey) => renderer.staticPictureCache?.getMetadata?.(cacheKey) ?? null,
+      );
       return {
         afterFirstPage,
         afterSecondPage,
@@ -676,8 +720,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
         firstVariantGroups,
         cachedVariantGroups,
         secondVariantGroups,
+        firstEquationDiagnostics,
+        cachedEquationDiagnostics,
+        secondEquationDiagnostics,
+        equationSvgReplayCallsAfterFirst,
+        equationSvgReplayCallsAfterCacheHit,
+        equationSvgReplayCallsAfterSecondPage,
+        metadataAfterClear,
       };
     } finally {
+      renderer.renderEquationSvgResource = originalRenderEquationSvgResource;
       pageRenderer.cancelAll?.();
       pageRenderer.clearLayerTreeCache?.();
       pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
@@ -698,6 +750,40 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && JSON.stringify(staticPictureProbe.cachedVariantGroups) === JSON.stringify(['cache-text-0'])
       && JSON.stringify(staticPictureProbe.secondVariantGroups) === JSON.stringify(['cache-text-1']),
     `text variant diagnostics survive static picture cache hits=${JSON.stringify(staticPictureProbe)}`,
+  );
+  const equationRouteSummary = (diagnostics) => ({
+    svgReplays: diagnostics.svgReplays,
+    layoutReplays: diagnostics.layoutReplays,
+    fallbackReplays: diagnostics.fallbackReplays,
+    routes: diagnostics.routes
+      .map(({ route, reason }) => `${route}:${reason}`)
+      .sort(),
+  });
+  const expectedEquationRouteSummary = {
+    svgReplays: 1,
+    layoutReplays: 1,
+    fallbackReplays: 1,
+    routes: ['layout:svgResourceMissing', 'svg:svgReplayed'],
+  };
+  assert(
+    JSON.stringify(equationRouteSummary(staticPictureProbe.firstEquationDiagnostics))
+      === JSON.stringify(expectedEquationRouteSummary)
+      && JSON.stringify(equationRouteSummary(staticPictureProbe.cachedEquationDiagnostics))
+        === JSON.stringify(expectedEquationRouteSummary)
+      && JSON.stringify(equationRouteSummary(staticPictureProbe.secondEquationDiagnostics))
+        === JSON.stringify(expectedEquationRouteSummary),
+    `equation route diagnostics survive static picture cache hits=${JSON.stringify(staticPictureProbe)}`,
+  );
+  assert(
+    staticPictureProbe.equationSvgReplayCallsAfterFirst === 2
+      && staticPictureProbe.equationSvgReplayCallsAfterCacheHit
+        === staticPictureProbe.equationSvgReplayCallsAfterFirst
+      && staticPictureProbe.equationSvgReplayCallsAfterSecondPage === 4,
+    `equation route diagnostics restore from cache without replaying SVG=${JSON.stringify(staticPictureProbe)}`,
+  );
+  assert(
+    staticPictureProbe.metadataAfterClear.every((metadata) => metadata === null),
+    `static picture cache releases equation route metadata=${JSON.stringify(staticPictureProbe.metadataAfterClear)}`,
   );
   assert(staticPictureProbe.afterClear === 0, `static picture cache released with layer tree cache=${staticPictureProbe.afterClear}`);
 
@@ -15089,6 +15175,77 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     equationSvgResourceDiff.passed,
     `equation SVG resource parity exact=${equationSvgResourceDiff.exactDiffPixels}, tolerant=${equationSvgResourceDiff.rawTolerantDiffPixels}, ink=${equationSvgResourceDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationSvgResourceDiff.maxChannelDelta}`,
+  );
+
+  setTestCase('canvaskit-equation-replay-route-diagnostics');
+  const equationReplayRouteProbe = await page.evaluate(async () => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!renderer) {
+      return { error: 'canvaskit renderer unavailable' };
+    }
+    const equation = (x, svg, width = 12) => ({
+      type: 'equation',
+      bbox: { x, y: 2, width, height: 10 },
+      color: '#111111',
+      fontSize: 8,
+      ...svg,
+      layoutBox: {
+        x: 0,
+        y: 0,
+        width: Math.max(width, 0),
+        height: 10,
+        baseline: 0,
+        kind: { type: 'empty' },
+      },
+    });
+    const tree = {
+      pageWidth: 84,
+      pageHeight: 16,
+      profile: 'screen',
+      resources: {
+        tableId: 1972,
+        images: [],
+        svgFragments: [],
+      },
+      root: {
+        kind: 'leaf',
+        bounds: { x: 0, y: 0, width: 84, height: 16 },
+        cacheHint: 'none',
+        ops: [
+          equation(0, {}),
+          equation(14, { svgResourceId: 3 }),
+          equation(28, { svgContent: '<g></g>' }),
+          equation(42, { svgContent: '<path d="M0 0H8V8H0Z" fill="#111111"/>' }, 0),
+          equation(56, { svgContent: '<path d="M0 0L" fill="#111111"/>' }),
+          equation(70, { svgContent: '<path d="M0 0H8V8H0Z" fill="#111111"/>' }),
+        ],
+      },
+    };
+    const canvas = document.createElement('canvas');
+    canvas.width = tree.pageWidth;
+    canvas.height = tree.pageHeight;
+    renderer.renderPage(tree, canvas, 1);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return renderer.getEquationReplayDiagnostics();
+  });
+  assert(
+    !equationReplayRouteProbe.error,
+    equationReplayRouteProbe.error || 'CanvasKit equation route diagnostics probe available',
+  );
+  assert(
+    equationReplayRouteProbe.svgReplays === 1
+      && equationReplayRouteProbe.layoutReplays === 5
+      && equationReplayRouteProbe.fallbackReplays === 4
+      && JSON.stringify(equationReplayRouteProbe.routes.map(({ route, reason }) => `${route}:${reason}`))
+        === JSON.stringify([
+          'layout:layoutRequested',
+          'layout:svgResourceMissing',
+          'layout:svgPayloadUnsupported',
+          'layout:invalidEquationBounds',
+          'layout:svgPathDecodeFailed',
+          'svg:svgReplayed',
+        ]),
+    `CanvasKit equation routes expose deterministic SVG/layout reasons=${JSON.stringify(equationReplayRouteProbe)}`,
   );
 
   setTestCase('canvas-layer-equation-advanced-layout-parity');

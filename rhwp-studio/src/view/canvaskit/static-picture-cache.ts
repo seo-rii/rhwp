@@ -18,8 +18,9 @@ import {
   layerPaintOpReplayPlane,
 } from './replay-plane';
 
-export class CanvasKitStaticPictureCache {
+export class CanvasKitStaticPictureCache<Metadata = never> {
   private readonly pictures = new Map<string, SkPicture>();
+  private readonly metadata = new Map<string, Metadata>();
   private readonly layerTreeIds = new WeakMap<PageLayerTree, number>();
   private readonly nodeIds = new WeakMap<LayerGroupNode, number>();
   private readonly resourcePayloadFingerprints = new WeakMap<object, string>();
@@ -85,8 +86,17 @@ export class CanvasKitStaticPictureCache {
     return this.pictures.get(cacheKey) ?? null;
   }
 
-  set(cacheKey: string, picture: SkPicture): void {
+  getMetadata(cacheKey: string): Metadata | null {
+    return this.metadata.get(cacheKey) ?? null;
+  }
+
+  set(cacheKey: string, picture: SkPicture, metadata?: Metadata): void {
     this.pictures.set(cacheKey, picture);
+    if (metadata !== undefined) {
+      this.metadata.set(cacheKey, metadata);
+    } else {
+      this.metadata.delete(cacheKey);
+    }
   }
 
   releaseLayerTree(tree: PageLayerTree): boolean {
@@ -102,6 +112,7 @@ export class CanvasKitStaticPictureCache {
       }
       picture.delete();
       this.pictures.delete(key);
+      this.metadata.delete(key);
     }
     this.layerTreeIds.delete(tree);
     return true;
@@ -112,6 +123,7 @@ export class CanvasKitStaticPictureCache {
       picture.delete();
     }
     this.pictures.clear();
+    this.metadata.clear();
   }
 }
 
