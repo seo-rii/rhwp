@@ -16683,6 +16683,123 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `equation SVG text shaping parity exact=${equationSvgTextShapingDiff.exactDiffPixels}, tolerant=${equationSvgTextShapingDiff.rawTolerantDiffPixels}, ink=${equationSvgTextShapingDiff.rawInkMaskDiffPixels}, max_channel_delta=${equationSvgTextShapingDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvaskit-equation-layout-paragraph-shaping');
+  const equationLayoutParagraphShapingProbe = await page.evaluate(async () => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!renderer) {
+      return { error: 'CanvasKit renderer unavailable' };
+    }
+    const paragraphBuilder = renderer.canvasKit?.ParagraphBuilder;
+    const originalMakeFromFontProvider = paragraphBuilder?.MakeFromFontProvider;
+    if (!paragraphBuilder || typeof originalMakeFromFontProvider !== 'function') {
+      return { error: 'CanvasKit ParagraphBuilder unavailable' };
+    }
+    const tree = {
+      pageWidth: 220,
+      pageHeight: 40,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1975,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1975,
+        bounds: { x: 0, y: 0, width: 220, height: 40 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 220, height: 40 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          {
+            type: 'equation',
+            bbox: { x: 4, y: 4, width: 212, height: 32 },
+            color: '#111111',
+            fontSize: 20,
+            layoutBox: {
+              x: 0,
+              y: 0,
+              width: 212,
+              height: 32,
+              baseline: 23,
+              kind: { type: 'text', text: 'AV office 한글' },
+            },
+          },
+        ],
+      },
+    };
+    const originalMakeTextObjects = renderer.makeTextObjects;
+    let paragraphBuildCalls = 0;
+    let directFallbackCalls = 0;
+    paragraphBuilder.MakeFromFontProvider = function (...args) {
+      paragraphBuildCalls += 1;
+      return originalMakeFromFontProvider.apply(this, args);
+    };
+    renderer.makeTextObjects = function (...args) {
+      directFallbackCalls += 1;
+      return originalMakeTextObjects.apply(this, args);
+    };
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return { paragraphBuildCalls, directFallbackCalls, png };
+    } finally {
+      paragraphBuilder.MakeFromFontProvider = originalMakeFromFontProvider;
+      renderer.makeTextObjects = originalMakeTextObjects;
+    }
+  });
+  assert(
+    !equationLayoutParagraphShapingProbe.error,
+    equationLayoutParagraphShapingProbe.error
+      || 'CanvasKit equation layout Paragraph shaping probe available',
+  );
+  const equationLayoutParagraphInk = countPixels(
+    equationLayoutParagraphShapingProbe.png,
+    (pixel) => (
+      pixel.alpha > 32
+      && pixel.red < 100
+      && pixel.green < 100
+      && pixel.blue < 100
+    ),
+  );
+  assert(
+    equationLayoutParagraphShapingProbe.paragraphBuildCalls > 0,
+    `CanvasKit equation layout shapes through Paragraph calls=${equationLayoutParagraphShapingProbe.paragraphBuildCalls}`,
+  );
+  assert(
+    equationLayoutParagraphShapingProbe.directFallbackCalls === 0,
+    `CanvasKit equation layout avoids direct text fallback calls=${equationLayoutParagraphShapingProbe.directFallbackCalls}`,
+  );
+  assert(
+    equationLayoutParagraphInk > 20,
+    `CanvasKit equation layout draws shaped text pixels=${equationLayoutParagraphInk}`,
+  );
+
   setTestCase('canvaskit-equation-replay-route-diagnostics');
   const equationReplayRouteProbe = await page.evaluate(async () => {
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;

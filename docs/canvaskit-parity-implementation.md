@@ -557,9 +557,14 @@ The working order is:
    equation replay parity, form object bounds/parity, raw SVG or placeholder
    previews, path gradient/pattern/fill edge cases, and line/arrow/connector
    edge cases. The CanvasKit equation layout fallback keeps natural font
-   advances instead of scaling every token to its layout box, centers only the
-   token kinds that Canvas2D centers, constructs `()[]{}` stretch delimiters as
-   direct Skia paths, and preserves the authored equation stroke widths.
+   advances instead of scaling every token to its layout box. Equation text,
+   numbers, functions, and symbols use the same single-line CanvasKit Paragraph
+   shaping path as static SVG and form text, preserving the producer-authored
+   baseline while allowing kerning, ligatures, and provider-backed fallback.
+   Direct `drawText` remains only a construction/draw failure recovery. The
+   renderer centers only the token kinds that Canvas2D centers, constructs
+   `()[]{}` stretch delimiters as direct Skia paths, and preserves the authored
+   equation stroke widths.
    Radicals, hats, and vector arrowheads retain connected path joins, while
    tildes use the same two quadratic segments as Canvas2D, including
    subpixel-width equation strokes.

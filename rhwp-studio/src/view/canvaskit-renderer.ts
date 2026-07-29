@@ -3642,15 +3642,51 @@ export class CanvasKitLayerRenderer {
     fontFamily: string,
     centered: boolean,
   ): void {
+    const shaped = this.buildShapedSingleLineParagraph(
+      text,
+      [
+        fontFamily,
+        'Latin Modern Math',
+        HAMCHOROM_BATANG_FAMILY,
+        'Noto Serif KR',
+        'Noto Serif CJK KR',
+        'Noto Sans KR',
+        'Noto Sans CJK KR',
+      ],
+      size,
+      bold ? 700 : 400,
+      italic,
+      color,
+      1,
+    );
+    if (shaped) {
+      let shapedDrawn = false;
+      try {
+        const x = centered ? anchorX - shaped.width / 2 : anchorX;
+        canvas.drawParagraph(shaped.paragraph, x, y - shaped.alphabeticBaseline);
+        shapedDrawn = true;
+      } catch {
+        shapedDrawn = false;
+      } finally {
+        shaped.paragraph.delete();
+      }
+      if (shapedDrawn) {
+        return;
+      }
+    }
+
     const { font, paint, typeface } = this.makeTextObjects(fontFamily, size, bold, italic, color);
-    const glyphIds = font.getGlyphIDs(text);
-    const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
-    const measuredWidth = glyphWidths.reduce((sum, width) => sum + width, 0);
-    const x = centered ? anchorX - measuredWidth / 2 : anchorX;
-    canvas.drawText(text, x, y, paint, font);
-    paint.delete();
-    font.delete();
-    typeface.delete();
+    try {
+      const glyphIds = font.getGlyphIDs(text);
+      const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
+      const measuredWidth = glyphWidths.reduce((sum, width) => sum + width, 0);
+      const x = centered ? anchorX - measuredWidth / 2 : anchorX;
+      canvas.drawText(text, x, y, paint, font);
+    } finally {
+      paint.delete();
+      font.delete();
+      typeface.delete();
+    }
   }
 
   private drawEquationTextCentered(

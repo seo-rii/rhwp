@@ -1209,10 +1209,14 @@ compareCaseLabels(
 );
 const canvaskitEquationTextBlock = extractMethodBody(canvaskitSource, 'drawEquationTextAligned');
 assert(
-  canvaskitEquationTextBlock.includes('const measuredWidth = glyphWidths.reduce(')
-    && canvaskitEquationTextBlock.includes('centered ? anchorX - measuredWidth / 2 : anchorX')
+  canvaskitEquationTextBlock.includes('const shaped = this.buildShapedSingleLineParagraph(')
+    && canvaskitEquationTextBlock.includes('centered ? anchorX - shaped.width / 2 : anchorX')
+    && canvaskitEquationTextBlock.includes('y - shaped.alphabeticBaseline')
+    && canvaskitEquationTextBlock.includes('canvas.drawParagraph(shaped.paragraph')
+    && canvaskitEquationTextBlock.includes('const measuredWidth = glyphWidths.reduce(')
+    && canvaskitEquationTextBlock.includes('canvas.drawText(text, x, y, paint, font)')
     && !canvaskitEquationTextBlock.includes('font.setScaleX('),
-  'CanvasKit equation text must preserve natural glyph advances and use measurement only for centering',
+  'CanvasKit equation text must shape with Paragraph before using the natural-advance direct fallback',
 );
 const canvaskitEquationBracketBlock = extractMethodBody(canvaskitSource, 'drawEquationBracket');
 for (const token of [
