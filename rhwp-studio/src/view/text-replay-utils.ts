@@ -75,6 +75,70 @@ export function tabLeaderLineSegments(fillType: number): TabLeaderLineSegment[] 
   }
 }
 
+export type TextDecorationLinePrimitive =
+  | {
+    kind: 'line';
+    offsetY: number;
+    width: number;
+    dash: number[];
+    cap: 'butt' | 'round';
+  }
+  | {
+    kind: 'wave';
+    offsetY: number;
+    width: number;
+    amplitude: number;
+    wavelength: number;
+  };
+
+export function textDecorationLineGeometry(shape: number): TextDecorationLinePrimitive[] {
+  const line = (
+    offsetY: number,
+    width: number,
+    dash: number[] = [],
+    cap: 'butt' | 'round' = 'butt',
+  ): TextDecorationLinePrimitive => ({ kind: 'line', offsetY, width, dash, cap });
+  const wave = (
+    offsetY: number,
+    width: number,
+    amplitude: number,
+  ): TextDecorationLinePrimitive => ({
+    kind: 'wave',
+    offsetY,
+    width,
+    amplitude,
+    wavelength: 6,
+  });
+  switch (shape) {
+    case 1:
+      return [line(0, 1, [3, 3])];
+    case 2:
+      return [line(0, 1, [1, 2])];
+    case 3:
+      return [line(0, 1, [6, 2, 1, 2])];
+    case 4:
+      return [line(0, 1, [6, 2, 1, 2, 1, 2])];
+    case 5:
+      return [line(0, 1, [8, 4])];
+    case 6:
+      return [line(0, 1, [0.1, 2.5], 'round')];
+    case 7:
+      return [line(-1, 0.7), line(1, 0.7)];
+    case 8:
+      return [line(-1.2, 0.5), line(0.8, 1.2)];
+    case 9:
+      return [line(-0.8, 1.2), line(1.2, 0.5)];
+    case 10:
+      return [line(-1.5, 0.5), line(0, 0.5), line(1.5, 0.5)];
+    case 11:
+      return [wave(0, 0.7, 1.5)];
+    case 12:
+      return [wave(-1, 0.5, 1.2), wave(1, 0.5, 1.2)];
+    default:
+      return [line(0, 1)];
+  }
+}
+
 export type TextDecorationEmphasisPathCommand =
   | { kind: 'moveTo'; x: number; y: number }
   | { kind: 'lineTo'; x: number; y: number }

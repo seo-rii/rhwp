@@ -87,6 +87,7 @@ import {
   textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
   textDecorationEmphasisPosition,
+  textDecorationLineGeometry,
   textDecorationLineY,
   textScriptMetrics,
 } from './text-replay-utils';
@@ -1007,27 +1008,27 @@ export class Canvas2DLayerRenderer {
       }
 
       if (!decorationsAreMirrors && op.style.underline !== 'none') {
-        ctx.save();
-        ctx.strokeStyle = op.style.underlineColor || op.style.color;
-        ctx.lineWidth = 1;
         const y = textDecorationLineY('underline', op.style.underline, originY, fontSize);
-        ctx.beginPath();
-        ctx.moveTo(originX, y);
-        ctx.lineTo(originX + textWidth, y);
-        ctx.stroke();
-        ctx.restore();
+        this.drawTextDecorationLine(
+          ctx,
+          originX,
+          originX + textWidth,
+          y,
+          op.style.underlineColor || op.style.color,
+          op.style.underlineShape,
+        );
       }
 
       if (!decorationsAreMirrors && op.style.strikethrough) {
-        ctx.save();
-        ctx.strokeStyle = op.style.strikeColor || op.style.color;
-        ctx.lineWidth = 1;
         const y = textDecorationLineY('strikethrough', undefined, originY, fontSize);
-        ctx.beginPath();
-        ctx.moveTo(originX, y);
-        ctx.lineTo(originX + textWidth, y);
-        ctx.stroke();
-        ctx.restore();
+        this.drawTextDecorationLine(
+          ctx,
+          originX,
+          originX + textWidth,
+          y,
+          op.style.strikeColor || op.style.color,
+          op.style.strikeShape,
+        );
       }
 
       drawControlMarks();
@@ -1086,12 +1087,26 @@ export class Canvas2DLayerRenderer {
       const textWidth = op.decoration.positions.at(-1) ?? 0;
       if (op.decoration.kind === 'underline') {
         const y = textDecorationLineY('underline', op.decoration.underline, baselineY, op.decoration.fontSize);
-        this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
+        this.drawTextDecorationLine(
+          ctx,
+          originX,
+          originX + textWidth,
+          y,
+          op.decoration.color,
+          op.decoration.shape,
+        );
         return;
       }
       if (op.decoration.kind === 'strikethrough') {
         const y = textDecorationLineY('strikethrough', undefined, baselineY, op.decoration.fontSize);
-        this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
+        this.drawTextDecorationLine(
+          ctx,
+          originX,
+          originX + textWidth,
+          y,
+          op.decoration.color,
+          op.decoration.shape,
+        );
         return;
       }
       const dotSize = textDecorationEmphasisSize(op.decoration.fontSize);
@@ -1779,19 +1794,41 @@ export class Canvas2DLayerRenderer {
   private drawTextDecorationLine(
     ctx: CanvasRenderingContext2D,
     x1: number,
-    y1: number,
     x2: number,
-    y2: number,
+    y: number,
     color: string,
+    shape: number | undefined,
   ): void {
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.restore();
+    for (const primitive of textDecorationLineGeometry(shape ?? 0)) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = primitive.width;
+      ctx.lineCap = primitive.kind === 'line' ? primitive.cap : 'butt';
+      ctx.beginPath();
+      if (primitive.kind === 'line') {
+        ctx.setLineDash(primitive.dash);
+        ctx.moveTo(x1, y + primitive.offsetY);
+        ctx.lineTo(x2, y + primitive.offsetY);
+      } else {
+        const lineY = y + primitive.offsetY;
+        ctx.moveTo(x1, lineY);
+        let currentX = x1;
+        let upward = true;
+        while (currentX < x2) {
+          const nextX = Math.min(currentX + primitive.wavelength, x2);
+          ctx.quadraticCurveTo(
+            (currentX + nextX) / 2,
+            lineY + (upward ? -primitive.amplitude : primitive.amplitude),
+            nextX,
+            lineY,
+          );
+          currentX = nextX;
+          upward = !upward;
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   private setCanvasTextFont(

@@ -17692,6 +17692,126 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `tab leader variant parity exact=${tabLeaderVariantDiff.exactDiffPixels}, tolerant=${tabLeaderVariantDiff.rawTolerantDiffPixels}, ink=${tabLeaderVariantDiff.rawInkMaskDiffPixels}, max_channel_delta=${tabLeaderVariantDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-text-decoration-line-variant-parity');
+  const textDecorationLineVariantParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 96,
+      pageHeight: 132,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1919,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1919,
+        bounds: { x: 0, y: 0, width: 96, height: 132 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 96, height: 132 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          ...Array.from({ length: 13 }, (_, shape) => ({
+            type: 'textDecoration',
+            bbox: { x: 8, y: shape * 10, width: 80, height: 10 },
+            decoration: {
+              kind: 'underline',
+              baseline: 5,
+              rotation: 0,
+              fontSize: 10,
+              ratio: 1,
+              color: '#101010',
+              shape,
+              underline: 'bottom',
+              emphasisDot: 0,
+              positions: [0, 80],
+            },
+          })),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !textDecorationLineVariantParityProbe.error,
+    textDecorationLineVariantParityProbe.error || 'text decoration line variant parity probe available',
+  );
+  const textDecorationLineVariantPixels = (dataUrl) => Array.from(
+    { length: 13 },
+    (_, shape) => countPixels(
+      dataUrl,
+      (pixel) => pixel.y >= shape * 10
+        && pixel.y < (shape + 1) * 10
+        && pixel.alpha > 16
+        && (pixel.red < 240 || pixel.green < 240 || pixel.blue < 240),
+    ),
+  );
+  const textDecorationLineCanvas2dPixels = textDecorationLineVariantPixels(
+    textDecorationLineVariantParityProbe.canvas2d,
+  );
+  const textDecorationLineCanvaskitPixels = textDecorationLineVariantPixels(
+    textDecorationLineVariantParityProbe.canvaskit,
+  );
+  assert(
+    textDecorationLineCanvas2dPixels.every((count) => count > 3)
+      && textDecorationLineCanvaskitPixels.every((count) => count > 3),
+    `all text decoration line shapes draw canvas2d=${JSON.stringify(textDecorationLineCanvas2dPixels)}, canvaskit=${JSON.stringify(textDecorationLineCanvaskitPixels)}`,
+  );
+  assert(
+    new Set(textDecorationLineCanvas2dPixels).size >= 6
+      && new Set(textDecorationLineCanvaskitPixels).size >= 6,
+    `text decoration line shapes retain distinct geometry canvas2d=${JSON.stringify(textDecorationLineCanvas2dPixels)}, canvaskit=${JSON.stringify(textDecorationLineCanvaskitPixels)}`,
+  );
+  const textDecorationLineVariantDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(textDecorationLineVariantParityProbe.canvas2d),
+    pngBufferFromDataUrl(textDecorationLineVariantParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-decoration-line-variant-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.032,
+      inkMaskMaxDiffRatio: 0.002,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    textDecorationLineVariantDiff.passed,
+    `text decoration line variant parity exact=${textDecorationLineVariantDiff.exactDiffPixels}, tolerant=${textDecorationLineVariantDiff.rawTolerantDiffPixels}, ink=${textDecorationLineVariantDiff.rawInkMaskDiffPixels}, max_channel_delta=${textDecorationLineVariantDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-decoration-options-parity');
   const textDecorationOptionsParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

@@ -109,6 +109,7 @@ import {
   textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
   textDecorationEmphasisPosition,
+  textDecorationLineGeometry,
   textDecorationLineY,
   textScriptMetrics,
 } from './text-replay-utils';
@@ -1541,18 +1542,26 @@ export class CanvasKitLayerRenderer {
       }
 
       if (!decorationsAreMirrors && op.style.underline !== 'none') {
-        const underlinePaint = this.makePaint(op.style.underlineColor || op.style.color, 'stroke');
-        underlinePaint.setStrokeWidth(1);
         const y = textDecorationLineY('underline', op.style.underline, originY, fontSize);
-        canvas.drawLine(originX, y, originX + textWidth, y, underlinePaint);
-        underlinePaint.delete();
+        this.drawTextDecorationLine(
+          canvas,
+          originX,
+          originX + textWidth,
+          y,
+          op.style.underlineColor || op.style.color,
+          op.style.underlineShape,
+        );
       }
       if (!decorationsAreMirrors && op.style.strikethrough) {
-        const strikePaint = this.makePaint(op.style.strikeColor || op.style.color, 'stroke');
-        strikePaint.setStrokeWidth(1);
         const y = textDecorationLineY('strikethrough', undefined, originY, fontSize);
-        canvas.drawLine(originX, y, originX + textWidth, y, strikePaint);
-        strikePaint.delete();
+        this.drawTextDecorationLine(
+          canvas,
+          originX,
+          originX + textWidth,
+          y,
+          op.style.strikeColor || op.style.color,
+          op.style.strikeShape,
+        );
       }
 
       drawControlMarks();
@@ -2099,19 +2108,27 @@ export class CanvasKitLayerRenderer {
     const drawDecoration = (originX: number, baselineY: number) => {
       const textWidth = op.decoration.positions.at(-1) ?? 0;
       if (op.decoration.kind === 'underline') {
-        const paint = this.makePaint(op.decoration.color, 'stroke');
-        paint.setStrokeWidth(1);
         const y = textDecorationLineY('underline', op.decoration.underline, baselineY, op.decoration.fontSize);
-        canvas.drawLine(originX, y, originX + textWidth, y, paint);
-        paint.delete();
+        this.drawTextDecorationLine(
+          canvas,
+          originX,
+          originX + textWidth,
+          y,
+          op.decoration.color,
+          op.decoration.shape,
+        );
         return;
       }
       if (op.decoration.kind === 'strikethrough') {
-        const paint = this.makePaint(op.decoration.color, 'stroke');
-        paint.setStrokeWidth(1);
         const y = textDecorationLineY('strikethrough', undefined, baselineY, op.decoration.fontSize);
-        canvas.drawLine(originX, y, originX + textWidth, y, paint);
-        paint.delete();
+        this.drawTextDecorationLine(
+          canvas,
+          originX,
+          originX + textWidth,
+          y,
+          op.decoration.color,
+          op.decoration.shape,
+        );
         return;
       }
       const dotSize = textDecorationEmphasisSize(op.decoration.fontSize);
@@ -3795,6 +3812,77 @@ export class CanvasKitLayerRenderer {
         canvas.drawLine(originX + leader.startX, y, originX + leader.endX, y, paint);
         paint.delete();
       }
+    }
+  }
+
+  private drawTextDecorationLine(
+    canvas: ReturnType<Surface['getCanvas']>,
+    x1: number,
+    x2: number,
+    y: number,
+    color: string,
+    shape: number | undefined,
+  ): void {
+    for (const primitive of textDecorationLineGeometry(shape ?? 0)) {
+      const paint = this.makePaint(color, 'stroke');
+      paint.setStrokeWidth(primitive.width);
+      if (primitive.kind === 'line') {
+        if (
+          primitive.cap === 'round'
+          && primitive.dash.length === 2
+          && primitive.dash[0] <= 0.1
+        ) {
+          paint.delete();
+          const dotPaint = this.makePaint(color, 'fill');
+          const period = primitive.dash[0] + primitive.dash[1];
+          const centerOffset = primitive.dash[0] / 2;
+          for (let x = x1 + centerOffset; x <= x2; x += period) {
+            canvas.drawCircle(x, y + primitive.offsetY, primitive.width / 2, dotPaint);
+          }
+          dotPaint.delete();
+          continue;
+        }
+        paint.setStrokeCap(
+          primitive.cap === 'round'
+            ? this.canvasKit.StrokeCap.Round
+            : this.canvasKit.StrokeCap.Butt,
+        );
+        if (primitive.dash.length) {
+          const effect = this.canvasKit.PathEffect.MakeDash(primitive.dash, 0);
+          paint.setPathEffect(effect);
+          effect.delete();
+        }
+        canvas.drawLine(
+          x1,
+          y + primitive.offsetY,
+          x2,
+          y + primitive.offsetY,
+          paint,
+        );
+        paint.delete();
+        continue;
+      }
+      const lineY = y + primitive.offsetY;
+      const builder = new this.canvasKit.PathBuilder();
+      builder.moveTo(x1, lineY);
+      let currentX = x1;
+      let upward = true;
+      while (currentX < x2) {
+        const nextX = Math.min(currentX + primitive.wavelength, x2);
+        builder.quadTo(
+          (currentX + nextX) / 2,
+          lineY + (upward ? -primitive.amplitude : primitive.amplitude),
+          nextX,
+          lineY,
+        );
+        currentX = nextX;
+        upward = !upward;
+      }
+      const path = builder.detach();
+      builder.delete();
+      canvas.drawPath(path, paint);
+      path.delete();
+      paint.delete();
     }
   }
 

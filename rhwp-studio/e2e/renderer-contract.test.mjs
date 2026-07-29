@@ -2114,9 +2114,28 @@ assert.equal(
   textReplayUtilsSource.includes('export function textDecorationEmphasisGeometry(')
     && textReplayUtilsSource.includes('export function textDecorationEmphasisPosition(')
     && textReplayUtilsSource.includes('export function textDecorationEmphasisSize(')
+    && textReplayUtilsSource.includes('export function textDecorationLineGeometry(')
     && textReplayUtilsSource.includes('export function textDecorationLineY('),
   true,
   'text decoration visual policy must live in shared native-ready text helpers',
+);
+assertTokensInOrder(
+  extractFunctionBody(textReplayUtilsSource, 'textDecorationLineGeometry'),
+  [
+    'case 1:',
+    'case 2:',
+    'case 3:',
+    'case 4:',
+    'case 5:',
+    'case 6:',
+    'case 7:',
+    'case 8:',
+    'case 9:',
+    'case 10:',
+    'case 11:',
+    'case 12:',
+  ],
+  'shared text decoration geometry must cover all HWP line shape variants',
 );
 assertTokensInOrder(
   extractFunctionBody(textReplayUtilsSource, 'textDecorationEmphasisGeometry'),
@@ -2127,10 +2146,12 @@ assert.equal(
   importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisGeometry')
     && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisPosition')
     && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisSize')
+    && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationLineGeometry')
     && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationLineY')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisGeometry')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisPosition')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisSize')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationLineGeometry')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationLineY'),
   true,
   'Canvas2D and CanvasKit must import the shared text decoration helpers',
@@ -2154,6 +2175,15 @@ for (const [label, source] of [
     extractMethodBody(source, 'renderTextRun').includes('this.drawEmphasisMark(')
       && extractMethodBody(source, 'renderTextDecoration').includes('this.drawEmphasisMark('),
     `${label} inline and standalone emphasis replay must share the geometry path`,
+  );
+  assert(
+    extractMethodBody(source, 'drawTextDecorationLine').includes('textDecorationLineGeometry('),
+    `${label} decoration lines must consume shared deterministic geometry`,
+  );
+  assert(
+    extractMethodBody(source, 'renderTextRun').includes('this.drawTextDecorationLine(')
+      && extractMethodBody(source, 'renderTextDecoration').includes('this.drawTextDecorationLine('),
+    `${label} inline and standalone decoration lines must share the geometry path`,
   );
 }
 assert(
