@@ -3921,7 +3921,10 @@ export class CanvasKitLayerRenderer {
     gradient?: LayerGradient,
     pattern?: LayerPatternFill,
   ): { paint: Paint; shader: Shader | null } | null {
-    const shader = gradient ? this.makeGradientShader(gradient, bounds) : pattern ? this.makePatternShader(pattern) : null;
+    let shader = gradient ? this.makeGradientShader(gradient, bounds) : null;
+    if (!shader && pattern) {
+      shader = this.makePatternShader(pattern);
+    }
     if (!shader && !fillColor) {
       return null;
     }

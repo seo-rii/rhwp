@@ -13671,7 +13671,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     });
     const tree = {
       pageWidth: 104,
-      pageHeight: 54,
+      pageHeight: 82,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: false,
@@ -13696,10 +13696,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1908,
-        bounds: { x: 0, y: 0, width: 104, height: 54 },
+        bounds: { x: 0, y: 0, width: 104, height: 82 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 104, height: 54 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 104, height: 82 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'rectangle',
             bbox: { x: 5, y: 6, width: 28, height: 18 },
@@ -13758,6 +13758,59 @@ runTest('Renderer lifecycle', async ({ page }) => {
             gradient: null,
             transform,
           },
+          {
+            type: 'rectangle',
+            bbox: { x: 5, y: 57, width: 26, height: 18 },
+            cornerRadius: 0,
+            style: style('#008577', null, {
+              patternType: 5,
+              patternColor: '#7b1fa2',
+              backgroundColor: '#fff59d',
+            }),
+            gradient: {
+              gradientType: 0,
+              angle: 0,
+              centerX: 50,
+              centerY: 50,
+              colors: [],
+              positions: [],
+            },
+            transform,
+          },
+          {
+            type: 'rectangle',
+            bbox: { x: 39, y: 57, width: 26, height: 18 },
+            cornerRadius: 0,
+            style: style('#d84315', null, {
+              patternType: 1,
+              patternColor: '#1565c0',
+              backgroundColor: '#ffccbc',
+            }),
+            gradient: {
+              gradientType: 0,
+              angle: 0,
+              centerX: 50,
+              centerY: 50,
+              colors: ['#ff0000'],
+              positions: [0],
+            },
+            transform,
+          },
+          {
+            type: 'rectangle',
+            bbox: { x: 73, y: 57, width: 26, height: 18 },
+            cornerRadius: 0,
+            style: style('#2e7d32', null),
+            gradient: {
+              gradientType: 0,
+              angle: 0,
+              centerX: 50,
+              centerY: 50,
+              colors: ['#ff0000'],
+              positions: [0],
+            },
+            transform,
+          },
         ],
       },
     };
@@ -13802,6 +13855,39 @@ runTest('Renderer lifecycle', async ({ page }) => {
     gradientPatternCanvas2dPurplePixels > 10 && gradientPatternCanvaskitPurplePixels > 10,
     `gradient/pattern replay honors full CSS named pattern color canvas2d=${gradientPatternCanvas2dPurplePixels}, canvaskit=${gradientPatternCanvaskitPurplePixels}`,
   );
+  for (const [name, predicate] of [
+    ['empty-gradient pattern fallback', (pixel) =>
+      pixel.y >= 57
+      && pixel.x >= 5
+      && pixel.x < 31
+      && pixel.red > 80
+      && pixel.red < 160
+      && pixel.green < 80
+      && pixel.blue > 120],
+    ['single-stop pattern fallback', (pixel) =>
+      pixel.y >= 57
+      && pixel.x >= 39
+      && pixel.x < 65
+      && pixel.red > 180
+      && pixel.green > 120
+      && pixel.green < 230
+      && pixel.blue > 100
+      && pixel.blue < 230],
+    ['single-stop solid fallback', (pixel) =>
+      pixel.y >= 57
+      && pixel.x >= 73
+      && pixel.x < 99
+      && pixel.green > 80
+      && pixel.red < 100
+      && pixel.blue < 100],
+  ]) {
+    const canvas2dPixels = countPixels(gradientPatternParityProbe.canvas2d, predicate);
+    const canvaskitPixels = countPixels(gradientPatternParityProbe.canvaskit, predicate);
+    assert(
+      canvas2dPixels > 20 && canvaskitPixels > 20,
+      `gradient/pattern replay preserves ${name} canvas2d=${canvas2dPixels}, canvaskit=${canvaskitPixels}`,
+    );
+  }
   const gradientPatternDiff = await comparePngBuffers(
     pngBufferFromDataUrl(gradientPatternParityProbe.canvas2d),
     pngBufferFromDataUrl(gradientPatternParityProbe.canvaskit),

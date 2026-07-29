@@ -477,7 +477,9 @@ The working order is:
    same round stroke join as Canvas2D for both root `TextRun` and selected
    `GlyphRun` replay. Shape shadow alpha is multiplied by the authored shape
    opacity before replay, matching the Canvas2D `globalAlpha` composition
-   contract for rectangle, ellipse, and path fill/stroke shadows.
+   contract for rectangle, ellipse, and path fill/stroke shadows. Shape fill
+   selection also falls through in Canvas2D order: an unusable gradient tries
+   the authored pattern before the solid fill color.
 4. Keep `GlyphRun` and `GlyphOutline` strict replay gated by exact resource
    proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
    bitmap/SVG/color glyph payloads, and fallback-free profiles must not be

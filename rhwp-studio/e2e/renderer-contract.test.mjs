@@ -1030,7 +1030,12 @@ assertTokensInOrder(
 );
 assertTokensInOrder(
   extractMethodBody(canvaskitSource, 'makeShapeFillPaint'),
-  ['gradient ? this.makeGradientShader', 'pattern ? this.makePatternShader', 'if (!shader && !fillColor)'],
+  [
+    'let shader = gradient ? this.makeGradientShader',
+    'if (!shader && pattern)',
+    'shader = this.makePatternShader(pattern)',
+    'if (!shader && !fillColor)',
+  ],
   'CanvasKit shape fill precedence must stay gradient, pattern, then solid color',
 );
 assert(
