@@ -506,7 +506,11 @@ The working order is:
    for these marks, so CanvasKit does not depend on browser-only system font
    fallback for the arrow and line-break glyphs. CanvasKit text outline Paints
    use the same round stroke join as Canvas2D for both root `TextRun` and
-   selected `GlyphRun` replay. All six HWP emphasis-mark variants use shared
+   selected `GlyphRun` replay. Character-overlap text derives its middle
+   baseline from the selected glyph bounds, with the CanvasKit font ascent and
+   descent as a fallback, instead of a font-size constant. This matches
+   Canvas2D `textBaseline = "middle"` placement.
+   All six HWP emphasis-mark variants use shared
    circle, line, and quadratic geometry in both browser backends, avoiding
    browser-only symbol-font fallback for the less common marks. Tab leaders
    likewise share the complete HWP fill-type geometry: zero omits paint, 1

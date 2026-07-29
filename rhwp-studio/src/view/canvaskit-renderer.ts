@@ -1306,8 +1306,22 @@ export class CanvasKitLayerRenderer {
               textObjects.font.setScaleX(scaleX);
               drawWidth = measuredWidth * scaleX;
             }
+            const glyphBounds = textObjects.font.getGlyphBounds(glyphIds);
+            let glyphTop = Number.POSITIVE_INFINITY;
+            let glyphBottom = Number.NEGATIVE_INFINITY;
+            for (let index = 1; index < glyphBounds.length; index += 4) {
+              glyphTop = Math.min(glyphTop, glyphBounds[index]);
+              glyphBottom = Math.max(glyphBottom, glyphBounds[index + 2]);
+            }
+            const metrics = textObjects.font.getMetrics();
+            const middleBaselineOffset = Number.isFinite(glyphTop) && Number.isFinite(glyphBottom)
+              ? -(glyphTop + glyphBottom) / 2
+              : -(
+                (metrics.ascent ?? -innerFontSize * 0.8)
+                + (metrics.descent ?? innerFontSize * 0.2)
+              ) / 2;
             const textY = (targetTextWidth !== undefined ? cy - fontSize * 0.08 : cy)
-              + innerFontSize * 0.35;
+              + middleBaselineOffset;
             canvas.drawText(
               display,
               cx - Math.max(drawWidth, 1) / 2,
