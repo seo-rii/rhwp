@@ -803,8 +803,8 @@ def write_reports(
                 f"- mode: `{browser_replay_diagnostics.get('mode', '-')}`",
                 f"- hard-gate violations: {browser_replay_diagnostics.get('hardGateViolationCount', 0)}",
                 "",
-                "| Backend | Profile | Captures | Items | Direct | Direct Required | Text Fallback | Unsupported | Compat Overlay | Hidden Overlay Violations | Runtime Image Failures | Runtime Text Recoveries | Runtime Text Failures | Pattern Surface Failures | Runtime Duplicate Reports | Runtime Selection Conflicts | v2 Issues |",
-                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| Backend | Profile | Captures | Items | Direct | Direct Required | Text Fallback | Unsupported | Compat Overlay | Hidden Overlay Violations | Runtime Image Recoveries | Runtime Image Failures | Runtime Text Recoveries | Runtime Text Failures | Pattern Surface Failures | Runtime Duplicate Reports | Runtime Selection Conflicts | v2 Issues |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for item in replay_summary_rows:
@@ -822,6 +822,7 @@ def write_reports(
                         format_count(item.get("unsupportedItems")),
                         format_count(item.get("compatOverlayItems")),
                         format_count(item.get("hiddenOverlayViolations")),
+                        format_count(item.get("runtimeImageRecoveries")),
                         format_count(item.get("runtimeImageFailures")),
                         format_count(item.get("runtimeTextReplayRecoveries")),
                         format_count(item.get("runtimeTextReplayFailures")),
@@ -839,8 +840,8 @@ def write_reports(
                 "",
                 "### Replay Reason Inventory",
                 "",
-                "| Backend | Profile | Plan Statuses | Plan Reasons | Runtime Selected Reasons | Runtime Rejected Reasons | Runtime Image Failures | Runtime Text Recoveries | Runtime Text Failures | v2 Issue Codes |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+                "| Backend | Profile | Plan Statuses | Plan Reasons | Runtime Selected Reasons | Runtime Rejected Reasons | Runtime Image Recoveries | Runtime Image Failures | Runtime Text Recoveries | Runtime Text Failures | v2 Issue Codes |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
         for item in replay_summary_rows:
@@ -850,6 +851,7 @@ def write_reports(
                 "planReasonCounts",
                 "selectedReasonCounts",
                 "rejectedReasonCounts",
+                "runtimeImageRecoveryReasonCounts",
                 "runtimeImageFailureReasonCounts",
                 "runtimeTextRecoveryReasonCounts",
                 "runtimeTextFailureReasonCounts",

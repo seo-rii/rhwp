@@ -40,6 +40,111 @@ test('keeps encoded raster decoding synchronous', () => {
   assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 0);
 });
 
+test('recovers encoded raster decoder failures through a direct CanvasKit browser image', async () => {
+  const harness = makeHarness();
+  const decodedImage = fakeCanvasKitImage(16, 12);
+  harness.canvasKit.encodedResult = null;
+  harness.canvasKit.canvasResult = decodedImage;
+  let readyCallbacks = 0;
+  harness.cache.setAsyncResourceReadyCallback(() => {
+    readyCallbacks += 1;
+  });
+  const encodedPng = base64(png(16, 12));
+
+  assert.equal(harness.cache.image(undefined, encodedPng), null);
+  assert.equal(harness.cache.image(undefined, encodedPng), null);
+  assert.equal(harness.canvasKit.encodedSources.length, 1);
+  assert.equal(harness.browser.images.length, 1);
+  assert.equal(harness.browser.blobs[0].type, 'image/png');
+  assert.equal(harness.cache.getImageDiagnostics().pendingAccesses, 2);
+  assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 1);
+
+  harness.browser.images[0].onload();
+  await Promise.resolve();
+
+  assert.equal(readyCallbacks, 1);
+  assert.equal(harness.cache.image(undefined, encodedPng), decodedImage);
+  assert.deepEqual(harness.canvasKit.canvasSources, [harness.browser.images[0]]);
+  assert.deepEqual(harness.cache.getImageDiagnostics().recoveries, [{
+    source: 'inline',
+    resourceId: null,
+    reason: 'encodedImageDecodeFailed',
+    fallback: 'browserImageSource',
+    format: 'png',
+  }]);
+  assert.deepEqual(harness.cache.getImageDiagnostics().failures, []);
+
+  harness.cache.resetImageDiagnostics();
+  assert.equal(harness.cache.image(undefined, encodedPng), decodedImage);
+  assert.equal(harness.cache.getImageDiagnostics().recoveries.length, 1);
+
+  const firstMipmap = harness.cache.image(undefined, encodedPng, true);
+  assert.notEqual(firstMipmap, null);
+  harness.cache.resetImageDiagnostics();
+  assert.equal(harness.cache.image(undefined, encodedPng, true), firstMipmap);
+  assert.equal(harness.cache.getImageDiagnostics().recoveries.length, 1);
+
+  const cachedEffect = fakeCanvasKitImage(16, 12);
+  harness.cache.imageEffectCache.set(`b64:${encodedPng}:effect:grayScale`, cachedEffect);
+  harness.cache.resetImageDiagnostics();
+  assert.equal(
+    harness.cache.imageWithEffect(undefined, encodedPng, 'grayScale'),
+    cachedEffect,
+  );
+  assert.equal(harness.cache.getImageDiagnostics().recoveries.length, 1);
+
+  harness.cache.resetImageDiagnostics();
+  const recoveryEventStart = harness.cache.getImageRecoveryEventCount();
+  assert.equal(harness.cache.image(undefined, encodedPng), decodedImage);
+  const cachedPictureRecoveries = harness.cache.getImageRecoveriesSince(recoveryEventStart);
+  harness.cache.resetImageDiagnostics();
+  harness.cache.restoreImageRecoveries(cachedPictureRecoveries);
+  assert.deepEqual(harness.cache.getImageDiagnostics().recoveries, [{
+    source: 'inline',
+    resourceId: null,
+    reason: 'encodedImageDecodeFailed',
+    fallback: 'browserImageSource',
+    format: 'png',
+  }]);
+});
+
+test('negative-caches browser raster recovery failures', async () => {
+  const harness = makeHarness();
+  harness.canvasKit.encodedResult = null;
+  const encodedPng = base64(png(20, 14));
+
+  assert.equal(harness.cache.image(undefined, encodedPng), null);
+  harness.browser.images[0].onerror();
+  await Promise.resolve();
+
+  assert.equal(harness.cache.image(undefined, encodedPng), null);
+  assert.equal(harness.canvasKit.encodedSources.length, 1);
+  assert.equal(harness.browser.images.length, 1);
+  assert.equal(harness.cache.getImageDiagnostics().failureCacheHits, 1);
+  assert.deepEqual(harness.cache.getImageDiagnostics().recoveries, []);
+  assert.deepEqual(harness.cache.getImageDiagnostics().failures, [{
+    source: 'inline',
+    resourceId: null,
+    reason: 'imageDecodeFailed',
+  }]);
+});
+
+test('does not browser-normalize GIF when CanvasKit cannot establish a stable frame', () => {
+  const harness = makeHarness();
+  harness.canvasKit.encodedResult = null;
+  const encodedGif = base64(gif(2, 1));
+
+  assert.equal(harness.cache.image(undefined, encodedGif), null);
+  assert.equal(harness.canvasKit.encodedSources.length, 1);
+  assert.equal(harness.browser.images.length, 0);
+  assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 0);
+  assert.deepEqual(harness.cache.getImageDiagnostics().failures, [{
+    source: 'inline',
+    resourceId: null,
+    reason: 'imageDecodeFailed',
+  }]);
+});
+
 test('rejects and negative-caches decoded raster dimension mismatches', () => {
   const harness = makeHarness();
   const mismatchedImage = fakeCanvasKitImage(8, 8);
@@ -80,6 +185,7 @@ test('loads SVG asynchronously into a direct CanvasKit image and notifies once',
     pendingAccesses: 2,
     pendingLoads: 1,
     imagesDecoded: 0,
+    recoveries: [],
     failures: [],
   });
 
@@ -406,6 +512,15 @@ function png(width, height) {
   view.setUint32(16, width);
   view.setUint32(20, height);
   bytes.set([8, 6, 0, 0, 0], 24);
+  return bytes;
+}
+
+function gif(width, height) {
+  const bytes = new Uint8Array(13);
+  bytes.set([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(6, width, true);
+  view.setUint16(8, height, true);
   return bytes;
 }
 

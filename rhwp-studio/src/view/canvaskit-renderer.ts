@@ -127,6 +127,7 @@ import {
 import {
   CanvasKitResourceCache,
   type CanvasKitImageDiagnostics,
+  type CanvasKitImageRecoveryDiagnostic,
   type CanvasKitPatternDiagnostics,
 } from './canvaskit/resource-cache';
 import { CanvasKitStaticPictureCache } from './canvaskit/static-picture-cache';
@@ -208,6 +209,7 @@ type CanvasKitEquationSvgReplayResult =
 
 type CanvasKitStaticPictureMetadata = {
   equationReplayDiagnostics: CanvasKitEquationReplayDiagnostic[];
+  imageRecoveryDiagnostics: CanvasKitImageRecoveryDiagnostic[];
 };
 
 type CanvasKitPreparedSvgGlyphPathLayer = {
@@ -710,6 +712,7 @@ export class CanvasKitLayerRenderer {
             if (cachedPicture) {
               const metadata = this.staticPictureCache.getMetadata(cacheKey);
               if (metadata) {
+                this.resourceCache.restoreImageRecoveries(metadata.imageRecoveryDiagnostics);
                 this.equationReplayDiagnostics.push(
                   ...metadata.equationReplayDiagnostics.map((diagnostic) => ({
                     ...diagnostic,
@@ -722,6 +725,8 @@ export class CanvasKitLayerRenderer {
             }
 
             const equationDiagnosticsStart = this.equationReplayDiagnostics.length;
+            const imageRecoveryEventsStart =
+              this.resourceCache.getImageRecoveryEventCount();
             const imageFailureAttemptsBefore =
               this.resourceCache.getImageDiagnostics().failureAttempts;
             const pendingImageAccessesBefore =
@@ -758,6 +763,8 @@ export class CanvasKitLayerRenderer {
               if (!hasRuntimeReplayFailure) {
                 if (!hasPendingImageReplay) {
                   this.staticPictureCache.set(cacheKey, picture, {
+                    imageRecoveryDiagnostics:
+                      this.resourceCache.getImageRecoveriesSince(imageRecoveryEventsStart),
                     equationReplayDiagnostics: this.equationReplayDiagnostics
                       .slice(equationDiagnosticsStart)
                       .map((diagnostic) => ({

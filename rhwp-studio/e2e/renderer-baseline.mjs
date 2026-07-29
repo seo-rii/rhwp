@@ -896,6 +896,7 @@ for (const result of results) {
       unsupportedItems: 0,
       hiddenOverlayViolations: 0,
       hardGateViolationCount: 0,
+      runtimeImageRecoveries: 0,
       runtimeImageFailures: 0,
       runtimeTextReplayRecoveries: 0,
       runtimeTextReplayFailures: 0,
@@ -911,6 +912,7 @@ for (const result of results) {
       planReasonCounts: {},
       selectedReasonCounts: {},
       rejectedReasonCounts: {},
+      runtimeImageRecoveryReasonCounts: {},
       runtimeImageFailureReasonCounts: {},
       runtimeTextRecoveryReasonCounts: {},
       runtimeTextFailureReasonCounts: {},
@@ -938,6 +940,7 @@ for (const result of results) {
     }
   }
   summary.patternSurfaceFailures += diagnostics.patternDiagnostics?.surfaceFailures ?? 0;
+  summary.runtimeImageRecoveries += diagnostics.imageDiagnostics?.recoveries?.length ?? 0;
   summary.runtimeImageFailures += diagnostics.imageDiagnostics?.failures?.length ?? 0;
   summary.runtimeTextReplayRecoveries +=
     diagnostics.textReplayDiagnostics?.recoveries?.length ?? 0;
@@ -976,6 +979,12 @@ for (const result of results) {
     const reason = String(failure.reason ?? 'unknown');
     summary.runtimeImageFailureReasonCounts[reason] = (
       summary.runtimeImageFailureReasonCounts[reason] ?? 0
+    ) + 1;
+  }
+  for (const recovery of diagnostics.imageDiagnostics?.recoveries ?? []) {
+    const reason = String(recovery.reason ?? 'unknown');
+    summary.runtimeImageRecoveryReasonCounts[reason] = (
+      summary.runtimeImageRecoveryReasonCounts[reason] ?? 0
     ) + 1;
   }
   for (const recovery of diagnostics.textReplayDiagnostics?.recoveries ?? []) {

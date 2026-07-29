@@ -326,13 +326,22 @@ CanvasKit parity is implemented through four layers:
    TextRun warm replay also caches the resolved fallback family by primary
    family, style, fallback class, and text cluster. The bounded cache stores
    family names only; CanvasKit font/typeface objects remain render-owned and
-   are released after each run. Encoded-image decode failures are contained as
-   unavailable resources and memoized by resource identity until that resource
-   table is replaced, preventing corrupt payloads from aborting page replay or
-   repeatedly entering the decoder. The cache also exposes per-render
-   `CanvasKitImageDiagnostics`: missing resources, invalid base64, rejected
-   encoded-image headers/limits, and CanvasKit decoder failures have distinct
-   reasons instead of becoming silent paint omissions. TextBlob construction
+   are released after each run. Admitted raster images first use CanvasKit's
+   synchronous encoded-image codec. When that codec rejects an otherwise
+   bounded PNG, JPEG, or BMP, Studio uses the browser image decoder
+   asynchronously and converts the decoded source directly into a CanvasKit
+   `Image`; it never composites the recovery through Canvas2D. Static pictures
+   are not admitted while that resource is pending. Successful browser-decoder
+   recovery remains visible in `CanvasKitImageDiagnostics` on later cache hits.
+   GIF and WebP remain on CanvasKit's synchronous codec path because a browser
+   image source does not provide a deterministic first-frame contract for
+   animated payloads; codec failure for those formats remains a final decode
+   failure.
+   Only failure of both decode paths is contained as an unavailable resource and
+   negative-cached by resource identity until that resource table is replaced.
+   Missing resources, invalid base64, rejected encoded-image headers/limits,
+   successful browser recoveries, and final decode failures therefore remain
+   distinct instead of becoming silent paint omissions. TextBlob construction
    failures are negative-cached without dropping the affected cluster.
    CanvasKit retries that cluster through direct `drawText`, which reaches
    `_drawSimpleText` without constructing a public `TextBlob`. A successful
@@ -413,8 +422,10 @@ Exit criteria:
 - `canvaskit-renderer.ts` and `rhwp-studio/src/view/canvaskit/*` do not import
   `canvas2d-layer-renderer` or broad Canvas2D utility modules.
 - CanvasKit-visible helper modules are free of `CanvasRenderingContext2D`,
-  `Path2D`, `DOMParser`, DOM image elements, object URLs, browser text
-  measurement, and SVG DOM nodes.
+  `Path2D`, `DOMParser`, browser text measurement, and SVG DOM nodes. The one
+  bounded adapter exception is `resource-cache.ts`: it may use an image element
+  and object URL only to decode an admitted image into
+  `MakeImageFromCanvasImageSource`.
 - `renderer-contract.test.mjs` scans CanvasKit source plus direct helper modules
   for forbidden APIs.
 - Static SVG parsing used by CanvasKit is handled by a DOM-free parser with
@@ -637,9 +648,10 @@ The working order is:
    performance/memory smoke results are stable enough to become hard gates.
 
 The browser baseline now records the Rust replay plan, CanvasKit runtime text
-variant selections/rejections, encoded-image diagnostics, TextBlob replay
-diagnostics, v2 validation issues, pattern diagnostics, and surface diagnostics
-for every CanvasKit capture. Hidden-overlay items, hidden-overlay violations,
+variant selections/rejections, encoded-image recovery/failure diagnostics,
+TextBlob replay diagnostics, v2 validation issues, pattern diagnostics, and
+surface diagnostics for every CanvasKit capture. Hidden-overlay items,
+hidden-overlay violations,
 invalid direct-only plan contracts, empty plans, direct-required image items,
 runtime image/image-effect/TextBlob/pattern replay failures, and v2 validation
 issues are hard failures. An image-effect preprocessing failure may draw the
@@ -657,9 +669,9 @@ by an `imageDecodeFailed` rejection of that selected strict variant; an
 undeclared mismatch, an unknown failure, or a fallback-free mismatch remains a
 hard failure. Resolved conditions remain visible in
 `runtimeConditionResolutions`. Intentional TextRun fallback, unsupported items,
-direct-text recoveries, and their exact reasons remain an inventory in the JSON
-and Markdown reports. Static CanvasKit pictures that encounter any runtime
-replay failure are drawn for the current attempt but not cached, so a later
+direct-image/direct-text recoveries, and their exact reasons remain an inventory
+in the JSON and Markdown reports. Static CanvasKit pictures that encounter any
+runtime replay failure are drawn for the current attempt but not cached, so a later
 diagnostic reset cannot turn a cached omission into a false pass. A recovered
 TextBlob construction failure is also kept out of the picture cache, ensuring
 that direct-text recovery stays observable on each retry instead of disappearing
@@ -751,9 +763,14 @@ root, no doctype, a resolvable positive intrinsic size or `viewBox`, at most
 through a browser image source and immediately converts it with
 `MakeImageFromCanvasImageSource`; the decoded pixels are then painted only by
 CanvasKit. This narrowly scoped decode bridge is not a Canvas2D compositing
-overlay: it cannot create or acquire a canvas context, and a pending decode
-prevents static-picture caching until the callback requests a fresh direct
-replay. Decode failures are negative-cached with the ordinary image diagnostics.
+overlay: rhwp never creates a canvas context or inserts a browser-canvas paint
+layer. CanvasKit 0.41's `MakeImageFromCanvasImageSource` helper may internally
+use a temporary browser canvas to normalize decoded pixels, but its result is
+immediately a CanvasKit `Image` and never an overlay surface. A future native
+backend uses its native image codec at the same adapter boundary. A pending
+decode prevents static-picture caching until the callback requests a fresh
+direct replay. Decode failures are negative-cached with the ordinary image
+diagnostics.
 CanvasKit accepts the decoded image only when its integer width and height
 exactly match the bounded encoded header; mismatches delete the decoded object
 and record `decodedDimensionsMismatch`, for both synchronous raster decode and

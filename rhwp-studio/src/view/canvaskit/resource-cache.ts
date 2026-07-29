@@ -37,6 +37,14 @@ export type CanvasKitImageFailureDiagnostic = {
   reason: CanvasKitImageFailureReason;
 };
 
+export type CanvasKitImageRecoveryDiagnostic = {
+  source: 'resource' | 'inline';
+  resourceId: number | null;
+  reason: 'encodedImageDecodeFailed';
+  fallback: 'browserImageSource';
+  format: Exclude<CanvasKitEncodedImageHeader['format'], 'svg'>;
+};
+
 export type CanvasKitImageDiagnostics = {
   cacheHits: number;
   cacheMisses: number;
@@ -45,6 +53,7 @@ export type CanvasKitImageDiagnostics = {
   pendingAccesses: number;
   pendingLoads: number;
   imagesDecoded: number;
+  recoveries: CanvasKitImageRecoveryDiagnostic[];
   failures: CanvasKitImageFailureDiagnostic[];
 };
 
@@ -54,12 +63,13 @@ export type CanvasKitAsyncImageDecodeEnvironment = {
   revokeObjectUrl: (url: string) => void;
 };
 
-type PendingSvgImageLoad = {
+type PendingBrowserImageLoad = {
   image: HTMLImageElement;
   objectUrl: string;
   resourceId: number | undefined;
   base64: string | undefined;
   expectedHeader: CanvasKitEncodedImageHeader;
+  recovery: CanvasKitImageRecoveryDiagnostic | null;
 };
 
 const browserAsyncImageDecodeEnvironment: CanvasKitAsyncImageDecodeEnvironment = {
@@ -75,9 +85,17 @@ export class CanvasKitResourceCache {
   readonly patternImageCache = new Map<string, CanvasKitImage | null>();
   readonly failedImageCacheKeys = new Set<string>();
   private readonly failedImageReasons = new Map<string, CanvasKitImageFailureReason>();
-  private readonly pendingSvgImageLoads = new Map<string, PendingSvgImageLoad>();
+  private readonly pendingBrowserImageLoads = new Map<string, PendingBrowserImageLoad>();
+  private readonly browserDecodedRasterRecoveries =
+    new Map<string, CanvasKitImageRecoveryDiagnostic>();
+  private readonly imageRecoveryDiagnostics =
+    new Map<string, CanvasKitImageRecoveryDiagnostic>();
+  private readonly imageRecoveryEvents: CanvasKitImageRecoveryDiagnostic[] = [];
   private readonly imageFailureDiagnostics = new Map<string, CanvasKitImageFailureDiagnostic>();
-  private readonly imageDiagnostics: Omit<CanvasKitImageDiagnostics, 'failures' | 'pendingLoads'> = {
+  private readonly imageDiagnostics: Omit<
+    CanvasKitImageDiagnostics,
+    'failures' | 'pendingLoads' | 'recoveries'
+  > = {
     cacheHits: 0,
     cacheMisses: 0,
     failureCacheHits: 0,
@@ -126,9 +144,9 @@ export class CanvasKitResourceCache {
     const nextTableId = nextResources?.tableId ?? null;
     if (this.resourceTableId === nextTableId) {
       if (this.resources !== nextResources) {
-        for (const [cacheKey, pending] of this.pendingSvgImageLoads) {
+        for (const [cacheKey, pending] of this.pendingBrowserImageLoads) {
           if (!this.resourceImageCacheKeyIsCurrent(cacheKey, nextResources)) {
-            this.cancelPendingSvgImageLoad(cacheKey, pending);
+            this.cancelPendingBrowserImageLoad(cacheKey, pending);
           }
         }
         this.clearReplacedResourceImageCaches(nextResources);
@@ -157,7 +175,10 @@ export class CanvasKitResourceCache {
 
     if (withMipmaps) {
       const cachedMipmap = this.mipmappedImageCache.get(cacheKey);
-      if (cachedMipmap) return cachedMipmap;
+      if (cachedMipmap) {
+        this.recordImageRecovery(cacheKey);
+        return cachedMipmap;
+      }
 
       const original = this.image(resourceId, base64);
       if (!original) return null;
@@ -170,6 +191,7 @@ export class CanvasKitResourceCache {
     const cached = this.imageCache.get(cacheKey);
     if (cached) {
       this.imageDiagnostics.cacheHits += 1;
+      this.recordImageRecovery(cacheKey);
       return cached;
     }
     if (this.failedImageCacheKeys.has(cacheKey)) {
@@ -183,6 +205,10 @@ export class CanvasKitResourceCache {
       return null;
     }
     this.imageDiagnostics.cacheMisses += 1;
+    if (this.pendingBrowserImageLoads.has(cacheKey)) {
+      this.imageDiagnostics.pendingAccesses += 1;
+      return null;
+    }
 
     let bytes: Uint8Array | undefined;
     try {
@@ -206,9 +232,7 @@ export class CanvasKitResourceCache {
     }
     if (imageHeader.format === 'svg') {
       this.imageDiagnostics.pendingAccesses += 1;
-      if (!this.pendingSvgImageLoads.has(cacheKey)) {
-        this.startSvgImageLoad(cacheKey, bytes, resourceId, base64, imageHeader);
-      }
+      this.startBrowserImageLoad(cacheKey, bytes, resourceId, base64, imageHeader, null);
       return null;
     }
     let image: CanvasKitImage | null;
@@ -218,7 +242,26 @@ export class CanvasKitResourceCache {
       image = null;
     }
     if (!image) {
-      this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
+      if (imageHeader.format === 'gif' || imageHeader.format === 'webp') {
+        this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
+        return null;
+      }
+      const recovery: CanvasKitImageRecoveryDiagnostic = {
+        source: typeof resourceId === 'number' ? 'resource' : 'inline',
+        resourceId: typeof resourceId === 'number' ? resourceId : null,
+        reason: 'encodedImageDecodeFailed',
+        fallback: 'browserImageSource',
+        format: imageHeader.format,
+      };
+      this.imageDiagnostics.pendingAccesses += 1;
+      this.startBrowserImageLoad(
+        cacheKey,
+        bytes,
+        resourceId,
+        base64,
+        imageHeader,
+        recovery,
+      );
       return null;
     }
     if (!this.decodedImageMatchesHeader(image, imageHeader)) {
@@ -258,6 +301,7 @@ export class CanvasKitResourceCache {
     const cached = this.imageEffectCache.get(effectCacheKey);
     if (cached) {
       this.imageEffectDiagnostics.cacheHits += 1;
+      this.recordImageRecovery(cacheKey);
       return cached;
     }
     this.imageEffectDiagnostics.cacheMisses += 1;
@@ -366,9 +410,32 @@ export class CanvasKitResourceCache {
   getImageDiagnostics(): CanvasKitImageDiagnostics {
     return {
       ...this.imageDiagnostics,
-      pendingLoads: this.pendingSvgImageLoads.size,
+      pendingLoads: this.pendingBrowserImageLoads.size,
+      recoveries: [...this.imageRecoveryDiagnostics.values()]
+        .map((recovery) => ({ ...recovery })),
       failures: [...this.imageFailureDiagnostics.values()].map((failure) => ({ ...failure })),
     };
+  }
+
+  getImageRecoveryEventCount(): number {
+    return this.imageRecoveryEvents.length;
+  }
+
+  getImageRecoveriesSince(eventIndex: number): CanvasKitImageRecoveryDiagnostic[] {
+    const recoveries = new Map<string, CanvasKitImageRecoveryDiagnostic>();
+    for (const recovery of this.imageRecoveryEvents.slice(eventIndex)) {
+      const key = `${recovery.source}:${recovery.resourceId ?? 'inline'}:${recovery.format}`;
+      recoveries.set(key, recovery);
+    }
+    return [...recoveries.values()].map((recovery) => ({ ...recovery }));
+  }
+
+  restoreImageRecoveries(recoveries: readonly CanvasKitImageRecoveryDiagnostic[]): void {
+    for (const recovery of recoveries) {
+      const key = `cached:${recovery.source}:${recovery.resourceId ?? 'inline'}:${recovery.format}`;
+      this.imageRecoveryDiagnostics.set(key, recovery);
+      this.imageRecoveryEvents.push({ ...recovery });
+    }
   }
 
   resetImageDiagnostics(): void {
@@ -378,6 +445,8 @@ export class CanvasKitResourceCache {
     this.imageDiagnostics.failureAttempts = 0;
     this.imageDiagnostics.pendingAccesses = 0;
     this.imageDiagnostics.imagesDecoded = 0;
+    this.imageRecoveryDiagnostics.clear();
+    this.imageRecoveryEvents.length = 0;
     this.imageFailureDiagnostics.clear();
   }
 
@@ -430,8 +499,8 @@ export class CanvasKitResourceCache {
     this.asyncResourceNotificationQueued = false;
     this.resources = null;
     this.resourceTableId = null;
-    for (const [cacheKey, pending] of this.pendingSvgImageLoads) {
-      this.cancelPendingSvgImageLoad(cacheKey, pending);
+    for (const [cacheKey, pending] of this.pendingBrowserImageLoads) {
+      this.cancelPendingBrowserImageLoad(cacheKey, pending);
     }
 
     for (const image of this.mipmappedImageCache.values()) {
@@ -450,6 +519,7 @@ export class CanvasKitResourceCache {
     this.imageCache.clear();
     this.failedImageCacheKeys.clear();
     this.failedImageReasons.clear();
+    this.browserDecodedRasterRecoveries.clear();
     this.resetImageDiagnostics();
     this.resetImageEffectDiagnostics();
   }
@@ -465,19 +535,41 @@ export class CanvasKitResourceCache {
     this.patternImageCache.clear();
   }
 
-  private startSvgImageLoad(
+  private startBrowserImageLoad(
     cacheKey: string,
     bytes: Uint8Array,
     resourceId: number | undefined,
     base64: string | undefined,
     expectedHeader: CanvasKitEncodedImageHeader,
+    recovery: CanvasKitImageRecoveryDiagnostic | null,
   ): void {
     let objectUrl: string | null = null;
     let image: HTMLImageElement;
     try {
-      const svgBytes = bytes.slice().buffer;
+      let mimeType: string;
+      switch (expectedHeader.format) {
+        case 'png':
+          mimeType = 'image/png';
+          break;
+        case 'jpeg':
+          mimeType = 'image/jpeg';
+          break;
+        case 'gif':
+          mimeType = 'image/gif';
+          break;
+        case 'webp':
+          mimeType = 'image/webp';
+          break;
+        case 'bmp':
+          mimeType = 'image/bmp';
+          break;
+        case 'svg':
+          mimeType = 'image/svg+xml';
+          break;
+      }
+      const imageBytes = bytes.slice().buffer;
       objectUrl = this.asyncImageDecodeEnvironment.createObjectUrl(
-        new Blob([svgBytes], { type: 'image/svg+xml' }),
+        new Blob([imageBytes], { type: mimeType }),
       );
       image = this.asyncImageDecodeEnvironment.createImage();
     } catch {
@@ -489,16 +581,17 @@ export class CanvasKitResourceCache {
       return;
     }
 
-    const pending: PendingSvgImageLoad = {
+    const pending: PendingBrowserImageLoad = {
       image,
       objectUrl,
       resourceId,
       base64,
       expectedHeader,
+      recovery,
     };
-    this.pendingSvgImageLoads.set(cacheKey, pending);
+    this.pendingBrowserImageLoads.set(cacheKey, pending);
     image.onload = () => {
-      if (this.pendingSvgImageLoads.get(cacheKey) !== pending) {
+      if (this.pendingBrowserImageLoads.get(cacheKey) !== pending) {
         return;
       }
       let decodedImage: CanvasKitImage | null;
@@ -507,10 +600,14 @@ export class CanvasKitResourceCache {
       } catch {
         decodedImage = null;
       }
-      this.cancelPendingSvgImageLoad(cacheKey, pending);
+      this.cancelPendingBrowserImageLoad(cacheKey, pending);
       if (decodedImage && this.decodedImageMatchesHeader(decodedImage, pending.expectedHeader)) {
         this.imageCache.set(cacheKey, decodedImage);
         this.imageDiagnostics.imagesDecoded += 1;
+        if (pending.recovery) {
+          this.browserDecodedRasterRecoveries.set(cacheKey, pending.recovery);
+          this.recordImageRecovery(cacheKey);
+        }
       } else {
         decodedImage?.delete();
         this.recordImageFailure(
@@ -523,25 +620,28 @@ export class CanvasKitResourceCache {
       this.notifyAsyncResourceReady();
     };
     image.onerror = () => {
-      if (this.pendingSvgImageLoads.get(cacheKey) !== pending) {
+      if (this.pendingBrowserImageLoads.get(cacheKey) !== pending) {
         return;
       }
-      this.cancelPendingSvgImageLoad(cacheKey, pending);
+      this.cancelPendingBrowserImageLoad(cacheKey, pending);
       this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
       this.notifyAsyncResourceReady();
     };
     try {
       image.src = objectUrl;
     } catch {
-      this.cancelPendingSvgImageLoad(cacheKey, pending);
+      this.cancelPendingBrowserImageLoad(cacheKey, pending);
       this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
       this.notifyAsyncResourceReady();
     }
   }
 
-  private cancelPendingSvgImageLoad(cacheKey: string, pending: PendingSvgImageLoad): void {
-    if (this.pendingSvgImageLoads.get(cacheKey) === pending) {
-      this.pendingSvgImageLoads.delete(cacheKey);
+  private cancelPendingBrowserImageLoad(
+    cacheKey: string,
+    pending: PendingBrowserImageLoad,
+  ): void {
+    if (this.pendingBrowserImageLoads.get(cacheKey) === pending) {
+      this.pendingBrowserImageLoads.delete(cacheKey);
     }
     pending.image.onload = null;
     pending.image.onerror = null;
@@ -589,6 +689,15 @@ export class CanvasKitResourceCache {
         this.asyncResourceReadyCallback?.();
       }
     });
+  }
+
+  private recordImageRecovery(cacheKey: string): void {
+    const recovery = this.browserDecodedRasterRecoveries.get(cacheKey);
+    if (!recovery) {
+      return;
+    }
+    this.imageRecoveryDiagnostics.set(cacheKey, recovery);
+    this.imageRecoveryEvents.push({ ...recovery });
   }
 
   private recordImageFailure(
@@ -693,9 +802,9 @@ export class CanvasKitResourceCache {
   }
 
   private clearResourceImageCaches(): void {
-    for (const [cacheKey, pending] of this.pendingSvgImageLoads) {
+    for (const [cacheKey, pending] of this.pendingBrowserImageLoads) {
       if (cacheKey.startsWith('res:')) {
-        this.cancelPendingSvgImageLoad(cacheKey, pending);
+        this.cancelPendingBrowserImageLoad(cacheKey, pending);
       }
     }
     for (const [key, image] of this.mipmappedImageCache) {
@@ -725,6 +834,11 @@ export class CanvasKitResourceCache {
         this.failedImageReasons.delete(key);
       }
     }
+    for (const key of this.browserDecodedRasterRecoveries.keys()) {
+      if (key.startsWith('res:')) {
+        this.browserDecodedRasterRecoveries.delete(key);
+      }
+    }
   }
 
   private clearReplacedResourceImageCaches(
@@ -752,6 +866,11 @@ export class CanvasKitResourceCache {
       if (!this.resourceImageCacheKeyIsCurrent(cacheKey, nextResources)) {
         this.failedImageCacheKeys.delete(cacheKey);
         this.failedImageReasons.delete(cacheKey);
+      }
+    }
+    for (const cacheKey of this.browserDecodedRasterRecoveries.keys()) {
+      if (!this.resourceImageCacheKeyIsCurrent(cacheKey, nextResources)) {
+        this.browserDecodedRasterRecoveries.delete(cacheKey);
       }
     }
   }

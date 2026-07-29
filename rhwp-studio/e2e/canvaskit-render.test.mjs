@@ -1572,7 +1572,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         : false,
       hasRendererDomImageCache: Object.prototype.hasOwnProperty.call(renderer, 'domImageCache'),
     };
-    const nativeResourceFailureProbe = (() => {
+    const nativeResourceFailureProbe = await (async () => {
       let invalidInlineImageError = null;
       let invalidInlineImageFirst = null;
       let invalidInlineImageSecond = null;
@@ -1580,6 +1580,10 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       let afterSecond = null;
       let rejectedEncodedImage = null;
       let rejectedEncodedImageDiagnostics = null;
+      let browserRecoveredImage = null;
+      let browserRecoveryDiagnostics = null;
+      let staticPictureRecoveryFirst = null;
+      let staticPictureRecoverySecond = null;
       let decoderFailedImage = null;
       let decoderFailedImageDiagnostics = null;
       let missingResourceImage = null;
@@ -1602,6 +1606,63 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         renderer.resetImageDiagnostics();
         rejectedEncodedImage = renderer.resourceCache.image(undefined, 'AQIDBA==');
         rejectedEncodedImageDiagnostics = renderer.getImageDiagnostics();
+        const onePixelPng =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7s8AAAAASUVORK5CYII=';
+        const originalMakeImageFromEncoded = renderer.canvasKit.MakeImageFromEncoded;
+        try {
+          renderer.canvasKit.MakeImageFromEncoded = () => null;
+          renderer.resetImageDiagnostics();
+          browserRecoveredImage = renderer.resourceCache.image(undefined, onePixelPng);
+        } finally {
+          renderer.canvasKit.MakeImageFromEncoded = originalMakeImageFromEncoded;
+        }
+        const recoveryDeadline = Date.now() + 2_000;
+        while (
+          renderer.getImageDiagnostics().pendingLoads > 0
+          && Date.now() < recoveryDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        browserRecoveredImage = renderer.resourceCache.image(undefined, onePixelPng);
+        browserRecoveryDiagnostics = renderer.getImageDiagnostics();
+        const recoveryProbeCanvas = document.createElement('canvas');
+        recoveryProbeCanvas.width = 24;
+        recoveryProbeCanvas.height = 24;
+        const recoveryProbeTree = {
+          pageWidth: 24,
+          pageHeight: 24,
+          profile: 'screen',
+          root: {
+            kind: 'group',
+            bounds: { x: 0, y: 0, width: 24, height: 24 },
+            cacheHint: 'staticSubtree',
+            children: [{
+              kind: 'leaf',
+              bounds: { x: 0, y: 0, width: 24, height: 24 },
+              cacheHint: 'none',
+              ops: [{
+                type: 'image',
+                bbox: { x: 2, y: 2, width: 20, height: 20 },
+                base64: onePixelPng,
+                fillMode: 'fitToSize',
+                transform: { rotation: 0, horzFlip: false, vertFlip: false },
+              }],
+            }],
+          },
+          resources: {
+            tableId: 909,
+            images: [],
+            imageHashes: [],
+            imageKeys: [],
+            svgFragments: [],
+            svgHashes: [],
+            svgKeys: [],
+          },
+        };
+        renderer.renderPage(recoveryProbeTree, recoveryProbeCanvas, 1);
+        staticPictureRecoveryFirst = renderer.getImageDiagnostics();
+        renderer.renderPage(recoveryProbeTree, recoveryProbeCanvas, 1);
+        staticPictureRecoverySecond = renderer.getImageDiagnostics();
         const truncatedPng = new Uint8Array([
           0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
           0x00, 0x00, 0x00, 0x0d,
@@ -1613,6 +1674,14 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         ]);
         const truncatedPngBase64 = btoa(String.fromCharCode(...truncatedPng));
         renderer.resetImageDiagnostics();
+        decoderFailedImage = renderer.resourceCache.image(undefined, truncatedPngBase64);
+        const failureDeadline = Date.now() + 2_000;
+        while (
+          renderer.getImageDiagnostics().pendingLoads > 0
+          && Date.now() < failureDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
         decoderFailedImage = renderer.resourceCache.image(undefined, truncatedPngBase64);
         decoderFailedImageDiagnostics = renderer.getImageDiagnostics();
         renderer.resetImageDiagnostics();
@@ -1763,6 +1832,10 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         afterSecond,
         rejectedEncodedImage,
         rejectedEncodedImageDiagnostics,
+        browserRecoveredImage: browserRecoveredImage !== null,
+        browserRecoveryDiagnostics,
+        staticPictureRecoveryFirst,
+        staticPictureRecoverySecond,
         decoderFailedImage,
         decoderFailedImageDiagnostics,
         missingResourceImage,
@@ -2165,8 +2238,26 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     `inadmissible encoded image reports a deterministic reason=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
   );
   assert(
+    nativeRouting.nativeResourceFailureProbe?.browserRecoveredImage === true
+      && nativeRouting.nativeResourceFailureProbe?.browserRecoveryDiagnostics?.pendingLoads === 0
+      && nativeRouting.nativeResourceFailureProbe?.browserRecoveryDiagnostics?.recoveries?.[0]?.reason
+        === 'encodedImageDecodeFailed'
+      && nativeRouting.nativeResourceFailureProbe?.browserRecoveryDiagnostics?.recoveries?.[0]?.fallback
+        === 'browserImageSource'
+      && nativeRouting.nativeResourceFailureProbe?.browserRecoveryDiagnostics?.recoveries?.[0]?.format
+        === 'png'
+      && nativeRouting.nativeResourceFailureProbe?.browserRecoveryDiagnostics?.failures?.length === 0
+      && nativeRouting.nativeResourceFailureProbe?.staticPictureRecoveryFirst?.recoveries?.[0]?.reason
+        === 'encodedImageDecodeFailed'
+      && nativeRouting.nativeResourceFailureProbe?.staticPictureRecoverySecond?.recoveries?.[0]?.reason
+        === 'encodedImageDecodeFailed'
+      && nativeRouting.nativeResourceFailureProbe?.staticPictureRecoverySecond?.failures?.length === 0,
+    `CanvasKit decoder failure recovers through a direct browser image source=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
     nativeRouting.nativeResourceFailureProbe?.decoderFailedImage === null
-      && nativeRouting.nativeResourceFailureProbe?.decoderFailedImageDiagnostics?.cacheMisses === 1
+      && nativeRouting.nativeResourceFailureProbe?.decoderFailedImageDiagnostics?.failureAttempts >= 1
+      && nativeRouting.nativeResourceFailureProbe?.decoderFailedImageDiagnostics?.failureCacheHits >= 1
       && nativeRouting.nativeResourceFailureProbe?.decoderFailedImageDiagnostics?.failures?.[0]?.reason
         === 'imageDecodeFailed',
     `CanvasKit decoder failure reports a deterministic reason=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,

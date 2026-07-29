@@ -123,12 +123,12 @@ const forbiddenCanvas2dApiPatterns = [
   [/\bCanvas2DLayerRenderer\b/, 'Canvas2DLayerRenderer'],
   [/canvas2d-layer-renderer/, 'canvas2d-layer-renderer import'],
 ];
-const canvaskitSvgDecodeBridgeApis = new Set([
+const canvaskitBrowserDecodeBridgeApis = new Set([
   'HTMLImageElement',
   'new Image',
   'URL.createObjectURL',
 ]);
-const canvaskitSvgDecodeBridgeFile = 'src/view/canvaskit/resource-cache.ts';
+const canvaskitBrowserDecodeBridgeFile = 'src/view/canvaskit/resource-cache.ts';
 const implementationPlanTouchpoints = [
   {
     docToken: 'src/paint/text_v2.rs',
@@ -1102,6 +1102,7 @@ assert(
     && rendererBaselineDriverSource.includes('Replay Reason Inventory')
     && rendererBaselineDriverSource.includes('planReasonCounts')
     && rendererBaselineDriverSource.includes('rejectedReasonCounts')
+    && rendererBaselineDriverSource.includes('runtimeImageRecoveryReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeImageFailureReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeTextRecoveryReasonCounts')
     && rendererBaselineDriverSource.includes('runtimeTextFailureReasonCounts'),
@@ -1791,9 +1792,11 @@ assertTokensInOrder(
     'image = this.canvasKit.MakeImageFromEncoded(bytes)',
     '} catch {',
     'image = null',
-    "this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed')",
+    "reason: 'encodedImageDecodeFailed'",
+    "fallback: 'browserImageSource'",
+    'this.startBrowserImageLoad(',
   ],
-  'CanvasKit resource cache must contain, diagnose, and memoize encoded-image decode failures',
+  'CanvasKit resource cache must recover bounded encoded-image decoder failures through its browser image bridge',
 );
 assert(
   canvaskitResourceCacheSource.includes('decodedImageMatchesHeader')
@@ -1851,11 +1854,17 @@ assertTokensInOrder(
 assert(
   canvaskitRenderNodeBlock.includes('this.staticPictureCache.getMetadata(cacheKey)')
     && canvaskitRenderNodeBlock.includes('metadata.equationReplayDiagnostics')
+    && canvaskitRenderNodeBlock.includes(
+      'this.resourceCache.restoreImageRecoveries(metadata.imageRecoveryDiagnostics)',
+    )
+    && canvaskitRenderNodeBlock.includes(
+      'this.resourceCache.getImageRecoveriesSince(imageRecoveryEventsStart)',
+    )
     && canvaskitRenderNodeBlock.includes('.slice(equationDiagnosticsStart)')
     && staticPictureCacheSource.includes('getMetadata(cacheKey: string): Metadata | null')
     && staticPictureCacheSource.includes('this.metadata.delete(key)')
     && staticPictureCacheSource.includes('this.metadata.clear()'),
-  'CanvasKit static pictures must retain equation route diagnostics and release their metadata with the picture',
+  'CanvasKit static pictures must retain equation routes and browser image recoveries and release their metadata with the picture',
 );
 assert(
   staticPictureCacheSource.includes('staticSubtreeReplayDependencies(')
@@ -2870,8 +2879,8 @@ assert.equal(
 for (const { label, source } of canvaskitSourceFiles) {
   for (const [pattern, apiName] of forbiddenCanvas2dApiPatterns) {
     if (
-      label === canvaskitSvgDecodeBridgeFile
-      && canvaskitSvgDecodeBridgeApis.has(apiName)
+      label === canvaskitBrowserDecodeBridgeFile
+      && canvaskitBrowserDecodeBridgeApis.has(apiName)
     ) {
       continue;
     }
@@ -2884,10 +2893,17 @@ for (const { label, source } of canvaskitSourceFiles) {
 }
 assert.equal(
   canvaskitResourceCacheSource.includes('MakeImageFromCanvasImageSource(image)')
-    && canvaskitResourceCacheSource.includes("new Blob([svgBytes], { type: 'image/svg+xml' })")
+    && canvaskitResourceCacheSource.includes('new Blob([imageBytes], { type: mimeType })')
     && canvaskitResourceCacheSource.includes("imageHeader.format === 'svg'"),
   true,
-  'the bounded embedded-SVG browser decode bridge must terminate in a direct CanvasKit image',
+  'the bounded browser image decode bridge must terminate SVG and raster recovery in a direct CanvasKit image',
+);
+assert.equal(
+  canvaskitResourceCacheSource.includes('browserDecodedRasterRecoveries')
+    && canvaskitResourceCacheSource.includes("reason: 'encodedImageDecodeFailed'")
+    && canvaskitResourceCacheSource.includes("fallback: 'browserImageSource'"),
+  true,
+  'CanvasKit must inventory successful raster browser-decoder recoveries without reporting a runtime image failure',
 );
 for (const forbiddenOverlayToken of [
   'document.createElement',
