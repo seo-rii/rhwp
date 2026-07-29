@@ -735,9 +735,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
       profile: 'screen',
       resources: {
         tableId: 81,
-        images: [blackBytes],
+        images: [blackBytes, blackBytes],
         imageHashes: [],
-        imageKeys: ['mutable-static-image'],
+        imageKeys: ['mutable-static-image', 'unreferenced-static-image'],
         svgFragments: [],
         svgHashes: [],
         svgKeys: [],
@@ -790,18 +790,26 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const firstPng = canvas.toDataURL('image/png');
       const afterFirstKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
 
-      tree.resources.images[0] = whiteBytes;
+      tree.resources.images[1] = whiteBytes;
       pageRenderer.renderPage(0, pageInfo, canvas, 1);
       pageRenderer.cancelReRender?.(0);
       const secondPng = canvas.toDataURL('image/png');
       const afterSecondKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
 
+      tree.resources.images[0] = whiteBytes;
+      pageRenderer.renderPage(0, pageInfo, canvas, 1);
+      pageRenderer.cancelReRender?.(0);
+      const thirdPng = canvas.toDataURL('image/png');
+      const afterThirdKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
+
       return {
         firstPng,
         secondPng,
+        thirdPng,
         afterFirstKeys,
         afterSecondKeys,
-        cacheSize: renderer.staticPictureCache?.size ?? -1,
+        afterThirdKeys,
+        cacheSizeAfterThird: renderer.staticPictureCache?.size ?? -1,
       };
     } finally {
       pageRenderer.cancelAll?.();
@@ -817,12 +825,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
     staticPictureResourceProbe.error || 'canvaskit static picture resource invalidation probe available',
   );
   assert(
-    staticPictureResourceProbe.firstPng !== staticPictureResourceProbe.secondPng,
+    staticPictureResourceProbe.firstPng === staticPictureResourceProbe.secondPng
+      && staticPictureResourceProbe.afterSecondKeys.length === staticPictureResourceProbe.afterFirstKeys.length,
+    `static picture cache ignores unreferenced resource byte changes=${JSON.stringify(staticPictureResourceProbe)}`,
+  );
+  assert(
+    staticPictureResourceProbe.secondPng !== staticPictureResourceProbe.thirdPng,
     `static picture cache key invalidates when resource bytes change=${JSON.stringify(staticPictureResourceProbe)}`,
   );
   assert(
-    staticPictureResourceProbe.cacheSize >= 2
-      && staticPictureResourceProbe.afterSecondKeys.length > staticPictureResourceProbe.afterFirstKeys.length,
+    staticPictureResourceProbe.cacheSizeAfterThird >= 2
+      && staticPictureResourceProbe.afterThirdKeys.length > staticPictureResourceProbe.afterSecondKeys.length,
     `static picture cache keeps distinct resource payload keys=${JSON.stringify(staticPictureResourceProbe)}`,
   );
 
@@ -1027,7 +1040,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const staticPictureArrayBufferProbe = await page.evaluate(() => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const renderer = pageRenderer?.canvaskitRenderer;
-    if (!pageRenderer?.wasm || !renderer || typeof pageRenderer.renderPage !== 'function') {
+    const pictureCache = renderer?.staticPictureCache;
+    if (!pageRenderer?.wasm || !renderer || !pictureCache) {
       return { error: 'canvaskit renderer unavailable' };
     }
 
@@ -1047,6 +1061,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
         fontBlobHashes: ['same-producer-hash'],
         fontBlobKeys: ['mutable-font-blob'],
       },
+      fontResources: {
+        blobs: [{
+          id: 'array-buffer-blob',
+          source: 'embedded',
+          portability: 'portableBlob',
+          digest: { algorithm: 'sha256', value: 'same-producer-hash' },
+          dataRef: { kind: 'fontBlob', id: '0' },
+        }],
+        faces: [{
+          id: 'array-buffer-face',
+          blobKey: 'array-buffer-blob',
+          faceIndex: 0,
+        }],
+      },
       root: {
         kind: 'group',
         sourceNodeId: 8200,
@@ -1059,70 +1087,37 @@ runTest('Renderer lifecycle', async ({ page }) => {
           bounds: { x: 0, y: 0, width: 64, height: 64 },
           cacheHint: 'none',
           ops: [{
-            type: 'path',
+            type: 'glyphRun',
             bbox: { x: 10, y: 10, width: 24, height: 24 },
-            transform: { rotation: 0, horzFlip: false, vertFlip: false },
-            commands: [
-              { type: 'moveTo', x: 10, y: 10 },
-              { type: 'lineTo', x: 34, y: 10 },
-              { type: 'lineTo', x: 34, y: 34 },
-              { type: 'lineTo', x: 10, y: 34 },
-              { type: 'closePath' },
-            ],
-            style: {
-              fillColor: '#000000',
-              strokeColor: null,
-              strokeWidth: 1,
-              strokeDash: 'solid',
-              opacity: 1,
+            shapeKey: {
+              fontInstance: {
+                faceKey: 'array-buffer-face',
+                sizePx: 16,
+              },
             },
           }],
         }],
       },
     };
 
-    const originalGetPageLayerTree = pageRenderer.wasm.getPageLayerTree.bind(pageRenderer.wasm);
-    pageRenderer.wasm.getPageLayerTree = () => tree;
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const pageInfo = {
-      pageIndex: 0,
-      width: 64,
-      height: 64,
-      sectionIndex: 0,
-      marginLeft: 0,
-      marginRight: 0,
-      marginTop: 0,
-      marginBottom: 0,
-      marginHeader: 0,
-      marginFooter: 0,
-    };
+    const layerTreeKey = pictureCache.cacheKeyForLayerTree(tree);
+    const firstKey = pictureCache.keyForStaticSubtree(
+      layerTreeKey,
+      tree.profile,
+      'flow',
+      tree.root,
+      tree,
+    );
+    tree.resources.fontBlobs[0] = new Uint8Array([9, 8, 7, 6]).buffer;
+    const secondKey = pictureCache.keyForStaticSubtree(
+      layerTreeKey,
+      tree.profile,
+      'flow',
+      tree.root,
+      tree,
+    );
 
-    try {
-      pageRenderer.clearLayerTreeCache();
-      renderer.clearStaticPictureCache?.();
-      pageRenderer.renderPage(0, pageInfo, canvas, 1);
-      pageRenderer.cancelReRender?.(0);
-      const afterFirstKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
-
-      tree.resources.fontBlobs[0] = new Uint8Array([9, 8, 7, 6]).buffer;
-      pageRenderer.renderPage(0, pageInfo, canvas, 1);
-      pageRenderer.cancelReRender?.(0);
-      const afterSecondKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
-
-      return {
-        afterFirstKeys,
-        afterSecondKeys,
-        cacheSize: renderer.staticPictureCache?.size ?? -1,
-      };
-    } finally {
-      pageRenderer.cancelAll?.();
-      pageRenderer.clearLayerTreeCache?.();
-      renderer.clearStaticPictureCache?.();
-      pageRenderer.wasm.getPageLayerTree = originalGetPageLayerTree;
-      canvas.remove();
-    }
+    return { firstKey, secondKey };
   });
 
   assert(
@@ -1130,8 +1125,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     staticPictureArrayBufferProbe.error || 'canvaskit static picture ArrayBuffer invalidation probe available',
   );
   assert(
-    staticPictureArrayBufferProbe.cacheSize >= 2
-      && staticPictureArrayBufferProbe.afterSecondKeys.length > staticPictureArrayBufferProbe.afterFirstKeys.length,
+    staticPictureArrayBufferProbe.firstKey !== staticPictureArrayBufferProbe.secondKey,
     `static picture cache key fingerprints ArrayBuffer resources=${JSON.stringify(staticPictureArrayBufferProbe)}`,
   );
 

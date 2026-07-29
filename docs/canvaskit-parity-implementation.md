@@ -66,9 +66,11 @@ CanvasKit replay plan all merge sidecars into the same leaf-local text variant
 selection set as their anchored `TextRun` fallback. Native Skia static subtree
 cache keys and CanvasKit static picture cache keys include those sidecar
 payloads as well, so cached pictures cannot be reused across different strict
-text alternatives. CanvasKit static picture cache keys also include replay
-`outputOptions`, because `clipEnabled`, paragraph marks, and control-code
-visibility change direct replay without changing node identity.
+text alternatives. CanvasKit scopes that dependency to sidecars anchored inside
+the cached subtree and to the current replay plane; unrelated sidecars do not
+discard otherwise reusable pictures. CanvasKit static picture cache keys also
+include replay `outputOptions`, because `clipEnabled`, paragraph marks, and
+control-code visibility change direct replay without changing node identity.
 Rust `PageLayerTree` replay-plane subtree detection is now centralized in
 `paint/replay_order.rs` as well: native Skia and layer SVG both use the same
 helper to skip planes that have no root or sidecar paint for the current
@@ -314,10 +316,15 @@ Studio page replay composes page content and margin guides on the same
 CanvasKit surface before one flush. A second guide-only flush is not part of
 the normal page path because it makes software-surface cost scale twice with
 the page raster size. Static-picture resource keys include the producer table,
-resource key/hash, and an actual payload fingerprint. Payload fingerprints are
-memoized by resource object identity so repeated replay does not rescan large
-byte arrays, while replacing a resource object still invalidates stale
-pictures even when producer metadata is unchanged.
+resource key/hash, and an actual payload fingerprint only for image, static
+SVG, and portable-font resources referenced by the cached subtree's current
+replay plane. GlyphRun dependencies follow the exact face to its blob and
+payload; schema-v1 sidecars are included only when anchored to a leaf inside the
+subtree. Adding or replacing an unrelated document resource therefore leaves
+the picture reusable. Payload fingerprints are memoized by resource object
+identity so repeated replay does not rescan large byte arrays, while replacing
+a referenced resource object still invalidates stale pictures even when
+producer metadata is unchanged.
 Ordinary document edits invalidate exported page trees and their static
 pictures, but retain the document-scoped resource table until a new document
 is loaded or the view is disposed. Content-addressed resource interning then

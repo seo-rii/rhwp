@@ -1541,34 +1541,44 @@ assertTokensInOrder(
   ],
   'CanvasKit must not cache static pictures that contain a silent runtime replay failure',
 );
-assert.equal(
-  fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
-    .includes('resourceTableFingerprint(tree.resources, this.resourcePayloadFingerprints)'),
-  true,
-  'CanvasKit static picture cache keys must include resource payload fingerprints for image and vector glyph resources',
+assert(
+  staticPictureCacheSource.includes('staticSubtreeReplayDependencies(')
+    && staticPictureCacheSource.includes('paintOpResourceReferences(')
+    && staticPictureCacheSource.includes('imageResourceReference(')
+    && staticPictureCacheSource.includes('svgResourceReference('),
+  'CanvasKit static picture cache keys must include subtree-referenced image and SVG payload fingerprints',
 );
 assert(
   staticPictureCacheSource.includes('payloadFingerprints.get(payload) ?? stableValueFingerprint(payload)')
     && staticPictureCacheSource.includes('producerHash: hashes?.[index] ?? null'),
   'CanvasKit static picture cache keys must memoize payload bytes while preserving producer identities',
 );
-assert.equal(
-  fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
-    .includes('stableValueFingerprint(tree.fontResources ?? null)'),
-  true,
-  'CanvasKit static picture cache keys must include font resource fingerprints for strict text replay',
+assert(
+  staticPictureCacheSource.includes("case 'glyphRun':")
+    && staticPictureCacheSource.includes('fontResourceReference(op, fontResources, resources, payloadFingerprints)')
+    && staticPictureCacheSource.includes("fontResources?.faces.find((candidate) => candidate.id === faceKey)"),
+  'CanvasKit static picture cache keys must include only the face/blob resource used by strict GlyphRun replay',
 );
-assert.equal(
-  fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
-    .includes('stableValueFingerprint(tree.variantOps ?? null)'),
-  true,
-  'CanvasKit static picture cache keys must include schema-v1 variantOps sidecar payloads',
+assert(
+  staticPictureCacheSource.includes('layerTextVariantOpsForLeaf(candidate.ops, tree.variantOps)')
+    && staticPictureCacheSource.includes('op: stableValueFingerprint(op)'),
+  'CanvasKit static picture cache keys must include only schema-v1 sidecars anchored in the cached subtree',
 );
 assert.equal(
   fs.readFileSync(path.join(canvaskitDirectory, 'static-picture-cache.ts'), 'utf8')
     .includes('stableValueFingerprint(tree.outputOptions ?? null)'),
   true,
   'CanvasKit static picture cache keys must include output options that affect direct replay',
+);
+const canvasKitLayerTreeCacheKeyBlock = extractMethodBody(
+  staticPictureCacheSource,
+  'cacheKeyForLayerTree',
+);
+assert(
+  !canvasKitLayerTreeCacheKeyBlock.includes('tree.resources')
+    && !canvasKitLayerTreeCacheKeyBlock.includes('tree.fontResources')
+    && !canvasKitLayerTreeCacheKeyBlock.includes('tree.variantOps'),
+  'CanvasKit layer-tree cache identity must not invalidate every static subtree for an unrelated resource or sidecar',
 );
 for (const requiredToken of [
   'item instanceof ArrayBuffer',

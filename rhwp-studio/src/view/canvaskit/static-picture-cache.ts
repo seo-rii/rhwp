@@ -1,12 +1,22 @@
 import type { SkPicture } from 'canvaskit-wasm';
 
+import { resolveLayerResourceIndex } from '@/core/layer-resource-store';
+import { layerTextVariantOpsForLeaf } from '@/core/text-variants';
 import type {
+  LayerFontBlobResource,
+  LayerFontResources,
+  LayerGlyphRunOp,
   LayerGroupNode,
+  LayerNode,
+  LayerPaintOp,
   LayerRenderProfile,
   LayerResources,
   PageLayerTree,
 } from '@/core/types';
-import type { CanvasKitReplayPlane } from './replay-plane';
+import {
+  type CanvasKitReplayPlane,
+  layerPaintOpReplayPlane,
+} from './replay-plane';
 
 export class CanvasKitStaticPictureCache {
   private readonly pictures = new Map<string, SkPicture>();
@@ -33,9 +43,6 @@ export class CanvasKitStaticPictureCache {
     }
     return [
       treeId,
-      resourceTableFingerprint(tree.resources, this.resourcePayloadFingerprints),
-      stableValueFingerprint(tree.fontResources ?? null),
-      stableValueFingerprint(tree.variantOps ?? null),
       stableValueFingerprint(tree.outputOptions ?? null),
     ].join(':');
   }
@@ -45,6 +52,7 @@ export class CanvasKitStaticPictureCache {
     profile: LayerRenderProfile,
     replayPlane: CanvasKitReplayPlane,
     node: LayerGroupNode,
+    tree: PageLayerTree,
   ): string {
     let nodeId = this.nodeIds.get(node);
     if (nodeId === undefined) {
@@ -64,6 +72,12 @@ export class CanvasKitStaticPictureCache {
       node.bounds.height.toFixed(3),
       node.children.length,
       stableValueFingerprint(node),
+      staticSubtreeReplayDependencies(
+        tree,
+        node,
+        replayPlane,
+        this.resourcePayloadFingerprints,
+      ),
     ].join(':');
   }
 
@@ -101,56 +115,229 @@ export class CanvasKitStaticPictureCache {
   }
 }
 
-function resourceTableFingerprint(
-  resources: LayerResources | undefined,
+function staticSubtreeReplayDependencies(
+  tree: PageLayerTree,
+  node: LayerGroupNode,
+  replayPlane: CanvasKitReplayPlane,
   payloadFingerprints: WeakMap<object, string>,
 ): string {
-  if (!resources) {
-    return stableValueFingerprint(null);
-  }
-  return stableValueFingerprint({
-    tableId: resources.tableId,
-    images: resourcePayloadReferences(
-      resources.images,
-      resources.imageHashes,
-      resources.imageKeys,
-      payloadFingerprints,
-    ),
-    svgFragments: resourcePayloadReferences(
-      resources.svgFragments,
-      resources.svgHashes,
-      resources.svgKeys,
-      payloadFingerprints,
-    ),
-    fontBlobs: resourcePayloadReferences(
-      resources.fontBlobs ?? [],
-      resources.fontBlobHashes,
-      resources.fontBlobKeys,
-      payloadFingerprints,
-    ),
-  });
+  const dependencies: unknown[] = [];
+
+  const visitNode = (candidate: LayerNode): void => {
+    switch (candidate.kind) {
+      case 'group':
+        for (const child of candidate.children) {
+          visitNode(child);
+        }
+        return;
+      case 'clipRect':
+        visitNode(candidate.child);
+        return;
+      case 'leaf':
+        for (const op of layerTextVariantOpsForLeaf(candidate.ops, tree.variantOps)) {
+          if (layerPaintOpReplayPlane(op) !== replayPlane) {
+            continue;
+          }
+          dependencies.push({
+            op: stableValueFingerprint(op),
+            resources: paintOpResourceReferences(
+              op,
+              tree.resources,
+              tree.fontResources,
+              payloadFingerprints,
+            ),
+          });
+        }
+        return;
+    }
+  };
+
+  visitNode(node);
+  return stableValueFingerprint(dependencies);
 }
 
-function resourcePayloadReferences(
+function paintOpResourceReferences(
+  op: LayerPaintOp,
+  resources: LayerResources | undefined,
+  fontResources: LayerFontResources | undefined,
+  payloadFingerprints: WeakMap<object, string>,
+): unknown[] {
+  const references: unknown[] = [];
+  switch (op.type) {
+    case 'pageBackground':
+      if (op.image?.resourceId !== undefined) {
+        references.push(imageResourceReference(op.image.resourceId, resources, payloadFingerprints));
+      }
+      break;
+    case 'image':
+      if (op.resourceId !== undefined) {
+        references.push(imageResourceReference(op.resourceId, resources, payloadFingerprints));
+      }
+      break;
+    case 'equation':
+      if (op.svgResourceId !== undefined) {
+        references.push(svgResourceReference(op.svgResourceId, resources, payloadFingerprints));
+      }
+      break;
+    case 'glyphOutline':
+      if (op.payloadKind === 'bitmapGlyph' && op.bitmapGlyph) {
+        references.push(
+          imageResourceReference(
+            op.bitmapGlyph.imageResourceId,
+            resources,
+            payloadFingerprints,
+          ),
+        );
+      }
+      if (op.payloadKind === 'svgGlyph' && op.svgGlyph) {
+        references.push(
+          svgResourceReference(
+            op.svgGlyph.vectorResourceId,
+            resources,
+            payloadFingerprints,
+          ),
+        );
+      }
+      break;
+    case 'glyphRun':
+      references.push(fontResourceReference(op, fontResources, resources, payloadFingerprints));
+      break;
+  }
+  return references;
+}
+
+function imageResourceReference(
+  resourceId: string | number,
+  resources: LayerResources | undefined,
+  payloadFingerprints: WeakMap<object, string>,
+): unknown {
+  return resourceReference(
+    'image',
+    resourceId,
+    resources?.images ?? [],
+    resources?.imageHashes,
+    resources?.imageKeys,
+    resources?.tableId,
+    payloadFingerprints,
+  );
+}
+
+function svgResourceReference(
+  resourceId: string | number,
+  resources: LayerResources | undefined,
+  payloadFingerprints: WeakMap<object, string>,
+): unknown {
+  return resourceReference(
+    'svg',
+    resourceId,
+    resources?.svgFragments ?? [],
+    resources?.svgHashes,
+    resources?.svgKeys,
+    resources?.tableId,
+    payloadFingerprints,
+  );
+}
+
+function resourceReference(
+  kind: 'image' | 'svg',
+  resourceId: string | number,
   payloads: readonly unknown[],
   hashes: readonly string[] | undefined,
   keys: readonly string[] | undefined,
+  tableId: number | undefined,
   payloadFingerprints: WeakMap<object, string>,
-): unknown[] {
-  return payloads.map((payload, index) => {
-    let payloadFingerprint: string;
-    if (typeof payload === 'object' && payload !== null) {
-      payloadFingerprint = payloadFingerprints.get(payload) ?? stableValueFingerprint(payload);
-      payloadFingerprints.set(payload, payloadFingerprint);
-    } else {
-      payloadFingerprint = stableValueFingerprint(payload ?? null);
-    }
-    return {
-      key: keys?.[index] ?? null,
-      producerHash: hashes?.[index] ?? null,
-      payloadFingerprint,
-    };
-  });
+): unknown {
+  const index = resolveLayerResourceIndex(resourceId, keys, payloads.length);
+  return {
+    kind,
+    resourceId,
+    tableId: tableId ?? null,
+    resolvedIndex: index ?? null,
+    payload: index === undefined
+      ? null
+      : resourcePayloadReferenceAt(payloads, hashes, keys, index, payloadFingerprints),
+  };
+}
+
+function fontResourceReference(
+  op: LayerGlyphRunOp,
+  fontResources: LayerFontResources | undefined,
+  resources: LayerResources | undefined,
+  payloadFingerprints: WeakMap<object, string>,
+): unknown {
+  const faceKey = op.shapeKey.fontInstance.faceKey;
+  const face = fontResources?.faces.find((candidate) => candidate.id === faceKey);
+  const blob = face
+    ? fontResources?.blobs.find((candidate) => candidate.id === face.blobKey)
+    : undefined;
+  const dataIndex = blob
+    ? resolveFontBlobDataIndex(blob, resources)
+    : undefined;
+
+  return {
+    kind: 'font',
+    faceKey,
+    face: face ?? null,
+    blob: blob ?? null,
+    tableId: resources?.tableId ?? null,
+    dataIndex: dataIndex ?? null,
+    payload: dataIndex === undefined
+      ? null
+      : resourcePayloadReferenceAt(
+          resources?.fontBlobs ?? [],
+          resources?.fontBlobHashes,
+          resources?.fontBlobKeys,
+          dataIndex,
+          payloadFingerprints,
+        ),
+  };
+}
+
+function resolveFontBlobDataIndex(
+  blob: LayerFontBlobResource,
+  resources: LayerResources | undefined,
+): number | undefined {
+  if (blob.dataRef?.kind !== 'fontBlob' || !resources?.fontBlobs) {
+    return undefined;
+  }
+  const numericRef = /^(0|[1-9]\d*)$/.test(blob.dataRef.id)
+    ? Number.parseInt(blob.dataRef.id, 10)
+    : undefined;
+  if (numericRef !== undefined && numericRef < resources.fontBlobs.length) {
+    return numericRef;
+  }
+  const keyIndex = resources.fontBlobKeys?.indexOf(blob.dataRef.id) ?? -1;
+  if (keyIndex >= 0 && keyIndex < resources.fontBlobs.length) {
+    return keyIndex;
+  }
+  const digestIndex = blob.digest
+    ? resources.fontBlobHashes?.indexOf(blob.digest.value) ?? -1
+    : -1;
+  return digestIndex >= 0 && digestIndex < resources.fontBlobs.length
+    ? digestIndex
+    : undefined;
+}
+
+function resourcePayloadReferenceAt(
+  payloads: readonly unknown[],
+  hashes: readonly string[] | undefined,
+  keys: readonly string[] | undefined,
+  index: number,
+  payloadFingerprints: WeakMap<object, string>,
+): unknown {
+  const payload = payloads[index];
+  let payloadFingerprint: string;
+  if (typeof payload === 'object' && payload !== null) {
+    payloadFingerprint = payloadFingerprints.get(payload) ?? stableValueFingerprint(payload);
+    payloadFingerprints.set(payload, payloadFingerprint);
+  } else {
+    payloadFingerprint = stableValueFingerprint(payload ?? null);
+  }
+  return {
+    key: keys?.[index] ?? null,
+    producerHash: hashes?.[index] ?? null,
+    payloadFingerprint,
+  };
 }
 
 function stableValueFingerprint(value: unknown): string {

@@ -584,12 +584,17 @@ export class CanvasKitLayerRenderer {
             if (!hasReplayPlane) {
               return;
             }
+            const activeTree = this.lastRenderedTree;
+            if (!activeTree) {
+              throw new Error('CanvasKit static subtree replay requires an active layer tree');
+            }
 
             const cacheKey = this.staticPictureCache.keyForStaticSubtree(
               this.currentLayerTreeCacheKey,
               this.currentProfile,
               replayPlane,
               node,
+              activeTree,
             );
             const cachedPicture = this.staticPictureCache.get(cacheKey);
             if (cachedPicture) {
