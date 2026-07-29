@@ -105,7 +105,7 @@ import {
   puaToDisplayText,
   splitIntoClusters,
   startsWithInvalidControl,
-  tabLeaderDashStyle,
+  tabLeaderLineSegments,
   textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
   textDecorationEmphasisPosition,
@@ -3778,11 +3778,23 @@ export class CanvasKitLayerRenderer {
 
   private drawTabLeaders(canvas: ReturnType<Surface['getCanvas']>, leaders: LayerTabLeader[], originX: number, baselineY: number, color: string): void {
     for (const leader of leaders) {
-      const dash = tabLeaderDashStyle(leader.fillType);
-      const paint = this.makeLinePaint(color, 1, dash);
-      const y = baselineY + 1;
-      canvas.drawLine(originX + leader.startX, y, originX + leader.endX, y, paint);
-      paint.delete();
+      for (const segment of tabLeaderLineSegments(leader.fillType)) {
+        const paint = this.makePaint(color, 'stroke');
+        paint.setStrokeWidth(segment.width);
+        paint.setStrokeCap(
+          segment.cap === 'round'
+            ? this.canvasKit.StrokeCap.Round
+            : this.canvasKit.StrokeCap.Butt,
+        );
+        if (segment.dash.length) {
+          const effect = this.canvasKit.PathEffect.MakeDash(segment.dash, 0);
+          paint.setPathEffect(effect);
+          effect.delete();
+        }
+        const y = baselineY + 1 + segment.offsetY;
+        canvas.drawLine(originX + leader.startX, y, originX + leader.endX, y, paint);
+        paint.delete();
+      }
     }
   }
 

@@ -83,7 +83,7 @@ import { replayColorPaintGraph, resolvedColorToCss } from './glyph-outline-color
 import { formObjectPalette } from './form-replay-utils';
 import {
   TEXT_CONTROL_MARK_FONT_FAMILY,
-  tabLeaderDashStyle,
+  tabLeaderLineSegments,
   textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
   textDecorationEmphasisPosition,
@@ -1760,16 +1760,19 @@ export class Canvas2DLayerRenderer {
     color: string,
   ): void {
     for (const leader of leaders) {
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.setLineDash(strokeDashPattern(tabLeaderDashStyle(leader.fillType), 1));
-      const y = baselineY + 1;
-      ctx.beginPath();
-      ctx.moveTo(originX + leader.startX, y);
-      ctx.lineTo(originX + leader.endX, y);
-      ctx.stroke();
-      ctx.restore();
+      for (const segment of tabLeaderLineSegments(leader.fillType)) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = segment.width;
+        ctx.lineCap = segment.cap;
+        ctx.setLineDash(segment.dash);
+        const y = baselineY + 1 + segment.offsetY;
+        ctx.beginPath();
+        ctx.moveTo(originX + leader.startX, y);
+        ctx.lineTo(originX + leader.endX, y);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 

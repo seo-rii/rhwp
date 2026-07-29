@@ -17580,6 +17580,118 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text visual line parity exact=${textVisualLineDiff.exactDiffPixels}, tolerant=${textVisualLineDiff.rawTolerantDiffPixels}, ink=${textVisualLineDiff.rawInkMaskDiffPixels}, max_channel_delta=${textVisualLineDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-tab-leader-variant-parity');
+  const tabLeaderVariantParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 96,
+      pageHeight: 122,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1918,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1918,
+        bounds: { x: 0, y: 0, width: 96, height: 122 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 96, height: 122 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          ...Array.from({ length: 12 }, (_, fillType) => ({
+            type: 'tabLeader',
+            bbox: { x: 8, y: fillType * 10, width: 80, height: 10 },
+            leader: { startX: 0, endX: 80, fillType },
+            color: '#101010',
+            fontSize: 10,
+            baseline: 4,
+          })),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !tabLeaderVariantParityProbe.error,
+    tabLeaderVariantParityProbe.error || 'tab leader variant parity probe available',
+  );
+  const tabLeaderVariantPixels = (dataUrl) => Array.from(
+    { length: 12 },
+    (_, fillType) => countPixels(
+      dataUrl,
+      (pixel) => pixel.y >= fillType * 10
+        && pixel.y < (fillType + 1) * 10
+        && pixel.alpha > 16
+        && (pixel.red < 240 || pixel.green < 240 || pixel.blue < 240),
+    ),
+  );
+  const tabLeaderCanvas2dVariantPixels = tabLeaderVariantPixels(tabLeaderVariantParityProbe.canvas2d);
+  const tabLeaderCanvaskitVariantPixels = tabLeaderVariantPixels(tabLeaderVariantParityProbe.canvaskit);
+  assert(
+    tabLeaderCanvas2dVariantPixels[0] === 0 && tabLeaderCanvaskitVariantPixels[0] === 0,
+    `fillType=0 omits tab leader ink canvas2d=${tabLeaderCanvas2dVariantPixels[0]}, canvaskit=${tabLeaderCanvaskitVariantPixels[0]}`,
+  );
+  assert(
+    tabLeaderCanvas2dVariantPixels.slice(1).every((count) => count > 3)
+      && tabLeaderCanvaskitVariantPixels.slice(1).every((count) => count > 3),
+    `all visible tab leader variants draw canvas2d=${JSON.stringify(tabLeaderCanvas2dVariantPixels)}, canvaskit=${JSON.stringify(tabLeaderCanvaskitVariantPixels)}`,
+  );
+  assert(
+    new Set(tabLeaderCanvas2dVariantPixels.slice(1)).size >= 5
+      && new Set(tabLeaderCanvaskitVariantPixels.slice(1)).size >= 5,
+    `tab leader variants retain distinct geometry canvas2d=${JSON.stringify(tabLeaderCanvas2dVariantPixels)}, canvaskit=${JSON.stringify(tabLeaderCanvaskitVariantPixels)}`,
+  );
+  const tabLeaderVariantDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(tabLeaderVariantParityProbe.canvas2d),
+    pngBufferFromDataUrl(tabLeaderVariantParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-tab-leader-variant-parity',
+      ignoreChannelDelta: 8,
+      maxDiffRatio: 0.01,
+      inkMaskMaxDiffRatio: 0.005,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    tabLeaderVariantDiff.passed,
+    `tab leader variant parity exact=${tabLeaderVariantDiff.exactDiffPixels}, tolerant=${tabLeaderVariantDiff.rawTolerantDiffPixels}, ink=${tabLeaderVariantDiff.rawInkMaskDiffPixels}, max_channel_delta=${tabLeaderVariantDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-text-decoration-options-parity');
   const textDecorationOptionsParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

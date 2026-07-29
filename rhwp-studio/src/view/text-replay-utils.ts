@@ -31,8 +31,48 @@ export function allowsTextControlMark(
   }
 }
 
-export function tabLeaderDashStyle(fillType: number): 'solid' | 'dash' | 'dot' {
-  return fillType === 2 ? 'dash' : fillType === 3 ? 'dot' : 'solid';
+export interface TabLeaderLineSegment {
+  offsetY: number;
+  width: number;
+  dash: number[];
+  cap: 'butt' | 'round';
+}
+
+export function tabLeaderLineSegments(fillType: number): TabLeaderLineSegment[] {
+  const segment = (
+    offsetY: number,
+    width: number,
+    dash: number[] = [],
+    cap: TabLeaderLineSegment['cap'] = 'butt',
+  ): TabLeaderLineSegment => ({ offsetY, width, dash, cap });
+  switch (fillType) {
+    case 0:
+      return [];
+    case 1:
+      return [segment(0, 0.5)];
+    case 2:
+      return [segment(0, 0.5, [3, 3])];
+    case 3:
+      return [segment(0, 0.5, [1, 2])];
+    case 4:
+      return [segment(0, 0.5, [6, 2, 1, 2])];
+    case 5:
+      return [segment(0, 0.5, [6, 2, 1, 2, 1, 2])];
+    case 6:
+      return [segment(0, 0.5, [8, 4])];
+    case 7:
+      return [segment(0, 0.7, [0.1, 2.5], 'round')];
+    case 8:
+      return [segment(-1, 0.3), segment(1, 0.3)];
+    case 9:
+      return [segment(-1.2, 0.3), segment(0.8, 0.8)];
+    case 10:
+      return [segment(-0.8, 0.8), segment(1.2, 0.3)];
+    case 11:
+      return [segment(-2, 0.3), segment(0, 0.8), segment(2, 0.3)];
+    default:
+      return [segment(0, 0.5, [1, 2])];
+  }
 }
 
 export type TextDecorationEmphasisPathCommand =

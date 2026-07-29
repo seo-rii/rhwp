@@ -2077,26 +2077,38 @@ assert.equal(
   'CanvasKit renderer must import shared text replay helpers from the native-ready module',
 );
 assert.equal(
-  textReplayUtilsSource.includes('export function tabLeaderDashStyle('),
+  textReplayUtilsSource.includes('export function tabLeaderLineSegments('),
   true,
-  'tab leader fillType mapping must live in shared native-ready text helpers',
+  'tab leader fillType geometry must live in shared native-ready text helpers',
+);
+assertTokensInOrder(
+  extractFunctionBody(textReplayUtilsSource, 'tabLeaderLineSegments'),
+  [
+    'case 0:',
+    'case 1:',
+    'case 2:',
+    'case 3:',
+    'case 4:',
+    'case 5:',
+    'case 6:',
+    'case 7:',
+    'case 8:',
+    'case 9:',
+    'case 10:',
+    'case 11:',
+  ],
+  'shared tab leader geometry must cover none plus all eleven HWP fill variants',
 );
 assert.equal(
-  canvas2dSource.includes('leader.fillType === 2')
-    || canvaskitSource.includes('leader.fillType === 2'),
-  false,
-  'Canvas2D and CanvasKit must not carry separate tab leader fillType mappings',
-);
-assert.equal(
-  importBlockFrom(canvas2dSource, './text-replay-utils').includes('tabLeaderDashStyle')
-    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('tabLeaderDashStyle'),
+  importBlockFrom(canvas2dSource, './text-replay-utils').includes('tabLeaderLineSegments')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('tabLeaderLineSegments'),
   true,
-  'Canvas2D and CanvasKit must import the shared tab leader dash helper',
+  'Canvas2D and CanvasKit must import the shared tab leader geometry helper',
 );
 assert(
-  extractMethodBody(canvas2dSource, 'drawTabLeaders').includes('strokeDashPattern(tabLeaderDashStyle(leader.fillType), 1)')
-    && extractMethodBody(canvaskitSource, 'drawTabLeaders').includes('tabLeaderDashStyle(leader.fillType)'),
-  'Canvas2D and CanvasKit tab leader replay must share fillType-to-dash mapping',
+  extractMethodBody(canvas2dSource, 'drawTabLeaders').includes('tabLeaderLineSegments(leader.fillType)')
+    && extractMethodBody(canvaskitSource, 'drawTabLeaders').includes('tabLeaderLineSegments(leader.fillType)'),
+  'Canvas2D and CanvasKit tab leader replay must share fillType geometry',
 );
 assert.equal(
   textReplayUtilsSource.includes('export function textDecorationEmphasisGeometry(')
