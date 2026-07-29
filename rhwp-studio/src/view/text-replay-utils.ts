@@ -1,5 +1,7 @@
 import type { LayerTextControlMark, LayerTextStyle } from '@/core/types';
 
+export const TEXT_CONTROL_MARK_FONT_FAMILY = 'D2Coding';
+
 export function startsWithInvalidControl(text: string): boolean {
   if (!text) {
     return false;

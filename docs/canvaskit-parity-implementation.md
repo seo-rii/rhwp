@@ -473,10 +473,14 @@ The working order is:
    rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
    dots, tab leaders, control marks, character overlap, field markers, and
    line-break-sensitive cases. These remain `hwpCompat` visual replay work, not
-   shapedModern layout authority changes. CanvasKit text outline Paints use the
-   same round stroke join as Canvas2D for both root `TextRun` and selected
-   `GlyphRun` replay. Shape shadow alpha is multiplied by the authored shape
-   opacity before replay, matching the Canvas2D `globalAlpha` composition
+   shapedModern layout authority changes. Inline control coverage includes
+   paragraph-end, line-break, space, and tab marks under their shared output
+   option gates. Both browser backends use the checked-in `D2Coding` symbol font
+   for these marks, so CanvasKit does not depend on browser-only system font
+   fallback for the arrow and line-break glyphs. CanvasKit text outline Paints
+   use the same round stroke join as Canvas2D for both root `TextRun` and
+   selected `GlyphRun` replay. Shape shadow alpha is multiplied by the authored
+   shape opacity before replay, matching the Canvas2D `globalAlpha` composition
    contract for rectangle, ellipse, and path fill/stroke shadows. Shape fill
    selection also falls through in Canvas2D order: an unusable gradient tries
    the authored pattern before the solid fill color. Path connectors derive

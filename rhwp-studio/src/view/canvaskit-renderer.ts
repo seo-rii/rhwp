@@ -95,6 +95,7 @@ import {
   strokeDashPattern,
 } from './layer-geometry-utils';
 import {
+  TEXT_CONTROL_MARK_FONT_FAMILY,
   allowsTextControlMark,
   charOverlapInnerSizeRatio,
   decodePuaOverlapNumber,
@@ -1220,7 +1221,13 @@ export class CanvasKitLayerRenderer {
           )) {
             continue;
           }
-          const markObjects = this.makeTextObjects('Noto Sans KR', mark.fontSize, false, false, '#4A90D9');
+          const markObjects = this.makeTextObjects(
+            TEXT_CONTROL_MARK_FONT_FAMILY,
+            mark.fontSize,
+            false,
+            false,
+            '#4A90D9',
+          );
           canvas.drawText(mark.text, originX + mark.x, originY + mark.y, markObjects.paint, markObjects.font);
           markObjects.paint.delete();
           markObjects.font.delete();
@@ -2061,7 +2068,13 @@ export class CanvasKitLayerRenderer {
     )) {
       return;
     }
-    const markObjects = this.makeTextObjects('Noto Sans KR', op.mark.fontSize, false, false, '#4A90D9');
+    const markObjects = this.makeTextObjects(
+      TEXT_CONTROL_MARK_FONT_FAMILY,
+      op.mark.fontSize,
+      false,
+      false,
+      '#4A90D9',
+    );
     canvas.drawText(
       op.mark.text,
       op.bbox.x + op.mark.x,

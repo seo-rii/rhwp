@@ -82,6 +82,7 @@ import {
 import { replayColorPaintGraph, resolvedColorToCss } from './glyph-outline-color-graph-utils';
 import { formObjectPalette } from './form-replay-utils';
 import {
+  TEXT_CONTROL_MARK_FONT_FAMILY,
   tabLeaderDashStyle,
   textDecorationEmphasisSize,
   textDecorationEmphasisMark,
@@ -888,7 +889,7 @@ export class Canvas2DLayerRenderer {
           )) {
             continue;
           }
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', mark.fontSize, false, false);
+          this.setCanvasTextFont(ctx, TEXT_CONTROL_MARK_FONT_FAMILY, mark.fontSize, false, false);
           ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
         }
         ctx.restore();
@@ -1070,7 +1071,7 @@ export class Canvas2DLayerRenderer {
     }
     ctx.save();
     ctx.fillStyle = '#4A90D9';
-    this.setCanvasTextFont(ctx, 'Noto Sans KR', op.mark.fontSize, false, false);
+    this.setCanvasTextFont(ctx, TEXT_CONTROL_MARK_FONT_FAMILY, op.mark.fontSize, false, false);
     ctx.fillText(op.mark.text, op.bbox.x + op.mark.x, op.bbox.y + op.mark.y);
     ctx.restore();
   }

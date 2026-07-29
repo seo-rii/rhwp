@@ -474,6 +474,32 @@ for (const [opType, rustOp, runtimeCall] of [
     runtimeCall,
   });
 }
+assertTokensInOrder(
+  extractFunctionBody(textReplayUtilsSource, 'allowsTextControlMark'),
+  ["case 'space':", "case 'tab':", "case 'lineBreakEnd':", 'return showControlCodes'],
+  'inline space, tab, and line-break control marks must share the control-code visibility gate',
+);
+assert(
+  textReplayUtilsSource.includes("export const TEXT_CONTROL_MARK_FONT_FAMILY = 'D2Coding';"),
+  'control marks must use the checked-in symbol font with all emitted mark glyphs',
+);
+for (const [label, source] of [
+  ['Canvas2D', canvas2dSource],
+  ['CanvasKit', canvaskitSource],
+]) {
+  assert(
+    extractMethodBody(source, 'renderTextControlMark').includes('allowsTextControlMark('),
+    `${label} standalone control marks must use the shared visibility policy`,
+  );
+  assert(
+    extractMethodBody(source, 'renderTextControlMark').includes('TEXT_CONTROL_MARK_FONT_FAMILY'),
+    `${label} standalone control marks must use the shared symbol font`,
+  );
+  assert(
+    extractMethodBody(source, 'renderTextRun').includes('TEXT_CONTROL_MARK_FONT_FAMILY'),
+    `${label} inline control marks must use the shared symbol font`,
+  );
+}
 for (const [opType, rustOp, runtimeCall] of [
   ['line', 'Line', 'this.renderLine(canvas, op);'],
   ['rectangle', 'Rectangle', 'this.renderRectangle(canvas, op);'],

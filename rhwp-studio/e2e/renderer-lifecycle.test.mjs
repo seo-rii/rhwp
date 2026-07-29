@@ -16308,7 +16308,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       shadeColor: '#ffffff',
     };
     const tree = (showParagraphMarks, showControlCodes) => ({
-      pageWidth: 94,
+      pageWidth: 114,
       pageHeight: 34,
       profile: 'screen',
       outputOptions: {
@@ -16334,13 +16334,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: showParagraphMarks || showControlCodes ? 1913 : 1914,
-        bounds: { x: 0, y: 0, width: 94, height: 34 },
+        bounds: { x: 0, y: 0, width: 114, height: 34 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 94, height: 34 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 114, height: 34 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'textRun',
-            bbox: { x: 8, y: 6, width: 80, height: 22 },
+            bbox: { x: 8, y: 6, width: 100, height: 22 },
             text: 'A',
             baseline: 17,
             rotation: 0,
@@ -16351,9 +16351,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
             style,
             positions: [0, 12],
             controlMarks: [
-              { kind: 'paragraphEnd', text: '¶', x: 18, y: 17, fontSize: 16 },
-              { kind: 'lineBreakEnd', text: '↵', x: 38, y: 17, fontSize: 16 },
-              { kind: 'space', text: '·', x: 58, y: 17, fontSize: 16 },
+              { kind: 'paragraphEnd', text: '¶', x: 18, y: 0, fontSize: 16 },
+              { kind: 'lineBreakEnd', text: '↵', x: 38, y: 0, fontSize: 16 },
+              { kind: 'space', text: '·', x: 58, y: 0, fontSize: 16 },
+              { kind: 'tab', text: '→', x: 78, y: 0, fontSize: 16 },
             ],
             tabLeaders: [],
           },
@@ -16397,6 +16398,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     visibleCanvas2dControlPixels > 20 && visibleCanvaskitControlPixels > 20,
     `inline control marks draw when enabled canvas2d=${visibleCanvas2dControlPixels}, canvaskit=${visibleCanvaskitControlPixels}`,
+  );
+  const visibleCanvas2dTabPixels = countPixels(
+    inlineControlMarkParityProbe.visibleCanvas2d,
+    (pixel) => pixel.x >= 84 && pixel.x < 109 && isControlMarkBlue(pixel),
+  );
+  const visibleCanvaskitTabPixels = countPixels(
+    inlineControlMarkParityProbe.visibleCanvaskit,
+    (pixel) => pixel.x >= 84 && pixel.x < 109 && isControlMarkBlue(pixel),
+  );
+  assert(
+    visibleCanvas2dTabPixels > 3 && visibleCanvaskitTabPixels > 3,
+    `inline tab control mark draws in its own region canvas2d=${visibleCanvas2dTabPixels}, canvaskit=${visibleCanvaskitTabPixels}`,
   );
   assert(
     hiddenCanvas2dControlPixels === 0 && hiddenCanvaskitControlPixels === 0,
