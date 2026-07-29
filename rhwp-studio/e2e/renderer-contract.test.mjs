@@ -1053,6 +1053,39 @@ compareCaseLabels(
   caseLabels(extractMethodBody(canvaskitSource, 'renderEquationBox')),
   'equation layout replay',
 );
+const canvaskitEquationTextBlock = extractMethodBody(canvaskitSource, 'drawEquationTextAligned');
+assert(
+  canvaskitEquationTextBlock.includes('const measuredWidth = glyphWidths.reduce(')
+    && canvaskitEquationTextBlock.includes('centered ? anchorX - measuredWidth / 2 : anchorX')
+    && !canvaskitEquationTextBlock.includes('font.setScaleX('),
+  'CanvasKit equation text must preserve natural glyph advances and use measurement only for centering',
+);
+const canvaskitEquationBracketBlock = extractMethodBody(canvaskitSource, 'drawEquationBracket');
+for (const token of [
+  "case '(':",
+  "case ')':",
+  "case '[':",
+  "case ']':",
+  "case '{':",
+  "case '}':",
+  'builder.quadTo(',
+  'const path = builder.detach()',
+  'builder.delete()',
+  'canvas.drawPath(path, paint)',
+  'path.delete()',
+]) {
+  assert.equal(
+    canvaskitEquationBracketBlock.includes(token),
+    true,
+    `CanvasKit equation stretch brackets must use direct CanvasKit paths: ${token}`,
+  );
+}
+assert(
+  extractMethodBody(canvaskitSource, 'makeEquationStrokePaint')
+    .includes('paint.setStrokeWidth(strokeWidth)')
+    && !extractMethodBody(canvaskitSource, 'makeEquationStrokePaint').includes('Math.max('),
+  'CanvasKit equation geometry must preserve the same authored stroke width as Canvas2D',
+);
 assert(
   extractMethodBody(canvas2dSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)')
     && extractMethodBody(canvaskitSource, 'renderEquationSvgResource').includes('parseStaticSvgPathLayers(fragment)')

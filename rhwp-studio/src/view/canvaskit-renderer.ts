@@ -2901,7 +2901,6 @@ export class CanvasKitLayerRenderer {
           true,
           bold,
           this.resolveEquationFontFamily('text', layout.kind.text),
-          layout.width,
         );
         return;
       case 'number':
@@ -2915,7 +2914,6 @@ export class CanvasKitLayerRenderer {
           false,
           bold,
           this.resolveEquationFontFamily('number', layout.kind.text),
-          layout.width,
         );
         return;
       case 'symbol':
@@ -2929,7 +2927,6 @@ export class CanvasKitLayerRenderer {
           false,
           false,
           this.resolveEquationFontFamily('symbol', layout.kind.text),
-          layout.width,
         );
         return;
       case 'mathSymbol':
@@ -2943,7 +2940,6 @@ export class CanvasKitLayerRenderer {
           false,
           false,
           this.resolveEquationFontFamily('mathSymbol', layout.kind.text),
-          layout.width,
         );
         return;
       case 'function':
@@ -2957,7 +2953,6 @@ export class CanvasKitLayerRenderer {
           false,
           false,
           this.resolveEquationFontFamily('function', layout.kind.name),
-          layout.width,
         );
         return;
       case 'fraction':
@@ -3017,17 +3012,17 @@ export class CanvasKitLayerRenderer {
       case 'bigOp': {
         const opFontSize = fontSize * EQUATION_BIG_OP_SCALE;
         const supHeight = layout.kind.sup ? layout.kind.sup.height + fontSize * 0.05 : 0;
-        this.drawEquationTextCentered(
+        const estimatedWidth = Array.from(layout.kind.symbol).length * opFontSize * 0.6;
+        this.drawEquationText(
           canvas,
           layout.kind.symbol,
-          x + layout.width / 2,
+          x + (layout.width - estimatedWidth) / 2,
           y + supHeight + opFontSize * 0.8,
           opFontSize,
           color,
           false,
           false,
           this.resolveEquationFontFamily('mathSymbol', layout.kind.symbol),
-          layout.width,
         );
         if (layout.kind.sup) {
           this.renderEquationBox(canvas, layout.kind.sup, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, false, false);
@@ -3048,7 +3043,6 @@ export class CanvasKitLayerRenderer {
           false,
           false,
           this.resolveEquationFontFamily('function', layout.kind.isUpper ? 'Lim' : 'lim'),
-          layout.width,
         );
         if (layout.kind.sub) {
           this.renderEquationBox(canvas, layout.kind.sub, x, y, color, fontSize * EQUATION_SCRIPT_SCALE, false, false);
@@ -3127,15 +3121,38 @@ export class CanvasKitLayerRenderer {
     italic: boolean,
     bold: boolean,
     fontFamily: string,
-    targetWidth: number,
+  ): void {
+    this.drawEquationTextAligned(
+      canvas,
+      text,
+      x,
+      y,
+      size,
+      color,
+      italic,
+      bold,
+      fontFamily,
+      false,
+    );
+  }
+
+  private drawEquationTextAligned(
+    canvas: ReturnType<Surface['getCanvas']>,
+    text: string,
+    anchorX: number,
+    y: number,
+    size: number,
+    color: string,
+    italic: boolean,
+    bold: boolean,
+    fontFamily: string,
+    centered: boolean,
   ): void {
     const { font, paint, typeface } = this.makeTextObjects(fontFamily, size, bold, italic, color);
     const glyphIds = font.getGlyphIDs(text);
     const glyphWidths = font.getGlyphWidths(glyphIds) ?? [];
     const measuredWidth = glyphWidths.reduce((sum, width) => sum + width, 0);
-    if (targetWidth > 0 && measuredWidth > 0) {
-      font.setScaleX(targetWidth / measuredWidth);
-    }
+    const x = centered ? anchorX - measuredWidth / 2 : anchorX;
     canvas.drawText(text, x, y, paint, font);
     paint.delete();
     font.delete();
@@ -3152,19 +3169,18 @@ export class CanvasKitLayerRenderer {
     italic: boolean,
     bold: boolean,
     fontFamily: string,
-    targetWidth: number,
   ): void {
-    this.drawEquationText(
+    this.drawEquationTextAligned(
       canvas,
       text,
-      centerX - targetWidth / 2,
+      centerX,
       baselineY,
       size,
       color,
       italic,
       bold,
       fontFamily,
-      targetWidth,
+      true,
     );
   }
 
@@ -3190,7 +3206,7 @@ export class CanvasKitLayerRenderer {
     color: string,
     strokeWidth: number,
   ): void {
-    const paint = this.makeLinePaint(color, Math.max(strokeWidth, 0.5), 'solid');
+    const paint = this.makeEquationStrokePaint(color, strokeWidth);
     canvas.drawLine(x1, y1, x2, y2, paint);
     paint.delete();
   }
@@ -3205,22 +3221,99 @@ export class CanvasKitLayerRenderer {
     color: string,
     fontSize: number,
   ): void {
+    const midX = x + width / 2;
     if (bracket === '|') {
-      this.drawEquationLine(canvas, x + width / 2, y, x + width / 2, y + height, color, fontSize * 0.04);
+      this.drawEquationLine(canvas, midX, y, midX, y + height, color, fontSize * 0.04);
       return;
     }
-    this.drawEquationTextCentered(
-      canvas,
-      bracket,
-      x + width / 2,
-      y + height * 0.7,
-      Math.max(height, fontSize),
-      color,
-      false,
-      false,
-      this.resolveEquationFontFamily('symbol', bracket),
-      width,
-    );
+
+    const builder = new this.canvasKit.PathBuilder();
+    switch (bracket) {
+      case '(':
+        builder.moveTo(midX + width * 0.2, y);
+        builder.quadTo(x, y + height / 2, midX + width * 0.2, y + height);
+        break;
+      case ')':
+        builder.moveTo(midX - width * 0.2, y);
+        builder.quadTo(x + width, y + height / 2, midX - width * 0.2, y + height);
+        break;
+      case '[':
+        builder.moveTo(midX + width * 0.2, y);
+        builder.lineTo(midX - width * 0.2, y);
+        builder.lineTo(midX - width * 0.2, y + height);
+        builder.lineTo(midX + width * 0.2, y + height);
+        break;
+      case ']':
+        builder.moveTo(midX - width * 0.2, y);
+        builder.lineTo(midX + width * 0.2, y);
+        builder.lineTo(midX + width * 0.2, y + height);
+        builder.lineTo(midX - width * 0.2, y + height);
+        break;
+      case '{': {
+        const quarterHeight = height / 4;
+        builder.moveTo(midX + width * 0.2, y);
+        builder.quadTo(midX - width * 0.1, y, midX - width * 0.1, y + quarterHeight);
+        builder.quadTo(
+          midX - width * 0.1,
+          y + quarterHeight * 2,
+          midX - width * 0.3,
+          y + quarterHeight * 2,
+        );
+        builder.quadTo(
+          midX - width * 0.1,
+          y + quarterHeight * 2,
+          midX - width * 0.1,
+          y + quarterHeight * 3,
+        );
+        builder.quadTo(midX - width * 0.1, y + height, midX + width * 0.2, y + height);
+        break;
+      }
+      case '}': {
+        const quarterHeight = height / 4;
+        builder.moveTo(midX - width * 0.2, y);
+        builder.quadTo(midX + width * 0.1, y, midX + width * 0.1, y + quarterHeight);
+        builder.quadTo(
+          midX + width * 0.1,
+          y + quarterHeight * 2,
+          midX + width * 0.3,
+          y + quarterHeight * 2,
+        );
+        builder.quadTo(
+          midX + width * 0.1,
+          y + quarterHeight * 2,
+          midX + width * 0.1,
+          y + quarterHeight * 3,
+        );
+        builder.quadTo(midX + width * 0.1, y + height, midX - width * 0.2, y + height);
+        break;
+      }
+      default:
+        builder.delete();
+        this.drawEquationTextCentered(
+          canvas,
+          bracket,
+          midX,
+          y + height * 0.7,
+          height,
+          color,
+          false,
+          false,
+          this.resolveEquationFontFamily('symbol', bracket),
+        );
+        return;
+    }
+    const path = builder.detach();
+    builder.delete();
+    const paint = this.makeEquationStrokePaint(color, fontSize * 0.04);
+    canvas.drawPath(path, paint);
+    paint.delete();
+    path.delete();
+  }
+
+  private makeEquationStrokePaint(color: string, strokeWidth: number): Paint {
+    const paint = this.makePaint(color, 'stroke');
+    paint.setStrokeWidth(strokeWidth);
+    return paint;
   }
 
   private drawEquationDecoration(
@@ -3232,7 +3325,7 @@ export class CanvasKitLayerRenderer {
     color: string,
     fontSize: number,
   ): void {
-    const strokeWidth = Math.max(fontSize * 0.03, 0.5);
+    const strokeWidth = fontSize * 0.03;
     const halfWidth = width / 2;
     switch (decoration) {
       case 'hat':
@@ -3264,7 +3357,7 @@ export class CanvasKitLayerRenderer {
       }
       case 'dot':
       case 'dDot': {
-        const radius = Math.max(fontSize * 0.03, 1);
+        const radius = fontSize * 0.03;
         const paint = this.makePaint(color, 'fill');
         if (decoration === 'dot') {
           canvas.drawCircle(midX, y + fontSize * 0.06, radius, paint);

@@ -15174,8 +15174,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
                   }),
                   box(100, 3, 30, 32, 18, {
                     type: 'paren',
-                    left: '[',
-                    right: ']',
+                    left: '{',
+                    right: '}',
                     body: textBox(9, 10, 'y'),
                   }),
                   box(136, 7, 26, 24, 15, {
@@ -15256,14 +15256,18 @@ runTest('Renderer lifecycle', async ({ page }) => {
     equationAdvancedCanvas2dInkPixels > 250 && equationAdvancedCanvaskitInkPixels > 250,
     `equation advanced layout replay draws glyphs/geometry canvas2d=${equationAdvancedCanvas2dInkPixels}, canvaskit=${equationAdvancedCanvaskitInkPixels}`,
   );
+  assert(
+    Math.abs(equationAdvancedCanvas2dInkPixels - equationAdvancedCanvaskitInkPixels) <= 120,
+    `equation advanced layout preserves natural text/delimiter coverage canvas2d=${equationAdvancedCanvas2dInkPixels}, canvaskit=${equationAdvancedCanvaskitInkPixels}`,
+  );
   const equationAdvancedDiff = await comparePngBuffers(
     pngBufferFromDataUrl(equationAdvancedLayoutParityProbe.canvas2d),
     pngBufferFromDataUrl(equationAdvancedLayoutParityProbe.canvaskit),
     {
       diffName: 'canvas-layer-equation-advanced-layout-parity',
       ignoreChannelDelta: 24,
-      maxDiffRatio: 0.1,
-      inkMaskMaxDiffRatio: 0.08,
+      maxDiffRatio: 0.08,
+      inkMaskMaxDiffRatio: 0.04,
       nonInkMaxDiffRatio: 0,
     },
   );

@@ -453,7 +453,10 @@ The working order is:
    authority changes: page background image/gradient fill, image effects,
    equation replay parity, form object bounds/parity, raw SVG or placeholder
    previews, path gradient/pattern/fill edge cases, and line/arrow/connector
-   edge cases.
+   edge cases. The CanvasKit equation layout fallback keeps natural font
+   advances instead of scaling every token to its layout box, centers only the
+   token kinds that Canvas2D centers, constructs `()[]{}` stretch delimiters as
+   direct Skia paths, and preserves the authored equation stroke widths.
 3. Continue root `TextRun` effect parity fixture by fixture: vertical and
    rotated text, ratio/spacing, shade/outline/shadow, underline/strike/emphasis
    dots, tab leaders, control marks, character overlap, field markers, and
