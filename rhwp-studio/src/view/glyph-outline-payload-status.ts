@@ -9,6 +9,7 @@ import {
   type LayerTextVariantReplayStatus,
 } from '@/core/text-variants';
 import type { LayerGlyphOutlineOp, LayerResources } from '@/core/types';
+import { isStaticSvgPathDataValid } from './static-svg-path-data';
 import {
   parseStaticSvgPathLayers,
   parseStaticSvgTextLayers,
@@ -90,6 +91,7 @@ export function glyphOutlinePayloadStatus(
         && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
         && hasReplayableGlyphPayloadBBox(op)
         && pathLayers.length > 0
+        && pathLayers.every((layer) => isStaticSvgPathDataValid(layer.pathData))
         && textLayers.length === 0,
       reason: 'unsupportedSvgGlyph',
     };

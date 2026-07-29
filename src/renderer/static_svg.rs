@@ -79,8 +79,10 @@ pub(crate) fn static_svg_fragment_has_path_layer(fragment: &str) -> bool {
         if !is_self_closing {
             open_element_depth += 1;
         }
-        if static_svg_tag_has_path_layer(&name, raw_attributes) {
-            has_path_layer = true;
+        match static_svg_tag_path_layer_status(&name, raw_attributes) {
+            Ok(false) => {}
+            Ok(true) => has_path_layer = true,
+            Err(()) => return false,
         }
         cursor = tag_end + 1;
     }
@@ -134,35 +136,35 @@ fn static_svg_tag_is_ignored_subtree(name: &str) -> bool {
     matches!(name, "title" | "desc" | "metadata" | "defs")
 }
 
-fn static_svg_tag_has_path_layer(name: &str, raw_attributes: &str) -> bool {
+fn static_svg_tag_path_layer_status(name: &str, raw_attributes: &str) -> Result<bool, ()> {
     match name {
-        "path" => static_svg_attribute_value(raw_attributes, "d").is_some_and(|value| {
+        "path" => {
+            let Some(value) = static_svg_attribute_value(raw_attributes, "d") else {
+                return Ok(false);
+            };
             let mut has_segment = false;
             for segment in svgtypes::PathParser::from(value.as_str()) {
                 if segment.is_err() {
-                    return false;
+                    return Err(());
                 }
                 has_segment = true;
             }
-            has_segment
-        }),
-        "rect" => {
-            static_svg_attribute_number(raw_attributes, "width").is_some_and(|value| value > 0.0)
-                && static_svg_attribute_number(raw_attributes, "height")
-                    .is_some_and(|value| value > 0.0)
+            Ok(has_segment)
         }
+        "rect" => Ok(static_svg_attribute_number(raw_attributes, "width")
+            .is_some_and(|value| value > 0.0)
+            && static_svg_attribute_number(raw_attributes, "height")
+                .is_some_and(|value| value > 0.0)),
         "circle" => {
-            static_svg_attribute_number(raw_attributes, "r").is_some_and(|value| value > 0.0)
+            Ok(static_svg_attribute_number(raw_attributes, "r").is_some_and(|value| value > 0.0))
         }
-        "ellipse" => {
-            static_svg_attribute_number(raw_attributes, "rx").is_some_and(|value| value > 0.0)
-                && static_svg_attribute_number(raw_attributes, "ry")
-                    .is_some_and(|value| value > 0.0)
-        }
-        "polygon" | "polyline" => static_svg_attribute_value(raw_attributes, "points")
-            .is_some_and(|value| static_svg_point_number_count(&value) >= 6),
-        "line" => true,
-        _ => false,
+        "ellipse" => Ok(static_svg_attribute_number(raw_attributes, "rx")
+            .is_some_and(|value| value > 0.0)
+            && static_svg_attribute_number(raw_attributes, "ry").is_some_and(|value| value > 0.0)),
+        "polygon" | "polyline" => Ok(static_svg_attribute_value(raw_attributes, "points")
+            .is_some_and(|value| static_svg_point_number_count(&value) >= 6)),
+        "line" => Ok(true),
+        _ => Ok(false),
     }
 }
 
@@ -364,6 +366,9 @@ mod tests {
         ));
         assert!(!static_svg_fragment_has_path_layer(
             "<path d=\"not-a-path\"/>"
+        ));
+        assert!(!static_svg_fragment_has_path_layer(
+            "<path d=\"M0 0 L16 16\"/><path d=\"not-a-path\"/>"
         ));
     }
 }

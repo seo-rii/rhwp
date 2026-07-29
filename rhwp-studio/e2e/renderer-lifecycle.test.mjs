@@ -8062,6 +8062,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       '</svg>',
     ].join('');
     textLayerSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-text-layer';
+    const malformedPathSvgResourceTree = treeFor(svgOutline);
+    malformedPathSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>',
+      '<path d="not-a-path" fill="#0000ff"/>',
+      '</svg>',
+    ].join('');
+    malformedPathSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-malformed-path';
     const strokedSvgResourceTree = treeFor(svgOutline);
     strokedSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -8732,6 +8740,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       duplicateSvgGlyphKey: await render(duplicateSvgResourceTree),
       unsafeSvgGlyphResource: await render(unsafeSvgResourceTree),
       unsupportedSvgGlyphTextLayerResource: await render(textLayerSvgResourceTree),
+      unsupportedSvgGlyphMalformedPathResource: await render(malformedPathSvgResourceTree),
       unsupportedSvgGlyphStrokeResource: await render(unsupportedSvgStrokeTree),
       unsupportedSvgGlyphOpacityResource: await render(unsupportedSvgOpacityTree),
       unsupportedSvgGlyphGroupOpacityResource: await render(unsupportedSvgGroupOpacityTree),
@@ -9969,6 +9978,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsupportedSvgGlyphTextLayerResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgMalformedPathResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphMalformedPathResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitUnsupportedSvgStrokeResourceReport = canvaskitGlyphOutlineProbe
     .unsupportedSvgGlyphStrokeResource
     ?.diagnostics
@@ -10133,6 +10146,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
       && canvaskitGlyphOutlineProbe.unsupportedSvgGlyphTextLayerResource.redPixels > 0
+      && canvaskitUnsupportedSvgMalformedPathResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgMalformedPathResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitGlyphOutlineProbe.unsupportedSvgGlyphMalformedPathResource.redPixels > 0
       && canvaskitUnsupportedSvgStrokeResourceReport?.selectedVariantId === 'textRun'
       && canvaskitUnsupportedSvgStrokeResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'
