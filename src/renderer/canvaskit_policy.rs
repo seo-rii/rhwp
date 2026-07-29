@@ -4331,17 +4331,26 @@ mod tests {
     }
 
     #[test]
-    fn canvaskit_accepts_simple_glyph_run_shadow_and_outline_effects() {
+    fn canvaskit_accepts_simple_glyph_run_shadow_outline_and_relief_effects() {
         let mut resources = ResourceArena::default();
         let face_key = add_portable_test_font(&mut resources, 0);
         let mut shadow = glyph_run(face_key.clone(), Vec::new());
         shadow.paint_style.shadow_type = 1;
         shadow.paint_style.shadow_offset_x = 4.0;
         shadow.paint_style.shadow_offset_y = 2.0;
-        let mut outline = glyph_run(face_key, Vec::new());
+        let mut outline = glyph_run(face_key.clone(), Vec::new());
         outline.paint_style.outline_type = 1;
+        let mut emboss = glyph_run(face_key.clone(), Vec::new());
+        emboss.paint_style.emboss = true;
+        let mut engrave = glyph_run(face_key, Vec::new());
+        engrave.paint_style.engrave = true;
 
-        for (case_name, run) in [("shadow", shadow), ("outline", outline)] {
+        for (case_name, run) in [
+            ("shadow", shadow),
+            ("outline", outline),
+            ("emboss", emboss),
+            ("engrave", engrave),
+        ] {
             let status = canvaskit_glyph_run_replay_status(&run, &resources);
             assert!(status.replayable, "{case_name}: {status:?}");
             assert_eq!(status.reason, None, "{case_name}");

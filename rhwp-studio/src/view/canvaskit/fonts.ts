@@ -690,12 +690,6 @@ export class CanvasKitFontRegistry {
     if (!hasSupportedShadow) {
       return 'glyphRunShadowUnsupported';
     }
-    if (style.emboss) {
-      return 'glyphRunEmbossUnsupported';
-    }
-    if (style.engrave) {
-      return 'glyphRunEngraveUnsupported';
-    }
     if (style.superscript) {
       return 'glyphRunSuperscriptUnsupported';
     }

@@ -1784,7 +1784,7 @@ impl From<&TextStyle> for PaintTextStyle {
 
 impl PaintTextStyle {
     /// Returns whether positioned glyph replay can preserve the currently
-    /// shared fill, finite offset-shadow, and binary outline passes.
+    /// shared fill, finite offset-shadow, binary outline, and relief passes.
     pub fn is_simple_glyph_run_replay(&self) -> bool {
         let ratio = if self.ratio > 0.0 { self.ratio } else { 1.0 };
         (ratio - 1.0).abs() <= 0.001
@@ -1793,8 +1793,6 @@ impl PaintTextStyle {
             && !self.strikethrough
             && (self.shadow_type == 0
                 || (self.shadow_offset_x.is_finite() && self.shadow_offset_y.is_finite()))
-            && !self.emboss
-            && !self.engrave
             && !self.superscript
             && !self.subscript
             && self.emphasis_dot == 0
@@ -1804,7 +1802,11 @@ impl PaintTextStyle {
     /// Returns whether a backend may replay this text as a simple fill-only
     /// positioned glyph run without losing HWP text effects.
     pub fn is_fill_only_glyph_replay(&self) -> bool {
-        self.is_simple_glyph_run_replay() && self.outline_type == 0 && self.shadow_type == 0
+        self.is_simple_glyph_run_replay()
+            && self.outline_type == 0
+            && self.shadow_type == 0
+            && !self.emboss
+            && !self.engrave
     }
 }
 
@@ -2254,10 +2256,17 @@ mod tests {
         assert!(style.is_simple_glyph_run_replay());
         assert!(!style.is_fill_only_glyph_replay());
 
+        style.outline_type = 0;
         style.emboss = true;
-        assert!(!style.is_simple_glyph_run_replay());
+        assert!(style.is_simple_glyph_run_replay());
+        assert!(!style.is_fill_only_glyph_replay());
 
         style.emboss = false;
+        style.engrave = true;
+        assert!(style.is_simple_glyph_run_replay());
+        assert!(!style.is_fill_only_glyph_replay());
+
+        style.engrave = false;
         style.tab_leaders.push(TabLeaderInfo {
             start_x: 0.0,
             end_x: 20.0,

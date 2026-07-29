@@ -2097,6 +2097,11 @@ impl SkiaLayerRenderer {
                 highlight_paint.set_style(skia_safe::paint::Style::Fill);
                 highlight_paint.set_color(Color::WHITE);
 
+                let mut relief_shadow_paint = Paint::default();
+                relief_shadow_paint.set_anti_alias(true);
+                relief_shadow_paint.set_style(skia_safe::paint::Style::Fill);
+                relief_shadow_paint.set_color(Color::from_rgb(0x80, 0x80, 0x80));
+
                 let draw_glyph_paths = |paint: &Paint, x_offset: f32, y_offset: f32| {
                     for (glyph_id, position) in run.glyph_ids.iter().zip(run.positions.iter()) {
                         let glyph_id = *glyph_id as u16;
@@ -2116,9 +2121,9 @@ impl SkiaLayerRenderer {
                     let offset = (run.paint_style.font_size as f32 / 20.0).max(1.0);
                     if run.paint_style.emboss {
                         draw_glyph_paths(&highlight_paint, -offset, -offset);
-                        draw_glyph_paths(&shadow_paint, offset, offset);
+                        draw_glyph_paths(&relief_shadow_paint, offset, offset);
                     } else {
-                        draw_glyph_paths(&shadow_paint, -offset, -offset);
+                        draw_glyph_paths(&relief_shadow_paint, -offset, -offset);
                         draw_glyph_paths(&highlight_paint, offset, offset);
                     }
                     draw_glyph_paths(&fill_paint, 0.0, 0.0);

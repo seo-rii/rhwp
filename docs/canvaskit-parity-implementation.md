@@ -647,15 +647,17 @@ The working order is:
    superscript and subscript remain ineligible for fill-only outlines until
    their transformed geometry is canonical.
    The proved single-face CanvasKit `GlyphRun` subset includes fill, finite
-   offset shadow, and the current binary outline pass. Rust lowering, replay
-   planning, and the browser font registry use the same subset; underline,
-   strike, emphasis, emboss/engrave, shade, non-default ratio, script, and
-   non-finite effects remain deterministic `TextRun` fallback cases. A missing
-   or non-positive ratio follows the root `TextRun` contract and normalizes to
-   `1`; a finite positive ratio outside the strict unit-ratio
-   tolerance remains a fallback case. This widens optional
-   compatibility variants only; fallback-free v2 strict writer emission keeps
-   its existing fill-only gate.
+   offset shadow, the current binary outline pass, and emboss/engrave relief
+   passes. Rust lowering, replay planning, the browser font registry, and
+   CanvasKit direct replay use the same subset; underline, strike, emphasis,
+   shade, non-default ratio, script, and non-finite effects remain deterministic
+   `TextRun` fallback cases. Relief uses the same fixed white/gray/original
+   three-pass order as Canvas2D `TextRun`, with opposite offsets for emboss and
+   engrave. A missing or non-positive ratio follows the root `TextRun` contract
+   and normalizes to `1`; a finite positive ratio outside the strict unit-ratio
+   tolerance remains a fallback case. This widens optional compatibility
+   variants only; fallback-free v2 strict writer emission keeps its existing
+   fill-only gate.
 5. Treat resource/cache identity as part of correctness. Image bytes, static
    SVG fragments, font blobs, output options, replay plane, and strict sidecar
    payloads must all participate in cache keys so stale pictures cannot hide

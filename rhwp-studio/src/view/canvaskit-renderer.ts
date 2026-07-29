@@ -1840,24 +1840,37 @@ export class CanvasKitLayerRenderer {
     ): void => {
       canvas.drawGlyphs(glyphs, positions, xOffset, yOffset, font, paint);
     };
-    if ((op.paintStyle.shadowType ?? 0) > 0) {
-      const shadowPaint = this.makePaint(op.paintStyle.shadowColor || '#000000', 'fill');
-      drawGlyphs(op.paintStyle.shadowOffsetX ?? 0, op.paintStyle.shadowOffsetY ?? 0, shadowPaint);
-      shadowPaint.delete();
-    }
-    if ((op.paintStyle.outlineType ?? 0) > 0) {
-      const fillPaint = this.makePaint('#ffffff', 'fill');
-      const strokePaint = this.makePaint(op.paintStyle.color, 'stroke');
-      strokePaint.setStrokeWidth(Math.max(op.paintStyle.fontSize / 25, 0.5));
-      strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round);
-      drawGlyphs(0, 0, fillPaint);
-      drawGlyphs(0, 0, strokePaint);
-      fillPaint.delete();
-      strokePaint.delete();
-    } else {
+    if (op.paintStyle.emboss || op.paintStyle.engrave) {
+      const offset = Math.max(op.paintStyle.fontSize / 20, 1);
+      const firstPaint = this.makePaint(op.paintStyle.emboss ? '#ffffff' : '#808080', 'fill');
+      const secondPaint = this.makePaint(op.paintStyle.emboss ? '#808080' : '#ffffff', 'fill');
       const fillPaint = this.makePaint(op.paintStyle.color, 'fill');
+      drawGlyphs(-offset, -offset, firstPaint);
+      drawGlyphs(offset, offset, secondPaint);
       drawGlyphs(0, 0, fillPaint);
+      firstPaint.delete();
+      secondPaint.delete();
       fillPaint.delete();
+    } else {
+      if ((op.paintStyle.shadowType ?? 0) > 0) {
+        const shadowPaint = this.makePaint(op.paintStyle.shadowColor || '#000000', 'fill');
+        drawGlyphs(op.paintStyle.shadowOffsetX ?? 0, op.paintStyle.shadowOffsetY ?? 0, shadowPaint);
+        shadowPaint.delete();
+      }
+      if ((op.paintStyle.outlineType ?? 0) > 0) {
+        const fillPaint = this.makePaint('#ffffff', 'fill');
+        const strokePaint = this.makePaint(op.paintStyle.color, 'stroke');
+        strokePaint.setStrokeWidth(Math.max(op.paintStyle.fontSize / 25, 0.5));
+        strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round);
+        drawGlyphs(0, 0, fillPaint);
+        drawGlyphs(0, 0, strokePaint);
+        fillPaint.delete();
+        strokePaint.delete();
+      } else {
+        const fillPaint = this.makePaint(op.paintStyle.color, 'fill');
+        drawGlyphs(0, 0, fillPaint);
+        fillPaint.delete();
+      }
     }
     canvas.restore();
   }

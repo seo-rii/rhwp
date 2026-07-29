@@ -3380,8 +3380,6 @@ runTest('Renderer lifecycle', async ({ page }) => {
         ...style,
         tabLeaders: [{ startX: 0, endX: 20, fillType: 1 }],
       })],
-      ['emboss', (style) => ({ ...style, emboss: true })],
-      ['engrave', (style) => ({ ...style, engrave: true })],
       ['superscript', (style) => ({ ...style, superscript: true })],
       ['subscript', (style) => ({ ...style, subscript: true })],
       ['shade', (style) => ({ ...style, shadeColor: '#ffff00' })],
@@ -3541,6 +3539,29 @@ runTest('Renderer lifecycle', async ({ page }) => {
       glyphOp(outlineTree),
       outlineTree.fontResources,
     );
+
+    const reliefReports = {};
+    for (const effect of ['emboss', 'engrave']) {
+      const effectTree = structuredClone(tree);
+      assignFontIdentity(
+        effectTree,
+        effect,
+        `fixture-font-digest-${effect}`,
+      );
+      glyphOp(effectTree).paintStyle = {
+        ...glyphOp(effectTree).paintStyle,
+        [effect]: true,
+      };
+      const effectRenderResult = renderTreeWithDiagnostics(effectTree);
+      reliefReports[effect] = {
+        status: canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+          glyphOp(effectTree),
+          effectTree.fontResources,
+        ),
+        png: effectRenderResult.png,
+        selectionDiagnostics: effectRenderResult.textVariantSelectionDiagnostics,
+      };
+    }
 
     const multiPartTree = structuredClone(tree);
     assignFontIdentity(multiPartTree, 'multipart', 'fixture-font-digest-multipart');
@@ -3713,6 +3734,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outlineStatus,
       outlinePng,
       outlineSelectionDiagnostics: outlineRenderResult.textVariantSelectionDiagnostics,
+      reliefReports,
       selectionDiagnostics,
       unsupportedSelectionDiagnostics,
       multiPartStatuses,
@@ -3899,8 +3921,6 @@ runTest('Renderer lifecycle', async ({ page }) => {
       emphasis: 'glyphRunEmphasisUnsupported',
       ratio: 'glyphRunRatioUnsupported',
       tabLeaders: 'glyphRunTabLeadersUnsupported',
-      emboss: 'glyphRunEmbossUnsupported',
-      engrave: 'glyphRunEngraveUnsupported',
       superscript: 'glyphRunSuperscriptUnsupported',
       subscript: 'glyphRunSubscriptUnsupported',
       shade: 'glyphRunShadeUnsupported',
@@ -4176,6 +4196,48 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     outlineBluePixels > 20 && outlineRedPixels < 5,
     `CanvasKit GlyphRun outline paints selected variant and suppresses fallback blue=${outlineBluePixels}, red=${outlineRedPixels}`,
+  );
+  for (const effect of ['emboss', 'engrave']) {
+    const report = portableGlyphRunProbe.reliefReports?.[effect];
+    const selectionReport = report?.selectionDiagnostics?.find(
+      (candidate) => candidate.equivalenceGroup === 'glyph-fixture-0',
+    );
+    const reliefGrayPixels = report?.png
+      ? countPixels(
+          report.png,
+          (pixel) => pixel.alpha > 32
+            && Math.abs(pixel.red - pixel.green) < 8
+            && Math.abs(pixel.green - pixel.blue) < 8
+            && pixel.red >= 80
+            && pixel.red <= 190,
+        )
+      : 0;
+    const reliefRedPixels = report?.png
+      ? countPixels(
+          report.png,
+          (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+        )
+      : 0;
+    assert(
+      report?.status?.replayable === true
+        && report?.status?.report?.effectSupported === true
+        && selectionReport?.selectedVariantId === 'glyphRun'
+        && selectionReport?.selectedReason === 'glyphRunStrictEligible'
+        && selectionReport?.fontVerification?.effectSupported === true,
+      `CanvasKit GlyphRun ${effect} selects the effect-supported glyph variant=${JSON.stringify({
+        status: report?.status,
+        selection: selectionReport,
+      })}`,
+    );
+    assert(
+      reliefGrayPixels > 5 && reliefRedPixels < 5,
+      `CanvasKit GlyphRun ${effect} paints relief passes and suppresses fallback gray=${reliefGrayPixels}, red=${reliefRedPixels}`,
+    );
+  }
+  assert(
+    portableGlyphRunProbe.reliefReports?.emboss?.png
+      !== portableGlyphRunProbe.reliefReports?.engrave?.png,
+    'CanvasKit GlyphRun emboss and engrave preserve opposite relief directions',
   );
   assert(
     portableGlyphRunProbe.multiPartStatuses?.length === 2

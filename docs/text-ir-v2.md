@@ -228,20 +228,20 @@ explicit gates for exact font instantiation before selecting a `GlyphRun`:
   until variable-font instance construction is proven.
 - Public glyph ids remain `u32`, but CanvasKit replay validates that every id
   fits the current `HEAPU16`/SkGlyphID path before calling `drawGlyphs`.
-- Initial CanvasKit replay supports fill, the same simple offset shadow pass
-  used by its `TextRun` path, and the matching outline/stroke pass. Unsupported
-  text effects such as underline/strike/emphasis mirrors, emboss/engrave, shade
-  fills, ratio scaling, color glyph mode, and per-glyph transforms still
+- CanvasKit replay supports fill, the same simple offset shadow and binary
+  outline passes used by its `TextRun` path, and matching emboss/engrave relief
+  passes. Unsupported text effects such as underline/strike/emphasis mirrors,
+  shade fills, ratio scaling, color glyph mode, and per-glyph transforms still
   disqualify the `GlyphRun` variant for that backend. Those runs use `TextRun`
   until effect parity fixtures explicitly enable the glyph path.
 - CanvasKit fallback diagnostics use effect-specific reason strings
   (`glyphRunUnderlineUnsupported`, `glyphRunStrikethroughUnsupported`,
   `glyphRunEmphasisUnsupported`, `glyphRunRatioUnsupported`,
-  `glyphRunEmbossUnsupported`, `glyphRunEngraveUnsupported`,
   `glyphRunSuperscriptUnsupported`, `glyphRunSubscriptUnsupported`, and
-  `glyphRunShadeUnsupported`) so each effect can be promoted independently once
-  a parity fixture covers it. Superscript and subscript remain on `TextRun`
-  until positioned-glyph replay applies the same script scale and baseline shift.
+  `glyphRunShadeUnsupported`) so each remaining effect can be promoted
+  independently once a parity fixture covers it. Superscript and subscript
+  remain on `TextRun` until positioned-glyph replay applies the same script
+  scale and baseline shift.
 - Explicit glyph positions use `canvas.drawGlyphs`. `TextBlob.MakeFromGlyphs`
   is not used for positioned `GlyphRun` replay because it relies on font default
   advances. RSXform/TextBlob paths are future optimizations for repeated static
@@ -621,14 +621,15 @@ The fast CI path should keep these checks small:
   range guard. P1a adds duplicate-part rejection, synthetic fallback-font split,
   and over-tolerance `PositionAdjusted` fallback. P1.5 adds in-tolerance
   `PositionAdjusted` selection.
-- Native Skia tests: fill/shadow/outline `GlyphRun`, explicit positions, and
-  unsupported effect fallback, plus small `PositionAdjusted` positive/negative
-  coverage.
-- Studio/CanvasKit E2E: eligible fill, finite offset-shadow, and binary outline
-  glyph replay, one digest mismatch fallback, one unsupported-effect fallback,
-  and small negative capability probes for unsupported variations, font
-  collection face index, and over-tolerance `PositionAdjusted`. P1.5 adds one
-  in-tolerance `PositionAdjusted` replay probe.
+- Native Skia tests: fill/shadow/outline/emboss/engrave `GlyphRun`, explicit
+  positions, and unsupported effect fallback, plus small `PositionAdjusted`
+  positive/negative coverage.
+- Studio/CanvasKit E2E: eligible fill, finite offset-shadow, binary outline, and
+  emboss/engrave glyph replay, one digest mismatch fallback, one
+  unsupported-effect fallback, and small negative capability probes for
+  unsupported variations, font collection face index, and over-tolerance
+  `PositionAdjusted`. P1.5 adds one in-tolerance `PositionAdjusted` replay
+  probe.
 
 Native Skia vs CanvasKit PNG fuzzy parity and larger matrices should start in a
 renderer sweep or nightly-style job, then move into the fast path only after
@@ -706,9 +707,10 @@ contract when `text.glyphOutline.colorLayers` and
    outline can reuse the anchored `TextRun` paint-order slot without being
    exported as an ordinary `Path`.
 10. Expand `GlyphRun` parity fixtures for exact-quality, portable
-    fill/shadow/outline replay. This phase covers native Skia, CanvasKit,
-    fallback gates, multi-part variant sets, glyph-id range guards, and fuzzy
-    cross-backend PNG comparison. It does not change layout measurement.
+    fill/shadow/outline/emboss/engrave replay. This phase covers native Skia,
+    CanvasKit, fallback gates, multi-part variant sets, glyph-id range guards,
+    and fuzzy cross-backend PNG comparison. It does not change layout
+    measurement.
 11. Move shaping into layout only after line breaking, fallback metrics, vertical
    metrics, and regression fixtures are stable.
 
@@ -726,13 +728,14 @@ contract when `text.glyphOutline.colorLayers` and
   the `TextRun` fallback remains selected.
 - CanvasKit: pre-scans variant sets and selects `GlyphRun` only when the
   renderer has verified the exact font blob/external font, can instantiate the
-  requested face, and the run passes the fill/shadow/outline eligibility matrix
-  above. Otherwise it replays the `TextRun` fallback. CanvasKit `default` mode
-  is the native-preparation path and `compat` mode uses the same direct-replay
-  backend with conservative CanvasKit policy knobs, not Canvas2D overlays.
-  The shadow/outline expansion applies to optional compatibility variants;
-  fallback-free schema-v2 strict writer emission keeps its narrower fill-only
-  gate until paint-effect requirements are explicit in that profile.
+  requested face, and the run passes the
+  fill/shadow/outline/emboss/engrave eligibility matrix above. Otherwise it
+  replays the `TextRun` fallback. CanvasKit `default` mode is the
+  native-preparation path and `compat` mode uses the same direct-replay backend
+  with conservative CanvasKit policy knobs, not Canvas2D overlays. These paint
+  effect expansions apply to optional compatibility variants; fallback-free
+  schema-v2 strict writer emission keeps its narrower fill-only gate until
+  paint-effect requirements are explicit in that profile.
   The producer-side replay plan cannot observe consumer-registered external
   font bytes, so a `ConditionalExternalFont` candidate remains fallback-selected
   there with `externalFontNotVerified`; the Studio runtime may select it only

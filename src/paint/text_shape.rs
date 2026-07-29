@@ -1889,15 +1889,24 @@ mod tests {
     }
 
     #[test]
-    fn lowerer_emits_glyph_runs_for_simple_shadow_and_outline_effects() {
+    fn lowerer_emits_glyph_runs_for_simple_shadow_outline_and_relief_effects() {
         let mut shadow_run = sourced_text_run("A");
         shadow_run.style.shadow_type = 1;
         shadow_run.style.shadow_offset_x = 4.0;
         shadow_run.style.shadow_offset_y = 2.0;
         let mut outline_run = sourced_text_run("A");
         outline_run.style.outline_type = 1;
+        let mut emboss_run = sourced_text_run("A");
+        emboss_run.style.emboss = true;
+        let mut engrave_run = sourced_text_run("A");
+        engrave_run.style.engrave = true;
 
-        for (case_name, text_run) in [("shadow", shadow_run), ("outline", outline_run)] {
+        for (case_name, text_run) in [
+            ("shadow", shadow_run),
+            ("outline", outline_run),
+            ("emboss", emboss_run),
+            ("engrave", engrave_run),
+        ] {
             let mut root = LayerNode::leaf(
                 BoundingBox::new(0.0, 0.0, 100.0, 100.0),
                 None,
