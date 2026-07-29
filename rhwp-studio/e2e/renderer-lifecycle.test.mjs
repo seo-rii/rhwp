@@ -8631,6 +8631,19 @@ runTest('Renderer lifecycle', async ({ page }) => {
       }
     }
 
+    const originalMakeFromSvgString = renderer.canvasKit.Path.MakeFromSVGString;
+    let svgGlyphPathDecodeCalls = 0;
+    let svgGlyph;
+    renderer.canvasKit.Path.MakeFromSVGString = function (pathData) {
+      svgGlyphPathDecodeCalls += 1;
+      return originalMakeFromSvgString.call(this, pathData);
+    };
+    try {
+      svgGlyph = await render(treeFor(svgOutline));
+    } finally {
+      renderer.canvasKit.Path.MakeFromSVGString = originalMakeFromSvgString;
+    }
+
     return {
       monochrome: await render(treeFor(outlineFor('canvaskit-outline-mono'))),
       stroke: await render(treeFor(strokeOutline)),
@@ -8658,7 +8671,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
       missingResourceBitmapGlyph: await render(treeFor(missingResourceBitmapOutline)),
       duplicateBitmapGlyphKey: await render(duplicateBitmapResourceTree),
       truncatedBitmapGlyph: await render(truncatedBitmapResourceTree),
-      svgGlyph: await render(treeFor(svgOutline)),
+      svgGlyph,
+      svgGlyphPathDecodeCalls,
       missingResourceSvgGlyph: await render(treeFor(missingResourceSvgOutline)),
       nonpositiveSvgBBoxGlyph: await render(treeFor(nonpositiveSvgBBoxOutline)),
       missingViewBoxSvgGlyph: await render(treeFor(missingViewBoxSvgOutline)),
@@ -9102,6 +9116,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     canvaskitSvgReport?.selectedVariantId === 'glyphOutline'
       && canvaskitSvgReport?.selectedVariantKind === 'glyphOutline',
     `CanvasKit selects SvgGlyph GlyphOutline=${JSON.stringify(canvaskitSvgReport)}`,
+  );
+  assert(
+    canvaskitGlyphOutlineProbe.svgGlyphPathDecodeCalls === 1,
+    `CanvasKit reuses one prepared SvgGlyph path for selection and drawing decodeCalls=${canvaskitGlyphOutlineProbe.svgGlyphPathDecodeCalls}`,
   );
   const canvaskitMissingResourceSvgReport = canvaskitGlyphOutlineProbe
     .missingResourceSvgGlyph

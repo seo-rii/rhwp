@@ -857,7 +857,11 @@ security modes, and rejects missing or ambiguous vector resources. Static
 vector admission is path-only and atomic: every path must pass the shared path
 grammar, and both transform-list and nested-transform composition must remain
 finite; opening and closing element names must also balance before the strict
-variant can suppress its `TextRun` fallback.
+variant can suppress its `TextRun` fallback. CanvasKit prepares each admitted
+path once per render, uses that same decoded path for variant selection and
+drawing (including GPU-to-software retry), and releases all prepared paths at
+the end of the render so a later decode failure cannot leave a suppressed
+fallback or partially painted strict variant.
 Schema-v2 strict
 GlyphOutline JSON and JS exports now declare `text.glyphOutline.svgGlyph` when
 the selected strict payload uses the static sanitized vector contract. A

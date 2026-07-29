@@ -200,6 +200,11 @@ type CanvasKitStaticPictureMetadata = {
   equationReplayDiagnostics: CanvasKitEquationReplayDiagnostic[];
 };
 
+type CanvasKitPreparedSvgGlyphPathLayer = {
+  layer: StaticSvgPathLayer;
+  path: Path;
+};
+
 export class CanvasKitLayerRenderer {
   // Prevent pathological tiled fills from monopolizing the render loop.
   private static readonly MAX_IMAGE_TILE_DRAWS = 4096;
@@ -238,6 +243,8 @@ export class CanvasKitLayerRenderer {
   private currentLayerTreeCacheKey = 'none';
   private readonly textVariantSelectionDiagnostics: LayerTextVariantGroupReport[] = [];
   private readonly textV2ValidationDiagnostics: LayerTextV2ValidationIssue[] = [];
+  private readonly preparedSvgGlyphPaths =
+    new Map<LayerGlyphOutlineOp, readonly CanvasKitPreparedSvgGlyphPathLayer[] | null>();
   private disposed = false;
 
   private constructor(
@@ -342,79 +349,84 @@ export class CanvasKitLayerRenderer {
       throw new Error('CanvasKit renderer가 이미 dispose되었습니다');
     }
 
-    this.lastRenderedTree = tree;
-    this.lastTargetCanvas = targetCanvas;
-    this.lastScale = scale;
-    this.currentProfile = tree.profile;
-    this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
-    this.resourceCache.resetImageDiagnostics();
-    this.resourceCache.beginPatternReplay();
-    this.resetTextReplayDiagnostics();
-    this.resetEquationReplayDiagnostics();
-    this.resourceCache.setResources(tree.resources);
-    this.fontRegistry.registerFontBlobsFromResources(tree.fontResources, tree.resources);
-    this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
-    this.currentShowParagraphMarks = tree.outputOptions?.showParagraphMarks ?? false;
-    this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;
-    this.currentClipStack.length = 0;
-    this.currentCacheHintStack.length = 0;
-    this.textVariantSelectionDiagnostics.length = 0;
-    this.textV2ValidationDiagnostics.length = 0;
-    this.textV2ValidationDiagnostics.push(...validateLayerTextV2Tree(tree));
-    const pendingTextVariantNodes: LayerNode[] = [tree.root];
-    while (pendingTextVariantNodes.length > 0) {
-      const node = pendingTextVariantNodes.pop();
-      if (!node) {
-        continue;
-      }
-      switch (node.kind) {
-        case 'group':
-          pendingTextVariantNodes.push(...node.children);
-          break;
-        case 'clipRect':
-          pendingTextVariantNodes.push(node.child);
-          break;
-        case 'leaf': {
-          const ops = layerTextVariantOpsForLeaf(node.ops, tree.variantOps);
-          const selection = selectLayerTextVariantSetsWithReport(
-            ops,
-            (op) => this.glyphRunVariantReplayStatus(op),
-            (op) => this.glyphOutlineVariantReplayStatus(op),
-            {
-              backend: 'canvaskit',
-              renderProfile: this.currentProfile,
-            },
-          );
-          this.textVariantSelectionDiagnostics.push(...selection.reports);
-          break;
+    this.clearPreparedSvgGlyphPaths();
+    try {
+      this.lastRenderedTree = tree;
+      this.lastTargetCanvas = targetCanvas;
+      this.lastScale = scale;
+      this.currentProfile = tree.profile;
+      this.currentLayerTreeCacheKey = this.staticPictureCache.cacheKeyForLayerTree(tree);
+      this.resourceCache.resetImageDiagnostics();
+      this.resourceCache.beginPatternReplay();
+      this.resetTextReplayDiagnostics();
+      this.resetEquationReplayDiagnostics();
+      this.resourceCache.setResources(tree.resources);
+      this.fontRegistry.registerFontBlobsFromResources(tree.fontResources, tree.resources);
+      this.currentClipEnabled = tree.outputOptions?.clipEnabled ?? true;
+      this.currentShowParagraphMarks = tree.outputOptions?.showParagraphMarks ?? false;
+      this.currentShowControlCodes = tree.outputOptions?.showControlCodes ?? false;
+      this.currentClipStack.length = 0;
+      this.currentCacheHintStack.length = 0;
+      this.textVariantSelectionDiagnostics.length = 0;
+      this.textV2ValidationDiagnostics.length = 0;
+      this.textV2ValidationDiagnostics.push(...validateLayerTextV2Tree(tree));
+      const pendingTextVariantNodes: LayerNode[] = [tree.root];
+      while (pendingTextVariantNodes.length > 0) {
+        const node = pendingTextVariantNodes.pop();
+        if (!node) {
+          continue;
+        }
+        switch (node.kind) {
+          case 'group':
+            pendingTextVariantNodes.push(...node.children);
+            break;
+          case 'clipRect':
+            pendingTextVariantNodes.push(node.child);
+            break;
+          case 'leaf': {
+            const ops = layerTextVariantOpsForLeaf(node.ops, tree.variantOps);
+            const selection = selectLayerTextVariantSetsWithReport(
+              ops,
+              (op) => this.glyphRunVariantReplayStatus(op),
+              (op) => this.glyphOutlineVariantReplayStatus(op),
+              {
+                backend: 'canvaskit',
+                renderProfile: this.currentProfile,
+              },
+            );
+            this.textVariantSelectionDiagnostics.push(...selection.reports);
+            break;
+          }
         }
       }
+
+      const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
+
+      let renderError: unknown = null;
+      try {
+        this.renderSurface(surface, tree, scale, pageInfo);
+      } catch (error) {
+        renderError = error;
+      }
+
+      if (!renderError) {
+        return;
+      }
+
+      if (!usedGpuSurface) {
+        throw renderError;
+      }
+
+      const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas);
+      if (!fallbackSurface) {
+        throw renderError;
+      }
+
+      this.resetEquationReplayDiagnostics();
+      this.renderSurface(fallbackSurface, tree, scale, pageInfo);
+    } finally {
+      this.clearPreparedSvgGlyphPaths();
     }
-
-    const { surface, usedGpuSurface } = this.surfaceCache.get(targetCanvas);
-
-    let renderError: unknown = null;
-    try {
-      this.renderSurface(surface, tree, scale, pageInfo);
-    } catch (error) {
-      renderError = error;
-    }
-
-    if (!renderError) {
-      return;
-    }
-
-    if (!usedGpuSurface) {
-      throw renderError;
-    }
-
-    const fallbackSurface = this.surfaceCache.replaceWithSoftware(targetCanvas);
-    if (!fallbackSurface) {
-      throw renderError;
-    }
-
-    this.resetEquationReplayDiagnostics();
-    this.renderSurface(fallbackSurface, tree, scale, pageInfo);
   }
 
   drawMarginGuides(pageInfo: PageInfo, targetCanvas: HTMLCanvasElement, scale: number): void {
@@ -442,10 +454,15 @@ export class CanvasKitLayerRenderer {
     if (!fallbackSurface) {
       throw renderError;
     }
-    if (this.lastRenderedTree) {
-      this.renderSurface(fallbackSurface, this.lastRenderedTree, scale);
+    this.clearPreparedSvgGlyphPaths();
+    try {
+      if (this.lastRenderedTree) {
+        this.renderSurface(fallbackSurface, this.lastRenderedTree, scale);
+      }
+      this.drawMarginGuidesOnSurface(fallbackSurface, pageInfo, scale);
+    } finally {
+      this.clearPreparedSvgGlyphPaths();
     }
-    this.drawMarginGuidesOnSurface(fallbackSurface, pageInfo, scale);
   }
 
   setAsyncResourceReadyCallback(callback: (() => void) | null): void {
@@ -453,6 +470,7 @@ export class CanvasKitLayerRenderer {
   }
 
   resetDocumentResources(): void {
+    this.clearPreparedSvgGlyphPaths();
     this.staticPictureCache.clear();
     this.resourceCache.resetDocumentResources();
     this.fontRegistry.clearDocumentResources();
@@ -881,6 +899,60 @@ export class CanvasKitLayerRenderer {
     };
   }
 
+  private prepareSvgGlyphPaths(
+    op: LayerGlyphOutlineOp,
+  ): readonly CanvasKitPreparedSvgGlyphPathLayer[] | null {
+    if (this.preparedSvgGlyphPaths.has(op)) {
+      return this.preparedSvgGlyphPaths.get(op) ?? null;
+    }
+
+    const vectorIndex = resolveLayerResourceIndex(
+      op.svgGlyph?.vectorResourceId,
+      this.lastRenderedTree?.resources?.svgKeys,
+      this.lastRenderedTree?.resources?.svgFragments.length ?? 0,
+    );
+    const fragment = vectorIndex === undefined
+      ? undefined
+      : this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex];
+    const layers = typeof fragment === 'string'
+      ? parseStaticSvgPathLayers(fragment)
+      : [];
+    if (layers.length === 0) {
+      this.preparedSvgGlyphPaths.set(op, null);
+      return null;
+    }
+
+    const prepared: CanvasKitPreparedSvgGlyphPathLayer[] = [];
+    for (const layer of layers) {
+      let path: Path | null = null;
+      try {
+        path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
+      } catch {
+        path = null;
+      }
+      if (!path) {
+        for (const decoded of prepared) {
+          decoded.path.delete();
+        }
+        this.preparedSvgGlyphPaths.set(op, null);
+        return null;
+      }
+      prepared.push({ layer, path });
+    }
+
+    this.preparedSvgGlyphPaths.set(op, prepared);
+    return prepared;
+  }
+
+  private clearPreparedSvgGlyphPaths(): void {
+    for (const prepared of this.preparedSvgGlyphPaths.values()) {
+      for (const decoded of prepared ?? []) {
+        decoded.path.delete();
+      }
+    }
+    this.preparedSvgGlyphPaths.clear();
+  }
+
   private glyphOutlineVariantReplayStatus(op: LayerGlyphOutlineOp): LayerTextVariantReplayStatus {
     const payloadStatus = glyphOutlinePayloadStatus(
       op,
@@ -908,33 +980,7 @@ export class CanvasKitLayerRenderer {
       }
     }
     if (payloadSupported && op.payloadKind === 'svgGlyph') {
-      const vectorIndex = resolveLayerResourceIndex(
-        op.svgGlyph?.vectorResourceId,
-        this.lastRenderedTree?.resources?.svgKeys,
-        this.lastRenderedTree?.resources?.svgFragments.length ?? 0,
-      );
-      const fragment = vectorIndex === undefined
-        ? undefined
-        : this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex];
-      let hasCanvasKitPath = false;
-      let allCanvasKitPathsDecodable = true;
-      if (typeof fragment === 'string') {
-        for (const layer of parseStaticSvgPathLayers(fragment)) {
-          let path: Path | null = null;
-          try {
-            path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
-          } catch {
-            path = null;
-          }
-          if (!path) {
-            allCanvasKitPathsDecodable = false;
-            break;
-          }
-          path.delete();
-          hasCanvasKitPath = true;
-        }
-      }
-      if (!hasCanvasKitPath || !allCanvasKitPathsDecodable) {
+      if (!this.prepareSvgGlyphPaths(op)) {
         payloadSupported = false;
         payloadDetails = 'pathDecodeFailed';
       }
@@ -2025,12 +2071,7 @@ export class CanvasKitLayerRenderer {
     op: LayerGlyphOutlineOp,
   ): void {
     const payload = op.svgGlyph;
-    const vectorIndex = resolveLayerResourceIndex(
-      payload?.vectorResourceId,
-      this.lastRenderedTree?.resources?.svgKeys,
-      this.lastRenderedTree?.resources?.svgFragments.length ?? 0,
-    );
-    if (!payload || !hasStaticSanitizedSvgGlyphContract(op) || vectorIndex === undefined) {
+    if (!payload || !hasStaticSanitizedSvgGlyphContract(op)) {
       return;
     }
     const viewBox = payload.viewBox;
@@ -2052,12 +2093,8 @@ export class CanvasKitLayerRenderer {
     ) {
       return;
     }
-    const fragment = this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex];
-    if (typeof fragment !== 'string') {
-      return;
-    }
-    const pathLayers = parseStaticSvgPathLayers(fragment);
-    if (pathLayers.length === 0) {
+    const pathLayers = this.prepareSvgGlyphPaths(op);
+    if (!pathLayers) {
       return;
     }
     const transform = payload.placement?.runToPage;
@@ -2093,7 +2130,7 @@ export class CanvasKitLayerRenderer {
       }
       canvas.scale(width / viewBox.width, height / viewBox.height);
       canvas.translate(-viewBox.x, -viewBox.y);
-      for (const layer of pathLayers) {
+      for (const { layer, path } of pathLayers) {
         canvas.save();
         try {
           if (layer.transform) {
@@ -2108,15 +2145,6 @@ export class CanvasKitLayerRenderer {
               0,
               1,
             ]);
-          }
-          let path: Path | null = null;
-          try {
-            path = this.canvasKit.Path.MakeFromSVGString(layer.pathData);
-          } catch {
-            path = null;
-          }
-          if (!path) {
-            continue;
           }
           this.applyPathFillRule(path, layer.fillRule);
           if (layer.fill !== null) {
@@ -2138,7 +2166,6 @@ export class CanvasKitLayerRenderer {
             canvas.drawPath(path, strokePaint);
             strokePaint.delete();
           }
-          path.delete();
         } finally {
           canvas.restore();
         }
@@ -4256,6 +4283,7 @@ export class CanvasKitLayerRenderer {
     this.currentClipStack.length = 0;
     this.currentCacheHintStack.length = 0;
     this.currentClipEnabled = true;
+    this.clearPreparedSvgGlyphPaths();
 
     for (const blob of this.textBlobCache.values()) {
       blob.delete();
