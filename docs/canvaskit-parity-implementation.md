@@ -516,10 +516,12 @@ The working order is:
    endpoint ink in both
    Canvas2D and CanvasKit. Rounded rectangles clamp authored corner radii to
    half the smaller bound before either direct fill/stroke or shadow replay.
-   SVG-style paths that begin with an `arcTo` command establish their current
-   point at the arc endpoint without painting from an implicit origin. This
+   SVG-style paths establish the same initial current point in both browser
+   backends: an initial `lineTo` starts at its endpoint, an initial `curveTo`
+   starts at its first control point, and an initial `arcTo` starts at its
+   endpoint. None of these commands paints from an implicit origin. This
    mirrors Canvas2D/SVG path semantics and prevents CanvasKit `PathBuilder`
-   from introducing an extra arc before the first real segment.
+   from introducing an extra segment before the first real one.
 4. Keep `GlyphRun` and `GlyphOutline` strict replay gated by exact resource
    proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
    bitmap/SVG/color glyph payloads, and fallback-free profiles must not be

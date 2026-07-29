@@ -13218,6 +13218,111 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `initial SVG arc path parity exact=${initialArcPathDiff.exactDiffPixels}, tolerant=${initialArcPathDiff.rawTolerantDiffPixels}, ink=${initialArcPathDiff.rawInkMaskDiffPixels}, max_channel_delta=${initialArcPathDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-initial-line-curve-path-parity');
+  const initialLineCurvePathProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const pathStyle = (strokeColor) => ({
+      fillColor: null,
+      strokeColor,
+      strokeWidth: 2,
+      strokeDash: 'solid',
+      opacity: 1,
+    });
+    const tree = {
+      pageWidth: 70,
+      pageHeight: 70,
+      profile: 'screen',
+      resources: {
+        tableId: 1918,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+      },
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1918,
+        bounds: { x: 0, y: 0, width: 70, height: 70 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 70, height: 70 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          {
+            type: 'path',
+            bbox: { x: 0, y: 0, width: 70, height: 35 },
+            commands: [
+              { type: 'lineTo', x: 20, y: 10 },
+              { type: 'lineTo', x: 55, y: 28 },
+            ],
+            style: pathStyle('#cc0000'),
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          },
+          {
+            type: 'path',
+            bbox: { x: 0, y: 35, width: 70, height: 35 },
+            commands: [
+              { type: 'curveTo', x1: 18, y1: 48, x2: 42, y2: 34, x3: 55, y3: 60 },
+            ],
+            style: pathStyle('#0033cc'),
+            transform: { rotation: 0, horzFlip: false, vertFlip: false },
+          },
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !initialLineCurvePathProbe.error,
+    initialLineCurvePathProbe.error || 'initial line/curve path parity probe available',
+  );
+  const initialLineCurveOriginInk = (dataUrl) => countPixels(
+    dataUrl,
+    (pixel) => pixel.x < 8
+      && pixel.y < 8
+      && pixel.alpha > 220
+      && (pixel.red < 180 || pixel.green < 180 || pixel.blue < 180),
+  );
+  assert(
+    initialLineCurveOriginInk(initialLineCurvePathProbe.canvas2d) === 0
+      && initialLineCurveOriginInk(initialLineCurvePathProbe.canvaskit) === 0,
+    `initial line/curve paths do not paint from an implicit origin canvas2d=${initialLineCurveOriginInk(initialLineCurvePathProbe.canvas2d)}, canvaskit=${initialLineCurveOriginInk(initialLineCurvePathProbe.canvaskit)}`,
+  );
+  const initialLineCurvePathDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(initialLineCurvePathProbe.canvas2d),
+    pngBufferFromDataUrl(initialLineCurvePathProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-initial-line-curve-path-parity',
+      ignoreChannelDelta: 24,
+      maxDiffRatio: 0.02,
+      inkMaskMaxDiffRatio: 0.02,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    initialLineCurvePathDiff.passed,
+    `initial line/curve path parity exact=${initialLineCurvePathDiff.exactDiffPixels}, tolerant=${initialLineCurvePathDiff.rawTolerantDiffPixels}, ink=${initialLineCurvePathDiff.rawInkMaskDiffPixels}, max_channel_delta=${initialLineCurvePathDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-transformed-vector-parity');
   const transformedVectorParityProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

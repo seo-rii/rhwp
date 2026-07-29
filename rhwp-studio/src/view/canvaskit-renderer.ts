@@ -3898,10 +3898,17 @@ export class CanvasKitLayerRenderer {
           hasCurrentPoint = true;
           break;
         case 'lineTo':
-          builder.lineTo(command.x, command.y);
+          if (hasCurrentPoint) {
+            builder.lineTo(command.x, command.y);
+          } else {
+            builder.moveTo(command.x, command.y);
+          }
           hasCurrentPoint = true;
           break;
         case 'curveTo':
+          if (!hasCurrentPoint) {
+            builder.moveTo(command.x1, command.y1);
+          }
           builder.cubicTo(command.x1, command.y1, command.x2, command.y2, command.x3, command.y3);
           hasCurrentPoint = true;
           break;
