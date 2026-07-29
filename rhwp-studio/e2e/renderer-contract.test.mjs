@@ -1529,12 +1529,16 @@ assertTokensInOrder(
 assertTokensInOrder(
   glyphOutlinePayloadStatusSource,
   [
+    'const fragment = resourceIndex === undefined ? undefined : resources?.svgFragments?.[resourceIndex]',
+    "const pathLayers = typeof fragment === 'string' ? parseStaticSvgPathLayers(fragment) : []",
+    "const textLayers = typeof fragment === 'string' ? parseStaticSvgTextLayers(fragment) : []",
     'supported: hasStaticSanitizedSvgGlyphContract(op)',
     'hasReplayableGlyphPayloadBBox(op)',
-    "typeof fragment === 'string'",
-    'parseStaticSvgPathLayers(fragment).length > 0',
+    'pathLayers.length > 0',
+    'pathLayers.every((layer) => isStaticSvgPathDataValid(layer.pathData))',
+    'textLayers.length === 0',
   ],
-  'SvgGlyph strict payload status must require replayable bbox and static vector resource',
+  'SvgGlyph strict payload status must require replayable bbox and path-only static vector resource',
 );
 const glyphPayloadBBoxGuardBlock = extractFunctionBody(glyphOutlinePayloadStatusSource, 'hasReplayableGlyphPayloadBBox');
 for (const requiredToken of [
@@ -1614,28 +1618,43 @@ assert.equal(
 );
 const canvaskitSvgGlyphReplayBlock = extractMethodBody(canvaskitSource, 'renderSvgGlyphOutline');
 assertTokensInOrder(
-  extractMethodBody(canvaskitSource, 'glyphOutlineVariantReplayStatus'),
+  extractMethodBody(canvaskitSource, 'prepareSvgGlyphPaths'),
   [
-    'let hasCanvasKitPath = false',
-    'let allCanvasKitPathsDecodable = true',
-    'for (const layer of parseStaticSvgPathLayers(fragment))',
+    'const layers = typeof fragment',
+    'parseStaticSvgPathLayers(fragment)',
+    'if (layers.length === 0)',
+    'const prepared: CanvasKitPreparedSvgGlyphPathLayer[] = []',
+    'for (const layer of layers)',
     'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
     'if (!path)',
-    'allCanvasKitPathsDecodable = false',
-    'if (!hasCanvasKitPath || !allCanvasKitPathsDecodable)',
-    "payloadDetails = 'pathDecodeFailed'",
+    'for (const decoded of prepared)',
+    'decoded.path.delete()',
+    'this.preparedSvgGlyphPaths.set(op, null)',
+    'prepared.push({ layer, path })',
+    'this.preparedSvgGlyphPaths.set(op, prepared)',
   ],
-  'CanvasKit SvgGlyph selection must preflight every path before suppressing TextRun fallback',
+  'CanvasKit SvgGlyph preparation must decode every path atomically before selection',
 );
 assertTokensInOrder(
-  canvaskitSvgGlyphReplayBlock,
+  extractMethodBody(canvaskitSource, 'glyphOutlineVariantReplayStatus'),
+  [
+    "if (payloadSupported && op.payloadKind === 'svgGlyph')",
+    'if (!this.prepareSvgGlyphPaths(op))',
+    'payloadSupported = false',
+    "payloadDetails = 'pathDecodeFailed'",
+  ],
+  'CanvasKit SvgGlyph selection must reject an atomically failed prepared path set',
+);
+assertTokensInOrder(
+  extractMethodBody(canvaskitSource, 'prepareSvgGlyphPaths'),
   [
     'const vectorIndex = resolveLayerResourceIndex(',
-    'payload?.vectorResourceId',
+    'op.svgGlyph?.vectorResourceId',
     'this.lastRenderedTree?.resources?.svgKeys',
-    'const fragment = this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex]',
+    'const fragment = vectorIndex === undefined',
+    'this.lastRenderedTree?.resources?.svgFragments?.[vectorIndex]',
   ],
-  'CanvasKit SvgGlyph replay must resolve vectors through resource ids before parsing',
+  'CanvasKit SvgGlyph preparation must resolve vectors through resource ids before parsing',
 );
 assertTokensInOrder(
   canvaskitSvgGlyphReplayBlock,
@@ -1656,29 +1675,27 @@ assertTokensInOrder(
   [
     'canvas.scale(width / viewBox.width, height / viewBox.height)',
     'canvas.translate(-viewBox.x, -viewBox.y)',
-    'for (const layer of pathLayers)',
+    'for (const { layer, path } of pathLayers)',
     'if (layer.transform)',
     'layer.transform.a',
-    'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
+    'this.applyPathFillRule(path, layer.fillRule)',
   ],
-  'CanvasKit SvgGlyph replay must apply path-layer transforms after viewBox normalization',
+  'CanvasKit SvgGlyph replay must apply path-layer transforms to prepared paths after viewBox normalization',
 );
 assertTokensInOrder(
-  canvaskitSvgGlyphReplayBlock,
+  extractMethodBody(canvaskitSource, 'clearPreparedSvgGlyphPaths'),
   [
-    'path = this.canvasKit.Path.MakeFromSVGString(layer.pathData)',
-    '} catch {',
-    'path = null',
-    'if (!path)',
-    'const paint = this.makePaint(',
-    'canvas.drawPath(path, paint)',
-    'paint.delete()',
-    'const strokePaint = this.makePaint(',
-    'canvas.drawPath(path, strokePaint)',
-    'strokePaint.delete()',
-    'path.delete()',
+    'for (const prepared of this.preparedSvgGlyphPaths.values())',
+    'for (const decoded of prepared ?? [])',
+    'decoded.path.delete()',
+    'this.preparedSvgGlyphPaths.clear()',
   ],
-  'CanvasKit SvgGlyph replay must release transient Path and Paint objects',
+  'CanvasKit SvgGlyph prepared-path cache must release every decoded path',
+);
+assert.equal(
+  canvaskitSvgGlyphReplayBlock.includes('MakeFromSVGString'),
+  false,
+  'CanvasKit SvgGlyph replay must reuse atomically prepared paths instead of decoding during drawing',
 );
 assertTokensInOrder(
   canvaskitSvgGlyphReplayBlock,
@@ -2343,8 +2360,10 @@ assertTokensInOrder(
   canvaskitTextRun,
   [
     'const requiresScriptShaping = (op.style.superscript || op.style.subscript)',
-    'const canUseScriptParagraph = requiresScriptShaping',
-    'const fontFamilies = fallbackFamilies',
+    'const requiresHangulClusterShaping = clusters.some',
+    'const canUseClusterParagraph = (requiresScriptShaping || requiresHangulClusterShaping)',
+    'if (canUseClusterParagraph)',
+    'const fontFamilies = [...clusterFontFamilies, ...fallbackFamilies]',
     'this.fontRegistry.resolveProviderFamily(family, renderFontWeight)',
     'for (const cluster of clusters)',
     'const x = positions[cluster.start]',
@@ -2361,7 +2380,7 @@ assertTokensInOrder(
     'originY - entry.baseline',
     'entry.paragraph.delete()',
   ],
-  'CanvasKit must shape positioned grapheme scripts through the registered font provider',
+  'CanvasKit must shape positioned script and old-Hangul grapheme clusters through the registered font provider',
 );
 for (const geometryHelperName of [
   'angleToCanvasCoords',
