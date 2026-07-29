@@ -35,14 +35,96 @@ export function tabLeaderDashStyle(fillType: number): 'solid' | 'dash' | 'dot' {
   return fillType === 2 ? 'dash' : fillType === 3 ? 'dot' : 'solid';
 }
 
-export function textDecorationEmphasisMark(emphasisDot: number): string {
-  return emphasisDot === 1 ? '●'
-    : emphasisDot === 2 ? '○'
-      : emphasisDot === 3 ? 'ˇ'
-        : emphasisDot === 4 ? '˜'
-          : emphasisDot === 5 ? '･'
-            : emphasisDot === 6 ? '˸'
-              : '';
+export type TextDecorationEmphasisPathCommand =
+  | { kind: 'moveTo'; x: number; y: number }
+  | { kind: 'lineTo'; x: number; y: number }
+  | { kind: 'quadraticCurveTo'; controlX: number; controlY: number; x: number; y: number };
+
+export type TextDecorationEmphasisPrimitive =
+  | {
+    kind: 'circle';
+    x: number;
+    y: number;
+    radius: number;
+    paint: 'fill' | 'stroke';
+    strokeWidth?: number;
+  }
+  | {
+    kind: 'path';
+    commands: TextDecorationEmphasisPathCommand[];
+    strokeWidth: number;
+  };
+
+export function textDecorationEmphasisGeometry(
+  emphasisDot: number,
+  size: number,
+): TextDecorationEmphasisPrimitive[] {
+  if (!Number.isFinite(size) || size <= 0) {
+    return [];
+  }
+  const centerY = -size * 0.45;
+  const pathStrokeWidth = Math.max(size * 0.14, 0.75);
+  switch (emphasisDot) {
+    case 1:
+    case 2:
+      return [{
+        kind: 'circle',
+        x: 0,
+        y: centerY,
+        radius: Math.max(size * 0.48, 1),
+        paint: emphasisDot === 1 ? 'fill' : 'stroke',
+        strokeWidth: Math.max(size * 0.12, 0.75),
+      }];
+    case 3:
+      return [{
+        kind: 'path',
+        commands: [
+          { kind: 'moveTo', x: -size * 0.48, y: -size * 0.72 },
+          { kind: 'lineTo', x: 0, y: -size * 0.18 },
+          { kind: 'lineTo', x: size * 0.48, y: -size * 0.72 },
+        ],
+        strokeWidth: pathStrokeWidth,
+      }];
+    case 4:
+      return [{
+        kind: 'path',
+        commands: [
+          { kind: 'moveTo', x: -size * 0.6, y: -size * 0.48 },
+          {
+            kind: 'quadraticCurveTo',
+            controlX: -size * 0.3,
+            controlY: -size * 0.8,
+            x: 0,
+            y: -size * 0.48,
+          },
+          {
+            kind: 'quadraticCurveTo',
+            controlX: size * 0.3,
+            controlY: -size * 0.16,
+            x: size * 0.6,
+            y: -size * 0.48,
+          },
+        ],
+        strokeWidth: pathStrokeWidth,
+      }];
+    case 5:
+      return [{
+        kind: 'circle',
+        x: 0,
+        y: centerY,
+        radius: Math.max(size * 0.16, 0.65),
+        paint: 'fill',
+      }];
+    case 6: {
+      const radius = Math.max(size * 0.13, 0.6);
+      return [
+        { kind: 'circle', x: 0, y: -size * 0.7, radius, paint: 'fill' },
+        { kind: 'circle', x: 0, y: -size * 0.2, radius, paint: 'fill' },
+      ];
+    }
+    default:
+      return [];
+  }
 }
 
 export function textDecorationLineY(

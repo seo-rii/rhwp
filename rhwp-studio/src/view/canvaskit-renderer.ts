@@ -106,8 +106,8 @@ import {
   splitIntoClusters,
   startsWithInvalidControl,
   tabLeaderDashStyle,
+  textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
-  textDecorationEmphasisMark,
   textDecorationEmphasisPosition,
   textDecorationLineY,
   textScriptMetrics,
@@ -1517,7 +1517,6 @@ export class CanvasKitLayerRenderer {
 
       if (emphasisDot > 0) {
         const dotSize = textDecorationEmphasisSize(fontSize);
-        const dotChar = textDecorationEmphasisMark(emphasisDot);
         for (const position of positions.slice(0, -1)) {
           const markPosition = textDecorationEmphasisPosition(
             originX,
@@ -1533,7 +1532,6 @@ export class CanvasKitLayerRenderer {
             markPosition.y,
             dotSize,
             op.style.color,
-            dotChar,
           );
         }
       }
@@ -2116,38 +2114,7 @@ export class CanvasKitLayerRenderer {
         paint.delete();
         return;
       }
-      const dotChar = textDecorationEmphasisMark(op.decoration.emphasisDot);
-      if (!dotChar) {
-        return;
-      }
       const dotSize = textDecorationEmphasisSize(op.decoration.fontSize);
-      if (op.decoration.emphasisDot === 1 || op.decoration.emphasisDot === 2) {
-        for (const position of op.decoration.positions.slice(0, -1)) {
-          const markPosition = textDecorationEmphasisPosition(
-            originX,
-            baselineY,
-            position,
-            op.decoration.fontSize,
-            op.decoration.ratio,
-          );
-          this.drawEmphasisMark(
-            canvas,
-            op.decoration.emphasisDot,
-            markPosition.x,
-            markPosition.y,
-            dotSize,
-            op.decoration.color,
-          );
-        }
-        return;
-      }
-      const dotObjects = this.makeTextObjects(
-        'Noto Sans KR',
-        dotSize,
-        false,
-        false,
-        op.decoration.color,
-      );
       for (const position of op.decoration.positions.slice(0, -1)) {
         const markPosition = textDecorationEmphasisPosition(
           originX,
@@ -2163,13 +2130,8 @@ export class CanvasKitLayerRenderer {
           markPosition.y,
           dotSize,
           op.decoration.color,
-          dotChar,
-          dotObjects,
         );
       }
-      dotObjects.paint.delete();
-      dotObjects.font.delete();
-      dotObjects.typeface.delete();
     };
 
     if (op.decoration.rotation !== 0) {
@@ -2193,31 +2155,46 @@ export class CanvasKitLayerRenderer {
     baselineY: number,
     size: number,
     color: string,
-    fallbackChar?: string,
-    fallbackObjects?: { typeface: Typeface; font: Font; paint: Paint },
   ): void {
-    if (emphasisDot === 1 || emphasisDot === 2) {
-      const radius = Math.max(size * 0.48, 1);
-      const centerY = baselineY - size * 0.45;
-      const paint = this.makePaint(color, emphasisDot === 1 ? 'fill' : 'stroke');
-      if (emphasisDot === 2) {
-        paint.setStrokeWidth(Math.max(size * 0.12, 0.75));
+    for (const primitive of textDecorationEmphasisGeometry(emphasisDot, size)) {
+      if (primitive.kind === 'circle') {
+        const paint = this.makePaint(color, primitive.paint);
+        if (primitive.paint === 'stroke') {
+          paint.setStrokeWidth(primitive.strokeWidth ?? 1);
+        }
+        canvas.drawCircle(
+          x + primitive.x,
+          baselineY + primitive.y,
+          primitive.radius,
+          paint,
+        );
+        paint.delete();
+        continue;
       }
-      canvas.drawCircle(x, centerY, radius, paint);
+      const builder = new this.canvasKit.PathBuilder();
+      for (const command of primitive.commands) {
+        if (command.kind === 'moveTo') {
+          builder.moveTo(x + command.x, baselineY + command.y);
+        } else if (command.kind === 'lineTo') {
+          builder.lineTo(x + command.x, baselineY + command.y);
+        } else {
+          builder.quadTo(
+            x + command.controlX,
+            baselineY + command.controlY,
+            x + command.x,
+            baselineY + command.y,
+          );
+        }
+      }
+      const path = builder.detach();
+      builder.delete();
+      const paint = this.makePaint(color, 'stroke');
+      paint.setStrokeWidth(primitive.strokeWidth);
+      paint.setStrokeCap(this.canvasKit.StrokeCap.Round);
+      paint.setStrokeJoin(this.canvasKit.StrokeJoin.Round);
+      canvas.drawPath(path, paint);
       paint.delete();
-      return;
-    }
-
-    const dotChar = fallbackChar ?? textDecorationEmphasisMark(emphasisDot);
-    if (!dotChar) {
-      return;
-    }
-    const objects = fallbackObjects ?? this.makeTextObjects('Noto Sans KR', size, false, false, color);
-    canvas.drawText(dotChar, x, baselineY, objects.paint, objects.font);
-    if (!fallbackObjects) {
-      objects.paint.delete();
-      objects.font.delete();
-      objects.typeface.delete();
+      path.delete();
     }
   }
 

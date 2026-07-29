@@ -17700,6 +17700,117 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text decoration options parity exact=${textDecorationOptionsDiff.exactDiffPixels}, tolerant=${textDecorationOptionsDiff.rawTolerantDiffPixels}, ink=${textDecorationOptionsDiff.rawInkMaskDiffPixels}, max_channel_delta=${textDecorationOptionsDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvas-layer-emphasis-mark-variant-parity');
+  const emphasisMarkVariantParityProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const tree = {
+      pageWidth: 246,
+      pageHeight: 34,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 1917,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 1917,
+        bounds: { x: 0, y: 0, width: 246, height: 34 },
+        cacheHint: 'none',
+        ops: [
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 246, height: 34 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          ...Array.from({ length: 6 }, (_, index) => ({
+            type: 'textDecoration',
+            bbox: { x: 5 + index * 40, y: 8, width: 32, height: 22 },
+            decoration: {
+              kind: 'emphasisDot',
+              baseline: 18,
+              rotation: 0,
+              fontSize: 18,
+              ratio: 1,
+              color: '#101010',
+              shape: 0,
+              underline: 'none',
+              emphasisDot: index + 1,
+              positions: [0, 12, 24],
+            },
+          })),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    return {
+      canvas2d: await render(canvas2dRenderer),
+      canvaskit: await render(canvaskitRenderer),
+    };
+  });
+  assert(
+    !emphasisMarkVariantParityProbe.error,
+    emphasisMarkVariantParityProbe.error || 'emphasis mark variant parity probe available',
+  );
+  const emphasisVariantPixels = (dataUrl) => Array.from(
+    { length: 6 },
+    (_, index) => countPixels(
+      dataUrl,
+      (pixel) => pixel.x >= index * 40
+        && pixel.x < (index + 1) * 40
+        && pixel.alpha > 32
+        && (pixel.red < 230 || pixel.green < 230 || pixel.blue < 230),
+    ),
+  );
+  const emphasisCanvas2dVariantPixels = emphasisVariantPixels(emphasisMarkVariantParityProbe.canvas2d);
+  const emphasisCanvaskitVariantPixels = emphasisVariantPixels(emphasisMarkVariantParityProbe.canvaskit);
+  assert(
+    emphasisCanvas2dVariantPixels.every((count) => count > 3)
+      && emphasisCanvaskitVariantPixels.every((count) => count > 3),
+    `all emphasis mark variants draw canvas2d=${JSON.stringify(emphasisCanvas2dVariantPixels)}, canvaskit=${JSON.stringify(emphasisCanvaskitVariantPixels)}`,
+  );
+  const emphasisMarkVariantDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(emphasisMarkVariantParityProbe.canvas2d),
+    pngBufferFromDataUrl(emphasisMarkVariantParityProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-emphasis-mark-variant-parity',
+      ignoreChannelDelta: 32,
+      maxDiffRatio: 0.02,
+      inkMaskMaxDiffRatio: 0.01,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    emphasisMarkVariantDiff.passed,
+    `emphasis mark variant parity exact=${emphasisMarkVariantDiff.exactDiffPixels}, tolerant=${emphasisMarkVariantDiff.rawTolerantDiffPixels}, ink=${emphasisMarkVariantDiff.rawInkMaskDiffPixels}, max_channel_delta=${emphasisMarkVariantDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-clip-scope-parity');
   await loadApp(page, '?renderer=canvaskit&canvaskitMode=default');
   const clipScopeProbe = await page.evaluate(() => {

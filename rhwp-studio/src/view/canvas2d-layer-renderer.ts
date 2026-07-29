@@ -84,8 +84,8 @@ import { formObjectPalette } from './form-replay-utils';
 import {
   TEXT_CONTROL_MARK_FONT_FAMILY,
   tabLeaderDashStyle,
+  textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
-  textDecorationEmphasisMark,
   textDecorationEmphasisPosition,
   textDecorationLineY,
   textScriptMetrics,
@@ -982,22 +982,23 @@ export class Canvas2DLayerRenderer {
       }
 
       if (emphasisDot > 0) {
-        const dotChar = textDecorationEmphasisMark(emphasisDot);
-        if (dotChar) {
-          ctx.save();
-          this.setCanvasTextFont(ctx, 'Noto Sans KR', textDecorationEmphasisSize(fontSize), false, false);
-          ctx.fillStyle = op.style.color;
-          for (const position of positions.slice(0, -1)) {
-            const markPosition = textDecorationEmphasisPosition(
-              originX,
-              originY,
-              position,
-              fontSize,
-              ratio,
-            );
-            ctx.fillText(dotChar, markPosition.x, markPosition.y);
-          }
-          ctx.restore();
+        const dotSize = textDecorationEmphasisSize(fontSize);
+        for (const position of positions.slice(0, -1)) {
+          const markPosition = textDecorationEmphasisPosition(
+            originX,
+            originY,
+            position,
+            fontSize,
+            ratio,
+          );
+          this.drawEmphasisMark(
+            ctx,
+            emphasisDot,
+            markPosition.x,
+            markPosition.y,
+            dotSize,
+            op.style.color,
+          );
         }
       }
 
@@ -1093,14 +1094,7 @@ export class Canvas2DLayerRenderer {
         this.drawTextDecorationLine(ctx, originX, y, originX + textWidth, y, op.decoration.color);
         return;
       }
-      const dotChar = textDecorationEmphasisMark(op.decoration.emphasisDot);
-      if (!dotChar) {
-        return;
-      }
-      ctx.save();
-      this.setCanvasTextFont(ctx, 'Noto Sans KR', textDecorationEmphasisSize(op.decoration.fontSize), false, false);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = op.decoration.color;
+      const dotSize = textDecorationEmphasisSize(op.decoration.fontSize);
       for (const position of op.decoration.positions.slice(0, -1)) {
         const markPosition = textDecorationEmphasisPosition(
           originX,
@@ -1109,9 +1103,15 @@ export class Canvas2DLayerRenderer {
           op.decoration.fontSize,
           op.decoration.ratio,
         );
-        ctx.fillText(dotChar, markPosition.x, markPosition.y);
+        this.drawEmphasisMark(
+          ctx,
+          op.decoration.emphasisDot,
+          markPosition.x,
+          markPosition.y,
+          dotSize,
+          op.decoration.color,
+        );
       }
-      ctx.restore();
     };
 
     ctx.save();
@@ -1123,6 +1123,55 @@ export class Canvas2DLayerRenderer {
       ctx.translate(-cx, -cy);
     }
     drawDecoration(op.bbox.x, op.bbox.y + op.decoration.baseline);
+    ctx.restore();
+  }
+
+  private drawEmphasisMark(
+    ctx: CanvasRenderingContext2D,
+    emphasisDot: number,
+    x: number,
+    baselineY: number,
+    size: number,
+    color: string,
+  ): void {
+    const geometry = textDecorationEmphasisGeometry(emphasisDot, size);
+    if (!geometry.length) {
+      return;
+    }
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const primitive of geometry) {
+      ctx.beginPath();
+      if (primitive.kind === 'circle') {
+        ctx.arc(x + primitive.x, baselineY + primitive.y, primitive.radius, 0, Math.PI * 2);
+        if (primitive.paint === 'fill') {
+          ctx.fill();
+        } else {
+          ctx.lineWidth = primitive.strokeWidth ?? 1;
+          ctx.stroke();
+        }
+        continue;
+      }
+      ctx.lineWidth = primitive.strokeWidth;
+      for (const command of primitive.commands) {
+        if (command.kind === 'moveTo') {
+          ctx.moveTo(x + command.x, baselineY + command.y);
+        } else if (command.kind === 'lineTo') {
+          ctx.lineTo(x + command.x, baselineY + command.y);
+        } else {
+          ctx.quadraticCurveTo(
+            x + command.controlX,
+            baselineY + command.controlY,
+            x + command.x,
+            baselineY + command.y,
+          );
+        }
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

@@ -2099,31 +2099,51 @@ assert(
   'Canvas2D and CanvasKit tab leader replay must share fillType-to-dash mapping',
 );
 assert.equal(
-  textReplayUtilsSource.includes('export function textDecorationEmphasisMark(')
+  textReplayUtilsSource.includes('export function textDecorationEmphasisGeometry(')
     && textReplayUtilsSource.includes('export function textDecorationEmphasisPosition(')
     && textReplayUtilsSource.includes('export function textDecorationEmphasisSize(')
     && textReplayUtilsSource.includes('export function textDecorationLineY('),
   true,
   'text decoration visual policy must live in shared native-ready text helpers',
 );
-assert.equal(
-  canvas2dSource.includes("emphasisDot === 3 ? 'ˇ'")
-    || canvaskitSource.includes("emphasisDot === 3 ? 'ˇ'"),
-  false,
-  'Canvas2D and CanvasKit must not carry separate emphasis mark character maps',
+assertTokensInOrder(
+  extractFunctionBody(textReplayUtilsSource, 'textDecorationEmphasisGeometry'),
+  ['case 1:', 'case 2:', 'case 3:', 'case 4:', 'case 5:', 'case 6:'],
+  'shared emphasis geometry must cover all six HWP emphasis mark variants',
 );
 assert.equal(
-  importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisMark')
+  importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisGeometry')
     && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisPosition')
     && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationEmphasisSize')
     && importBlockFrom(canvas2dSource, './text-replay-utils').includes('textDecorationLineY')
-    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisMark')
+    && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisGeometry')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisPosition')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationEmphasisSize')
     && importBlockFrom(canvaskitSource, './text-replay-utils').includes('textDecorationLineY'),
   true,
   'Canvas2D and CanvasKit must import the shared text decoration helpers',
 );
+for (const [label, source] of [
+  ['Canvas2D', canvas2dSource],
+  ['CanvasKit', canvaskitSource],
+]) {
+  const drawEmphasisBody = extractMethodBody(source, 'drawEmphasisMark');
+  assert(
+    drawEmphasisBody.includes('textDecorationEmphasisGeometry('),
+    `${label} emphasis replay must consume shared deterministic geometry`,
+  );
+  assert(
+    !drawEmphasisBody.includes('makeTextObjects(')
+      && !drawEmphasisBody.includes('fillText(')
+      && !drawEmphasisBody.includes('drawText('),
+    `${label} emphasis replay must not depend on font glyph fallback`,
+  );
+  assert(
+    extractMethodBody(source, 'renderTextRun').includes('this.drawEmphasisMark(')
+      && extractMethodBody(source, 'renderTextDecoration').includes('this.drawEmphasisMark('),
+    `${label} inline and standalone emphasis replay must share the geometry path`,
+  );
+}
 assert(
   extractMethodBody(canvas2dSource, 'renderTextDecoration').includes('textDecorationEmphasisPosition(')
     && extractMethodBody(canvaskitSource, 'renderTextDecoration').includes('textDecorationEmphasisPosition('),
