@@ -349,20 +349,56 @@ test('negative-caches browser raster recovery failures', async () => {
   }]);
 });
 
-test('does not browser-normalize GIF when CanvasKit cannot establish a stable frame', () => {
-  const harness = makeHarness();
-  harness.canvasKit.encodedResult = null;
-  const encodedGif = base64(gif(2, 1));
+test('recovers proven single-frame GIF and WebP decoder failures through browser images', async () => {
+  for (const [format, bytes, mimeType] of [
+    ['gif', gifWithFrames(2, 1, 1), 'image/gif'],
+    ['webp', extendedWebp(2, 1), 'image/webp'],
+  ]) {
+    const harness = makeHarness();
+    const decodedImage = fakeCanvasKitImage(2, 1);
+    harness.canvasKit.encodedResult = null;
+    harness.canvasKit.canvasResult = decodedImage;
+    const encoded = base64(bytes);
 
-  assert.equal(harness.cache.image(undefined, encodedGif), null);
-  assert.equal(harness.canvasKit.encodedSources.length, 1);
-  assert.equal(harness.browser.images.length, 0);
-  assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 0);
-  assert.deepEqual(harness.cache.getImageDiagnostics().failures, [{
-    source: 'inline',
-    resourceId: null,
-    reason: 'imageDecodeFailed',
-  }]);
+    assert.equal(harness.cache.image(undefined, encoded), null);
+    assert.equal(harness.canvasKit.encodedSources.length, 1);
+    assert.equal(harness.browser.images.length, 1);
+    assert.equal(harness.browser.blobs[0].type, mimeType);
+    harness.browser.images[0].onload();
+    await Promise.resolve();
+
+    assert.equal(harness.cache.image(undefined, encoded), decodedImage);
+    assert.deepEqual(harness.cache.getImageDiagnostics().recoveries, [{
+      source: 'inline',
+      resourceId: null,
+      reason: 'encodedImageDecodeFailed',
+      fallback: 'browserImageSource',
+      format,
+    }]);
+    assert.deepEqual(harness.cache.getImageDiagnostics().failures, []);
+  }
+});
+
+test('does not browser-normalize animated or structurally incomplete image containers', () => {
+  for (const bytes of [
+    gifWithFrames(2, 1, 2),
+    extendedWebp(2, 1, true),
+    gif(2, 1),
+  ]) {
+    const harness = makeHarness();
+    harness.canvasKit.encodedResult = null;
+    const encoded = base64(bytes);
+
+    assert.equal(harness.cache.image(undefined, encoded), null);
+    assert.equal(harness.canvasKit.encodedSources.length, 1);
+    assert.equal(harness.browser.images.length, 0);
+    assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 0);
+    assert.deepEqual(harness.cache.getImageDiagnostics().failures, [{
+      source: 'inline',
+      resourceId: null,
+      reason: 'imageDecodeFailed',
+    }]);
+  }
 });
 
 test('rejects and negative-caches decoded raster dimension mismatches', () => {
@@ -741,6 +777,54 @@ function gif(width, height) {
   const view = new DataView(bytes.buffer);
   view.setUint16(6, width, true);
   view.setUint16(8, height, true);
+  return bytes;
+}
+
+function gifWithFrames(width, height, frameCount) {
+  const bytes = new Uint8Array(19 + frameCount * 15 + 1);
+  bytes.set([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(6, width, true);
+  view.setUint16(8, height, true);
+  bytes[10] = 0x80;
+  bytes.set([0, 0, 0, 0xff, 0xff, 0xff], 13);
+  let offset = 19;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    bytes[offset] = 0x2c;
+    view.setUint16(offset + 5, width, true);
+    view.setUint16(offset + 7, height, true);
+    bytes.set([0x02, 0x02, 0x44, 0x01, 0x00], offset + 10);
+    offset += 15;
+  }
+  bytes[offset] = 0x3b;
+  return bytes;
+}
+
+function extendedWebp(width, height, animated = false) {
+  const bytes = new Uint8Array(48);
+  bytes.set([0x52, 0x49, 0x46, 0x46]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(4, 40, true);
+  bytes.set([0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58], 8);
+  view.setUint32(16, 10, true);
+  bytes[20] = animated ? 0x02 : 0;
+  const encodedWidth = width - 1;
+  const encodedHeight = height - 1;
+  bytes.set([
+    encodedWidth & 0xff,
+    (encodedWidth >> 8) & 0xff,
+    (encodedWidth >> 16) & 0xff,
+  ], 24);
+  bytes.set([
+    encodedHeight & 0xff,
+    (encodedHeight >> 8) & 0xff,
+    (encodedHeight >> 16) & 0xff,
+  ], 27);
+  bytes.set([0x56, 0x50, 0x38, 0x20], 30);
+  view.setUint32(34, 10, true);
+  bytes.set([0x9d, 0x01, 0x2a], 41);
+  view.setUint16(44, width, true);
+  view.setUint16(46, height, true);
   return bytes;
 }
 

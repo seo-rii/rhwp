@@ -5,6 +5,7 @@ import {
   CANVASKIT_MAX_ENCODED_IMAGE_BASE64_BYTES,
   CANVASKIT_MAX_SVG_BYTES,
   canvasKitEncodedImageHeader,
+  canvasKitEncodedImageHasStableFrame,
   canvasKitEncodedImageIsReplayable,
 } from '../src/view/canvaskit/encoded-image-admission.ts';
 
@@ -62,6 +63,54 @@ function webp(width: number, height: number): Uint8Array {
   return bytes;
 }
 
+function gifWithFrames(width: number, height: number, frameCount: number): Uint8Array {
+  const bytes = new Uint8Array(19 + frameCount * 15 + 1);
+  bytes.set([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(6, width, true);
+  view.setUint16(8, height, true);
+  bytes[10] = 0x80;
+  bytes.set([0, 0, 0, 0xff, 0xff, 0xff], 13);
+  let offset = 19;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    bytes[offset] = 0x2c;
+    view.setUint16(offset + 5, width, true);
+    view.setUint16(offset + 7, height, true);
+    bytes.set([0x02, 0x02, 0x44, 0x01, 0x00], offset + 10);
+    offset += 15;
+  }
+  bytes[offset] = 0x3b;
+  return bytes;
+}
+
+function extendedWebp(width: number, height: number, animated = false): Uint8Array {
+  const bytes = new Uint8Array(48);
+  bytes.set([0x52, 0x49, 0x46, 0x46]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(4, 40, true);
+  bytes.set([0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58], 8);
+  view.setUint32(16, 10, true);
+  bytes[20] = animated ? 0x02 : 0;
+  const encodedWidth = width - 1;
+  const encodedHeight = height - 1;
+  bytes.set([
+    encodedWidth & 0xff,
+    (encodedWidth >> 8) & 0xff,
+    (encodedWidth >> 16) & 0xff,
+  ], 24);
+  bytes.set([
+    encodedHeight & 0xff,
+    (encodedHeight >> 8) & 0xff,
+    (encodedHeight >> 16) & 0xff,
+  ], 27);
+  bytes.set([0x56, 0x50, 0x38, 0x20], 30);
+  view.setUint32(34, 10, true);
+  bytes.set([0x9d, 0x01, 0x2a], 41);
+  view.setUint16(44, width, true);
+  view.setUint16(46, height, true);
+  return bytes;
+}
+
 function bmp(width: number, height: number): Uint8Array {
   const bytes = new Uint8Array(54);
   bytes.set([0x42, 0x4d]);
@@ -108,6 +157,20 @@ test('CanvasKit encoded-image admission rejects malformed and oversized payloads
   const overEncodedLimit = new Uint8Array(maxRawBytes + 1);
   overEncodedLimit.set(png(1, 1));
   assert.equal(canvasKitEncodedImageIsReplayable(overEncodedLimit), false);
+});
+
+test('CanvasKit browser recovery admits only structurally stable GIF and WebP frames', () => {
+  assert.equal(canvasKitEncodedImageHasStableFrame(gifWithFrames(2, 1, 1)), true);
+  assert.equal(canvasKitEncodedImageHasStableFrame(gifWithFrames(2, 1, 2)), false);
+  assert.equal(canvasKitEncodedImageHasStableFrame(gif(2, 1)), false);
+
+  assert.equal(canvasKitEncodedImageHasStableFrame(extendedWebp(2, 1)), true);
+  assert.equal(canvasKitEncodedImageHasStableFrame(extendedWebp(2, 1, true)), false);
+  assert.equal(canvasKitEncodedImageHasStableFrame(webp(2, 1)), false);
+  assert.equal(
+    canvasKitEncodedImageHasStableFrame(extendedWebp(2, 1).subarray(0, 47)),
+    false,
+  );
 });
 
 test('CanvasKit SVG admission resolves bounded intrinsic dimensions', () => {

@@ -1801,6 +1801,25 @@ assertTokensInOrder(
   'CanvasKit resource cache must recover bounded encoded-image decoder failures through its browser image bridge',
 );
 assert(
+  canvaskitResourceCacheSource.includes(
+    'canvasKitEncodedImageHasStableFrame(bytes, imageHeader)',
+  )
+    && canvaskitEncodedImageAdmissionSource.includes(
+      'export function canvasKitEncodedImageHasStableFrame',
+    )
+    && canvaskitEncodedImageAdmissionSource.includes('function gifHasSingleFrame')
+    && canvaskitEncodedImageAdmissionSource.includes('function webpHasSingleFrame')
+    && canvaskitEncodedImageAdmissionSource.includes('frameCount > 1')
+    && canvaskitEncodedImageAdmissionSource.includes("(bytes[payloadStart] & 0x02) !== 0")
+    && canvaskitEncodedImageAdmissionSource.includes(
+      "bytesEqual(bytes, offset, [0x41, 0x4e, 0x49, 0x4d])",
+    )
+    && canvaskitEncodedImageAdmissionSource.includes(
+      "bytesEqual(bytes, offset, [0x41, 0x4e, 0x4d, 0x46])",
+    ),
+  'CanvasKit browser recovery must admit only structurally proven single-frame GIF and WebP payloads',
+);
+assert(
   canvaskitResourceCacheSource.includes('decodedImageMatchesHeader')
     && canvaskitResourceCacheSource.includes("'decodedDimensionsMismatch'"),
   'CanvasKit must reject decoded raster and SVG dimensions that disagree with admitted headers',

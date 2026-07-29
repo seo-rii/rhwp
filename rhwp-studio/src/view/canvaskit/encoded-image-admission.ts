@@ -38,6 +38,22 @@ export function canvasKitEncodedImageIsReplayable(bytes: Uint8Array): boolean {
     && header.width * header.height <= CANVASKIT_MAX_IMAGE_PIXELS;
 }
 
+export function canvasKitEncodedImageHasStableFrame(
+  bytes: Uint8Array,
+  header: CanvasKitEncodedImageHeader | null = canvasKitEncodedImageHeader(bytes),
+): boolean {
+  if (!header) {
+    return false;
+  }
+  if (header.format === 'gif') {
+    return gifHasSingleFrame(bytes);
+  }
+  if (header.format === 'webp') {
+    return webpHasSingleFrame(bytes);
+  }
+  return true;
+}
+
 type SvgIntrinsicLength =
   | { kind: 'missing' | 'relative' }
   | { kind: 'absolute'; value: number };
@@ -321,6 +337,90 @@ function parseGifHeader(bytes: Uint8Array): CanvasKitEncodedImageHeader | null {
   return { format: 'gif', width, height };
 }
 
+function gifHasSingleFrame(bytes: Uint8Array): boolean {
+  const header = parseGifHeader(bytes);
+  if (!header) {
+    return false;
+  }
+
+  let offset = 13;
+  const packed = bytes[10];
+  const hasGlobalColorTable = (packed & 0x80) !== 0;
+  if (hasGlobalColorTable) {
+    offset += (1 << ((packed & 0x07) + 1)) * 3;
+  }
+  let frameCount = 0;
+  while (offset < bytes.byteLength) {
+    const introducer = bytes[offset];
+    offset += 1;
+    if (introducer === 0x3b) {
+      return frameCount === 1 && offset === bytes.byteLength;
+    }
+    if (introducer === 0x21) {
+      if (offset >= bytes.byteLength) {
+        return false;
+      }
+      offset += 1;
+      const extensionEnd = skipGifSubBlocks(bytes, offset);
+      if (extensionEnd === null) {
+        return false;
+      }
+      offset = extensionEnd;
+      continue;
+    }
+    if (introducer !== 0x2c || offset + 9 > bytes.byteLength) {
+      return false;
+    }
+
+    const frameWidth = readUint16(bytes, offset + 4, true);
+    const frameHeight = readUint16(bytes, offset + 6, true);
+    const framePacked = bytes[offset + 8];
+    if (frameWidth === 0 || frameHeight === 0) {
+      return false;
+    }
+    offset += 9;
+    const hasLocalColorTable = (framePacked & 0x80) !== 0;
+    if (hasLocalColorTable) {
+      offset += (1 << ((framePacked & 0x07) + 1)) * 3;
+    }
+    if (
+      (!hasGlobalColorTable && !hasLocalColorTable)
+      || offset >= bytes.byteLength
+      || bytes[offset] < 2
+      || bytes[offset] > 8
+    ) {
+      return false;
+    }
+    offset += 1;
+    const imageEnd = skipGifSubBlocks(bytes, offset);
+    if (imageEnd === null) {
+      return false;
+    }
+    offset = imageEnd;
+    frameCount += 1;
+    if (frameCount > 1) {
+      return false;
+    }
+  }
+  return false;
+}
+
+function skipGifSubBlocks(bytes: Uint8Array, start: number): number | null {
+  let offset = start;
+  while (offset < bytes.byteLength) {
+    const blockLength = bytes[offset];
+    offset += 1;
+    if (blockLength === 0) {
+      return offset;
+    }
+    if (offset + blockLength > bytes.byteLength) {
+      return null;
+    }
+    offset += blockLength;
+  }
+  return null;
+}
+
 function parseWebpHeader(bytes: Uint8Array): CanvasKitEncodedImageHeader | null {
   if (
     bytes.byteLength < 20
@@ -369,6 +469,57 @@ function parseWebpHeader(bytes: Uint8Array): CanvasKitEncodedImageHeader | null 
   }
 
   return width > 0 && height > 0 ? { format: 'webp', width, height } : null;
+}
+
+function webpHasSingleFrame(bytes: Uint8Array): boolean {
+  if (!parseWebpHeader(bytes)) {
+    return false;
+  }
+  const riffEnd = readUint32(bytes, 4, true) + 8;
+  if (riffEnd !== bytes.byteLength) {
+    return false;
+  }
+
+  let offset = 12;
+  let imageChunkCount = 0;
+  while (offset < riffEnd) {
+    if (offset + 8 > riffEnd) {
+      return false;
+    }
+    const chunkLength = readUint32(bytes, offset + 4, true);
+    const payloadStart = offset + 8;
+    const chunkEnd = payloadStart + chunkLength;
+    const paddedEnd = chunkEnd + (chunkLength & 1);
+    if (
+      !Number.isSafeInteger(chunkEnd)
+      || !Number.isSafeInteger(paddedEnd)
+      || chunkEnd > riffEnd
+      || paddedEnd > riffEnd
+    ) {
+      return false;
+    }
+
+    if (bytesEqual(bytes, offset, [0x56, 0x50, 0x38, 0x58])) {
+      if (chunkLength < 10 || (bytes[payloadStart] & 0x02) !== 0) {
+        return false;
+      }
+    } else if (
+      bytesEqual(bytes, offset, [0x41, 0x4e, 0x49, 0x4d])
+      || bytesEqual(bytes, offset, [0x41, 0x4e, 0x4d, 0x46])
+    ) {
+      return false;
+    } else if (
+      bytesEqual(bytes, offset, [0x56, 0x50, 0x38, 0x20])
+      || bytesEqual(bytes, offset, [0x56, 0x50, 0x38, 0x4c])
+    ) {
+      imageChunkCount += 1;
+      if (imageChunkCount > 1) {
+        return false;
+      }
+    }
+    offset = paddedEnd;
+  }
+  return offset === riffEnd && imageChunkCount === 1;
 }
 
 function parseBmpHeader(bytes: Uint8Array): CanvasKitEncodedImageHeader | null {

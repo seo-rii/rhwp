@@ -328,15 +328,18 @@ CanvasKit parity is implemented through four layers:
    family names only; CanvasKit font/typeface objects remain render-owned and
    are released after each run. Admitted raster images first use CanvasKit's
    synchronous encoded-image codec. When that codec rejects an otherwise
-   bounded PNG, JPEG, or BMP, Studio uses the browser image decoder
+   bounded PNG, JPEG, BMP, or structurally proven single-frame GIF/WebP,
+   Studio uses the browser image decoder
    asynchronously and converts the decoded source directly into a CanvasKit
    `Image`; it never composites the recovery through Canvas2D. Static pictures
    are not admitted while that resource is pending. Successful browser-decoder
    recovery remains visible in `CanvasKitImageDiagnostics` on later cache hits.
-   GIF and WebP remain on CanvasKit's synchronous codec path because a browser
-   image source does not provide a deterministic first-frame contract for
-   animated payloads; codec failure for those formats remains a final decode
-   failure.
+   GIF recovery requires a complete stream with exactly one image descriptor
+   and a terminal trailer. WebP recovery requires a complete RIFF chunk walk,
+   one VP8/VP8L image payload, no animation feature flag, and no `ANIM`/`ANMF`
+   chunk. Animated or structurally incomplete GIF/WebP stays on CanvasKit's
+   synchronous codec path, so a codec failure remains a deterministic final
+   decode failure rather than selecting a timing-dependent browser frame.
    Only failure of both decode paths is contained as an unavailable resource and
    negative-cached by resource identity until that resource table is replaced.
    Missing resources, invalid base64, rejected encoded-image headers/limits,

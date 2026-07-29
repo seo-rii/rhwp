@@ -11,6 +11,7 @@ import {
 import { parseCanvasKitCssColor } from './css-color';
 import {
   canvasKitEncodedImageHeader,
+  canvasKitEncodedImageHasStableFrame,
   canvasKitEncodedImageIsReplayable,
   type CanvasKitEncodedImageHeader,
 } from './encoded-image-admission';
@@ -245,7 +246,7 @@ export class CanvasKitResourceCache {
       image = null;
     }
     if (!image) {
-      if (imageHeader.format === 'gif' || imageHeader.format === 'webp') {
+      if (!canvasKitEncodedImageHasStableFrame(bytes, imageHeader)) {
         this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
         return null;
       }

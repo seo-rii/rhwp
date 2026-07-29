@@ -1584,6 +1584,9 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       let browserRecoveryDiagnostics = null;
       let staticPictureRecoveryFirst = null;
       let staticPictureRecoverySecond = null;
+      let staticGifRecovery = null;
+      let staticWebpRecovery = null;
+      let staticWebpMime = null;
       let decoderFailedImage = null;
       let decoderFailedImageDiagnostics = null;
       let missingResourceImage = null;
@@ -1663,6 +1666,44 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         staticPictureRecoveryFirst = renderer.getImageDiagnostics();
         renderer.renderPage(recoveryProbeTree, recoveryProbeCanvas, 1);
         staticPictureRecoverySecond = renderer.getImageDiagnostics();
+        const recoverStableBrowserRaster = async (encoded) => {
+          const originalDecoder = renderer.canvasKit.MakeImageFromEncoded;
+          let firstImage = null;
+          try {
+            renderer.canvasKit.MakeImageFromEncoded = () => null;
+            renderer.resetImageDiagnostics();
+            firstImage = renderer.resourceCache.image(undefined, encoded);
+          } finally {
+            renderer.canvasKit.MakeImageFromEncoded = originalDecoder;
+          }
+          const deadline = Date.now() + 2_000;
+          while (
+            renderer.getImageDiagnostics().pendingLoads > 0
+            && Date.now() < deadline
+          ) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          const recoveredImage = renderer.resourceCache.image(undefined, encoded);
+          return {
+            firstAvailable: firstImage !== null,
+            recovered: recoveredImage !== null,
+            diagnostics: renderer.getImageDiagnostics(),
+          };
+        };
+        staticGifRecovery = await recoverStableBrowserRaster(
+          'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',
+        );
+        const webpCanvas = document.createElement('canvas');
+        webpCanvas.width = 2;
+        webpCanvas.height = 1;
+        const webpContext = webpCanvas.getContext('2d');
+        webpContext.fillStyle = '#123456';
+        webpContext.fillRect(0, 0, 1, 1);
+        webpContext.fillStyle = '#fedcba';
+        webpContext.fillRect(1, 0, 1, 1);
+        const webpDataUrl = webpCanvas.toDataURL('image/webp', 1);
+        staticWebpMime = webpDataUrl.slice(0, webpDataUrl.indexOf(';'));
+        staticWebpRecovery = await recoverStableBrowserRaster(webpDataUrl.split(',')[1]);
         const truncatedPng = new Uint8Array([
           0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
           0x00, 0x00, 0x00, 0x0d,
@@ -1836,6 +1877,9 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         browserRecoveryDiagnostics,
         staticPictureRecoveryFirst,
         staticPictureRecoverySecond,
+        staticGifRecovery,
+        staticWebpRecovery,
+        staticWebpMime,
         decoderFailedImage,
         decoderFailedImageDiagnostics,
         missingResourceImage,
@@ -2253,6 +2297,29 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         === 'encodedImageDecodeFailed'
       && nativeRouting.nativeResourceFailureProbe?.staticPictureRecoverySecond?.failures?.length === 0,
     `CanvasKit decoder failure recovers through a direct browser image source=${JSON.stringify(nativeRouting.nativeResourceFailureProbe)}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.staticGifRecovery?.firstAvailable === false
+      && nativeRouting.nativeResourceFailureProbe?.staticGifRecovery?.recovered === true
+      && nativeRouting.nativeResourceFailureProbe?.staticGifRecovery?.diagnostics?.pendingLoads === 0
+      && nativeRouting.nativeResourceFailureProbe?.staticGifRecovery?.diagnostics?.recoveries?.[0]?.format
+        === 'gif'
+      && nativeRouting.nativeResourceFailureProbe?.staticGifRecovery?.diagnostics?.failures?.length === 0,
+    `single-frame GIF decoder failure recovers through a direct browser image=${JSON.stringify(
+      nativeRouting.nativeResourceFailureProbe,
+    )}`,
+  );
+  assert(
+    nativeRouting.nativeResourceFailureProbe?.staticWebpMime === 'data:image/webp'
+      && nativeRouting.nativeResourceFailureProbe?.staticWebpRecovery?.firstAvailable === false
+      && nativeRouting.nativeResourceFailureProbe?.staticWebpRecovery?.recovered === true
+      && nativeRouting.nativeResourceFailureProbe?.staticWebpRecovery?.diagnostics?.pendingLoads === 0
+      && nativeRouting.nativeResourceFailureProbe?.staticWebpRecovery?.diagnostics?.recoveries?.[0]?.format
+        === 'webp'
+      && nativeRouting.nativeResourceFailureProbe?.staticWebpRecovery?.diagnostics?.failures?.length === 0,
+    `single-frame WebP decoder failure recovers through a direct browser image=${JSON.stringify(
+      nativeRouting.nativeResourceFailureProbe,
+    )}`,
   );
   assert(
     nativeRouting.nativeResourceFailureProbe?.decoderFailedImage === null
