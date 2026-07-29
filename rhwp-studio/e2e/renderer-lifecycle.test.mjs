@@ -8054,6 +8054,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const unsafeSvgResourceTree = treeFor(svgOutline);
     unsafeSvgResourceTree.resources.svgFragments[0] = '<script>1</script><path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>';
     unsafeSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-unsafe-script';
+    const textLayerSvgResourceTree = treeFor(svgOutline);
+    textLayerSvgResourceTree.resources.svgFragments[0] = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
+      '<path d="M0 0 L18 0 L18 18 L0 18 Z" fill="#ff00cc"/>',
+      '<text x="1" y="12" fill="#0000ff">X</text>',
+      '</svg>',
+    ].join('');
+    textLayerSvgResourceTree.resources.svgHashes[0] = 'svg-glyph-text-layer';
     const strokedSvgResourceTree = treeFor(svgOutline);
     strokedSvgResourceTree.resources.svgFragments[0] = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">',
@@ -8723,6 +8731,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       noDomParserIdentityOpacitySvgGlyph,
       duplicateSvgGlyphKey: await render(duplicateSvgResourceTree),
       unsafeSvgGlyphResource: await render(unsafeSvgResourceTree),
+      unsupportedSvgGlyphTextLayerResource: await render(textLayerSvgResourceTree),
       unsupportedSvgGlyphStrokeResource: await render(unsupportedSvgStrokeTree),
       unsupportedSvgGlyphOpacityResource: await render(unsupportedSvgOpacityTree),
       unsupportedSvgGlyphGroupOpacityResource: await render(unsupportedSvgGroupOpacityTree),
@@ -9956,6 +9965,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
     .unsafeSvgGlyphResource
     ?.diagnostics
     ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
+  const canvaskitUnsupportedSvgTextLayerResourceReport = canvaskitGlyphOutlineProbe
+    .unsupportedSvgGlyphTextLayerResource
+    ?.diagnostics
+    ?.find((report) => report.equivalenceGroup === 'canvaskit-outline-svg');
   const canvaskitUnsupportedSvgStrokeResourceReport = canvaskitGlyphOutlineProbe
     .unsupportedSvgGlyphStrokeResource
     ?.diagnostics
@@ -10114,6 +10127,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         (variant) => variant.variantId === 'glyphOutline'
           && variant.reasons.includes('unsupportedSvgGlyph'),
       )
+      && canvaskitUnsupportedSvgTextLayerResourceReport?.selectedVariantId === 'textRun'
+      && canvaskitUnsupportedSvgTextLayerResourceReport?.rejectedVariants?.some(
+        (variant) => variant.variantId === 'glyphOutline'
+          && variant.reasons.includes('unsupportedSvgGlyph'),
+      )
+      && canvaskitGlyphOutlineProbe.unsupportedSvgGlyphTextLayerResource.redPixels > 0
       && canvaskitUnsupportedSvgStrokeResourceReport?.selectedVariantId === 'textRun'
       && canvaskitUnsupportedSvgStrokeResourceReport?.rejectedVariants?.some(
         (variant) => variant.variantId === 'glyphOutline'

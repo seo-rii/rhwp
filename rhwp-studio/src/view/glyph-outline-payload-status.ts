@@ -9,7 +9,10 @@ import {
   type LayerTextVariantReplayStatus,
 } from '@/core/text-variants';
 import type { LayerGlyphOutlineOp, LayerResources } from '@/core/types';
-import { parseStaticSvgPathLayers } from './static-svg-path-layers';
+import {
+  parseStaticSvgPathLayers,
+  parseStaticSvgTextLayers,
+} from './static-svg-path-layers';
 
 export type GlyphOutlinePayloadReplayStatus = {
   supported: boolean;
@@ -80,12 +83,14 @@ export function glyphOutlinePayloadStatus(
       resources?.svgFragments.length ?? 0,
     );
     const fragment = resourceIndex === undefined ? undefined : resources?.svgFragments?.[resourceIndex];
+    const pathLayers = typeof fragment === 'string' ? parseStaticSvgPathLayers(fragment) : [];
+    const textLayers = typeof fragment === 'string' ? parseStaticSvgTextLayers(fragment) : [];
     return {
       supported: hasStaticSanitizedSvgGlyphContract(op)
         && op.variant.requires?.includes('text.glyphOutline.svgGlyph') === true
         && hasReplayableGlyphPayloadBBox(op)
-        && typeof fragment === 'string'
-        && parseStaticSvgPathLayers(fragment).length > 0,
+        && pathLayers.length > 0
+        && textLayers.length === 0,
       reason: 'unsupportedSvgGlyph',
     };
   }

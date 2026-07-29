@@ -6,6 +6,10 @@ const textVariantsSource = readFileSync(
   new URL('../src/core/text-variants.ts', import.meta.url),
   'utf8',
 );
+const glyphOutlinePayloadStatusSource = readFileSync(
+  new URL('../src/view/glyph-outline-payload-status.ts', import.meta.url),
+  'utf8',
+);
 
 function extractFunctionBody(source: string, functionName: string): string {
   let signatureIndex = source.indexOf(`export function ${functionName}(`);
@@ -163,4 +167,16 @@ test('SvgGlyph gate requires sanitized static vector resources without raw inlin
     assert.equal(textVariantsSource.includes(token), true, `missing raw SVG field guard: ${token}`);
   }
   assert.match(rawFieldBody, /RAW_INLINE_SVG_GLYPH_FIELDS\.some/);
+});
+
+test('SvgGlyph admission keeps strict payloads path-only', () => {
+  const body = extractFunctionBody(
+    glyphOutlinePayloadStatusSource,
+    'glyphOutlinePayloadStatus',
+  );
+
+  assert.match(body, /parseStaticSvgPathLayers\(fragment\)/);
+  assert.match(body, /parseStaticSvgTextLayers\(fragment\)/);
+  assert.match(body, /pathLayers\.length > 0/);
+  assert.match(body, /textLayers\.length === 0/);
 });
