@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn scaled_canvas_extent_preserves_fractional_page_edges() {
         assert_eq!(scaled_canvas_extent(793.700_787, 1.5), 1191);
-        assert_eq!(scaled_canvas_extent(1122.519_685, 1.5), 1684);
+        assert_eq!(scaled_canvas_extent(1_122.519_685, 1.5), 1684);
         assert_eq!(scaled_canvas_extent(16_384.25, 1.0), 16_384);
     }
 }
