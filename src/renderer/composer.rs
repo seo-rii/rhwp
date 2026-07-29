@@ -10,6 +10,7 @@ use super::{px_to_hwpunit, TextStyle};
 use crate::model::control::Control;
 use crate::model::document::Section;
 use crate::model::paragraph::{CharShapeRef, LineSeg, Paragraph};
+use std::borrow::Cow;
 
 /// 글자겹침(CharOverlap) 렌더링 정보
 #[derive(Debug, Clone)]
@@ -1064,9 +1065,34 @@ pub fn estimate_composed_line_width(line: &ComposedLine, styles: &ResolvedStyleS
         .iter()
         .map(|run| {
             let ts = resolved_to_text_style(styles, run.char_style_id, run.lang_index);
-            estimate_text_width(&run.text, &ts)
+            if run.char_overlap.is_some() {
+                estimate_text_width(&run.text, &ts)
+            } else {
+                estimate_text_width(effective_text_for_metrics(&run.text).as_ref(), &ts)
+            }
         })
         .sum()
+}
+
+/// Returns the displayed text used for visual layout metrics.
+///
+/// Source text remains authoritative for character and control indexes. Callers
+/// that measure a source range must slice the source first, then project that
+/// slice through this helper.
+pub fn effective_text_for_metrics(text: &str) -> Cow<'_, str> {
+    use crate::renderer::pua_oldhangul::map_pua_old_hangul;
+
+    let needs_projection = text.chars().any(|ch| {
+        ch == '\u{F081C}'
+            || pua_plain_text_display(ch).is_some()
+            || map_pua_old_hangul(ch).is_some()
+            || crate::renderer::layout::map_pua_bullet_char(ch) != ch
+    });
+    if needs_projection {
+        Cow::Owned(expand_pua_display_text(text))
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 /// PUA Supplementary 영역(U+F0000~) 문자가 사각형/원형 테두리 숫자인지 판별한다.

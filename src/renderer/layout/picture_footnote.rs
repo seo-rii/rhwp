@@ -1,6 +1,6 @@
 //! 그림/캡션 레이아웃 + 각주 영역 레이아웃
 
-use super::super::composer::{compose_paragraph, ComposedParagraph};
+use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
 use super::super::page_layout::LayoutRect;
 use super::super::pagination::{FootnoteRef, FootnoteSource};
 use super::super::render_tree::*;
@@ -830,7 +830,10 @@ impl LayoutEngine {
             let mut char_offset = comp_line.char_start;
             for run in &comp_line.runs {
                 let text_style = resolved_to_text_style(styles, run.char_style_id, run.lang_index);
-                let width = estimate_text_width(&run.text, &text_style);
+                let width = estimate_text_width(
+                    effective_text_for_metrics(&run.text).as_ref(),
+                    &text_style,
+                );
 
                 let run_id = tree.next_id();
                 let run_node = RenderNode::new(
@@ -960,8 +963,10 @@ impl LayoutEngine {
                                     let chars_before = char_pos - cs;
                                     let partial_text: String =
                                         run.text.chars().take(chars_before).collect();
-                                    let partial_width =
-                                        estimate_text_width(&partial_text, &run.style);
+                                    let partial_width = estimate_text_width(
+                                        effective_text_for_metrics(&partial_text).as_ref(),
+                                        &run.style,
+                                    );
                                     insert_x = run_node.bbox.x + partial_width;
                                     line_height = line_node.bbox.height;
                                     line_y = line_node.bbox.y;

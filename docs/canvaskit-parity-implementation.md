@@ -750,6 +750,18 @@ Document preflight continues to use the same PUA-expanded display projection:
 bounded work counts include both preserved source text and a differing display
 projection.
 
+Shared layout measurement now uses that same display projection for ordinary
+run widths, source-sliced fragments, table/control offsets, and synthetic line
+breaking. Source text is sliced before projection, so UTF-8/UTF-16 indexes,
+control anchors, cursor boundaries, and `TextRun` source positions remain
+unchanged even when one PUA scalar expands to several display scalars.
+Unmodified text stays on a borrowed fast path. Char-overlap payloads retain
+their one-control advance contract, while the nonpainting HWP TAC filler
+`U+F081C` has explicit zero advance in embedded, WASM, source-position, and
+unrounded line-breaking measurement paths. Canvas2D and CanvasKit therefore
+consume the same authored bounds that correspond to the text they actually
+paint.
+
 Shared HWP text measurement applies authored percentage letter spacing to each
 glyph's measured advance rather than to the font size. Full-width glyphs keep
 their previous behavior, while spaces, punctuation, and other narrow glyphs no

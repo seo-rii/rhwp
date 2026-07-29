@@ -23,6 +23,25 @@ fn expand_pua_display_text_maps_only_verified_hancom_symbols() {
     );
 }
 
+#[test]
+fn pua_metrics_projection_borrows_unmodified_text() {
+    let effective = effective_text_for_metrics("plain text");
+
+    assert!(matches!(effective, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(effective, "plain text");
+}
+
+#[test]
+fn pua_metrics_projection_expands_visual_text_after_source_slicing() {
+    assert_eq!(effective_text_for_metrics("\u{F012B}"), "(인)");
+    assert_eq!(effective_text_for_metrics("\u{E1A7}"), "\u{1100}\u{119E}");
+    assert_eq!(effective_text_for_metrics("\u{F081C}"), "");
+
+    let source = "\u{F012B}X";
+    let source_prefix: String = source.chars().take(1).collect();
+    assert_eq!(effective_text_for_metrics(&source_prefix), "(인)");
+}
+
 /// 단일 줄, 단일 스타일 문단
 #[test]
 fn test_compose_single_line_single_style() {
@@ -680,6 +699,97 @@ fn test_estimate_composed_line_width() {
 
     let width = estimate_composed_line_width(&line, &styles);
     assert!(width > 0.0, "폭이 0보다 커야 함");
+}
+
+#[test]
+fn pua_metrics_estimate_composed_line_width_uses_projected_text() {
+    let styles = make_styles_with_font_size(16.0);
+    let line = ComposedLine {
+        runs: vec![ComposedTextRun {
+            text: "\u{F012B}".to_string(),
+            char_style_id: 0,
+            lang_index: 0,
+            char_overlap: None,
+            footnote_marker: None,
+        }],
+        line_height: 400,
+        baseline_distance: 320,
+        segment_width: 0,
+        column_start: 0,
+        line_spacing: 0,
+        has_line_break: false,
+        char_start: 0,
+    };
+    let style = resolved_to_text_style(&styles, 0, 0);
+
+    assert_eq!(
+        estimate_composed_line_width(&line, &styles),
+        estimate_text_width("(인)", &style),
+    );
+}
+
+#[test]
+fn pua_metrics_estimate_composed_line_width_preserves_char_overlap_payload() {
+    let styles = make_styles_with_font_size(16.0);
+    let line = ComposedLine {
+        runs: vec![ComposedTextRun {
+            text: "\u{F012B}".to_string(),
+            char_style_id: 0,
+            lang_index: 0,
+            char_overlap: Some(CharOverlapInfo {
+                border_type: 1,
+                inner_char_size: 100,
+            }),
+            footnote_marker: None,
+        }],
+        line_height: 400,
+        baseline_distance: 320,
+        segment_width: 0,
+        column_start: 0,
+        line_spacing: 0,
+        has_line_break: false,
+        char_start: 0,
+    };
+    let style = resolved_to_text_style(&styles, 0, 0);
+
+    assert_eq!(
+        estimate_composed_line_width(&line, &styles),
+        estimate_text_width("\u{F012B}", &style),
+    );
+}
+
+#[test]
+fn pua_metrics_reflow_uses_projected_width_and_preserves_source_offsets() {
+    let styles = make_styles_with_font_size(16.0);
+    let style = resolved_to_text_style(&styles, 0, 0);
+    let raw_pua_width = crate::renderer::layout::estimate_text_width_unrounded("\u{F012B}", &style);
+    let projected_pua_width =
+        crate::renderer::layout::estimate_text_width_unrounded("(인)", &style);
+    let space_width = crate::renderer::layout::estimate_text_width_unrounded(" ", &style);
+    assert!(projected_pua_width > raw_pua_width);
+
+    let mut para = Paragraph {
+        text: "\u{F012B} \u{F012B}".to_string(),
+        char_offsets: vec![0, 2, 3],
+        char_count: 4,
+        char_shapes: vec![CharShapeRef {
+            start_pos: 0,
+            char_shape_id: 0,
+        }],
+        line_segs: vec![LineSeg {
+            text_start: 0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let raw_line_width = raw_pua_width * 2.0 + space_width;
+    let projected_line_width = projected_pua_width * 2.0 + space_width;
+    let available_width = (raw_line_width + projected_line_width) / 2.0;
+
+    reflow_line_segs(&mut para, available_width, &styles, 96.0);
+
+    assert_eq!(para.line_segs.len(), 2);
+    assert_eq!(para.line_segs[1].text_start, 3);
 }
 
 // === 줄 나눔 엔진 테스트 ===

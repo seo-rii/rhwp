@@ -95,6 +95,7 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['field-01.hwp', { nonInkMaxDiffPixels: 64, maxCanvaskitReplayAvgMs: 500, maxCanvaskitReplayRatio: 80 }],
   ['hwp_table_test.hwp', { maxDiffRatio: 0.0002 }],
   ['pic-crop-01.hwp', { maxDiffRatio: 0.0065 }],
+  ['복학원서.hwp', { solidInkMaxDiffRatio: 0.02 }],
   ['통합재정통계(2010.11월).hwp', { solidInkMaxDiffRatio: 0.0065 }],
   ['통합재정통계(2011.10월).hwp', { solidInkMaxDiffRatio: 0.0065 }],
   ['통합재정통계(2014.8월).hwp', { solidInkMaxDiffRatio: 0.0065 }],

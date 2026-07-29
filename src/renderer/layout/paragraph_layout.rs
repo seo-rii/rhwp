@@ -1,6 +1,6 @@
 //! 문단 레이아웃 (인라인 표, 문단 전체/부분, composed/raw) + 번호 매기기
 
-use super::super::composer::{compose_paragraph, ComposedParagraph};
+use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
 use super::super::height_measurer::MeasuredTable;
 use super::super::page_layout::LayoutRect;
 use super::super::render_tree::*;
@@ -67,7 +67,7 @@ fn right_tab_block_width(
         text_style.tab_stops = tab_stops.to_vec();
         text_style.auto_tab_right = auto_tab_right;
         text_style.available_width = available_width;
-        width += estimate_text_width(&run.text, &text_style);
+        width += estimate_text_width(effective_text_for_metrics(&run.text).as_ref(), &text_style);
     }
     width
 }
@@ -216,7 +216,9 @@ impl LayoutEngine {
                     let ch = text_chars[ch_idx];
                     let lang = super::super::style_resolver::detect_lang_category(ch);
                     let ts = resolved_to_text_style(styles, cs_id, lang);
-                    total += estimate_text_width(&ch.to_string(), &ts);
+                    let source_char = ch.to_string();
+                    total +=
+                        estimate_text_width(effective_text_for_metrics(&source_char).as_ref(), &ts);
                 }
                 total
             })
@@ -389,7 +391,10 @@ impl LayoutEngine {
                                 );
                                 let run_ts =
                                     resolved_to_text_style(styles, current_cs_id, first_lang);
-                                let run_width = estimate_text_width(&run_text, &run_ts);
+                                let run_width = estimate_text_width(
+                                    effective_text_for_metrics(&run_text).as_ref(),
+                                    &run_ts,
+                                );
                                 let run_bbox_h = if wrapped_below_table {
                                     text_line_baseline
                                 } else {
@@ -474,7 +479,11 @@ impl LayoutEngine {
                         let ch = text_chars[ch_idx];
                         let lang = super::super::style_resolver::detect_lang_category(ch);
                         let ts = resolved_to_text_style(styles, cs_id, lang);
-                        let ch_w = estimate_text_width(&ch.to_string(), &ts);
+                        let source_char = ch.to_string();
+                        let ch_w = estimate_text_width(
+                            effective_text_for_metrics(&source_char).as_ref(),
+                            &ts,
+                        );
 
                         // char_shape 변경 또는 줄바꿈 시 누적된 run을 출력
                         // LINE_SEG 기반 줄 나눔: text_start 위치에서 강제 개행
@@ -500,7 +509,10 @@ impl LayoutEngine {
                                 text_chars[line_run_start],
                             );
                             let run_ts = resolved_to_text_style(styles, current_cs_id, first_lang);
-                            let run_width = estimate_text_width(&run_text, &run_ts);
+                            let run_width = estimate_text_width(
+                                effective_text_for_metrics(&run_text).as_ref(),
+                                &run_ts,
+                            );
 
                             let run_id = tree.next_id();
                             let run_node = RenderNode::new(
@@ -567,7 +579,10 @@ impl LayoutEngine {
                             text_chars[line_run_start],
                         );
                         let run_ts = resolved_to_text_style(styles, current_cs_id, first_lang);
-                        let run_width = estimate_text_width(&run_text, &run_ts);
+                        let run_width = estimate_text_width(
+                            effective_text_for_metrics(&run_text).as_ref(),
+                            &run_ts,
+                        );
 
                         let run_id = tree.next_id();
                         let run_node = RenderNode::new(
@@ -1168,7 +1183,8 @@ impl LayoutEngine {
                     if seg_start_est < tac_rel {
                         let seg: String = run_chars_est[seg_start_est..tac_rel].iter().collect();
                         ts.line_x_offset = est_x;
-                        est_x += estimate_text_width(&seg, &ts);
+                        est_x +=
+                            estimate_text_width(effective_text_for_metrics(&seg).as_ref(), &ts);
                     }
                     est_x += tac_w;
                     seg_start_est = tac_rel;
@@ -1177,13 +1193,19 @@ impl LayoutEngine {
                 let remaining_est: String = run_chars_est[seg_start_est..].iter().collect();
                 ts.line_x_offset = est_x;
                 if !remaining_est.is_empty() {
-                    est_x += estimate_text_width(&remaining_est, &ts);
+                    est_x += estimate_text_width(
+                        effective_text_for_metrics(&remaining_est).as_ref(),
+                        &ts,
+                    );
                 }
                 // run이 \t로 끝나면 다음 run에 오른쪽/가운데 탭 조정 필요
                 if run.text.ends_with('\t') {
                     if let Some(last_tab_byte) = run.text.rfind('\t') {
                         let text_before_tab = &run.text[..last_tab_byte];
-                        let w_before = estimate_text_width(text_before_tab, &ts);
+                        let w_before = estimate_text_width(
+                            effective_text_for_metrics(text_before_tab).as_ref(),
+                            &ts,
+                        );
                         let abs_before = ts.line_x_offset + w_before;
                         let tw = if tab_width > 0.0 { tab_width } else { 48.0 };
                         let (tp, tt, _) = find_next_tab_stop(
@@ -1277,9 +1299,11 @@ impl LayoutEngine {
                             return 0.0;
                         }
                         let glyph = last_visible.to_string();
-                        let spaced_width = estimate_text_width(&glyph, &with_spacing);
+                        let metric_glyph = effective_text_for_metrics(&glyph);
+                        let spaced_width =
+                            estimate_text_width(metric_glyph.as_ref(), &with_spacing);
                         with_spacing.letter_spacing = 0.0;
-                        let ink_advance = estimate_text_width(&glyph, &with_spacing);
+                        let ink_advance = estimate_text_width(metric_glyph.as_ref(), &with_spacing);
                         return (ink_advance - spaced_width).max(0.0);
                     }
                 }
@@ -1603,7 +1627,7 @@ impl LayoutEngine {
                     let chars: Vec<char> = run.text.chars().collect();
                     fs * crate::renderer::composer::char_overlap_advance_units(&chars) as f64
                 } else {
-                    estimate_text_width(&run.text, &text_style)
+                    estimate_text_width(effective_text_for_metrics(&run.text).as_ref(), &text_style)
                 };
                 // 탭 리더 계산: 탭이 포함된 run에서 채움 기호 정보 추출
                 // inline_tabs를 일시 제거하여 tab_stops 기반 위치 계산과 일관되게 함
@@ -1623,7 +1647,10 @@ impl LayoutEngine {
                 if has_tabs && run.text.ends_with('\t') {
                     if let Some(last_tab_pos) = run.text.rfind('\t') {
                         let text_before_tab = &run.text[..last_tab_pos];
-                        let w_before = estimate_text_width(text_before_tab, &text_style);
+                        let w_before = estimate_text_width(
+                            effective_text_for_metrics(text_before_tab).as_ref(),
+                            &text_style,
+                        );
                         let abs_before = text_style.line_x_offset + w_before;
                         let tw = if tab_width > 0.0 { tab_width } else { 48.0 };
                         let (tp, tt, _) = find_next_tab_stop(
@@ -1674,7 +1701,13 @@ impl LayoutEngine {
                     // 글자 테두리/배경: bbox 계산용 run_x, run_w
                     let (run_x, run_w) = if !leading_spaces.is_empty() && !content.is_empty() {
                         let sw = estimate_text_width(&leading_spaces, &text_style);
-                        (x + sw, estimate_text_width(content, &text_style))
+                        (
+                            x + sw,
+                            estimate_text_width(
+                                effective_text_for_metrics(content).as_ref(),
+                                &text_style,
+                            ),
+                        )
                     } else {
                         (x, full_width)
                     };
@@ -1806,7 +1839,10 @@ impl LayoutEngine {
                                 if rel_pos > seg_start {
                                     let seg_text: String =
                                         run_chars[seg_start..rel_pos].iter().collect();
-                                    let seg_w = estimate_text_width(&seg_text, &text_style);
+                                    let seg_w = estimate_text_width(
+                                        effective_text_for_metrics(&seg_text).as_ref(),
+                                        &text_style,
+                                    );
                                     let seg_id = tree.next_id();
                                     let seg_node = RenderNode::new(
                                         seg_id,
@@ -1868,7 +1904,10 @@ impl LayoutEngine {
                             // 마지막 세그먼트 (각주 뒤 나머지 텍스트)
                             if seg_start < run_chars.len() {
                                 let seg_text: String = run_chars[seg_start..].iter().collect();
-                                let seg_w = estimate_text_width(&seg_text, &text_style);
+                                let seg_w = estimate_text_width(
+                                    effective_text_for_metrics(&seg_text).as_ref(),
+                                    &text_style,
+                                );
                                 let seg_id = tree.next_id();
                                 let seg_node = RenderNode::new(
                                     seg_id,
@@ -1967,7 +2006,10 @@ impl LayoutEngine {
                                     &composed.tab_extended,
                                 );
                             }
-                            let seg_w = estimate_text_width(&seg_text, &seg_style);
+                            let seg_w = estimate_text_width(
+                                effective_text_for_metrics(&seg_text).as_ref(),
+                                &seg_style,
+                            );
                             let seg_char_count = tac_rel - seg_start;
                             if !skip_text_for_inline_shape {
                                 let sub_run_id = tree.next_id();
@@ -2217,7 +2259,10 @@ impl LayoutEngine {
                                 &composed.tab_extended,
                             );
                         }
-                        let seg_w = estimate_text_width(&remaining, &seg_style);
+                        let seg_w = estimate_text_width(
+                            effective_text_for_metrics(&remaining).as_ref(),
+                            &seg_style,
+                        );
                         if !skip_text_for_inline_shape {
                             let sub_run_id = tree.next_id();
                             let sub_run_node = RenderNode::new(

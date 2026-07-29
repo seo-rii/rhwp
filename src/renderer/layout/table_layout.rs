@@ -1,6 +1,6 @@
 //! 표 레이아웃 (layout_table + 셀 높이/줄범위 계산)
 
-use super::super::composer::{compose_paragraph, ComposedParagraph};
+use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
 use super::super::height_measurer::MeasuredTable;
 use super::super::page_layout::LayoutRect;
 use super::super::render_tree::*;
@@ -1863,7 +1863,11 @@ impl LayoutEngine {
                                                     char_style_id,
                                                     lang_index,
                                                 );
-                                                let text_w = estimate_text_width(&text_before, &ts);
+                                                let text_w = estimate_text_width(
+                                                    effective_text_for_metrics(&text_before)
+                                                        .as_ref(),
+                                                    &ts,
+                                                );
                                                 let text_font_size = ts.font_size;
                                                 // 텍스트 렌더링: Shape 사이에 배치
                                                 // 텍스트 y를 Shape 하단 baseline에 맞춤
@@ -2094,7 +2098,11 @@ impl LayoutEngine {
                                                         run.char_style_id,
                                                         run.lang_index,
                                                     );
-                                                    text_w += estimate_text_width(&run.text, &ts);
+                                                    text_w += estimate_text_width(
+                                                        effective_text_for_metrics(&run.text)
+                                                            .as_ref(),
+                                                        &ts,
+                                                    );
                                                 }
                                             }
                                         }
@@ -2134,7 +2142,10 @@ impl LayoutEngine {
                                                     run.char_style_id,
                                                     run.lang_index,
                                                 );
-                                                let run_w = estimate_text_width(&run.text, &ts);
+                                                let run_w = estimate_text_width(
+                                                    effective_text_for_metrics(&run.text).as_ref(),
+                                                    &ts,
+                                                );
                                                 let run_id = tree.next_id();
                                                 let run_node = RenderNode::new(
                                                     run_id,
@@ -2247,7 +2258,10 @@ impl LayoutEngine {
                                     .map(|r| r.lang_index)
                                     .unwrap_or(0);
                                 let ts = resolved_to_text_style(styles, char_style_id, lang_index);
-                                let text_w = estimate_text_width(remaining_trimmed, &ts);
+                                let text_w = estimate_text_width(
+                                    effective_text_for_metrics(remaining_trimmed).as_ref(),
+                                    &ts,
+                                );
                                 let text_baseline = ts.font_size * 0.85;
                                 let text_h = ts.font_size * 1.2;
                                 // 마지막 Shape 높이 기준으로 텍스트 y 계산

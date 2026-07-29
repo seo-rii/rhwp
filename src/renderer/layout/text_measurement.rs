@@ -233,7 +233,7 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                     )
                     + style.extra_char_spacing;
             }
-            if c == '\u{FFFC}' {
+            if matches!(c, '\u{FFFC}' | '\u{F081C}') {
                 return 0.0;
             }
             let base_w = if let Some(w) = measure_char_width_embedded(
@@ -387,7 +387,7 @@ impl TextMeasurer for EmbeddedTextMeasurer {
                     )
                     + style.extra_char_spacing;
             }
-            if c == '\u{FFFC}' {
+            if matches!(c, '\u{FFFC}' | '\u{F081C}') {
                 return 0.0;
             }
             let base_w = if let Some(w) = measure_char_width_embedded(
@@ -732,7 +732,7 @@ impl TextMeasurer for WasmTextMeasurer {
                     )
                     + style.extra_char_spacing;
             }
-            if c == '\u{FFFC}' {
+            if matches!(c, '\u{FFFC}' | '\u{F081C}') {
                 return 0.0;
             }
             let char_px = if cluster_len[i] > 1 {
@@ -873,7 +873,7 @@ impl TextMeasurer for WasmTextMeasurer {
                     )
                     + style.extra_char_spacing;
             }
-            if c == '\u{FFFC}' {
+            if matches!(c, '\u{FFFC}' | '\u{F081C}') {
                 return 0.0;
             }
             let char_px = if cluster_len[i] > 1 {
@@ -1191,7 +1191,7 @@ pub(crate) fn estimate_text_width_unrounded(text: &str, style: &TextStyle) -> f6
                 + glyph_letter_spacing(style.letter_spacing, font_size * 0.5 * ratio, font_size)
                 + style.extra_char_spacing;
         }
-        if c == '\u{FFFC}' {
+        if matches!(c, '\u{FFFC}' | '\u{F081C}') {
             return 0.0;
         }
         let base_w = if let Some(w) =
@@ -1721,6 +1721,30 @@ mod tests {
         let positions = compute_char_positions("\u{FFFC}A", &style);
         assert_eq!(positions[0], positions[1]);
         assert!(positions[2] > positions[1]);
+    }
+
+    #[test]
+    fn test_hwp_tac_filler_has_zero_advance() {
+        let style = TextStyle {
+            font_family: "Haansoft Dotum".to_string(),
+            font_size: 12.0,
+            letter_spacing: 2.0,
+            extra_char_spacing: 1.0,
+            ..Default::default()
+        };
+
+        assert_eq!(estimate_text_width("\u{F081C}", &style), 0.0);
+        assert_eq!(estimate_text_width_unrounded("\u{F081C}", &style), 0.0);
+        assert_eq!(
+            estimate_text_width("A\u{F081C}B", &style),
+            estimate_text_width("AB", &style),
+        );
+
+        let positions = compute_char_positions("A\u{F081C}B", &style);
+        assert_eq!(positions.len(), 4);
+        assert_eq!(positions[1], positions[2]);
+        assert!(positions[1] > positions[0]);
+        assert!(positions[3] > positions[2]);
     }
 
     #[test]

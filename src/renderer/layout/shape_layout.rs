@@ -1,6 +1,6 @@
 //! 도형/글상자/그룹 개체 레이아웃
 
-use super::super::composer::{compose_paragraph, ComposedParagraph};
+use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
 use super::super::page_layout::LayoutRect;
 use super::super::pagination::PageItem;
 use super::super::render_tree::*;
@@ -63,7 +63,8 @@ fn measure_composed_text_range_width(
                 }
                 let mut style = resolved_to_text_style(styles, run.char_style_id, run.lang_index);
                 style.default_tab_width = tab_width;
-                width += estimate_text_width(&seg_text, &style);
+                width +=
+                    estimate_text_width(effective_text_for_metrics(&seg_text).as_ref(), &style);
             }
 
             run_start = run_end;
@@ -1972,7 +1973,7 @@ impl LayoutEngine {
                             let mut ts =
                                 resolved_to_text_style(styles, run.char_style_id, run.lang_index);
                             ts.default_tab_width = tab_width;
-                            estimate_text_width(&run.text, &ts)
+                            estimate_text_width(effective_text_for_metrics(&run.text).as_ref(), &ts)
                         })
                         .sum()
                 } else {

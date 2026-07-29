@@ -684,7 +684,7 @@ impl DocumentCore {
         section_idx: usize,
         para_idx: usize,
     ) -> Result<String, HwpError> {
-        use crate::renderer::composer::estimate_composed_line_width;
+        use crate::renderer::composer::{effective_text_for_metrics, estimate_composed_line_width};
         use crate::renderer::hwpunit_to_px;
 
         let section =
@@ -722,7 +722,10 @@ impl DocumentCore {
                     run.char_style_id,
                     run.lang_index,
                 );
-                let run_width = crate::renderer::layout::estimate_text_width(&run.text, &ts);
+                let run_width = crate::renderer::layout::estimate_text_width(
+                    effective_text_for_metrics(&run.text).as_ref(),
+                    &ts,
+                );
                 runs_json.push(format!(
                     r#"{{"text":"{}","lang":{},"font":"{}","width_px":{:.2}}}"#,
                     super::super::helpers::json_escape(&run.text),

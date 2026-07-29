@@ -3,7 +3,7 @@
 //! 문단 텍스트를 토큰화하고 줄 나눔을 수행한다.
 //! 한글 어절/글자, 영어 단어/하이픈, CJK 개별 분할을 지원한다.
 
-use super::{find_active_char_shape_visible, is_lang_neutral};
+use super::{effective_text_for_metrics, find_active_char_shape_visible, is_lang_neutral};
 use crate::model::paragraph::{CharShapeRef, LineSeg, Paragraph};
 use crate::model::style::LineSpacingType;
 use crate::renderer::layout::{
@@ -305,7 +305,7 @@ pub(crate) fn tokenize_paragraph(
                 } else {
                     12.0
                 };
-                let w = estimate_text_width_unrounded(&ch.to_string(), &ts);
+                let w = estimate_source_char_width_unrounded(ch, &ts);
                 tokens.push(BreakToken::Text {
                     start_idx: i,
                     end_idx: i + 1,
@@ -381,7 +381,7 @@ pub(crate) fn tokenize_paragraph(
                             let sid = find_active_char_shape_visible(char_shapes, ci);
                             let lang = if is_lang_neutral(c) { current_lang } else { 1 };
                             let ts = resolved_to_text_style(styles, sid, lang);
-                            estimate_text_width_unrounded(&c.to_string(), &ts)
+                            estimate_source_char_width_unrounded(c, &ts)
                         })
                         .collect();
                     tokens.push(BreakToken::Text {
@@ -403,7 +403,7 @@ pub(crate) fn tokenize_paragraph(
                 } else {
                     12.0
                 };
-                let w = estimate_text_width_unrounded(&ch.to_string(), &ts);
+                let w = estimate_source_char_width_unrounded(ch, &ts);
                 tokens.push(BreakToken::Text {
                     start_idx: i,
                     end_idx: i + 1,
@@ -426,7 +426,7 @@ pub(crate) fn tokenize_paragraph(
             } else {
                 12.0
             };
-            let w = estimate_text_width_unrounded(&ch.to_string(), &ts);
+            let w = estimate_source_char_width_unrounded(ch, &ts);
             tokens.push(BreakToken::Text {
                 start_idx: i,
                 end_idx: i + 1,
@@ -454,7 +454,7 @@ pub(crate) fn tokenize_paragraph(
             } else {
                 12.0
             };
-            let w = estimate_text_width_unrounded(&ch.to_string(), &ts);
+            let w = estimate_source_char_width_unrounded(ch, &ts);
             tokens.push(BreakToken::Text {
                 start_idx: i,
                 end_idx: i + 1,
@@ -490,9 +490,14 @@ fn measure_token_width(
             detected
         };
         let ts = resolved_to_text_style(styles, style_id, lang);
-        total += estimate_text_width_unrounded(&ch.to_string(), &ts);
+        total += estimate_source_char_width_unrounded(ch, &ts);
     }
     total
+}
+
+fn estimate_source_char_width_unrounded(ch: char, style: &crate::renderer::TextStyle) -> f64 {
+    let source_char = ch.to_string();
+    estimate_text_width_unrounded(effective_text_for_metrics(&source_char).as_ref(), style)
 }
 
 /// px를 HWPUNIT(i32)로 변환 (내림, DPI=96 기준: px * 75)

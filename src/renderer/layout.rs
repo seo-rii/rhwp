@@ -3,7 +3,7 @@
 //! 페이지 분할 결과를 받아 각 요소의 정확한 위치와 크기를 계산하고
 //! 렌더 트리(PageRenderTree)를 생성한다.
 
-use super::composer::{compose_paragraph, ComposedParagraph};
+use super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
 use super::font_metrics_data;
 use super::height_measurer::MeasuredTable;
 use super::page_layout::{LayoutRect, PageLayoutInfo};
@@ -3864,7 +3864,9 @@ impl LayoutEngine {
                     );
                     est_x = tp;
                 } else {
-                    est_x += estimate_text_width(&ch.to_string(), &ts);
+                    let source_char = ch.to_string();
+                    est_x +=
+                        estimate_text_width(effective_text_for_metrics(&source_char).as_ref(), &ts);
                 }
                 char_idx += 1;
             }
