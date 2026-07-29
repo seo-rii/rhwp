@@ -269,6 +269,24 @@ branch already carries CanvasKit/native Skia parity work that is ahead of
 work. Import only small, contract-relevant commits when they close a current
 CanvasKit parity gap or provide a fixture needed by one of the gates below.
 
+The latest contract audit used `upstream/devel` at `2f281d67f`. Its page-extent
+rounding, old-Hangul shaping, page-background tone/opacity, PUA/font-metric, and
+resource-prefetch identity changes are already represented here by equivalent
+or stricter implementations and tests. The one uncovered rendering semantic
+was the mixed-axis master-page coordinate contract from upstream `22459efdd`;
+it was ported as `237f9ae32` without importing unrelated parser changes. HWP3
+parser commits remain a separate parser-baseline concern because this branch
+does not currently contain that parser architecture.
+
+Master-page `Shape` and `Equation` lowering now uses a virtual paragraph/column
+area whose horizontal origin and extent come from the page body, while its
+vertical origin and extent come from the paper. This keeps horizontal placement
+inside body margins without incorrectly adding the top body margin to
+paragraph-relative vertical coordinates. `Picture` and `Table` placement retain
+their existing contracts. Canvas2D and CanvasKit consume the same lowered
+geometry, and the regression fixture asserts the body-relative x coordinate and
+paper-relative y coordinate independently.
+
 The tracking issue changes affect this branch as follows:
 
 - P23 is PDF export/native API packaging. PR #1359 adds shared
@@ -1790,3 +1808,21 @@ corpus case, not a remaining direct-replay coverage gap. The Markdown report
 mirrors target-backend/profile summaries, applied per-comparison thresholds, and
 the worst browser comparisons so large sweeps do not require scanning every
 screenshot row first.
+
+The latest local closure pass completed `1392` Rust library tests with no
+failures and one ignored test, rebuilt the web WASM package and Studio, and
+passed the renderer contract guard. A one-iteration representative browser
+sweep covered eleven full-page and two feature cases in both CanvasKit modes:
+all direct-dispatch probes passed, no hidden overlay was present, and no
+direct-required or unsupported replay item remained. Its report-only aggregate
+average was `62.277 ms` for CanvasKit and `73.354 ms` for Canvas2D
+(`0.849` ratio); one iteration is intentionally not a performance gate. After
+the mixed-axis master-page port, the focused `2010-01-06` browser sweep also
+passed, reporting `88.2 ms` for CanvasKit and `233.1 ms` for Canvas2D.
+
+These results close the currently exercised Canvas2D direct-replay gap. The
+remaining register is corpus, public-API proof, or layout-authority work:
+real-document strict glyph payload widening, exact CanvasKit variation/TTC
+construction proof, and explicitly gated shapedModern, cross-scope, or
+MixedPerGlyph changes. None requires a hidden Canvas2D overlay or a new direct
+paint-operation fallback.
