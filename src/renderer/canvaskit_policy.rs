@@ -2073,26 +2073,30 @@ fn canvaskit_glyph_outline_payload_status(
     if !outline.has_exclusive_payload_family() {
         return (false, Some(VariantRejectReason::MixedGlyphOutlinePayload));
     }
-    if outline.paths.iter().any(|path| {
-        path.commands.is_empty()
-            || path
-                .commands
-                .iter()
-                .any(|command| !path_command_is_finite(command))
-    }) {
-        return (false, Some(VariantRejectReason::UnsupportedOutlinePayload));
-    }
+    let monochrome_paths_are_replayable = || {
+        outline.paths.iter().all(|path| {
+            path.source_range_utf8.end >= path.source_range_utf8.start
+                && path.glyph_range.end >= path.glyph_range.start
+                && !path.commands.is_empty()
+                && path.commands.iter().all(path_command_is_finite)
+        })
+    };
     match outline.payload_kind {
         GlyphOutlinePayloadKind::MonochromeFill => {
             if outline.paths.is_empty() {
-                (false, Some(VariantRejectReason::EmptyGlyphOutlinePayload))
-            } else {
-                (true, None)
+                return (false, Some(VariantRejectReason::EmptyGlyphOutlinePayload));
             }
+            if !monochrome_paths_are_replayable() {
+                return (false, Some(VariantRejectReason::UnsupportedOutlinePayload));
+            }
+            (true, None)
         }
         GlyphOutlinePayloadKind::MonochromeFillStroke => {
             if outline.paths.is_empty() {
                 return (false, Some(VariantRejectReason::EmptyGlyphOutlinePayload));
+            }
+            if !monochrome_paths_are_replayable() {
+                return (false, Some(VariantRejectReason::UnsupportedOutlinePayload));
             }
             if !outline
                 .stroke
@@ -3739,6 +3743,76 @@ mod tests {
             ),
             (true, None)
         );
+    }
+
+    #[test]
+    fn canvaskit_rejects_invalid_monochrome_outline_paths() {
+        let resources = ResourceArena::default();
+        let empty = outline(GlyphOutlinePayloadKind::MonochromeFill);
+        assert_eq!(
+            canvaskit_glyph_outline_payload_status(&empty, Some(valid_bbox()), &resources),
+            (false, Some(VariantRejectReason::EmptyGlyphOutlinePayload))
+        );
+
+        let mut reversed_source = outline_path();
+        reversed_source.source_range_utf8 = TextSourceRange::new(2, 1);
+        let mut reversed_glyphs = outline_path();
+        reversed_glyphs.glyph_range = GlyphRange::new(2, 1);
+        let mut empty_commands = outline_path();
+        empty_commands.commands.clear();
+        let mut non_finite_command = outline_path();
+        non_finite_command.commands[0] = PathCommand::MoveTo(f64::NAN, 0.0);
+
+        for (case_name, path) in [
+            ("reversed-source-range", reversed_source),
+            ("reversed-glyph-range", reversed_glyphs),
+            ("empty-commands", empty_commands),
+            ("non-finite-command", non_finite_command),
+        ] {
+            let mut outline = outline(GlyphOutlinePayloadKind::MonochromeFill);
+            outline.paths.push(path);
+            assert_eq!(
+                canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources,),
+                (false, Some(VariantRejectReason::UnsupportedOutlinePayload)),
+                "{case_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn canvaskit_ignores_legacy_paths_for_richer_outline_payloads() {
+        let mut resources = ResourceArena::default();
+        let image_id = resources.intern_image_bytes(FIXTURE_PNG);
+        let svg_id = resources
+            .intern_svg_fragment("<path d=\"M0 0 L16 0 L16 16 L0 16 Z\" fill=\"#00ffff\"/>");
+        let mut stale_path = outline_path();
+        stale_path.source_range_utf8 = TextSourceRange::new(2, 1);
+        stale_path.glyph_range = GlyphRange::new(2, 1);
+        stale_path.commands.clear();
+
+        let mut color = outline(GlyphOutlinePayloadKind::ColorLayers);
+        color.color_layers = Some(colrv0_payload());
+        color.paths.push(stale_path.clone());
+
+        let mut bitmap = outline(GlyphOutlinePayloadKind::BitmapGlyph);
+        bitmap.bitmap_glyph = Some(bitmap_payload(image_id));
+        bitmap.paths.push(stale_path.clone());
+
+        let mut svg = outline(GlyphOutlinePayloadKind::SvgGlyph);
+        svg.svg_glyph = Some(svg_payload(svg_id));
+        svg.paths.push(stale_path);
+
+        for (case_name, outline) in [
+            ("color-layers", color),
+            ("bitmap-glyph", bitmap),
+            ("svg-glyph", svg),
+        ] {
+            assert_eq!(
+                canvaskit_glyph_outline_payload_status(&outline, Some(valid_bbox()), &resources,),
+                (true, None),
+                "{case_name}"
+            );
+        }
     }
 
     #[test]
