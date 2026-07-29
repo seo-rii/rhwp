@@ -7,9 +7,10 @@ use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
     paint_op_replay_plane, sidecars_for_leaf_ops, CacheHint, ClipKind, GlyphOutlinePayloadKind,
     GlyphRunOrientation, GlyphRunReplayEligibility, LayerGlyphOutlinePaint, LayerGlyphRunPaint,
-    LayerNode, LayerNodeKind, PageLayerTree, PaintOp, PaintReplayPlane, RenderProfile,
-    ResourceArena, TextVariantKind, TextVariantQuality,
+    LayerNode, LayerNodeKind, LayerTextRunPaint, PageLayerTree, PaintOp, PaintReplayPlane,
+    RenderProfile, ResourceArena, TextVariantKind, TextVariantQuality,
 };
+use crate::renderer::composer::expand_pua_display_text;
 use crate::renderer::image_header::{canvaskit_encoded_image_header, CANVASKIT_MAX_SVG_BYTES};
 use crate::renderer::layer_renderer::{
     select_text_variant_sets_with_report, VariantFontVerificationReport,
@@ -19,6 +20,8 @@ use crate::renderer::layer_renderer::{
 };
 use crate::renderer::render_tree::{PageRenderTree, RenderNodeType};
 use crate::renderer::static_svg::static_svg_fragment_has_path_layer;
+
+const CANVASKIT_OLD_HANGUL_FONT_FAMILY: &str = "Noto Sans KR ExtraLight";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanvasKitReplayMode {
@@ -935,19 +938,21 @@ pub fn estimate_canvaskit_page_lowering_work(
 
 fn render_node_prelower_work_units(node_type: &RenderNodeType) -> Option<usize> {
     let (base_units, payload_bytes, text_like) = match node_type {
-        RenderNodeType::TextRun(run) => (
-            10usize,
-            run.text
-                .len()
-                .checked_add(run.style.font_family.len())?
-                .checked_add(
-                    run.style
-                        .tab_stops
-                        .len()
-                        .checked_mul(std::mem::size_of::<crate::renderer::TabStop>())?,
-                )?,
-            true,
-        ),
+        RenderNodeType::TextRun(run) => {
+            let display_text = expand_pua_display_text(&run.text);
+            (
+                10usize,
+                text_projection_payload_bytes(&run.text, &display_text)?
+                    .checked_add(run.style.font_family.len())?
+                    .checked_add(
+                        run.style
+                            .tab_stops
+                            .len()
+                            .checked_mul(std::mem::size_of::<crate::renderer::TabStop>())?,
+                    )?,
+                true,
+            )
+        }
         RenderNodeType::Path(path) => (2usize.checked_add(path.commands.len())?, 0, false),
         RenderNodeType::Image(image) => (2, image.data.as_ref().map_or(0, Vec::len), false),
         RenderNodeType::PageBackground(background) => (
@@ -1097,23 +1102,38 @@ fn additional_payload_work_units(bytes: usize) -> usize {
         .unwrap_or_default()
 }
 
+fn text_projection_payload_bytes(source_text: &str, display_text: &str) -> Option<usize> {
+    let display_bytes = if display_text != source_text {
+        display_text.len()
+    } else {
+        0
+    };
+    source_text.len().checked_add(display_bytes)
+}
+
+fn layer_text_display_text(run: &LayerTextRunPaint) -> String {
+    expand_pua_display_text(&run.text)
+}
+
 fn paint_op_work_units(op: &PaintOp) -> usize {
     let payload_bytes = match op {
         PaintOp::PageBackground { .. } => 0,
-        PaintOp::TextRun { run, .. } => run
-            .text
-            .len()
-            .saturating_add(run.style.font_family.len())
-            .saturating_add(
-                run.positions
-                    .len()
-                    .saturating_mul(std::mem::size_of::<f64>()),
-            )
-            .saturating_add(
-                run.clusters
-                    .len()
-                    .saturating_mul(std::mem::size_of::<crate::paint::TextClusterPlacement>()),
-            ),
+        PaintOp::TextRun { run, .. } => {
+            let display_text = layer_text_display_text(run);
+            text_projection_payload_bytes(&run.text, &display_text)
+                .unwrap_or(usize::MAX)
+                .saturating_add(run.style.font_family.len())
+                .saturating_add(
+                    run.positions
+                        .len()
+                        .saturating_mul(std::mem::size_of::<f64>()),
+                )
+                .saturating_add(
+                    run.clusters
+                        .len()
+                        .saturating_mul(std::mem::size_of::<crate::paint::TextClusterPlacement>()),
+                )
+        }
         PaintOp::CharOverlap { overlap, .. } => overlap
             .text
             .len()
@@ -1662,7 +1682,16 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
         for op in ops {
             match op {
                 PaintOp::TextRun { run, .. } => {
-                    self.record_required_font_family(&run.style.font_family)
+                    self.record_required_font_family(&run.style.font_family);
+                    let display_text = layer_text_display_text(run);
+                    if display_text.chars().any(|character| {
+                        matches!(
+                            character as u32,
+                            0x1100..=0x11ff | 0xa960..=0xa97f | 0xd7b0..=0xd7ff
+                        )
+                    }) {
+                        self.record_required_font_family(CANVASKIT_OLD_HANGUL_FONT_FAMILY);
+                    }
                 }
                 PaintOp::CharOverlap { overlap, .. } => {
                     self.record_required_font_family(&overlap.style.font_family)
@@ -2688,6 +2717,7 @@ mod tests {
         CanvasKitReplayRuntimeCondition, CanvasKitReplayStatus, CanvasKitTextVariantPartReport,
         CanvasKitTextVariantReport, GlyphOutlinePayloadKind, VariantRejectReason,
         CANVASKIT_DOCUMENT_PREFLIGHT_MAX_TEXT_BYTES, CANVASKIT_MAX_SVG_BYTES,
+        CANVASKIT_OLD_HANGUL_FONT_FAMILY,
     };
     use crate::model::image::ImageEffect;
     use crate::model::style::ImageFillMode;
@@ -2711,7 +2741,8 @@ mod tests {
     use crate::paint::{LayerBuilder, RenderProfile};
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
     use crate::renderer::render_tree::{
-        BoundingBox, PageRenderTree, RawSvgNode, RenderNode, RenderNodeType, ShapeTransform,
+        BoundingBox, FieldMarkerType, PageRenderTree, RawSvgNode, RenderNode, RenderNodeType,
+        ShapeTransform, TextRunNode,
     };
     use crate::renderer::{PathCommand, TextStyle};
 
@@ -5171,6 +5202,30 @@ mod tests {
     }
 
     #[test]
+    fn replay_plan_uses_display_projection_for_old_hangul_font_requirements() {
+        let mut text = text_run_op("text-0");
+        let PaintOp::TextRun { run, .. } = &mut text else {
+            unreachable!("helper returns textRun");
+        };
+        run.text = "\u{E1A7}".to_string();
+        run.style.font_family = "Test Family".to_string();
+        run.variant = None;
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        );
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+
+        assert_eq!(
+            plan.required_font_families,
+            [CANVASKIT_OLD_HANGUL_FONT_FAMILY, "Test Family"]
+        );
+        assert!(plan.required_font_families_complete);
+    }
+
+    #[test]
     fn document_preflight_keeps_text_fallback_inventory_eligible() {
         let mut text = text_run_op("text-0");
         let PaintOp::TextRun { run, .. } = &mut text else {
@@ -5342,6 +5397,77 @@ mod tests {
         );
         assert!(!preflight.complete);
         assert_eq!(preflight.scanned_pages, 0);
+    }
+
+    #[test]
+    fn document_preflight_counts_source_and_expanded_display_text() {
+        let mut text = text_run_op("text-0");
+        let PaintOp::TextRun { run, .. } = &mut text else {
+            unreachable!("helper returns textRun");
+        };
+        run.text = "\u{E1A7}".repeat(128);
+        run.variant = None;
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text]),
+        );
+        let preflight = analyze_canvaskit_document_preflight_with_limits(
+            1,
+            CanvasKitReplayMode::Default,
+            RenderProfile::Screen,
+            CanvasKitDocumentPreflightLimits {
+                max_pages: 1,
+                max_work_units: 2,
+                max_blockers: 4,
+                max_required_font_families: 8,
+            },
+            move |_, _| {
+                Ok::<_, &'static str>(CanvasKitPreflightPageBuild::Complete {
+                    tree: Box::new(tree.clone()),
+                    prelower_work_units: 0,
+                })
+            },
+        );
+
+        assert_eq!(
+            preflight.status,
+            CanvasKitDocumentPreflightStatus::Incomplete
+        );
+        assert!(!preflight.complete);
+        assert_eq!(preflight.scanned_pages, 0);
+    }
+
+    #[test]
+    fn prelower_estimate_counts_expanded_display_text() {
+        let mut tree = PageRenderTree::new(0, 100.0, 100.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(TextRunNode {
+                text: "\u{E1A7}".repeat(128),
+                style: TextStyle::default(),
+                char_shape_id: None,
+                para_shape_id: None,
+                section_index: None,
+                para_index: None,
+                char_start: None,
+                cell_context: None,
+                is_para_end: false,
+                is_line_break_end: false,
+                rotation: 0.0,
+                is_vertical: false,
+                char_overlap: None,
+                border_fill_id: 0,
+                baseline: 0.0,
+                field_marker: FieldMarkerType::None,
+            }),
+            valid_bbox(),
+        ));
+
+        assert_eq!(
+            estimate_canvaskit_page_lowering_work(&tree, 12),
+            CanvasKitBoundedWorkCount::Exceeded
+        );
     }
 
     #[test]

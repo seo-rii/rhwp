@@ -631,7 +631,10 @@ font-provider Paragraph path, so HarfBuzz shapes the cluster once while each
 cluster still starts at the producer-authored HWP position. The smoke pins the
 three source jamo and one-cluster Paragraph result, and browser parity keeps
 Canvas2D and CanvasKit on the same checked-in fallback without adding a second
-old-Hangul font asset.
+old-Hangul font asset. Document preflight uses the same PUA-expanded display
+projection as browser replay: bounded work counts include both preserved source
+text and a differing display projection, and old-Hangul projection records the
+ExtraLight face as a required family before automatic CanvasKit selection.
 
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
