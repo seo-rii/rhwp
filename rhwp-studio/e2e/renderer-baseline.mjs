@@ -10,6 +10,7 @@ import {
   loadApp,
   loadHwpFile,
 } from './helpers.mjs';
+import { classifyCanvasKitVariantAlignment } from './runtime-condition-alignment.mjs';
 
 const DEFAULT_BROWSER_PARITY_THRESHOLDS = {
   ignoreChannelDelta: 8,
@@ -595,27 +596,26 @@ try {
           const planSelections = new Map(
             (replayPlan?.textVariants ?? []).map((report) => [
               String(report.equivalenceGroup ?? ''),
-              report.selectedVariantId ?? null,
+              report,
             ]),
           );
           const runtimeSelections = new Map(
             diagnostics.textVariants.map((report) => [
               String(report.equivalenceGroup ?? ''),
-              report.selectedVariantId ?? null,
+              report,
             ]),
           );
+          diagnostics.runtimeConditionResolutions = [];
           const selectionGroups = new Set([
             ...planSelections.keys(),
             ...runtimeSelections.keys(),
           ]);
           for (const equivalenceGroup of selectionGroups) {
-            const planVariantId = planSelections.get(equivalenceGroup);
-            const runtimeVariantId = runtimeSelections.get(equivalenceGroup);
-            if (
-              !planSelections.has(equivalenceGroup)
-              || !runtimeSelections.has(equivalenceGroup)
-              || runtimeVariantId !== planVariantId
-            ) {
+            const alignment = classifyCanvasKitVariantAlignment(
+              planSelections.get(equivalenceGroup),
+              runtimeSelections.get(equivalenceGroup),
+            );
+            if (!alignment.aligned) {
               hardGateViolations.push({
                 sampleId: sample.id,
                 backend: backend.key,
@@ -623,9 +623,13 @@ try {
                 code: 'planRuntimeVariantMismatch',
                 detail: JSON.stringify({
                   equivalenceGroup,
-                  planVariantId: planVariantId ?? null,
-                  runtimeVariantId: runtimeVariantId ?? null,
+                  ...alignment,
                 }),
+              });
+            } else if (alignment.resolution === 'runtimeFallback') {
+              diagnostics.runtimeConditionResolutions.push({
+                equivalenceGroup,
+                ...alignment,
               });
             }
           }
@@ -873,6 +877,7 @@ for (const result of results) {
       textV2ValidationIssues: 0,
       runtimeDuplicateVariantReports: 0,
       runtimeVariantSelectionConflicts: 0,
+      resolvedRuntimeVariantConditions: 0,
       planStatusCounts: {},
       planReasonCounts: {},
       selectedReasonCounts: {},
@@ -911,6 +916,9 @@ for (const result of results) {
   summary.textV2ValidationIssues += diagnostics.textV2Validation?.length ?? 0;
   summary.runtimeDuplicateVariantReports += diagnostics.textVariantDuplicateReports ?? 0;
   summary.runtimeVariantSelectionConflicts += diagnostics.textVariantConflicts?.length ?? 0;
+  summary.resolvedRuntimeVariantConditions += (
+    diagnostics.runtimeConditionResolutions?.length ?? 0
+  );
 
   for (const item of replayPlan.items ?? []) {
     const status = String(item.status ?? 'unknown');

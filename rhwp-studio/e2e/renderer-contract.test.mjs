@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { classifyCanvasKitVariantAlignment } from './runtime-condition-alignment.mjs';
+
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(studioRoot, '..');
 const packageJsonPath = path.join(studioRoot, 'package.json');
@@ -1030,8 +1032,64 @@ assert(
     && rendererBaselineSource.includes("code: 'planRuntimeVariantMismatch'")
     && rendererBaselineSource.includes('...planSelections.keys()')
     && rendererBaselineSource.includes('...runtimeSelections.keys()')
+    && rendererBaselineSource.includes('classifyCanvasKitVariantAlignment')
+    && rendererBaselineSource.includes('runtimeConditionResolutions')
     && rendererBaselineSource.includes('hardSafetyGateAndReportInventory'),
   'browser baseline must hard-gate invalid plans, runtime paint failures, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
+);
+const conditionalBitmapPlan = {
+  selectedVariantId: 'glyphOutline',
+  selectedVariantKind: 'glyphOutline',
+  selectedRuntimeConditions: ['canvasKitEncodedImageDecode'],
+};
+const decodedBitmapFallback = {
+  selectedVariantId: 'textRun',
+  selectedVariantKind: 'textRun',
+  selectedReason: 'defaultTextRunFallback',
+  rejectedVariants: [{
+    variantId: 'glyphOutline',
+    variantKind: 'glyphOutline',
+    details: ['imageDecodeFailed'],
+  }],
+};
+const conditionalBitmapAlignment = classifyCanvasKitVariantAlignment(
+  conditionalBitmapPlan,
+  decodedBitmapFallback,
+);
+assert.equal(conditionalBitmapAlignment.aligned, true);
+assert.equal(conditionalBitmapAlignment.resolution, 'runtimeFallback');
+assert.deepEqual(
+  conditionalBitmapAlignment.resolvedRuntimeConditions,
+  ['canvasKitEncodedImageDecode'],
+);
+assert.equal(
+  classifyCanvasKitVariantAlignment(
+    { ...conditionalBitmapPlan, selectedRuntimeConditions: [] },
+    decodedBitmapFallback,
+  ).aligned,
+  false,
+  'an undeclared plan/runtime variant mismatch must remain a hard failure',
+);
+assert.equal(
+  classifyCanvasKitVariantAlignment(
+    conditionalBitmapPlan,
+    {
+      ...decodedBitmapFallback,
+      selectedVariantId: 'glyphOutline-v2',
+      selectedVariantKind: 'glyphOutline',
+      selectedReason: 'noSupportedVariant',
+    },
+  ).aligned,
+  false,
+  'a fallback-free or non-TextRun runtime mismatch must remain a hard failure',
+);
+assert.equal(
+  classifyCanvasKitVariantAlignment(
+    conditionalBitmapPlan,
+    { ...decodedBitmapFallback, rejectedVariants: [] },
+  ).aligned,
+  false,
+  'a runtime condition without its matching observed failure must remain a hard failure',
 );
 assert(
   rendererBaselineDriverSource.includes('CanvasKit Replay Diagnostics')

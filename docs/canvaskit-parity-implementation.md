@@ -590,8 +590,14 @@ effect request must not force nearest-neighbor sampling or claim that a crop was
 already preprocessed. Runtime
 reports are deduplicated by equivalence group;
 conflicting repeated selections and Rust-plan/runtime selected-variant
-mismatches also fail. Intentional TextRun fallback, unsupported items, and their
-exact reasons remain an inventory in the JSON and Markdown reports. Static
+mismatches also fail. The sole exception is an explicitly declared plan
+runtime condition whose exact failure is observed before Studio selects the
+`TextRun` fallback. For example, `canvasKitEncodedImageDecode` is resolved only
+by an `imageDecodeFailed` rejection of that selected strict variant; an
+undeclared mismatch, an unknown failure, or a fallback-free mismatch remains a
+hard failure. Resolved conditions remain visible in
+`runtimeConditionResolutions`. Intentional TextRun fallback, unsupported items,
+and their exact reasons remain an inventory in the JSON and Markdown reports. Static
 CanvasKit pictures that encounter any of these runtime replay failures are
 drawn for the current attempt but not cached, so a later diagnostic reset cannot
 turn a cached omission into a false pass. Cache admission compares diagnostics
