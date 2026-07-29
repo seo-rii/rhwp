@@ -57,6 +57,37 @@ test('internFontBlob assigns distinct ids when a producer key is reused for diff
   assert.equal(store.stats().fontBlobCount, 2);
 });
 
+test('retention limits count only unique retained payloads and bytes', () => {
+  const store = new LayerResourceStore();
+  const image = Uint8Array.of(1, 2);
+  const font = Uint8Array.of(3, 4, 5, 6);
+
+  store.internImage(image, 'image-digest', 'img:fixture');
+  store.internImage(new Uint8Array(image), 'image-digest', 'img:fixture');
+  store.internSvg('svg', 'svg-digest', 'svg:fixture');
+  store.internFontBlob(font, 'font-digest', 'font:fixture');
+
+  assert.deepEqual(
+    {
+      retainedPayloadCount: store.stats().retainedPayloadCount,
+      retainedPayloadBytes: store.stats().retainedPayloadBytes,
+      imagePayloadBytesRetained: store.stats().imagePayloadBytesRetained,
+      svgPayloadBytesRetained: store.stats().svgPayloadBytesRetained,
+      fontBlobPayloadBytesRetained: store.stats().fontBlobPayloadBytesRetained,
+    },
+    {
+      retainedPayloadCount: 3,
+      retainedPayloadBytes: 9,
+      imagePayloadBytesRetained: 2,
+      svgPayloadBytesRetained: 3,
+      fontBlobPayloadBytesRetained: 4,
+    },
+  );
+  assert.equal(store.exceedsRetentionLimits(3, 9), false);
+  assert.equal(store.exceedsRetentionLimits(2, 9), true);
+  assert.equal(store.exceedsRetentionLimits(3, 8), true);
+});
+
 test('clear advances tableId and resets font blob arrays and statistics', () => {
   const store = new LayerResourceStore();
   const initialTableId = store.resources.tableId;

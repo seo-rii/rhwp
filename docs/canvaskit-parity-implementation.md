@@ -330,6 +330,14 @@ the page resource table. A true document reset immediately cancels pending
 image work, releases decoded/effect/mipmap images and verified embedded-font
 instances, and detaches the previous tree even when the replacement document
 has no renderable page.
+The document resource table remains append-only while cached page trees can
+refer to it. At an ordinary edit refresh, after every cached page tree and
+static picture has been released, Studio starts a new resource generation when
+the retained table exceeds 4,096 payloads or 256 MiB of encoded image, static
+SVG, and portable font data. Canvas2D and CanvasKit document caches reset in
+the same step; visible pages then repopulate the new table. Compaction is not
+performed during page traversal, so an unseen page can never lose a resource id
+while an older tree remains cached.
 CanvasKit fallback-font initialization deduplicates bundled Noto/D2/math URLs
 and prefetches the remaining unique catalog files in parallel; registration
 order and family/style matching remain deterministic.

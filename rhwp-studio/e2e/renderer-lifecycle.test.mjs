@@ -1809,6 +1809,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       makeTree([4, 3, 2, 1], 'digest-b'),
     );
     const stats = wasm.getLayerResourceStats();
+    const beforeCompactionTableId = replacement.resources?.tableId ?? null;
+    const compacted = wasm.compactLayerResourceCacheIfNeeded(
+      1,
+      Number.MAX_SAFE_INTEGER,
+    );
+    const afterCompactionStats = wasm.getLayerResourceStats();
 
     return {
       firstRef: first.fontResources?.blobs?.[0]?.dataRef?.id,
@@ -1822,6 +1828,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
         && omitted.resources === replacement.resources,
       fontBlobKeys: replacement.resources?.fontBlobKeys ?? [],
       stats,
+      compaction: {
+        compacted,
+        beforeTableId: beforeCompactionTableId,
+        afterTableId: afterCompactionStats.tableId,
+        retainedPayloadCount: afterCompactionStats.retainedPayloadCount,
+      },
     };
   });
   assert(
@@ -1851,6 +1863,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && fontBlobNormalizationProbe.fontBlobKeys.every((key) => key === 'font:fixture'),
     `font blob key collisions keep distinct payload ids=${JSON.stringify(fontBlobNormalizationProbe)}`,
   );
+  assert(
+    fontBlobNormalizationProbe.compaction?.compacted === true
+      && fontBlobNormalizationProbe.compaction.afterTableId
+        === fontBlobNormalizationProbe.compaction.beforeTableId + 1
+      && fontBlobNormalizationProbe.compaction.retainedPayloadCount === 0,
+    `resource retention budget starts a clean document table generation=${JSON.stringify(fontBlobNormalizationProbe)}`,
+  );
 
   await loadHwpFile(page, '20250130-hongbo_saved.hwp');
   const resourcePreservationProbe = await page.evaluate(() => {
@@ -1871,6 +1890,21 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const afterResources = afterTree.resources;
     renderer.resourceCache.setResources(afterResources);
     const afterCachedImage = renderer.resourceCache.image(0);
+    const originalCompactLayerResources = wasm.compactLayerResourceCacheIfNeeded.bind(wasm);
+    const originalResetDocumentResources = canvasView.pageRenderer.resetDocumentResources.bind(
+      canvasView.pageRenderer,
+    );
+    let compactionResetCalls = 0;
+    try {
+      wasm.compactLayerResourceCacheIfNeeded = () => true;
+      canvasView.pageRenderer.resetDocumentResources = () => {
+        compactionResetCalls += 1;
+      };
+      canvasView.refreshPages();
+    } finally {
+      wasm.compactLayerResourceCacheIfNeeded = originalCompactLayerResources;
+      canvasView.pageRenderer.resetDocumentResources = originalResetDocumentResources;
+    }
 
     return {
       beforeImageCount: beforeResources?.images?.length ?? -1,
@@ -1882,6 +1916,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       afterImageCacheSize: renderer.imageCache?.size ?? -1,
       reusedDecodedImage: beforeCachedImage !== null && beforeCachedImage === afterCachedImage,
       layerTreeCacheSize: canvasView.pageRenderer?.layerTreeCache?.size ?? -1,
+      compactionResetCalls,
     };
   });
 
@@ -1913,6 +1948,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     resourcePreservationProbe.reusedDecodedImage,
     `ordinary refresh reuses the decoded CanvasKit image=${JSON.stringify(resourcePreservationProbe)}`,
+  );
+  assert(
+    resourcePreservationProbe.compactionResetCalls === 1,
+    `refresh resets renderer resources when the document table compacts=${JSON.stringify(resourcePreservationProbe)}`,
   );
 
   setTestCase('layer-resource-cache-immediate-document-reset');

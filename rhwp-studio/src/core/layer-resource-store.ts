@@ -31,12 +31,15 @@ export class LayerResourceStore {
   private cachedKnownSvgKeys: string[] | null = null;
   private importedImagePayloads = 0;
   private importedImagePayloadBytes = 0;
+  private retainedImagePayloadBytes = 0;
   private omittedImagePayloads = 0;
   private importedSvgPayloads = 0;
   private importedSvgPayloadBytes = 0;
+  private retainedSvgPayloadBytes = 0;
   private omittedSvgPayloads = 0;
   private importedFontBlobPayloads = 0;
   private importedFontBlobPayloadBytes = 0;
+  private retainedFontBlobPayloadBytes = 0;
   private omittedFontBlobPayloads = 0;
 
   constructor() {
@@ -53,12 +56,15 @@ export class LayerResourceStore {
     this.cachedKnownSvgKeys = null;
     this.importedImagePayloads = 0;
     this.importedImagePayloadBytes = 0;
+    this.retainedImagePayloadBytes = 0;
     this.omittedImagePayloads = 0;
     this.importedSvgPayloads = 0;
     this.importedSvgPayloadBytes = 0;
+    this.retainedSvgPayloadBytes = 0;
     this.omittedSvgPayloads = 0;
     this.importedFontBlobPayloads = 0;
     this.importedFontBlobPayloadBytes = 0;
+    this.retainedFontBlobPayloadBytes = 0;
     this.omittedFontBlobPayloads = 0;
   }
 
@@ -82,6 +88,7 @@ export class LayerResourceStore {
     this.resources.images.push(bytes);
     this.resources.imageHashes?.push(resourceHash);
     this.resources.imageKeys?.push(key);
+    this.retainedImagePayloadBytes += bytes.byteLength;
     if (candidates) {
       candidates.push(id);
     } else {
@@ -112,6 +119,7 @@ export class LayerResourceStore {
     this.resources.svgFragments.push(fragment);
     this.resources.svgHashes?.push(resourceHash);
     this.resources.svgKeys?.push(key);
+    this.retainedSvgPayloadBytes += byteLength;
     if (candidates) {
       candidates.push(id);
     } else {
@@ -141,6 +149,7 @@ export class LayerResourceStore {
     this.resources.fontBlobs?.push(bytes);
     this.resources.fontBlobHashes?.push(resourceHash);
     this.resources.fontBlobKeys?.push(key);
+    this.retainedFontBlobPayloadBytes += bytes.byteLength;
     if (candidates) {
       candidates.push(id);
     } else {
@@ -183,21 +192,31 @@ export class LayerResourceStore {
     return this.cachedKnownSvgKeys;
   }
 
+  exceedsRetentionLimits(maxPayloadCount: number, maxPayloadBytes: number): boolean {
+    return this.retainedPayloadCount() > maxPayloadCount
+      || this.retainedPayloadBytes() > maxPayloadBytes;
+  }
+
   stats() {
     return {
       tableId: this.resources.tableId,
       imageCount: this.resources.images.length,
       imagePayloadsImported: this.importedImagePayloads,
       imagePayloadBytesImported: this.importedImagePayloadBytes,
+      imagePayloadBytesRetained: this.retainedImagePayloadBytes,
       imagePayloadsOmitted: this.omittedImagePayloads,
       svgCount: this.resources.svgFragments.length,
       svgPayloadsImported: this.importedSvgPayloads,
       svgPayloadBytesImported: this.importedSvgPayloadBytes,
+      svgPayloadBytesRetained: this.retainedSvgPayloadBytes,
       svgPayloadsOmitted: this.omittedSvgPayloads,
       fontBlobCount: this.resources.fontBlobs?.length ?? 0,
       fontBlobPayloadsImported: this.importedFontBlobPayloads,
       fontBlobPayloadBytesImported: this.importedFontBlobPayloadBytes,
+      fontBlobPayloadBytesRetained: this.retainedFontBlobPayloadBytes,
       fontBlobPayloadsOmitted: this.omittedFontBlobPayloads,
+      retainedPayloadCount: this.retainedPayloadCount(),
+      retainedPayloadBytes: this.retainedPayloadBytes(),
       knownImageKeyCount: this.knownImageKeys().length,
       knownSvgKeyCount: this.knownSvgKeys().length,
     };
@@ -242,6 +261,18 @@ export class LayerResourceStore {
       if (left[index] !== right[index]) return false;
     }
     return true;
+  }
+
+  private retainedPayloadCount(): number {
+    return this.resources.images.length
+      + this.resources.svgFragments.length
+      + (this.resources.fontBlobs?.length ?? 0);
+  }
+
+  private retainedPayloadBytes(): number {
+    return this.retainedImagePayloadBytes
+      + this.retainedSvgPayloadBytes
+      + this.retainedFontBlobPayloadBytes;
   }
 
   private uniqueKeys(lookup: Map<string, number[]>): string[] {

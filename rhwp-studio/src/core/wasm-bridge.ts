@@ -63,6 +63,9 @@ type LayerTreeExportStats = {
   profile: LayerRenderProfile;
 };
 
+const MAX_RETAINED_LAYER_RESOURCE_PAYLOADS = 4096;
+const MAX_RETAINED_LAYER_RESOURCE_BYTES = 256 * 1024 * 1024;
+
 export class WasmBridge {
   private doc: HwpDocument | null = null;
   private initialized = false;
@@ -529,6 +532,17 @@ export class WasmBridge {
   clearLayerResourceCache(): void {
     this.layerResourceStore.clear();
     this.lastLayerTreeExportStats = null;
+  }
+
+  compactLayerResourceCacheIfNeeded(
+    maxPayloadCount = MAX_RETAINED_LAYER_RESOURCE_PAYLOADS,
+    maxPayloadBytes = MAX_RETAINED_LAYER_RESOURCE_BYTES,
+  ): boolean {
+    if (!this.layerResourceStore.exceedsRetentionLimits(maxPayloadCount, maxPayloadBytes)) {
+      return false;
+    }
+    this.clearLayerResourceCache();
+    return true;
   }
 
   getLayerResourceStats() {
