@@ -18090,9 +18090,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       return { error: 'renderers unavailable' };
     }
     const supplementaryMathLetter = '\u{1D400}';
-    const text = `A₩①◆☀€${supplementaryMathLetter}`;
+    const oldHangulText = 'ᄒᆞᆫ';
+    const text = `A₩①◆☀€${supplementaryMathLetter}${oldHangulText}`;
     const tree = {
-      pageWidth: 128,
+      pageWidth: 184,
       pageHeight: 40,
       profile: 'screen',
       outputOptions: {
@@ -18118,13 +18119,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1936,
-        bounds: { x: 0, y: 0, width: 128, height: 40 },
+        bounds: { x: 0, y: 0, width: 184, height: 40 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 128, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 184, height: 40 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'textRun',
-            bbox: { x: 8, y: 6, width: 112, height: 26 },
+            bbox: { x: 8, y: 6, width: 168, height: 26 },
             text,
             baseline: 22,
             rotation: 0,
@@ -18186,6 +18187,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         supplementaryGlyphIds: fontFamily === 'Latin Modern Math'
           ? Array.from(objects.font.getGlyphIDs(supplementaryMathLetter))
           : undefined,
+        oldHangulGlyphIds: fontFamily === 'Noto Sans KR ExtraLight'
+          ? Array.from(objects.font.getGlyphIDs(oldHangulText))
+          : undefined,
       });
       return objects;
     };
@@ -18197,6 +18201,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
         supplementaryFontLoaded: document.fonts.check(
           '400 16px "Latin Modern Math"',
           supplementaryMathLetter,
+        ),
+        oldHangulFontLoaded: document.fonts.check(
+          '400 18px "Noto Sans KR ExtraLight"',
+          oldHangulText,
         ),
       };
     } finally {
@@ -18232,6 +18240,17 @@ runTest('Renderer lifecycle', async ({ page }) => {
       ),
     `both browser renderers load the checked-in supplementary fallback and CanvasKit resolves its glyph loaded=${textFallbackFontProbe.supplementaryFontLoaded}, requests=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
   );
+  assert(
+    textFallbackFontProbe.oldHangulFontLoaded === true
+      && textFallbackFontProbe.makeTextRequests.some(
+        ({ fontFamily, oldHangulGlyphIds }) => (
+          fontFamily === 'Noto Sans KR ExtraLight'
+          && oldHangulGlyphIds?.length === 3
+          && oldHangulGlyphIds.every((glyphId) => glyphId !== 0)
+        ),
+      ),
+    `both browser renderers load the old-Hangul fallback and CanvasKit resolves every jamo loaded=${textFallbackFontProbe.oldHangulFontLoaded}, requests=${JSON.stringify(textFallbackFontProbe.makeTextRequests)}`,
+  );
   const textFallbackCanvas2dInkPixels = countPixels(
     textFallbackFontProbe.canvas2d,
     (pixel) => pixel.alpha > 32 && pixel.red < 245 && pixel.green < 245 && pixel.blue < 245,
@@ -18249,7 +18268,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const png = PNG.sync.read(pngBufferFromDataUrl(textFallbackFontProbe[backend]));
     let inkPixels = 0;
     for (let y = 0; y < png.height; y += 1) {
-      for (let x = 106; x < png.width; x += 1) {
+      for (let x = 106; x < Math.min(126, png.width); x += 1) {
         const offset = (y * png.width + x) * 4;
         if (
           png.data[offset + 3] > 32
@@ -18264,7 +18283,33 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     supplementaryFallbackInkPixels.canvas2d > 20
       && supplementaryFallbackInkPixels.canvaskit > 20,
-    `supplementary-plane fallback draws the final math letter=${JSON.stringify(supplementaryFallbackInkPixels)}`,
+    `supplementary-plane fallback draws the math letter=${JSON.stringify(supplementaryFallbackInkPixels)}`,
+  );
+  const oldHangulInk = {};
+  for (const backend of ['canvas2d', 'canvaskit']) {
+    const png = PNG.sync.read(pngBufferFromDataUrl(textFallbackFontProbe[backend]));
+    let count = 0;
+    let maxX = -1;
+    for (let y = 0; y < png.height; y += 1) {
+      for (let x = 126; x < png.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        if (
+          png.data[offset + 3] > 32
+          && (png.data[offset] < 245 || png.data[offset + 1] < 245 || png.data[offset + 2] < 245)
+        ) {
+          count += 1;
+          maxX = Math.max(maxX, x);
+        }
+      }
+    }
+    oldHangulInk[backend] = { count, maxX };
+  }
+  assert(
+    oldHangulInk.canvas2d.count > 20
+      && oldHangulInk.canvaskit.count > 20
+      && oldHangulInk.canvas2d.maxX < 160
+      && oldHangulInk.canvaskit.maxX < 160,
+    `old-Hangul fallback shapes one compact cluster=${JSON.stringify(oldHangulInk)}`,
   );
   const textFallbackFontDiff = await comparePngBuffers(
     pngBufferFromDataUrl(textFallbackFontProbe.canvas2d),

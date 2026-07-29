@@ -29,7 +29,6 @@ assert.equal(
   'Noto Sans KR ExtraLight',
   'ExtraLight 번들은 독립 family name을 노출해야 한다',
 );
-extraLightFontManager?.delete();
 
 const regularFont = new CanvasKit.Font(regularTypeface, 16);
 const extraLightFont = new CanvasKit.Font(extraLightTypeface, 16);
@@ -48,15 +47,54 @@ try {
     ['가', 'U+AC00'],
     ['한', 'U+D55C'],
     ['A', 'U+0041'],
+    ['ᄒ', 'U+1112'],
+    ['ᆞ', 'U+119E'],
+    ['ᆫ', 'U+11AB'],
   ]) {
     const glyphId = extraLightFont.getGlyphIDs(character, 1)[0];
     assert.notEqual(glyphId, 0, `${codepoint} ${character}는 Noto Sans KR ExtraLight에 있어야 한다`);
+  }
+
+  const paragraphStyle = new CanvasKit.ParagraphStyle({
+    textStyle: {
+      color: CanvasKit.BLACK,
+      fontSize: 40,
+      fontFamilies: ['Noto Sans KR ExtraLight'],
+    },
+  });
+  const builder = CanvasKit.ParagraphBuilder.Make(paragraphStyle, extraLightFontManager);
+  try {
+    builder.addText('ᄒᆞᆫ');
+    const paragraph = builder.build();
+    try {
+      paragraph.layout(400);
+      assert.ok(paragraph.getLongestLine() > 0, '옛한글 cluster가 폭을 가져야 한다');
+      assert.ok(
+        paragraph.getLongestLine() < 80,
+        '옛한글 cluster는 분리된 자모 세 칸보다 좁게 shape되어야 한다',
+      );
+      assert.equal(
+        paragraph.getRectsForRange(
+          0,
+          3,
+          CanvasKit.RectHeightStyle.Tight,
+          CanvasKit.RectWidthStyle.Tight,
+        ).length,
+        1,
+        'ᄒᆞᆫ은 CanvasKit Paragraph에서 하나의 glyph cluster여야 한다',
+      );
+    } finally {
+      paragraph.delete();
+    }
+  } finally {
+    builder.delete();
   }
 } finally {
   regularFont.delete();
   extraLightFont.delete();
   regularTypeface.delete();
   extraLightTypeface.delete();
+  extraLightFontManager?.delete();
 }
 
-console.log('CanvasKit Noto Sans KR Regular/ExtraLight coverage passed');
+console.log('CanvasKit Noto Sans KR Regular/ExtraLight and old-Hangul shaping coverage passed');

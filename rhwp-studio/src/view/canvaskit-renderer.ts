@@ -1133,6 +1133,7 @@ export class CanvasKitLayerRenderer {
     const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
     const fallbackFamilies = [
       op.style.fontFamily,
+      'Noto Sans KR ExtraLight',
       'Noto Sans KR',
       'Noto Sans CJK KR',
       'NanumGothic',
@@ -1413,7 +1414,10 @@ export class CanvasKitLayerRenderer {
           const codePoint = character.codePointAt(0) ?? 0;
           return codePoint < 0x20 || codePoint > 0x7e;
         });
-      const canUseScriptParagraph = requiresScriptShaping
+      const requiresHangulClusterShaping = clusters.some((cluster) => (
+        /[\u1100-\u115f\ua960-\ua97f][\u1160-\u11a7\ud7b0-\ud7c6]/u.test(cluster.text)
+      ));
+      const canUseClusterParagraph = (requiresScriptShaping || requiresHangulClusterShaping)
         && !hasRatio
         && outlineType === 0
         && shadowType === 0
@@ -1425,7 +1429,7 @@ export class CanvasKitLayerRenderer {
         && !op.style.strikethrough
         && (!('tabLeaders' in op) || !op.tabLeaders?.length)
         && (!('controlMarks' in op) || !op.controlMarks?.length);
-      if (canUseScriptParagraph) {
+      if (canUseClusterParagraph) {
         let paragraphsReady = false;
         const paragraphs: Array<{
           paragraph: Paragraph;
@@ -1434,7 +1438,7 @@ export class CanvasKitLayerRenderer {
         }> = [];
         try {
           const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
-          const fontFamilies = fallbackFamilies
+          const fontFamilies = [...clusterFontFamilies, ...fallbackFamilies]
             .map((family) => this.fontRegistry.resolveProviderFamily(family, renderFontWeight))
             .filter((family, index, all) => all.indexOf(family) === index);
           const textStyle = new this.canvasKit.TextStyle({

@@ -625,7 +625,13 @@ rather than pretending it is a weight variant of `Noto Sans KR`. The expanded
 Regular face remains registered for CanvasKit symbol and box-drawing coverage.
 Catalog parity tests pin the alias mapping, and the CanvasKit font-coverage
 smoke verifies both the Regular symbol subset and ExtraLight Korean/Latin
-coverage.
+coverage. The same ExtraLight face contains the old-Hangul jamo needed for
+`ᄒᆞᆫ`. CanvasKit routes Hangul-jamo grapheme clusters through its existing
+font-provider Paragraph path, so HarfBuzz shapes the cluster once while each
+cluster still starts at the producer-authored HWP position. The smoke pins the
+three source jamo and one-cluster Paragraph result, and browser parity keeps
+Canvas2D and CanvasKit on the same checked-in fallback without adding a second
+old-Hangul font asset.
 
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
