@@ -1696,6 +1696,12 @@ usually:
 (cd rhwp-studio && node e2e/renderer-lifecycle.test.mjs)
 ```
 
+The lifecycle suite always gates the checked-in single-face COLRv0 color-font
+smoke: the exact digest and face must verify, the `GlyphRun` variant must be
+selected, red and blue layer pixels must render, and the `TextRun` fallback must
+remain suppressed. This fixed-fixture capability gate does not automatically
+promote arbitrary color fonts to fallback-free strictVisual eligibility.
+
 When a change touches strict payload semantics or native-ready Skia behavior,
 also run the targeted native Skia replay suite:
 

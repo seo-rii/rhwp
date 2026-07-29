@@ -15,7 +15,6 @@ import { PNG } from 'pngjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RHWP_ROOT = path.resolve(__dirname, '..', '..');
-const CANVASKIT_COLOR_GLYPH_SMOKE_GATE = process.env.RHWP_CANVASKIT_COLOR_GLYPH_SMOKE === '1';
 const PATTERN_REFERENCE_FIXTURE = loadPatternReferenceFixture();
 const ORDERED_DITHER_8X8 = [
   0, 48, 12, 60, 3, 51, 15, 63,
@@ -3838,54 +3837,52 @@ runTest('Renderer lifecycle', async ({ page }) => {
     bluePixels: colorGlyphBluePixels,
     fallbackPixels: colorGlyphFallbackPixels,
   };
-  console.log(`[report-only] CanvasKit color glyph smoke ${JSON.stringify(colorGlyphSmokeSummary)}`);
-  if (CANVASKIT_COLOR_GLYPH_SMOKE_GATE) {
-    assert(
-      colorGlyphReport?.available === true,
-      `CanvasKit color glyph smoke fixture available=${JSON.stringify(colorGlyphSmokeSummary)}`,
-    );
-    assert(
-      colorGlyphReport?.status?.replayable === false
-        && colorGlyphReport?.status?.reason === 'fontBlobNotVerified',
-      `CanvasKit color glyph status stays unverified before render=${JSON.stringify(colorGlyphReport?.status)}`,
-    );
-    assert(
-      colorGlyphReport?.renderedStatus?.replayable === true
-        && colorGlyphReport?.renderedStatus?.report?.digestMatched === true
-        && colorGlyphReport?.renderedStatus?.report?.exactFaceInstantiated === true
-        && colorGlyphReport?.renderedStatus?.report?.effectSupported === true,
-      `CanvasKit color glyph verified status=${JSON.stringify(colorGlyphReport?.renderedStatus)}`,
-    );
-    assert(
-      colorGlyphSelectedReport?.selectedVariantId === 'glyphRun'
-        && colorGlyphSelectedReport?.selectedReason === 'glyphRunStrictEligible'
-        && colorGlyphSelectedReport?.partsExpected === 1
-        && colorGlyphSelectedReport?.partsReplayed === 1
-        && (colorGlyphSelectedReport?.rejectedVariants?.length ?? 0) === 0
-        && colorGlyphSelectedReport?.fontVerification?.digestMatched === true
-        && colorGlyphSelectedReport?.fontVerification?.exactFaceInstantiated === true
-        && colorGlyphSelectedReport?.fontVerification?.replayEligible === true
-        && colorGlyphSelectedReport?.fontVerification?.effectSupported === true,
-      `CanvasKit color glyph selection report=${JSON.stringify(colorGlyphSelectedReport)}`,
-    );
-    const colorGlyphRunPart = colorGlyphSelectedReport?.parts?.find(
-      (part) => part.variantId === 'glyphRun' && part.variantKind === 'glyphRun',
-    );
-    assert(
-      colorGlyphRunPart?.replayable === true
-        && colorGlyphRunPart?.fontVerification?.replayEligible === true
-        && colorGlyphRunPart?.fontVerification?.effectSupported === true,
-      `CanvasKit color glyph part replay report=${JSON.stringify(colorGlyphRunPart)}`,
-    );
-    assert(
-      colorGlyphRedPixels > 20 && colorGlyphBluePixels > 20,
-      `CanvasKit COLRv0 smoke expected colored pixels=${JSON.stringify(colorGlyphSmokeSummary)}`,
-    );
-    assert(
-      colorGlyphFallbackPixels < 5,
-      `CanvasKit COLRv0 smoke suppressed fallback=${JSON.stringify(colorGlyphSmokeSummary)}`,
-    );
-  }
+  console.log(`[gate] CanvasKit color glyph smoke ${JSON.stringify(colorGlyphSmokeSummary)}`);
+  assert(
+    colorGlyphReport?.available === true,
+    `CanvasKit color glyph smoke fixture available=${JSON.stringify(colorGlyphSmokeSummary)}`,
+  );
+  assert(
+    colorGlyphReport?.status?.replayable === false
+      && colorGlyphReport?.status?.reason === 'fontBlobNotVerified',
+    `CanvasKit color glyph status stays unverified before render=${JSON.stringify(colorGlyphReport?.status)}`,
+  );
+  assert(
+    colorGlyphReport?.renderedStatus?.replayable === true
+      && colorGlyphReport?.renderedStatus?.report?.digestMatched === true
+      && colorGlyphReport?.renderedStatus?.report?.exactFaceInstantiated === true
+      && colorGlyphReport?.renderedStatus?.report?.effectSupported === true,
+    `CanvasKit color glyph verified status=${JSON.stringify(colorGlyphReport?.renderedStatus)}`,
+  );
+  assert(
+    colorGlyphSelectedReport?.selectedVariantId === 'glyphRun'
+      && colorGlyphSelectedReport?.selectedReason === 'glyphRunStrictEligible'
+      && colorGlyphSelectedReport?.partsExpected === 1
+      && colorGlyphSelectedReport?.partsReplayed === 1
+      && (colorGlyphSelectedReport?.rejectedVariants?.length ?? 0) === 0
+      && colorGlyphSelectedReport?.fontVerification?.digestMatched === true
+      && colorGlyphSelectedReport?.fontVerification?.exactFaceInstantiated === true
+      && colorGlyphSelectedReport?.fontVerification?.replayEligible === true
+      && colorGlyphSelectedReport?.fontVerification?.effectSupported === true,
+    `CanvasKit color glyph selection report=${JSON.stringify(colorGlyphSelectedReport)}`,
+  );
+  const colorGlyphRunPart = colorGlyphSelectedReport?.parts?.find(
+    (part) => part.variantId === 'glyphRun' && part.variantKind === 'glyphRun',
+  );
+  assert(
+    colorGlyphRunPart?.replayable === true
+      && colorGlyphRunPart?.fontVerification?.replayEligible === true
+      && colorGlyphRunPart?.fontVerification?.effectSupported === true,
+    `CanvasKit color glyph part replay report=${JSON.stringify(colorGlyphRunPart)}`,
+  );
+  assert(
+    colorGlyphRedPixels > 20 && colorGlyphBluePixels > 20,
+    `CanvasKit COLRv0 smoke expected colored pixels=${JSON.stringify(colorGlyphSmokeSummary)}`,
+  );
+  assert(
+    colorGlyphFallbackPixels < 5,
+    `CanvasKit COLRv0 smoke suppressed fallback=${JSON.stringify(colorGlyphSmokeSummary)}`,
+  );
   assert(
     portableGlyphRunProbe.renderedStatus?.report?.digestMatched === true
       && portableGlyphRunProbe.renderedStatus?.report?.exactFaceInstantiated === true

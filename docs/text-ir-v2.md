@@ -645,17 +645,17 @@ promoting them to PR gates. Text-heavy samples can disable the tolerant pixel
 budget with `maxDiffRatio: null` and use ink-mask / solid-ink budgets so report
 rows distinguish geometry drift from backend glyph rasterization differences.
 
-CanvasKit color glyph coverage follows the same report-first rule. The checked
-in `tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf` fixture is a tiny synthetic
+CanvasKit color glyph coverage uses the checked-in
+`tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf` fixture, a tiny synthetic
 single-face COLRv0 font with fixed digest and metadata. The Studio lifecycle
-probe renders it only through the `GlyphRun` path and records selected/rejected
-variant diagnostics plus pre-render verification, post-render digest/exact-face
-and effect gates, selected part replay counts, replay eligibility, and
-red/blue/fallback pixel counts as a report-only smoke. Setting
-`RHWP_CANVASKIT_COLOR_GLYPH_SMOKE=1` promotes that local probe to hard
-assertions for those diagnostics. This does not make color glyphs
-`GlyphOutline`-eligible; `ColorLayers`, bitmap glyphs, and SVG-in-font payloads
-remain reserved richer-outline work.
+gate renders it only through the `GlyphRun` path and requires selected/rejected
+variant diagnostics, pre-render verification, post-render digest/exact-face and
+effect gates, selected part replay counts, replay eligibility, red/blue color
+pixels, and fallback suppression. This hard smoke proves the fixed backend
+capability only; it does not by itself make color GlyphRun strictVisual-eligible
+for arbitrary fonts or make color glyphs `GlyphOutline`-eligible.
+`ColorLayers`, bitmap glyphs, and SVG-in-font payloads retain their independent
+strict payload gates.
 The smoke may start CanvasKit-only, but strictVisual color glyph eligibility
 requires a stable native reference or equivalent baseline, deterministic
 diagnostics, and a stable fuzzy threshold. Successful smoke output is therefore
@@ -1271,7 +1271,7 @@ that every reserved writer is enabled:
 | `GlyphOutline` `bitmapGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support one producer-selected image strike |
 | `GlyphOutline` `colorLayers.colrV1` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support the stage-1 solid-path + transform graph subset, stage-2 linear/radial gradient path leaves, stage-4 `sourceOver` composite subset, and stage-5 run-local clip/reusable DAG subset; Canvas2D/CanvasKit and native Skia additionally support stage-3 full-360 sweep gradient leaves |
 | `GlyphOutline` `svgGlyph` | V2 feature addition; SVG, Canvas2D, CanvasKit, and native Skia strict replay support sanitized static path-vector resources |
-| CanvasKit color glyph smoke | Report-only backend capability smoke |
+| CanvasKit color glyph smoke | Required lifecycle gate for the fixed single-face COLRv0 GlyphRun fixture; broader strictVisual eligibility remains separately gated |
 | Native Skia variation/TTC strict replay | V2 backend feature addition; checked-in exact-font proof fixtures cover selected variation tuples, explicit default-axis replay, alternate valid axis-bound replay, direct TTF replay, synthetic TTC non-zero `faceIndex` replay, exact-byte out-of-range fallback, invalid exact embedded font bytes, and digest mismatch rejection. Broader real-font coverage remains corpus-gated. |
 | CanvasKit variation/TTC strict replay | Blocked until CanvasKit-specific exact variation tuple or collection `faceIndex` construction fixtures pass while preserving the `u32` glyph-id range guard. |
 | shaped measurement and `lineBreakRisk` telemetry | Report-only artifact outside replay schema |
