@@ -691,6 +691,12 @@ CanvasKit. This narrowly scoped decode bridge is not a Canvas2D compositing
 overlay: it cannot create or acquire a canvas context, and a pending decode
 prevents static-picture caching until the callback requests a fresh direct
 replay. Decode failures are negative-cached with the ordinary image diagnostics.
+CanvasKit accepts the decoded image only when its integer width and height
+exactly match the bounded encoded header; mismatches delete the decoded object
+and record `decodedDimensionsMismatch`, for both synchronous raster decode and
+the browser-assisted SVG bridge. Replacing bytes in the same resource table
+changes the content-specific key and clears the matching negative cache before
+retry.
 Native Skia parses the same admission header, rasterizes through `usvg`/`resvg`
 at the replay destination and output scale, and keys the SVG cache by resource,
 destination size, and scale. Raster resources retain their resource-only cache.

@@ -1772,6 +1772,11 @@ assertTokensInOrder(
   'CanvasKit resource cache must contain, diagnose, and memoize encoded-image decode failures',
 );
 assert(
+  canvaskitResourceCacheSource.includes('decodedImageMatchesHeader')
+    && canvaskitResourceCacheSource.includes("'decodedDimensionsMismatch'"),
+  'CanvasKit must reject decoded raster and SVG dimensions that disagree with admitted headers',
+);
+assert(
   canvaskitResourceCacheSource.includes('this.failedImageCacheKeys.clear()')
     && canvaskitResourceCacheSource.includes('this.failedImageReasons.clear()')
     && canvaskitResourceCacheSource.includes("if (key.startsWith('res:')) {")

@@ -12,6 +12,7 @@ import { parseCanvasKitCssColor } from './css-color';
 import {
   canvasKitEncodedImageHeader,
   canvasKitEncodedImageIsReplayable,
+  type CanvasKitEncodedImageHeader,
 } from './encoded-image-admission';
 
 export type CanvasKitPatternDiagnostics = {
@@ -27,7 +28,8 @@ export type CanvasKitImageFailureReason =
   | 'resourceUnavailable'
   | 'base64DecodeFailed'
   | 'encodedImageRejected'
-  | 'imageDecodeFailed';
+  | 'imageDecodeFailed'
+  | 'decodedDimensionsMismatch';
 
 export type CanvasKitImageFailureDiagnostic = {
   source: 'resource' | 'inline' | 'missing';
@@ -57,6 +59,7 @@ type PendingSvgImageLoad = {
   objectUrl: string;
   resourceId: number | undefined;
   base64: string | undefined;
+  expectedHeader: CanvasKitEncodedImageHeader;
 };
 
 const browserAsyncImageDecodeEnvironment: CanvasKitAsyncImageDecodeEnvironment = {
@@ -204,7 +207,7 @@ export class CanvasKitResourceCache {
     if (imageHeader.format === 'svg') {
       this.imageDiagnostics.pendingAccesses += 1;
       if (!this.pendingSvgImageLoads.has(cacheKey)) {
-        this.startSvgImageLoad(cacheKey, bytes, resourceId, base64);
+        this.startSvgImageLoad(cacheKey, bytes, resourceId, base64, imageHeader);
       }
       return null;
     }
@@ -216,6 +219,11 @@ export class CanvasKitResourceCache {
     }
     if (!image) {
       this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
+      return null;
+    }
+    if (!this.decodedImageMatchesHeader(image, imageHeader)) {
+      image.delete();
+      this.recordImageFailure(cacheKey, resourceId, base64, 'decodedDimensionsMismatch');
       return null;
     }
     this.imageCache.set(cacheKey, image);
@@ -462,6 +470,7 @@ export class CanvasKitResourceCache {
     bytes: Uint8Array,
     resourceId: number | undefined,
     base64: string | undefined,
+    expectedHeader: CanvasKitEncodedImageHeader,
   ): void {
     let objectUrl: string | null = null;
     let image: HTMLImageElement;
@@ -485,6 +494,7 @@ export class CanvasKitResourceCache {
       objectUrl,
       resourceId,
       base64,
+      expectedHeader,
     };
     this.pendingSvgImageLoads.set(cacheKey, pending);
     image.onload = () => {
@@ -498,11 +508,17 @@ export class CanvasKitResourceCache {
         decodedImage = null;
       }
       this.cancelPendingSvgImageLoad(cacheKey, pending);
-      if (decodedImage) {
+      if (decodedImage && this.decodedImageMatchesHeader(decodedImage, pending.expectedHeader)) {
         this.imageCache.set(cacheKey, decodedImage);
         this.imageDiagnostics.imagesDecoded += 1;
       } else {
-        this.recordImageFailure(cacheKey, resourceId, base64, 'imageDecodeFailed');
+        decodedImage?.delete();
+        this.recordImageFailure(
+          cacheKey,
+          resourceId,
+          base64,
+          decodedImage ? 'decodedDimensionsMismatch' : 'imageDecodeFailed',
+        );
       }
       this.notifyAsyncResourceReady();
     };
@@ -535,6 +551,22 @@ export class CanvasKitResourceCache {
       // The handlers are already detached, so a source reset failure cannot revive the load.
     }
     this.revokeObjectUrl(pending.objectUrl);
+  }
+
+  private decodedImageMatchesHeader(
+    image: CanvasKitImage,
+    expectedHeader: CanvasKitEncodedImageHeader,
+  ): boolean {
+    try {
+      const width = image.width();
+      const height = image.height();
+      return Number.isSafeInteger(width)
+        && Number.isSafeInteger(height)
+        && width === expectedHeader.width
+        && height === expectedHeader.height;
+    } catch {
+      return false;
+    }
   }
 
   private revokeObjectUrl(objectUrl: string): void {

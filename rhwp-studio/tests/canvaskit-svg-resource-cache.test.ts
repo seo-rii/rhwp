@@ -28,7 +28,7 @@ test.after(async () => {
 
 test('keeps encoded raster decoding synchronous', () => {
   const harness = makeHarness();
-  const rasterImage = fakeCanvasKitImage();
+  const rasterImage = fakeCanvasKitImage(16, 12);
   harness.canvasKit.encodedResult = rasterImage;
 
   const result = harness.cache.image(undefined, base64(png(16, 12)));
@@ -40,9 +40,27 @@ test('keeps encoded raster decoding synchronous', () => {
   assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 0);
 });
 
+test('rejects and negative-caches decoded raster dimension mismatches', () => {
+  const harness = makeHarness();
+  const mismatchedImage = fakeCanvasKitImage(8, 8);
+  harness.canvasKit.encodedResult = mismatchedImage;
+  const encodedPng = base64(png(16, 12));
+
+  assert.equal(harness.cache.image(undefined, encodedPng), null);
+  assert.equal(harness.cache.image(undefined, encodedPng), null);
+  assert.equal(mismatchedImage.deleteCalls, 1);
+  assert.equal(harness.canvasKit.encodedSources.length, 1);
+  assert.equal(harness.cache.getImageDiagnostics().failureCacheHits, 1);
+  assert.deepEqual(harness.cache.getImageDiagnostics().failures, [{
+    source: 'inline',
+    resourceId: null,
+    reason: 'decodedDimensionsMismatch',
+  }]);
+});
+
 test('loads SVG asynchronously into a direct CanvasKit image and notifies once', async () => {
   const harness = makeHarness();
-  const decodedImage = fakeCanvasKitImage();
+  const decodedImage = fakeCanvasKitImage(24, 18);
   harness.canvasKit.canvasResult = decodedImage;
   let readyCallbacks = 0;
   harness.cache.setAsyncResourceReadyCallback(() => {
@@ -80,6 +98,26 @@ test('loads SVG asynchronously into a direct CanvasKit image and notifies once',
   assert.equal(readyCallbacks, 1);
   assert.equal(harness.cache.image(undefined, encodedSvg), decodedImage);
   assert.equal(harness.cache.getImageDiagnostics().pendingLoads, 0);
+});
+
+test('rejects browser-decoded SVG dimension mismatches', async () => {
+  const harness = makeHarness();
+  const mismatchedImage = fakeCanvasKitImage(12, 12);
+  harness.canvasKit.canvasResult = mismatchedImage;
+  const encodedSvg = base64(svg(24, 18));
+
+  assert.equal(harness.cache.image(undefined, encodedSvg), null);
+  harness.browser.images[0].onload();
+  await Promise.resolve();
+
+  assert.equal(mismatchedImage.deleteCalls, 1);
+  assert.equal(harness.cache.image(undefined, encodedSvg), null);
+  assert.equal(harness.browser.images.length, 1);
+  assert.deepEqual(harness.cache.getImageDiagnostics().failures, [{
+    source: 'inline',
+    resourceId: null,
+    reason: 'decodedDimensionsMismatch',
+  }]);
 });
 
 test('negative-caches SVG decode failures and reports a deterministic reason', async () => {
@@ -192,7 +230,7 @@ test('cancels pending SVG work and deletes decoded images across resource lifeti
   await Promise.resolve();
   assert.equal(harness.canvasKit.canvasSources.length, 0);
 
-  const decodedImage = fakeCanvasKitImage();
+  const decodedImage = fakeCanvasKitImage(32, 20);
   harness.canvasKit.canvasResult = decodedImage;
   assert.equal(harness.cache.image(0), null);
   harness.browser.images[1].onload();
@@ -217,7 +255,7 @@ test('cancels pending SVG work and deletes decoded images across resource lifeti
 
 test('resets document image state without disposing the reusable cache', async () => {
   const harness = makeHarness();
-  const decodedRaster = fakeCanvasKitImage();
+  const decodedRaster = fakeCanvasKitImage(10, 8);
   harness.canvasKit.encodedResult = decodedRaster;
   assert.equal(harness.cache.image(undefined, base64(png(10, 8))), decodedRaster);
 
@@ -240,9 +278,25 @@ test('resets document image state without disposing the reusable cache', async (
   await Promise.resolve();
   assert.equal(harness.canvasKit.canvasSources.length, 0);
 
-  const nextRaster = fakeCanvasKitImage();
+  const nextRaster = fakeCanvasKitImage(12, 9);
   harness.canvasKit.encodedResult = nextRaster;
   assert.equal(harness.cache.image(undefined, base64(png(12, 9))), nextRaster);
+});
+
+test('retries a replaced resource after a negative cache entry in the same table', () => {
+  const harness = makeHarness();
+  harness.cache.setResources(resources(7, Uint8Array.of(1, 2, 3), 'invalid'));
+
+  assert.equal(harness.cache.image(0), null);
+  assert.equal(harness.cache.failedImageCacheKeys.size, 1);
+
+  const replacementImage = fakeCanvasKitImage(6, 4);
+  harness.canvasKit.encodedResult = replacementImage;
+  harness.cache.setResources(resources(7, png(6, 4), 'replacement'));
+
+  assert.equal(harness.cache.failedImageCacheKeys.size, 0);
+  assert.equal(harness.cache.image(0), replacementImage);
+  assert.equal(harness.canvasKit.encodedSources.length, 1);
 });
 
 test('renderer forwards readiness and excludes pending SVGs from static pictures', () => {
@@ -309,14 +363,20 @@ function makeHarness() {
   };
 }
 
-function fakeCanvasKitImage() {
+function fakeCanvasKitImage(width = 1, height = 1) {
   return {
     deleteCalls: 0,
+    width() {
+      return width;
+    },
+    height() {
+      return height;
+    },
     delete() {
       this.deleteCalls += 1;
     },
     makeCopyWithDefaultMipmaps() {
-      return fakeCanvasKitImage();
+      return fakeCanvasKitImage(width, height);
     },
   };
 }
