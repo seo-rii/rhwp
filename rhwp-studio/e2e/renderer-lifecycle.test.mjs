@@ -18370,6 +18370,207 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `text script parity exact=${textScriptDiff.exactDiffPixels}, tolerant=${textScriptDiff.rawTolerantDiffPixels}, ink=${textScriptDiff.rawInkMaskDiffPixels}, max_channel_delta=${textScriptDiff.maxChannelDelta}`,
   );
 
+  setTestCase('canvaskit-text-complex-grapheme-paragraph-shaping');
+  const complexGraphemeParagraphProbe = await page.evaluate(async () => {
+    const pageRenderer = window.__canvasView?.pageRenderer;
+    const canvas2dRenderer = pageRenderer?.canvas2dRenderer;
+    const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
+    if (!canvas2dRenderer || !canvaskitRenderer) {
+      return { error: 'renderers unavailable' };
+    }
+    const paragraphBuilder = canvaskitRenderer.canvasKit?.ParagraphBuilder;
+    const originalMakeFromFontProvider = paragraphBuilder?.MakeFromFontProvider;
+    if (!paragraphBuilder || typeof originalMakeFromFontProvider !== 'function') {
+      return { error: 'CanvasKit ParagraphBuilder unavailable' };
+    }
+    const textRun = (text, positions, x, width, color) => ({
+      type: 'textRun',
+      bbox: { x, y: 10, width, height: 44 },
+      text,
+      baseline: 36,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      isParaEnd: false,
+      isLineBreakEnd: false,
+      style: {
+        fontFamily: 'Noto Sans KR',
+        fontSize: 30,
+        color,
+        bold: false,
+        italic: false,
+        superscript: false,
+        subscript: false,
+        ratio: 1,
+        underline: 'none',
+        underlineShape: 0,
+        strikethrough: false,
+        strikeShape: 0,
+        outlineType: 0,
+        shadowType: 0,
+        shadowColor: '#000000',
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        emboss: false,
+        engrave: false,
+        emphasisDot: 0,
+        underlineColor: color,
+        strikeColor: color,
+        shadeColor: '#ffffff',
+      },
+      positions,
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const tree = {
+      pageWidth: 360,
+      pageHeight: 64,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 2193,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 2193,
+        bounds: { x: 0, y: 0, width: 360, height: 64 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 360, height: 64 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          textRun('\u0634\u064f', [0, 0, 52], 18, 70, '#c02020'),
+          textRun('\u0915\u094d\u0937\u093f', [0, 0, 0, 0, 64], 140, 90, '#16803a'),
+          textRun('e\u0301', [0, 0, 44], 286, 58, '#2050c0'),
+        ],
+      },
+    };
+    const render = async (renderer) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = tree.pageWidth;
+      canvas.height = tree.pageHeight;
+      document.body.appendChild(canvas);
+      renderer.renderPage(tree, canvas, 1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const png = canvas.toDataURL('image/png');
+      canvas.remove();
+      return png;
+    };
+    let paragraphBuildCalls = 0;
+    paragraphBuilder.MakeFromFontProvider = function (...args) {
+      paragraphBuildCalls += 1;
+      return originalMakeFromFontProvider.apply(this, args);
+    };
+    try {
+      return {
+        canvas2d: await render(canvas2dRenderer),
+        canvaskit: await render(canvaskitRenderer),
+        paragraphBuildCalls,
+      };
+    } finally {
+      paragraphBuilder.MakeFromFontProvider = originalMakeFromFontProvider;
+    }
+  });
+  assert(
+    !complexGraphemeParagraphProbe.error,
+    complexGraphemeParagraphProbe.error
+      || 'CanvasKit complex grapheme Paragraph shaping probe available',
+  );
+  assert(
+    complexGraphemeParagraphProbe.paragraphBuildCalls >= 3,
+    `CanvasKit ordinary Arabic/Devanagari/combining TextRuns shape through Paragraph calls=${complexGraphemeParagraphProbe.paragraphBuildCalls}`,
+  );
+  const complexGraphemePlacement = {};
+  const authoredComplexRuns = [
+    { name: 'Arabic', x: 18, width: 70 },
+    { name: 'Devanagari', x: 140, width: 90 },
+    { name: 'combining', x: 286, width: 58 },
+  ];
+  for (const [backend, dataUrl] of Object.entries({
+    canvas2d: complexGraphemeParagraphProbe.canvas2d,
+    canvaskit: complexGraphemeParagraphProbe.canvaskit,
+  })) {
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    const stats = authoredComplexRuns.map(() => ({
+      count: 0,
+      minX: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+    }));
+    for (let y = 0; y < png.height; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        const red = png.data[offset];
+        const green = png.data[offset + 1];
+        const blue = png.data[offset + 2];
+        const alpha = png.data[offset + 3];
+        let runIndex = -1;
+        if (alpha > 32 && red > 100 && red > green + 50 && red > blue + 50) {
+          runIndex = 0;
+        } else if (alpha > 32 && green > 80 && green > red + 45 && green > blue + 35) {
+          runIndex = 1;
+        } else if (alpha > 32 && blue > 100 && blue > red + 50 && blue > green + 50) {
+          runIndex = 2;
+        }
+        if (runIndex >= 0) {
+          stats[runIndex].count += 1;
+          stats[runIndex].minX = Math.min(stats[runIndex].minX, x);
+          stats[runIndex].maxX = Math.max(stats[runIndex].maxX, x);
+        }
+      }
+    }
+    complexGraphemePlacement[backend] = stats;
+  }
+  for (const [backend, stats] of Object.entries(complexGraphemePlacement)) {
+    const combiningIndex = 2;
+    const combining = stats[combiningIndex];
+    const authored = authoredComplexRuns[combiningIndex];
+    assert(
+      combining.count > 20,
+      `${backend} supported combining grapheme draws visible ink=${combining.count}`,
+    );
+    assert(
+      combining.minX >= authored.x - 2
+        && combining.minX < authored.x + 24
+        && combining.maxX > authored.x + 4
+        && combining.maxX <= authored.x + authored.width,
+      `${backend} supported combining grapheme preserves authored placement x=${authored.x}, ink=${combining.minX}-${combining.maxX}`,
+    );
+  }
+  const complexGraphemeDiff = await comparePngBuffers(
+    pngBufferFromDataUrl(complexGraphemeParagraphProbe.canvas2d),
+    pngBufferFromDataUrl(complexGraphemeParagraphProbe.canvaskit),
+    {
+      diffName: 'canvas-layer-text-complex-grapheme-parity',
+      ignoreChannelDelta: 48,
+      maxDiffRatio: 0.18,
+      inkMaskMaxDiffRatio: 0.1,
+      nonInkMaxDiffRatio: 0,
+    },
+  );
+  assert(
+    complexGraphemeDiff.passed,
+    `complex grapheme parity exact=${complexGraphemeDiff.exactDiffPixels}, tolerant=${complexGraphemeDiff.rawTolerantDiffPixels}, ink=${complexGraphemeDiff.rawInkMaskDiffPixels}, max_channel_delta=${complexGraphemeDiff.maxChannelDelta}`,
+  );
+
   setTestCase('canvas-layer-hancom-pua-display-parity');
   const hancomPuaDisplayProbe = await page.evaluate(async () => {
     const pageRenderer = window.__canvasView?.pageRenderer;

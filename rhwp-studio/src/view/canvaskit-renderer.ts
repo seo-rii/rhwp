@@ -1470,7 +1470,7 @@ export class CanvasKitLayerRenderer {
         return;
       }
 
-      const requiresScriptShaping = (op.style.superscript || op.style.subscript)
+      const requiresScriptMetricShaping = (op.style.superscript || op.style.subscript)
         && Array.from(text).some((character) => {
           const codePoint = character.codePointAt(0) ?? 0;
           return codePoint < 0x20 || codePoint > 0x7e;
@@ -1478,7 +1478,33 @@ export class CanvasKitLayerRenderer {
       const requiresHangulClusterShaping = clusters.some((cluster) => (
         /[\u1100-\u115f\ua960-\ua97f][\u1160-\u11a7\ud7b0-\ud7c6]/u.test(cluster.text)
       ));
-      const canUseClusterParagraph = (requiresScriptShaping || requiresHangulClusterShaping)
+      const requiresComplexClusterShaping = clusters.some((cluster) => (
+        Array.from(cluster.text).some((character) => {
+          const codePoint = character.codePointAt(0) ?? 0;
+          return (codePoint >= 0x0590 && codePoint <= 0x08ff)
+            || (codePoint >= 0x0900 && codePoint <= 0x0dff)
+            || (codePoint >= 0x0e00 && codePoint <= 0x0e7f)
+            || (codePoint >= 0x1780 && codePoint <= 0x17ff)
+            || (codePoint >= 0xfb1d && codePoint <= 0xfdff)
+            || (codePoint >= 0xfe70 && codePoint <= 0xfeff)
+            || (codePoint >= 0x10800 && codePoint <= 0x10fff)
+            || (codePoint >= 0x1e800 && codePoint <= 0x1efff)
+            || (codePoint >= 0x0300 && codePoint <= 0x036f)
+            || (codePoint >= 0x1ab0 && codePoint <= 0x1aff)
+            || (codePoint >= 0x1dc0 && codePoint <= 0x1dff)
+            || (codePoint >= 0x200c && codePoint <= 0x200d)
+            || (codePoint >= 0x20d0 && codePoint <= 0x20ff)
+            || (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
+            || (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+            || (codePoint >= 0x1f1e6 && codePoint <= 0x1faff)
+            || (codePoint >= 0xe0100 && codePoint <= 0xe01ef);
+        })
+      ));
+      const canUseClusterParagraph = (
+        requiresScriptMetricShaping
+        || requiresHangulClusterShaping
+        || requiresComplexClusterShaping
+      )
         && !hasRatio
         && outlineType === 0
         && shadowType === 0

@@ -2042,6 +2042,18 @@ assert(
   'Canvas2D and CanvasKit must share old-Hangul grapheme detection and select the dedicated face before generic fallback',
 );
 assert(
+  canvaskitTextRunBlock.includes('const requiresComplexClusterShaping = clusters.some')
+    && canvaskitTextRunBlock.includes('codePoint >= 0x0590 && codePoint <= 0x08ff')
+    && canvaskitTextRunBlock.includes('codePoint >= 0x0900 && codePoint <= 0x0dff')
+    && canvaskitTextRunBlock.includes('codePoint >= 0x200c && codePoint <= 0x200d')
+    && canvaskitTextRunBlock.includes('codePoint >= 0x1f1e6 && codePoint <= 0x1faff')
+    && canvaskitTextRunBlock.includes('|| requiresComplexClusterShaping')
+    && canvaskitTextRunBlock.includes('builder.addText(cluster.text)')
+    && canvaskitTextRunBlock.includes('originX + entry.x')
+    && canvaskitTextRunBlock.includes('originY - entry.baseline'),
+  'CanvasKit ordinary complex-script graphemes must shape through Paragraph at authored TextRun positions',
+);
+assert(
   canvaskitTextRunBlock.includes('strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round)')
     && extractMethodBody(canvaskitSource, 'renderGlyphRun')
       .includes('strokePaint.setStrokeJoin(this.canvasKit.StrokeJoin.Round)'),
@@ -2506,9 +2518,11 @@ const canvaskitTextRun = extractMethodBody(canvaskitSource, 'renderTextRun');
 assertTokensInOrder(
   canvaskitTextRun,
   [
-    'const requiresScriptShaping = (op.style.superscript || op.style.subscript)',
+    'const requiresScriptMetricShaping = (op.style.superscript || op.style.subscript)',
     'const requiresHangulClusterShaping = clusters.some',
-    'const canUseClusterParagraph = (requiresScriptShaping || requiresHangulClusterShaping)',
+    'const requiresComplexClusterShaping = clusters.some',
+    'const canUseClusterParagraph = (',
+    '|| requiresComplexClusterShaping',
     'if (canUseClusterParagraph)',
     'const fontFamilies = [...clusterFontFamilies, ...fallbackFamilies]',
     'this.fontRegistry.resolveProviderFamily(family, renderFontWeight)',
@@ -2527,7 +2541,7 @@ assertTokensInOrder(
     'originY - entry.baseline',
     'entry.paragraph.delete()',
   ],
-  'CanvasKit must shape positioned script and old-Hangul grapheme clusters through the registered font provider',
+  'CanvasKit must shape positioned script, old-Hangul, and ordinary complex-script graphemes through the registered font provider',
 );
 for (const geometryHelperName of [
   'angleToCanvasCoords',
