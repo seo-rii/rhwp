@@ -33,7 +33,9 @@ Layer JSON/JS exports currently provide:
 
 - `textSources`: source text entries keyed by numeric id.
 - `TextRun.source`: a span into `textSources`.
-- `TextRun.text`: the v1 replay projection kept for Canvas2D/SVG compatibility.
+- `TextRun.text`: the v1-compatible source-backed text payload.
+- `TextRun.displayText`: an optional explicit paint projection. An empty value
+  is significant for a source fragment collapsed into another fragment.
 - `TextRun.style`: v1-compatible style projection.
 - `TextRun.paintStyle`: paint-visible style projection.
 - `TextRun.projectionKind`: how the replay projection relates to the source
@@ -70,7 +72,8 @@ Layer JSON/JS exports currently provide:
   that selected variant set.
 - `text.fallbackRequired`: true while `TextRun` remains the public fallback.
 - `text.placementAuthority`: currently `compatibilityProjection`, meaning
-  `positions`/`baseline`/`rotation` remain authoritative for visual replay.
+  source-aligned `positions` plus `displayPositions` when present, together
+  with `baseline`/`rotation`, remain authoritative for visual replay.
 - `text.externalizedVisuals`: contains `charOverlap`, `controlMarks`,
   `tabLeaders`, or `decorations` when those visuals are emitted as explicit
   paint ops.
@@ -96,12 +99,16 @@ old consumers.
   are valid only inside one layer tree export. Future cache, diff, editing, or
   accessibility keys must use optional `stableSourceKey` plus source range and
   document revision when available.
-- `TextRun.text` is a replay projection, not the long-term canonical identity.
+- `TextRun.text` is a compatibility payload, not the long-term canonical
+  identity. It normally retains source text; `displayText` carries an explicit
+  visual override when normalized text spans source run boundaries.
 - Source ranges are UTF-8 byte ranges. UTF-16 ranges are exported for JS/DOM
   consumers when available.
-- Run positions remain v1 compatibility positions for now. TextRun v2 placement
-  and clusters are additive metadata until `text.placementAuthority` changes
-  from `compatibilityProjection`.
+- Run `positions` remain source-character-aligned v1 compatibility positions.
+  A normalized projection also exports `displayPositions` for the visible
+  string; collapsed source characters repeat the preceding source boundary.
+  TextRun v2 placement and clusters are additive metadata until
+  `text.placementAuthority` changes from `compatibilityProjection`.
 - TextRun v2 cluster origins are run-local. The local baseline is y=0, and
   `TextRunPlacement.run_to_page` maps the run into page coordinates. `PaintOp`
   bounding boxes remain page-space conservative boxes for culling and v1
@@ -110,10 +117,17 @@ old consumers.
   `LegacyPosition`, `Grapheme`, or `LayoutPlacement`. They must not be called
   shaping clusters unless a shared shaping pass proves the mapping and marks
   them `ShapingEquivalent`. `GlyphRun` uses shaped glyph clusters.
-- `TextRun.text` is a visible replay projection. Ordinary text should use
-  `projectionKind=verbatim` and must byte-match the source span. Normalized,
-  control, field, and synthetic visual text must identify the source that
-  produced it and explain the mismatch through `projectionKind`.
+- Ordinary text should use `projectionKind=verbatim`, omit `displayText`, and
+  byte-match the source span. Normalized source text may retain the raw value
+  in `TextRun.text` and supply the visible value through `displayText`.
+  Normalized, control, field, and synthetic visual text must identify the
+  source that produced it and explain the projection through `projectionKind`.
+- Source-aligned normalized projections carry one cluster per source
+  character. A cluster may have an empty display range and zero advance when
+  its visual contribution is folded into an earlier source character. Such
+  clusters are `SpecialVisual` and `NotShapingCandidate`; optional strict
+  glyph sidecars must not be emitted until a shaping-equivalent mapping is
+  available.
 - One text run should have homogeneous orientation. Mixed vertical text should
   be split by layout/lowering until per-glyph transforms are introduced.
 - `MixedPerGlyph` orientation is an internal reservation only. Public exports

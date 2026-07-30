@@ -65,6 +65,8 @@ mod tests {
             11,
             RenderNodeType::TextRun(TextRunNode {
                 text: "레이어".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle {
                     font_family: "Noto Sans CJK KR".to_string(),
                     font_size: 14.0,

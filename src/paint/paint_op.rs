@@ -101,10 +101,15 @@ pub struct LayerTextRunPaint {
     /// Exact HWP char-shape/language slot used to resolve this run's font.
     pub font_slot: Option<TextFontSlot>,
     /// Source-backed identity is exported through the layer tree `textSources`
-    /// table and per-op `source` span. The in-memory v1 payload keeps the
-    /// string projection here so existing Canvas2D/SVG replay remains stable
-    /// while TextRun v2 and optional GlyphRun variants are introduced.
+    /// table and per-op `source` span. The in-memory v1 payload normally keeps
+    /// the source-backed text here; `display_text` carries an explicit paint
+    /// projection when source and visual text differ.
     pub text: String,
+    /// Explicit visual projection of `text`.
+    ///
+    /// `Some("")` is distinct from `None`: it represents a source-backed run
+    /// whose visible contribution was collapsed into an adjacent run.
+    pub display_text: Option<String>,
     /// Compatibility text style carried by the transitional TextRun IR.
     ///
     /// Backend replay should treat `PaintTextStyle::from(&style)` as the
@@ -1305,6 +1310,7 @@ impl Default for LayerTextRunPaint {
             variant: None,
             font_slot: None,
             text: String::new(),
+            display_text: None,
             style: TextStyle::default(),
             projection: TextProjectionKind::Verbatim,
             placement: None,
@@ -2323,6 +2329,7 @@ mod tests {
             run: LayerTextRunPaint {
                 source: None,
                 text: "text".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_size: 20.0,
                     underline: UnderlineType::Bottom,

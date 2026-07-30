@@ -3,7 +3,10 @@
 //! 페이지 분할 결과를 받아 각 요소의 정확한 위치와 크기를 계산하고
 //! 렌더 트리(PageRenderTree)를 생성한다.
 
-use super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
+use super::composer::{
+    apply_legacy_hancom_product_run_projection, compose_paragraph, effective_text_for_metrics,
+    ComposedParagraph,
+};
 use super::font_metrics_data;
 use super::height_measurer::MeasuredTable;
 use super::page_layout::{LayoutRect, PageLayoutInfo};
@@ -336,9 +339,9 @@ mod utils;
 pub(crate) use border_rendering::{border_width_to_px, create_border_line_nodes};
 pub(crate) use paragraph_layout::{ensure_min_baseline, map_pua_bullet_char};
 pub(crate) use text_measurement::{
-    compute_char_positions, estimate_text_width, estimate_text_width_unrounded,
-    extract_tab_leaders_with_extended, find_next_tab_stop, is_cjk_char, resolved_to_text_style,
-    split_into_clusters,
+    compute_char_positions, compute_source_aligned_display_positions, estimate_text_width,
+    estimate_text_width_unrounded, extract_tab_leaders_with_extended, find_next_tab_stop,
+    is_cjk_char, resolved_to_text_style, split_into_clusters,
 };
 pub(crate) use utils::{
     drawing_to_line_style, drawing_to_shape_style, find_bin_data, format_page_number,
@@ -835,6 +838,7 @@ impl LayoutEngine {
             }
             line.runs = new_runs;
         }
+        apply_legacy_hancom_product_run_projection(comp);
     }
 
     /// 페이지 배경 노드를 생성하여 tree에 추가한다.
@@ -1503,6 +1507,8 @@ impl LayoutEngine {
                 run_id,
                 RenderNodeType::TextRun(TextRunNode {
                     text: page_num_text,
+                    display_text: None,
+                    display_clusters: None,
                     style: page_num_style,
                     char_shape_id: None,
                     para_shape_id: None,
@@ -3456,6 +3462,8 @@ impl LayoutEngine {
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: String::new(),
+                        display_text: None,
+                        display_clusters: None,
                         style: TextStyle {
                             font_family: "바탕".to_string(),
                             font_size,
@@ -3576,6 +3584,8 @@ impl LayoutEngine {
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: String::new(),
+                        display_text: None,
+                        display_clusters: None,
                         style: TextStyle {
                             font_family: "바탕".to_string(),
                             font_size,
@@ -3858,7 +3868,7 @@ impl LayoutEngine {
             ts.auto_tab_right = auto_tab_right;
             ts.available_width = available_width;
 
-            for ch in run.text.chars() {
+            for (run_char_index, ch) in run.text.chars().enumerate() {
                 // 현재 char_idx 위치에 삽입된 preceding tac 컨트롤 너비 추가
                 while tac_pos < preceding_tac.len() && preceding_tac[tac_pos].0 <= char_idx {
                     est_x += preceding_tac[tac_pos].1;
@@ -3878,9 +3888,9 @@ impl LayoutEngine {
                     );
                     est_x = tp;
                 } else {
-                    let source_char = ch.to_string();
-                    est_x +=
-                        estimate_text_width(effective_text_for_metrics(&source_char).as_ref(), &ts);
+                    let display_fragment = run
+                        .effective_display_text_for_char_range(run_char_index, run_char_index + 1);
+                    est_x += estimate_text_width(&display_fragment, &ts);
                 }
                 char_idx += 1;
             }

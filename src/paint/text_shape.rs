@@ -1062,6 +1062,7 @@ impl<'a> TextShapeLowerer<'a> {
                 .flags
                 .contains(&TextClusterFlag::NotShapingCandidate)
         });
+        let excluded_by_projection = run.display_text.is_some();
         let excluded_by_legacy_visual = run.char_overlap.is_some()
             || run
                 .legacy_visuals
@@ -1084,7 +1085,7 @@ impl<'a> TextShapeLowerer<'a> {
             );
         }
 
-        if excluded_by_cluster || excluded_by_legacy_visual {
+        if excluded_by_cluster || excluded_by_projection || excluded_by_legacy_visual {
             return (
                 TextShapeDiagnostic {
                     text: run.text.clone(),
@@ -1710,6 +1711,33 @@ mod tests {
         assert!(!run.variant.is_default_fallback);
         assert_eq!(run.glyph_ids, vec![42]);
         assert!(run.diagnostics.strict_visual_eligible);
+    }
+
+    #[test]
+    fn lowerer_does_not_shape_source_display_projections() {
+        let mut text_run = sourced_text_run("ᄒ");
+        text_run.display_text = Some("한".to_string());
+        text_run.positions = vec![0.0, 10.0];
+        let mut root = LayerNode::leaf(
+            BoundingBox::new(0.0, 0.0, 100.0, 100.0),
+            None,
+            vec![PaintOp::TextRun {
+                bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
+                run: text_run,
+            }],
+        );
+
+        let report = TextShapeLowerer::new(&EmittingResolver).lower_root(&mut root);
+
+        assert_eq!(report.public_glyph_run_count(), 0);
+        assert_eq!(
+            report.diagnostics[0].reason.as_deref(),
+            Some("notShapingCandidate")
+        );
+        let LayerNodeKind::Leaf { ops, .. } = &root.kind else {
+            panic!("expected leaf root");
+        };
+        assert!(matches!(ops.as_slice(), [PaintOp::TextRun { .. }]));
     }
 
     #[test]

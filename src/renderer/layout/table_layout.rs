@@ -1,6 +1,9 @@
 //! 표 레이아웃 (layout_table + 셀 높이/줄범위 계산)
 
-use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
+use super::super::composer::{
+    apply_legacy_hancom_product_run_projection, compose_paragraph, effective_text_for_metrics,
+    ComposedParagraph,
+};
 use super::super::height_measurer::MeasuredTable;
 use super::super::page_layout::LayoutRect;
 use super::super::render_tree::*;
@@ -1349,6 +1352,7 @@ impl LayoutEngine {
                                     }
                                 }
                             }
+                            apply_legacy_hancom_product_run_projection(comp);
                         }
                     }
                 }
@@ -1900,6 +1904,8 @@ impl LayoutEngine {
                                                     text_node_id,
                                                     RenderNodeType::TextRun(TextRunNode {
                                                         text: text_before,
+                                                        display_text: None,
+                                                        display_clusters: None,
                                                         style: ts,
                                                         char_shape_id: Some(char_style_id),
                                                         para_shape_id: Some(composed.para_style_id),
@@ -2099,8 +2105,7 @@ impl LayoutEngine {
                                                         run.lang_index,
                                                     );
                                                     text_w += estimate_text_width(
-                                                        effective_text_for_metrics(&run.text)
-                                                            .as_ref(),
+                                                        run.effective_display_text().as_ref(),
                                                         &ts,
                                                     );
                                                 }
@@ -2143,7 +2148,7 @@ impl LayoutEngine {
                                                     run.lang_index,
                                                 );
                                                 let run_w = estimate_text_width(
-                                                    effective_text_for_metrics(&run.text).as_ref(),
+                                                    run.effective_display_text().as_ref(),
                                                     &ts,
                                                 );
                                                 let run_id = tree.next_id();
@@ -2151,6 +2156,10 @@ impl LayoutEngine {
                                                     run_id,
                                                     RenderNodeType::TextRun(TextRunNode {
                                                         text: run.text.clone(),
+                                                        display_text: run.explicit_display_text(),
+                                                        display_clusters: run
+                                                            .display_clusters
+                                                            .clone(),
                                                         style: ts,
                                                         char_shape_id: Some(run.char_style_id),
                                                         para_shape_id: Some(para.para_shape_id),
@@ -2291,6 +2300,8 @@ impl LayoutEngine {
                                     text_node_id,
                                     RenderNodeType::TextRun(TextRunNode {
                                         text: remaining_trimmed.to_string(),
+                                        display_text: None,
+                                        display_clusters: None,
                                         style: ts,
                                         char_shape_id: Some(char_style_id),
                                         para_shape_id: Some(composed.para_style_id),

@@ -3179,6 +3179,9 @@ fn affine_transform_to_value(transform: LayerAffineTransform) -> JsValue {
 }
 
 fn display_text_for_text_run(run: &crate::paint::LayerTextRunPaint) -> Option<String> {
+    if let Some(display_text) = &run.display_text {
+        return Some(display_text.clone());
+    }
     let display_text = expand_pua_display_text(&run.text);
     (display_text != run.text).then_some(display_text)
 }
@@ -3610,12 +3613,13 @@ mod tests {
                     bbox: BoundingBox::new(8.0, 10.0, 80.0, 16.0),
                     run: LayerTextRunPaint {
                         text: text.to_string(),
+                        display_text: Some("한글".to_string()),
                         style: TextStyle {
                             font_family: "Noto Sans KR".to_string(),
                             font_size: 16.0,
                             ..Default::default()
                         },
-                        positions: vec![0.0, 16.0, 32.0, 48.0, 64.0],
+                        positions: vec![0.0, 16.0, 16.0, 16.0, 32.0],
                         baseline: 13.0,
                         ..Default::default()
                     },
@@ -3628,6 +3632,7 @@ mod tests {
 
         assert_eq!(string_prop(&text_op, "text"), text);
         assert_eq!(string_prop(&text_op, "displayText"), "한글");
+        assert_eq!(Array::from(&prop(&text_op, "positions")).length(), 5);
         assert_eq!(Array::from(&prop(&text_op, "displayPositions")).length(), 3);
     }
 
@@ -3984,6 +3989,7 @@ mod tests {
                         source: Some(source),
                         variant: Some(PaintVariantMeta::text_run_default("text-0")),
                         text: "A".to_string(),
+                        display_text: None,
                         style: TextStyle {
                             font_family: "Test".to_string(),
                             font_size: 12.0,
@@ -4083,6 +4089,7 @@ mod tests {
                 source: Some(source.clone()),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -4892,6 +4899,7 @@ mod tests {
                 source: Some(source.clone()),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -5047,6 +5055,7 @@ mod tests {
                     bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
                     run: LayerTextRunPaint {
                         text: "A".to_string(),
+                        display_text: None,
                         style: TextStyle {
                             font_family: "Test".to_string(),
                             font_size: 12.0,
@@ -5177,6 +5186,7 @@ mod tests {
                         run: LayerTextRunPaint {
                             source: None,
                             text: "marker".to_string(),
+                            display_text: None,
                             style: TextStyle {
                                 font_family: "Noto Sans KR".to_string(),
                                 font_size: 12.0,

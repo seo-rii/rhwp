@@ -10,6 +10,7 @@ use crate::model::image::ImageEffect;
 use crate::model::shape::TextWrap;
 use crate::model::style::ImageFillMode;
 use crate::model::{ColorRef, Rect};
+use std::borrow::Cow;
 
 /// Opacity used by the verified RealPic page-watermark tone preset.
 pub const REAL_PICTURE_WATERMARK_PAGE_OPACITY: f64 = 0.26;
@@ -483,8 +484,16 @@ impl TextLineNode {
 /// 텍스트 런 노드 (동일 글자 모양의 연속 텍스트)
 #[derive(Debug, Clone)]
 pub struct TextRunNode {
-    /// 텍스트 내용
+    /// Source text used for editing and source offsets.
     pub text: String,
+    /// Explicit text to paint when the visual projection spans source runs.
+    ///
+    /// `Some("")` is significant: the source run participates in a projection
+    /// but contributes no visible text.
+    pub display_text: Option<String>,
+    /// Per-source-character visual fragments used to retain projection mapping
+    /// while layout splits a run.
+    pub display_clusters: Option<Vec<String>>,
     /// 텍스트 스타일
     pub style: TextStyle,
     /// 글자 모양 ID (서식 툴바용)
@@ -515,6 +524,32 @@ pub struct TextRunNode {
     pub baseline: f64,
     /// 누름틀 필드 마커: 이 TextRun 위치에 표시할 필드 경계 마커
     pub field_marker: FieldMarkerType,
+}
+
+impl TextRunNode {
+    pub fn effective_display_text(&self) -> Cow<'_, str> {
+        match self.display_text.as_deref() {
+            Some(display) => Cow::Borrowed(display),
+            None => super::composer::effective_text_for_metrics(&self.text),
+        }
+    }
+
+    pub fn effective_display_text_for_char_range(&self, start: usize, end: usize) -> String {
+        if let Some(clusters) = &self.display_clusters {
+            return clusters
+                .get(start.min(clusters.len())..end.min(clusters.len()))
+                .unwrap_or_default()
+                .concat();
+        }
+
+        let source = self
+            .text
+            .chars()
+            .skip(start)
+            .take(end.saturating_sub(start))
+            .collect::<String>();
+        super::composer::expand_pua_display_text(&source)
+    }
 }
 
 /// 누름틀 필드 조판부호 마커 유형

@@ -1,6 +1,6 @@
 //! 페이지 분할 표 레이아웃 (layout_partial_table)
 
-use super::super::composer::{compose_paragraph, effective_text_for_metrics};
+use super::super::composer::compose_paragraph;
 use super::super::height_measurer::MeasuredTable;
 use super::super::page_layout::LayoutRect;
 use super::super::render_tree::*;
@@ -1097,8 +1097,7 @@ impl LayoutEngine {
                                                         run.lang_index,
                                                     );
                                                     text_w += estimate_text_width(
-                                                        effective_text_for_metrics(&run.text)
-                                                            .as_ref(),
+                                                        run.effective_display_text().as_ref(),
                                                         &ts,
                                                     );
                                                 }
@@ -1174,8 +1173,7 @@ impl LayoutEngine {
                                                         run.lang_index,
                                                     );
                                                     text_w += estimate_text_width(
-                                                        effective_text_for_metrics(&run.text)
-                                                            .as_ref(),
+                                                        run.effective_display_text().as_ref(),
                                                         &ts,
                                                     );
                                                 }

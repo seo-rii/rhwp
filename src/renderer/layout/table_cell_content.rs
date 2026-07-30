@@ -46,6 +46,7 @@ impl LayoutEngine {
         //    line_seg.line_height = 열 폭, line_seg.line_spacing = 열 간격
         struct CharInfo {
             ch: char,
+            display_text: Option<String>,
             style: TextStyle,
             char_style_id: u32,
             para_style_id: u16,
@@ -119,23 +120,36 @@ impl LayoutEngine {
                 for run in &line.runs {
                     let text_style =
                         resolved_to_text_style(styles, run.char_style_id, run.lang_index);
-                    for ch in run.text.chars() {
+                    for (run_char_index, ch) in run.text.chars().enumerate() {
                         if ch == '\n' || ch == '\r' {
                             char_offset += 1;
                             continue;
                         }
-                        let is_rotate = is_vertical_rotate_char(ch);
-                        let needs_rotation = is_rotate || (text_direction == 1 && !is_cjk_char(ch));
+                        let display_text = run
+                            .display_clusters
+                            .as_ref()
+                            .and_then(|clusters| clusters.get(run_char_index))
+                            .cloned();
+                        let display_ch =
+                            display_text.as_deref().and_then(|text| text.chars().next());
+                        let visual_ch = display_ch.unwrap_or(ch);
+                        let is_hidden = display_text.as_deref() == Some("");
+                        let is_rotate = is_vertical_rotate_char(visual_ch);
+                        let needs_rotation =
+                            is_rotate || (text_direction == 1 && !is_cjk_char(visual_ch));
                         // 세로쓰기에서 구두점/기호만 반칸 advance (영문/숫자는 캐릭터 높이)
-                        let half_advance =
-                            needs_rotation || (!is_cjk_char(ch) && !ch.is_ascii_alphanumeric());
-                        let advance = if half_advance {
+                        let half_advance = needs_rotation
+                            || (!is_cjk_char(visual_ch) && !visual_ch.is_ascii_alphanumeric());
+                        let advance = if is_hidden {
+                            0.0
+                        } else if half_advance {
                             text_style.font_size * 0.5
                         } else {
                             text_style.font_size
                         };
                         chars.push(CharInfo {
                             ch,
+                            display_text,
                             style: text_style.clone(),
                             char_style_id: run.char_style_id,
                             para_style_id: composed.para_style_id,
@@ -219,12 +233,20 @@ impl LayoutEngine {
 
             for i in col.start_idx..col.end_idx {
                 let ci = &chars[i];
-                let is_rotate = is_vertical_rotate_char(ci.ch);
-                let needs_rotation = is_rotate || (text_direction == 1 && !is_cjk_char(ci.ch));
+                let visual_ch = ci
+                    .display_text
+                    .as_deref()
+                    .and_then(|text| text.chars().next())
+                    .unwrap_or(ci.ch);
+                let is_hidden = ci.display_text.as_deref() == Some("");
+                let is_rotate = is_vertical_rotate_char(visual_ch);
+                let needs_rotation = is_rotate || (text_direction == 1 && !is_cjk_char(visual_ch));
                 // 세로쓰기에서 구두점/기호만 반칸 advance (영문/숫자는 캐릭터 높이)
-                let half_advance =
-                    needs_rotation || (!is_cjk_char(ci.ch) && !ci.ch.is_ascii_alphanumeric());
-                let advance = if half_advance {
+                let half_advance = needs_rotation
+                    || (!is_cjk_char(visual_ch) && !visual_ch.is_ascii_alphanumeric());
+                let advance = if is_hidden {
+                    0.0
+                } else if half_advance {
                     ci.style.font_size * 0.5
                 } else {
                     ci.style.font_size
@@ -236,32 +258,49 @@ impl LayoutEngine {
                 }
 
                 // 세로쓰기: 모든 문자를 칼럼 중앙에 전각 배치 (영문눕힘과 동일)
-                let char_width = ci.style.font_size;
+                let char_width = if is_hidden { 0.0 } else { ci.style.font_size };
 
                 let char_x = col_x + (col.col_width - char_width) / 2.0;
                 // 기호 대체: 세로 형태 Unicode가 있으면 대체 문자를 사용 (회전 불필요)
                 let (render_ch, rotation) = if needs_rotation {
-                    if let Some(sub) = vertical_substitute_char(ci.ch) {
+                    if let Some(sub) = vertical_substitute_char(visual_ch) {
                         (sub, 0.0)
                     } else {
-                        (ci.ch, 90.0)
+                        (visual_ch, 90.0)
                     }
                 } else {
-                    (ci.ch, 0.0)
+                    (visual_ch, 0.0)
                 };
+                let display_text = ci.display_text.as_ref().map(|text| {
+                    if text.is_empty() {
+                        String::new()
+                    } else if text.chars().count() == 1 {
+                        render_ch.to_string()
+                    } else {
+                        text.clone()
+                    }
+                });
+                let display_clusters = display_text.as_ref().map(|text| vec![text.clone()]);
+                let node_height = advance;
 
                 let line_id = tree.next_id();
                 let mut line_node = RenderNode::new(
                     line_id,
-                    RenderNodeType::TextLine(TextLineNode::new(advance, advance * 0.85)),
-                    BoundingBox::new(char_x, char_y, char_width, advance),
+                    RenderNodeType::TextLine(TextLineNode::new(node_height, node_height * 0.85)),
+                    BoundingBox::new(char_x, char_y, char_width, node_height),
                 );
 
                 let run_id = tree.next_id();
                 let run_node = RenderNode::new(
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
-                        text: render_ch.to_string(),
+                        text: if display_text.is_some() {
+                            ci.ch.to_string()
+                        } else {
+                            render_ch.to_string()
+                        },
+                        display_text,
+                        display_clusters,
                         style: ci.style.clone(),
                         char_shape_id: Some(ci.char_style_id),
                         para_shape_id: Some(ci.para_style_id),
@@ -296,10 +335,10 @@ impl LayoutEngine {
                             .get(ci.char_style_id as usize)
                             .map(|cs| cs.border_fill_id)
                             .unwrap_or(0),
-                        baseline: advance * 0.85,
+                        baseline: node_height * 0.85,
                         field_marker: FieldMarkerType::None,
                     }),
-                    BoundingBox::new(char_x, char_y, char_width, advance),
+                    BoundingBox::new(char_x, char_y, char_width, node_height),
                 );
 
                 line_node.children.push(run_node);

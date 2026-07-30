@@ -2127,6 +2127,8 @@ mod tests {
                 next_id,
                 RenderNodeType::TextRun(TextRunNode {
                     text: text.to_string(),
+                    display_text: None,
+                    display_clusters: None,
                     style,
                     char_shape_id: None,
                     para_shape_id: None,

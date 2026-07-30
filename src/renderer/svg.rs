@@ -1308,6 +1308,7 @@ impl SvgRenderer {
                 }
             }
             RenderNodeType::TextRun(run) => {
+                let display_text = run.effective_display_text();
                 // 폰트 임베딩: 사용된 폰트/글자 수집
                 if self.font_embed_mode != FontEmbedMode::None && !run.style.font_family.is_empty()
                 {
@@ -1315,7 +1316,7 @@ impl SvgRenderer {
                         .font_codepoints
                         .entry(run.style.font_family.clone())
                         .or_default();
-                    for ch in run.text.chars() {
+                    for ch in display_text.chars() {
                         if !ch.is_control() {
                             codepoints.insert(ch);
                         }
@@ -1343,7 +1344,7 @@ impl SvgRenderer {
                     );
                 } else {
                     self.draw_text(
-                        &run.text,
+                        display_text.as_ref(),
                         node.bbox.x,
                         node.bbox.y + run.baseline,
                         &run.style,
@@ -1362,7 +1363,12 @@ impl SvgRenderer {
                     };
                     // 공백·탭 기호: 각 문자 위치에 오버레이
                     if !run.text.is_empty() && !is_marker {
-                        let char_positions = compute_char_positions(&run.text, &run.style);
+                        let char_positions =
+                            crate::renderer::layout::compute_source_aligned_display_positions(
+                                &run.text,
+                                run.display_clusters.as_deref(),
+                                &run.style,
+                            );
                         let mark_font_size = font_size * 0.5;
                         for (i, c) in run.text.chars().enumerate() {
                             if c == ' ' {

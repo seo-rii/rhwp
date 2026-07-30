@@ -514,6 +514,12 @@ impl StaticSubtreeCacheKey {
     fn mix_text_run(&mut self, run: &LayerTextRunPaint) {
         self.mix_variant_meta(run.variant.as_ref());
         self.mix_str(&run.text);
+        if let Some(display_text) = &run.display_text {
+            self.mix_bool(true);
+            self.mix_str(display_text);
+        } else {
+            self.mix_bool(false);
+        }
         self.mix_text_style(&run.style);
         self.mix_usize(run.positions.len());
         for position in &run.positions {

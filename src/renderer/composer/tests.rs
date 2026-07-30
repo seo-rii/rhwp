@@ -33,11 +33,244 @@ fn display_text_projects_only_closed_legacy_hancom_product_names() {
 }
 
 #[test]
+fn legacy_product_projection_exposes_source_aligned_display_clusters() {
+    let clusters = legacy_hancom_product_display_clusters("Aᄒᆞᆫ글B").unwrap();
+
+    assert_eq!(clusters, ["A", "한", "", "", "글", "B"]);
+    assert_eq!(legacy_hancom_product_display_clusters("ᄒᆞᆫ겨울"), None);
+}
+
+#[test]
 fn legacy_product_projection_does_not_reinterpret_expanded_pua_old_hangul() {
     let source = "\u{F537}\u{11AB}글";
 
     assert_eq!(expand_pua_display_text(source), "ᄒᆞᆫ글");
     assert_eq!(effective_text_for_metrics(source), "ᄒᆞᆫ글");
+}
+
+#[test]
+fn legacy_product_projection_crosses_style_and_layout_line_runs() {
+    let text = "ᄒᆞᆫ글";
+    let para = Paragraph {
+        text: text.to_string(),
+        char_offsets: vec![0, 1, 2, 3],
+        char_count: 5,
+        char_shapes: vec![
+            CharShapeRef {
+                start_pos: 0,
+                char_shape_id: 0,
+            },
+            CharShapeRef {
+                start_pos: 1,
+                char_shape_id: 1,
+            },
+            CharShapeRef {
+                start_pos: 2,
+                char_shape_id: 2,
+            },
+            CharShapeRef {
+                start_pos: 3,
+                char_shape_id: 3,
+            },
+        ],
+        line_segs: vec![
+            LineSeg {
+                text_start: 0,
+                line_height: 400,
+                baseline_distance: 320,
+                ..Default::default()
+            },
+            LineSeg {
+                text_start: 2,
+                line_height: 400,
+                baseline_distance: 320,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let composed = compose_paragraph(&para);
+    let runs: Vec<&ComposedTextRun> = composed
+        .lines
+        .iter()
+        .flat_map(|line| line.runs.iter())
+        .collect();
+
+    assert_eq!(
+        runs.iter().map(|run| run.text.as_str()).collect::<Vec<_>>(),
+        ["ᄒ", "ᆞ", "ᆫ", "글"]
+    );
+    assert_eq!(runs[0].explicit_display_text().as_deref(), Some("한"));
+    assert_eq!(runs[1].explicit_display_text().as_deref(), Some(""));
+    assert_eq!(runs[2].explicit_display_text().as_deref(), Some(""));
+    assert_eq!(runs[3].explicit_display_text(), None);
+}
+
+#[test]
+fn legacy_product_projection_does_not_cross_explicit_or_control_boundaries() {
+    fn run(text: &str) -> ComposedTextRun {
+        ComposedTextRun {
+            text: text.to_string(),
+            display_clusters: None,
+            ..Default::default()
+        }
+    }
+
+    let mut synthetic_wrap = ComposedParagraph {
+        lines: vec![
+            ComposedLine {
+                runs: vec![run("ᄒᆞ")],
+                line_height: 400,
+                baseline_distance: 320,
+                segment_width: 0,
+                column_start: 0,
+                line_spacing: 0,
+                has_line_break: true,
+                has_explicit_line_break: false,
+                char_start: 0,
+            },
+            ComposedLine {
+                runs: vec![run("ᆫ글")],
+                line_height: 400,
+                baseline_distance: 320,
+                segment_width: 0,
+                column_start: 0,
+                line_spacing: 0,
+                has_line_break: false,
+                has_explicit_line_break: false,
+                char_start: 2,
+            },
+        ],
+        para_style_id: 0,
+        inline_controls: Vec::new(),
+        numbering_text: None,
+        numbering_char_shape_id: None,
+        tac_controls: Vec::new(),
+        footnote_positions: Vec::new(),
+        tab_extended: Vec::new(),
+    };
+    apply_legacy_hancom_product_run_projection(&mut synthetic_wrap);
+    assert_eq!(
+        synthetic_wrap.lines[0].runs[0]
+            .explicit_display_text()
+            .as_deref(),
+        Some("한")
+    );
+    assert_eq!(
+        synthetic_wrap.lines[1].runs[0]
+            .explicit_display_text()
+            .as_deref(),
+        Some("글")
+    );
+
+    let mut explicit_break = ComposedParagraph {
+        lines: vec![
+            ComposedLine {
+                runs: vec![run("ᄒᆞ")],
+                line_height: 400,
+                baseline_distance: 320,
+                segment_width: 0,
+                column_start: 0,
+                line_spacing: 0,
+                has_line_break: true,
+                has_explicit_line_break: true,
+                char_start: 0,
+            },
+            ComposedLine {
+                runs: vec![run("ᆫ글")],
+                line_height: 400,
+                baseline_distance: 320,
+                segment_width: 0,
+                column_start: 0,
+                line_spacing: 0,
+                has_line_break: false,
+                has_explicit_line_break: false,
+                char_start: 2,
+            },
+        ],
+        para_style_id: 0,
+        inline_controls: Vec::new(),
+        numbering_text: None,
+        numbering_char_shape_id: None,
+        tac_controls: Vec::new(),
+        footnote_positions: Vec::new(),
+        tab_extended: Vec::new(),
+    };
+    apply_legacy_hancom_product_run_projection(&mut explicit_break);
+    assert!(explicit_break
+        .lines
+        .iter()
+        .flat_map(|line| &line.runs)
+        .all(|run| run.display_clusters.is_none()));
+
+    let mut control_boundary = ComposedParagraph {
+        lines: vec![ComposedLine {
+            runs: vec![
+                run("ᄒ"),
+                ComposedTextRun {
+                    text: "1".to_string(),
+                    display_clusters: None,
+                    char_overlap: Some(CharOverlapInfo {
+                        border_type: 1,
+                        inner_char_size: 100,
+                    }),
+                    ..Default::default()
+                },
+                run("ᆞᆫ글"),
+            ],
+            line_height: 400,
+            baseline_distance: 320,
+            segment_width: 0,
+            column_start: 0,
+            line_spacing: 0,
+            has_line_break: false,
+            has_explicit_line_break: false,
+            char_start: 0,
+        }],
+        para_style_id: 0,
+        inline_controls: Vec::new(),
+        numbering_text: None,
+        numbering_char_shape_id: None,
+        tac_controls: Vec::new(),
+        footnote_positions: Vec::new(),
+        tab_extended: Vec::new(),
+    };
+    apply_legacy_hancom_product_run_projection(&mut control_boundary);
+    assert!(control_boundary.lines[0]
+        .runs
+        .iter()
+        .all(|run| run.display_clusters.is_none()));
+
+    let source_control_boundary = |tac_controls, footnote_positions| ComposedParagraph {
+        lines: vec![ComposedLine {
+            runs: vec![run("ᄒᆞᆫ글")],
+            line_height: 400,
+            baseline_distance: 320,
+            segment_width: 0,
+            column_start: 0,
+            line_spacing: 0,
+            has_line_break: false,
+            has_explicit_line_break: false,
+            char_start: 0,
+        }],
+        para_style_id: 0,
+        inline_controls: Vec::new(),
+        numbering_text: None,
+        numbering_char_shape_id: None,
+        tac_controls,
+        footnote_positions,
+        tab_extended: Vec::new(),
+    };
+    let mut tac_boundary = source_control_boundary(vec![(1, 100, 0)], Vec::new());
+    apply_legacy_hancom_product_run_projection(&mut tac_boundary);
+    assert!(tac_boundary.lines[0].runs[0].display_clusters.is_none());
+
+    let mut footnote_boundary = source_control_boundary(Vec::new(), vec![(1, 1, 0)]);
+    apply_legacy_hancom_product_run_projection(&mut footnote_boundary);
+    assert!(footnote_boundary.lines[0].runs[0]
+        .display_clusters
+        .is_none());
 }
 
 #[test]
@@ -541,6 +774,7 @@ fn test_reflow_line_height() {
 fn test_split_runs_by_lang_korean_english() {
     let runs = vec![ComposedTextRun {
         text: "안녕Hello세계".to_string(),
+        display_clusters: None,
         char_style_id: 0,
         lang_index: 0,
         char_overlap: None,
@@ -561,6 +795,7 @@ fn test_split_runs_by_lang_korean_english() {
 fn test_split_runs_by_lang_no_split() {
     let runs = vec![ComposedTextRun {
         text: "안녕하세요".to_string(),
+        display_clusters: None,
         char_style_id: 0,
         lang_index: 0,
         char_overlap: None,
@@ -577,6 +812,7 @@ fn test_split_runs_by_lang_no_split() {
 fn test_split_runs_by_lang_space_follows_prev() {
     let runs = vec![ComposedTextRun {
         text: "안녕 Hello 세계".to_string(),
+        display_clusters: None,
         char_style_id: 0,
         lang_index: 0,
         char_overlap: None,
@@ -597,6 +833,7 @@ fn test_split_runs_by_lang_space_follows_prev() {
 fn test_split_runs_by_lang_empty() {
     let runs = vec![ComposedTextRun {
         text: "".to_string(),
+        display_clusters: None,
         char_style_id: 0,
         lang_index: 0,
         char_overlap: None,
@@ -612,6 +849,7 @@ fn test_split_runs_by_lang_empty() {
 fn test_split_runs_by_lang_english_only() {
     let runs = vec![ComposedTextRun {
         text: "Hello World".to_string(),
+        display_clusters: None,
         char_style_id: 0,
         lang_index: 0,
         char_overlap: None,
@@ -700,6 +938,7 @@ fn test_estimate_composed_line_width() {
     let line = ComposedLine {
         runs: vec![ComposedTextRun {
             text: "가나다".to_string(),
+            display_clusters: None,
             char_style_id: 0,
             lang_index: 0,
             char_overlap: None,
@@ -711,6 +950,7 @@ fn test_estimate_composed_line_width() {
         column_start: 0,
         line_spacing: 0,
         has_line_break: false,
+        has_explicit_line_break: false,
         char_start: 0,
     };
 
@@ -724,6 +964,7 @@ fn pua_metrics_estimate_composed_line_width_uses_projected_text() {
     let line = ComposedLine {
         runs: vec![ComposedTextRun {
             text: "\u{F012B}".to_string(),
+            display_clusters: None,
             char_style_id: 0,
             lang_index: 0,
             char_overlap: None,
@@ -735,6 +976,7 @@ fn pua_metrics_estimate_composed_line_width_uses_projected_text() {
         column_start: 0,
         line_spacing: 0,
         has_line_break: false,
+        has_explicit_line_break: false,
         char_start: 0,
     };
     let style = resolved_to_text_style(&styles, 0, 0);
@@ -751,6 +993,7 @@ fn pua_metrics_estimate_composed_line_width_preserves_char_overlap_payload() {
     let line = ComposedLine {
         runs: vec![ComposedTextRun {
             text: "\u{F012B}".to_string(),
+            display_clusters: None,
             char_style_id: 0,
             lang_index: 0,
             char_overlap: Some(CharOverlapInfo {
@@ -765,6 +1008,7 @@ fn pua_metrics_estimate_composed_line_width_preserves_char_overlap_payload() {
         column_start: 0,
         line_spacing: 0,
         has_line_break: false,
+        has_explicit_line_break: false,
         char_start: 0,
     };
     let style = resolved_to_text_style(&styles, 0, 0);

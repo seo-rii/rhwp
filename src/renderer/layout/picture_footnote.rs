@@ -1,6 +1,6 @@
 //! 그림/캡션 레이아웃 + 각주 영역 레이아웃
 
-use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
+use super::super::composer::{compose_paragraph, ComposedParagraph};
 use super::super::page_layout::LayoutRect;
 use super::super::pagination::{FootnoteRef, FootnoteSource};
 use super::super::render_tree::*;
@@ -804,6 +804,8 @@ impl LayoutEngine {
                     num_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: number_text.to_string(),
+                        display_text: None,
+                        display_clusters: None,
                         style: base_style,
                         char_shape_id: None,
                         para_shape_id: None,
@@ -830,16 +832,15 @@ impl LayoutEngine {
             let mut char_offset = comp_line.char_start;
             for run in &comp_line.runs {
                 let text_style = resolved_to_text_style(styles, run.char_style_id, run.lang_index);
-                let width = estimate_text_width(
-                    effective_text_for_metrics(&run.text).as_ref(),
-                    &text_style,
-                );
+                let width = estimate_text_width(run.effective_display_text().as_ref(), &text_style);
 
                 let run_id = tree.next_id();
                 let run_node = RenderNode::new(
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: run.text.clone(),
+                        display_text: run.explicit_display_text(),
+                        display_clusters: run.display_clusters.clone(),
                         style: text_style,
                         char_shape_id: None,
                         para_shape_id: None,
@@ -961,12 +962,10 @@ impl LayoutEngine {
                                 let run_end = cs + run_len;
                                 if *char_pos >= cs && *char_pos <= run_end {
                                     let chars_before = char_pos - cs;
-                                    let partial_text: String =
-                                        run.text.chars().take(chars_before).collect();
-                                    let partial_width = estimate_text_width(
-                                        effective_text_for_metrics(&partial_text).as_ref(),
-                                        &run.style,
-                                    );
+                                    let partial_text =
+                                        run.effective_display_text_for_char_range(0, chars_before);
+                                    let partial_width =
+                                        estimate_text_width(&partial_text, &run.style);
                                     insert_x = run_node.bbox.x + partial_width;
                                     line_height = line_node.bbox.height;
                                     line_y = line_node.bbox.y;
@@ -1022,6 +1021,8 @@ impl LayoutEngine {
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: number_text,
+                        display_text: None,
+                        display_clusters: None,
                         style,
                         char_shape_id: None,
                         para_shape_id: None,

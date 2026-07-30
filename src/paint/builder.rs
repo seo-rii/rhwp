@@ -1,19 +1,20 @@
 use crate::paint::layer_tree::{
     CacheHint, ClipKind, LayerNode, LayerNodeKind, LayerOutputOptions, LayerSemantic,
-    LayerSemanticRole, PageLayerTree,
+    LayerSemanticRole, PageLayerTree, TextSourceRange,
 };
 use crate::paint::paint_op::{
     LayerCharOverlapPaint, LayerEllipsePaint, LayerEquationPaint, LayerFootnoteMarkerPaint,
     LayerFormObjectPaint, LayerImagePaint, LayerLinePaint, LayerPageBackgroundImagePaint,
-    LayerPageBackgroundPaint, LayerPathPaint, LayerRectanglePaint, LayerTabLeaderPaint,
+    LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerTabLeaderPaint,
     LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
     LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextOrientation, LayerTextRunPaint,
-    PaintOp, TextClusterBasis, TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
+    LayerVector, PaintOp, TextClusterBasis, TextClusterFlag, TextClusterPlacement,
+    TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
 };
 use crate::paint::profile::RenderProfile;
 use crate::paint::resources::ResourceArena;
 use crate::paint::{lower_font_native_glyph_sidecars, EmbeddedFontFace, TextFontSlot};
-use crate::renderer::layout::compute_char_positions;
+use crate::renderer::layout::{compute_char_positions, compute_source_aligned_display_positions};
 use crate::renderer::render_tree::{
     BoundingBox, FieldMarkerType, PageRenderTree, RenderNode, RenderNodeType, TextRunNode,
 };
@@ -367,7 +368,20 @@ impl LayerBuilder {
                 ))
             }
             RenderNodeType::TextRun(run) => {
-                let positions = compute_char_positions(&run.text, &run.style);
+                let replay_text = run.display_text.as_deref().unwrap_or(&run.text);
+                let display_positions = compute_char_positions(replay_text, &run.style);
+                let positions = compute_source_aligned_display_positions(
+                    &run.text,
+                    run.display_clusters.as_deref(),
+                    &run.style,
+                );
+                let clusters = run
+                    .display_clusters
+                    .as_deref()
+                    .map(|display_clusters| {
+                        projected_text_clusters(&run.text, display_clusters, &display_positions)
+                    })
+                    .unwrap_or_default();
                 let control_marks = self.build_text_control_marks(run, node.bbox, &positions);
                 let orientation = LayerTextOrientation::from_run(run.is_vertical, run.rotation);
                 let legacy_visuals = TextLegacyVisuals {
@@ -396,11 +410,16 @@ impl LayerBuilder {
                             },
                         ),
                         text: run.text.clone(),
+                        display_text: run.display_text.clone(),
                         style: run.style.clone(),
-                        projection: TextProjectionKind::Verbatim,
+                        projection: if run.display_text.is_some() {
+                            TextProjectionKind::Normalized
+                        } else {
+                            TextProjectionKind::Verbatim
+                        },
                         placement: None,
                         cluster_basis: TextClusterBasis::LegacyPosition,
-                        clusters: Vec::new(),
+                        clusters,
                         positions: positions.clone(),
                         control_marks: control_marks.clone(),
                         baseline: run.baseline,
@@ -667,6 +686,7 @@ impl LayerBuilder {
                         variant: None,
                         font_slot: None,
                         text: placeholder.label.clone(),
+                        display_text: None,
                         positions: compute_char_positions(&placeholder.label, &text_style),
                         control_marks: Vec::new(),
                         style: text_style,
@@ -1056,6 +1076,69 @@ impl LayerBuilder {
     }
 }
 
+fn projected_text_clusters(
+    source: &str,
+    display_clusters: &[String],
+    positions: &[f64],
+) -> Vec<TextClusterPlacement> {
+    let source_chars = source.char_indices().collect::<Vec<_>>();
+    if source_chars.len() != display_clusters.len() {
+        return Vec::new();
+    }
+
+    let mut display_utf8 = 0_u32;
+    let mut display_utf16 = 0_u32;
+    let mut display_char_index = 0usize;
+
+    source_chars
+        .iter()
+        .enumerate()
+        .map(|(index, (source_utf8_start, _))| {
+            let source_utf8_end = source_chars
+                .get(index + 1)
+                .map_or(source.len(), |(offset, _)| *offset);
+            let fragment = &display_clusters[index];
+            let fragment_char_count = fragment.chars().count();
+            let display_utf8_end = display_utf8 + fragment.len() as u32;
+            let display_utf16_end = display_utf16 + fragment.encode_utf16().count() as u32;
+            let origin_x = positions
+                .get(display_char_index)
+                .copied()
+                .unwrap_or_default();
+            let next_display_char_index = display_char_index + fragment_char_count;
+            let advance = positions
+                .get(next_display_char_index)
+                .map(|next| LayerVector {
+                    dx: *next - origin_x,
+                    dy: 0.0,
+                });
+            let cluster = TextClusterPlacement {
+                source_range_utf8: TextSourceRange::new(
+                    *source_utf8_start as u32,
+                    source_utf8_end as u32,
+                ),
+                text_range_utf8: TextSourceRange::new(display_utf8, display_utf8_end),
+                text_range_utf16: Some(TextSourceRange::new(display_utf16, display_utf16_end)),
+                projection: TextProjectionKind::Normalized,
+                origin: LayerPoint {
+                    x: origin_x,
+                    y: 0.0,
+                },
+                advance,
+                flags: vec![
+                    TextClusterFlag::SpecialVisual,
+                    TextClusterFlag::NotShapingCandidate,
+                ],
+            };
+
+            display_utf8 = display_utf8_end;
+            display_utf16 = display_utf16_end;
+            display_char_index = next_display_char_index;
+            cluster
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1075,6 +1158,8 @@ mod tests {
     ) -> TextRunNode {
         TextRunNode {
             text: text.to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_family: font_family.to_string(),
                 font_language_index: Some(0),
@@ -1107,6 +1192,53 @@ mod tests {
             LayerNodeKind::ClipRect { child, .. } => count_leaf_source_nodes(child, source_node_id),
             LayerNodeKind::Leaf { .. } => usize::from(node.source_node_id == Some(source_node_id)),
         }
+    }
+
+    #[test]
+    fn preserves_source_ranges_for_collapsed_display_projection() {
+        let source = "ᄒᆞᆫ글";
+        let mut run = font_native_test_run(source, None, "sans-serif");
+        run.display_text = Some("한글".to_string());
+        run.display_clusters = Some(vec![
+            "한".to_string(),
+            String::new(),
+            String::new(),
+            "글".to_string(),
+        ]);
+        let mut tree = PageRenderTree::new(0, 100.0, 100.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::TextRun(run),
+            BoundingBox::new(0.0, 0.0, 32.0, 20.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected page group");
+        };
+        let LayerNodeKind::Leaf { ops, .. } = &children[0].kind else {
+            panic!("expected text leaf");
+        };
+        let [PaintOp::TextRun { run, .. }] = ops.as_slice() else {
+            panic!("expected one text run");
+        };
+
+        assert_eq!(run.text, source);
+        assert_eq!(run.display_text.as_deref(), Some("한글"));
+        assert_eq!(run.projection, TextProjectionKind::Normalized);
+        assert_eq!(run.positions.len(), source.chars().count() + 1);
+        assert_eq!(run.positions[1], run.positions[2]);
+        assert_eq!(run.positions[2], run.positions[3]);
+        assert_eq!(run.clusters.len(), 4);
+        assert_eq!(run.clusters[0].text_range_utf8, TextSourceRange::new(0, 3));
+        assert_eq!(run.clusters[1].text_range_utf8, TextSourceRange::new(3, 3));
+        assert_eq!(run.clusters[2].text_range_utf8, TextSourceRange::new(3, 3));
+        assert_eq!(run.clusters[3].text_range_utf8, TextSourceRange::new(3, 6));
+        assert!(run.clusters.iter().all(|cluster| cluster
+            .flags
+            .contains(&TextClusterFlag::NotShapingCandidate)));
+        assert_eq!(layer_tree.text_sources.entries[0].text, source);
     }
 
     #[test]
@@ -1915,6 +2047,8 @@ mod tests {
             1,
             RenderNodeType::TextRun(TextRunNode {
                 text: "a b\t".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: crate::renderer::TextStyle {
                     font_size: 20.0,
                     ..Default::default()
@@ -1985,6 +2119,8 @@ mod tests {
             1,
             RenderNodeType::TextRun(TextRunNode {
                 text: "12".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle {
                     font_size: 18.0,
                     ..TextStyle::default()
@@ -2046,6 +2182,8 @@ mod tests {
             1,
             RenderNodeType::TextRun(TextRunNode {
                 text: "a\tb".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle {
                     tab_leaders: vec![TabLeaderInfo {
                         start_x: 12.0,
@@ -2109,6 +2247,8 @@ mod tests {
             1,
             RenderNodeType::TextRun(TextRunNode {
                 text: "abc".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle {
                     underline: crate::model::style::UnderlineType::Bottom,
                     strikethrough: true,
@@ -2232,6 +2372,8 @@ mod tests {
             8,
             RenderNodeType::TextRun(TextRunNode {
                 text: "글상자".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: crate::renderer::TextStyle {
                     font_size: 12.0,
                     ..Default::default()
@@ -2360,6 +2502,8 @@ mod tests {
         };
         let text_run = || crate::renderer::render_tree::TextRunNode {
             text: "x".to_string(),
+            display_text: None,
+            display_clusters: None,
             style: crate::renderer::TextStyle {
                 font_size: 12.0,
                 ..Default::default()
@@ -2757,6 +2901,8 @@ mod tests {
             11,
             RenderNodeType::TextRun(TextRunNode {
                 text: "group label".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle::default(),
                 char_shape_id: None,
                 para_shape_id: None,
@@ -2948,6 +3094,8 @@ mod tests {
             30,
             RenderNodeType::TextRun(TextRunNode {
                 text: "A".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle {
                     font_size: 16.0,
                     ..Default::default()

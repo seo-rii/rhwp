@@ -3,7 +3,6 @@
 //! 렌더 트리를 HTML 문자열로 변환한다.
 //! CSS로 스타일링하여 접근성과 텍스트 선택을 지원한다.
 
-use super::layout::compute_char_positions;
 use super::render_tree::{PageRenderTree, RenderNode, RenderNodeType};
 use super::{LineStyle, PathCommand, Renderer, ShapeStyle, TextStyle};
 use crate::model::style::UnderlineType;
@@ -121,7 +120,8 @@ impl HtmlRenderer {
                 return;
             }
             RenderNodeType::TextRun(run) => {
-                self.draw_text(&run.text, node.bbox.x, node.bbox.y, &run.style);
+                let display_text = run.effective_display_text();
+                self.draw_text(display_text.as_ref(), node.bbox.x, node.bbox.y, &run.style);
                 if self.show_paragraph_marks || self.show_control_codes {
                     let font_size = if run.style.font_size > 0.0 {
                         run.style.font_size
@@ -130,7 +130,12 @@ impl HtmlRenderer {
                     };
                     // 공백·탭 기호
                     if !run.text.is_empty() {
-                        let char_positions = compute_char_positions(&run.text, &run.style);
+                        let char_positions =
+                            crate::renderer::layout::compute_source_aligned_display_positions(
+                                &run.text,
+                                run.display_clusters.as_deref(),
+                                &run.style,
+                            );
                         let mark_font_size = font_size * 0.5;
                         for (i, c) in run.text.chars().enumerate() {
                             if c == ' ' {

@@ -1,4 +1,5 @@
 use skia_safe::{paint::Cap, Canvas, Color, Paint, PathBuilder, Point, Rect};
+use std::borrow::Cow;
 
 use crate::paint::{LayerTextDecorationKind, LayerTextDecorationPaint, LayerTextRunPaint};
 use crate::renderer::composer::{
@@ -209,18 +210,20 @@ impl SkiaLayerRenderer {
                 .shape_text_blob(text, font, !has_rtl, 1_000_000.0, Point::default())
                 .map(|(blob, _)| blob)
         };
-        let mapped_text = expand_pua_display_text(&run.text);
-        let text = if mapped_text == run.text {
-            run.text.as_str()
-        } else {
-            mapped_text.as_str()
+        let display_text = match run.display_text.as_deref() {
+            Some(display_text) => Cow::Borrowed(display_text),
+            None => Cow::Owned(expand_pua_display_text(&run.text)),
         };
+        let text = display_text.as_ref();
         let clusters = split_into_clusters(text);
         let metrics_font = self.font_resolver.make_font(&render_style, text);
         let display_positions;
-        let char_positions = if mapped_text == run.text {
+        let char_positions = if run.display_text.is_some() {
+            display_positions = crate::renderer::layout::compute_char_positions(text, &run.style);
+            &display_positions
+        } else if text == run.text {
             &run.positions
-        } else if mapped_text.is_empty() {
+        } else if text.is_empty() {
             display_positions = Vec::new();
             &display_positions
         } else {

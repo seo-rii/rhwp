@@ -1300,6 +1300,34 @@ pub(crate) fn compute_char_positions(text: &str, style: &TextStyle) -> Vec<f64> 
     default_measurer().compute_char_positions(text, style)
 }
 
+pub(crate) fn compute_source_aligned_display_positions(
+    source: &str,
+    display_clusters: Option<&[String]>,
+    style: &TextStyle,
+) -> Vec<f64> {
+    let Some(display_clusters) =
+        display_clusters.filter(|clusters| clusters.len() == source.chars().count())
+    else {
+        return compute_char_positions(source, style);
+    };
+
+    let display_positions = compute_char_positions(&display_clusters.concat(), style);
+    let fallback = display_positions.last().copied().unwrap_or_default();
+    let mut display_char_index = 0usize;
+    let mut source_positions = Vec::with_capacity(display_clusters.len() + 1);
+    source_positions.push(0.0);
+    for fragment in display_clusters {
+        display_char_index += fragment.chars().count();
+        source_positions.push(
+            display_positions
+                .get(display_char_index)
+                .copied()
+                .unwrap_or(fallback),
+        );
+    }
+    source_positions
+}
+
 // ── 문자 분류 함수 ──────────────────────────────────────────────────
 
 /// CJK 문자 여부 판별 (EmbeddedTextMeasurer의 히우리스틱 폭 계산에서 사용)
@@ -1829,6 +1857,29 @@ mod tests {
         for (a, b) in free_fn_result.iter().zip(trait_result.iter()) {
             assert!((a - b).abs() < 0.01, "position mismatch: {} != {}", a, b);
         }
+    }
+
+    #[test]
+    fn projected_positions_preserve_source_character_boundaries() {
+        let style = TextStyle {
+            font_size: 16.0,
+            ..Default::default()
+        };
+        let clusters = vec![
+            "한".to_string(),
+            String::new(),
+            String::new(),
+            "글".to_string(),
+        ];
+        let positions = compute_source_aligned_display_positions("ᄒᆞᆫ글", Some(&clusters), &style);
+        let display_positions = compute_char_positions("한글", &style);
+
+        assert_eq!(positions.len(), 5);
+        assert_eq!(positions[0], display_positions[0]);
+        assert_eq!(positions[1], display_positions[1]);
+        assert_eq!(positions[2], display_positions[1]);
+        assert_eq!(positions[3], display_positions[1]);
+        assert_eq!(positions[4], display_positions[2]);
     }
 
     #[test]

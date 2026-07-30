@@ -108,7 +108,9 @@ impl TextSourceTable {
                             run.projection = projection;
                             run.placement = Some(text_run_compat_placement(*bbox, run));
                             run.cluster_basis = TextClusterBasis::LegacyPosition;
-                            run.clusters = text_run_legacy_clusters(run, projection);
+                            if run.clusters.is_empty() {
+                                run.clusters = text_run_legacy_clusters(run, projection);
+                            }
                             run.variant =
                                 Some(PaintVariantMeta::text_run_default(format!("text-{}", id.0)));
                             last_text_source = run.source.clone();
@@ -152,6 +154,8 @@ impl TextSourceTable {
 fn text_projection_kind(run: &crate::paint::paint_op::LayerTextRunPaint) -> TextProjectionKind {
     if run.char_overlap.is_some() {
         TextProjectionKind::SyntheticVisual
+    } else if run.display_text.is_some() {
+        TextProjectionKind::Normalized
     } else if run.field_marker != FieldMarkerType::None {
         TextProjectionKind::FieldProjection
     } else if run.text.is_empty()
@@ -762,6 +766,7 @@ mod tests {
                     run: crate::paint::LayerTextRunPaint {
                         source: None,
                         text: "가A".to_string(),
+                        display_text: None,
                         style: TextStyle::default(),
                         positions: vec![0.0, 10.0, 20.0],
                         control_marks: Vec::new(),
@@ -787,6 +792,7 @@ mod tests {
                             stable_source_key: Some("hwp-source-v1".to_string()),
                         }),
                         text: "B".to_string(),
+                        display_text: None,
                         style: TextStyle::default(),
                         positions: vec![0.0, 9.0],
                         control_marks: Vec::new(),
@@ -871,6 +877,7 @@ mod tests {
                 bbox: BoundingBox::new(0.0, 0.0, 30.0, 12.0),
                 run: crate::paint::LayerTextRunPaint {
                     text: "A".to_string(),
+                    display_text: None,
                     style: TextStyle {
                         font_size: 16.0,
                         ..Default::default()

@@ -18765,9 +18765,53 @@ runTest('Renderer lifecycle', async ({ page }) => {
       0xF0854,
       0xF0855,
     ].map((codePoint) => String.fromCodePoint(codePoint)).join('');
+    const textStyle = {
+      fontFamily: 'Noto Sans KR',
+      fontSize: 22,
+      color: '#202020',
+      bold: false,
+      italic: false,
+      ratio: 1,
+      underline: 'none',
+      underlineShape: 0,
+      strikethrough: false,
+      strikeShape: 0,
+      outlineType: 0,
+      shadowType: 0,
+      shadowColor: '#000000',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      emboss: false,
+      engrave: false,
+      emphasisDot: 0,
+      underlineColor: '#202020',
+      strikeColor: '#202020',
+      shadeColor: '#ffffff',
+    };
+    const productFragment = ({ text, displayText, x, displayPositions }) => ({
+      type: 'textRun',
+      bbox: {
+        x,
+        y: 52,
+        width: displayPositions?.at(-1) ?? 22,
+        height: 38,
+      },
+      text,
+      ...(displayText !== undefined ? { displayText, displayPositions } : {}),
+      baseline: 30,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      isParaEnd: false,
+      isLineBreakEnd: false,
+      style: textStyle,
+      positions: displayText === '' ? [0, 0] : [0, 22],
+      controlMarks: [],
+      tabLeaders: [],
+    });
     const tree = {
       pageWidth: 420,
-      pageHeight: 52,
+      pageHeight: 96,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: false,
@@ -18792,12 +18836,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 2192,
-        bounds: { x: 0, y: 0, width: 420, height: 52 },
+        bounds: { x: 0, y: 0, width: 420, height: 96 },
         cacheHint: 'none',
         ops: [
           {
             type: 'pageBackground',
-            bbox: { x: 0, y: 0, width: 420, height: 52 },
+            bbox: { x: 0, y: 0, width: 420, height: 96 },
             backgroundColor: '#ffffff',
             borderWidth: 0,
           },
@@ -18811,33 +18855,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
             orientation: 'horizontal',
             isParaEnd: false,
             isLineBreakEnd: false,
-            style: {
-              fontFamily: 'Noto Sans KR',
-              fontSize: 22,
-              color: '#202020',
-              bold: false,
-              italic: false,
-              ratio: 1,
-              underline: 'none',
-              underlineShape: 0,
-              strikethrough: false,
-              strikeShape: 0,
-              outlineType: 0,
-              shadowType: 0,
-              shadowColor: '#000000',
-              shadowOffsetX: 0,
-              shadowOffsetY: 0,
-              emboss: false,
-              engrave: false,
-              emphasisDot: 0,
-              underlineColor: '#202020',
-              strikeColor: '#202020',
-              shadeColor: '#ffffff',
-            },
+            style: textStyle,
             positions: Array.from({ length: 17 }, (_, index) => index * 22),
             controlMarks: [],
             tabLeaders: [],
           },
+          productFragment({
+            text: 'ᄒ',
+            displayText: '한',
+            x: 8,
+            displayPositions: [0, 22],
+          }),
+          productFragment({
+            text: 'ᆞ',
+            displayText: '',
+            x: 100,
+            displayPositions: [],
+          }),
+          productFragment({
+            text: 'ᆫ',
+            displayText: '',
+            x: 140,
+            displayPositions: [],
+          }),
+          productFragment({ text: '글', x: 32 }),
         ],
       },
     };
@@ -18871,6 +18912,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
     assert(
       inkPixels > 150,
       `${backend} maps raw verified Hancom PUA through the shared display policy ink=${inkPixels}`,
+    );
+    const png = PNG.sync.read(pngBufferFromDataUrl(dataUrl));
+    let productInk = 0;
+    let collapsedSourceInk = 0;
+    for (let y = 48; y < png.height; y += 1) {
+      for (let x = 0; x < png.width; x += 1) {
+        const offset = (y * png.width + x) * 4;
+        const isInk = png.data[offset + 3] > 32
+          && (png.data[offset] < 220 || png.data[offset + 1] < 220 || png.data[offset + 2] < 220);
+        if (!isInk) {
+          continue;
+        }
+        if (x < 72) {
+          productInk += 1;
+        } else if (x >= 80 && x < 180) {
+          collapsedSourceInk += 1;
+        }
+      }
+    }
+    assert(
+      productInk > 80 && collapsedSourceInk === 0,
+      `${backend} paints the projected product name without collapsed source fragments product=${productInk}, collapsed=${collapsedSourceInk}`,
     );
   }
   const hancomPuaDisplayDiff = await comparePngBuffers(

@@ -104,8 +104,9 @@ impl CanvasRenderer {
                 }
             }
             RenderNodeType::TextRun(run) => {
+                let display_text = run.effective_display_text();
                 self.draw_text(
-                    &run.text,
+                    display_text.as_ref(),
                     node.bbox.x,
                     node.bbox.y + node.bbox.height,
                     &run.style,

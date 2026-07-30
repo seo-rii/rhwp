@@ -11,6 +11,7 @@ use crate::model::control::Control;
 use crate::model::document::Section;
 use crate::model::paragraph::{CharShapeRef, LineSeg, Paragraph};
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 /// 글자겹침(CharOverlap) 렌더링 정보
 #[derive(Debug, Clone)]
@@ -36,6 +37,11 @@ pub fn char_overlap_inner_size_ratio(inner_char_size: i8) -> f64 {
 pub struct ComposedTextRun {
     /// 텍스트 조각
     pub text: String,
+    /// Source 문자별 명시적 화면 조각.
+    ///
+    /// `Some("")`도 유효하다. 여러 source 문자를 하나의 화면 글리프로
+    /// 투영할 때 뒤 source 문자들은 빈 조각을 가진다.
+    pub display_clusters: Option<Vec<String>>,
     /// 글자 스타일 ID (ResolvedStyleSet.char_styles 인덱스)
     pub char_style_id: u32,
     /// 언어 카테고리 (0=한국어, 1=영어, 2=한자, 3=일본어, 4=기타, 5=기호, 6=사용자)
@@ -44,6 +50,56 @@ pub struct ComposedTextRun {
     pub char_overlap: Option<CharOverlapInfo>,
     /// 각주/미주 마커 (Some이면 위첨자로 렌더링, 텍스트 흐름에 포함)
     pub footnote_marker: Option<u16>,
+}
+
+impl ComposedTextRun {
+    pub fn explicit_display_text(&self) -> Option<String> {
+        self.display_clusters
+            .as_ref()
+            .map(|clusters| clusters.concat())
+    }
+
+    pub fn explicit_display_clusters_for_char_range(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Option<Vec<String>> {
+        self.display_clusters.as_ref().map(|clusters| {
+            clusters
+                .get(start.min(clusters.len())..end.min(clusters.len()))
+                .unwrap_or_default()
+                .to_vec()
+        })
+    }
+
+    pub fn explicit_display_text_for_char_range(&self, start: usize, end: usize) -> Option<String> {
+        self.explicit_display_clusters_for_char_range(start, end)
+            .map(|clusters| clusters.concat())
+    }
+
+    pub fn effective_display_text(&self) -> Cow<'_, str> {
+        match &self.display_clusters {
+            Some(clusters) => Cow::Owned(clusters.concat()),
+            None => effective_text_for_metrics(&self.text),
+        }
+    }
+
+    pub fn effective_display_text_for_char_range(&self, start: usize, end: usize) -> String {
+        if let Some(clusters) = &self.display_clusters {
+            return clusters
+                .get(start.min(clusters.len())..end.min(clusters.len()))
+                .unwrap_or_default()
+                .concat();
+        }
+
+        let source: String = self
+            .text
+            .chars()
+            .skip(start)
+            .take(end.saturating_sub(start))
+            .collect();
+        expand_pua_display_text(&source)
+    }
 }
 
 /// 구성된 줄 (LineSeg 기반)
@@ -63,6 +119,10 @@ pub struct ComposedLine {
     pub line_spacing: i32,
     /// 강제 줄 바꿈(\n, Shift+Enter)으로 끝나는 줄인지 여부
     pub has_line_break: bool,
+    /// Source에 실제 줄바꿈 문자가 있어 projection 경계가 되는지 여부.
+    ///
+    /// 합성 wrap은 `has_line_break`일 수 있지만 이 값은 false다.
+    pub has_explicit_line_break: bool,
     /// 이 줄의 첫 문자가 para.text 내에서 갖는 절대 char 인덱스
     pub char_start: usize,
 }
@@ -301,6 +361,10 @@ pub fn compose_paragraph(para: &Paragraph) -> ComposedParagraph {
     // PUA 테두리 숫자(사각형/원형 안의 숫자) → CharOverlap 런으로 변환
     convert_pua_enclosed_numbers(&mut composed);
 
+    // 한컴 PDF가 현대 글리프로 인쇄하는 닫힌 legacy 제품명만 화면 조각으로
+    // 투영한다. 실제 줄바꿈이 아닌 layout/style run 경계는 넘어갈 수 있다.
+    apply_legacy_hancom_product_run_projection(&mut composed);
+
     composed
 }
 
@@ -348,6 +412,7 @@ fn inject_footnote_markers(lines: &mut [ComposedLine], positions: &[(usize, u16)
 
                 let marker_run = ComposedTextRun {
                     text: marker_text.clone(),
+                    display_clusters: None,
                     char_style_id: cs_id,
                     lang_index: lang,
                     char_overlap: None,
@@ -361,6 +426,7 @@ fn inject_footnote_markers(lines: &mut [ComposedLine], positions: &[(usize, u16)
                         if !before.is_empty() {
                             new_runs.push(ComposedTextRun {
                                 text: before.clone(),
+                                display_clusters: None,
                                 char_style_id: cs_id,
                                 lang_index: lang,
                                 char_overlap: run.char_overlap.clone(),
@@ -371,6 +437,7 @@ fn inject_footnote_markers(lines: &mut [ComposedLine], positions: &[(usize, u16)
                         if !after.is_empty() {
                             new_runs.push(ComposedTextRun {
                                 text: after.clone(),
+                                display_clusters: None,
                                 char_style_id: cs_id,
                                 lang_index: lang,
                                 char_overlap: run.char_overlap.clone(),
@@ -419,10 +486,12 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
                 }
             }
             let line_text: String = chars[offset..end].iter().collect();
+            let has_explicit_line_break = line_text.ends_with('\n') || line_text.ends_with('\r');
             let is_last_line = end >= total;
             lines.push(ComposedLine {
                 runs: split_runs_by_lang(vec![ComposedTextRun {
                     text: line_text,
+                    display_clusters: None,
                     char_style_id: default_style_id,
                     lang_index: 0,
                     char_overlap: None,
@@ -435,6 +504,7 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
                 line_spacing: 0,
                 // 합성 wrap의 중간 줄은 줄바꿈으로 표시해 justify 확장을 막는다.
                 has_line_break: !is_last_line,
+                has_explicit_line_break,
                 char_start: offset,
             });
             offset = end;
@@ -524,6 +594,7 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
                     column_start: line_seg.column_start,
                     line_spacing: line_seg.line_spacing,
                     has_line_break: true,
+                    has_explicit_line_break: true,
                     char_start: text_start,
                 });
             }
@@ -547,6 +618,7 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
                 column_start: line_seg.column_start,
                 line_spacing: line_seg.line_spacing,
                 has_line_break: post_text.ends_with('\n'),
+                has_explicit_line_break: post_text.ends_with('\n'),
                 char_start: post_start,
             });
         } else {
@@ -584,6 +656,7 @@ fn compose_lines(para: &Paragraph) -> Vec<ComposedLine> {
                 column_start: line_seg.column_start,
                 line_spacing: line_seg.line_spacing,
                 has_line_break,
+                has_explicit_line_break: has_line_break,
                 char_start: text_start,
             });
         }
@@ -636,6 +709,7 @@ fn split_by_char_shapes(
     if char_shapes.is_empty() {
         return split_runs_by_lang(vec![ComposedTextRun {
             text: line_text.to_string(),
+            display_clusters: None,
             char_style_id: 0,
             lang_index: 0,
             char_overlap: None,
@@ -673,6 +747,7 @@ fn split_by_char_shapes(
         let style_id = find_active_char_shape_visible(char_shapes, text_start);
         return split_runs_by_lang(vec![ComposedTextRun {
             text: line_text.to_string(),
+            display_clusters: None,
             char_style_id: style_id,
             lang_index: 0,
             char_overlap: None,
@@ -698,6 +773,7 @@ fn split_by_char_shapes(
             if !run_text.is_empty() {
                 runs.push(ComposedTextRun {
                     text: run_text,
+                    display_clusters: None,
                     char_style_id: style_id,
                     lang_index: 0,
                     char_overlap: None,
@@ -717,6 +793,7 @@ fn split_by_char_shapes(
                 0,
                 ComposedTextRun {
                     text: prefix_text,
+                    display_clusters: None,
                     char_style_id: style_id,
                     lang_index: 0,
                     char_overlap: None,
@@ -730,6 +807,7 @@ fn split_by_char_shapes(
         let style_id = find_active_char_shape_visible(char_shapes, text_start);
         runs.push(ComposedTextRun {
             text: line_text.to_string(),
+            display_clusters: None,
             char_style_id: style_id,
             lang_index: 0,
             char_overlap: None,
@@ -813,6 +891,7 @@ pub(crate) fn split_runs_by_lang(runs: Vec<ComposedTextRun>) -> Vec<ComposedText
                     let text: String = chars[current_start..i].iter().collect();
                     result.push(ComposedTextRun {
                         text,
+                        display_clusters: None,
                         char_style_id: run.char_style_id,
                         lang_index: current_lang,
                         char_overlap: run.char_overlap.clone(),
@@ -829,6 +908,7 @@ pub(crate) fn split_runs_by_lang(runs: Vec<ComposedTextRun>) -> Vec<ComposedText
         if !text.is_empty() {
             result.push(ComposedTextRun {
                 text,
+                display_clusters: None,
                 char_style_id: run.char_style_id,
                 lang_index: current_lang,
                 char_overlap: run.char_overlap.clone(),
@@ -934,6 +1014,7 @@ fn inject_char_overlap_text(composed: &mut ComposedParagraph, para: &Paragraph) 
             text_pos,
             ComposedTextRun {
                 text,
+                display_clusters: None,
                 char_style_id,
                 lang_index: 0,
                 char_overlap: Some(CharOverlapInfo {
@@ -964,6 +1045,7 @@ fn inject_char_overlap_text(composed: &mut ComposedParagraph, para: &Paragraph) 
             column_start: 0,
             line_spacing: ls,
             has_line_break: false,
+            has_explicit_line_break: false,
             char_start: 0,
         });
         return;
@@ -1027,6 +1109,7 @@ fn insert_overlap_run(
                     // after 런 생성
                     let after_run = ComposedTextRun {
                         text: after,
+                        display_clusters: None,
                         char_style_id: style_id,
                         lang_index: lang_idx,
                         char_overlap: None,
@@ -1068,7 +1151,7 @@ pub fn estimate_composed_line_width(line: &ComposedLine, styles: &ResolvedStyleS
             if run.char_overlap.is_some() {
                 estimate_text_width(&run.text, &ts)
             } else {
-                estimate_text_width(effective_text_for_metrics(&run.text).as_ref(), &ts)
+                estimate_text_width(run.effective_display_text().as_ref(), &ts)
             }
         })
         .sum()
@@ -1206,6 +1289,155 @@ fn project_legacy_hancom_product_names(text: &str) -> Option<String> {
     Some(display)
 }
 
+pub(crate) fn legacy_hancom_product_display_clusters(text: &str) -> Option<Vec<String>> {
+    let chars = text.chars().collect::<Vec<_>>();
+    let legacy_words = LEGACY_HANCOM_PRODUCT_WORDS
+        .iter()
+        .map(|(legacy, _)| legacy.chars().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let prefix_starts = (0..chars.len())
+        .filter(|&start| {
+            legacy_words
+                .iter()
+                .any(|legacy| chars[start..].starts_with(legacy))
+        })
+        .collect::<Vec<_>>();
+    if prefix_starts.is_empty() {
+        return None;
+    }
+
+    Some(
+        chars
+            .iter()
+            .enumerate()
+            .map(|(index, ch)| {
+                if prefix_starts.contains(&index) {
+                    "한".to_string()
+                } else if prefix_starts
+                    .iter()
+                    .any(|start| index == start + 1 || index == start + 2)
+                {
+                    String::new()
+                } else {
+                    expand_pua_display_text(&ch.to_string())
+                }
+            })
+            .collect(),
+    )
+}
+
+fn projected_run_source_char_count(run: &ComposedTextRun) -> usize {
+    if run.footnote_marker.is_some() {
+        return 0;
+    }
+    if run.char_overlap.is_some() {
+        return usize::from(
+            run.text
+                .chars()
+                .next()
+                .is_some_and(|ch| pua_enclosed_border_type(ch).is_some())
+                && run.text.chars().count() == 1,
+        );
+    }
+    run.text.chars().count()
+}
+
+pub(crate) fn apply_legacy_hancom_product_run_projection(composed: &mut ComposedParagraph) {
+    const BOUNDARY: char = '\0';
+
+    for line in &mut composed.lines {
+        for run in &mut line.runs {
+            run.display_clusters = None;
+        }
+    }
+
+    let control_boundaries = composed
+        .tac_controls
+        .iter()
+        .map(|(position, _, _)| *position)
+        .chain(
+            composed
+                .footnote_positions
+                .iter()
+                .map(|(position, _, _)| *position),
+        )
+        .collect::<HashSet<_>>();
+    let mut logical_chars = Vec::new();
+    for line in &composed.lines {
+        let mut source_position = line.char_start;
+        for run in &line.runs {
+            if run.char_overlap.is_some() || run.footnote_marker.is_some() {
+                if control_boundaries.contains(&source_position) {
+                    logical_chars.push(BOUNDARY);
+                }
+                logical_chars.push(BOUNDARY);
+                source_position += projected_run_source_char_count(run);
+            } else {
+                for ch in run.text.chars() {
+                    if control_boundaries.contains(&source_position) {
+                        logical_chars.push(BOUNDARY);
+                    }
+                    logical_chars.push(ch);
+                    source_position += 1;
+                }
+            }
+        }
+        if control_boundaries.contains(&source_position) {
+            logical_chars.push(BOUNDARY);
+        }
+        if line.has_explicit_line_break {
+            logical_chars.push(BOUNDARY);
+        }
+    }
+
+    let logical_text = logical_chars.iter().collect::<String>();
+    let Some(logical_clusters) = legacy_hancom_product_display_clusters(&logical_text) else {
+        return;
+    };
+
+    let mut logical_position = 0usize;
+    for line in &mut composed.lines {
+        let mut source_position = line.char_start;
+        for run in &mut line.runs {
+            if run.char_overlap.is_some() || run.footnote_marker.is_some() {
+                if control_boundaries.contains(&source_position) {
+                    logical_position += 1;
+                }
+                logical_position += 1;
+                source_position += projected_run_source_char_count(run);
+                continue;
+            }
+
+            let mut changed = false;
+            let mut clusters = Vec::with_capacity(run.text.chars().count());
+            for ch in run.text.chars() {
+                if control_boundaries.contains(&source_position) {
+                    logical_position += 1;
+                }
+                let fragment = logical_clusters
+                    .get(logical_position)
+                    .cloned()
+                    .unwrap_or_else(|| expand_pua_display_text(&ch.to_string()));
+                if fragment != expand_pua_display_text(&ch.to_string()) {
+                    changed = true;
+                }
+                clusters.push(fragment);
+                logical_position += 1;
+                source_position += 1;
+            }
+            if changed {
+                run.display_clusters = Some(clusters);
+            }
+        }
+        if control_boundaries.contains(&source_position) {
+            logical_position += 1;
+        }
+        if line.has_explicit_line_break {
+            logical_position += 1;
+        }
+    }
+}
+
 /// 일반 텍스트 렌더링/paint contract 경로에서 한컴 PUA 문자를 표시 문자열로 확장한다.
 ///
 /// HWP TAC filler `U+F081C` 는 레이아웃 측정에는 원문으로 남겨 0폭 규칙을
@@ -1304,6 +1536,7 @@ fn convert_pua_enclosed_numbers(composed: &mut ComposedParagraph) {
                     if !buf.is_empty() {
                         new_runs.push(ComposedTextRun {
                             text: buf.clone(),
+                            display_clusters: None,
                             char_style_id: run.char_style_id,
                             lang_index: run.lang_index,
                             char_overlap: None,
@@ -1314,6 +1547,7 @@ fn convert_pua_enclosed_numbers(composed: &mut ComposedParagraph) {
                     // PUA 문자 그대로 유지 + CharOverlapInfo 부착
                     new_runs.push(ComposedTextRun {
                         text: ch.to_string(),
+                        display_clusters: None,
                         char_style_id: run.char_style_id,
                         lang_index: run.lang_index,
                         char_overlap: Some(CharOverlapInfo {
@@ -1331,6 +1565,7 @@ fn convert_pua_enclosed_numbers(composed: &mut ComposedParagraph) {
             if !buf.is_empty() {
                 new_runs.push(ComposedTextRun {
                     text: buf,
+                    display_clusters: None,
                     char_style_id: run.char_style_id,
                     lang_index: run.lang_index,
                     char_overlap: None,

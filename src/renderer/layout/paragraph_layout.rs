@@ -1,6 +1,9 @@
 //! 문단 레이아웃 (인라인 표, 문단 전체/부분, composed/raw) + 번호 매기기
 
-use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
+use super::super::composer::{
+    apply_legacy_hancom_product_run_projection, compose_paragraph, effective_text_for_metrics,
+    legacy_hancom_product_display_clusters, ComposedParagraph,
+};
 use super::super::height_measurer::MeasuredTable;
 use super::super::page_layout::LayoutRect;
 use super::super::render_tree::*;
@@ -11,8 +14,8 @@ use super::super::{
 };
 use super::border_rendering::create_border_line_nodes;
 use super::text_measurement::{
-    compute_char_positions, estimate_text_width, extract_tab_leaders_with_extended,
-    find_next_tab_stop, resolved_to_text_style,
+    compute_source_aligned_display_positions, estimate_text_width,
+    extract_tab_leaders_with_extended, find_next_tab_stop, resolved_to_text_style,
 };
 use super::utils::{
     expand_numbering_format, numbering_format_to_number_format, resolve_numbering_id,
@@ -67,7 +70,7 @@ fn right_tab_block_width(
         text_style.tab_stops = tab_stops.to_vec();
         text_style.auto_tab_right = auto_tab_right;
         text_style.available_width = available_width;
-        width += estimate_text_width(effective_text_for_metrics(&run.text).as_ref(), &text_style);
+        width += estimate_text_width(run.effective_display_text().as_ref(), &text_style);
     }
     width
 }
@@ -157,6 +160,49 @@ impl LayoutEngine {
         }
         segments.push((seg_start, text_chars.len()));
 
+        let mut projected_display_clusters = vec![None; text_chars.len()];
+        for &(start, end) in &segments {
+            let mut chunk_start = start;
+            let mut boundaries = composed
+                .into_iter()
+                .flat_map(|paragraph| paragraph.footnote_positions.iter())
+                .map(|(position, _, _)| *position)
+                .filter(|position| *position > start && *position < end)
+                .collect::<Vec<_>>();
+            boundaries.sort_unstable();
+            boundaries.dedup();
+            boundaries.push(end);
+
+            for chunk_end in boundaries {
+                let chunk = text_chars[chunk_start..chunk_end]
+                    .iter()
+                    .collect::<String>();
+                if let Some(clusters) = legacy_hancom_product_display_clusters(&chunk) {
+                    for (offset, cluster) in clusters.into_iter().enumerate() {
+                        projected_display_clusters[chunk_start + offset] = Some(cluster);
+                    }
+                }
+                chunk_start = chunk_end;
+            }
+        }
+        let display_clusters_for_range = |start: usize, end: usize| {
+            projected_display_clusters[start..end]
+                .iter()
+                .any(Option::is_some)
+                .then(|| {
+                    (start..end)
+                        .map(|index| {
+                            projected_display_clusters[index]
+                                .clone()
+                                .unwrap_or_else(|| {
+                                    effective_text_for_metrics(&text_chars[index].to_string())
+                                        .into_owned()
+                                })
+                        })
+                        .collect::<Vec<_>>()
+                })
+        };
+
         // 배치 순서: segment[0], table[0], segment[1], table[1], ...
         // 선행 컨트롤이 있으면: empty_seg, table[0], text_seg, table[1], ...
 
@@ -216,9 +262,12 @@ impl LayoutEngine {
                     let ch = text_chars[ch_idx];
                     let lang = super::super::style_resolver::detect_lang_category(ch);
                     let ts = resolved_to_text_style(styles, cs_id, lang);
-                    let source_char = ch.to_string();
-                    total +=
-                        estimate_text_width(effective_text_for_metrics(&source_char).as_ref(), &ts);
+                    let display = projected_display_clusters[ch_idx]
+                        .clone()
+                        .unwrap_or_else(|| {
+                            effective_text_for_metrics(&ch.to_string()).into_owned()
+                        });
+                    total += estimate_text_width(&display, &ts);
                 }
                 total
             })
@@ -391,9 +440,18 @@ impl LayoutEngine {
                                 );
                                 let run_ts =
                                     resolved_to_text_style(styles, current_cs_id, first_lang);
-                                let run_width = estimate_text_width(
-                                    effective_text_for_metrics(&run_text).as_ref(),
-                                    &run_ts,
+                                let display_clusters =
+                                    display_clusters_for_range(line_run_start, ch_idx);
+                                let display_text =
+                                    display_clusters.as_ref().map(|clusters| clusters.concat());
+                                let run_width = display_text.as_deref().map_or_else(
+                                    || {
+                                        estimate_text_width(
+                                            effective_text_for_metrics(&run_text).as_ref(),
+                                            &run_ts,
+                                        )
+                                    },
+                                    |display| estimate_text_width(display, &run_ts),
                                 );
                                 let run_bbox_h = if wrapped_below_table {
                                     text_line_baseline
@@ -405,6 +463,8 @@ impl LayoutEngine {
                                     run_id,
                                     RenderNodeType::TextRun(TextRunNode {
                                         text: run_text,
+                                        display_text,
+                                        display_clusters,
                                         style: run_ts,
                                         char_shape_id: Some(current_cs_id),
                                         para_shape_id: Some(para_style_id as u16),
@@ -479,11 +539,13 @@ impl LayoutEngine {
                         let ch = text_chars[ch_idx];
                         let lang = super::super::style_resolver::detect_lang_category(ch);
                         let ts = resolved_to_text_style(styles, cs_id, lang);
-                        let source_char = ch.to_string();
-                        let ch_w = estimate_text_width(
-                            effective_text_for_metrics(&source_char).as_ref(),
-                            &ts,
-                        );
+                        let display =
+                            projected_display_clusters[ch_idx]
+                                .clone()
+                                .unwrap_or_else(|| {
+                                    effective_text_for_metrics(&ch.to_string()).into_owned()
+                                });
+                        let ch_w = estimate_text_width(&display, &ts);
 
                         // char_shape 변경 또는 줄바꿈 시 누적된 run을 출력
                         // LINE_SEG 기반 줄 나눔: text_start 위치에서 강제 개행
@@ -509,9 +571,18 @@ impl LayoutEngine {
                                 text_chars[line_run_start],
                             );
                             let run_ts = resolved_to_text_style(styles, current_cs_id, first_lang);
-                            let run_width = estimate_text_width(
-                                effective_text_for_metrics(&run_text).as_ref(),
-                                &run_ts,
+                            let display_clusters =
+                                display_clusters_for_range(line_run_start, ch_idx);
+                            let display_text =
+                                display_clusters.as_ref().map(|clusters| clusters.concat());
+                            let run_width = display_text.as_deref().map_or_else(
+                                || {
+                                    estimate_text_width(
+                                        effective_text_for_metrics(&run_text).as_ref(),
+                                        &run_ts,
+                                    )
+                                },
+                                |display| estimate_text_width(display, &run_ts),
                             );
 
                             let run_id = tree.next_id();
@@ -519,6 +590,8 @@ impl LayoutEngine {
                                 run_id,
                                 RenderNodeType::TextRun(TextRunNode {
                                     text: run_text,
+                                    display_text,
+                                    display_clusters,
                                     style: run_ts,
                                     char_shape_id: Some(current_cs_id),
                                     para_shape_id: Some(para_style_id as u16),
@@ -579,9 +652,17 @@ impl LayoutEngine {
                             text_chars[line_run_start],
                         );
                         let run_ts = resolved_to_text_style(styles, current_cs_id, first_lang);
-                        let run_width = estimate_text_width(
-                            effective_text_for_metrics(&run_text).as_ref(),
-                            &run_ts,
+                        let display_clusters = display_clusters_for_range(line_run_start, *e);
+                        let display_text =
+                            display_clusters.as_ref().map(|clusters| clusters.concat());
+                        let run_width = display_text.as_deref().map_or_else(
+                            || {
+                                estimate_text_width(
+                                    effective_text_for_metrics(&run_text).as_ref(),
+                                    &run_ts,
+                                )
+                            },
+                            |display| estimate_text_width(display, &run_ts),
                         );
 
                         let run_id = tree.next_id();
@@ -589,6 +670,8 @@ impl LayoutEngine {
                             run_id,
                             RenderNodeType::TextRun(TextRunNode {
                                 text: run_text,
+                                display_text,
+                                display_clusters,
                                 style: run_ts,
                                 char_shape_id: Some(current_cs_id),
                                 para_shape_id: Some(para_style_id as u16),
@@ -937,6 +1020,8 @@ impl LayoutEngine {
                             marker_id,
                             RenderNodeType::TextRun(TextRunNode {
                                 text: marker_text,
+                                display_text: None,
+                                display_clusters: None,
                                 style,
                                 char_shape_id: Some(first_char_shape_id),
                                 para_shape_id: Some(composed.para_style_id),
@@ -1181,31 +1266,27 @@ impl LayoutEngine {
                 }) {
                     let tac_rel = tac_abs_pos - run_char_pos_est;
                     if seg_start_est < tac_rel {
-                        let seg: String = run_chars_est[seg_start_est..tac_rel].iter().collect();
+                        let seg = run.effective_display_text_for_char_range(seg_start_est, tac_rel);
                         ts.line_x_offset = est_x;
-                        est_x +=
-                            estimate_text_width(effective_text_for_metrics(&seg).as_ref(), &ts);
+                        est_x += estimate_text_width(&seg, &ts);
                     }
                     est_x += tac_w;
                     seg_start_est = tac_rel;
                 }
                 // 마지막 세그먼트 처리
-                let remaining_est: String = run_chars_est[seg_start_est..].iter().collect();
+                let remaining_est =
+                    run.effective_display_text_for_char_range(seg_start_est, run_chars_est.len());
                 ts.line_x_offset = est_x;
                 if !remaining_est.is_empty() {
-                    est_x += estimate_text_width(
-                        effective_text_for_metrics(&remaining_est).as_ref(),
-                        &ts,
-                    );
+                    est_x += estimate_text_width(&remaining_est, &ts);
                 }
                 // run이 \t로 끝나면 다음 run에 오른쪽/가운데 탭 조정 필요
                 if run.text.ends_with('\t') {
                     if let Some(last_tab_byte) = run.text.rfind('\t') {
-                        let text_before_tab = &run.text[..last_tab_byte];
-                        let w_before = estimate_text_width(
-                            effective_text_for_metrics(text_before_tab).as_ref(),
-                            &ts,
-                        );
+                        let tab_char_index = run.text[..last_tab_byte].chars().count();
+                        let text_before_tab =
+                            run.effective_display_text_for_char_range(0, tab_char_index);
+                        let w_before = estimate_text_width(&text_before_tab, &ts);
                         let abs_before = ts.line_x_offset + w_before;
                         let tw = if tab_width > 0.0 { tab_width } else { 48.0 };
                         let (tp, tt, _) = find_next_tab_stop(
@@ -1443,6 +1524,8 @@ impl LayoutEngine {
                         num_id,
                         RenderNodeType::TextRun(TextRunNode {
                             text: num_text.clone(),
+                            display_text: None,
+                            display_clusters: None,
                             style: num_style,
                             char_shape_id: composed.numbering_char_shape_id,
                             para_shape_id: Some(composed.para_style_id),
@@ -1561,6 +1644,8 @@ impl LayoutEngine {
                             mid,
                             RenderNodeType::TextRun(TextRunNode {
                                 text: stext.clone(),
+                                display_text: None,
+                                display_clusters: None,
                                 style: ms,
                                 char_shape_id: None,
                                 para_shape_id: Some(composed.para_style_id),
@@ -1627,13 +1712,17 @@ impl LayoutEngine {
                     let chars: Vec<char> = run.text.chars().collect();
                     fs * crate::renderer::composer::char_overlap_advance_units(&chars) as f64
                 } else {
-                    estimate_text_width(effective_text_for_metrics(&run.text).as_ref(), &text_style)
+                    estimate_text_width(run.effective_display_text().as_ref(), &text_style)
                 };
                 // 탭 리더 계산: 탭이 포함된 run에서 채움 기호 정보 추출
                 // inline_tabs를 일시 제거하여 tab_stops 기반 위치 계산과 일관되게 함
                 if has_tabs && run.text.contains('\t') {
                     let saved_inline_tabs = std::mem::take(&mut text_style.inline_tabs);
-                    let positions = compute_char_positions(&run.text, &text_style);
+                    let positions = compute_source_aligned_display_positions(
+                        &run.text,
+                        run.display_clusters.as_deref(),
+                        &text_style,
+                    );
                     text_style.inline_tabs = saved_inline_tabs;
                     text_style.tab_leaders = extract_tab_leaders_with_extended(
                         &run.text,
@@ -1646,11 +1735,10 @@ impl LayoutEngine {
                 // run이 \t로 끝나면 해당 탭의 종류를 확인하여 다음 run 조정에 사용
                 if has_tabs && run.text.ends_with('\t') {
                     if let Some(last_tab_pos) = run.text.rfind('\t') {
-                        let text_before_tab = &run.text[..last_tab_pos];
-                        let w_before = estimate_text_width(
-                            effective_text_for_metrics(text_before_tab).as_ref(),
-                            &text_style,
-                        );
+                        let tab_char_index = run.text[..last_tab_pos].chars().count();
+                        let text_before_tab =
+                            run.effective_display_text_for_char_range(0, tab_char_index);
+                        let w_before = estimate_text_width(&text_before_tab, &text_style);
                         let abs_before = text_style.line_x_offset + w_before;
                         let tw = if tab_width > 0.0 { tab_width } else { 48.0 };
                         let (tp, tt, _) = find_next_tab_stop(
@@ -1701,13 +1789,12 @@ impl LayoutEngine {
                     // 글자 테두리/배경: bbox 계산용 run_x, run_w
                     let (run_x, run_w) = if !leading_spaces.is_empty() && !content.is_empty() {
                         let sw = estimate_text_width(&leading_spaces, &text_style);
-                        (
-                            x + sw,
-                            estimate_text_width(
-                                effective_text_for_metrics(content).as_ref(),
-                                &text_style,
-                            ),
-                        )
+                        let leading_space_count = leading_spaces.chars().count();
+                        let content_display = run.effective_display_text_for_char_range(
+                            leading_space_count,
+                            run.text.chars().count(),
+                        );
+                        (x + sw, estimate_text_width(&content_display, &text_style))
                     } else {
                         (x, full_width)
                     };
@@ -1807,6 +1894,8 @@ impl LayoutEngine {
                                 run_id,
                                 RenderNodeType::TextRun(TextRunNode {
                                     text: run.text.clone(),
+                                    display_text: run.explicit_display_text(),
+                                    display_clusters: run.display_clusters.clone(),
                                     style: text_style,
                                     char_shape_id: Some(run.char_style_id),
                                     para_shape_id: Some(composed.para_style_id),
@@ -1839,15 +1928,27 @@ impl LayoutEngine {
                                 if rel_pos > seg_start {
                                     let seg_text: String =
                                         run_chars[seg_start..rel_pos].iter().collect();
-                                    let seg_w = estimate_text_width(
-                                        effective_text_for_metrics(&seg_text).as_ref(),
-                                        &text_style,
-                                    );
+                                    let seg_display_clusters = run
+                                        .explicit_display_clusters_for_char_range(
+                                            seg_start, rel_pos,
+                                        );
+                                    let seg_display_text = seg_display_clusters
+                                        .as_ref()
+                                        .map(|clusters| clusters.concat());
+                                    let seg_w = match seg_display_text.as_deref() {
+                                        Some(display) => estimate_text_width(display, &text_style),
+                                        None => estimate_text_width(
+                                            effective_text_for_metrics(&seg_text).as_ref(),
+                                            &text_style,
+                                        ),
+                                    };
                                     let seg_id = tree.next_id();
                                     let seg_node = RenderNode::new(
                                         seg_id,
                                         RenderNodeType::TextRun(TextRunNode {
                                             text: seg_text,
+                                            display_text: seg_display_text,
+                                            display_clusters: seg_display_clusters,
                                             style: text_style.clone(),
                                             char_shape_id: Some(run.char_style_id),
                                             para_shape_id: Some(composed.para_style_id),
@@ -1904,15 +2005,28 @@ impl LayoutEngine {
                             // 마지막 세그먼트 (각주 뒤 나머지 텍스트)
                             if seg_start < run_chars.len() {
                                 let seg_text: String = run_chars[seg_start..].iter().collect();
-                                let seg_w = estimate_text_width(
-                                    effective_text_for_metrics(&seg_text).as_ref(),
-                                    &text_style,
-                                );
+                                let seg_display_clusters = run
+                                    .explicit_display_clusters_for_char_range(
+                                        seg_start,
+                                        run_chars.len(),
+                                    );
+                                let seg_display_text = seg_display_clusters
+                                    .as_ref()
+                                    .map(|clusters| clusters.concat());
+                                let seg_w = match seg_display_text.as_deref() {
+                                    Some(display) => estimate_text_width(display, &text_style),
+                                    None => estimate_text_width(
+                                        effective_text_for_metrics(&seg_text).as_ref(),
+                                        &text_style,
+                                    ),
+                                };
                                 let seg_id = tree.next_id();
                                 let seg_node = RenderNode::new(
                                     seg_id,
                                     RenderNodeType::TextRun(TextRunNode {
                                         text: seg_text,
+                                        display_text: seg_display_text,
+                                        display_clusters: seg_display_clusters,
                                         style: text_style,
                                         char_shape_id: Some(run.char_style_id),
                                         para_shape_id: Some(composed.para_style_id),
@@ -1994,11 +2108,20 @@ impl LayoutEngine {
                         // tac 앞 텍스트 세그먼트 렌더링
                         if seg_start < tac_rel {
                             let seg_text: String = run_chars[seg_start..tac_rel].iter().collect();
+                            let seg_display_clusters =
+                                run.explicit_display_clusters_for_char_range(seg_start, tac_rel);
+                            let seg_display_text = seg_display_clusters
+                                .as_ref()
+                                .map(|clusters| clusters.concat());
                             let mut seg_style = text_style.clone();
                             seg_style.line_x_offset = x - col_area.x;
                             // 탭 리더 계산
                             if has_tabs && seg_text.contains('\t') {
-                                let positions = compute_char_positions(&seg_text, &seg_style);
+                                let positions = compute_source_aligned_display_positions(
+                                    &seg_text,
+                                    seg_display_clusters.as_deref(),
+                                    &seg_style,
+                                );
                                 seg_style.tab_leaders = extract_tab_leaders_with_extended(
                                     &seg_text,
                                     &positions,
@@ -2006,10 +2129,13 @@ impl LayoutEngine {
                                     &composed.tab_extended,
                                 );
                             }
-                            let seg_w = estimate_text_width(
-                                effective_text_for_metrics(&seg_text).as_ref(),
-                                &seg_style,
-                            );
+                            let seg_w = match seg_display_text.as_deref() {
+                                Some(display) => estimate_text_width(display, &seg_style),
+                                None => estimate_text_width(
+                                    effective_text_for_metrics(&seg_text).as_ref(),
+                                    &seg_style,
+                                ),
+                            };
                             let seg_char_count = tac_rel - seg_start;
                             if !skip_text_for_inline_shape {
                                 let sub_run_id = tree.next_id();
@@ -2017,6 +2143,8 @@ impl LayoutEngine {
                                     sub_run_id,
                                     RenderNodeType::TextRun(TextRunNode {
                                         text: seg_text,
+                                        display_text: seg_display_text,
+                                        display_clusters: seg_display_clusters,
                                         style: seg_style,
                                         char_shape_id: Some(run.char_style_id),
                                         para_shape_id: Some(composed.para_style_id),
@@ -2248,10 +2376,19 @@ impl LayoutEngine {
                     // 마지막 tac 이후 텍스트 세그먼트 렌더링
                     let remaining: String = run_chars[seg_start..].iter().collect();
                     if !remaining.is_empty() {
+                        let remaining_display_clusters = run
+                            .explicit_display_clusters_for_char_range(seg_start, run_chars.len());
+                        let remaining_display_text = remaining_display_clusters
+                            .as_ref()
+                            .map(|clusters| clusters.concat());
                         let mut seg_style = text_style.clone();
                         seg_style.line_x_offset = x - col_area.x;
                         if has_tabs && remaining.contains('\t') {
-                            let positions = compute_char_positions(&remaining, &seg_style);
+                            let positions = compute_source_aligned_display_positions(
+                                &remaining,
+                                remaining_display_clusters.as_deref(),
+                                &seg_style,
+                            );
                             seg_style.tab_leaders = extract_tab_leaders_with_extended(
                                 &remaining,
                                 &positions,
@@ -2259,16 +2396,21 @@ impl LayoutEngine {
                                 &composed.tab_extended,
                             );
                         }
-                        let seg_w = estimate_text_width(
-                            effective_text_for_metrics(&remaining).as_ref(),
-                            &seg_style,
-                        );
+                        let seg_w = match remaining_display_text.as_deref() {
+                            Some(display) => estimate_text_width(display, &seg_style),
+                            None => estimate_text_width(
+                                effective_text_for_metrics(&remaining).as_ref(),
+                                &seg_style,
+                            ),
+                        };
                         if !skip_text_for_inline_shape {
                             let sub_run_id = tree.next_id();
                             let sub_run_node = RenderNode::new(
                                 sub_run_id,
                                 RenderNodeType::TextRun(TextRunNode {
                                     text: remaining,
+                                    display_text: remaining_display_text,
+                                    display_clusters: remaining_display_clusters,
                                     style: seg_style,
                                     char_shape_id: Some(run.char_style_id),
                                     para_shape_id: Some(composed.para_style_id),
@@ -2299,6 +2441,8 @@ impl LayoutEngine {
                             sub_run_id,
                             RenderNodeType::TextRun(TextRunNode {
                                 text: String::new(),
+                                display_text: None,
+                                display_clusters: None,
                                 style: seg_style,
                                 char_shape_id: Some(run.char_style_id),
                                 para_shape_id: Some(composed.para_style_id),
@@ -2341,6 +2485,8 @@ impl LayoutEngine {
                         mid,
                         RenderNodeType::TextRun(TextRunNode {
                             text: stext.clone(),
+                            display_text: None,
+                            display_clusters: None,
                             style: ms,
                             char_shape_id: None,
                             para_shape_id: Some(composed.para_style_id),
@@ -2510,6 +2656,8 @@ impl LayoutEngine {
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: String::new(),
+                        display_text: None,
+                        display_clusters: None,
                         style: text_style,
                         char_shape_id: None,
                         para_shape_id: Some(composed.para_style_id),
@@ -2626,6 +2774,8 @@ impl LayoutEngine {
                                 m_id,
                                 RenderNodeType::TextRun(TextRunNode {
                                     text: marker_text.to_string(),
+                                    display_text: None,
+                                    display_clusters: None,
                                     style: marker_style,
                                     char_shape_id: None,
                                     para_shape_id: Some(composed.para_style_id),
@@ -2660,6 +2810,8 @@ impl LayoutEngine {
                                 anchor_id,
                                 RenderNodeType::TextRun(TextRunNode {
                                     text: String::new(),
+                                    display_text: None,
+                                    display_clusters: None,
                                     style: base_style.clone(),
                                     char_shape_id: None,
                                     para_shape_id: Some(composed.para_style_id),
@@ -2699,6 +2851,8 @@ impl LayoutEngine {
                                     guide_id,
                                     RenderNodeType::TextRun(TextRunNode {
                                         text: guide.to_string(),
+                                        display_text: None,
+                                        display_clusters: None,
                                         style: guide_style,
                                         char_shape_id: None,
                                         para_shape_id: Some(composed.para_style_id),
@@ -2739,6 +2893,8 @@ impl LayoutEngine {
                                 m_id,
                                 RenderNodeType::TextRun(TextRunNode {
                                     text: marker_text.to_string(),
+                                    display_text: None,
+                                    display_clusters: None,
                                     style: marker_style,
                                     char_shape_id: None,
                                     para_shape_id: Some(composed.para_style_id),
@@ -2795,6 +2951,8 @@ impl LayoutEngine {
                                     m_id,
                                     RenderNodeType::TextRun(TextRunNode {
                                         text: marker_text,
+                                        display_text: None,
+                                        display_clusters: None,
                                         style: marker_style,
                                         char_shape_id: None,
                                         para_shape_id: Some(composed.para_style_id),
@@ -2917,6 +3075,8 @@ impl LayoutEngine {
                 run_id,
                 RenderNodeType::TextRun(TextRunNode {
                     text: String::new(),
+                    display_text: None,
+                    display_clusters: None,
                     style: text_style,
                     char_shape_id: None,
                     para_shape_id: Some(composed.para_style_id),
@@ -2989,6 +3149,8 @@ impl LayoutEngine {
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: para.text.clone(),
+                        display_text: None,
+                        display_clusters: None,
                         style: TextStyle::default(),
                         char_shape_id: None,
                         para_shape_id: None,
@@ -3031,6 +3193,8 @@ impl LayoutEngine {
                     run_id,
                     RenderNodeType::TextRun(TextRunNode {
                         text: para.text.clone(),
+                        display_text: None,
+                        display_clusters: None,
                         style: TextStyle::default(),
                         char_shape_id: None,
                         para_shape_id: None,
@@ -3197,6 +3361,7 @@ impl LayoutEngine {
                                 num_str,
                                 &run.text[pos + 1..]
                             );
+                            apply_legacy_hancom_product_run_projection(composed);
                             return; // 첫 번째 발견 시 처리 완료
                         }
                     }

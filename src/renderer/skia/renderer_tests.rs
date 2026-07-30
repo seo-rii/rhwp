@@ -166,6 +166,7 @@ fn glyph_variant_test_tree(
             source: Some(source.clone()),
             variant: Some(text_variant),
             text: text.clone(),
+            display_text: None,
             style: style.clone(),
             positions: (0..=glyph_ids.len())
                 .map(|idx| 118.0 + idx as f64 * 32.0)
@@ -330,6 +331,7 @@ fn glyph_outline_variant_test_tree_with_bbox_and_resources(
                         } else {
                             String::new()
                         },
+                        display_text: None,
                         style: fallback_style,
                         positions: if fallback_visible {
                             vec![118.0, 150.0]
@@ -371,6 +373,7 @@ fn glyph_outline_sidecar_variant_test_tree(
                     } else {
                         String::new()
                     },
+                    display_text: None,
                     style: TextStyle {
                         font_family: "sans-serif".to_string(),
                         font_size: 32.0,
@@ -1594,6 +1597,7 @@ fn static_subtree_picture_cache_replays_image_path_and_text_payloads() {
                 run: LayerTextRunPaint {
                     source: None,
                     text: "Skia".to_string(),
+                    display_text: None,
                     style: TextStyle {
                         font_size: 8.0,
                         color: 0x00000000,
@@ -2530,6 +2534,41 @@ fn static_subtree_cache_key_uses_paint_text_style_projection() {
 }
 
 #[test]
+fn static_subtree_cache_key_includes_explicit_display_projection() {
+    let bbox = BoundingBox::new(2.0, 2.0, 44.0, 16.0);
+    let make_node = |display_text: Option<&str>| {
+        LayerNode::leaf_with_hint(
+            bbox,
+            Some(301),
+            vec![PaintOp::TextRun {
+                bbox,
+                run: LayerTextRunPaint {
+                    text: "ᄒ".to_string(),
+                    display_text: display_text.map(str::to_string),
+                    style: TextStyle {
+                        font_size: 12.0,
+                        ..Default::default()
+                    },
+                    positions: vec![0.0, 12.0],
+                    baseline: 12.0,
+                    ..Default::default()
+                },
+            }],
+            CacheHint::StaticSubtree,
+        )
+    };
+    let cache_key = |display_text| {
+        let mut key = StaticSubtreeCacheKey::new();
+        key.mix_layer_node(&make_node(display_text), &ResourceArena::default());
+        key.finish()
+    };
+
+    assert_eq!(cache_key(Some("한")), cache_key(Some("한")));
+    assert_ne!(cache_key(None), cache_key(Some("ᄒ")));
+    assert_ne!(cache_key(Some("한")), cache_key(Some("")));
+}
+
+#[test]
 fn static_subtree_cache_key_includes_glyph_outline_stroke_payload() {
     let bbox = BoundingBox::new(2.0, 2.0, 24.0, 24.0);
     let make_node = |stroke: Option<GlyphOutlineStrokeStyle>| {
@@ -3105,6 +3144,8 @@ fn renders_char_overlap_to_png() {
         1,
         RenderNodeType::TextRun(TextRunNode {
             text: "12".to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_size: 24.0,
                 color: 0x00000000,
@@ -3152,6 +3193,8 @@ fn renders_plain_text_run_to_png() {
         1,
         RenderNodeType::TextRun(TextRunNode {
             text: "Plain text".to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_size: 22.0,
                 color: 0x00000000,
@@ -3217,6 +3260,8 @@ fn renders_complex_shaped_text_run_to_png() {
         1,
         RenderNodeType::TextRun(TextRunNode {
             text: text.to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_family: "sans-serif".to_string(),
                 font_size: 20.0,
@@ -3273,6 +3318,8 @@ fn renders_text_feature_fixture_to_png() {
             next_id,
             RenderNodeType::TextRun(TextRunNode {
                 text: text.to_string(),
+                display_text: None,
+                display_clusters: None,
                 style,
                 char_shape_id: None,
                 para_shape_id: None,
@@ -3434,6 +3481,7 @@ fn skia_vertical_sideways_uses_explicit_rotation_only() {
                 run: LayerTextRunPaint {
                     source: None,
                     text: "ABC".to_string(),
+                    display_text: None,
                     style: TextStyle {
                         font_family: "sans-serif".to_string(),
                         font_size: 20.0,
@@ -3476,6 +3524,7 @@ fn skia_vertical_upright_uses_layout_glyph_positions() {
     let make_run = |text: &str| LayerTextRunPaint {
         source: None,
         text: text.to_string(),
+        display_text: None,
         style: TextStyle {
             font_family: "sans-serif".to_string(),
             font_size: 22.0,
@@ -7270,6 +7319,8 @@ fn output_options_enable_text_control_marks() {
         1,
         RenderNodeType::TextRun(TextRunNode {
             text: "a b".to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_size: 22.0,
                 color: 0x00000000,
@@ -7327,6 +7378,8 @@ fn output_options_enable_line_break_mark() {
         1,
         RenderNodeType::TextRun(TextRunNode {
             text: "line".to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_size: 22.0,
                 color: 0x00000000,
@@ -7384,6 +7437,8 @@ fn field_marker_runs_do_not_gain_space_marks() {
         1,
         RenderNodeType::TextRun(TextRunNode {
             text: "a b".to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_size: 22.0,
                 color: 0x00000000,
@@ -7446,6 +7501,8 @@ fn renders_tab_leaders_for_skipped_tab_clusters() {
             1,
             RenderNodeType::TextRun(TextRunNode {
                 text: "\t".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle {
                     font_size: 18.0,
                     color: 0x00000000,

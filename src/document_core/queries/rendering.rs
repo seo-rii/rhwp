@@ -2666,6 +2666,8 @@ mod embedded_font_tests {
                 u32::try_from(char_shape_id + 1).unwrap(),
                 RenderNodeType::TextRun(TextRunNode {
                     text: "A".to_string(),
+                    display_text: None,
+                    display_clusters: None,
                     style: TextStyle {
                         font_family: format!("Non-embedded face {char_shape_id}"),
                         font_language_index: Some(0),
@@ -2694,6 +2696,8 @@ mod embedded_font_tests {
             u32::try_from(MAX_PAGE_EMBEDDED_FONT_FACES + 1).unwrap(),
             RenderNodeType::TextRun(TextRunNode {
                 text: "\u{E100}".to_string(),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle {
                     font_family: "unrelated CSS fallback".to_string(),
                     font_language_index: Some(0),

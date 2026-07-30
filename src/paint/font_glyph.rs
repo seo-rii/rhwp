@@ -461,6 +461,7 @@ impl FontGlyphLowerer<'_, '_> {
         let mut characters = run.text.chars();
         let character = characters.next()?;
         if characters.next().is_some()
+            || run.display_text.is_some()
             || run.projection != TextProjectionKind::Verbatim
             || run.char_overlap.is_some()
             || !run.style.font_size.is_finite()
@@ -920,6 +921,30 @@ mod tests {
     }
 
     #[test]
+    fn lowering_keeps_projected_text_as_text_run_only() {
+        let mut tree = assigned_text_tree(
+            "\u{E100}",
+            TextStyle {
+                font_size: 16.0,
+                ..TextStyle::default()
+            },
+        );
+        let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind else {
+            panic!("expected leaf");
+        };
+        let PaintOp::TextRun { run, .. } = &mut ops[0] else {
+            panic!("expected text run");
+        };
+        run.display_text = Some("한".to_string());
+
+        let report = lower_font_native_glyph_sidecars(&mut tree, &[fixture_embedded_font(7)]);
+
+        assert_eq!(report.emitted_bitmap_glyphs, 0);
+        assert_eq!(report.emitted_svg_glyphs, 0);
+        assert!(tree.variant_ops.is_empty());
+    }
+
+    #[test]
     fn lowering_uses_svg_when_the_font_has_no_bitmap_strike() {
         let mut tree = assigned_text_tree(
             "\u{E101}",
@@ -1087,6 +1112,7 @@ mod tests {
                         language_index: 0,
                     }),
                     text: "\u{E100}".to_string(),
+                    display_text: None,
                     style: TextStyle {
                         font_size: 16.0,
                         ..TextStyle::default()

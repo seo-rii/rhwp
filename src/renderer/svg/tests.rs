@@ -328,6 +328,7 @@ fn test_layer_svg_vertical_text_uses_explicit_rotation_only() {
             run: LayerTextRunPaint {
                 source: None,
                 text: "세로".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_size: 14.0,
                     ..Default::default()
@@ -2053,6 +2054,7 @@ fn glyph_outline_fixture_tree_with_payload(
                     }),
                     variant: Some(text_variant),
                     text: "A".to_string(),
+                    display_text: None,
                     style: text_style,
                     positions: vec![0.0, 10.0],
                     baseline: 12.0,
@@ -2316,6 +2318,8 @@ fn test_legacy_svg_vertical_text_uses_explicit_rotation_only() {
         1,
         RenderNodeType::TextRun(TextRunNode {
             text: "세로".to_string(),
+            display_text: None,
+            display_clusters: None,
             style: TextStyle {
                 font_size: 14.0,
                 ..Default::default()
@@ -2362,6 +2366,7 @@ fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
             run: LayerTextRunPaint {
                 source: None,
                 text: "a b".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_size: 14.0,
                     ..Default::default()

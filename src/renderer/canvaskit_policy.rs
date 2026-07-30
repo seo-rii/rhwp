@@ -966,10 +966,10 @@ pub fn estimate_canvaskit_page_lowering_work(
 fn render_node_prelower_work_units(node_type: &RenderNodeType) -> Option<usize> {
     let (base_units, payload_bytes, text_like) = match node_type {
         RenderNodeType::TextRun(run) => {
-            let display_text = expand_pua_display_text(&run.text);
+            let display_text = run.effective_display_text();
             (
                 10usize,
-                text_projection_payload_bytes(&run.text, &display_text)?
+                text_projection_payload_bytes(&run.text, display_text.as_ref())?
                     .checked_add(run.style.font_family.len())?
                     .checked_add(
                         run.style
@@ -1139,7 +1139,9 @@ fn text_projection_payload_bytes(source_text: &str, display_text: &str) -> Optio
 }
 
 fn layer_text_display_text(run: &LayerTextRunPaint) -> String {
-    expand_pua_display_text(&run.text)
+    run.display_text
+        .clone()
+        .unwrap_or_else(|| expand_pua_display_text(&run.text))
 }
 
 fn paint_op_work_units(op: &PaintOp) -> usize {
@@ -5829,6 +5831,8 @@ mod tests {
             1,
             RenderNodeType::TextRun(TextRunNode {
                 text: "\u{E1A7}".repeat(128),
+                display_text: None,
+                display_clusters: None,
                 style: TextStyle::default(),
                 char_shape_id: None,
                 para_shape_id: None,

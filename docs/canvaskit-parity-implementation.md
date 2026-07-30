@@ -269,15 +269,27 @@ The lifecycle fixture feeds raw company-name PUA to both Canvas2D and CanvasKit
 and requires visible ink plus fuzzy raster parity.
 
 The later upstream legacy-product correction is applied through this branch's
-shared projection helper instead of importing its renderer-tree-specific
-display field. Raw source spellings `ᄒᆞᆫ글`, `ᄒᆞᆫ메일`, `ᄒᆞᆫ팩스`, and
-`ᄒᆞᆫ소프트` project to their modern product spellings for layout metrics and
-all Canvas2D, SVG, CanvasKit, JSON, and WASM paint paths when contained in one
-text run. Source text and indexes remain unchanged. Product matching runs
+source/display projection contract instead of importing its
+renderer-tree-specific display field. Raw source spellings `ᄒᆞᆫ글`,
+`ᄒᆞᆫ메일`, `ᄒᆞᆫ팩스`, and `ᄒᆞᆫ소프트` project to their modern product
+spellings for layout metrics and all Canvas2D, SVG, CanvasKit, JSON, and WASM
+paint paths. The projection crosses style runs and non-authorial layout-line
+splits, including the separate inline-table paragraph path, but does not cross
+explicit line breaks, inline-control gaps, char-overlap runs, or footnote
+markers.
+
+Raw source text and indexes remain unchanged. Each source character carries a
+display fragment; the first three legacy jamo map to `"한"`, `""`, and `""`.
+The empty fragments are significant zero-advance normalized clusters, so
+partial-run lowering, vertical layout, source selection, and JSON/WASM export
+retain source identity without painting duplicate glyphs. `TextRun.text`
+continues to carry source text while optional `displayText` carries the visual
+projection. Projected runs are excluded from `GlyphRun` and `GlyphOutline`
+sidecars until a shaping-equivalent source/display mapping exists, and static
+Skia cache keys include the explicit display value. Product matching runs
 before PUA old-Hangul expansion, so a PUA sequence that expands to the same
 jamo is not misclassified as a product name; ordinary old-Hangul words remain
-untouched. Product spellings split across style or line runs remain a separate
-source-index projection transport follow-up.
+untouched.
 
 The same shared table also carries ten earlier upstream mappings with
 document/PDF or embedded-outline evidence: the corrected basic-PUA middle dot

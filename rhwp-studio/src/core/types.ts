@@ -826,14 +826,14 @@ export interface LayerTextRunOp {
   bbox: LayerBounds;
   text: string;
   /**
-   * Paint-only text projection for HWP private-use characters. `text` remains
-   * the source-preserving replay identity; renderers should prefer
-   * `displayText` with `displayPositions` when present.
+   * Paint-only text projection for normalized or private-use source text.
+   * `text` remains source-backed; renderers must prefer `displayText` with
+   * `displayPositions` when present, including an explicitly empty value.
    */
   displayText?: string;
   /**
    * Source identity for search/accessibility/debug/editing. Rendering keeps the
-   * v1 `text` projection as the browser-friendly fallback.
+   * v1 `text` payload as the browser-friendly fallback.
    */
   source?: LayerTextSourceSpan;
   baseline: number;
@@ -865,7 +865,9 @@ export interface LayerTextRunOp {
    */
   legacyVisuals?: LayerTextLegacyVisuals;
   style: LayerTextStyle;
+  /** Source-character-aligned boundaries; collapsed fragments repeat a boundary. */
   positions: number[];
+  /** Visible-text boundaries used with `displayText`. */
   displayPositions?: number[];
   controlMarks?: LayerTextControlMark[];
   charOverlap?: LayerCharOverlap;

@@ -2151,6 +2151,7 @@ impl SkiaLayerRenderer {
                 let mut run = crate::paint::LayerTextRunPaint {
                     source: overlap.source.clone(),
                     text: overlap.text.clone(),
+                    display_text: None,
                     style: overlap.style.clone(),
                     positions: overlap.positions.clone(),
                     baseline: overlap.baseline,
@@ -2179,6 +2180,7 @@ impl SkiaLayerRenderer {
             PaintOp::TabLeader { bbox, leader } => {
                 let run = crate::paint::LayerTextRunPaint {
                     text: String::new(),
+                    display_text: None,
                     style: crate::renderer::TextStyle {
                         color: leader.color,
                         font_size: leader.font_size,

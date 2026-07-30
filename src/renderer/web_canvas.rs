@@ -782,9 +782,10 @@ impl WebCanvasRenderer {
                 }
             }
             RenderNodeType::TextRun(run) => {
+                let display_text = run.effective_display_text();
                 self.draw_text_run_contents(
                     &node.bbox,
-                    &run.text,
+                    display_text.as_ref(),
                     &run.style,
                     run.char_overlap.as_ref(),
                     run.rotation,
@@ -802,7 +803,12 @@ impl WebCanvasRenderer {
                     };
                     // 공백·탭 기호 (조판부호 마커는 건너뜀)
                     if !run.text.is_empty() && !is_marker {
-                        let char_positions = compute_char_positions(&run.text, &run.style);
+                        let char_positions =
+                            crate::renderer::layout::compute_source_aligned_display_positions(
+                                &run.text,
+                                run.display_clusters.as_deref(),
+                                &run.style,
+                            );
                         let mark_font_size = font_size * 0.5;
                         self.ctx.set_fill_style_str("#4A90D9");
                         self.ctx

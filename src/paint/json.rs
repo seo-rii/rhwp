@@ -2536,6 +2536,9 @@ fn write_text_positions_slice(buf: &mut String, positions: &[f64]) {
 }
 
 fn display_text_for_text_run(run: &LayerTextRunPaint) -> Option<String> {
+    if let Some(display_text) = &run.display_text {
+        return Some(display_text.clone());
+    }
     let display_text = expand_pua_display_text(&run.text);
     (display_text != run.text).then_some(display_text)
 }
@@ -3570,12 +3573,20 @@ mod tests {
         let text = "ᄒᆞᆫ글";
         let display_text = "한글";
         let display_positions = compute_char_positions(display_text, &style);
+        let source_positions = vec![
+            display_positions[0],
+            display_positions[1],
+            display_positions[1],
+            display_positions[1],
+            display_positions[2],
+        ];
         let text_run = PaintOp::TextRun {
             bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
             run: LayerTextRunPaint {
                 text: text.to_string(),
+                display_text: Some(display_text.to_string()),
                 style,
-                positions: vec![0.0, 16.0, 32.0, 48.0, 64.0],
+                positions: source_positions.clone(),
                 baseline: 13.0,
                 ..Default::default()
             },
@@ -3602,6 +3613,14 @@ mod tests {
 
         assert!(json.contains(&format!("\"text\":\"{}\"", text)));
         assert!(json.contains(&format!("\"displayText\":\"{}\"", display_text)));
+        assert!(json.contains(&format!(
+            "\"positions\":[{}]",
+            source_positions
+                .iter()
+                .map(|position| format!("{:.6}", position))
+                .collect::<Vec<_>>()
+                .join(",")
+        )));
         assert!(json.contains(&display_positions_json));
         assert!(json.contains("\"text.displayText\""));
     }
@@ -3612,6 +3631,7 @@ mod tests {
             bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
             run: LayerTextRunPaint {
                 text: "\u{F081C}".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Noto Sans KR".to_string(),
                     font_size: 16.0,
@@ -3646,6 +3666,7 @@ mod tests {
             run: LayerTextRunPaint {
                 source: None,
                 text: "가A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Noto Sans KR".to_string(),
                     font_size: 16.0,
@@ -3769,6 +3790,7 @@ mod tests {
         };
         let text_run = LayerTextRunPaint {
             text: "12".to_string(),
+            display_text: None,
             style: TextStyle {
                 font_size: 16.0,
                 ..TextStyle::default()
@@ -3833,6 +3855,7 @@ mod tests {
         };
         let text_run = LayerTextRunPaint {
             text: "decorated".to_string(),
+            display_text: None,
             style: style.clone(),
             positions: vec![0.0, 16.0, 32.0, 48.0],
             baseline: 12.0,
@@ -4192,6 +4215,7 @@ mod tests {
                 source: Some(source.clone()),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -4308,6 +4332,7 @@ mod tests {
                 source: Some(source),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -4351,6 +4376,7 @@ mod tests {
                 source: Some(source.clone()),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -4479,6 +4505,7 @@ mod tests {
                 source: Some(source.clone()),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -5077,6 +5104,7 @@ mod tests {
                 source: Some(source.clone()),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -5181,6 +5209,7 @@ mod tests {
             bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
             run: LayerTextRunPaint {
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -5211,6 +5240,7 @@ mod tests {
             bbox: BoundingBox::new(0.0, 0.0, 20.0, 20.0),
             run: LayerTextRunPaint {
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
@@ -5249,6 +5279,7 @@ mod tests {
                 source: Some(source.clone()),
                 variant: Some(PaintVariantMeta::text_run_default("text-0")),
                 text: "A".to_string(),
+                display_text: None,
                 style: TextStyle {
                     font_family: "Test".to_string(),
                     font_size: 12.0,
