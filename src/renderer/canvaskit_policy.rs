@@ -324,6 +324,7 @@ impl CanvasKitReplayStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanvasKitReplayRuntimeCondition {
     CanvasKitEncodedImageDecode,
+    CanvasKitTypefaceConstruction,
     BrowserSvgImageDecode,
 }
 
@@ -331,6 +332,7 @@ impl CanvasKitReplayRuntimeCondition {
     fn as_str(self) -> &'static str {
         match self {
             Self::CanvasKitEncodedImageDecode => "canvasKitEncodedImageDecode",
+            Self::CanvasKitTypefaceConstruction => "canvasKitTypefaceConstruction",
             Self::BrowserSvgImageDecode => "browserSvgImageDecode",
         }
     }
@@ -1756,7 +1758,13 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 }
             }
             PaintOp::GlyphRun { run, .. } => {
-                self.text_variant_item(path, "glyphRun", &run.variant, selected_variants)
+                let mut item =
+                    self.text_variant_item(path, "glyphRun", &run.variant, selected_variants);
+                if item.status == CanvasKitReplayStatus::Direct {
+                    item.runtime_condition =
+                        canvaskit_text_variant_runtime_condition(op, &self.tree.resources);
+                }
+                item
             }
             PaintOp::GlyphOutline { outline, .. } => {
                 let mut item = self.text_variant_item(
@@ -1947,25 +1955,30 @@ fn canvaskit_text_variant_runtime_condition(
     op: &PaintOp,
     resources: &ResourceArena,
 ) -> Option<CanvasKitReplayRuntimeCondition> {
-    let PaintOp::GlyphOutline { outline, .. } = op else {
-        return None;
-    };
-    if outline.payload_kind != GlyphOutlinePayloadKind::BitmapGlyph {
-        return None;
-    }
-    let bytes = outline
-        .bitmap_glyph
-        .as_ref()
-        .and_then(|payload| resources.image_bytes(payload.image_resource_id))?;
-    match image_admission(bytes) {
-        CanvasKitImageAdmission::HeaderAdmitted(
-            CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode,
-        ) => Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode),
-        CanvasKitImageAdmission::Missing
-        | CanvasKitImageAdmission::StaticRejected
-        | CanvasKitImageAdmission::HeaderAdmitted(
-            CanvasKitReplayRuntimeCondition::BrowserSvgImageDecode,
-        ) => None,
+    match op {
+        PaintOp::GlyphRun { run, .. }
+            if canvaskit_glyph_run_replay_status(run, resources).replayable =>
+        {
+            Some(CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction)
+        }
+        PaintOp::GlyphOutline { outline, .. }
+            if outline.payload_kind == GlyphOutlinePayloadKind::BitmapGlyph =>
+        {
+            let bytes = outline
+                .bitmap_glyph
+                .as_ref()
+                .and_then(|payload| resources.image_bytes(payload.image_resource_id))?;
+            match image_admission(bytes) {
+                CanvasKitImageAdmission::HeaderAdmitted(runtime_condition)
+                    if runtime_condition
+                        == CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode =>
+                {
+                    Some(runtime_condition)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
@@ -4289,6 +4302,51 @@ mod tests {
         assert_eq!(report.digest_matched, Some(true));
         assert_eq!(report.exact_face_instantiated, None);
         assert!(report.replay_eligible);
+    }
+
+    #[test]
+    fn canvaskit_marks_selected_glyph_run_as_typeface_construction_conditional() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_test_font(&mut resources, 0);
+        let text = text_run_op("text-0");
+        let glyph = PaintOp::GlyphRun {
+            bbox: valid_bbox(),
+            run: glyph_run(face_key, Vec::new()),
+        };
+        let tree = PageLayerTree::builder(
+            100.0,
+            100.0,
+            LayerNode::leaf(valid_bbox(), None, vec![text, glyph]),
+        )
+        .resources(resources)
+        .build();
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let report = plan
+            .text_variants
+            .iter()
+            .find(|report| report.equivalence_group == "text-0")
+            .expect("GlyphRun variant report");
+
+        assert_eq!(report.selected_variant_id, "glyphRun");
+        assert_eq!(
+            report.selected_runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction]
+        );
+        assert!(report.parts.iter().any(|part| {
+            part.variant_id == "glyphRun"
+                && part.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction)
+        }));
+        assert!(plan.items.iter().any(|item| {
+            item.op_type == "glyphRun"
+                && item.status == CanvasKitReplayStatus::Direct
+                && item.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction)
+        }));
+        assert!(plan
+            .to_json()
+            .contains("\"selectedRuntimeConditions\":[\"canvasKitTypefaceConstruction\"]"));
     }
 
     #[test]

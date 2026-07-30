@@ -594,6 +594,15 @@ assertTokensInOrder(
   ],
   'CanvasKit replay plan must bound static image admission and expose the remaining decoder condition',
 );
+assert(
+  rustCanvaskitPolicySource.includes(
+    'CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction',
+  )
+    && rustCanvaskitPolicySource.includes(
+      'Some(CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction)',
+    ),
+  'CanvasKit replay plan must expose browser typeface construction as a GlyphRun runtime condition',
+);
 assertTokensInOrder(
   rustCanvaskitPolicySource,
   [
@@ -1160,6 +1169,27 @@ assert(
     && rendererBaselineSource.includes('pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, 1.0)')
     && rendererBaselineSource.includes('textVariantReportKey(report)'),
   'browser baseline must wait for CanvasKit async image recovery, rerender the capture, and correlate leaf-local variant slots',
+);
+const conditionalGlyphRunAlignment = classifyCanvasKitVariantAlignment(
+  {
+    ...conditionalBitmapPlan,
+    selectedVariantId: 'glyphRun',
+    selectedVariantKind: 'glyphRun',
+    selectedRuntimeConditions: ['canvasKitTypefaceConstruction'],
+  },
+  {
+    ...decodedBitmapFallback,
+    rejectedVariants: [{
+      variantId: 'glyphRun',
+      variantKind: 'glyphRun',
+      reasons: ['fontFaceInstantiationFailed'],
+    }],
+  },
+);
+assert.equal(conditionalGlyphRunAlignment.aligned, true);
+assert.deepEqual(
+  conditionalGlyphRunAlignment.resolvedRuntimeConditions,
+  ['canvasKitTypefaceConstruction'],
 );
 assert(
   rendererBaselineDriverSource.includes('CanvasKit Replay Diagnostics')

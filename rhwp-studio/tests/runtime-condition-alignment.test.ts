@@ -87,6 +87,47 @@ test('declared runtime fallback still requires complete reports in the same pain
   assert(incomplete.mismatches.includes('runtimePartsIncomplete'));
 });
 
+test('GlyphRun typeface construction failure resolves only its declared runtime condition', () => {
+  const conditionalPlan = {
+    ...directPlan,
+    selectedVariantId: 'glyphRun',
+    selectedVariantKind: 'glyphRun',
+    selectedRuntimeConditions: ['canvasKitTypefaceConstruction'],
+  };
+  const runtimeFallback = {
+    equivalenceGroup: 'text-0',
+    anchorOpId: 'op-text-0',
+    selectedVariantId: 'textRun',
+    selectedVariantKind: 'textRun',
+    selectedReason: 'defaultTextRunFallback',
+    partsExpected: 1,
+    partsReplayed: 1,
+    rejectedVariants: [{
+      variantId: 'glyphRun',
+      variantKind: 'glyphRun',
+      reasons: ['fontFaceInstantiationFailed'],
+    }],
+  };
+
+  const resolved = classifyCanvasKitVariantAlignment(conditionalPlan, runtimeFallback);
+  assert.equal(resolved.aligned, true);
+  assert.deepEqual(resolved.resolvedRuntimeConditions, ['canvasKitTypefaceConstruction']);
+
+  const unrelatedFailure = classifyCanvasKitVariantAlignment(conditionalPlan, {
+    ...runtimeFallback,
+    rejectedVariants: [{
+      variantId: 'glyphRun',
+      variantKind: 'glyphRun',
+      reasons: ['fontBlobNotVerified'],
+    }],
+  });
+  assert.equal(unrelatedFailure.aligned, false);
+  assert.deepEqual(
+    unrelatedFailure.unresolvedRuntimeConditions,
+    ['canvasKitTypefaceConstruction'],
+  );
+});
+
 test('variant report keys include the leaf-local anchor when available', () => {
   assert.notEqual(
     textVariantReportKey({

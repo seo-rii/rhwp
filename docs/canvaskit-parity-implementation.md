@@ -579,6 +579,12 @@ The working order is:
    actual codec result. Missing resources remain `missingImageData`, and bytes
    rejected by static admission report `encodedImageRejected`; the plan does
    not mislabel either case as a runtime decode failure.
+   A statically verified `GlyphRun` similarly carries
+   `runtimeCondition=canvasKitTypefaceConstruction`: Rust proves the bounded
+   font resource, digest, face, glyph IDs, and paint contract, while Studio
+   proves that the active CanvasKit build can construct that exact typeface.
+   Only an observed `fontFaceInstantiationFailed` rejection may resolve this
+   condition into a compatibility `TextRun` fallback.
    Browser replay ordering is also one shared contract: Canvas2D and CanvasKit
    traverse `background`, `behindText`, `flow`, and `inFrontOfText` planes in
    the same order as native Skia and layered SVG. Source order remains stable

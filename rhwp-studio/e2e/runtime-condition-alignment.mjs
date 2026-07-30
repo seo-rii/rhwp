@@ -1,5 +1,9 @@
 const RUNTIME_CONDITION_FAILURE_DETAILS = new Map([
-  ['canvasKitEncodedImageDecode', 'imageDecodeFailed'],
+  ['canvasKitEncodedImageDecode', { field: 'details', value: 'imageDecodeFailed' }],
+  ['canvasKitTypefaceConstruction', {
+    field: 'reasons',
+    value: 'fontFaceInstantiationFailed',
+  }],
 ]);
 
 function stringArray(value) {
@@ -88,11 +92,15 @@ export function classifyCanvasKitVariantAlignment(planReport, runtimeReport) {
       && rejected?.variantKind === planReport.selectedVariantKind
   ));
   const rejectedDetails = new Set(stringArray(rejectedPlanVariant?.details));
+  const rejectedReasons = new Set(stringArray(rejectedPlanVariant?.reasons));
   const resolvedRuntimeConditions = [];
   const unresolvedRuntimeConditions = [];
   for (const runtimeCondition of runtimeConditions) {
-    const expectedFailureDetail = RUNTIME_CONDITION_FAILURE_DETAILS.get(runtimeCondition);
-    if (expectedFailureDetail && rejectedDetails.has(expectedFailureDetail)) {
+    const expectedFailure = RUNTIME_CONDITION_FAILURE_DETAILS.get(runtimeCondition);
+    const observedFailures = expectedFailure?.field === 'reasons'
+      ? rejectedReasons
+      : rejectedDetails;
+    if (expectedFailure && observedFailures.has(expectedFailure.value)) {
       resolvedRuntimeConditions.push(runtimeCondition);
     } else {
       unresolvedRuntimeConditions.push(runtimeCondition);
