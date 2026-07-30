@@ -94,6 +94,27 @@ export class CanvasView {
 
     // 그리드 모드 CSS 클래스 토글
     this.scrollContent.classList.toggle('grid-mode', this.virtualScroll.isGridMode());
+
+    // A viewport-width change can move centered or grid pages without
+    // invalidating their pixels. Keep already rendered Canvas2D and CanvasKit
+    // surfaces on the newly calculated page coordinates.
+    for (const pageIdx of this.canvasPool.activePages) {
+      const canvas = this.canvasPool.getCanvas(pageIdx);
+      if (canvas) this.positionPageCanvas(canvas, pageIdx);
+    }
+  }
+
+  private positionPageCanvas(canvas: HTMLCanvasElement, pageIdx: number): void {
+    canvas.style.top = `${this.virtualScroll.getPageOffset(pageIdx)}px`;
+
+    const pageLeft = this.virtualScroll.getPageLeft(pageIdx);
+    if (pageLeft >= 0) {
+      canvas.style.left = `${pageLeft}px`;
+      canvas.style.transform = 'none';
+    } else {
+      canvas.style.left = '50%';
+      canvas.style.transform = 'translateX(-50%)';
+    }
   }
 
   /** 스크롤/리사이즈 시 보이는 페이지를 갱신한다 */
@@ -160,17 +181,7 @@ export class CanvasView {
     const renderScale = zoom * dpr;
 
     // Canvas를 DOM에 추가하고 위치를 설정한다
-    canvas.style.top = `${this.virtualScroll.getPageOffset(pageIdx)}px`;
-
-    // 그리드 모드: 고정 left 좌표, 단일 열: CSS 중앙 정렬
-    const pageLeft = this.virtualScroll.getPageLeft(pageIdx);
-    if (pageLeft >= 0) {
-      canvas.style.left = `${pageLeft}px`;
-      canvas.style.transform = 'none';
-    } else {
-      canvas.style.left = '50%';
-      canvas.style.transform = 'translateX(-50%)';
-    }
+    this.positionPageCanvas(canvas, pageIdx);
 
     this.scrollContent.appendChild(canvas);
 

@@ -206,6 +206,58 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `page layer cache load count=${layerCacheProbe.loads}`,
   );
 
+  setTestCase('active-page-position-recalculation');
+  const pagePositionProbe = await page.evaluate(() => {
+    const canvasView = window.__canvasView;
+    if (!canvasView?.canvasPool || !canvasView?.virtualScroll) {
+      return { error: 'canvas view unavailable' };
+    }
+
+    const pageIdx = 0;
+    canvasView.pages = [{
+      pageIndex: pageIdx,
+      width: 100,
+      height: 120,
+      sectionIndex: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      marginHeader: 0,
+      marginFooter: 0,
+    }];
+    const canvas = canvasView.canvasPool.acquire(pageIdx);
+    try {
+      canvas.style.top = '12345px';
+      canvas.style.left = '12345px';
+      canvas.style.transform = 'rotate(1deg)';
+      canvasView.recalcLayout();
+
+      const pageLeft = canvasView.virtualScroll.getPageLeft(pageIdx);
+      return {
+        pageIdx,
+        actualTop: canvas.style.top,
+        expectedTop: `${canvasView.virtualScroll.getPageOffset(pageIdx)}px`,
+        actualLeft: canvas.style.left,
+        expectedLeft: pageLeft >= 0 ? `${pageLeft}px` : '50%',
+        actualTransform: canvas.style.transform,
+        expectedTransform: pageLeft >= 0 ? 'none' : 'translateX(-50%)',
+      };
+    } finally {
+      canvasView.canvasPool.release(pageIdx);
+    }
+  });
+  assert(
+    !pagePositionProbe.error,
+    pagePositionProbe.error || 'active page canvas available',
+  );
+  assert(
+    pagePositionProbe.actualTop === pagePositionProbe.expectedTop
+      && pagePositionProbe.actualLeft === pagePositionProbe.expectedLeft
+      && pagePositionProbe.actualTransform === pagePositionProbe.expectedTransform,
+    `layout recalculation repositions active page=${JSON.stringify(pagePositionProbe)}`,
+  );
+
   setTestCase('skia-renderer-alias');
   await loadApp(page, '?renderer=skia&canvaskitMode=default&canvaskitSurface=software');
   const skiaAliasProbe = await page.evaluate(() => ({

@@ -1935,6 +1935,14 @@ average was `62.277 ms` for CanvasKit and `73.354 ms` for Canvas2D
 the mixed-axis master-page port, the focused `2010-01-06` browser sweep also
 passed, reporting `88.2 ms` for CanvasKit and `233.1 ms` for Canvas2D.
 
+Viewport layout recalculation also reapplies the current virtual-scroll
+coordinates to every active page canvas. This positioning contract is shared
+by Canvas2D and CanvasKit: a scrollbar, viewport-width, or grid-layout change
+may move an existing surface without invalidating its pixels, so a page must
+not retain coordinates from the previous layout pass. The browser lifecycle
+suite deliberately corrupts an active canvas position and verifies that
+recalculation restores its current page offset and centering/grid transform.
+
 These results close the currently exercised Canvas2D direct-replay gap. The
 remaining register is corpus, public-API proof, or layout-authority work:
 real-document strict glyph payload widening, exact CanvasKit variation-instance
