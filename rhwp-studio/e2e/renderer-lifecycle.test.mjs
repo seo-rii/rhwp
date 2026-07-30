@@ -16695,7 +16695,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
         imageKeys: [],
         svgFragments: [[
           '<text x="6" y="18" font-family="Noto Sans KR" font-size="16" fill="#111111" text-anchor="start">AV office</text>',
-          '<text x="118" y="42" font-family="Noto Sans KR" font-size="16" font-weight="700" fill="#0057b8" text-anchor="middle">AVATAR office</text>',
+          '<text x="118" y="42" font-family="Noto Sans KR" font-size="16" font-weight="700" fill="#0057b8" text-anchor="middle" dominant-baseline="middle">AVATAR office</text>',
           '<text x="230" y="66" font-family="Noto Sans KR" font-size="16" fill="#b00020" text-anchor="end">office AV</text>',
         ].join('')],
         svgHashes: ['fixture-equation-svg-text-shaping'],

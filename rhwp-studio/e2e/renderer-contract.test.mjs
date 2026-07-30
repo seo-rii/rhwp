@@ -1340,6 +1340,7 @@ assertTokensInOrder(
     'builder.delete()',
     'paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH)',
     'const width = paragraph.getLongestLine()',
+    'const height = paragraph.getHeight()',
     'const alphabeticBaseline = paragraph.getAlphabeticBaseline()',
     'paragraph?.delete()',
   ],
@@ -1351,14 +1352,17 @@ assertTokensInOrder(
     'this.buildShapedSingleLineParagraph(',
     'layer.text',
     'if (shaped)',
+    'layer.y - shaped.height / 2',
     'canvas.drawParagraph(',
-    'baselineY - shaped.alphabeticBaseline',
+    'drawY',
     'paragraphDrawn = true',
     'shaped.paragraph.delete()',
     'if (paragraphDrawn)',
+    'const primaryMetrics = primaryObjects.font.getMetrics()',
     'const clusters = splitIntoClusters(layer.text)',
+    '-(primaryMetrics.ascent + primaryMetrics.descent) / 2',
   ],
-  'CanvasKit static SVG text must shape the complete string before using its direct-text fallback',
+  'CanvasKit static SVG text must shape the complete string and use real line/font metrics before its direct-text fallback',
 );
 const canvaskitFormObjectBlock =
   extractMethodBody(canvaskitSource, 'renderFormObject');

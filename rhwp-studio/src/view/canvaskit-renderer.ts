@@ -223,6 +223,7 @@ type CanvasKitPreparedSvgGlyphPathLayer = {
 type CanvasKitShapedSingleLine = {
   paragraph: Paragraph;
   width: number;
+  height: number;
   alphabeticBaseline: number;
 };
 
@@ -3264,13 +3265,20 @@ export class CanvasKitLayerRenderer {
       }
       paragraph.layout(CanvasKitLayerRenderer.MAX_SHAPED_TEXT_WIDTH);
       const width = paragraph.getLongestLine();
+      const height = paragraph.getHeight();
       const alphabeticBaseline = paragraph.getAlphabeticBaseline();
-      if (!Number.isFinite(width) || !Number.isFinite(alphabeticBaseline)) {
+      if (
+        !Number.isFinite(width)
+        || !Number.isFinite(height)
+        || height < 0
+        || !Number.isFinite(alphabeticBaseline)
+      ) {
         throw new Error('invalid single-line paragraph metrics');
       }
       return {
         paragraph,
         width,
+        height,
         alphabeticBaseline,
       };
     } catch {
@@ -3340,13 +3348,13 @@ export class CanvasKitLayerRenderer {
               : layer.textAnchor === 'end'
                 ? layer.x - shaped.width
                 : layer.x;
-            const baselineY = layer.dominantBaseline === 'middle'
-              ? layer.y + layer.fontSize * 0.35
-              : layer.y;
+            const drawY = layer.dominantBaseline === 'middle'
+              ? layer.y - shaped.height / 2
+              : layer.y - shaped.alphabeticBaseline;
             canvas.drawParagraph(
               shaped.paragraph,
               drawX,
-              baselineY - shaped.alphabeticBaseline,
+              drawY,
             );
             paragraphDrawn = true;
           } catch {
@@ -3361,6 +3369,7 @@ export class CanvasKitLayerRenderer {
 
         const primaryObjects = makeSvgTextObjects(layer.fontFamily);
         textObjectsByFamily.set(layer.fontFamily, primaryObjects);
+        const primaryMetrics = primaryObjects.font.getMetrics();
         const clusters = splitIntoClusters(layer.text);
         const clusterObjects: Array<{ typeface: Typeface; font: Font; paint: Paint }> = [];
         const clusterWidths: number[] = [];
@@ -3392,8 +3401,12 @@ export class CanvasKitLayerRenderer {
           : layer.textAnchor === 'end'
             ? layer.x - textWidth
             : layer.x;
+        const middleBaselineOffset = Number.isFinite(primaryMetrics.ascent)
+          && Number.isFinite(primaryMetrics.descent)
+          ? -(primaryMetrics.ascent + primaryMetrics.descent) / 2
+          : layer.fontSize * 0.35;
         const baselineY = layer.dominantBaseline === 'middle'
-          ? layer.y + layer.fontSize * 0.35
+          ? layer.y + middleBaselineOffset
           : layer.y;
         let clusterX = drawX;
         for (const [index, cluster] of clusters.entries()) {
