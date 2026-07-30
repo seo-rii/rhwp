@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  classifyCanvasKitPageRuntimeConditions,
   classifyCanvasKitVariantAlignment,
   textVariantReportKey,
 } from '../e2e/runtime-condition-alignment.mjs';
@@ -15,6 +16,120 @@ const directPlan = {
   partsExpected: 2,
   partsReplayed: 2,
 };
+
+test('page runtime alignment observes plural and legacy plan conditions', () => {
+  const alignments = classifyCanvasKitPageRuntimeConditions({
+    items: [
+      {
+        path: 'root/ops/0',
+        runtimeCondition: 'canvasKitImageEffectPreprocess',
+        runtimeConditions: [
+          'canvasKitImageEffectPreprocess',
+          'canvasKitPatternImageConstruction',
+        ],
+      },
+      {
+        path: 'root/ops/1',
+        runtimeCondition: 'canvasKitImageEffectPreprocess',
+      },
+    ],
+  }, {
+    imageEffects: {
+      canvaskit: {
+        cacheHits: 1,
+        cacheMisses: 2,
+        preprocessFailures: 0,
+        fallbackToOriginal: 0,
+      },
+    },
+    patternDiagnostics: {
+      cacheHits: 1,
+      cacheMisses: 1,
+      surfaceFailures: 0,
+    },
+  });
+
+  assert.deepEqual(alignments, [
+    {
+      condition: 'canvasKitImageEffectPreprocess',
+      plannedPaths: ['root/ops/0', 'root/ops/1'],
+      plannedItemCount: 2,
+      observedAttempts: 3,
+      failureCount: 0,
+      status: 'observed',
+    },
+    {
+      condition: 'canvasKitPatternImageConstruction',
+      plannedPaths: ['root/ops/0'],
+      plannedItemCount: 1,
+      observedAttempts: 2,
+      failureCount: 0,
+      status: 'observed',
+    },
+  ]);
+});
+
+test('page runtime alignment distinguishes unobserved, undeclared, and failed conditions', () => {
+  const unobserved = classifyCanvasKitPageRuntimeConditions({
+    items: [{
+      path: 'root/ops/0',
+      runtimeConditions: ['canvasKitImageEffectPreprocess'],
+    }],
+  }, {});
+  assert.equal(unobserved[0].status, 'unobserved');
+
+  const undeclared = classifyCanvasKitPageRuntimeConditions({ items: [] }, {
+    patternDiagnostics: {
+      cacheHits: 0,
+      cacheMisses: 1,
+      surfaceFailures: 0,
+    },
+  });
+  assert.deepEqual(undeclared, [{
+    condition: 'canvasKitPatternImageConstruction',
+    plannedPaths: [],
+    plannedItemCount: 0,
+    observedAttempts: 1,
+    failureCount: 0,
+    status: 'undeclared',
+  }]);
+
+  const failed = classifyCanvasKitPageRuntimeConditions({
+    items: [{
+      path: 'root/ops/0',
+      runtimeCondition: 'canvasKitImageEffectPreprocess',
+    }],
+  }, {
+    imageEffects: {
+      canvaskit: {
+        cacheHits: 0,
+        cacheMisses: 1,
+        preprocessFailures: 1,
+        fallbackToOriginal: 1,
+      },
+    },
+  });
+  assert.equal(failed[0].status, 'failed');
+  assert.equal(failed[0].failureCount, 1);
+});
+
+test('page runtime alignment omits irrelevant and malformed counters', () => {
+  assert.deepEqual(
+    classifyCanvasKitPageRuntimeConditions({ items: [] }, {
+      imageEffects: {
+        canvaskit: {
+          cacheHits: Number.NaN,
+          cacheMisses: -1,
+        },
+      },
+      patternDiagnostics: {
+        cacheHits: null,
+        cacheMisses: '1',
+      },
+    }),
+    [],
+  );
+});
 
 test('variant alignment requires the full selected variant identity', () => {
   const exact = classifyCanvasKitVariantAlignment(directPlan, {

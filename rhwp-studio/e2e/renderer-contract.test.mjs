@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { classifyCanvasKitVariantAlignment } from './runtime-condition-alignment.mjs';
+import {
+  classifyCanvasKitPageRuntimeConditions,
+  classifyCanvasKitVariantAlignment,
+} from './runtime-condition-alignment.mjs';
 
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(studioRoot, '..');
@@ -1089,10 +1092,43 @@ assert(
     && rendererBaselineSource.includes("code: 'planRuntimeVariantMismatch'")
     && rendererBaselineSource.includes('...planSelections.keys()')
     && rendererBaselineSource.includes('...runtimeSelections.keys()')
+    && rendererBaselineSource.includes('classifyCanvasKitPageRuntimeConditions')
     && rendererBaselineSource.includes('classifyCanvasKitVariantAlignment')
+    && rendererBaselineSource.includes("code: 'runtimeConditionUndeclared'")
+    && rendererBaselineSource.includes('pageRuntimeConditionAlignments')
+    && rendererBaselineSource.includes('runtimeConditionStatusCounts')
     && rendererBaselineSource.includes('runtimeConditionResolutions')
     && rendererBaselineSource.includes('hardSafetyGateAndReportInventory'),
   'browser baseline must hard-gate invalid plans, runtime paint failures, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
+);
+const pageRuntimeAlignments = classifyCanvasKitPageRuntimeConditions({
+  items: [{
+    path: 'root/ops/0',
+    runtimeCondition: 'canvasKitImageEffectPreprocess',
+    runtimeConditions: [
+      'canvasKitImageEffectPreprocess',
+      'canvasKitPatternImageConstruction',
+    ],
+  }],
+}, {
+  imageEffects: {
+    canvaskit: {
+      cacheHits: 0,
+      cacheMisses: 1,
+      preprocessFailures: 0,
+      fallbackToOriginal: 0,
+    },
+  },
+  patternDiagnostics: {
+    cacheHits: 0,
+    cacheMisses: 1,
+    surfaceFailures: 0,
+  },
+});
+assert.deepEqual(
+  pageRuntimeAlignments.map((alignment) => alignment.status),
+  ['observed', 'observed'],
+  'page-level runtime prerequisites must join replay-plan declarations with CanvasKit attempts',
 );
 const conditionalBitmapPlan = {
   equivalenceGroup: 'text-0',

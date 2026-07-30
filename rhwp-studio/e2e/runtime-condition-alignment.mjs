@@ -27,6 +27,100 @@ function partsAreComplete(report) {
   return expected !== null && expected > 0 && replayed === expected;
 }
 
+function nonnegativeCounter(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : 0;
+}
+
+function replayItemRuntimeConditions(item) {
+  const conditions = stringArray(item?.runtimeConditions);
+  if (conditions.length > 0) {
+    return conditions;
+  }
+  const legacyCondition = nullableString(item?.runtimeCondition);
+  return legacyCondition ? [legacyCondition] : [];
+}
+
+const PAGE_RUNTIME_CONDITION_OBSERVERS = [
+  {
+    condition: 'canvasKitImageEffectPreprocess',
+    observe(diagnostics) {
+      const effects = diagnostics?.imageEffects?.canvaskit;
+      return {
+        observedAttempts:
+          nonnegativeCounter(effects?.cacheHits) + nonnegativeCounter(effects?.cacheMisses),
+        failureCount: Math.max(
+          nonnegativeCounter(effects?.preprocessFailures),
+          nonnegativeCounter(effects?.fallbackToOriginal),
+        ),
+      };
+    },
+  },
+  {
+    condition: 'canvasKitPatternImageConstruction',
+    observe(diagnostics) {
+      const patterns = diagnostics?.patternDiagnostics;
+      return {
+        observedAttempts:
+          nonnegativeCounter(patterns?.cacheHits) + nonnegativeCounter(patterns?.cacheMisses),
+        failureCount: nonnegativeCounter(patterns?.surfaceFailures),
+      };
+    },
+  },
+];
+
+export function classifyCanvasKitPageRuntimeConditions(replayPlan, diagnostics) {
+  const declarations = new Map();
+  const items = Array.isArray(replayPlan?.items) ? replayPlan.items : [];
+  for (const item of items) {
+    for (const condition of new Set(replayItemRuntimeConditions(item))) {
+      const declaration = declarations.get(condition) ?? {
+        plannedPaths: [],
+        plannedItemCount: 0,
+      };
+      declaration.plannedItemCount += 1;
+      declaration.plannedPaths.push(
+        typeof item?.path === 'string' ? item.path : '',
+      );
+      declarations.set(condition, declaration);
+    }
+  }
+
+  const alignments = [];
+  for (const observer of PAGE_RUNTIME_CONDITION_OBSERVERS) {
+    const declaration = declarations.get(observer.condition) ?? {
+      plannedPaths: [],
+      plannedItemCount: 0,
+    };
+    const observation = observer.observe(diagnostics);
+    if (
+      declaration.plannedItemCount === 0
+      && observation.observedAttempts === 0
+      && observation.failureCount === 0
+    ) {
+      continue;
+    }
+    let status = 'unobserved';
+    if (observation.failureCount > 0) {
+      status = 'failed';
+    } else if (declaration.plannedItemCount === 0) {
+      status = 'undeclared';
+    } else if (observation.observedAttempts > 0) {
+      status = 'observed';
+    }
+    alignments.push({
+      condition: observer.condition,
+      plannedPaths: [...new Set(declaration.plannedPaths)],
+      plannedItemCount: declaration.plannedItemCount,
+      observedAttempts: observation.observedAttempts,
+      failureCount: observation.failureCount,
+      status,
+    });
+  }
+  return alignments;
+}
+
 export function textVariantReportKey(report) {
   return JSON.stringify([
     nullableString(report?.equivalenceGroup) ?? '',

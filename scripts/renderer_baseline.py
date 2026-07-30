@@ -894,8 +894,8 @@ def write_reports(
                 "",
                 "### Replay Reason Inventory",
                 "",
-                "| Backend | Profile | Plan Statuses | Plan Reasons | Runtime Selected Reasons | Runtime Rejected Reasons | Runtime Image Recoveries | Runtime Image Failures | Runtime Text Recoveries | Runtime Text Failures | Font Resolution Sources | v2 Issue Codes |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+                "| Backend | Profile | Plan Statuses | Plan Reasons | Runtime Conditions | Runtime Selected Reasons | Runtime Rejected Reasons | Runtime Image Recoveries | Runtime Image Failures | Runtime Text Recoveries | Runtime Text Failures | Font Resolution Sources | v2 Issue Codes |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
         for item in replay_summary_rows:
@@ -903,6 +903,7 @@ def write_reports(
             for field in (
                 "planStatusCounts",
                 "planReasonCounts",
+                "runtimeConditionStatusCounts",
                 "selectedReasonCounts",
                 "rejectedReasonCounts",
                 "runtimeImageRecoveryReasonCounts",

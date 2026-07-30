@@ -11,6 +11,7 @@ import {
   runTest,
   setTestCase,
 } from './helpers.mjs';
+import { classifyCanvasKitPageRuntimeConditions } from './runtime-condition-alignment.mjs';
 import { PNG } from 'pngjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21612,6 +21613,54 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && imageEffectCropProbe.directPatternCacheReuse.failure.afterSecond.imagesCreated === 0,
     `CanvasKit pattern failure cache avoids repeated creation work and reports each failed replay=${JSON.stringify(
       imageEffectCropProbe.directPatternCacheReuse,
+    )}`,
+  );
+  const imageEffectRuntimeAlignment = classifyCanvasKitPageRuntimeConditions({
+    items: [{
+      path: 'synthetic/image-effect',
+      runtimeConditions: ['canvasKitImageEffectPreprocess'],
+    }],
+  }, {
+    imageEffects: {
+      canvaskit: imageEffectCropProbe.canvaskit.diagnostics,
+    },
+  });
+  assert(
+    imageEffectRuntimeAlignment.length === 1
+      && imageEffectRuntimeAlignment[0].status === 'observed',
+    `CanvasKit image-effect runtime prerequisite observed=${JSON.stringify(
+      imageEffectRuntimeAlignment,
+    )}`,
+  );
+  const patternRuntimeAlignment = classifyCanvasKitPageRuntimeConditions({
+    items: [{
+      path: 'synthetic/pattern',
+      runtimeConditions: ['canvasKitPatternImageConstruction'],
+    }],
+  }, {
+    patternDiagnostics: imageEffectCropProbe.directPatternCacheReuse.afterOther,
+  });
+  assert(
+    patternRuntimeAlignment.length === 1
+      && patternRuntimeAlignment[0].status === 'observed',
+    `CanvasKit pattern runtime prerequisite observed=${JSON.stringify(
+      patternRuntimeAlignment,
+    )}`,
+  );
+  const failedPatternRuntimeAlignment = classifyCanvasKitPageRuntimeConditions({
+    items: [{
+      path: 'synthetic/pattern-failure',
+      runtimeConditions: ['canvasKitPatternImageConstruction'],
+    }],
+  }, {
+    patternDiagnostics:
+      imageEffectCropProbe.directPatternCacheReuse.failure.afterFirst,
+  });
+  assert(
+    failedPatternRuntimeAlignment.length === 1
+      && failedPatternRuntimeAlignment[0].status === 'failed',
+    `CanvasKit pattern runtime prerequisite failure classified=${JSON.stringify(
+      failedPatternRuntimeAlignment,
     )}`,
   );
 

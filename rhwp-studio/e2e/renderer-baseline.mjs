@@ -15,6 +15,7 @@ import {
   selectRendererBaselineShard,
 } from './renderer-baseline-sharding.mjs';
 import {
+  classifyCanvasKitPageRuntimeConditions,
   classifyCanvasKitVariantAlignment,
   textVariantReportKey,
 } from './runtime-condition-alignment.mjs';
@@ -604,6 +605,19 @@ try {
               detail: String(replaySummary.directRequiredItems),
             });
           }
+          diagnostics.pageRuntimeConditionAlignments =
+            classifyCanvasKitPageRuntimeConditions(replayPlan, diagnostics);
+          for (const alignment of diagnostics.pageRuntimeConditionAlignments) {
+            if (alignment.status === 'undeclared') {
+              hardGateViolations.push({
+                sampleId: sample.id,
+                backend: backend.key,
+                profile,
+                code: 'runtimeConditionUndeclared',
+                detail: JSON.stringify(alignment),
+              });
+            }
+          }
           if ((diagnostics.imageDiagnostics?.failures?.length ?? 0) > 0) {
             hardGateViolations.push({
               sampleId: sample.id,
@@ -964,6 +978,7 @@ for (const result of results) {
       runtimeDuplicateVariantReports: 0,
       runtimeVariantSelectionConflicts: 0,
       resolvedRuntimeVariantConditions: 0,
+      runtimeConditionStatusCounts: {},
       planStatusCounts: {},
       planReasonCounts: {},
       selectedReasonCounts: {},
@@ -1020,6 +1035,12 @@ for (const result of results) {
   summary.resolvedRuntimeVariantConditions += (
     diagnostics.runtimeConditionResolutions?.length ?? 0
   );
+  for (const alignment of diagnostics.pageRuntimeConditionAlignments ?? []) {
+    const key = `${String(alignment.condition ?? 'unknown')}:${String(alignment.status ?? 'unknown')}`;
+    summary.runtimeConditionStatusCounts[key] = (
+      summary.runtimeConditionStatusCounts[key] ?? 0
+    ) + 1;
+  }
 
   for (const item of replayPlan.items ?? []) {
     const status = String(item.status ?? 'unknown');
@@ -1099,6 +1120,7 @@ for (const summary of replaySummaryRows) {
   for (const field of [
     'planStatusCounts',
     'planReasonCounts',
+    'runtimeConditionStatusCounts',
     'selectedReasonCounts',
     'rejectedReasonCounts',
     'runtimeFontResolutionSourceCounts',

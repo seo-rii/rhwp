@@ -589,6 +589,11 @@ The working order is:
    runtime precedence. These conditions describe successful direct replay
    prerequisites; they do not waive the existing hard failures for effect
    preprocessing fallback or pattern surface construction failure.
+   The browser baseline joins these item declarations to page-level
+   image-effect and pattern cache attempts. `observed`, `unobserved`, and
+   `failed` remain diagnostic inventory (`unobserved` can result from a static
+   picture cache hit), while a runtime attempt with no matching declaration is
+   a `runtimeConditionUndeclared` hard-gate violation.
    A statically verified `GlyphRun` similarly carries
    `runtimeCondition=canvasKitTypefaceConstruction`: Rust proves the bounded
    font resource, digest, face, glyph IDs, and paint contract, while Studio
