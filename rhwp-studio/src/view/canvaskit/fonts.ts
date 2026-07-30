@@ -125,6 +125,19 @@ const MATH_ALIASES = [
 ];
 const OLD_HANGUL_ALIASES = [OLD_HANGUL_FONT_FAMILY];
 
+export type CanvasKitFontResolutionSource =
+  | 'requestedAlias'
+  | 'substitutionAlias'
+  | 'weightSuffixAlias'
+  | 'fallbackCandidate'
+  | 'defaultFallback';
+
+export interface CanvasKitFontResolution {
+  requestedFamily: string;
+  resolvedFamily: string;
+  source: CanvasKitFontResolutionSource;
+}
+
 export interface CanvasKitGlyphRunReplayReport {
   replayEligibility: LayerGlyphRunOp['diagnostics']['replayEligibility'];
   quality: LayerGlyphRunOp['diagnostics']['quality'];
@@ -253,7 +266,7 @@ export class CanvasKitFontRegistry {
     );
   }
 
-  resolveFamily(fontFamily: string): string {
+  resolveFamilyWithStatus(fontFamily: string): CanvasKitFontResolution {
     // PageLayerTree families have already passed through the Rust style
     // resolver. Preserve measured HFT identities instead of feeding them
     // through the raw-document substitution table a second time.
@@ -261,26 +274,62 @@ export class CanvasKitFontRegistry {
       ? fontFamily
       : resolveFont(fontFamily, 0, 0);
     if (HAMCHOROM_DOTUM_ALIASES.has(resolved) || HAMCHOROM_DOTUM_ALIASES.has(fontFamily)) {
-      return HAMCHOROM_DOTUM_FAMILY;
+      return {
+        requestedFamily: fontFamily,
+        resolvedFamily: HAMCHOROM_DOTUM_FAMILY,
+        source: fontFamily === HAMCHOROM_DOTUM_FAMILY ? 'requestedAlias' : 'substitutionAlias',
+      };
     }
     if (HAMCHOROM_BATANG_ALIASES.has(resolved) || HAMCHOROM_BATANG_ALIASES.has(fontFamily)) {
-      return HAMCHOROM_BATANG_FAMILY;
+      return {
+        requestedFamily: fontFamily,
+        resolvedFamily: HAMCHOROM_BATANG_FAMILY,
+        source: fontFamily === HAMCHOROM_BATANG_FAMILY ? 'requestedAlias' : 'substitutionAlias',
+      };
     }
-    if (this.aliases.has(resolved)) return resolved;
-    if (this.aliases.has(fontFamily)) return fontFamily;
+    if (this.aliases.has(resolved)) {
+      return {
+        requestedFamily: fontFamily,
+        resolvedFamily: resolved,
+        source: resolved === fontFamily ? 'requestedAlias' : 'substitutionAlias',
+      };
+    }
+    if (this.aliases.has(fontFamily)) {
+      return {
+        requestedFamily: fontFamily,
+        resolvedFamily: fontFamily,
+        source: 'requestedAlias',
+      };
+    }
 
     for (const candidate of [resolved, fontFamily]) {
       const baseFamily = baseFamilyWithoutWeightSuffix(candidate);
       if (baseFamily && this.aliases.has(baseFamily)) {
-        return baseFamily;
+        return {
+          requestedFamily: fontFamily,
+          resolvedFamily: baseFamily,
+          source: 'weightSuffixAlias',
+        };
       }
     }
     for (const candidate of canvasFontFamilyFallbackCandidates(resolved)) {
       if (this.aliases.has(candidate)) {
-        return candidate;
+        return {
+          requestedFamily: fontFamily,
+          resolvedFamily: candidate,
+          source: 'fallbackCandidate',
+        };
       }
     }
-    return 'Noto Sans KR';
+    return {
+      requestedFamily: fontFamily,
+      resolvedFamily: 'Noto Sans KR',
+      source: 'defaultFallback',
+    };
+  }
+
+  resolveFamily(fontFamily: string): string {
+    return this.resolveFamilyWithStatus(fontFamily).resolvedFamily;
   }
 
   shouldSynthesizeBold(fontFamily: string): boolean {

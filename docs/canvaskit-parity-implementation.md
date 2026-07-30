@@ -784,6 +784,17 @@ Document preflight continues to use the same PUA-expanded display projection:
 bounded work counts include both preserved source text and a differing display
 projection.
 
+CanvasKit TextRun diagnostics expose how each authored primary family resolves
+without changing that fallback behavior. Directly registered aliases are quiet;
+substitution-table and weight-suffix mappings are reported as `mappedAlias`,
+while an unregistered family that reaches a generic candidate or the final
+default face is reported as `unregisteredFallback`. Each record includes the
+paint op id, requested family, resolved family, and resolution source.
+`unregisteredFontFallbacks` is therefore an observable parity risk rather than
+a hidden successful replay. The diagnostic set is bounded, resets with document
+resources, and is stored in static-picture metadata so a cache hit reports the
+same substitutions as the recording pass.
+
 Shared layout measurement now uses that same display projection for ordinary
 run widths, source-sliced fragments, table/control offsets, and synthetic line
 breaking. Source text is sliced before projection, so UTF-8/UTF-16 indexes,

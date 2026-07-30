@@ -699,6 +699,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       },
     });
     const staticTextOp = (pageIdx) => ({
+      id: `cache-text-op-${pageIdx}`,
       type: 'textRun',
       bbox: { x: 4, y: 28, width: 34, height: 18 },
       variant: {
@@ -717,7 +718,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       isParaEnd: false,
       isLineBreakEnd: false,
       style: {
-        fontFamily: 'Noto Sans KR',
+        fontFamily: 'RHWP Static Missing Font',
         fontSize: 12,
         color: '#000000',
         bold: false,
@@ -842,12 +843,14 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const afterFirstPage = renderer.staticPictureCache?.size ?? -1;
       const firstVariantGroups = renderer.getTextVariantSelectionDiagnostics()
         .map((report) => report.equivalenceGroup);
+      const firstTextDiagnostics = renderer.getTextReplayDiagnostics();
       const firstEquationDiagnostics = renderer.getEquationReplayDiagnostics();
       const equationSvgReplayCallsAfterFirst = equationSvgReplayCalls;
       pageRenderer.renderPage(0, { ...pageInfo, pageIndex: 0 }, canvas, 1);
       pageRenderer.cancelReRender(0);
       const cachedVariantGroups = renderer.getTextVariantSelectionDiagnostics()
         .map((report) => report.equivalenceGroup);
+      const cachedTextDiagnostics = renderer.getTextReplayDiagnostics();
       const cachedEquationDiagnostics = renderer.getEquationReplayDiagnostics();
       const equationSvgReplayCallsAfterCacheHit = equationSvgReplayCalls;
       pageRenderer.renderPage(1, { ...pageInfo, pageIndex: 1 }, canvas, 1);
@@ -855,6 +858,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       const afterSecondPage = renderer.staticPictureCache?.size ?? -1;
       const secondVariantGroups = renderer.getTextVariantSelectionDiagnostics()
         .map((report) => report.equivalenceGroup);
+      const secondTextDiagnostics = renderer.getTextReplayDiagnostics();
       const secondEquationDiagnostics = renderer.getEquationReplayDiagnostics();
       const equationSvgReplayCallsAfterSecondPage = equationSvgReplayCalls;
       const cacheKeys = Array.from(renderer.staticPictureCache?.keys?.() ?? []);
@@ -871,6 +875,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
         firstVariantGroups,
         cachedVariantGroups,
         secondVariantGroups,
+        firstTextDiagnostics,
+        cachedTextDiagnostics,
+        secondTextDiagnostics,
         firstEquationDiagnostics,
         cachedEquationDiagnostics,
         secondEquationDiagnostics,
@@ -901,6 +908,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && JSON.stringify(staticPictureProbe.cachedVariantGroups) === JSON.stringify(['cache-text-0'])
       && JSON.stringify(staticPictureProbe.secondVariantGroups) === JSON.stringify(['cache-text-1']),
     `text variant diagnostics survive static picture cache hits=${JSON.stringify(staticPictureProbe)}`,
+  );
+  assert(
+    staticPictureProbe.firstTextDiagnostics.unregisteredFontFallbacks === 1
+      && staticPictureProbe.cachedTextDiagnostics.unregisteredFontFallbacks === 1
+      && staticPictureProbe.secondTextDiagnostics.unregisteredFontFallbacks === 1
+      && staticPictureProbe.firstTextDiagnostics.fontSubstitutions[0]?.opId === 'cache-text-op-0'
+      && staticPictureProbe.cachedTextDiagnostics.fontSubstitutions[0]?.opId === 'cache-text-op-0'
+      && staticPictureProbe.secondTextDiagnostics.fontSubstitutions[0]?.opId === 'cache-text-op-1',
+    `text font substitution diagnostics survive static picture cache hits=${JSON.stringify(staticPictureProbe)}`,
   );
   const equationRouteSummary = (diagnostics) => ({
     svgReplays: diagnostics.svgReplays,
@@ -18569,6 +18585,157 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     complexGraphemeDiff.passed,
     `complex grapheme parity exact=${complexGraphemeDiff.exactDiffPixels}, tolerant=${complexGraphemeDiff.rawTolerantDiffPixels}, ink=${complexGraphemeDiff.rawInkMaskDiffPixels}, max_channel_delta=${complexGraphemeDiff.maxChannelDelta}`,
+  );
+
+  setTestCase('canvaskit-text-font-substitution-diagnostics');
+  const fontSubstitutionProbe = await page.evaluate(async () => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    if (!renderer) {
+      return { error: 'CanvasKit renderer unavailable' };
+    }
+    const textRun = (id, text, fontFamily, y) => ({
+      id,
+      type: 'textRun',
+      bbox: { x: 10, y, width: 240, height: 26 },
+      text,
+      baseline: 20,
+      rotation: 0,
+      isVertical: false,
+      orientation: 'horizontal',
+      isParaEnd: false,
+      isLineBreakEnd: false,
+      style: {
+        fontFamily,
+        fontSize: 18,
+        color: '#202020',
+        bold: false,
+        italic: false,
+        superscript: false,
+        subscript: false,
+        ratio: 1,
+        underline: 'none',
+        underlineShape: 0,
+        strikethrough: false,
+        strikeShape: 0,
+        outlineType: 0,
+        shadowType: 0,
+        shadowColor: '#000000',
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        emboss: false,
+        engrave: false,
+        emphasisDot: 0,
+        underlineColor: '#202020',
+        strikeColor: '#202020',
+        shadeColor: '#ffffff',
+      },
+      positions: Array.from({ length: text.length + 1 }, (_, index) => index * 15),
+      controlMarks: [],
+      tabLeaders: [],
+    });
+    const tree = {
+      pageWidth: 260,
+      pageHeight: 92,
+      profile: 'screen',
+      outputOptions: {
+        showParagraphMarks: false,
+        showControlCodes: false,
+        showTransparentBorders: false,
+        clipEnabled: true,
+        debugOverlay: false,
+      },
+      resources: {
+        tableId: 2194,
+        images: [],
+        imageHashes: [],
+        imageKeys: [],
+        svgFragments: [],
+        svgHashes: [],
+        svgKeys: [],
+        fontBlobs: [],
+        fontBlobHashes: [],
+        fontBlobKeys: [],
+      },
+      textSources: [],
+      root: {
+        kind: 'leaf',
+        sourceNodeId: 2194,
+        bounds: { x: 0, y: 0, width: 260, height: 92 },
+        cacheHint: 'none',
+        ops: [
+          {
+            type: 'pageBackground',
+            bbox: { x: 0, y: 0, width: 260, height: 92 },
+            backgroundColor: '#ffffff',
+            borderWidth: 0,
+          },
+          textRun('font-known', 'Known', 'Noto Sans KR', 4),
+          textRun('font-weight-alias', 'Mapped', 'Noto Serif KR Extra Bold', 32),
+          textRun('font-missing', 'Fallback', 'RHWP Definitely Missing Font', 60),
+        ],
+      },
+    };
+    const canvas = document.createElement('canvas');
+    canvas.width = tree.pageWidth;
+    canvas.height = tree.pageHeight;
+    document.body.appendChild(canvas);
+    renderer.renderPage(tree, canvas, 1);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const png = canvas.toDataURL('image/png');
+    const diagnostics = renderer.getTextReplayDiagnostics();
+    renderer.resetDocumentResources();
+    const afterReset = renderer.getTextReplayDiagnostics();
+    canvas.remove();
+    return { png, diagnostics, afterReset };
+  });
+  assert(
+    !fontSubstitutionProbe.error,
+    fontSubstitutionProbe.error || 'CanvasKit font substitution diagnostics probe available',
+  );
+  const fontSubstitutionInk = countPixels(
+    fontSubstitutionProbe.png,
+    ({ red, green, blue, alpha }) => (
+      alpha > 32 && (red < 230 || green < 230 || blue < 230)
+    ),
+  );
+  assert(
+    fontSubstitutionInk > 180,
+    `CanvasKit renders registered and substituted TextRun families ink=${fontSubstitutionInk}`,
+  );
+  assert(
+    fontSubstitutionProbe.diagnostics.fontSubstitutions.some(
+      (diagnostic) => (
+        diagnostic.opId === 'font-weight-alias'
+        && diagnostic.requestedFamily === 'Noto Serif KR Extra Bold'
+        && diagnostic.resolvedFamily === 'Noto Serif KR'
+        && diagnostic.source === 'weightSuffixAlias'
+        && diagnostic.kind === 'mappedAlias'
+      ),
+    ),
+    `CanvasKit reports intentional weight-suffix mapping=${JSON.stringify(fontSubstitutionProbe.diagnostics)}`,
+  );
+  assert(
+    !fontSubstitutionProbe.diagnostics.fontSubstitutions.some(
+      (diagnostic) => diagnostic.opId === 'font-known',
+    ),
+    `CanvasKit does not report a directly registered family as substituted=${JSON.stringify(fontSubstitutionProbe.diagnostics)}`,
+  );
+  assert(
+    fontSubstitutionProbe.diagnostics.unregisteredFontFallbacks === 1
+      && fontSubstitutionProbe.diagnostics.fontSubstitutions.some(
+        (diagnostic) => (
+          diagnostic.opId === 'font-missing'
+          && diagnostic.requestedFamily === 'RHWP Definitely Missing Font'
+          && diagnostic.source === 'fallbackCandidate'
+          && diagnostic.kind === 'unregisteredFallback'
+        ),
+      ),
+    `CanvasKit exposes unregistered font fallback without suppressing replay=${JSON.stringify(fontSubstitutionProbe.diagnostics)}`,
+  );
+  assert(
+    fontSubstitutionProbe.afterReset.unregisteredFontFallbacks === 0
+      && fontSubstitutionProbe.afterReset.fontSubstitutions.length === 0,
+    `CanvasKit document reset clears font substitution diagnostics=${JSON.stringify(fontSubstitutionProbe.afterReset)}`,
   );
 
   setTestCase('canvas-layer-hancom-pua-display-parity');

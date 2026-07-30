@@ -119,7 +119,11 @@ import {
   textScriptMetrics,
   verticalPresentationBaseText,
 } from './text-replay-utils';
-import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
+import {
+  CanvasKitFontRegistry,
+  HAMCHOROM_BATANG_FAMILY,
+  type CanvasKitFontResolutionSource,
+} from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
 import { parseCanvasKitCssColor } from './canvaskit/css-color';
 import {
@@ -140,6 +144,7 @@ const EQUATION_SCRIPT_SCALE = 0.7;
 const EQUATION_BIG_OP_SCALE = 1.5;
 const MAX_TEXT_BLOB_CACHE_ENTRIES = 4096;
 const MAX_TEXT_FALLBACK_FAMILY_CACHE_ENTRIES = 4096;
+const MAX_TEXT_FONT_SUBSTITUTION_DIAGNOSTICS = 4096;
 
 type CanvasKitClipState = {
   bounds: LayerBounds;
@@ -164,10 +169,20 @@ export type CanvasKitTextReplayFailureDiagnostic = CanvasKitTextReplayDiagnostic
   reason: 'simpleTextFallbackFailed';
 };
 
+export type CanvasKitTextFontSubstitutionDiagnostic = {
+  opId: string | null;
+  requestedFamily: string;
+  resolvedFamily: string;
+  source: Exclude<CanvasKitFontResolutionSource, 'requestedAlias'>;
+  kind: 'mappedAlias' | 'unregisteredFallback';
+};
+
 export type CanvasKitTextReplayDiagnostics = {
   constructionFailures: number;
   failureCacheHits: number;
   fallbackDraws: number;
+  unregisteredFontFallbacks: number;
+  fontSubstitutions: CanvasKitTextFontSubstitutionDiagnostic[];
   recoveries: CanvasKitTextReplayRecoveryDiagnostic[];
   failures: CanvasKitTextReplayFailureDiagnostic[];
 };
@@ -213,6 +228,7 @@ type CanvasKitEquationSvgReplayResult =
 type CanvasKitStaticPictureMetadata = {
   equationReplayDiagnostics: CanvasKitEquationReplayDiagnostic[];
   imageRecoveryDiagnostics: CanvasKitImageRecoveryDiagnostic[];
+  textFontSubstitutionDiagnostics: CanvasKitTextFontSubstitutionDiagnostic[];
 };
 
 type CanvasKitPreparedSvgGlyphPathLayer = {
@@ -249,6 +265,8 @@ export class CanvasKitLayerRenderer {
   private readonly textReplayRecoveryDiagnostics =
     new Map<string, CanvasKitTextReplayRecoveryDiagnostic>();
   private readonly textReplayFailureDiagnostics = new Map<string, CanvasKitTextReplayFailureDiagnostic>();
+  private readonly textFontSubstitutionDiagnostics =
+    new Map<string, CanvasKitTextFontSubstitutionDiagnostic>();
   private readonly equationReplayDiagnostics: CanvasKitEquationReplayDiagnostic[] = [];
   private textBlobConstructionFailures = 0;
   private textBlobFailureCacheHits = 0;
@@ -505,6 +523,7 @@ export class CanvasKitLayerRenderer {
     this.textVariantSelectionDiagnostics.length = 0;
     this.textV2ValidationDiagnostics.length = 0;
     this.equationReplayDiagnostics.length = 0;
+    this.resetTextReplayDiagnostics();
   }
 
   getImageEffectDiagnostics(): Readonly<LayerImageEffectDiagnostics> {
@@ -516,10 +535,16 @@ export class CanvasKitLayerRenderer {
   }
 
   getTextReplayDiagnostics(): Readonly<CanvasKitTextReplayDiagnostics> {
+    const fontSubstitutions = [...this.textFontSubstitutionDiagnostics.values()]
+      .map((substitution) => ({ ...substitution }));
     return {
       constructionFailures: this.textBlobConstructionFailures,
       failureCacheHits: this.textBlobFailureCacheHits,
       fallbackDraws: this.textBlobFallbackDraws,
+      unregisteredFontFallbacks: fontSubstitutions.filter(
+        (substitution) => substitution.kind === 'unregisteredFallback',
+      ).length,
+      fontSubstitutions,
       recoveries: [...this.textReplayRecoveryDiagnostics.values()]
         .map((recovery) => ({ ...recovery })),
       failures: [...this.textReplayFailureDiagnostics.values()].map((failure) => ({ ...failure })),
@@ -563,6 +588,7 @@ export class CanvasKitLayerRenderer {
     this.failedTextBlobCacheKeys.clear();
     this.textReplayRecoveryDiagnostics.clear();
     this.textReplayFailureDiagnostics.clear();
+    this.textFontSubstitutionDiagnostics.clear();
     this.textBlobConstructionFailures = 0;
     this.textBlobFailureCacheHits = 0;
     this.textBlobFallbackDraws = 0;
@@ -723,6 +749,9 @@ export class CanvasKitLayerRenderer {
               const metadata = this.staticPictureCache.getMetadata(cacheKey);
               if (metadata) {
                 this.resourceCache.restoreImageRecoveries(metadata.imageRecoveryDiagnostics);
+                for (const diagnostic of metadata.textFontSubstitutionDiagnostics) {
+                  this.recordTextFontSubstitutionDiagnostic({ ...diagnostic });
+                }
                 this.equationReplayDiagnostics.push(
                   ...metadata.equationReplayDiagnostics.map((diagnostic) => ({
                     ...diagnostic,
@@ -747,6 +776,8 @@ export class CanvasKitLayerRenderer {
               this.resourceCache.getPatternDiagnostics().surfaceFailures;
             const textFailureAttemptsBefore =
               this.textBlobConstructionFailures + this.textBlobFailureCacheHits;
+            const textFontSubstitutionKeysBefore =
+              new Set(this.textFontSubstitutionDiagnostics.keys());
             const recorder = new this.canvasKit.PictureRecorder();
             try {
               const recordingCanvas = recorder.beginRecording(this.toRect(node.bounds), true);
@@ -781,6 +812,10 @@ export class CanvasKitLayerRenderer {
                         ...diagnostic,
                         bbox: { ...diagnostic.bbox },
                       })),
+                    textFontSubstitutionDiagnostics:
+                      [...this.textFontSubstitutionDiagnostics.entries()]
+                        .filter(([key]) => !textFontSubstitutionKeysBefore.has(key))
+                        .map(([, diagnostic]) => ({ ...diagnostic })),
                   });
                 }
               }
@@ -1141,6 +1176,22 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerTextRunOp | LayerCharOverlapOp,
   ): void {
+    const opId = 'id' in op && typeof op.id === 'string' ? op.id : null;
+    const primaryFontResolution = this.fontRegistry.resolveFamilyWithStatus(op.style.fontFamily);
+    if (primaryFontResolution.source !== 'requestedAlias') {
+      const kind = primaryFontResolution.source === 'fallbackCandidate'
+        || primaryFontResolution.source === 'defaultFallback'
+        ? 'unregisteredFallback'
+        : 'mappedAlias';
+      const diagnostic: CanvasKitTextFontSubstitutionDiagnostic = {
+        opId,
+        requestedFamily: primaryFontResolution.requestedFamily,
+        resolvedFamily: primaryFontResolution.resolvedFamily,
+        source: primaryFontResolution.source,
+        kind,
+      };
+      this.recordTextFontSubstitutionDiagnostic(diagnostic);
+    }
     const baseFontSize = op.style.fontSize || 12;
     const { fontSize, baselineShift } = textScriptMetrics(
       baseFontSize,
@@ -1191,7 +1242,7 @@ export class CanvasKitLayerRenderer {
     const clusterFonts: Array<Font | null> = [];
     const clusterFontFamilies: string[] = [];
     const clusterFontKeys: string[] = [];
-    const resolvedPrimaryFamily = this.fontRegistry.resolveFamily(op.style.fontFamily);
+    const resolvedPrimaryFamily = primaryFontResolution.resolvedFamily;
     const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
     for (const [clusterIndex, cluster] of clusters.entries()) {
       const replayText = clusterReplayTexts[clusterIndex];
@@ -1618,7 +1669,6 @@ export class CanvasKitLayerRenderer {
         shadePaint.delete();
       }
 
-      const opId = 'id' in op && typeof op.id === 'string' ? op.id : null;
       const drawPass = (dx: number, dy: number, fillPaint: Paint, strokePaint?: Paint) => {
         for (const [index, cluster] of clusters.entries()) {
           if (cluster.text === ' ' || cluster.text === '\t' || cluster.text === '\u2007') {
@@ -4403,6 +4453,23 @@ export class CanvasKitLayerRenderer {
 
   private resolveCanvasKitFontFamily(fontFamily: string): string {
     return this.fontRegistry.resolveFamily(fontFamily);
+  }
+
+  private recordTextFontSubstitutionDiagnostic(
+    diagnostic: CanvasKitTextFontSubstitutionDiagnostic,
+  ): void {
+    const diagnosticKey = JSON.stringify([
+      diagnostic.opId,
+      diagnostic.requestedFamily,
+      diagnostic.resolvedFamily,
+      diagnostic.source,
+    ]);
+    if (
+      this.textFontSubstitutionDiagnostics.has(diagnosticKey)
+      || this.textFontSubstitutionDiagnostics.size < MAX_TEXT_FONT_SUBSTITUTION_DIAGNOSTICS
+    ) {
+      this.textFontSubstitutionDiagnostics.set(diagnosticKey, diagnostic);
+    }
   }
 
   private makePaint(color: string, style: 'fill' | 'stroke', opacity = 1): Paint {

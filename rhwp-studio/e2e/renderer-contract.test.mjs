@@ -2021,6 +2021,16 @@ const canvas2dTextRunBlock = extractMethodBody(canvas2dSource, 'renderTextRun');
 assert(
   canvaskitSource.includes('getTextReplayDiagnostics(): Readonly<CanvasKitTextReplayDiagnostics>')
     && canvaskitSource.includes('resetTextReplayDiagnostics(): void')
+    && canvaskitFontsSource.includes('resolveFamilyWithStatus(fontFamily: string): CanvasKitFontResolution')
+    && canvaskitFontsSource.includes("source: 'weightSuffixAlias'")
+    && canvaskitFontsSource.includes("source: 'fallbackCandidate'")
+    && canvaskitFontsSource.includes("source: 'defaultFallback'")
+    && canvaskitTextRunBlock.includes('this.fontRegistry.resolveFamilyWithStatus(op.style.fontFamily)')
+    && canvaskitTextRunBlock.includes("? 'unregisteredFallback'")
+    && canvaskitSource.includes('textFontSubstitutionDiagnostics:')
+    && canvaskitSource.includes('this.recordTextFontSubstitutionDiagnostic({ ...diagnostic })')
+    && canvaskitSource.includes('unregisteredFontFallbacks: fontSubstitutions.filter(')
+    && canvaskitSource.includes('this.textFontSubstitutionDiagnostics.clear()')
     && canvaskitTextRunBlock.includes("reason: 'textBlobConstructionFailed' as const")
     && canvaskitTextRunBlock.includes("fallback: 'drawText'")
     && canvaskitTextRunBlock.includes("reason: 'simpleTextFallbackFailed'")
@@ -2032,7 +2042,7 @@ assert(
     && canvaskitTextRunBlock.includes('canvas.drawText(replayText, drawX, drawY, fillPaint, fallbackFont)')
     && canvaskitTextRunBlock.includes('this.textReplayRecoveryDiagnostics.set(failureKey, recovery)')
     && canvaskitTextRunBlock.includes('this.textReplayFailureDiagnostics.set(failureKey, failure)'),
-  'CanvasKit TextRun replay must recover negative-cached TextBlob failures through direct CanvasKit text and expose unrecovered failures',
+  'CanvasKit TextRun replay must diagnose font substitutions, recover negative-cached TextBlob failures through direct CanvasKit text, and expose unrecovered failures',
 );
 assert(
   importBlockFrom(canvas2dSource, './text-replay-utils').includes('containsOldHangulJamo')
