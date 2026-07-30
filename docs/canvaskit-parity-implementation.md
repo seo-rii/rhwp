@@ -579,6 +579,15 @@ The working order is:
    actual codec result. Missing resources remain `missingImageData`, and bytes
    rejected by static admission report `encodedImageRejected`; the plan does
    not mislabel either case as a runtime decode failure.
+   Replay items can require more than one runtime proof. `runtimeCondition`
+   remains the first condition for compatibility with existing plan readers,
+   while `runtimeConditions` carries the complete ordered set. Images with a
+   non-`realPic` effect or nonzero brightness/contrast add
+   `canvasKitImageEffectPreprocess` after decode. Pattern-filled rectangles,
+   ellipses, and paths add `canvasKitPatternImageConstruction`. These
+   conditions describe successful direct replay prerequisites; they do not
+   waive the existing hard failures for effect preprocessing fallback or
+   pattern surface construction failure.
    A statically verified `GlyphRun` similarly carries
    `runtimeCondition=canvasKitTypefaceConstruction`: Rust proves the bounded
    font resource, digest, face, glyph IDs, and paint contract, while Studio

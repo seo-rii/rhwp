@@ -557,11 +557,13 @@ assertTokensInOrder(
     '.map_or(CanvasKitImageAdmission::Missing, image_admission)',
     'CanvasKitImageAdmission::HeaderAdmitted(runtime_condition)',
     'direct_item_with_detail(',
-    'item.runtime_condition = Some(runtime_condition)',
+    'item.add_runtime_condition(runtime_condition)',
+    'if image_effect_requires_preprocess(image.effect, image.brightness, image.contrast)',
+    'CanvasKitReplayRuntimeCondition::CanvasKitImageEffectPreprocess',
     'CanvasKitImageAdmission::Missing | CanvasKitImageAdmission::StaticRejected',
     'direct_required_item_with_detail(',
   ],
-  'CanvasKit replay plan must distinguish runtime-conditional page background images from statically rejected resources',
+  'CanvasKit replay plan must expose decode and effect prerequisites for admitted page background images',
 );
 assertTokensInOrder(
   rustCanvaskitPolicySource,
@@ -572,11 +574,23 @@ assertTokensInOrder(
     '.map_or(CanvasKitImageAdmission::Missing, image_admission)',
     'CanvasKitImageAdmission::HeaderAdmitted(runtime_condition)',
     'direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail)',
-    'item.runtime_condition = Some(runtime_condition)',
+    'item.add_runtime_condition(runtime_condition)',
+    'if image_effect_requires_preprocess(image.effect, image.brightness, image.contrast)',
+    'CanvasKitReplayRuntimeCondition::CanvasKitImageEffectPreprocess',
     'CanvasKitImageAdmission::Missing | CanvasKitImageAdmission::StaticRejected',
     'direct_required_item_with_detail(',
   ],
-  'CanvasKit replay plan must distinguish runtime-conditional images from statically rejected resources',
+  'CanvasKit replay plan must expose decode and effect prerequisites for admitted images',
+);
+assertTokensInOrder(
+  rustCanvaskitPolicySource,
+  [
+    'if let Some(runtime_condition) = self.runtime_conditions.first()',
+    'out.push_str(",\\"runtimeCondition\\":")',
+    'if !self.runtime_conditions.is_empty()',
+    'out.push_str(",\\"runtimeConditions\\":[")',
+  ],
+  'CanvasKit replay items must preserve the legacy first condition while exposing every runtime prerequisite',
 );
 assertTokensInOrder(
   rustCanvaskitPolicySource,

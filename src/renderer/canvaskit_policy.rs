@@ -264,7 +264,7 @@ pub struct CanvasKitReplayItem {
     pub feature: CanvasKitReplayFeature,
     pub status: CanvasKitReplayStatus,
     pub reason: CanvasKitReplayReason,
-    pub runtime_condition: Option<CanvasKitReplayRuntimeCondition>,
+    pub runtime_conditions: Vec<CanvasKitReplayRuntimeCondition>,
     pub compat_overlay_allowed: bool,
     pub detail: Option<String>,
 }
@@ -324,6 +324,8 @@ impl CanvasKitReplayStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanvasKitReplayRuntimeCondition {
     CanvasKitEncodedImageDecode,
+    CanvasKitImageEffectPreprocess,
+    CanvasKitPatternImageConstruction,
     CanvasKitSvgPathConstruction,
     CanvasKitTypefaceConstruction,
     BrowserSvgImageDecode,
@@ -333,6 +335,8 @@ impl CanvasKitReplayRuntimeCondition {
     fn as_str(self) -> &'static str {
         match self {
             Self::CanvasKitEncodedImageDecode => "canvasKitEncodedImageDecode",
+            Self::CanvasKitImageEffectPreprocess => "canvasKitImageEffectPreprocess",
+            Self::CanvasKitPatternImageConstruction => "canvasKitPatternImageConstruction",
             Self::CanvasKitSvgPathConstruction => "canvasKitSvgPathConstruction",
             Self::CanvasKitTypefaceConstruction => "canvasKitTypefaceConstruction",
             Self::BrowserSvgImageDecode => "browserSvgImageDecode",
@@ -463,6 +467,12 @@ impl CanvasKitReplaySummary {
 }
 
 impl CanvasKitReplayItem {
+    fn add_runtime_condition(&mut self, condition: CanvasKitReplayRuntimeCondition) {
+        if !self.runtime_conditions.contains(&condition) {
+            self.runtime_conditions.push(condition);
+        }
+    }
+
     fn write_json(&self, out: &mut String) {
         out.push('{');
         out.push_str("\"path\":");
@@ -479,9 +489,19 @@ impl CanvasKitReplayItem {
         push_json_str(out, self.status.as_str());
         out.push_str(",\"reason\":");
         push_json_str(out, self.reason.as_str());
-        if let Some(runtime_condition) = self.runtime_condition {
+        if let Some(runtime_condition) = self.runtime_conditions.first() {
             out.push_str(",\"runtimeCondition\":");
             push_json_str(out, runtime_condition.as_str());
+        }
+        if !self.runtime_conditions.is_empty() {
+            out.push_str(",\"runtimeConditions\":[");
+            for (index, runtime_condition) in self.runtime_conditions.iter().enumerate() {
+                if index != 0 {
+                    out.push(',');
+                }
+                push_json_str(out, runtime_condition.as_str());
+            }
+            out.push(']');
         }
         out.push_str(",\"compatOverlayAllowed\":");
         out.push_str(bool_json(self.compat_overlay_allowed));
@@ -1491,7 +1511,7 @@ impl CanvasKitCapabilityDigest {
         self.record_str(item.feature.as_str());
         self.record_str(item.status.as_str());
         self.record_str(item.reason.as_str());
-        if let Some(runtime_condition) = item.runtime_condition {
+        for runtime_condition in &item.runtime_conditions {
             self.0.update(b"runtime-condition\0");
             self.record_str(runtime_condition.as_str());
         }
@@ -1632,7 +1652,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                     feature: CanvasKitReplayFeature::Clip,
                     status: CanvasKitReplayStatus::Direct,
                     reason: CanvasKitReplayReason::DirectReplaySupported,
-                    runtime_condition: None,
+                    runtime_conditions: Vec::new(),
                     compat_overlay_allowed: false,
                     detail: Some(clip_kind_detail(*clip_kind).to_string()),
                 });
@@ -1763,8 +1783,11 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 let mut item =
                     self.text_variant_item(path, "glyphRun", &run.variant, selected_variants);
                 if item.status == CanvasKitReplayStatus::Direct {
-                    item.runtime_condition =
-                        canvaskit_text_variant_runtime_condition(op, &self.tree.resources);
+                    if let Some(runtime_condition) =
+                        canvaskit_text_variant_runtime_condition(op, &self.tree.resources)
+                    {
+                        item.add_runtime_condition(runtime_condition);
+                    }
                 }
                 item
             }
@@ -1776,8 +1799,11 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                     selected_variants,
                 );
                 if item.status == CanvasKitReplayStatus::Direct {
-                    item.runtime_condition =
-                        canvaskit_text_variant_runtime_condition(op, &self.tree.resources);
+                    if let Some(runtime_condition) =
+                        canvaskit_text_variant_runtime_condition(op, &self.tree.resources)
+                    {
+                        item.add_runtime_condition(runtime_condition);
+                    }
                 }
                 item
             }
@@ -1790,12 +1816,18 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 paint_op_type(op),
                 CanvasKitReplayFeature::TextSpecialVisual,
             ),
-            PaintOp::Line { .. }
-            | PaintOp::Rectangle { .. }
-            | PaintOp::Ellipse { .. }
-            | PaintOp::Path { .. } => {
+            PaintOp::Line { .. } => {
                 direct_item(path, paint_op_type(op), CanvasKitReplayFeature::VectorShape)
             }
+            PaintOp::Rectangle { rect, .. } => {
+                vector_shape_item(path, "rectangle", rect.style.pattern.is_some())
+            }
+            PaintOp::Ellipse { ellipse, .. } => {
+                vector_shape_item(path, "ellipse", ellipse.style.pattern.is_some())
+            }
+            PaintOp::Path {
+                path: shape_path, ..
+            } => vector_shape_item(path, "path", shape_path.style.pattern.is_some()),
             PaintOp::Image { image, .. } => image_item(path, image, &self.tree.resources),
             PaintOp::Equation { .. } => {
                 direct_item(path, "equation", CanvasKitReplayFeature::Equation)
@@ -1828,7 +1860,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
                 feature: CanvasKitReplayFeature::TextVariant,
                 status: CanvasKitReplayStatus::TextFallback,
                 reason: CanvasKitReplayReason::ExplicitTextRunFallback,
-                runtime_condition: None,
+                runtime_conditions: Vec::new(),
                 compat_overlay_allowed: false,
                 detail: Some("TextRun fallback selected for this equivalence group".to_string()),
             }
@@ -1843,7 +1875,7 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             feature: CanvasKitReplayFeature::CacheHint,
             status: CanvasKitReplayStatus::Direct,
             reason: CanvasKitReplayReason::DirectReplaySupported,
-            runtime_condition: None,
+            runtime_conditions: Vec::new(),
             compat_overlay_allowed: false,
             detail: Some(cache_hint_detail(cache_hint).to_string()),
         });
@@ -2432,7 +2464,7 @@ fn direct_item_with_detail(
         feature,
         status: CanvasKitReplayStatus::Direct,
         reason: CanvasKitReplayReason::DirectReplaySupported,
-        runtime_condition: None,
+        runtime_conditions: Vec::new(),
         compat_overlay_allowed: false,
         detail,
     }
@@ -2451,10 +2483,28 @@ fn direct_required_item_with_detail(
         feature,
         status: CanvasKitReplayStatus::DirectRequired,
         reason: CanvasKitReplayReason::DirectReplayRequired,
-        runtime_condition: None,
+        runtime_conditions: Vec::new(),
         compat_overlay_allowed: false,
         detail,
     }
+}
+
+fn vector_shape_item(
+    path: String,
+    op_type: &'static str,
+    has_pattern: bool,
+) -> CanvasKitReplayItem {
+    let mut item = direct_item(path, op_type, CanvasKitReplayFeature::VectorShape);
+    if has_pattern {
+        item.add_runtime_condition(
+            CanvasKitReplayRuntimeCondition::CanvasKitPatternImageConstruction,
+        );
+    }
+    item
+}
+
+fn image_effect_requires_preprocess(effect: ImageEffect, brightness: i8, contrast: i8) -> bool {
+    effect != ImageEffect::RealPic || brightness != 0 || contrast != 0
 }
 
 fn image_item(
@@ -2484,7 +2534,12 @@ fn image_item(
         CanvasKitImageAdmission::HeaderAdmitted(runtime_condition) => {
             let mut item =
                 direct_item_with_detail(path, "image", CanvasKitReplayFeature::RasterImage, detail);
-            item.runtime_condition = Some(runtime_condition);
+            item.add_runtime_condition(runtime_condition);
+            if image_effect_requires_preprocess(image.effect, image.brightness, image.contrast) {
+                item.add_runtime_condition(
+                    CanvasKitReplayRuntimeCondition::CanvasKitImageEffectPreprocess,
+                );
+            }
             item
         }
         CanvasKitImageAdmission::Missing | CanvasKitImageAdmission::StaticRejected => {
@@ -2535,7 +2590,12 @@ fn page_background_item(
                 CanvasKitReplayFeature::PageBackground,
                 detail,
             );
-            item.runtime_condition = Some(runtime_condition);
+            item.add_runtime_condition(runtime_condition);
+            if image_effect_requires_preprocess(image.effect, image.brightness, image.contrast) {
+                item.add_runtime_condition(
+                    CanvasKitReplayRuntimeCondition::CanvasKitImageEffectPreprocess,
+                );
+            }
             item
         }
         CanvasKitImageAdmission::Missing | CanvasKitImageAdmission::StaticRejected => {
@@ -2758,13 +2818,14 @@ mod tests {
         FontColorGlyphRef, FontDigest, FontFaceKey, FontFaceResource, FontFallbackPolicyId,
         FontInstanceKey, FontPortability, FontResourceSource, GlyphOutlineFillRule, GlyphRange,
         GlyphRunDiagnostics, GlyphRunOrientation, GlyphRunReplayEligibility, GlyphTransform,
-        ImageResourceId, LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath,
-        LayerGlyphRunPaint, LayerImagePaint, LayerNode, LayerPageBackgroundImagePaint,
-        LayerPageBackgroundPaint, LayerPoint, LayerTextRunPaint, LayerVector, LocalizedName,
-        PageLayerTree, PaintOp, PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena,
-        ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
-        TextDirection, TextRunPlacement, TextSourceId, TextSourceRange, TextSourceSpan,
-        TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
+        ImageResourceId, LayerAffineTransform, LayerEllipsePaint, LayerGlyphOutlinePaint,
+        LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint, LayerNode,
+        LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerPathPaint, LayerPoint,
+        LayerRectanglePaint, LayerTextRunPaint, LayerVector, LocalizedName, PageLayerTree, PaintOp,
+        PaintTextStyle, PaintVariantMeta, ResolvedColor, ResourceArena, ShapeKey, ShapingEngineId,
+        SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextDirection, TextRunPlacement,
+        TextSourceId, TextSourceRange, TextSourceSpan, TextVariantKind, TextVariantQuality,
+        VariationAxisValue, WritingMode,
     };
     use crate::paint::{LayerBuilder, RenderProfile};
     use crate::renderer::layer_renderer::VariantOutlineEligibilityReport;
@@ -2772,7 +2833,7 @@ mod tests {
         BoundingBox, FieldMarkerType, PageRenderTree, RawSvgNode, RenderNode, RenderNodeType,
         ShapeTransform, TextRunNode,
     };
-    use crate::renderer::{PathCommand, TextStyle};
+    use crate::renderer::{PathCommand, PatternFillInfo, ShapeStyle, TextStyle};
 
     const FIXTURE_PNG: &[u8] = include_bytes!("../../assets/logo/logo-32.png");
     const FIXTURE_FONT: &[u8] =
@@ -3406,8 +3467,8 @@ mod tests {
             item.path == "root/leaf/variantOps/0"
                 && item.op_type == "glyphOutline"
                 && item.status == CanvasKitReplayStatus::Direct
-                && item.runtime_condition
-                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+                && item.runtime_conditions
+                    == vec![CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode]
         }));
         assert!(plan
             .to_json()
@@ -3467,8 +3528,8 @@ mod tests {
         assert!(plan.items.iter().any(|item| {
             item.op_type == "glyphOutline"
                 && item.status == CanvasKitReplayStatus::Direct
-                && item.runtime_condition
-                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+                && item.runtime_conditions
+                    == vec![CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode]
         }));
     }
 
@@ -3585,8 +3646,8 @@ mod tests {
             item.path == "root/leaf/variantOps/0"
                 && item.op_type == "glyphOutline"
                 && item.status == CanvasKitReplayStatus::Direct
-                && item.runtime_condition
-                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitSvgPathConstruction)
+                && item.runtime_conditions
+                    == vec![CanvasKitReplayRuntimeCondition::CanvasKitSvgPathConstruction]
         }));
         assert!(plan
             .to_json()
@@ -3661,8 +3722,11 @@ mod tests {
             .expect("page background image replay item");
         assert_eq!(page_background_item.status, CanvasKitReplayStatus::Direct);
         assert_eq!(
-            page_background_item.runtime_condition,
-            Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+            page_background_item.runtime_conditions,
+            vec![
+                CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode,
+                CanvasKitReplayRuntimeCondition::CanvasKitImageEffectPreprocess,
+            ]
         );
         let page_background_detail = page_background_item
             .detail
@@ -3693,6 +3757,96 @@ mod tests {
         assert!(json.contains("\"detail\":\"fillMode=tileHorzBottom"));
         assert!(json.contains("effect=pattern8x8"));
         assert!(json.contains("\"runtimeCondition\":\"canvasKitEncodedImageDecode\""));
+        assert!(json.contains(
+            "\"runtimeConditions\":[\"canvasKitEncodedImageDecode\",\"canvasKitImageEffectPreprocess\"]"
+        ));
+    }
+
+    #[test]
+    fn canvaskit_replay_plan_marks_pattern_shapes_as_runtime_conditional() {
+        let pattern_style = ShapeStyle {
+            pattern: Some(PatternFillInfo {
+                pattern_type: 6,
+                pattern_color: 0x000000,
+                background_color: 0xffffff,
+            }),
+            ..ShapeStyle::default()
+        };
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![
+                    PaintOp::Rectangle {
+                        bbox: valid_bbox(),
+                        rect: LayerRectanglePaint {
+                            corner_radius: 0.0,
+                            style: pattern_style.clone(),
+                            gradient: None,
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                    PaintOp::Ellipse {
+                        bbox: valid_bbox(),
+                        ellipse: LayerEllipsePaint {
+                            style: pattern_style.clone(),
+                            gradient: None,
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                    PaintOp::Path {
+                        bbox: valid_bbox(),
+                        path: LayerPathPaint {
+                            commands: vec![
+                                PathCommand::MoveTo(0.0, 0.0),
+                                PathCommand::LineTo(16.0, 16.0),
+                            ],
+                            style: pattern_style,
+                            gradient: None,
+                            transform: ShapeTransform::default(),
+                            connector_endpoints: None,
+                            line_style: None,
+                        },
+                    },
+                    PaintOp::Rectangle {
+                        bbox: valid_bbox(),
+                        rect: LayerRectanglePaint {
+                            corner_radius: 0.0,
+                            style: ShapeStyle::default(),
+                            gradient: None,
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                ],
+            ),
+        );
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        assert_eq!(plan.summary.direct_items, 4);
+        for op_type in ["rectangle", "ellipse", "path"] {
+            let item = plan
+                .items
+                .iter()
+                .find(|item| item.op_type == op_type)
+                .expect("pattern shape replay item");
+            assert_eq!(
+                item.runtime_conditions,
+                vec![CanvasKitReplayRuntimeCondition::CanvasKitPatternImageConstruction],
+                "{op_type} must declare runtime shader/image construction",
+            );
+        }
+        let plain_rectangle = plan
+            .items
+            .iter()
+            .filter(|item| item.op_type == "rectangle")
+            .nth(1)
+            .expect("plain rectangle replay item");
+        assert!(plain_rectangle.runtime_conditions.is_empty());
+        assert!(plan
+            .to_json()
+            .contains("\"runtimeConditions\":[\"canvasKitPatternImageConstruction\"]"));
     }
 
     #[test]
@@ -3730,7 +3884,7 @@ mod tests {
             .find(|item| item.op_type == "image")
             .expect("missing external image item");
         assert_eq!(missing_item.status, CanvasKitReplayStatus::DirectRequired);
-        assert_eq!(missing_item.runtime_condition, None);
+        assert!(missing_item.runtime_conditions.is_empty());
         let detail = missing_item.detail.as_deref().expect("image detail");
         assert!(detail.contains("externalImage"));
         assert!(detail.contains("missingImageData"));
@@ -3768,7 +3922,7 @@ mod tests {
             .find(|item| item.op_type == "image")
             .expect("dangling image resource item");
         assert_eq!(dangling_item.status, CanvasKitReplayStatus::DirectRequired);
-        assert_eq!(dangling_item.runtime_condition, None);
+        assert!(dangling_item.runtime_conditions.is_empty());
         let detail = dangling_item.detail.as_deref().expect("image detail");
         assert!(detail.contains("externalImage"));
         assert!(detail.contains("missingImageData"));
@@ -3810,8 +3964,8 @@ mod tests {
             .expect("injected external image item");
         assert_eq!(injected_item.status, CanvasKitReplayStatus::Direct);
         assert_eq!(
-            injected_item.runtime_condition,
-            Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+            injected_item.runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode]
         );
         let detail = injected_item.detail.as_deref().expect("image detail");
         assert!(detail.contains("externalImage"));
@@ -3989,8 +4143,8 @@ mod tests {
         assert_eq!(plan.summary.direct_required_items, 0);
         assert!(plan.items.iter().all(|item| {
             item.status == CanvasKitReplayStatus::Direct
-                && item.runtime_condition
-                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+                && item.runtime_conditions
+                    == vec![CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode]
                 && item.detail.as_deref().is_some_and(|detail| {
                     detail.contains("imageHeaderAdmitted")
                         && detail.contains("runtimeDecodeRequired")
@@ -4041,8 +4195,8 @@ mod tests {
         let item = plan.items.first().expect("SVG image replay item");
         assert_eq!(item.status, CanvasKitReplayStatus::Direct);
         assert_eq!(
-            item.runtime_condition,
-            Some(CanvasKitReplayRuntimeCondition::BrowserSvgImageDecode)
+            item.runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::BrowserSvgImageDecode]
         );
         assert!(plan
             .to_json()
@@ -4146,8 +4300,8 @@ mod tests {
             super::CanvasKitReplayReason::DirectReplaySupported
         );
         assert_eq!(
-            image_item.runtime_condition,
-            Some(CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode)
+            image_item.runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::CanvasKitEncodedImageDecode]
         );
         assert!(
             image_item
@@ -4363,8 +4517,8 @@ mod tests {
         assert!(plan.items.iter().any(|item| {
             item.op_type == "glyphRun"
                 && item.status == CanvasKitReplayStatus::Direct
-                && item.runtime_condition
-                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction)
+                && item.runtime_conditions
+                    == vec![CanvasKitReplayRuntimeCondition::CanvasKitTypefaceConstruction]
         }));
         assert!(plan
             .to_json()
