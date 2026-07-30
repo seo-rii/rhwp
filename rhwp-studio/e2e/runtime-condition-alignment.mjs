@@ -8,6 +8,27 @@ function stringArray(value) {
     : [];
 }
 
+function nullableString(value) {
+  return typeof value === 'string' ? value : null;
+}
+
+function partCount(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function partsAreComplete(report) {
+  const expected = partCount(report?.partsExpected);
+  const replayed = partCount(report?.partsReplayed);
+  return expected !== null && expected > 0 && replayed === expected;
+}
+
+export function textVariantReportKey(report) {
+  return JSON.stringify([
+    nullableString(report?.equivalenceGroup) ?? '',
+    nullableString(report?.anchorOpId) ?? '',
+  ]);
+}
+
 export function classifyCanvasKitVariantAlignment(planReport, runtimeReport) {
   const planVariantId = planReport?.selectedVariantId ?? null;
   const runtimeVariantId = runtimeReport?.selectedVariantId ?? null;
@@ -19,9 +40,37 @@ export function classifyCanvasKitVariantAlignment(planReport, runtimeReport) {
       runtimeVariantId,
       resolvedRuntimeConditions: [],
       unresolvedRuntimeConditions: [],
+      mismatches: ['missingReport'],
     };
   }
-  if (planVariantId === runtimeVariantId) {
+
+  const identityMismatches = [];
+  if (nullableString(planReport.equivalenceGroup) !== nullableString(runtimeReport.equivalenceGroup)) {
+    identityMismatches.push('equivalenceGroup');
+  }
+  if (nullableString(planReport.anchorOpId) !== nullableString(runtimeReport.anchorOpId)) {
+    identityMismatches.push('anchorOpId');
+  }
+  const planPartsComplete = partsAreComplete(planReport);
+  const runtimePartsComplete = partsAreComplete(runtimeReport);
+  if (!planPartsComplete) {
+    identityMismatches.push('planPartsIncomplete');
+  }
+  if (!runtimePartsComplete) {
+    identityMismatches.push('runtimePartsIncomplete');
+  }
+
+  const exactMismatches = [...identityMismatches];
+  if (planVariantId !== runtimeVariantId) {
+    exactMismatches.push('selectedVariantId');
+  }
+  if (planReport.selectedVariantKind !== runtimeReport.selectedVariantKind) {
+    exactMismatches.push('selectedVariantKind');
+  }
+  if (partCount(planReport.partsExpected) !== partCount(runtimeReport.partsExpected)) {
+    exactMismatches.push('partsExpected');
+  }
+  if (exactMismatches.length === 0) {
     return {
       aligned: true,
       resolution: 'exact',
@@ -29,6 +78,7 @@ export function classifyCanvasKitVariantAlignment(planReport, runtimeReport) {
       runtimeVariantId,
       resolvedRuntimeConditions: [],
       unresolvedRuntimeConditions: [],
+      mismatches: [],
     };
   }
 
@@ -50,6 +100,7 @@ export function classifyCanvasKitVariantAlignment(planReport, runtimeReport) {
   }
 
   const runtimeFallbackResolved = runtimeConditions.length > 0
+    && identityMismatches.length === 0
     && unresolvedRuntimeConditions.length === 0
     && runtimeReport.selectedVariantKind === 'textRun'
     && runtimeReport.selectedReason === 'defaultTextRunFallback';
@@ -60,5 +111,6 @@ export function classifyCanvasKitVariantAlignment(planReport, runtimeReport) {
     runtimeVariantId,
     resolvedRuntimeConditions,
     unresolvedRuntimeConditions,
+    mismatches: runtimeFallbackResolved ? [] : exactMismatches,
   };
 }

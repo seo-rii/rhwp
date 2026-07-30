@@ -405,7 +405,10 @@ where
                     is_default_fallback: variant.is_default_fallback,
                     reasons: HashSet::new(),
                     details: HashSet::new(),
-                    anchor_op_id: variant.anchor_op_id.clone(),
+                    anchor_op_id: variant
+                        .anchor_op_id
+                        .clone()
+                        .or_else(|| variant.is_default_fallback.then(|| variant.stable_op_id())),
                     font_verification: None,
                     outline_eligibility: None,
                 }

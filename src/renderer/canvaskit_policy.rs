@@ -3286,7 +3286,7 @@ mod tests {
             is_default_fallback: false,
             requires: vec!["text.glyphOutline.monochromeFill".to_string()],
             quality: Some(TextVariantQuality::Exact),
-            anchor_op_id: Some(anchor_op_id),
+            anchor_op_id: Some(anchor_op_id.clone()),
             local_paint_order: Some(0),
         };
         outline.paths = vec![outline_path()];
@@ -3309,6 +3309,7 @@ mod tests {
             .expect("sidecar variant report");
 
         assert_eq!(report.selected_variant_id, "glyphOutline");
+        assert_eq!(report.anchor_op_id.as_deref(), Some(anchor_op_id.as_str()));
         assert_eq!(report.parts_expected, 1);
         assert_eq!(report.parts_replayed, 1);
         assert_eq!(report.parts.len(), 2);

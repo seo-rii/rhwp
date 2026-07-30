@@ -1072,14 +1072,22 @@ assert(
   'browser baseline must hard-gate invalid plans, runtime paint failures, hidden overlays, invalid v2, and bidirectional plan/runtime variant drift while inventorying fallbacks',
 );
 const conditionalBitmapPlan = {
+  equivalenceGroup: 'text-0',
+  anchorOpId: 'op-text-0',
   selectedVariantId: 'glyphOutline',
   selectedVariantKind: 'glyphOutline',
   selectedRuntimeConditions: ['canvasKitEncodedImageDecode'],
+  partsExpected: 1,
+  partsReplayed: 1,
 };
 const decodedBitmapFallback = {
+  equivalenceGroup: 'text-0',
+  anchorOpId: 'op-text-0',
   selectedVariantId: 'textRun',
   selectedVariantKind: 'textRun',
   selectedReason: 'defaultTextRunFallback',
+  partsExpected: 1,
+  partsReplayed: 1,
   rejectedVariants: [{
     variantId: 'glyphOutline',
     variantKind: 'glyphOutline',
@@ -1124,6 +1132,34 @@ assert.equal(
   ).aligned,
   false,
   'a runtime condition without its matching observed failure must remain a hard failure',
+);
+assert.equal(
+  classifyCanvasKitVariantAlignment(
+    { ...conditionalBitmapPlan, selectedRuntimeConditions: [] },
+    {
+      ...conditionalBitmapPlan,
+      selectedVariantKind: 'glyphRun',
+    },
+  ).aligned,
+  false,
+  'matching variant ids with different kinds must remain a hard failure',
+);
+assert.equal(
+  classifyCanvasKitVariantAlignment(
+    { ...conditionalBitmapPlan, selectedRuntimeConditions: [] },
+    {
+      ...conditionalBitmapPlan,
+      partsReplayed: 0,
+    },
+  ).aligned,
+  false,
+  'an incomplete runtime multipart replay must remain a hard failure',
+);
+assert(
+  rendererBaselineSource.includes('imageDiagnostics.pendingLoads === 0')
+    && rendererBaselineSource.includes('pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, 1.0)')
+    && rendererBaselineSource.includes('textVariantReportKey(report)'),
+  'browser baseline must wait for CanvasKit async image recovery, rerender the capture, and correlate leaf-local variant slots',
 );
 assert(
   rendererBaselineDriverSource.includes('CanvasKit Replay Diagnostics')

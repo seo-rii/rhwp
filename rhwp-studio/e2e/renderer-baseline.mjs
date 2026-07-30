@@ -14,7 +14,10 @@ import {
   normalizeRendererBaselineShard,
   selectRendererBaselineShard,
 } from './renderer-baseline-sharding.mjs';
-import { classifyCanvasKitVariantAlignment } from './runtime-condition-alignment.mjs';
+import {
+  classifyCanvasKitVariantAlignment,
+  textVariantReportKey,
+} from './runtime-condition-alignment.mjs';
 
 const DEFAULT_BROWSER_PARITY_THRESHOLDS = {
   ignoreChannelDelta: 8,
@@ -253,15 +256,19 @@ async function readRendererDiagnostics(page, pageIndex, backendKey, profile) {
     const textVariantsByGroup = new Map();
     const textVariantConflicts = [];
     for (const report of rawTextVariants) {
-      const group = String(report.equivalenceGroup ?? '');
-      const existing = textVariantsByGroup.get(group);
+      const reportKey = JSON.stringify([
+        String(report.equivalenceGroup ?? ''),
+        String(report.anchorOpId ?? ''),
+      ]);
+      const existing = textVariantsByGroup.get(reportKey);
       if (!existing) {
-        textVariantsByGroup.set(group, report);
+        textVariantsByGroup.set(reportKey, report);
         continue;
       }
       if (JSON.stringify(existing) !== JSON.stringify(report)) {
         textVariantConflicts.push({
-          equivalenceGroup: group,
+          equivalenceGroup: String(report.equivalenceGroup ?? ''),
+          anchorOpId: report.anchorOpId ?? null,
           first: existing,
           repeated: report,
         });
@@ -401,10 +408,13 @@ try {
         );
         await page.waitForFunction(
           ({ captureBackend }) => {
-            if (captureBackend !== 'canvas2d') {
-              return true;
+            const pageRenderer = window.__canvasView?.pageRenderer;
+            if (captureBackend.startsWith('canvaskit')) {
+              const imageDiagnostics =
+                pageRenderer?.canvaskitRenderer?.getImageDiagnostics?.();
+              return imageDiagnostics != null && imageDiagnostics.pendingLoads === 0;
             }
-            const imageCache = window.__canvasView?.pageRenderer?.canvas2dRenderer?.domImageCache;
+            const imageCache = pageRenderer?.canvas2dRenderer?.domImageCache;
             return imageCache instanceof Map
               && [...imageCache.values()].every((image) => image.complete);
           },
@@ -424,27 +434,39 @@ try {
               throw new Error('baseline capture canvas is unavailable');
             }
             const pageInfo = wasm.getPageInfo(capturePageIndex);
+            pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, 1.0);
+            let imageReadiness = null;
             if (captureBackend === 'canvas2d') {
-              pageRenderer.renderPage(capturePageIndex, pageInfo, canvas, 1.0);
+              const imageCache = pageRenderer.canvas2dRenderer?.domImageCache;
+              imageReadiness = imageCache instanceof Map
+                ? [...imageCache.values()].reduce(
+                  (summary, image) => {
+                    if (!image.complete) {
+                      summary.pending += 1;
+                    } else if (image.naturalWidth > 0) {
+                      summary.loaded += 1;
+                    } else {
+                      summary.failed += 1;
+                    }
+                    return summary;
+                  },
+                  { total: imageCache.size, loaded: 0, failed: 0, pending: 0 },
+                )
+                : null;
+            } else if (captureBackend.startsWith('canvaskit')) {
+              const diagnostics =
+                pageRenderer.canvaskitRenderer?.getImageDiagnostics?.();
+              imageReadiness = diagnostics == null
+                ? null
+                : {
+                    total: diagnostics.imagesDecoded
+                      + diagnostics.failures.length
+                      + diagnostics.pendingLoads,
+                    loaded: diagnostics.imagesDecoded,
+                    failed: diagnostics.failures.length,
+                    pending: diagnostics.pendingLoads,
+                  };
             }
-            const imageCache = captureBackend === 'canvas2d'
-              ? pageRenderer.canvas2dRenderer?.domImageCache
-              : null;
-            const imageReadiness = imageCache instanceof Map
-              ? [...imageCache.values()].reduce(
-                (summary, image) => {
-                  if (!image.complete) {
-                    summary.pending += 1;
-                  } else if (image.naturalWidth > 0) {
-                    summary.loaded += 1;
-                  } else {
-                    summary.failed += 1;
-                  }
-                  return summary;
-                },
-                { total: imageCache.size, loaded: 0, failed: 0, pending: 0 },
-              )
-              : null;
             return {
               width: canvas.width,
               height: canvas.height,
@@ -641,13 +663,13 @@ try {
           }
           const planSelections = new Map(
             (replayPlan?.textVariants ?? []).map((report) => [
-              String(report.equivalenceGroup ?? ''),
+              textVariantReportKey(report),
               report,
             ]),
           );
           const runtimeSelections = new Map(
             diagnostics.textVariants.map((report) => [
-              String(report.equivalenceGroup ?? ''),
+              textVariantReportKey(report),
               report,
             ]),
           );
@@ -656,11 +678,21 @@ try {
             ...planSelections.keys(),
             ...runtimeSelections.keys(),
           ]);
-          for (const equivalenceGroup of selectionGroups) {
+          for (const reportKey of selectionGroups) {
+            const planReport = planSelections.get(reportKey);
+            const runtimeReport = runtimeSelections.get(reportKey);
             const alignment = classifyCanvasKitVariantAlignment(
-              planSelections.get(equivalenceGroup),
-              runtimeSelections.get(equivalenceGroup),
+              planReport,
+              runtimeReport,
             );
+            const equivalenceGroup =
+              planReport?.equivalenceGroup
+              ?? runtimeReport?.equivalenceGroup
+              ?? '';
+            const anchorOpId =
+              planReport?.anchorOpId
+              ?? runtimeReport?.anchorOpId
+              ?? null;
             if (!alignment.aligned) {
               hardGateViolations.push({
                 sampleId: sample.id,
@@ -669,12 +701,14 @@ try {
                 code: 'planRuntimeVariantMismatch',
                 detail: JSON.stringify({
                   equivalenceGroup,
+                  anchorOpId,
                   ...alignment,
                 }),
               });
             } else if (alignment.resolution === 'runtimeFallback') {
               diagnostics.runtimeConditionResolutions.push({
                 equivalenceGroup,
+                anchorOpId,
                 ...alignment,
               });
             }

@@ -1450,7 +1450,9 @@ export function selectLayerTextVariantSetsWithReport(
         isDefaultFallback: !!variant.isDefaultFallback,
         reasons: new Set<LayerTextVariantRejectReason>(),
         details: new Set<string>(),
-        anchorOpId: variant.anchorOpId,
+        anchorOpId:
+          variant.anchorOpId
+          ?? (variant.isDefaultFallback ? layerPaintOpId(op) : undefined),
       };
       order += 1;
       variants.set(variantId, state);

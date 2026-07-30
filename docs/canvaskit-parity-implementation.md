@@ -726,9 +726,12 @@ attempt, but it is reported as a replay failure and is never admitted to the
 static picture cache. That fallback uses the original image's crop and
 linear/mipmap sampling path; an unmaterialized effect request must not force
 nearest-neighbor sampling or claim that a crop was already preprocessed. Runtime
-reports are deduplicated by equivalence group;
-conflicting repeated selections and Rust-plan/runtime selected-variant
-mismatches also fail. The sole exception is an explicitly declared plan
+reports are deduplicated by equivalence group plus `anchorOpId`, so a
+leaf-local group reused at another anchored text slot cannot overwrite the
+first report. Conflicting repeated selections fail. Rust-plan/runtime
+alignment requires the selected variant ID, kind, anchor, expected part count,
+and complete replayed part count to match; an ID-only match is not sufficient.
+The sole exception is an explicitly declared plan
 runtime condition whose exact failure is observed before Studio selects the
 `TextRun` fallback. For example, `canvasKitEncodedImageDecode` is resolved only
 by an `imageDecodeFailed` rejection of that selected strict variant; an
@@ -1575,8 +1578,9 @@ Recommended implementation order from this point:
 Replay diagnostics are now collected from the existing corpus. Browser captures
 render the requested manifest page into a dedicated backend canvas instead of
 implicitly taking the first visible page. The canvas stays DOM-attached while
-Canvas2D image resources settle, pending animation frames drain, and one final
-scale-1 render fixes the selected-page diagnostics. The baseline then encodes
+Canvas2D image resources or CanvasKit browser-decoder recoveries settle,
+pending animation frames drain, and one final scale-1 render fixes the
+selected-page diagnostics. The baseline then encodes
 intrinsic canvas pixels rather than a CSS/DPR-dependent element screenshot.
 Checked-in page 5 of the repeated header-image document and page 4 of the
 multi-section document exercise this path. The checked-in HWP and HWPX
