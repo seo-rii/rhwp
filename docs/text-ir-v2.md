@@ -988,7 +988,11 @@ implicitly change schema authority:
   including unsupported axis tags, out-of-range axis values, explicit
   default-axis tuples, and alternate axis tuples; omission of the variation
   tuple is the only CanvasKit strict path until browser-side exact
-  construction is proven.
+  construction is proven. The installed CanvasKit public API is covered by an
+  executable capability guard: both direct typeface data factories accept only
+  bytes, and `Typeface`, `Font`, and `FontMgr` expose no variation/axis method.
+  Paragraph `fontVariations` is not a substitute because it reshapes text
+  instead of replaying supplied glyph ids and positions.
   CanvasKit TTC/OTC replay is proven for digest-verified collection bytes whose
   requested face passes bounded standalone-SFNT normalization. The checked-in
   two-face fixture proves that face 1, rather than face 0 or a family fallback,

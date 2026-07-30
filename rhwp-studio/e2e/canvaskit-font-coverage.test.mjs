@@ -19,6 +19,26 @@ const canvasKitBundle = path.resolve(studioRoot, 'node_modules/canvaskit-wasm/bi
 const CanvasKit = await CanvasKitInit({
   locateFile: (file) => path.join(canvasKitBundle, file),
 });
+const directVariationMethods = [
+  ...Object.getOwnPropertyNames(CanvasKit.Typeface.prototype),
+  ...Object.getOwnPropertyNames(CanvasKit.Font.prototype),
+  ...Object.getOwnPropertyNames(CanvasKit.FontMgr.prototype),
+].filter((name) => /vari|axis/i.test(name));
+assert.equal(
+  CanvasKit.Typeface.MakeTypefaceFromData.length,
+  1,
+  'direct typeface construction has no exact variation tuple argument',
+);
+assert.equal(
+  CanvasKit.Typeface.MakeFreeTypeFaceFromData.length,
+  1,
+  'FreeType typeface construction has no exact variation tuple argument',
+);
+assert.deepEqual(
+  directVariationMethods,
+  [],
+  'direct GlyphRun APIs must remain variation-gated until CanvasKit exposes an exact axis method',
+);
 const regularBytes = fs.readFileSync(regularFontPath);
 const extraLightBytes = fs.readFileSync(extraLightFontPath);
 const d2CodingBytes = fs.readFileSync(d2CodingFontPath);
@@ -170,4 +190,4 @@ try {
   oldHangulFontManager?.delete();
 }
 
-console.log('CanvasKit font coverage and exact TTC face normalization passed');
+console.log('CanvasKit font coverage, variation API gate, and exact TTC face normalization passed');

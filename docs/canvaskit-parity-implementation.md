@@ -1113,6 +1113,14 @@ negative cases and the checked-in exact construction positives listed above.
 Broader real collection corpus remains coverage widening rather than an
 enablement prerequisite.
 
+The CanvasKit font-coverage smoke also pins the installed public direct-glyph
+API contract. Both typeface data factories accept only the font bytes, and the
+runtime `Typeface`, `Font`, and `FontMgr` prototypes expose no variation/axis
+method. Paragraph text style accepts `fontVariations`, but that path reshapes
+text and cannot replay the IR's supplied glyph ids and positions. If a future
+CanvasKit upgrade adds an exact direct-font axis API, this capability guard must
+fail first so the `variationUnsupported` gate is revisited deliberately.
+
 ### 5. Layout, Scope, And Vertical Writer Gates
 
 These features remain vocabulary/validator work until their authority gates are
