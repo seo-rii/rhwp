@@ -24,6 +24,23 @@ fn expand_pua_display_text_maps_only_verified_hancom_symbols() {
 }
 
 #[test]
+fn display_text_projects_only_closed_legacy_hancom_product_names() {
+    let source = "ᄒᆞᆫ글, ᄒᆞᆫ메일, ᄒᆞᆫ팩스, ᄒᆞᆫ소프트, ᄒᆞᆫ겨울";
+    let expected = "한글, 한메일, 한팩스, 한소프트, ᄒᆞᆫ겨울";
+
+    assert_eq!(expand_pua_display_text(source), expected);
+    assert_eq!(effective_text_for_metrics(source), expected);
+}
+
+#[test]
+fn legacy_product_projection_does_not_reinterpret_expanded_pua_old_hangul() {
+    let source = "\u{F537}\u{11AB}글";
+
+    assert_eq!(expand_pua_display_text(source), "ᄒᆞᆫ글");
+    assert_eq!(effective_text_for_metrics(source), "ᄒᆞᆫ글");
+}
+
+#[test]
 fn pua_metrics_projection_borrows_unmodified_text() {
     let effective = effective_text_for_metrics("plain text");
 

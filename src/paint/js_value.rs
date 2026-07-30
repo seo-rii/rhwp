@@ -3598,6 +3598,40 @@ mod tests {
     use crate::renderer::render_tree::BoundingBox;
 
     #[wasm_bindgen_test]
+    fn exports_legacy_hancom_product_display_projection() {
+        let text = "ᄒᆞᆫ글";
+        let tree = PageLayerTree::new(
+            120.0,
+            80.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 120.0, 80.0),
+                None,
+                vec![PaintOp::TextRun {
+                    bbox: BoundingBox::new(8.0, 10.0, 80.0, 16.0),
+                    run: LayerTextRunPaint {
+                        text: text.to_string(),
+                        style: TextStyle {
+                            font_family: "Noto Sans KR".to_string(),
+                            font_size: 16.0,
+                            ..Default::default()
+                        },
+                        positions: vec![0.0, 16.0, 32.0, 48.0, 64.0],
+                        baseline: 13.0,
+                        ..Default::default()
+                    },
+                }],
+            ),
+        );
+
+        let value = page_layer_tree_to_js_value(&tree);
+        let text_op = Array::from(&prop(&prop(&value, "root"), "ops")).get(0);
+
+        assert_eq!(string_prop(&text_op, "text"), text);
+        assert_eq!(string_prop(&text_op, "displayText"), "한글");
+        assert_eq!(Array::from(&prop(&text_op, "displayPositions")).length(), 3);
+    }
+
+    #[wasm_bindgen_test]
     fn exports_json_and_js_value_schema_parity() {
         let image_bytes = vec![1, 2, 3, 4, 5, 6];
         let svg_fragment = "<text x=\"0\" y=\"12\">x</text>".to_string();

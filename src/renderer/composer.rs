@@ -1082,12 +1082,13 @@ pub fn estimate_composed_line_width(line: &ComposedLine, styles: &ResolvedStyleS
 pub fn effective_text_for_metrics(text: &str) -> Cow<'_, str> {
     use crate::renderer::pua_oldhangul::map_pua_old_hangul;
 
-    let needs_projection = text.chars().any(|ch| {
-        ch == '\u{F081C}'
-            || pua_plain_text_display(ch).is_some()
-            || map_pua_old_hangul(ch).is_some()
-            || crate::renderer::layout::map_pua_bullet_char(ch) != ch
-    });
+    let needs_projection = has_legacy_hancom_product_name(text)
+        || text.chars().any(|ch| {
+            ch == '\u{F081C}'
+                || pua_plain_text_display(ch).is_some()
+                || map_pua_old_hangul(ch).is_some()
+                || crate::renderer::layout::map_pua_bullet_char(ch) != ch
+        });
     if needs_projection {
         Cow::Owned(expand_pua_display_text(text))
     } else {
@@ -1180,6 +1181,31 @@ fn pua_plain_text_display(ch: char) -> Option<&'static str> {
     super::hancom_pua::verified_hancom_pua_display(ch)
 }
 
+const LEGACY_HANCOM_PRODUCT_WORDS: [(&str, &str); 4] = [
+    ("ᄒᆞᆫ글", "한글"),
+    ("ᄒᆞᆫ메일", "한메일"),
+    ("ᄒᆞᆫ팩스", "한팩스"),
+    ("ᄒᆞᆫ소프트", "한소프트"),
+];
+
+fn has_legacy_hancom_product_name(text: &str) -> bool {
+    LEGACY_HANCOM_PRODUCT_WORDS
+        .iter()
+        .any(|(legacy, _)| text.contains(legacy))
+}
+
+fn project_legacy_hancom_product_names(text: &str) -> Option<String> {
+    if !has_legacy_hancom_product_name(text) {
+        return None;
+    }
+
+    let mut display = text.to_owned();
+    for (legacy, modern) in LEGACY_HANCOM_PRODUCT_WORDS {
+        display = display.replace(legacy, modern);
+    }
+    Some(display)
+}
+
 /// 일반 텍스트 렌더링/paint contract 경로에서 한컴 PUA 문자를 표시 문자열로 확장한다.
 ///
 /// HWP TAC filler `U+F081C` 는 레이아웃 측정에는 원문으로 남겨 0폭 규칙을
@@ -1187,11 +1213,17 @@ fn pua_plain_text_display(ch: char) -> Option<&'static str> {
 ///
 /// Hanyang-PUA 옛한글은 KS X 1026-1:2007 자모 시퀀스로 확장한다.
 ///
+/// 1990년대 한컴 제품 설명서의 닫힌 제품명 어휘는 한컴 PDF와 같은 현대
+/// 표기로 투영한다. 이 projection은 raw source에만 적용하므로 PUA 옛한글을
+/// 확장한 결과가 우연히 제품명처럼 보여도 다시 해석하지 않는다.
+///
 /// CharOverlap 전용 숫자(`U+F02CE..=U+F02E1`)는 여기서 확장하지 않는다.
 /// 해당 문자는 `pua_to_display_text()`가 글자겹침 렌더러에서만 처리한다.
 pub fn expand_pua_display_text(text: &str) -> String {
     use crate::renderer::pua_oldhangul::map_pua_old_hangul;
 
+    let product_projection = project_legacy_hancom_product_names(text);
+    let text = product_projection.as_deref().unwrap_or(text);
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         if ch == '\u{F081C}' {

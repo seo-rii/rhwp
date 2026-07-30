@@ -268,6 +268,17 @@ Studio fallback applies the same table when an older tree lacks that field.
 The lifecycle fixture feeds raw company-name PUA to both Canvas2D and CanvasKit
 and requires visible ink plus fuzzy raster parity.
 
+The later upstream legacy-product correction is applied through this branch's
+shared projection helper instead of importing its renderer-tree-specific
+display field. Raw source spellings `ᄒᆞᆫ글`, `ᄒᆞᆫ메일`, `ᄒᆞᆫ팩스`, and
+`ᄒᆞᆫ소프트` project to their modern product spellings for layout metrics and
+all Canvas2D, SVG, CanvasKit, JSON, and WASM paint paths when contained in one
+text run. Source text and indexes remain unchanged. Product matching runs
+before PUA old-Hangul expansion, so a PUA sequence that expands to the same
+jamo is not misclassified as a product name; ordinary old-Hangul words remain
+untouched. Product spellings split across style or line runs remain a separate
+source-index projection transport follow-up.
+
 The same shared table also carries ten earlier upstream mappings with
 document/PDF or embedded-outline evidence: the corrected basic-PUA middle dot
 and right arrow, a supplementary down arrow and middle dot, HWP3 line glyphs,

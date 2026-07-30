@@ -3561,6 +3561,52 @@ mod tests {
     }
 
     #[test]
+    fn serializes_display_text_for_legacy_hancom_product_name() {
+        let style = TextStyle {
+            font_family: "Noto Sans KR".to_string(),
+            font_size: 16.0,
+            ..Default::default()
+        };
+        let text = "ᄒᆞᆫ글";
+        let display_text = "한글";
+        let display_positions = compute_char_positions(display_text, &style);
+        let text_run = PaintOp::TextRun {
+            bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
+            run: LayerTextRunPaint {
+                text: text.to_string(),
+                style,
+                positions: vec![0.0, 16.0, 32.0, 48.0, 64.0],
+                baseline: 13.0,
+                ..Default::default()
+            },
+        };
+        let tree = PageLayerTree::new(
+            120.0,
+            80.0,
+            LayerNode::leaf(
+                BoundingBox::new(0.0, 0.0, 120.0, 80.0),
+                None,
+                vec![text_run],
+            ),
+        );
+
+        let json = tree.to_json();
+        let display_positions_json = format!(
+            "\"displayPositions\":[{}]",
+            display_positions
+                .iter()
+                .map(|position| format!("{:.6}", position))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        assert!(json.contains(&format!("\"text\":\"{}\"", text)));
+        assert!(json.contains(&format!("\"displayText\":\"{}\"", display_text)));
+        assert!(json.contains(&display_positions_json));
+        assert!(json.contains("\"text.displayText\""));
+    }
+
+    #[test]
     fn serializes_empty_display_positions_for_hidden_pua_filler() {
         let text_run = PaintOp::TextRun {
             bbox: BoundingBox::new(10.0, 20.0, 80.0, 18.0),
