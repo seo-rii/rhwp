@@ -202,6 +202,21 @@ The sample is therefore part of the representative manifest with a narrow
 `ignoreChannelDelta = 9`, `maxDiffRatio = 0` raster-only budget instead of
 remaining an unclassified watch item.
 
+Full default-mode corpus verification on 2026-07-30 covered all 139 full-page
+cases plus 2 feature cases in the `screen` profile. The manifest was split by
+filename only to avoid concurrent headless-browser resource contention; four
+initial startup failures passed when rerun sequentially and were not renderer
+gaps. The one reproducible functional defect was `table-004`: the bundled
+CanvasKit fonts had no glyphs for the vertical presentation forms `U+FE35` and
+`U+FE36`, so they rendered as `.notdef`. CanvasKit now replays the corresponding
+base parentheses directly, centers them in the producer-authored vertical
+cells, and rotates them on the CanvasKit canvas without a Canvas2D overlay.
+`table-004` now passes the geometry and raster-only budgets. The only other
+reproducible differences were stable rasterizer deltas in `endnote-01`,
+`footnote-01`, and `pr-149`; their ink geometry already matched, so each has a
+narrow sample-specific raster-only budget. Targeted sequential reruns of all
+four samples pass.
+
 Profile-specific editor visuals are filtered before backend replay. Empty field
 guides are marked `editor_only` in the semantic render tree; `LayerBuilder`
 keeps them for `screen` and `fast-preview`, and omits them for `print` and
@@ -800,6 +815,15 @@ the 0.3em fallback only for the measured Human Myeongjo/Hanyang Jung Gothic
 families and KoPub; HCR Batang and unverified faces retain 0.5em behavior.
 Because these decisions live in the embedded measurement gateway and its WASM
 fallback, Canvas2D and CanvasKit receive identical authored run bounds.
+
+CanvasKit vertical upright text also normalizes the vertical presentation forms
+`U+FE19` and `U+FE31..U+FE44` to their horizontal base glyphs before font
+selection. Font coverage probes, `TextBlob` cache
+identity, negative-cache recovery, and direct drawing all use the same replay
+text. The renderer measures the selected base glyph, centers it in the authored
+vertical advance cell, and applies a local 90-degree CanvasKit rotation. Source
+text, cluster positions, diagnostics, and the producer-owned bounding box stay
+unchanged.
 
 The `GlyphOutline` payload-family guard is shared by the v2 text validator,
 CanvasKit policy, Rust SVG renderer, and native Skia renderer. A payload kind
