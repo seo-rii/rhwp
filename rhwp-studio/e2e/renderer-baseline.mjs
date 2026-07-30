@@ -902,6 +902,8 @@ for (const result of results) {
       runtimePatternDirectImageCreations: 0,
       runtimeTextReplayRecoveries: 0,
       runtimeTextReplayFailures: 0,
+      runtimeFontSubstitutions: 0,
+      runtimeUnregisteredFontFallbacks: 0,
       equationSvgReplays: 0,
       equationLayoutReplays: 0,
       equationFallbackReplays: 0,
@@ -918,6 +920,7 @@ for (const result of results) {
       runtimeImageFailureReasonCounts: {},
       runtimeTextRecoveryReasonCounts: {},
       runtimeTextFailureReasonCounts: {},
+      runtimeFontResolutionSourceCounts: {},
       equationRouteReasonCounts: {},
       textV2IssueCounts: {},
     });
@@ -951,6 +954,11 @@ for (const result of results) {
   summary.runtimeTextReplayRecoveries +=
     diagnostics.textReplayDiagnostics?.recoveries?.length ?? 0;
   summary.runtimeTextReplayFailures += diagnostics.textReplayDiagnostics?.failures?.length ?? 0;
+  const fontSubstitutions = diagnostics.textReplayDiagnostics?.fontSubstitutions ?? [];
+  summary.runtimeFontSubstitutions += fontSubstitutions.length;
+  summary.runtimeUnregisteredFontFallbacks += fontSubstitutions.filter(
+    (substitution) => substitution.kind === 'unregisteredFallback',
+  ).length;
   summary.equationSvgReplays += diagnostics.equationReplayDiagnostics?.svgReplays ?? 0;
   summary.equationLayoutReplays += diagnostics.equationReplayDiagnostics?.layoutReplays ?? 0;
   summary.equationFallbackReplays += diagnostics.equationReplayDiagnostics?.fallbackReplays ?? 0;
@@ -1005,6 +1013,12 @@ for (const result of results) {
       summary.runtimeTextFailureReasonCounts[reason] ?? 0
     ) + 1;
   }
+  for (const substitution of fontSubstitutions) {
+    const source = String(substitution.source ?? 'unknown');
+    summary.runtimeFontResolutionSourceCounts[source] = (
+      summary.runtimeFontResolutionSourceCounts[source] ?? 0
+    ) + 1;
+  }
   for (const route of diagnostics.equationReplayDiagnostics?.routes ?? []) {
     const reason = String(route.reason ?? 'unknown');
     summary.equationRouteReasonCounts[reason] = (
@@ -1035,6 +1049,7 @@ for (const summary of replaySummaryRows) {
     'planReasonCounts',
     'selectedReasonCounts',
     'rejectedReasonCounts',
+    'runtimeFontResolutionSourceCounts',
     'textV2IssueCounts',
   ]) {
     summary[field] = Object.fromEntries(

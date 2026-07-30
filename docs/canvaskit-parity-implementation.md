@@ -793,7 +793,11 @@ paint op id, requested family, resolved family, and resolution source.
 `unregisteredFontFallbacks` is therefore an observable parity risk rather than
 a hidden successful replay. The diagnostic set is bounded, resets with document
 resources, and is stored in static-picture metadata so a cache hit reports the
-same substitutions as the recording pass.
+same substitutions as the recording pass. Renderer baseline JSON keeps the
+per-capture records, while its backend/profile summaries inventory total
+substitutions, unregistered fallbacks, and resolution-source counts. These
+counts remain report-only until representative corpus data distinguishes
+expected compatibility mappings from font-selection parity regressions.
 
 Shared layout measurement now uses that same display projection for ordinary
 run widths, source-sliced fragments, table/control offsets, and synthetic line
