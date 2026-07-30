@@ -49,6 +49,26 @@ python3 scripts/renderer_baseline.py --filter eq-01
 python3 scripts/renderer_baseline.py --filter table --skip-browser
 ```
 
+큰 corpus는 `--shard-index`와 `--shard-count`로 결정적으로 분할할 수 있다.
+index는 0부터 시작하며 각 shard는 반드시 서로 다른 출력 디렉터리를 사용한다.
+
+```bash
+python3 scripts/renderer_baseline.py \
+  --shard-index 0 --shard-count 4 \
+  --output output/renderer-baseline/shard-0
+python3 scripts/renderer_baseline.py \
+  --shard-index 1 --shard-count 4 \
+  --output output/renderer-baseline/shard-1
+```
+
+필터를 먼저 적용한 뒤 정규화된 `id`, `file`, `page` identity의 SHA-256
+상위 64비트를 shard count로 나눈다. 따라서 manifest 순서를 바꾸어도 sample
+assignment가 달라지지 않고, 같은 filter/count의 모든 index를 실행하면 중복이나
+누락 없이 선택 집합 전체를 덮는다. Python driver와 standalone Node browser
+capture가 같은 알고리즘을 사용하며, driver는 browser 결과의 sample ID 집합이
+native 선택 집합과 다르면 실패한다. 선택된 shard와 알고리즘은 JSON/Markdown
+report에 기록된다.
+
 브라우저 캡처 모드는 `host` 또는 `headless`를 지원한다.
 
 ```bash

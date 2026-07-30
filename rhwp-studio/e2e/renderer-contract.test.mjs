@@ -35,6 +35,10 @@ const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.
 const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-implementation.md');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
 const rendererBaselinePath = path.join(studioRoot, 'e2e/renderer-baseline.mjs');
+const rendererBaselineShardingPath = path.join(
+  studioRoot,
+  'e2e/renderer-baseline-sharding.mjs',
+);
 const rendererBaselineNativeDiffPath = path.join(studioRoot, 'e2e/renderer-baseline-native-diff.mjs');
 const runCiPath = path.join(studioRoot, 'e2e/run-ci.mjs');
 const rendererBaselineDriverPath = path.join(repoRoot, 'scripts/renderer_baseline.py');
@@ -70,6 +74,7 @@ const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
 const rendererBaselineSource = fs.readFileSync(rendererBaselinePath, 'utf8');
+const rendererBaselineShardingSource = fs.readFileSync(rendererBaselineShardingPath, 'utf8');
 const rendererBaselineNativeDiffSource = fs.readFileSync(rendererBaselineNativeDiffPath, 'utf8');
 const runCiSource = fs.readFileSync(runCiPath, 'utf8');
 const rendererBaselineDriverSource = fs.readFileSync(rendererBaselineDriverPath, 'utf8');
@@ -926,6 +931,21 @@ for (const category of [
 assert(
   extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('...sample'),
   'browser baseline sample normalization must preserve manifest extension fields such as browserParityThresholds',
+);
+assert(
+  rendererBaselineSource.includes('selectRendererBaselineShard(filteredSamples')
+    && rendererBaselineSource.includes('filteredSampleCount: filteredSamples.length')
+    && rendererBaselineSource.includes('shard,')
+    && rendererBaselineShardingSource.includes("createHash('sha256')")
+    && rendererBaselineShardingSource.includes('readBigUInt64BE(0)')
+    && rendererBaselineDriverSource.includes('"--shard-index"')
+    && rendererBaselineDriverSource.includes('"--shard-count"')
+    && rendererBaselineDriverSource.includes('digest[:8]')
+    && rendererBaselineDriverSource.includes('byteorder="big"')
+    && rendererBaselineDriverSource.includes(
+      'native/browser baseline sample selection differs',
+    ),
+  'native and browser baselines must use and report the same stable no-overlap sample shard',
 );
 assert(
   extractFunctionBody(rendererBaselineSource, 'normalizeSamples').includes('viewOptions')

@@ -10,6 +10,10 @@ import {
   loadApp,
   loadHwpFile,
 } from './helpers.mjs';
+import {
+  normalizeRendererBaselineShard,
+  selectRendererBaselineShard,
+} from './renderer-baseline-sharding.mjs';
 import { classifyCanvasKitVariantAlignment } from './runtime-condition-alignment.mjs';
 
 const DEFAULT_BROWSER_PARITY_THRESHOLDS = {
@@ -78,6 +82,8 @@ function parseArgs() {
     filter: '',
     profiles: 'screen,fast-preview',
     canvaskitSurface: process.env.RHWP_CANVASKIT_SURFACE ?? 'auto',
+    shardIndex: 0,
+    shardCount: 1,
   };
 
   for (const arg of args) {
@@ -99,6 +105,14 @@ function parseArgs() {
     }
     if (arg.startsWith('--canvaskit-surface=')) {
       options.canvaskitSurface = arg.slice('--canvaskit-surface='.length);
+      continue;
+    }
+    if (arg.startsWith('--shard-index=')) {
+      options.shardIndex = arg.slice('--shard-index='.length);
+      continue;
+    }
+    if (arg.startsWith('--shard-count=')) {
+      options.shardCount = arg.slice('--shard-count='.length);
       continue;
     }
   }
@@ -309,11 +323,15 @@ if (requestedCanvasKitSurface === 'sw' || requestedCanvasKitSurface === 'cpu') {
   options.canvaskitSurface = 'auto';
 }
 const manifest = JSON.parse(fs.readFileSync(options.manifest, 'utf8'));
-const samples = normalizeSamples(manifest, options.filter);
+const shard = normalizeRendererBaselineShard(options.shardIndex, options.shardCount);
+const filteredSamples = normalizeSamples(manifest, options.filter);
+const samples = selectRendererBaselineShard(filteredSamples, shard.index, shard.count);
 const profiles = parseProfiles(options.profiles);
 
 if (samples.length === 0) {
-  throw new Error('manifest filter removed every sample');
+  throw new Error(
+    `manifest filter/shard removed every sample (shard ${shard.index}/${shard.count})`,
+  );
 }
 for (const sample of samples) {
   if (!Number.isInteger(sample.page) || sample.page < 0) {
@@ -1070,6 +1088,8 @@ fs.writeFileSync(
     {
       manifest: options.manifest,
       sampleCount: samples.length,
+      filteredSampleCount: filteredSamples.length,
+      shard,
       profiles,
       canvaskitSurface: options.canvaskitSurface,
       results,

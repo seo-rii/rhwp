@@ -1844,7 +1844,13 @@ fuzzy PNG metrics used by the renderer sweep, so CanvasKit parity drift can be
 triaged from the baseline artifact without adding a fast-path gate. The renderer
 contract test pins the representative manifest sample ids, categories, and
 sample-file existence so this checked-in corpus cannot be accidentally narrowed
-while later payload-specific fixtures are added. Manifest
+while later payload-specific fixtures are added. Large baseline runs can use
+`--shard-index` plus `--shard-count`; the driver and standalone browser capture
+both assign normalized `id + file + page` identities with
+`sha256-first64-be`, and the driver rejects any native/browser selected-ID
+mismatch. The hash assignment is independent of manifest order, so executing
+every index for one filter/count partitions the selected corpus without overlap
+or omission. Manifest
 samples may carry browser parity threshold overrides when an existing
 renderer-sweep fixture already classifies the remaining delta as backend
 rasterization, such as the `pic-crop-01` crop-sampling budget. Text-heavy

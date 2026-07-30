@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -43,6 +44,18 @@ def parse_args() -> argparse.Namespace:
         "--filter",
         default="",
         help="regex filter applied to sample id/file/category",
+    )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=0,
+        help="zero-based deterministic sample shard index",
+    )
+    parser.add_argument(
+        "--shard-count",
+        type=int,
+        default=1,
+        help="number of deterministic sample shards",
     )
     parser.add_argument(
         "--browser-mode",
@@ -103,7 +116,20 @@ def parse_profiles(raw: str) -> list[str]:
     return ordered
 
 
-def load_manifest(manifest_path: Path, filter_pattern: str) -> dict:
+def sample_shard(sample: dict, shard_count: int) -> int:
+    identity = (
+        f"{sample['id']}\0{sample['file']}\0{sample.get('page', 0)}"
+    ).encode("utf-8")
+    digest = hashlib.sha256(identity).digest()
+    return int.from_bytes(digest[:8], byteorder="big") % shard_count
+
+
+def load_manifest(
+    manifest_path: Path,
+    filter_pattern: str,
+    shard_index: int,
+    shard_count: int,
+) -> dict:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     samples = manifest.get("samples", [])
     if not isinstance(samples, list) or not samples:
@@ -132,10 +158,14 @@ def load_manifest(manifest_path: Path, filter_pattern: str) -> dict:
                 "notes": sample.get("notes", ""),
             }
         )
-        selected.append(selected_sample)
+        if sample_shard(selected_sample, shard_count) == shard_index:
+            selected.append(selected_sample)
 
     if not selected:
-        raise SystemExit("sample filter removed every manifest entry")
+        raise SystemExit(
+            "sample filter/shard removed every manifest entry "
+            f"(shard {shard_index}/{shard_count})"
+        )
 
     manifest["samples"] = selected
     return manifest
@@ -340,6 +370,8 @@ def capture_browser_baseline(
     output_root: Path,
     browser_mode: str,
     filter_pattern: str,
+    shard_index: int,
+    shard_count: int,
     profiles: list[str],
     canvaskit_surface: str,
 ) -> Path:
@@ -370,6 +402,8 @@ def capture_browser_baseline(
             f"--output={output_root}",
             f"--profiles={','.join(profiles)}",
             f"--canvaskit-surface={canvaskit_surface}",
+            f"--shard-index={shard_index}",
+            f"--shard-count={shard_count}",
         ]
         if filter_pattern:
             cmd.append(f"--filter={filter_pattern}")
@@ -445,10 +479,24 @@ def write_reports(
     profiles: list[str],
     parity_report: Path | None,
     canvaskit_surface: str,
+    shard: dict,
 ) -> None:
     browser_data = None
     if browser_report and browser_report.exists():
         browser_data = json.loads(browser_report.read_text(encoding="utf-8"))
+        expected_sample_ids = sorted(sample["id"] for sample in manifest["samples"])
+        actual_sample_ids = sorted(
+            {
+                item["sampleId"]
+                for item in browser_data.get("results", [])
+                if isinstance(item.get("sampleId"), str)
+            }
+        )
+        if actual_sample_ids != expected_sample_ids:
+            raise SystemExit(
+                "native/browser baseline sample selection differs: "
+                f"expected={expected_sample_ids}, browser={actual_sample_ids}"
+            )
     parity_data = None
     if parity_report and parity_report.exists():
         parity_data = json.loads(parity_report.read_text(encoding="utf-8"))
@@ -636,6 +684,7 @@ def write_reports(
 
     report_json = {
         "manifest": manifest,
+        "shard": shard,
         "canvaskitSurface": effective_canvaskit_surface,
         "native": native_results,
         "browser": browser_data,
@@ -654,6 +703,7 @@ def write_reports(
         "",
         f"- manifest: `{repo_relative(manifest['_path']) if manifest.get('_path') else 'n/a'}`",
         f"- samples: {len(manifest['samples'])}",
+        f"- shard: `{shard['index']}/{shard['count']}` ({shard['algorithm']})",
         f"- layered profiles: {', '.join(profiles)}",
         f"- CanvasKit surface: `{effective_canvaskit_surface}`",
         "",
@@ -1247,6 +1297,18 @@ def main() -> None:
     manifest_path = Path(args.manifest).resolve()
     output_root = Path(args.output).resolve()
     profiles = parse_profiles(args.profiles)
+    if args.shard_count <= 0:
+        raise SystemExit("renderer baseline shard count must be a positive integer")
+    if args.shard_index < 0 or args.shard_index >= args.shard_count:
+        raise SystemExit(
+            "renderer baseline shard index must be in "
+            f"[0, {args.shard_count}): {args.shard_index}"
+        )
+    shard = {
+        "index": args.shard_index,
+        "count": args.shard_count,
+        "algorithm": "sha256-first64-be",
+    }
     canvaskit_surface = str(args.canvaskit_surface).strip().lower()
     if canvaskit_surface in ("sw", "cpu"):
         canvaskit_surface = "software"
@@ -1260,7 +1322,12 @@ def main() -> None:
         )
     ensure_dir(output_root)
 
-    manifest = load_manifest(manifest_path, args.filter)
+    manifest = load_manifest(
+        manifest_path,
+        args.filter,
+        args.shard_index,
+        args.shard_count,
+    )
     manifest["_path"] = str(manifest_path)
     shutil.copy2(manifest_path, output_root / manifest_path.name)
 
@@ -1294,10 +1361,12 @@ def main() -> None:
     if not args.skip_browser:
         print("\n[browser] capturing canvas2d/canvaskit baseline", flush=True)
         browser_report = capture_browser_baseline(
-            filtered_manifest_path,
+            manifest_path,
             output_root / "browser",
             args.browser_mode,
             args.filter,
+            args.shard_index,
+            args.shard_count,
             profiles,
             canvaskit_surface,
         )
@@ -1313,6 +1382,7 @@ def main() -> None:
         profiles,
         parity_report,
         canvaskit_surface,
+        shard,
     )
     print(f"\n[baseline] complete: {output_root}", flush=True)
 
