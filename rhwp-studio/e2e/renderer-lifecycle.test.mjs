@@ -2921,6 +2921,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
   const glyphRunFontBytes = [...fs.readFileSync(path.join(RHWP_ROOT, 'web', 'fonts', 'NotoSansKR-Regular.woff2'))];
   const colorGlyphFontPath = path.join(RHWP_ROOT, 'tests', 'fixtures', 'fonts', 'RHWPColorSmokeCOLRv0.ttf');
   const colorGlyphFontBytes = [...fs.readFileSync(colorGlyphFontPath)];
+  const exactFaceFontPath = path.join(RHWP_ROOT, 'tests', 'fixtures', 'fonts', 'RHWPExactFaceSmoke.ttc');
+  const exactFaceFontBytes = [...fs.readFileSync(exactFaceFontPath)];
   const colorGlyphFontDigest = '07aba86fc0f09361a59a4df361362e895e7e77cc8f20dd24ee5493cd1c85aac0';
   const colorGlyphFontActualDigest = crypto
     .createHash('sha256')
@@ -2934,7 +2936,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
     fs.existsSync(path.join(RHWP_ROOT, 'tests', 'fixtures', 'fonts', 'RHWPColorSmokeCOLRv0.LICENSE.md')),
     'CanvasKit color glyph fixture license file exists',
   );
-  const portableGlyphRunProbe = await page.evaluate(({ fontBytes, colorFontBytes, colorFontDigest }) => {
+  assert(
+    fs.existsSync(path.join(RHWP_ROOT, 'tests', 'fixtures', 'fonts', 'RHWPExactFaceSmoke.LICENSE.md')),
+    'CanvasKit exact-face TTC fixture license file exists',
+  );
+  const portableGlyphRunProbe = await page.evaluate(({
+    fontBytes,
+    colorFontBytes,
+    colorFontDigest,
+    exactFaceFontBytes: exactFaceFontSource,
+  }) => {
     const pageRenderer = window.__canvasView?.pageRenderer;
     const canvaskitRenderer = pageRenderer?.canvaskitRenderer;
     if (!canvaskitRenderer) {
@@ -2963,6 +2974,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
       colorGlyphIds = Array.from(colorFont.getGlyphIDs('\uE000') ?? []);
       colorFont.delete();
       colorTypeface.delete();
+    }
+    const exactFaceBytes = new Uint8Array(exactFaceFontSource);
+    const exactFaceManager = canvasKit.FontMgr.FromData(exactFaceBytes.buffer.slice(0));
+    const exactFaceFamily = exactFaceManager
+      ? Array.from(
+          { length: exactFaceManager.countFamilies() },
+          (_, index) => exactFaceManager.getFamilyName(index),
+        ).find((family) => family === 'RHWP Exact Face One')
+      : null;
+    const exactFaceTypeface = exactFaceManager && exactFaceFamily
+      ? exactFaceManager.matchFamilyStyle(exactFaceFamily, { weight: 400, width: 5, slant: 0 })
+      : null;
+    const exactFaceFont = exactFaceTypeface ? new canvasKit.Font(exactFaceTypeface, 42) : null;
+    const exactFaceGlyphIds = exactFaceFont
+      ? Array.from(exactFaceFont.getGlyphIDs('\uE104') ?? [])
+      : [];
+    exactFaceFont?.delete();
+    exactFaceTypeface?.delete();
+    exactFaceManager?.delete();
+    if (exactFaceGlyphIds.length !== 1 || exactFaceGlyphIds[0] === 0) {
+      return { error: `invalid exact TTC face glyph id ${JSON.stringify(exactFaceGlyphIds)}` };
     }
 
     const style = (color) => ({
@@ -3477,6 +3509,40 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const faceIndexPng = faceIndexRenderResult.png;
     const faceIndexSelectionDiagnostics = faceIndexRenderResult.textVariantSelectionDiagnostics;
 
+    const exactFaceTree = structuredClone(tree);
+    const exactFaceDigest = 'fixture-font-digest-exact-face';
+    const exactFaceResourceKey = `font:fixture:${exactFaceFontSource.length}:${exactFaceDigest}`;
+    exactFaceTree.resources.tableId = 1803;
+    exactFaceTree.resources.fontBlobs = [exactFaceFontSource];
+    exactFaceTree.resources.fontBlobHashes = [exactFaceDigest];
+    exactFaceTree.resources.fontBlobKeys = [exactFaceResourceKey];
+    exactFaceTree.fontResources.blobs[0] = {
+      id: 'fixture-font-blob-exact-face',
+      source: 'embedded',
+      portability: 'portableBlob',
+      digest: { algorithm: 'fixture', value: exactFaceDigest },
+      dataRef: { kind: 'fontBlob', id: exactFaceResourceKey },
+    };
+    exactFaceTree.fontResources.faces[0] = {
+      id: 'fixture-face-exact-face',
+      blobKey: 'fixture-font-blob-exact-face',
+      faceIndex: 1,
+      postscriptName: 'RHWPExactFaceOne-Regular',
+      familyNames: [{ value: 'RHWP Exact Face One' }],
+      styleNames: [{ value: 'Regular' }],
+    };
+    glyphOp(exactFaceTree).shapeKey.fontInstance.faceKey = 'fixture-face-exact-face';
+    glyphOp(exactFaceTree).glyphIds = exactFaceGlyphIds;
+    const exactFaceStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(exactFaceTree),
+      exactFaceTree.fontResources,
+    );
+    const exactFaceRenderResult = renderTreeWithDiagnostics(exactFaceTree);
+    const exactFaceRenderedStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+      glyphOp(exactFaceTree),
+      exactFaceTree.fontResources,
+    );
+
     const positionAdjustedTree = structuredClone(tree);
     assignFontIdentity(
       positionAdjustedTree,
@@ -3723,6 +3789,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       faceIndexStatus,
       faceIndexSelectionDiagnostics,
       faceIndexPng,
+      exactFaceStatus,
+      exactFaceRenderedStatus,
+      exactFaceSelectionDiagnostics: exactFaceRenderResult.textVariantSelectionDiagnostics,
+      exactFacePng: exactFaceRenderResult.png,
       positionAdjustedStatus,
       positionAdjustedPng,
       positionAdjustedStrictStatus,
@@ -3749,7 +3819,12 @@ runTest('Renderer lifecycle', async ({ page }) => {
       verticalSidewaysPng,
       colorGlyphReport,
     };
-  }, { fontBytes: glyphRunFontBytes, colorFontBytes: colorGlyphFontBytes, colorFontDigest: colorGlyphFontDigest });
+  }, {
+    fontBytes: glyphRunFontBytes,
+    colorFontBytes: colorGlyphFontBytes,
+    colorFontDigest: colorGlyphFontDigest,
+    exactFaceFontBytes,
+  });
 
   assert(
     !portableGlyphRunProbe.error,
@@ -4063,8 +4138,8 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     portableGlyphRunProbe.faceIndexStatus?.replayable === false
-      && portableGlyphRunProbe.faceIndexStatus?.reason === 'faceIndexUnsupported',
-    `CanvasKit GlyphRun rejects TTC/OTC-style non-zero face index=${JSON.stringify(portableGlyphRunProbe.faceIndexStatus)}`,
+      && portableGlyphRunProbe.faceIndexStatus?.reason === 'fontBlobNotVerified',
+    `CanvasKit invalid non-zero face index remains resource-gated before render=${JSON.stringify(portableGlyphRunProbe.faceIndexStatus)}`,
   );
   const faceIndexSelectionReport = portableGlyphRunProbe.faceIndexSelectionDiagnostics?.find(
     (report) => report.equivalenceGroup === 'glyph-fixture-0',
@@ -4106,6 +4181,37 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     faceIndexRedPixels > 20 && faceIndexBlackPixels < 5,
     `CanvasKit unsupported font face index keeps TextRun fallback red=${faceIndexRedPixels}, black=${faceIndexBlackPixels}`,
+  );
+  assert(
+    portableGlyphRunProbe.exactFaceStatus?.replayable === false
+      && portableGlyphRunProbe.exactFaceStatus?.reason === 'fontBlobNotVerified',
+    `CanvasKit exact TTC face remains gated before resource registration=${JSON.stringify(portableGlyphRunProbe.exactFaceStatus)}`,
+  );
+  assert(
+    portableGlyphRunProbe.exactFaceRenderedStatus?.replayable === true
+      && portableGlyphRunProbe.exactFaceRenderedStatus?.report?.exactFaceInstantiated === true
+      && portableGlyphRunProbe.exactFaceRenderedStatus?.report?.faceIndexSupported === true,
+    `CanvasKit exact TTC face is selected after bounded normalization=${JSON.stringify(portableGlyphRunProbe.exactFaceRenderedStatus)}`,
+  );
+  const exactFaceSelectionReport = portableGlyphRunProbe.exactFaceSelectionDiagnostics?.find(
+    (report) => report.equivalenceGroup === 'glyph-fixture-0',
+  );
+  assert(
+    exactFaceSelectionReport?.selectedVariantId === 'glyphRun'
+      && exactFaceSelectionReport?.selectedReason === 'glyphRunStrictEligible',
+    `CanvasKit exact TTC face suppresses TextRun fallback=${JSON.stringify(exactFaceSelectionReport)}`,
+  );
+  const exactFaceRedPixels = countPixels(
+    portableGlyphRunProbe.exactFacePng,
+    (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+  );
+  const exactFaceBlackPixels = countPixels(
+    portableGlyphRunProbe.exactFacePng,
+    (pixel) => pixel.alpha > 32 && pixel.red < 80 && pixel.green < 80 && pixel.blue < 80,
+  );
+  assert(
+    exactFaceBlackPixels > 20 && exactFaceRedPixels < 5,
+    `CanvasKit exact TTC face draws strict glyph ink black=${exactFaceBlackPixels}, red=${exactFaceRedPixels}`,
   );
   assert(
     portableGlyphRunProbe.positionAdjustedStatus?.replayable === false

@@ -4,12 +4,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import CanvasKitInit from 'canvaskit-wasm/bin/full/canvaskit.js';
+import { canvasKitFontFaceData } from '../src/view/canvaskit/sfnt-face.ts';
 
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const regularFontPath = path.resolve(studioRoot, '../web/fonts/NotoSansKR-Regular.woff2');
 const extraLightFontPath = path.resolve(studioRoot, '../web/fonts/NotoSansKR-ExtraLight.woff2');
 const d2CodingFontPath = path.resolve(studioRoot, '../web/fonts/D2Coding-Regular.woff2');
 const oldHangulFontPath = path.resolve(studioRoot, '../web/fonts/SourceHanSerifK-OldHangul-subset.woff2');
+const exactFaceCollectionPath = path.resolve(
+  studioRoot,
+  '../tests/fixtures/fonts/RHWPExactFaceSmoke.ttc',
+);
 const canvasKitBundle = path.resolve(studioRoot, 'node_modules/canvaskit-wasm/bin/full');
 const CanvasKit = await CanvasKitInit({
   locateFile: (file) => path.join(canvasKitBundle, file),
@@ -18,14 +23,47 @@ const regularBytes = fs.readFileSync(regularFontPath);
 const extraLightBytes = fs.readFileSync(extraLightFontPath);
 const d2CodingBytes = fs.readFileSync(d2CodingFontPath);
 const oldHangulBytes = fs.readFileSync(oldHangulFontPath);
+const exactFaceCollectionBytes = fs.readFileSync(exactFaceCollectionPath);
 const regularTypeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(regularBytes);
 const extraLightTypeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(extraLightBytes);
 const d2CodingTypeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(d2CodingBytes);
 const oldHangulTypeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(oldHangulBytes);
+const exactFaceData = canvasKitFontFaceData(
+  exactFaceCollectionBytes.buffer.slice(
+    exactFaceCollectionBytes.byteOffset,
+    exactFaceCollectionBytes.byteOffset + exactFaceCollectionBytes.byteLength,
+  ),
+  1,
+);
+const exactFaceTypeface = exactFaceData
+  ? CanvasKit.Typeface.MakeTypefaceFromData(exactFaceData)
+  : null;
 assert.ok(regularTypeface, 'Noto Sans KR Regular typeface를 만들 수 있어야 한다');
 assert.ok(extraLightTypeface, 'Noto Sans KR ExtraLight typeface를 만들 수 있어야 한다');
 assert.ok(d2CodingTypeface, 'D2Coding Regular typeface를 만들 수 있어야 한다');
 assert.ok(oldHangulTypeface, 'Source Han Serif K 옛한글 subset typeface를 만들 수 있어야 한다');
+assert.ok(exactFaceTypeface, 'TTC face 1을 standalone SFNT로 정규화해 exact typeface를 만들어야 한다');
+assert.equal(
+  exactFaceTypeface.getFamilyName(),
+  'RHWP Exact Face One',
+  '정규화한 typeface는 요청한 TTC face의 family를 노출해야 한다',
+);
+assert.notEqual(
+  exactFaceTypeface.getGlyphIDs('\uE104', 1)[0],
+  0,
+  '정규화한 TTC face 1은 face 0에 없는 증명 glyph를 노출해야 한다',
+);
+assert.equal(
+  canvasKitFontFaceData(
+    exactFaceCollectionBytes.buffer.slice(
+      exactFaceCollectionBytes.byteOffset,
+      exactFaceCollectionBytes.byteOffset + exactFaceCollectionBytes.byteLength,
+    ),
+    2,
+  ),
+  null,
+  'out-of-range TTC faceIndex는 typeface 생성 전에 거부해야 한다',
+);
 
 const regularFontManager = CanvasKit.FontMgr.FromData(regularBytes);
 assert.equal(regularFontManager?.getFamilyName(0), 'Noto Sans KR', 'Regular 번들은 올바른 family name을 노출해야 한다');
@@ -126,9 +164,10 @@ try {
   extraLightTypeface.delete();
   d2CodingTypeface.delete();
   oldHangulTypeface.delete();
+  exactFaceTypeface.delete();
   extraLightFontManager?.delete();
   d2CodingFontManager?.delete();
   oldHangulFontManager?.delete();
 }
 
-console.log('CanvasKit Noto Sans KR, D2Coding unit-symbol, and dedicated old-Hangul coverage passed');
+console.log('CanvasKit font coverage and exact TTC face normalization passed');

@@ -13,6 +13,7 @@ const canvaskitPath = path.join(studioRoot, 'src/view/canvaskit-renderer.ts');
 const pageRendererPath = path.join(studioRoot, 'src/view/page-renderer.ts');
 const canvaskitDirectory = path.join(studioRoot, 'src/view/canvaskit');
 const canvaskitFontsPath = path.join(canvaskitDirectory, 'fonts.ts');
+const canvaskitSfntFacePath = path.join(canvaskitDirectory, 'sfnt-face.ts');
 const fontLoaderPath = path.join(studioRoot, 'src/core/font-loader.ts');
 const canvaskitReplayPlanePath = path.join(canvaskitDirectory, 'replay-plane.ts');
 const canvaskitResourceCachePath = path.join(canvaskitDirectory, 'resource-cache.ts');
@@ -47,6 +48,7 @@ const canvas2dSource = fs.readFileSync(canvas2dPath, 'utf8');
 const canvaskitSource = fs.readFileSync(canvaskitPath, 'utf8');
 const pageRendererSource = fs.readFileSync(pageRendererPath, 'utf8');
 const canvaskitFontsSource = fs.readFileSync(canvaskitFontsPath, 'utf8');
+const canvaskitSfntFaceSource = fs.readFileSync(canvaskitSfntFacePath, 'utf8');
 const fontLoaderSource = fs.readFileSync(fontLoaderPath, 'utf8');
 const canvaskitReplayPlaneSource = fs.readFileSync(canvaskitReplayPlanePath, 'utf8');
 const canvaskitResourceCacheSource = fs.readFileSync(canvaskitResourceCachePath, 'utf8');
@@ -2079,6 +2081,14 @@ const glyphOutlineFillOnlyStyleBlock = extractFunctionBody(
   'isFillOnlyGlyphOutlineStyle',
 );
 const canvaskitGlyphRunTypefaceBlock = extractMethodBody(canvaskitFontsSource, 'typefaceForGlyphRun');
+const canvaskitGlyphRunFaceDataBlock = extractMethodBody(
+  canvaskitFontsSource,
+  'fontFaceDataForGlyphRun',
+);
+const canvaskitSfntFaceDataBlock = extractFunctionBody(
+  canvaskitSfntFaceSource,
+  'canvasKitFontFaceData',
+);
 const canvaskitFontBlobBytesBlock = extractMethodBody(canvaskitFontsSource, 'fontBlobBytesForRef');
 assertTokensInOrder(
   canvaskitFontBlobRegistrationBlock,
@@ -2095,6 +2105,7 @@ assertTokensInOrder(
 assertTokensInOrder(
   canvaskitGlyphRunTypefaceBlock,
   [
+    'const bytes = this.fontFaceDataForGlyphRun(face, blob)',
     'try {',
     'typeface = this.canvasKit.Typeface.MakeTypefaceFromData(bytes.slice(0))',
     '} catch {',
@@ -2106,6 +2117,17 @@ assertTokensInOrder(
     'typeface = null',
   ],
   'CanvasKit GlyphRun font selection must contain both typeface parser failure paths',
+);
+assert(
+  canvaskitFontsSource.includes("import { canvasKitFontFaceData } from './sfnt-face'")
+    && canvaskitGlyphRunFaceDataBlock.includes('canvasKitFontFaceData(bytes, face.faceIndex)')
+    && canvaskitSfntFaceDataBlock.includes('faceIndex >= faceCount')
+    && canvaskitSfntFaceDataBlock.includes('tableOffset < collectionHeaderLength')
+    && canvaskitSfntFaceDataBlock.includes('tableLength > bytes.byteLength - tableOffset')
+    && canvaskitSfntFaceDataBlock.includes(
+      'selectedView.setUint32(outputRecordOffset + 8, table.outputOffset, false)',
+    ),
+  'CanvasKit exact TTC replay must select one bounded SFNT face before typeface construction',
 );
 assertTokensInOrder(
   canvaskitFontBlobBytesBlock,
@@ -2133,11 +2155,14 @@ assertTokensInOrder(
     'if (run.shapeKey.fontInstance.variations?.length)',
     "return this.glyphRunReplayFailure(run, 'variationUnsupported'",
     'const faceKey = run.shapeKey.fontInstance.faceKey',
-    'if (face.faceIndex !== 0)',
-    "return this.glyphRunReplayFailure(run, 'faceIndexUnsupported'",
+    "if (run.diagnostics.replayEligibility === 'portable')",
     "return this.glyphRunReplayFailure(run, 'fontBlobNotPortable'",
+    'face.faceIndex !== 0',
+    '!this.glyphRunTypefaces.has(this.typefaceCacheKey(face, blob))',
+    '!this.fontFaceDataForGlyphRun(face, blob)',
+    "return this.glyphRunReplayFailure(run, 'faceIndexUnsupported'",
   ],
-  'CanvasKit GlyphRun replay must keep range, variation, and face-index gates before portable replay',
+  'CanvasKit GlyphRun replay must keep range and variation gates while admitting only extractable collection faces',
 );
 assert(
   canvaskitGlyphRunReplayStatusBlock.includes('Number.isFinite(run.placement.baselineY)')

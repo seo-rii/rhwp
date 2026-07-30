@@ -2051,18 +2051,6 @@ fn canvaskit_glyph_run_replay_status(
     else {
         return VariantReplayStatus::rejected(VariantRejectReason::ExactFaceUnavailable);
     };
-    if face.face_index != 0 {
-        let mut status =
-            canvaskit_glyph_run_font_rejection(run, VariantRejectReason::FaceIndexUnsupported);
-        if let Some(report) = status.font_verification.as_mut() {
-            report.blob_key = Some(face.blob_key.0.clone());
-            report.portability = Some(blob.portability.kind().as_str().to_string());
-            report.blob_resolved = Some(true);
-            report.exact_face_instantiated = Some(false);
-            report.face_index_supported = Some(false);
-        }
-        return status;
-    }
     if !blob.portability.is_self_contained_replayable() {
         return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
     }
@@ -2111,7 +2099,7 @@ fn canvaskit_glyph_run_replay_status(
     if data_ref.kind != crate::paint::BinaryResourceKind::FontBlob {
         return font_resource_rejection(VariantRejectReason::FontBlobNotVerified, false, false);
     }
-    let mut resource_digest = None;
+    let mut resource = None;
     for (id, bytes) in resources.font_blob_resources() {
         let digest = crate::paint::resource_digest_hex(bytes);
         let ref_matches = data_ref.id == blob.id.0
@@ -2121,11 +2109,11 @@ fn canvaskit_glyph_run_replay_status(
                 .as_deref()
                 .is_some_and(|expected| expected == digest);
         if ref_matches {
-            resource_digest = Some(digest);
+            resource = Some((digest, bytes));
             break;
         }
     }
-    let Some(resource_digest) = resource_digest else {
+    let Some((resource_digest, resource_bytes)) = resource else {
         return font_resource_rejection(VariantRejectReason::FontBlobNotVerified, false, false);
     };
     let digest_matched = expected_digest
@@ -2133,6 +2121,20 @@ fn canvaskit_glyph_run_replay_status(
         .is_some_and(|expected| expected == resource_digest);
     if !digest_matched {
         return font_resource_rejection(VariantRejectReason::FontDigestMismatch, true, false);
+    }
+    if face.face_index != 0 && ttf_parser::Face::parse(resource_bytes, face.face_index).is_err() {
+        let mut status =
+            canvaskit_glyph_run_font_rejection(run, VariantRejectReason::FaceIndexUnsupported);
+        if let Some(report) = status.font_verification.as_mut() {
+            report.blob_key = Some(face.blob_key.0.clone());
+            report.portability = Some(blob.portability.kind().as_str().to_string());
+            report.expected_digest = expected_digest;
+            report.blob_resolved = Some(true);
+            report.digest_matched = Some(true);
+            report.exact_face_instantiated = Some(false);
+            report.face_index_supported = Some(false);
+        }
+        return status;
     }
     let mut status = VariantReplayStatus::replayable();
     status.font_verification = Some(VariantFontVerificationReport {
@@ -2753,6 +2755,7 @@ mod tests {
     const FIXTURE_PNG: &[u8] = include_bytes!("../../assets/logo/logo-32.png");
     const FIXTURE_FONT: &[u8] =
         include_bytes!("../../tests/fixtures/fonts/RHWPColorSmokeCOLRv0.ttf");
+    const FIXTURE_TTC: &[u8] = include_bytes!("../../tests/fixtures/fonts/RHWPExactFaceSmoke.ttc");
 
     fn compact_bmp(width: i32, height: i32) -> Vec<u8> {
         let mut bytes = vec![0; 54];
@@ -2843,18 +2846,26 @@ mod tests {
     }
 
     fn add_portable_test_font(resources: &mut ResourceArena, face_index: u32) -> FontFaceKey {
+        add_portable_font_bytes(resources, FIXTURE_FONT, face_index)
+    }
+
+    fn add_portable_font_bytes(
+        resources: &mut ResourceArena,
+        bytes: &[u8],
+        face_index: u32,
+    ) -> FontFaceKey {
         let blob_key = FontBlobKey("test-blob".to_string());
         let face_key = FontFaceKey("test-face".to_string());
-        let digest_value = crate::paint::resource_digest_hex(FIXTURE_FONT);
+        let digest_value = crate::paint::resource_digest_hex(bytes);
         let digest = FontDigest {
             algorithm: "blake3".to_string(),
             value: digest_value.clone(),
         };
         let data_ref = BinaryResourceRef {
             kind: BinaryResourceKind::FontBlob,
-            id: crate::paint::font_blob_resource_key(FIXTURE_FONT.len(), &digest_value),
+            id: crate::paint::font_blob_resource_key(bytes.len(), &digest_value),
         };
-        resources.intern_font_blob_bytes(FIXTURE_FONT);
+        resources.intern_font_blob_bytes(bytes);
         resources.font_resources_mut().blobs.push(FontBlobResource {
             id: blob_key.clone(),
             digest: Some(digest.clone()),
@@ -4450,7 +4461,7 @@ mod tests {
     }
 
     #[test]
-    fn canvaskit_rejects_nonzero_face_index_until_exact_construction_is_proven() {
+    fn canvaskit_rejects_nonzero_face_index_without_a_matching_collection_face() {
         let cases = [
             ("wrong-face-index", 1, false),
             ("high-face-index", 7, false),
@@ -4504,6 +4515,47 @@ mod tests {
             assert_eq!(font_report.face_index_supported, Some(false), "{case_name}");
             assert!(!font_report.replay_eligible, "{case_name}");
         }
+    }
+
+    #[test]
+    fn canvaskit_accepts_exact_nonzero_collection_face_for_runtime_normalization() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_font_bytes(&mut resources, FIXTURE_TTC, 1);
+        let run = glyph_run(face_key, Vec::new());
+
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(status.replayable, "{status:?}");
+        assert_eq!(status.reason, None);
+        let font_report = status
+            .font_verification
+            .expect("exact collection face should carry verification");
+        assert_eq!(font_report.blob_resolved, Some(true));
+        assert_eq!(font_report.digest_matched, Some(true));
+        assert_eq!(font_report.face_index_supported, Some(true));
+        assert!(font_report.replay_eligible);
+    }
+
+    #[test]
+    fn canvaskit_rejects_out_of_range_collection_face_before_runtime() {
+        let mut resources = ResourceArena::default();
+        let face_key = add_portable_font_bytes(&mut resources, FIXTURE_TTC, 2);
+        let run = glyph_run(face_key, Vec::new());
+
+        let status = canvaskit_glyph_run_replay_status(&run, &resources);
+
+        assert!(!status.replayable);
+        assert_eq!(
+            status.reason,
+            Some(VariantRejectReason::FaceIndexUnsupported)
+        );
+        let font_report = status
+            .font_verification
+            .expect("out-of-range collection face should carry verification");
+        assert_eq!(font_report.blob_resolved, Some(true));
+        assert_eq!(font_report.digest_matched, Some(true));
+        assert_eq!(font_report.face_index_supported, Some(false));
+        assert!(!font_report.replay_eligible);
     }
 
     #[test]

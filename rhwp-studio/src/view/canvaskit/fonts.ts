@@ -15,6 +15,7 @@ import type {
   LayerGlyphRunOp,
 } from '@/core/types';
 import { decodeBase64 } from '@/core/base64';
+import { canvasKitFontFaceData } from './sfnt-face';
 
 const FONT_SANS_REGULAR_URL = new URL('../../../../web/fonts/NotoSansKR-Regular.woff2', import.meta.url).href;
 const FONT_SANS_BOLD_URL = new URL('../../../../web/fonts/NotoSansKR-Bold.woff2', import.meta.url).href;
@@ -429,12 +430,6 @@ export class CanvasKitFontRegistry {
         exactFaceInstantiated: false,
       });
     }
-    if (face.faceIndex !== 0) {
-      return this.glyphRunReplayFailure(run, 'faceIndexUnsupported', {
-        exactFaceInstantiated: false,
-        faceIndexSupported: false,
-      });
-    }
     if (run.diagnostics.replayEligibility === 'portable') {
       if (blob.portability !== 'portableBlob' || !blob.digest || !blob.dataRef) {
         return this.glyphRunReplayFailure(run, 'fontBlobNotPortable', {
@@ -446,6 +441,17 @@ export class CanvasKitFontRegistry {
         return this.glyphRunReplayFailure(run, 'fontBlobNotVerified', {
           digestMatched: false,
           exactFaceInstantiated: false,
+        });
+      }
+      if (
+        face.faceIndex !== 0
+        && !this.glyphRunTypefaces.has(this.typefaceCacheKey(face, blob))
+        && !this.fontFaceDataForGlyphRun(face, blob)
+      ) {
+        return this.glyphRunReplayFailure(run, 'faceIndexUnsupported', {
+          digestMatched: true,
+          exactFaceInstantiated: false,
+          faceIndexSupported: false,
         });
       }
       if (!this.typefaceForGlyphRun(face, blob)) {
@@ -479,6 +485,17 @@ export class CanvasKitFontRegistry {
       return this.glyphRunReplayFailure(run, 'externalFontNotInstantiated', {
         digestMatched: false,
         exactFaceInstantiated: false,
+      });
+    }
+    if (
+      face.faceIndex !== 0
+      && !this.glyphRunTypefaces.has(this.typefaceCacheKey(face, blob))
+      && !this.fontFaceDataForGlyphRun(face, blob)
+    ) {
+      return this.glyphRunReplayFailure(run, 'faceIndexUnsupported', {
+        digestMatched: true,
+        exactFaceInstantiated: false,
+        faceIndexSupported: false,
       });
     }
     if (!this.typefaceForGlyphRun(face, blob)) {
@@ -577,10 +594,7 @@ export class CanvasKitFontRegistry {
     if (cached) {
       return cached;
     }
-    if (!blob.digest) {
-      return null;
-    }
-    const bytes = this.verifiedFontBlobs.get(this.fontBlobCacheKey(blob.id, blob.digest.value));
+    const bytes = this.fontFaceDataForGlyphRun(face, blob);
     if (!bytes) {
       return null;
     }
@@ -602,6 +616,17 @@ export class CanvasKitFontRegistry {
     }
     this.glyphRunTypefaces.set(cacheKey, typeface);
     return typeface;
+  }
+
+  private fontFaceDataForGlyphRun(
+    face: LayerFontFaceResource,
+    blob: LayerFontBlobResource,
+  ): ArrayBuffer | null {
+    if (!blob.digest) {
+      return null;
+    }
+    const bytes = this.verifiedFontBlobs.get(this.fontBlobCacheKey(blob.id, blob.digest.value));
+    return bytes ? canvasKitFontFaceData(bytes, face.faceIndex) : null;
   }
 
   private fontBlobCacheKey(blobId: string, digestValue: string): string {
