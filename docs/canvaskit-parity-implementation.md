@@ -584,10 +584,11 @@ The working order is:
    while `runtimeConditions` carries the complete ordered set. Images with a
    non-`realPic` effect or nonzero brightness/contrast add
    `canvasKitImageEffectPreprocess` after decode. Pattern-filled rectangles,
-   ellipses, and paths add `canvasKitPatternImageConstruction`. These
-   conditions describe successful direct replay prerequisites; they do not
-   waive the existing hard failures for effect preprocessing fallback or
-   pattern surface construction failure.
+   ellipses, and paths add `canvasKitPatternImageConstruction` only when a
+   usable two-color gradient does not win the same gradient-before-pattern
+   runtime precedence. These conditions describe successful direct replay
+   prerequisites; they do not waive the existing hard failures for effect
+   preprocessing fallback or pattern surface construction failure.
    A statically verified `GlyphRun` similarly carries
    `runtimeCondition=canvasKitTypefaceConstruction`: Rust proves the bounded
    font resource, digest, face, glyph IDs, and paint contract, while Studio

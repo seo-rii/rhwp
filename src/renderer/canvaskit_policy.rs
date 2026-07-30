@@ -1819,15 +1819,23 @@ impl<'a> CanvasKitReplayPlanBuilder<'a> {
             PaintOp::Line { .. } => {
                 direct_item(path, paint_op_type(op), CanvasKitReplayFeature::VectorShape)
             }
-            PaintOp::Rectangle { rect, .. } => {
-                vector_shape_item(path, "rectangle", rect.style.pattern.is_some())
-            }
-            PaintOp::Ellipse { ellipse, .. } => {
-                vector_shape_item(path, "ellipse", ellipse.style.pattern.is_some())
-            }
+            PaintOp::Rectangle { rect, .. } => vector_shape_item(
+                path,
+                "rectangle",
+                pattern_image_required(&rect.style, rect.gradient.as_deref()),
+            ),
+            PaintOp::Ellipse { ellipse, .. } => vector_shape_item(
+                path,
+                "ellipse",
+                pattern_image_required(&ellipse.style, ellipse.gradient.as_deref()),
+            ),
             PaintOp::Path {
                 path: shape_path, ..
-            } => vector_shape_item(path, "path", shape_path.style.pattern.is_some()),
+            } => vector_shape_item(
+                path,
+                "path",
+                pattern_image_required(&shape_path.style, shape_path.gradient.as_deref()),
+            ),
             PaintOp::Image { image, .. } => image_item(path, image, &self.tree.resources),
             PaintOp::Equation { .. } => {
                 direct_item(path, "equation", CanvasKitReplayFeature::Equation)
@@ -2503,6 +2511,13 @@ fn vector_shape_item(
     item
 }
 
+fn pattern_image_required(
+    style: &crate::renderer::ShapeStyle,
+    gradient: Option<&crate::renderer::GradientFillInfo>,
+) -> bool {
+    style.pattern.is_some() && gradient.is_none_or(|gradient| gradient.colors.len() < 2)
+}
+
 fn image_effect_requires_preprocess(effect: ImageEffect, brightness: i8, contrast: i8) -> bool {
     effect != ImageEffect::RealPic || brightness != 0 || contrast != 0
 }
@@ -2833,7 +2848,7 @@ mod tests {
         BoundingBox, FieldMarkerType, PageRenderTree, RawSvgNode, RenderNode, RenderNodeType,
         ShapeTransform, TextRunNode,
     };
-    use crate::renderer::{PathCommand, PatternFillInfo, ShapeStyle, TextStyle};
+    use crate::renderer::{GradientFillInfo, PathCommand, PatternFillInfo, ShapeStyle, TextStyle};
 
     const FIXTURE_PNG: &[u8] = include_bytes!("../../assets/logo/logo-32.png");
     const FIXTURE_FONT: &[u8] =
@@ -3847,6 +3862,71 @@ mod tests {
         assert!(plan
             .to_json()
             .contains("\"runtimeConditions\":[\"canvasKitPatternImageConstruction\"]"));
+    }
+
+    #[test]
+    fn canvaskit_pattern_runtime_condition_follows_gradient_precedence() {
+        let pattern_style = ShapeStyle {
+            pattern: Some(PatternFillInfo {
+                pattern_type: 6,
+                pattern_color: 0x000000,
+                background_color: 0xffffff,
+            }),
+            ..ShapeStyle::default()
+        };
+        let gradient = |colors| GradientFillInfo {
+            gradient_type: 1,
+            angle: 0,
+            center_x: 50,
+            center_y: 50,
+            colors,
+            positions: vec![0.0, 1.0],
+        };
+        let tree = PageLayerTree::new(
+            100.0,
+            100.0,
+            LayerNode::leaf(
+                valid_bbox(),
+                None,
+                vec![
+                    PaintOp::Rectangle {
+                        bbox: valid_bbox(),
+                        rect: LayerRectanglePaint {
+                            corner_radius: 0.0,
+                            style: pattern_style.clone(),
+                            gradient: Some(Box::new(gradient(vec![0x000000, 0xffffff]))),
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                    PaintOp::Rectangle {
+                        bbox: valid_bbox(),
+                        rect: LayerRectanglePaint {
+                            corner_radius: 0.0,
+                            style: pattern_style,
+                            gradient: Some(Box::new(gradient(vec![0x000000]))),
+                            transform: ShapeTransform::default(),
+                        },
+                    },
+                ],
+            ),
+        );
+
+        let plan = analyze_canvaskit_replay_plan(&tree, CanvasKitReplayMode::Default);
+        let rectangles = plan
+            .items
+            .iter()
+            .filter(|item| item.op_type == "rectangle")
+            .collect::<Vec<_>>();
+        assert_eq!(rectangles.len(), 2);
+        assert!(
+            rectangles[0].runtime_conditions.is_empty(),
+            "a valid gradient wins before the pattern path at runtime",
+        );
+        assert_eq!(
+            rectangles[1].runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::CanvasKitPatternImageConstruction],
+            "an unusable gradient falls through to pattern construction",
+        );
     }
 
     #[test]
