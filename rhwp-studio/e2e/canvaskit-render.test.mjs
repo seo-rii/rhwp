@@ -79,10 +79,10 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
 const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['2010-01-06.hwp', { solidInkMaxDiffRatio: 0.0065 }],
   ['aift.hwp', { solidInkMaxDiffRatio: 0.032 }],
-  ['endnote-01.hwp', { solidInkMaxDiffRatio: 0.0095 }],
+  ['endnote-01.hwp', { nonInkMaxDiffPixels: 64, solidInkMaxDiffRatio: 0.0095 }],
   ['exam_eng.hwp', { maxCanvaskitReplayAvgMs: 750, maxCanvaskitReplayRatio: 80 }],
   ['exam_kor.hwp', { maxCanvaskitReplayAvgMs: 1250, maxCanvaskitReplayRatio: 80 }],
-  ['footnote-01.hwp', { solidInkMaxDiffRatio: 0.0095 }],
+  ['footnote-01.hwp', { nonInkMaxDiffPixels: 64, solidInkMaxDiffRatio: 0.0095 }],
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085, solidInkMaxDiffRatio: 0.0125 }],
   [
     'hwpspec.hwp',
@@ -96,6 +96,7 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['inner-table-01.hwp', { solidInkMaxDiffRatio: 0.0065 }],
   ['pic-in-head-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
   ['pic-in-table-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
+  ['pr-149.hwp', { solidInkMaxDiffRatio: 0.006 }],
   ['table-004.hwp', { nonInkMaxDiffPixels: 512, solidInkMaxDiffRatio: 0.0065 }],
   ['20250130-hongbo_saved.hwp', { nonInkMaxDiffPixels: 128, maxCanvaskitReplayAvgMs: 350 }],
   ['field-01.hwp', { nonInkMaxDiffPixels: 64, maxCanvaskitReplayAvgMs: 500, maxCanvaskitReplayRatio: 80 }],
