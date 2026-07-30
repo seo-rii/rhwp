@@ -2025,7 +2025,7 @@ assert(
     && canvaskitTextRunBlock.includes('? [OLD_HANGUL_FONT_FAMILY]')
     && canvaskitTextRunBlock.includes("? 'oldHangul'")
     && canvaskitTextRunBlock.includes('this.failedTextBlobCacheKeys.has(cacheKey)')
-    && canvaskitTextRunBlock.includes('canvas.drawText(cluster.text, drawX, drawY, fillPaint, fallbackFont)')
+    && canvaskitTextRunBlock.includes('canvas.drawText(replayText, drawX, drawY, fillPaint, fallbackFont)')
     && canvaskitTextRunBlock.includes('this.textReplayRecoveryDiagnostics.set(failureKey, recovery)')
     && canvaskitTextRunBlock.includes('this.textReplayFailureDiagnostics.set(failureKey, failure)'),
   'CanvasKit TextRun replay must recover negative-cached TextBlob failures through direct CanvasKit text and expose unrecovered failures',
@@ -2047,7 +2047,7 @@ assert(
   canvaskitSource.includes('const MAX_TEXT_FALLBACK_FAMILY_CACHE_ENTRIES = 4096')
     && canvaskitSource.includes('private readonly textFallbackFamilyCache = new Map<string, string>()')
     && canvaskitTextRunBlock.includes('this.textFallbackFamilyCache.get(familyCacheKey)')
-    && canvaskitTextRunBlock.includes('!this.textBlobCache.has(`${clusterFontKey}|${cluster.text}`)')
+    && canvaskitTextRunBlock.includes('!this.textBlobCache.has(`${clusterFontKey}|${replayText}`)')
     && canvaskitSource.includes('this.textFallbackFamilyCache.clear()'),
   'CanvasKit TextRun warm replay must use a bounded family-name cache and release it with the renderer',
 );
@@ -2056,7 +2056,7 @@ assertTokensInOrder(
   [
     'const cachedFamily = this.textFallbackFamilyCache.get(familyCacheKey)',
     'const clusterFontKey = [',
-    '!this.textBlobCache.has(`${clusterFontKey}|${cluster.text}`)',
+    '!this.textBlobCache.has(`${clusterFontKey}|${replayText}`)',
     'selectedObjects = this.makeTextObjects(',
   ],
   'CanvasKit TextRun must consult family and TextBlob caches before constructing CanvasKit font objects',

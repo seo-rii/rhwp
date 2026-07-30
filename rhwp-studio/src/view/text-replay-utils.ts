@@ -513,6 +513,34 @@ export function mapPuaDisplayText(text: string): string {
   return changed ? mapped : text;
 }
 
+const VERTICAL_PRESENTATION_BASE_TEXT = new Map<string, string>([
+  ['\uFE19', '\u2026'],
+  ['\uFE31', '\u2014'],
+  ['\uFE32', '\u2013'],
+  ['\uFE33', '_'],
+  ['\uFE34', '~'],
+  ['\uFE35', '('],
+  ['\uFE36', ')'],
+  ['\uFE37', '{'],
+  ['\uFE38', '}'],
+  ['\uFE39', '['],
+  ['\uFE3A', ']'],
+  ['\uFE3B', '\u3010'],
+  ['\uFE3C', '\u3011'],
+  ['\uFE3D', '\u300A'],
+  ['\uFE3E', '\u300B'],
+  ['\uFE3F', '\u3008'],
+  ['\uFE40', '\u3009'],
+  ['\uFE41', '\u300C'],
+  ['\uFE42', '\u300D'],
+  ['\uFE43', '\u300E'],
+  ['\uFE44', '\u300F'],
+]);
+
+export function verticalPresentationBaseText(text: string): string | null {
+  return VERTICAL_PRESENTATION_BASE_TEXT.get(text) ?? null;
+}
+
 function isPuaOverlapDisplayChar(ch: string): boolean {
   const cp = ch.codePointAt(0) ?? 0;
   return (cp >= 0xF02B1 && cp <= 0xF02C4) || (cp >= 0xF02CE && cp <= 0xF02E1);

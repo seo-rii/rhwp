@@ -117,6 +117,7 @@ import {
   textDecorationLineGeometry,
   textDecorationLineY,
   textScriptMetrics,
+  verticalPresentationBaseText,
 } from './text-replay-utils';
 import { CanvasKitFontRegistry, HAMCHOROM_BATANG_FAMILY } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
@@ -1165,6 +1166,14 @@ export class CanvasKitLayerRenderer {
       ? op.displayPositions
       : text === op.text ? op.positions : estimateDisplayTextPositions(text, op.style);
     const clusters = splitIntoClusters(text);
+    const clusterReplayTexts = clusters.map((cluster) => (
+      op.orientation === 'vertical-upright'
+        ? verticalPresentationBaseText(cluster.text) ?? cluster.text
+        : cluster.text
+    ));
+    const clusterUsesVerticalPresentationFallback = clusterReplayTexts.map(
+      (replayText, index) => replayText !== clusters[index].text,
+    );
     const textObjectsByFamily = new Map<string, { typeface: Typeface; font: Font; paint: Paint }>();
     const fallbackFamilies = [
       op.style.fontFamily,
@@ -1183,7 +1192,8 @@ export class CanvasKitLayerRenderer {
     const clusterFontKeys: string[] = [];
     const resolvedPrimaryFamily = this.fontRegistry.resolveFamily(op.style.fontFamily);
     const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
-    for (const cluster of clusters) {
+    for (const [clusterIndex, cluster] of clusters.entries()) {
+      const replayText = clusterReplayTexts[clusterIndex];
       let selectedFont: Font | null = null;
       let selectedFontFamily = op.style.fontFamily;
       const codePoint = cluster.text.codePointAt(0) ?? 0;
@@ -1213,11 +1223,14 @@ export class CanvasKitLayerRenderer {
             : needsSupplementaryFallback
               ? 'supplementary'
               : 'general';
+      const cacheFallbackClass = clusterUsesVerticalPresentationFallback[clusterIndex]
+        ? 'verticalPresentation'
+        : fallbackClass;
       const familyCacheKey = JSON.stringify([
         resolvedPrimaryFamily,
         renderFontWeight,
         op.style.italic ? 'italic' : 'upright',
-        fallbackClass,
+        cacheFallbackClass,
         cluster.text,
       ]);
       const cachedFamily = this.textFallbackFamilyCache.get(familyCacheKey);
@@ -1242,7 +1255,7 @@ export class CanvasKitLayerRenderer {
           textObjectsByFamily.set(op.style.fontFamily, primaryObjects);
         }
         selectedFont = primaryObjects.font;
-        const primaryGlyphs = primaryObjects.font.getGlyphIDs(cluster.text);
+        const primaryGlyphs = primaryObjects.font.getGlyphIDs(replayText);
         const primaryGlyphMissing = primaryGlyphs?.some((glyphId) => glyphId === 0) ?? true;
         if (needsOldHangulFallback || needsCurrencyFallback || needsSymbolFallback || primaryGlyphMissing) {
           const candidateFamilies = [...preferredFallbackFamilies, ...fallbackFamilies]
@@ -1261,7 +1274,7 @@ export class CanvasKitLayerRenderer {
               );
               textObjectsByFamily.set(family, candidate);
             }
-            const candidateGlyphs = candidate.font.getGlyphIDs(cluster.text);
+            const candidateGlyphs = candidate.font.getGlyphIDs(replayText);
             if (candidateGlyphs && candidateGlyphs.every((glyphId) => glyphId !== 0)) {
               selectedFont = candidate.font;
               selectedFontFamily = family;
@@ -1287,7 +1300,13 @@ export class CanvasKitLayerRenderer {
         || cluster.text === '\t'
         || cluster.text === '\u2007'
         || startsWithInvalidControl(cluster.text);
-      if (!selectedFont && !skipsTextBlob && !this.textBlobCache.has(`${clusterFontKey}|${cluster.text}`)) {
+      if (
+        !selectedFont
+        && (
+          clusterUsesVerticalPresentationFallback[clusterIndex]
+          || (!skipsTextBlob && !this.textBlobCache.has(`${clusterFontKey}|${replayText}`))
+        )
+      ) {
         let selectedObjects = textObjectsByFamily.get(selectedFontFamily);
         if (!selectedObjects) {
           selectedObjects = this.makeTextObjects(
@@ -1583,7 +1602,8 @@ export class CanvasKitLayerRenderer {
           }
           const x = originX + positions[cluster.start] + dx;
           const y = originY + dy;
-          const cacheKey = `${clusterFontKeys[index]}|${cluster.text}`;
+          const replayText = clusterReplayTexts[index];
+          const cacheKey = `${clusterFontKeys[index]}|${replayText}`;
           const failureKey = `${opId ?? 'anonymous'}:${cluster.start}:${cacheKey}`;
           const diagnosticBase = {
             opId,
@@ -1626,7 +1646,7 @@ export class CanvasKitLayerRenderer {
               font = objects.font;
               clusterFonts[index] = font;
             }
-            blob = this.canvasKit.TextBlob.MakeFromText(cluster.text, font);
+            blob = this.canvasKit.TextBlob.MakeFromText(replayText, font);
             if (!blob) {
               this.failedTextBlobCacheKeys.add(cacheKey);
               this.textBlobConstructionFailures += 1;
@@ -1678,9 +1698,9 @@ export class CanvasKitLayerRenderer {
               return;
             }
             try {
-              canvas.drawText(cluster.text, drawX, drawY, fillPaint, fallbackFont);
+              canvas.drawText(replayText, drawX, drawY, fillPaint, fallbackFont);
               if (strokePaint) {
-                canvas.drawText(cluster.text, drawX, drawY, strokePaint, fallbackFont);
+                canvas.drawText(replayText, drawX, drawY, strokePaint, fallbackFont);
               }
               this.textBlobFallbackDraws += 1;
               this.textReplayFailureDiagnostics.delete(failureKey);
@@ -1690,6 +1710,36 @@ export class CanvasKitLayerRenderer {
               this.textReplayFailureDiagnostics.set(failureKey, failure);
             }
           };
+
+          if (clusterUsesVerticalPresentationFallback[index] && font) {
+            const glyphIds = font.getGlyphIDs(replayText);
+            const glyphBounds = font.getGlyphBounds(glyphIds);
+            let left = Number.POSITIVE_INFINITY;
+            let top = Number.POSITIVE_INFINITY;
+            let right = Number.NEGATIVE_INFINITY;
+            let bottom = Number.NEGATIVE_INFINITY;
+            for (let boundIndex = 0; boundIndex + 3 < glyphBounds.length; boundIndex += 4) {
+              left = Math.min(left, glyphBounds[boundIndex]);
+              top = Math.min(top, glyphBounds[boundIndex + 1]);
+              right = Math.max(right, glyphBounds[boundIndex + 2]);
+              bottom = Math.max(bottom, glyphBounds[boundIndex + 3]);
+            }
+            const nextPositionIndex = clusters[index + 1]?.start ?? positions.length - 1;
+            const advance = positions[nextPositionIndex] - positions[cluster.start];
+            const targetCenterX = x + (Number.isFinite(advance) ? advance / 2 : op.bbox.width / 2);
+            const targetCenterY = y - op.baseline - baselineShift + op.bbox.height / 2;
+            const sourceCenterX = Number.isFinite(left) && Number.isFinite(right) ? (left + right) / 2 : 0;
+            const sourceCenterY = Number.isFinite(top) && Number.isFinite(bottom) ? (top + bottom) / 2 : 0;
+            canvas.save();
+            try {
+              canvas.translate(targetCenterX, targetCenterY);
+              canvas.rotate(90, 0, 0);
+              drawText(-sourceCenterX, -sourceCenterY);
+            } finally {
+              canvas.restore();
+            }
+            continue;
+          }
 
           const horizontalScale = isHalfwidthScaledCluster(cluster.text) && !hasRatio
             ? 0.5

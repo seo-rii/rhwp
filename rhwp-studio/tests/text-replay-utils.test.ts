@@ -7,6 +7,7 @@ import {
   mapPuaDisplayText,
   puaToDisplayText,
   splitIntoClusters,
+  verticalPresentationBaseText,
 } from '../src/view/text-replay-utils.ts';
 
 test('old-Hangul detection covers modern and extended jamo anywhere in a cluster', () => {
@@ -82,4 +83,36 @@ test('Hancom PUA fallback uses only the verified display table', () => {
       String.fromCodePoint(codePoint),
     );
   }
+});
+
+test('vertical presentation forms expose their rotatable base glyphs', () => {
+  const cases = [
+    ['\uFE19', '\u2026'],
+    ['\uFE31', '\u2014'],
+    ['\uFE32', '\u2013'],
+    ['\uFE33', '_'],
+    ['\uFE34', '~'],
+    ['\uFE35', '('],
+    ['\uFE36', ')'],
+    ['\uFE37', '{'],
+    ['\uFE38', '}'],
+    ['\uFE39', '['],
+    ['\uFE3A', ']'],
+    ['\uFE3B', '\u3010'],
+    ['\uFE3C', '\u3011'],
+    ['\uFE3D', '\u300A'],
+    ['\uFE3E', '\u300B'],
+    ['\uFE3F', '\u3008'],
+    ['\uFE40', '\u3009'],
+    ['\uFE41', '\u300C'],
+    ['\uFE42', '\u300D'],
+    ['\uFE43', '\u300E'],
+    ['\uFE44', '\u300F'],
+  ] as const;
+
+  for (const [presentation, base] of cases) {
+    assert.equal(verticalPresentationBaseText(presentation), base);
+  }
+  assert.equal(verticalPresentationBaseText('('), null);
+  assert.equal(verticalPresentationBaseText('\uFE35\uFE36'), null);
 });

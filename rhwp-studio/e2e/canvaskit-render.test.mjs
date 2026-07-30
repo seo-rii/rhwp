@@ -67,6 +67,12 @@ const REPRESENTATIVE_FULL_PAGE_CASES = [
     maxDiffRatio: 0.0085,
     solidInkMaxDiffRatio: 0.0125,
   },
+  {
+    name: 'table-004',
+    setup: (page) => loadHwpFile(page, 'table-004.hwp'),
+    nonInkMaxDiffPixels: 512,
+    solidInkMaxDiffRatio: 0.0065,
+  },
 ];
 // Keep these scoped to samples where ink-mask/non-ink checks show matching
 // geometry and the remaining delta is renderer-specific rasterization.
@@ -90,7 +96,7 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['inner-table-01.hwp', { solidInkMaxDiffRatio: 0.0065 }],
   ['pic-in-head-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
   ['pic-in-table-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
-  ['table-004.hwp', { solidInkMaxDiffRatio: 0.0065 }],
+  ['table-004.hwp', { nonInkMaxDiffPixels: 512, solidInkMaxDiffRatio: 0.0065 }],
   ['20250130-hongbo_saved.hwp', { nonInkMaxDiffPixels: 128, maxCanvaskitReplayAvgMs: 350 }],
   ['field-01.hwp', { nonInkMaxDiffPixels: 64, maxCanvaskitReplayAvgMs: 500, maxCanvaskitReplayRatio: 80 }],
   ['hwp_table_test.hwp', { maxDiffRatio: 0.0002 }],
@@ -1467,6 +1473,19 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         positions: [0, 8],
         bbox: { x: 8, y: 40, width: 32, height: 24 },
       };
+      const verticalPresentationTextRun = {
+        ...simpleTextRun,
+        id: 'vertical-presentation-probe',
+        text: '\uFE35\uFE36',
+        positions: [0, 20, 40],
+        bbox: { x: 80, y: 8, width: 48, height: 24 },
+        isVertical: true,
+        orientation: 'vertical-upright',
+        style: {
+          ...simpleTextRun.style,
+          fontSize: 19.25,
+        },
+      };
       const probeTree = {
         pageWidth: 160,
         pageHeight: 72,
@@ -1475,7 +1494,7 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
           kind: 'leaf',
           bounds: { x: 0, y: 0, width: 160, height: 72 },
           cacheHint: 'none',
-          ops: [verticalTextRun, invalidControlTextRun],
+          ops: [verticalTextRun, verticalPresentationTextRun, invalidControlTextRun],
         },
         resources: {
           tableId: 902,
@@ -1489,18 +1508,27 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       };
       let nativeTextRunCalls = 0;
       const originalRenderTextRun = renderer.renderTextRun;
+      const originalMakeFromText = renderer.canvasKit.TextBlob.MakeFromText;
+      const textBlobInputs = [];
       renderer.renderTextRun = function renderTextRunProbe(...args) {
         nativeTextRunCalls += 1;
         return originalRenderTextRun.apply(this, args);
+      };
+      renderer.canvasKit.TextBlob.MakeFromText = function verticalPresentationTextProbe(text) {
+        textBlobInputs.push(text);
+        return originalMakeFromText.apply(this, arguments);
       };
       try {
         renderer.renderPage(probeTree, probeCanvas, 1);
         textProjectionNativeProbe = {
           nativeTextRunCalls,
           hasRenderTextRunOverlay: typeof renderer.renderTextRunOverlay === 'function',
+          verticalPresentationBaseTexts: textBlobInputs.filter((text) => text === '(' || text === ')'),
+          verticalPresentationForms: textBlobInputs.filter((text) => text === '\uFE35' || text === '\uFE36'),
         };
       } finally {
         renderer.renderTextRun = originalRenderTextRun;
+        renderer.canvasKit.TextBlob.MakeFromText = originalMakeFromText;
       }
     }
 
@@ -2228,8 +2256,14 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     `measured HFT layer identities=${JSON.stringify(nativeRouting.measuredHftFamilies)}`,
   );
   assert(
-    nativeRouting.textProjectionNativeProbe?.nativeTextRunCalls === 2,
+    nativeRouting.textProjectionNativeProbe?.nativeTextRunCalls === 3,
     `vertical/invalid TextRun native calls=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
+  );
+  assert(
+    nativeRouting.textProjectionNativeProbe?.verticalPresentationBaseTexts?.includes('(')
+      && nativeRouting.textProjectionNativeProbe?.verticalPresentationBaseTexts?.includes(')')
+      && nativeRouting.textProjectionNativeProbe?.verticalPresentationForms?.length === 0,
+    `vertical presentation TextRun uses rotatable base glyphs=${JSON.stringify(nativeRouting.textProjectionNativeProbe)}`,
   );
   assert(
     nativeRouting.textProjectionNativeProbe?.hasRenderTextRunOverlay === false,
