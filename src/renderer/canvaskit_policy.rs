@@ -324,6 +324,7 @@ impl CanvasKitReplayStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanvasKitReplayRuntimeCondition {
     CanvasKitEncodedImageDecode,
+    CanvasKitSvgPathConstruction,
     CanvasKitTypefaceConstruction,
     BrowserSvgImageDecode,
 }
@@ -332,6 +333,7 @@ impl CanvasKitReplayRuntimeCondition {
     fn as_str(self) -> &'static str {
         match self {
             Self::CanvasKitEncodedImageDecode => "canvasKitEncodedImageDecode",
+            Self::CanvasKitSvgPathConstruction => "canvasKitSvgPathConstruction",
             Self::CanvasKitTypefaceConstruction => "canvasKitTypefaceConstruction",
             Self::BrowserSvgImageDecode => "browserSvgImageDecode",
         }
@@ -1978,6 +1980,13 @@ fn canvaskit_text_variant_runtime_condition(
                 _ => None,
             }
         }
+        PaintOp::GlyphOutline { bbox, outline }
+            if outline.payload_kind == GlyphOutlinePayloadKind::SvgGlyph
+                && canvaskit_glyph_outline_replay_status(outline, Some(*bbox), resources)
+                    .replayable =>
+        {
+            Some(CanvasKitReplayRuntimeCondition::CanvasKitSvgPathConstruction)
+        }
         _ => None,
     }
 }
@@ -3561,14 +3570,27 @@ mod tests {
             .expect("SvgGlyph sidecar variant report");
 
         assert_eq!(report.selected_variant_id, "glyphOutline");
+        assert_eq!(
+            report.selected_runtime_conditions,
+            vec![CanvasKitReplayRuntimeCondition::CanvasKitSvgPathConstruction]
+        );
         assert!(report.parts.iter().any(|part| {
-            part.variant_id == "glyphOutline" && part.replayable && part.reason.is_none()
+            part.variant_id == "glyphOutline"
+                && part.replayable
+                && part.reason.is_none()
+                && part.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitSvgPathConstruction)
         }));
         assert!(plan.items.iter().any(|item| {
             item.path == "root/leaf/variantOps/0"
                 && item.op_type == "glyphOutline"
                 && item.status == CanvasKitReplayStatus::Direct
+                && item.runtime_condition
+                    == Some(CanvasKitReplayRuntimeCondition::CanvasKitSvgPathConstruction)
         }));
+        assert!(plan
+            .to_json()
+            .contains("\"selectedRuntimeConditions\":[\"canvasKitSvgPathConstruction\"]"));
     }
 
     #[test]

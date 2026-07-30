@@ -128,6 +128,47 @@ test('GlyphRun typeface construction failure resolves only its declared runtime 
   );
 });
 
+test('SvgGlyph path construction failure resolves only its declared runtime condition', () => {
+  const conditionalPlan = {
+    ...directPlan,
+    selectedRuntimeConditions: ['canvasKitSvgPathConstruction'],
+  };
+  const runtimeFallback = {
+    equivalenceGroup: 'text-0',
+    anchorOpId: 'op-text-0',
+    selectedVariantId: 'textRun',
+    selectedVariantKind: 'textRun',
+    selectedReason: 'defaultTextRunFallback',
+    partsExpected: 1,
+    partsReplayed: 1,
+    rejectedVariants: [{
+      variantId: 'glyphOutline',
+      variantKind: 'glyphOutline',
+      reasons: ['unsupportedSvgGlyph'],
+      details: ['pathDecodeFailed'],
+    }],
+  };
+
+  const resolved = classifyCanvasKitVariantAlignment(conditionalPlan, runtimeFallback);
+  assert.equal(resolved.aligned, true);
+  assert.deepEqual(resolved.resolvedRuntimeConditions, ['canvasKitSvgPathConstruction']);
+
+  const unrelatedFailure = classifyCanvasKitVariantAlignment(conditionalPlan, {
+    ...runtimeFallback,
+    rejectedVariants: [{
+      variantId: 'glyphOutline',
+      variantKind: 'glyphOutline',
+      reasons: ['unsupportedSvgGlyph'],
+      details: ['missingVectorResource'],
+    }],
+  });
+  assert.equal(unrelatedFailure.aligned, false);
+  assert.deepEqual(
+    unrelatedFailure.unresolvedRuntimeConditions,
+    ['canvasKitSvgPathConstruction'],
+  );
+});
+
 test('variant report keys include the leaf-local anchor when available', () => {
   assert.notEqual(
     textVariantReportKey({

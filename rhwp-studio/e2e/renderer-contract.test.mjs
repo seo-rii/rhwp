@@ -1191,6 +1191,26 @@ assert.deepEqual(
   conditionalGlyphRunAlignment.resolvedRuntimeConditions,
   ['canvasKitTypefaceConstruction'],
 );
+const conditionalSvgGlyphAlignment = classifyCanvasKitVariantAlignment(
+  {
+    ...conditionalBitmapPlan,
+    selectedRuntimeConditions: ['canvasKitSvgPathConstruction'],
+  },
+  {
+    ...decodedBitmapFallback,
+    rejectedVariants: [{
+      variantId: 'glyphOutline',
+      variantKind: 'glyphOutline',
+      reasons: ['unsupportedSvgGlyph'],
+      details: ['pathDecodeFailed'],
+    }],
+  },
+);
+assert.equal(conditionalSvgGlyphAlignment.aligned, true);
+assert.deepEqual(
+  conditionalSvgGlyphAlignment.resolvedRuntimeConditions,
+  ['canvasKitSvgPathConstruction'],
+);
 assert(
   rendererBaselineDriverSource.includes('CanvasKit Replay Diagnostics')
     && rendererBaselineDriverSource.includes('Replay Reason Inventory')

@@ -585,6 +585,12 @@ The working order is:
    proves that the active CanvasKit build can construct that exact typeface.
    Only an observed `fontFaceInstantiationFailed` rejection may resolve this
    condition into a compatibility `TextRun` fallback.
+   A statically sanitized `SvgGlyph` carries
+   `runtimeCondition=canvasKitSvgPathConstruction` because Rust can validate
+   the bounded SVG/path grammar but cannot construct a path through the active
+   CanvasKit build. Only an observed `pathDecodeFailed` rejection resolves that
+   condition. Missing resources and other static contract failures remain
+   ordinary plan/runtime mismatches rather than conditional fallbacks.
    Browser replay ordering is also one shared contract: Canvas2D and CanvasKit
    traverse `background`, `behindText`, `flow`, and `inFrontOfText` planes in
    the same order as native Skia and layered SVG. Source order remains stable

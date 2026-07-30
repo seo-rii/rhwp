@@ -1,5 +1,6 @@
 const RUNTIME_CONDITION_FAILURE_DETAILS = new Map([
   ['canvasKitEncodedImageDecode', { field: 'details', value: 'imageDecodeFailed' }],
+  ['canvasKitSvgPathConstruction', { field: 'details', value: 'pathDecodeFailed' }],
   ['canvasKitTypefaceConstruction', {
     field: 'reasons',
     value: 'fontFaceInstantiationFailed',
