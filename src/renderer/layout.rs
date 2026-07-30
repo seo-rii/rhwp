@@ -3,10 +3,7 @@
 //! 페이지 분할 결과를 받아 각 요소의 정확한 위치와 크기를 계산하고
 //! 렌더 트리(PageRenderTree)를 생성한다.
 
-use super::composer::{
-    apply_legacy_hancom_product_run_projection, compose_paragraph, effective_text_for_metrics,
-    ComposedParagraph,
-};
+use super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
 use super::font_metrics_data;
 use super::height_measurer::MeasuredTable;
 use super::page_layout::{LayoutRect, PageLayoutInfo};
@@ -806,10 +803,12 @@ impl LayoutEngine {
         }
     }
 
-    /// 머리말/꼬리말 ComposedParagraph의 필드 마커를 실제 값으로 치환한다.
+    /// 머리말/꼬리말 ComposedParagraph의 필드 마커에 표시값을 투영한다.
     /// - `\u{0015}` → 현재 쪽번호
     /// - `\u{0016}` → 총 쪽수
     /// - `\u{0017}` → 파일 이름
+    ///
+    /// source marker는 모델 오프셋을 위해 한 글자로 유지한다.
     fn substitute_hf_field_markers(&self, comp: &mut ComposedParagraph, page_number: u32) {
         let total = self.total_pages.get();
         let file_name = self.file_name.borrow();
@@ -817,28 +816,156 @@ impl LayoutEngine {
         let total_str = total.to_string();
 
         for line in &mut comp.lines {
-            let mut new_runs = Vec::new();
-            for run in &line.runs {
-                if !run.text.contains('\u{0015}')
-                    && !run.text.contains('\u{0016}')
-                    && !run.text.contains('\u{0017}')
-                {
-                    new_runs.push(run.clone());
-                    continue;
-                }
-                // 마커가 포함된 런 → 치환 후 분할
-                let replaced = run
+            for run in &mut line.runs {
+                let replacements = run
                     .text
-                    .replace('\u{0015}', &page_str)
-                    .replace('\u{0016}', &total_str)
-                    .replace('\u{0017}', &file_name);
-                let mut new_run = run.clone();
-                new_run.text = replaced;
-                new_runs.push(new_run);
+                    .chars()
+                    .enumerate()
+                    .filter_map(|(index, ch)| {
+                        let display = match ch {
+                            '\u{0015}' => &page_str,
+                            '\u{0016}' => &total_str,
+                            '\u{0017}' => file_name.as_str(),
+                            _ => return None,
+                        };
+                        Some((index, display.to_string()))
+                    })
+                    .collect::<Vec<_>>();
+                for (index, display) in replacements {
+                    run.set_display_fragment_for_source_char(index, &display);
+                }
             }
-            line.runs = new_runs;
         }
-        apply_legacy_hancom_product_run_projection(comp);
+    }
+
+    pub(crate) fn substitute_page_auto_numbers_in_composed(
+        &self,
+        para: &Paragraph,
+        comp: &mut ComposedParagraph,
+        page_number: u32,
+    ) {
+        if page_number == 0 {
+            return;
+        }
+
+        let value = page_number.to_string();
+        let mut positions = self.auto_number_placeholder_positions(para);
+        positions.sort_unstable();
+        positions.dedup();
+        for position in positions {
+            Self::replace_composed_char_display(comp, position, &value);
+        }
+    }
+
+    fn auto_number_placeholder_positions(&self, para: &Paragraph) -> Vec<usize> {
+        let control_positions = crate::document_core::helpers::find_control_text_positions(para);
+        let text_chars = para.text.chars().collect::<Vec<_>>();
+        let mut positions = Vec::new();
+        let mut search_from = 0usize;
+
+        for (control_index, control) in para.controls.iter().enumerate() {
+            if !matches!(
+                control,
+                Control::AutoNumber(auto)
+                    if auto.number_type == crate::model::control::AutoNumberType::Page
+            ) {
+                continue;
+            }
+
+            let direct = control_positions
+                .get(control_index)
+                .copied()
+                .filter(|&position| {
+                    Self::is_auto_number_placeholder_at(para, &text_chars, position)
+                        || text_chars
+                            .get(position)
+                            .is_some_and(|ch| Self::is_auto_number_placeholder_char(*ch))
+                });
+            let position = direct.or_else(|| {
+                Self::find_auto_number_placeholder_char(para, &text_chars, search_from)
+            });
+            if let Some(position) = position {
+                positions.push(position);
+                search_from = position.saturating_add(1);
+            }
+        }
+
+        positions
+    }
+
+    fn is_auto_number_placeholder_char(ch: char) -> bool {
+        ch == '\u{0015}' || ch.is_whitespace()
+    }
+
+    fn is_auto_number_placeholder_at(para: &Paragraph, text_chars: &[char], index: usize) -> bool {
+        if !text_chars
+            .get(index)
+            .is_some_and(|ch| Self::is_auto_number_placeholder_char(*ch))
+        {
+            return false;
+        }
+
+        let Some(&current) = para.char_offsets.get(index) else {
+            return false;
+        };
+        let next = para
+            .char_offsets
+            .get(index.saturating_add(1))
+            .copied()
+            .unwrap_or_else(|| para.char_count.saturating_sub(1));
+        next.saturating_sub(current) >= 8
+    }
+
+    fn find_auto_number_placeholder_char(
+        para: &Paragraph,
+        text_chars: &[char],
+        search_from: usize,
+    ) -> Option<usize> {
+        text_chars
+            .iter()
+            .enumerate()
+            .skip(search_from)
+            .find(|(index, _)| Self::is_auto_number_placeholder_at(para, text_chars, *index))
+            .map(|(index, _)| index)
+            .or_else(|| {
+                if !para.char_offsets.is_empty() {
+                    return text_chars
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(index, ch)| {
+                            *index >= search_from && Self::is_auto_number_placeholder_char(**ch)
+                        })
+                        .map(|(index, _)| index);
+                }
+                text_chars
+                    .iter()
+                    .enumerate()
+                    .skip(search_from)
+                    .find(|(_, ch)| Self::is_auto_number_placeholder_char(**ch))
+                    .map(|(index, _)| index)
+            })
+    }
+
+    fn replace_composed_char_display(
+        comp: &mut ComposedParagraph,
+        absolute_position: usize,
+        display: &str,
+    ) -> bool {
+        for line in &mut comp.lines {
+            let mut run_start = line.char_start;
+            for run in &mut line.runs {
+                let run_end = run_start + run.text.chars().count();
+                if absolute_position >= run_start && absolute_position < run_end {
+                    return run.set_display_fragment_for_source_char(
+                        absolute_position - run_start,
+                        display,
+                    );
+                }
+                run_start = run_end;
+            }
+        }
+        false
     }
 
     /// 페이지 배경 노드를 생성하여 tree에 추가한다.

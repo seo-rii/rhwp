@@ -176,9 +176,25 @@ fn test_insert_text_empty() {
         char_offsets: vec![0, 1],
         ..Default::default()
     };
-    para.insert_text_at(1, "");
+    let inserted_at = para.insert_text_at(1, "");
     assert_eq!(para.text, "AB");
     assert_eq!(para.char_count, 2);
+    assert_eq!(inserted_at, 1);
+}
+
+#[test]
+fn test_insert_text_reports_clamped_source_offset() {
+    let mut para = Paragraph {
+        text: "AB".to_string(),
+        char_count: 2,
+        char_offsets: vec![0, 1],
+        ..Default::default()
+    };
+
+    let inserted_at = para.insert_text_at(20, "X");
+
+    assert_eq!(inserted_at, 2);
+    assert_eq!(para.text, "ABX");
 }
 
 #[test]

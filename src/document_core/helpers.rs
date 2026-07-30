@@ -763,11 +763,24 @@ pub(crate) fn json_usize(json: &str, key: &str) -> Result<usize, HwpError> {
 
 /// JSON 문자열 이스케이프
 pub(crate) fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    let mut escaped = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{0008}' => escaped.push_str("\\b"),
+            '\u{000c}' => escaped.push_str("\\f"),
+            control if control <= '\u{001f}' => {
+                use std::fmt::Write;
+                let _ = write!(escaped, "\\u{:04x}", control as u32);
+            }
+            other => escaped.push(other),
+        }
+    }
+    escaped
 }
 
 /// JSON 성공 응답 생성: {"ok":true}

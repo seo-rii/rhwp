@@ -1,9 +1,6 @@
 //! 표 레이아웃 (layout_table + 셀 높이/줄범위 계산)
 
-use super::super::composer::{
-    apply_legacy_hancom_product_run_projection, compose_paragraph, effective_text_for_metrics,
-    ComposedParagraph,
-};
+use super::super::composer::{compose_paragraph, effective_text_for_metrics, ComposedParagraph};
 use super::super::height_measurer::MeasuredTable;
 use super::super::page_layout::LayoutRect;
 use super::super::render_tree::*;
@@ -1341,18 +1338,8 @@ impl LayoutEngine {
                             if an.number_type == crate::model::control::AutoNumberType::Page)
                     });
                     if has_page_auto {
-                        let page_str = current_pn.to_string();
                         if let Some(comp) = composed_paras.get_mut(cpi) {
-                            for line in &mut comp.lines {
-                                for run in &mut line.runs {
-                                    if run.text.contains('\u{0015}') {
-                                        run.text = run.text.replace('\u{0015}', &page_str);
-                                    } else if run.text.trim().is_empty() {
-                                        run.text = page_str.clone();
-                                    }
-                                }
-                            }
-                            apply_legacy_hancom_product_run_projection(comp);
+                            self.substitute_page_auto_numbers_in_composed(para, comp, current_pn);
                         }
                     }
                 }

@@ -438,7 +438,10 @@ impl HwpDocument {
     /// 파일 이름을 설정한다 (머리말/꼬리말 필드 치환용).
     #[wasm_bindgen(js_name = setFileName)]
     pub fn set_file_name(&mut self, name: &str) {
-        self.core.file_name = name.to_string();
+        if self.core.file_name != name {
+            self.core.file_name = name.to_string();
+            self.invalidate_page_tree_cache();
+        }
     }
 
     /// 현재 DPI를 반환한다.

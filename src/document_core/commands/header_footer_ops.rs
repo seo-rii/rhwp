@@ -882,7 +882,7 @@ impl DocumentCore {
         };
 
         let hf_para = self.get_hf_paragraph_mut(section_idx, is_header, apply_to, hf_para_idx)?;
-        hf_para.insert_text_at(char_offset, marker);
+        let inserted_at = hf_para.insert_text_at(char_offset, marker);
 
         self.reflow_hf_paragraph(section_idx, is_header, apply_to, hf_para_idx);
 
@@ -890,16 +890,16 @@ impl DocumentCore {
         self.mark_section_dirty(section_idx);
         self.paginate_if_needed();
 
-        let new_offset = char_offset + 1;
+        let new_offset = inserted_at + 1;
         self.event_log.push(DocumentEvent::TextInserted {
             section: section_idx,
             para: 0,
-            offset: char_offset,
+            offset: inserted_at,
             len: 1,
         });
         Ok(super::super::helpers::json_ok_with(&format!(
-            "\"charOffset\":{}",
-            new_offset
+            "\"charOffset\":{},\"insertedAt\":{},\"insertedLength\":1",
+            new_offset, inserted_at
         )))
     }
 
@@ -1152,6 +1152,20 @@ mod tests {
 
         let result = core.get_header_footer_native(0, true, 0).unwrap();
         assert!(result.contains("Hello"));
+    }
+
+    #[test]
+    fn field_insert_reports_the_actual_source_offset() {
+        let mut core = make_test_core();
+        core.create_header_footer_native(0, true, 0).unwrap();
+
+        let result = core
+            .insert_field_in_hf_native(0, true, 0, 0, 20, 3)
+            .unwrap();
+
+        assert!(result.contains("\"charOffset\":1"), "{result}");
+        assert!(result.contains("\"insertedAt\":0"), "{result}");
+        assert!(result.contains("\"insertedLength\":1"), "{result}");
     }
 
     #[test]

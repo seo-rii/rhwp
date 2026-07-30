@@ -108,6 +108,44 @@ fn test_build_empty_page() {
 }
 
 #[test]
+fn header_fields_and_auto_numbers_preserve_source_character_space() {
+    use crate::model::control::{AutoNumber, AutoNumberType};
+
+    let para = Paragraph {
+        text: "\u{0015}\u{0015}".to_string(),
+        char_offsets: vec![0, 9],
+        char_count: 10,
+        controls: vec![Control::AutoNumber(AutoNumber {
+            number_type: AutoNumberType::Page,
+            ..Default::default()
+        })],
+        ..Default::default()
+    };
+    let engine = LayoutEngine::with_default_dpi();
+    let mut composed = compose_paragraph(&para);
+
+    engine.substitute_hf_field_markers(&mut composed, 12);
+    engine.substitute_page_auto_numbers_in_composed(&para, &mut composed, 12);
+
+    let runs = composed
+        .lines
+        .iter()
+        .flat_map(|line| line.runs.iter())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        runs.iter().map(|run| run.text.as_str()).collect::<String>(),
+        "\u{0015}\u{0015}"
+    );
+    assert_eq!(
+        runs.iter()
+            .flat_map(|run| run.display_clusters.iter().flatten())
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["12".to_string(), "12".to_string()]
+    );
+}
+
+#[test]
 fn master_page_para_relative_shape_uses_body_x_and_paper_y() {
     let engine = LayoutEngine::with_default_dpi();
     let layout = PageLayoutInfo::from_page_def_default(&a4_page_def(), &ColumnDef::default());

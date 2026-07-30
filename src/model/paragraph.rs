@@ -303,9 +303,11 @@ impl Paragraph {
     ///
     /// char_offset이 text.chars().count()를 초과하면 인라인 컨트롤 뒤의
     /// 위치로 간주하여 올바른 UTF-16 위치에 삽입한다.
-    pub fn insert_text_at(&mut self, char_offset: usize, new_text: &str) {
+    ///
+    /// 실제로 삽입된 source 문자 오프셋을 반환한다.
+    pub fn insert_text_at(&mut self, char_offset: usize, new_text: &str) -> usize {
         if new_text.is_empty() {
-            return;
+            return char_offset.min(self.text.chars().count());
         }
 
         let text_chars: Vec<char> = self.text.chars().collect();
@@ -332,6 +334,7 @@ impl Paragraph {
                                 | Control::Equation(_)
                                 | Control::Footnote(_)
                                 | Control::Endnote(_)
+                                | Control::AutoNumber(_)
                         )
                 });
 
@@ -438,6 +441,8 @@ impl Paragraph {
 
         // 6. char_count 갱신
         self.char_count += new_chars.len() as u32;
+
+        effective_char_offset
     }
 
     /// char_offset 위치에서 count개의 문자를 삭제한다.

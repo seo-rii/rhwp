@@ -100,6 +100,32 @@ impl ComposedTextRun {
             .collect();
         expand_pua_display_text(&source)
     }
+
+    pub(crate) fn set_display_fragment_for_source_char(
+        &mut self,
+        source_index: usize,
+        display: &str,
+    ) -> bool {
+        let source_len = self.text.chars().count();
+        if source_index >= source_len {
+            return false;
+        }
+
+        let mut clusters = self
+            .display_clusters
+            .take()
+            .filter(|clusters| clusters.len() == source_len)
+            .or_else(|| legacy_hancom_product_display_clusters(&self.text))
+            .unwrap_or_else(|| {
+                self.text
+                    .chars()
+                    .map(|ch| expand_pua_display_text(&ch.to_string()))
+                    .collect()
+            });
+        clusters[source_index] = expand_pua_display_text(display);
+        self.display_clusters = Some(clusters);
+        true
+    }
 }
 
 /// 구성된 줄 (LineSeg 기반)

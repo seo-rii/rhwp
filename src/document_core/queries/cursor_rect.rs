@@ -9,6 +9,7 @@ use crate::error::HwpError;
 use crate::model::control::Control;
 use crate::model::paragraph::Paragraph;
 use crate::model::path::PathSegment;
+use crate::renderer::layout::compute_source_aligned_display_positions;
 use crate::renderer::render_tree::TextRunNode;
 
 /// 글자겹침 TextRun의 논리적 char_count (1) 반환, 아니면 실제 글자 수 반환.
@@ -27,7 +28,6 @@ impl DocumentCore {
         para_idx: usize,
         char_offset: usize,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         // 문단이 포함된 페이지 찾기
@@ -115,7 +115,11 @@ impl DocumentCore {
                                     if text_run.char_overlap.is_some() && char_count == 1 {
                                         vec![0.0, node.bbox.width]
                                     } else {
-                                        compute_char_positions(&text_run.text, &text_run.style)
+                                        compute_source_aligned_display_positions(
+                                            &text_run.text,
+                                            text_run.display_clusters.as_deref(),
+                                            &text_run.style,
+                                        )
                                     };
                                 let x_in_run = if local_offset < positions.len() {
                                     positions[local_offset]
@@ -385,7 +389,7 @@ impl DocumentCore {
 
     /// 페이지 좌표에서 문서 위치 찾기 (네이티브)
     pub fn hit_test_native(&self, page_num: u32, x: f64, y: f64) -> Result<String, HwpError> {
-        use crate::renderer::layout::{compute_char_positions, CellContext};
+        use crate::renderer::layout::CellContext;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         let tree = self.build_page_tree_cached(page_num)?;
@@ -486,7 +490,11 @@ impl DocumentCore {
                         let positions = if text_run.char_overlap.is_some() && ecc == 1 {
                             vec![0.0, node.bbox.width]
                         } else {
-                            compute_char_positions(&text_run.text, &text_run.style)
+                            compute_source_aligned_display_positions(
+                                &text_run.text,
+                                text_run.display_clusters.as_deref(),
+                                &text_run.style,
+                            )
                         };
                         runs.push(RunInfo {
                             section_index: si,
@@ -1063,7 +1071,6 @@ impl DocumentCore {
         cell_para_idx: usize,
         char_offset: usize,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         // 표 캡션은 cell_index=65534 센티널로 렌더 트리에도 동일하게 저장됨
@@ -1103,7 +1110,11 @@ impl DocumentCore {
                         let positions = if text_run.char_overlap.is_some() && char_count == 1 {
                             vec![0.0, node.bbox.width]
                         } else {
-                            compute_char_positions(&text_run.text, &text_run.style)
+                            compute_source_aligned_display_positions(
+                                &text_run.text,
+                                text_run.display_clusters.as_deref(),
+                                &text_run.style,
+                            )
                         };
                         let x_in_run = if local_offset < positions.len() {
                             positions[local_offset]
@@ -1332,7 +1343,6 @@ impl DocumentCore {
         path_json: &str,
         char_offset: usize,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         let path = Self::parse_cell_path(path_json)?;
@@ -1371,7 +1381,11 @@ impl DocumentCore {
                         let positions = if tr.char_overlap.is_some() && cc == 1 {
                             vec![0.0, node.bbox.width]
                         } else {
-                            compute_char_positions(&tr.text, &tr.style)
+                            compute_source_aligned_display_positions(
+                                &tr.text,
+                                tr.display_clusters.as_deref(),
+                                &tr.style,
+                            )
                         };
                         let lo = offset - cs;
                         let xr = if lo < positions.len() {
@@ -1601,8 +1615,6 @@ impl DocumentCore {
         delta: i32,
         preferred_x: f64,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
-
         let path = Self::parse_cell_path(path_json)?;
         if path.is_empty() {
             return Err(HwpError::RenderError("경로가 비어있습니다".to_string()));
@@ -1936,7 +1948,6 @@ impl DocumentCore {
         char_offset: usize,
         preferred_page: i32,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         // 머리말/꼬리말 문단의 para_index 마커 값
@@ -1975,7 +1986,11 @@ impl DocumentCore {
                             let positions = if text_run.char_overlap.is_some() && char_count == 1 {
                                 vec![0.0, node.bbox.width]
                             } else {
-                                compute_char_positions(&text_run.text, &text_run.style)
+                                compute_source_aligned_display_positions(
+                                    &text_run.text,
+                                    text_run.display_clusters.as_deref(),
+                                    &text_run.style,
+                                )
                             };
                             let x_in_run = if local_offset < positions.len() {
                                 positions[local_offset]
@@ -2213,7 +2228,6 @@ impl DocumentCore {
         x: f64,
         y: f64,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         let tree = self.build_page_tree(page_num)?;
@@ -2251,7 +2265,11 @@ impl DocumentCore {
                     // marker_para = usize::MAX - hf_para_idx → 복원
                     if marker_para >= (usize::MAX - 1000) {
                         let hf_para_idx = usize::MAX - marker_para;
-                        let positions = compute_char_positions(&text_run.text, &text_run.style);
+                        let positions = compute_source_aligned_display_positions(
+                            &text_run.text,
+                            text_run.display_clusters.as_deref(),
+                            &text_run.style,
+                        );
                         runs.push(HfRunInfo {
                             hf_para_idx,
                             char_start: cs,
@@ -2283,23 +2301,6 @@ impl DocumentCore {
             ));
         }
 
-        // hitTest용 헬퍼: char_positions에서 x 좌표로 문자 오프셋 찾기
-        fn find_char_at_x_hf(positions: &[f64], local_x: f64) -> usize {
-            for (i, &px) in positions.iter().enumerate() {
-                if i == 0 {
-                    if local_x < px / 2.0 {
-                        return 0;
-                    }
-                } else {
-                    let mid = (positions[i - 1] + px) / 2.0;
-                    if local_x < mid {
-                        return i;
-                    }
-                }
-            }
-            positions.len()
-        }
-
         fn format_hf_hit(run: &HfRunInfo, char_offset: usize, page_num: u32) -> String {
             let cursor_x = if char_offset <= run.char_start {
                 run.bbox_x
@@ -2329,7 +2330,7 @@ impl DocumentCore {
                 && y <= run.bbox_y + run.bbox_h
             {
                 let local_x = x - run.bbox_x;
-                let char_offset = find_char_at_x_hf(&run.char_positions, local_x);
+                let char_offset = find_char_at_x(&run.char_positions, local_x);
                 return Ok(format_hf_hit(run, run.char_start + char_offset, page_num));
             }
         }
@@ -2378,7 +2379,7 @@ impl DocumentCore {
         for run in &line_runs {
             if x >= run.bbox_x && x <= run.bbox_x + run.bbox_w {
                 let local_x = x - run.bbox_x;
-                let char_offset = find_char_at_x_hf(&run.char_positions, local_x);
+                let char_offset = find_char_at_x(&run.char_positions, local_x);
                 return Ok(format_hf_hit(run, run.char_start + char_offset, page_num));
             }
         }
@@ -2449,7 +2450,6 @@ impl DocumentCore {
         x: f64,
         y: f64,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         let tree = self.build_page_tree(page_num)?;
@@ -2504,7 +2504,11 @@ impl DocumentCore {
                         let fn_para_idx = usize::MAX - 2000 - marker_para;
                         if let Some(cs) = text_run.char_start {
                             // 본문 텍스트 TextRun
-                            let positions = compute_char_positions(&text_run.text, &text_run.style);
+                            let positions = compute_source_aligned_display_positions(
+                                &text_run.text,
+                                text_run.display_clusters.as_deref(),
+                                &text_run.style,
+                            );
                             runs.push(FnRunInfo {
                                 footnote_index: marker_section,
                                 fn_para_idx,
@@ -2679,7 +2683,6 @@ impl DocumentCore {
         fn_para_idx: usize,
         char_offset: usize,
     ) -> Result<String, HwpError> {
-        use crate::renderer::layout::compute_char_positions;
         use crate::renderer::render_tree::{RenderNode, RenderNodeType};
 
         let tree = self.build_page_tree(page_num)?;
@@ -2725,7 +2728,11 @@ impl DocumentCore {
                         let positions = if tr.char_overlap.is_some() && char_count == 1 {
                             vec![0.0, node.bbox.width]
                         } else {
-                            compute_char_positions(&tr.text, &tr.style)
+                            compute_source_aligned_display_positions(
+                                &tr.text,
+                                tr.display_clusters.as_deref(),
+                                &tr.style,
+                            )
                         };
                         runs.push(FnCursorRun {
                             char_start: cs,
