@@ -712,9 +712,28 @@ impl SvgRenderer {
                 self.render_layer_char_overlap(*bbox, overlap);
             }
             PaintOp::TextControlMark { bbox, mark } => {
+                if mark.rotation != 0.0 {
+                    let cx = bbox.x + bbox.width / 2.0;
+                    let cy = bbox.y + bbox.height / 2.0;
+                    self.output.push_str(&format!(
+                        "<g transform=\"rotate({},{},{})\">\n",
+                        mark.rotation, cx, cy
+                    ));
+                }
                 self.render_layer_text_control_mark(*bbox, &mark.mark, 0.0);
+                if mark.rotation != 0.0 {
+                    self.output.push_str("</g>\n");
+                }
             }
             PaintOp::TabLeader { bbox, leader } => {
+                if leader.rotation != 0.0 {
+                    let cx = bbox.x + bbox.width / 2.0;
+                    let cy = bbox.y + bbox.height / 2.0;
+                    self.output.push_str(&format!(
+                        "<g transform=\"rotate({},{},{})\">\n",
+                        leader.rotation, cx, cy
+                    ));
+                }
                 self.render_layer_tab_leader(
                     bbox.x,
                     bbox.y + leader.baseline,
@@ -722,6 +741,9 @@ impl SvgRenderer {
                     leader.color,
                     &leader.leader,
                 );
+                if leader.rotation != 0.0 {
+                    self.output.push_str("</g>\n");
+                }
             }
             PaintOp::TextDecoration { bbox, decoration } => {
                 self.render_layer_text_decoration(*bbox, decoration);

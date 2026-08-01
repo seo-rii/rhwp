@@ -2175,7 +2175,16 @@ impl SkiaLayerRenderer {
                 }
             }
             PaintOp::TextControlMark { bbox, mark } => {
-                self.render_text_control_mark(canvas, bbox, &mark.mark, 0.0, replay);
+                if mark.rotation != 0.0 {
+                    let cx = (bbox.x + bbox.width / 2.0) as f32;
+                    let cy = (bbox.y + bbox.height / 2.0) as f32;
+                    canvas.save();
+                    canvas.rotate(mark.rotation as f32, Some((cx, cy).into()));
+                    self.render_text_control_mark(canvas, bbox, &mark.mark, 0.0, replay);
+                    canvas.restore();
+                } else {
+                    self.render_text_control_mark(canvas, bbox, &mark.mark, 0.0, replay);
+                }
             }
             PaintOp::TabLeader { bbox, leader } => {
                 let run = crate::paint::LayerTextRunPaint {
@@ -2190,7 +2199,16 @@ impl SkiaLayerRenderer {
                     baseline: leader.baseline,
                     ..Default::default()
                 };
-                self.render_text_run(canvas, bbox, &run, replay);
+                if leader.rotation != 0.0 {
+                    let cx = (bbox.x + bbox.width / 2.0) as f32;
+                    let cy = (bbox.y + bbox.height / 2.0) as f32;
+                    canvas.save();
+                    canvas.rotate(leader.rotation as f32, Some((cx, cy).into()));
+                    self.render_text_run(canvas, bbox, &run, replay);
+                    canvas.restore();
+                } else {
+                    self.render_text_run(canvas, bbox, &run, replay);
+                }
             }
             PaintOp::TextDecoration { bbox, decoration } => {
                 let rotation = decoration.rotation;

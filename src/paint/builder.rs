@@ -458,6 +458,7 @@ impl LayerBuilder {
                         mark: LayerTextControlMarkPaint {
                             source: None,
                             text_wrap: None,
+                            rotation: run.rotation,
                             mark,
                         },
                     });
@@ -471,6 +472,7 @@ impl LayerBuilder {
                             color: run.style.color,
                             font_size: run.style.font_size,
                             baseline: run.baseline,
+                            rotation: run.rotation,
                         },
                     });
                 }
@@ -861,6 +863,7 @@ impl LayerBuilder {
             mark: LayerTextControlMarkPaint {
                 source: None,
                 text_wrap,
+                rotation: 0.0,
                 mark: LayerTextControlMark {
                     kind,
                     x: 0.0,
@@ -2161,7 +2164,7 @@ mod tests {
                 cell_context: None,
                 is_para_end: true,
                 is_line_break_end: false,
-                rotation: 0.0,
+                rotation: 33.0,
                 is_vertical: false,
                 char_overlap: None,
                 border_fill_id: 0,
@@ -2202,9 +2205,11 @@ mod tests {
                         }
                         other => panic!("expected text run op, got {other:?}"),
                     }
-                    assert!(ops[1..]
-                        .iter()
-                        .all(|op| matches!(op, PaintOp::TextControlMark { .. })));
+                    assert!(ops[1..].iter().all(|op| matches!(
+                        op,
+                        PaintOp::TextControlMark { mark, .. }
+                            if (mark.rotation - 33.0).abs() < f64::EPSILON
+                    )));
                 }
                 other => panic!("expected text leaf, got {other:?}"),
             },
@@ -2340,7 +2345,7 @@ mod tests {
         }));
 
         let json = layer_tree.to_json();
-        assert!(json.contains("\"schemaMinorVersion\":21"));
+        assert!(json.contains("\"schemaMinorVersion\":22"));
         assert!(json.contains("\"text.structureControlMarkOp\""));
         assert!(json.contains("\"wrap\":\"inFrontOfText\""));
 
@@ -2448,7 +2453,7 @@ mod tests {
                 cell_context: None,
                 is_para_end: false,
                 is_line_break_end: false,
-                rotation: 0.0,
+                rotation: 27.0,
                 is_vertical: false,
                 char_overlap: None,
                 border_fill_id: 0,
@@ -2482,9 +2487,12 @@ mod tests {
             PaintOp::TabLeader { leader, .. } => {
                 assert_eq!(leader.leader.fill_type, 3);
                 assert_eq!(leader.baseline, 14.0);
+                assert_eq!(leader.rotation, 27.0);
             }
             other => panic!("expected tab leader op, got {other:?}"),
         }
+        let json = layer_tree.to_json();
+        assert!(json.contains("\"rotation\":27.000000"));
     }
 
     #[test]

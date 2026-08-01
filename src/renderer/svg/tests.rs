@@ -10,7 +10,7 @@ use crate::paint::{
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
     LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
     LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerRectanglePaint,
-    LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
+    LayerTabLeaderPaint, LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
     LayerTextOrientation, PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor,
     ResourceArena, SvgGlyphIntrinsicSize, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
     TextRunPlacement, TextSourceEntry, TextSourceId, TextSourceRange, TextSourceSpan,
@@ -2436,6 +2436,7 @@ fn test_layer_svg_replays_structure_control_mark_ops_once_in_structure_color() {
             mark: LayerTextControlMarkPaint {
                 source: None,
                 text_wrap: None,
+                rotation: 0.0,
                 mark: LayerTextControlMark {
                     kind: *kind,
                     x: 0.0,
@@ -2464,6 +2465,59 @@ fn test_layer_svg_replays_structure_control_mark_ops_once_in_structure_color() {
         );
     }
     assert_eq!(output.matches("fill=\"#CC3333\"").count(), kinds.len());
+}
+
+#[test]
+fn test_layer_svg_rotates_externalized_control_marks_and_tab_leaders() {
+    let mark_bbox = BoundingBox::new(10.0, 10.0, 40.0, 20.0);
+    let leader_bbox = BoundingBox::new(10.0, 40.0, 60.0, 20.0);
+    let root = LayerNode::leaf(
+        BoundingBox::new(0.0, 0.0, 90.0, 80.0),
+        None,
+        vec![
+            PaintOp::TextControlMark {
+                bbox: mark_bbox,
+                mark: LayerTextControlMarkPaint {
+                    source: None,
+                    text_wrap: None,
+                    rotation: 30.0,
+                    mark: LayerTextControlMark {
+                        kind: LayerTextControlMarkKind::Space,
+                        x: 4.0,
+                        y: 14.0,
+                        font_size: 12.0,
+                    },
+                },
+            },
+            PaintOp::TabLeader {
+                bbox: leader_bbox,
+                leader: LayerTabLeaderPaint {
+                    source: None,
+                    leader: crate::renderer::TabLeaderInfo {
+                        start_x: 4.0,
+                        end_x: 48.0,
+                        fill_type: 2,
+                    },
+                    color: 0,
+                    font_size: 12.0,
+                    baseline: 14.0,
+                    rotation: -20.0,
+                },
+            },
+        ],
+    );
+    let tree = PageLayerTree::new(90.0, 80.0, root).with_output_options(LayerOutputOptions {
+        show_control_codes: true,
+        ..Default::default()
+    });
+    let mut renderer = SvgRenderer::new();
+
+    renderer.render_layer_tree(&tree);
+
+    let output = renderer.output();
+    assert!(output.contains("<g transform=\"rotate(30,30,20)\">"));
+    assert!(output.contains("<g transform=\"rotate(-20,40,50)\">"));
+    assert_eq!(output.matches("<g transform=\"rotate(").count(), 2);
 }
 
 #[test]

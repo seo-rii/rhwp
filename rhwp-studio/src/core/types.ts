@@ -1208,6 +1208,7 @@ export interface LayerTextControlMarkOp {
   bbox: LayerBounds;
   source?: LayerTextSourceSpan;
   wrap?: LayerTextWrap;
+  rotation?: number;
   mark: LayerTextControlMark;
 }
 
@@ -1219,6 +1220,7 @@ export interface LayerTabLeaderOp {
   color: string;
   fontSize: number;
   baseline: number;
+  rotation?: number;
 }
 
 export type LayerTextDecorationKind = 'underline' | 'strikethrough' | 'emphasisDot';

@@ -440,10 +440,35 @@ impl WebCanvasRenderer {
                             continue;
                         }
                         PaintOp::TextControlMark { bbox, mark } => {
+                            let rotated = mark.rotation != 0.0;
+                            if rotated {
+                                let cx = bbox.x + bbox.width / 2.0;
+                                let cy = bbox.y + bbox.height / 2.0;
+                                self.ctx.save();
+                                let _ = self.ctx.translate(cx, cy);
+                                let _ = self
+                                    .ctx
+                                    .rotate(mark.rotation * std::f64::consts::PI / 180.0);
+                                let _ = self.ctx.translate(-cx, -cy);
+                            }
                             self.draw_layer_text_control_mark(bbox, &mark.mark, 0.0, 0.0);
+                            if rotated {
+                                self.ctx.restore();
+                            }
                             continue;
                         }
                         PaintOp::TabLeader { bbox, leader } => {
+                            let rotated = leader.rotation != 0.0;
+                            if rotated {
+                                let cx = bbox.x + bbox.width / 2.0;
+                                let cy = bbox.y + bbox.height / 2.0;
+                                self.ctx.save();
+                                let _ = self.ctx.translate(cx, cy);
+                                let _ = self
+                                    .ctx
+                                    .rotate(leader.rotation * std::f64::consts::PI / 180.0);
+                                let _ = self.ctx.translate(-cx, -cy);
+                            }
                             draw_tab_leader_canvas(
                                 &self.ctx,
                                 bbox.x,
@@ -452,6 +477,9 @@ impl WebCanvasRenderer {
                                 leader.font_size,
                                 &leader.leader,
                             );
+                            if rotated {
+                                self.ctx.restore();
+                            }
                             continue;
                         }
                         PaintOp::TextDecoration { bbox, decoration } => {

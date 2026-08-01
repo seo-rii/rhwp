@@ -538,6 +538,13 @@ for (const [label, source] of [
     extractMethodBody(source, 'renderTextRun').includes('TEXT_CONTROL_MARK_FONT_FAMILY'),
     `${label} inline control marks must use the shared symbol font`,
   );
+  for (const method of ['renderTextControlMark', 'renderTabLeader']) {
+    const body = extractMethodBody(source, method);
+    assert(
+      body.includes('op.rotation') && body.includes('.rotate('),
+      `${label} ${method} must preserve the owner TextRun rotation`,
+    );
+  }
 }
 for (const [opType, rustOp, runtimeCall] of [
   ['line', 'Line', 'this.renderLine(canvas, op);'],

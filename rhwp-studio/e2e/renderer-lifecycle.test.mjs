@@ -17241,7 +17241,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
     }
     const tree = {
       pageWidth: 132,
-      pageHeight: 36,
+      pageHeight: 68,
       profile: 'screen',
       outputOptions: {
         showParagraphMarks: true,
@@ -17266,10 +17266,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1912,
-        bounds: { x: 0, y: 0, width: 132, height: 36 },
+        bounds: { x: 0, y: 0, width: 132, height: 68 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 132, height: 36 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 132, height: 68 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'textControlMark',
             bbox: { x: 8, y: 5, width: 18, height: 20 },
@@ -17278,6 +17278,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
           {
             type: 'textControlMark',
             bbox: { x: 28, y: 5, width: 18, height: 20 },
+            rotation: 25,
             mark: { kind: 'lineBreakEnd', text: '↵', x: 1, y: 15, fontSize: 16 },
           },
           {
@@ -17297,6 +17298,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
             fontFamily: 'Noto Sans KR',
             fontSize: 14,
             color: '#111111',
+          },
+          {
+            type: 'tabLeader',
+            bbox: { x: 10, y: 40, width: 112, height: 22 },
+            leader: { startX: 4, endX: 96, fillType: 4 },
+            color: '#111111',
+            fontSize: 14,
+            baseline: 15,
+            rotation: -12,
           },
         ],
       },
@@ -17362,6 +17372,20 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     textMarkerCanvas2dStructurePixels > 5 && textMarkerCanvaskitStructurePixels > 5,
     `structure control mark uses direct red replay canvas2d=${textMarkerCanvas2dStructurePixels}, canvaskit=${textMarkerCanvaskitStructurePixels}`,
+  );
+  const textMarkerCanvas2dRotatedLeaderPixels = countPixels(
+    textMarkerParityProbe.canvas2d,
+    (pixel) => pixel.y > 36 && pixel.alpha > 32
+      && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  const textMarkerCanvaskitRotatedLeaderPixels = countPixels(
+    textMarkerParityProbe.canvaskit,
+    (pixel) => pixel.y > 36 && pixel.alpha > 32
+      && (pixel.red < 245 || pixel.green < 245 || pixel.blue < 245),
+  );
+  assert(
+    textMarkerCanvas2dRotatedLeaderPixels > 10 && textMarkerCanvaskitRotatedLeaderPixels > 10,
+    `rotated tab leader replays directly canvas2d=${textMarkerCanvas2dRotatedLeaderPixels}, canvaskit=${textMarkerCanvaskitRotatedLeaderPixels}`,
   );
   const textMarkerDiff = await comparePngBuffers(
     pngBufferFromDataUrl(textMarkerParityProbe.canvas2d),

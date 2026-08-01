@@ -2426,13 +2426,26 @@ export class CanvasKitLayerRenderer {
       false,
       isStructureControlMark(op.mark.kind) ? '#CC3333' : '#4A90D9',
     );
-    canvas.drawText(
-      op.mark.text,
-      op.bbox.x + op.mark.x,
-      op.bbox.y + op.mark.y,
-      markObjects.paint,
-      markObjects.font,
-    );
+    const rotation = op.rotation ?? 0;
+    if (rotation !== 0) {
+      const cx = op.bbox.x + op.bbox.width / 2;
+      const cy = op.bbox.y + op.bbox.height / 2;
+      canvas.save();
+      canvas.rotate(rotation, cx, cy);
+    }
+    try {
+      canvas.drawText(
+        op.mark.text,
+        op.bbox.x + op.mark.x,
+        op.bbox.y + op.mark.y,
+        markObjects.paint,
+        markObjects.font,
+      );
+    } finally {
+      if (rotation !== 0) {
+        canvas.restore();
+      }
+    }
     markObjects.paint.delete();
     markObjects.font.delete();
     markObjects.typeface.delete();
@@ -2442,7 +2455,20 @@ export class CanvasKitLayerRenderer {
     canvas: ReturnType<Surface['getCanvas']>,
     op: LayerTabLeaderOp,
   ): void {
-    this.drawTabLeaders(canvas, [op.leader], op.bbox.x, op.bbox.y + op.baseline, op.color);
+    const rotation = op.rotation ?? 0;
+    if (rotation !== 0) {
+      const cx = op.bbox.x + op.bbox.width / 2;
+      const cy = op.bbox.y + op.bbox.height / 2;
+      canvas.save();
+      canvas.rotate(rotation, cx, cy);
+    }
+    try {
+      this.drawTabLeaders(canvas, [op.leader], op.bbox.x, op.bbox.y + op.baseline, op.color);
+    } finally {
+      if (rotation !== 0) {
+        canvas.restore();
+      }
+    }
   }
 
   private renderTextDecoration(

@@ -1122,6 +1122,13 @@ export class Canvas2DLayerRenderer {
       return;
     }
     ctx.save();
+    if ((op.rotation ?? 0) !== 0) {
+      const cx = op.bbox.x + op.bbox.width / 2;
+      const cy = op.bbox.y + op.bbox.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(((op.rotation ?? 0) * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
     ctx.fillStyle = isStructureControlMark(op.mark.kind) ? '#CC3333' : '#4A90D9';
     this.setCanvasTextFont(ctx, TEXT_CONTROL_MARK_FONT_FAMILY, op.mark.fontSize, false, false);
     ctx.fillText(op.mark.text, op.bbox.x + op.mark.x, op.bbox.y + op.mark.y);
@@ -1129,7 +1136,16 @@ export class Canvas2DLayerRenderer {
   }
 
   private renderTabLeader(ctx: CanvasRenderingContext2D, op: LayerTabLeaderOp): void {
+    ctx.save();
+    if ((op.rotation ?? 0) !== 0) {
+      const cx = op.bbox.x + op.bbox.width / 2;
+      const cy = op.bbox.y + op.bbox.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(((op.rotation ?? 0) * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
     this.drawTabLeaders(ctx, [op.leader], op.bbox.x, op.bbox.y + op.baseline, op.color);
+    ctx.restore();
   }
 
   private renderTextDecoration(ctx: CanvasRenderingContext2D, op: LayerTextDecorationOp): void {

@@ -23,8 +23,8 @@ use crate::paint::{
     LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerGlyphRunPaint, LayerImagePaint,
     LayerLinePaint, LayerNode, LayerNodeKind, LayerOutputOptions, LayerPageBackgroundImagePaint,
     LayerPageBackgroundPaint, LayerPathPaint, LayerPoint, LayerRectanglePaint, LayerSemantic,
-    LayerTextOrientation, LayerTextRunPaint, LocalizedName, PageLayerTree, PaintOp,
-    PaintReplayPlane, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor,
+    LayerTabLeaderPaint, LayerTextOrientation, LayerTextRunPaint, LocalizedName, PageLayerTree,
+    PaintOp, PaintReplayPlane, PaintTextStyle, PaintVariantMeta, RenderProfile, ResolvedColor,
     ResourceArena, ShapeKey, ShapingEngineId, SvgGlyphPayload, SvgGlyphSecurityMode,
     SvgGlyphViewBox, SvgResourceId, TextDirection, TextRunPlacement, TextSourceId, TextSourceRange,
     TextSourceSpan, TextVariantKind, TextVariantQuality, VariationAxisValue, WritingMode,
@@ -7417,6 +7417,43 @@ fn output_options_replay_structure_control_marks_through_native_skia() {
         structure_red_pixels > 0,
         "native Skia must replay the explicit structure control mark"
     );
+}
+
+#[test]
+fn externalized_tab_leader_rotation_replays_through_native_skia() {
+    let render = |rotation| {
+        let bbox = BoundingBox::new(10.0, 10.0, 80.0, 80.0);
+        let root = LayerNode::leaf(
+            bbox,
+            None,
+            vec![PaintOp::TabLeader {
+                bbox,
+                leader: LayerTabLeaderPaint {
+                    source: None,
+                    leader: TabLeaderInfo {
+                        start_x: 10.0,
+                        end_x: 60.0,
+                        fill_type: 1,
+                    },
+                    color: 0,
+                    font_size: 10.0,
+                    baseline: 40.0,
+                    rotation,
+                },
+            }],
+        );
+        let tree = PageLayerTree::new(100.0, 100.0, root);
+        let png = SkiaLayerRenderer::new()
+            .render_png(&tree)
+            .expect("rotated tab leader render");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("rotated tab leader decode");
+        alpha_bounds(&pixmap).expect("tab leader ink")
+    };
+
+    let horizontal = render(0.0);
+    let vertical = render(90.0);
+    assert!(horizontal.width() > horizontal.height() * 5);
+    assert!(vertical.height() > vertical.width() * 5);
 }
 
 #[test]

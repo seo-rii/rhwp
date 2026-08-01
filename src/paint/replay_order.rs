@@ -119,6 +119,7 @@ mod tests {
             mark: LayerTextControlMarkPaint {
                 source: None,
                 text_wrap: wrap,
+                rotation: 0.0,
                 mark: LayerTextControlMark {
                     kind: LayerTextControlMarkKind::Picture,
                     x: 0.0,

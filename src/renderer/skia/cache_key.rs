@@ -364,6 +364,7 @@ impl StaticSubtreeCacheKey {
                         crate::model::shape::TextWrap::InFrontOfText => 5,
                     });
                 }
+                self.mix_f64(mark.rotation);
                 self.mix_f64(mark.mark.x);
                 self.mix_f64(mark.mark.y);
                 self.mix_f64(mark.mark.font_size);
@@ -377,6 +378,7 @@ impl StaticSubtreeCacheKey {
                 self.mix_u32(leader.color);
                 self.mix_f64(leader.font_size);
                 self.mix_f64(leader.baseline);
+                self.mix_f64(leader.rotation);
             }
             PaintOp::TextDecoration { bbox, decoration } => {
                 self.mix_u8(13);

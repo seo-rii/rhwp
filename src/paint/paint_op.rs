@@ -1377,6 +1377,9 @@ pub struct LayerTextControlMarkPaint {
     ///
     /// Inline text marks omit this field and remain on the flow plane.
     pub text_wrap: Option<TextWrap>,
+    /// Rotation inherited from the owner `TextRun`, in degrees around the
+    /// owner's bounding-box center.
+    pub rotation: f64,
     pub mark: LayerTextControlMark,
 }
 
@@ -1387,6 +1390,9 @@ pub struct LayerTabLeaderPaint {
     pub color: ColorRef,
     pub font_size: f64,
     pub baseline: f64,
+    /// Rotation inherited from the owner `TextRun`, in degrees around the
+    /// owner's bounding-box center.
+    pub rotation: f64,
 }
 
 #[derive(Debug, Clone)]

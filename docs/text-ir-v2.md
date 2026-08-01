@@ -141,7 +141,10 @@ old consumers.
   only as a legacy mirror for old consumers.
 - Visible control marks are emitted as explicit `textControlMark` PaintOps when
   paragraph/control-code output options produce visible marks. The paired
-  `TextRun.controlMarks` payload is a legacy mirror for old consumers.
+  `TextRun.controlMarks` payload is a legacy mirror for old consumers. An
+  externalized mark carries the owning run's `rotation` in degrees and rotates
+  around the owner bbox center; readers treat an omitted value as zero for
+  artifacts from earlier additive schema revisions.
 - Structure/object control labels are also explicit `textControlMark` PaintOps:
   `table`, `picture`, `textBox`, `equation`, `header`, `footer`, and
   `footnoteArea` map to `[표]`, `[그림]`, `[글상자]`, `[수식]`, `[머리말]`,
@@ -154,7 +157,9 @@ old consumers.
   not regenerate labels from image/equation ops or semantic group metadata.
 - Tab leaders are emitted as explicit `tabLeader` PaintOps when present in a
   lowered text style. The paired `TextRun.tabLeaders` payload is a legacy
-  mirror for old consumers.
+  mirror for old consumers. An externalized leader carries the same owner
+  `rotation` contract as `TextControlMark`, `CharOverlap`, and
+  `TextDecoration`.
 - Text decorations that need backend-stable visual geometry are emitted as
   explicit `textDecoration` PaintOps. The initial externalized set covers
   underline, strikethrough, and emphasis-dot geometry. The paired
@@ -1246,7 +1251,7 @@ Schema v1 should close as a compatibility-safe text replay schema:
   range, explicit positions, and effect-specific eligibility.
 - shaped measurement remains report-only telemetry outside the replay schema.
 
-Schema v1 minor 21 exports advertise the v2 direction without changing replay
+Schema v1 minor 22 exports advertise the v2 direction without changing replay
 semantics. They keep `schemaVersion=1`, add only producer-known v2 feature names
 to `knownFeatures`, and include `textV2` metadata with
 `profile="compatibility"`, `canonicalOp="text"`, `fallbackPolicy="required"`,

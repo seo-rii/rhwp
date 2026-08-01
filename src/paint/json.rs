@@ -1457,6 +1457,7 @@ impl PaintOp {
                 if let Some(text_wrap) = mark.text_wrap {
                     let _ = write!(buf, ",\"wrap\":{}", json_escape(text_wrap_str(text_wrap)));
                 }
+                let _ = write!(buf, ",\"rotation\":{:.6}", mark.rotation);
                 buf.push_str(",\"mark\":");
                 write_text_control_mark(buf, &mark.mark);
                 buf.push('}');
@@ -1473,10 +1474,11 @@ impl PaintOp {
                 write_tab_leader(buf, &leader.leader);
                 let _ = write!(
                     buf,
-                    ",\"color\":{},\"fontSize\":{:.6},\"baseline\":{:.6}}}",
+                    ",\"color\":{},\"fontSize\":{:.6},\"baseline\":{:.6},\"rotation\":{:.6}}}",
                     json_escape(&color_ref_to_css(leader.color)),
                     leader.font_size,
                     leader.baseline,
+                    leader.rotation,
                 );
             }
             PaintOp::TextDecoration { bbox, decoration } => {

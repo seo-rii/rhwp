@@ -1885,6 +1885,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             if let Some(text_wrap) = mark.text_wrap {
                 set_string(&value, "wrap", text_wrap_str(text_wrap));
             }
+            set_number(&value, "rotation", mark.rotation);
             set_value(&value, "mark", text_control_mark_to_value(&mark.mark));
         }
         PaintOp::TabLeader { bbox, leader } => {
@@ -1897,6 +1898,7 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             set_string(&value, "color", &color_ref_to_css(leader.color));
             set_number(&value, "fontSize", leader.font_size);
             set_number(&value, "baseline", leader.baseline);
+            set_number(&value, "rotation", leader.rotation);
         }
         PaintOp::TextDecoration { bbox, decoration } => {
             set_string(&value, "type", "textDecoration");
