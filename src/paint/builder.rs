@@ -919,13 +919,13 @@ impl LayerBuilder {
                                 LayerSemantic::default(),
                             )),
                         );
-                        *child = Box::new(LayerNode::group(
+                        **child = LayerNode::group(
                             child_bounds,
                             None,
                             vec![*previous_child, marker_leaf],
                             CacheHint::None,
                             LayerSemantic::default(),
-                        ));
+                        );
                     }
                 }
             }
