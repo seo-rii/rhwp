@@ -467,6 +467,26 @@ export async function comparePngBuffers(expectedBuffer, actualBuffer, {
     return true;
   };
 
+  // A 3x3 flat-color check separates fill interiors from glyph/stroke raster edges.
+  const hasLocallyFlatColor = (data, x, y) => {
+    const center = (y * width + x) * 4;
+    const minY = Math.max(0, y - 1);
+    const maxY = Math.min(height - 1, y + 1);
+    const minX = Math.max(0, x - 1);
+    const maxX = Math.min(width - 1, x + 1);
+    for (let ny = minY; ny <= maxY; ny++) {
+      for (let nx = minX; nx <= maxX; nx++) {
+        const neighbor = (ny * width + nx) * 4;
+        for (let channel = 0; channel < 4; channel++) {
+          if (Math.abs(data[neighbor + channel] - data[center + channel]) > ignoreChannelDelta) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  };
+
   for (let pixelIndex = 0; pixelIndex < totalPixels; pixelIndex++) {
     const base = pixelIndex * 4;
     expectedInkMask[pixelIndex] = isInkPixel(expected.data, base) ? 1 : 0;
@@ -501,6 +521,8 @@ export async function comparePngBuffers(expectedBuffer, actualBuffer, {
         && actualInkMask[pixelIndex]
         && isSolidInk(expectedInkMask, x, y)
         && isSolidInk(actualInkMask, x, y)
+        && hasLocallyFlatColor(expected.data, x, y)
+        && hasLocallyFlatColor(actual.data, x, y)
       ) {
         solidInkDiffPixels++;
       }
