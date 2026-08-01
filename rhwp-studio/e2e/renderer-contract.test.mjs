@@ -488,8 +488,31 @@ for (const [opType, rustOp, runtimeCall] of [
 }
 assertTokensInOrder(
   extractFunctionBody(textReplayUtilsSource, 'allowsTextControlMark'),
-  ["case 'space':", "case 'tab':", "case 'lineBreakEnd':", 'return showControlCodes'],
-  'inline space, tab, and line-break control marks must share the control-code visibility gate',
+  [
+    "case 'space':",
+    "case 'tab':",
+    "case 'lineBreakEnd':",
+    "case 'table':",
+    "case 'picture':",
+    "case 'textBox':",
+    "case 'equation':",
+    "case 'header':",
+    "case 'footer':",
+    "case 'footnoteArea':",
+    'return showControlCodes',
+  ],
+  'inline and structure control marks must share the control-code visibility gate',
+);
+for (const kind of ['table', 'picture', 'textBox', 'equation', 'header', 'footer', 'footnoteArea']) {
+  assert(
+    extractFunctionBody(textReplayUtilsSource, 'isStructureControlMark').includes(`case '${kind}':`),
+    `${kind} must be classified as a structure control mark`,
+  );
+}
+assertTokensInOrder(
+  canvaskitReplayPlaneSource,
+  ["op.type === 'textControlMark'", "op.wrap === 'behindText'", "op.wrap === 'inFrontOfText'"],
+  'CanvasKit structure marks must follow their owner wrap replay plane',
 );
 assert(
   textReplayUtilsSource.includes("export const TEXT_CONTROL_MARK_FONT_FAMILY = 'D2Coding';"),
@@ -506,6 +529,10 @@ for (const [label, source] of [
   assert(
     extractMethodBody(source, 'renderTextControlMark').includes('TEXT_CONTROL_MARK_FONT_FAMILY'),
     `${label} standalone control marks must use the shared symbol font`,
+  );
+  assert(
+    extractMethodBody(source, 'renderTextControlMark').includes('isStructureControlMark('),
+    `${label} standalone structure marks must use the shared structure color policy`,
   );
   assert(
     extractMethodBody(source, 'renderTextRun').includes('TEXT_CONTROL_MARK_FONT_FAMILY'),

@@ -39,7 +39,32 @@ export function allowsTextControlMark(
     case 'space':
     case 'tab':
     case 'lineBreakEnd':
+    case 'table':
+    case 'picture':
+    case 'textBox':
+    case 'equation':
+    case 'header':
+    case 'footer':
+    case 'footnoteArea':
       return showControlCodes;
+  }
+}
+
+export function isStructureControlMark(kind: LayerTextControlMark['kind']): boolean {
+  switch (kind) {
+    case 'table':
+    case 'picture':
+    case 'textBox':
+    case 'equation':
+    case 'header':
+    case 'footer':
+    case 'footnoteArea':
+      return true;
+    case 'space':
+    case 'tab':
+    case 'paragraphEnd':
+    case 'lineBreakEnd':
+      return false;
   }
 }
 

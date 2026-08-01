@@ -17240,7 +17240,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       return { error: 'renderers unavailable' };
     }
     const tree = {
-      pageWidth: 84,
+      pageWidth: 132,
       pageHeight: 36,
       profile: 'screen',
       outputOptions: {
@@ -17266,10 +17266,10 @@ runTest('Renderer lifecycle', async ({ page }) => {
       root: {
         kind: 'leaf',
         sourceNodeId: 1912,
-        bounds: { x: 0, y: 0, width: 84, height: 36 },
+        bounds: { x: 0, y: 0, width: 132, height: 36 },
         cacheHint: 'none',
         ops: [
-          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 84, height: 36 }, backgroundColor: '#ffffff', borderWidth: 0 },
+          { type: 'pageBackground', bbox: { x: 0, y: 0, width: 132, height: 36 }, backgroundColor: '#ffffff', borderWidth: 0 },
           {
             type: 'textControlMark',
             bbox: { x: 8, y: 5, width: 18, height: 20 },
@@ -17286,8 +17286,13 @@ runTest('Renderer lifecycle', async ({ page }) => {
             mark: { kind: 'space', text: '·', x: 1, y: 15, fontSize: 16 },
           },
           {
+            type: 'textControlMark',
+            bbox: { x: 64, y: 5, width: 40, height: 20 },
+            mark: { kind: 'table', text: '[표]', x: 1, y: 15, fontSize: 14 },
+          },
+          {
             type: 'footnoteMarker',
-            bbox: { x: 64, y: 5, width: 18, height: 20 },
+            bbox: { x: 110, y: 5, width: 18, height: 20 },
             text: '12',
             fontFamily: 'Noto Sans KR',
             fontSize: 14,
@@ -17341,6 +17346,22 @@ runTest('Renderer lifecycle', async ({ page }) => {
   assert(
     textMarkerCanvas2dInkPixels > 80 && textMarkerCanvaskitInkPixels > 80,
     `text marker replay draws direct markers canvas2d=${textMarkerCanvas2dInkPixels}, canvaskit=${textMarkerCanvaskitInkPixels}`,
+  );
+  const isStructureMarkRed = (pixel) => pixel.alpha > 32
+    && pixel.red > 120
+    && pixel.red > pixel.green * 2
+    && pixel.red > pixel.blue * 2;
+  const textMarkerCanvas2dStructurePixels = countPixels(
+    textMarkerParityProbe.canvas2d,
+    isStructureMarkRed,
+  );
+  const textMarkerCanvaskitStructurePixels = countPixels(
+    textMarkerParityProbe.canvaskit,
+    isStructureMarkRed,
+  );
+  assert(
+    textMarkerCanvas2dStructurePixels > 5 && textMarkerCanvaskitStructurePixels > 5,
+    `structure control mark uses direct red replay canvas2d=${textMarkerCanvas2dStructurePixels}, canvaskit=${textMarkerCanvaskitStructurePixels}`,
   );
   const textMarkerDiff = await comparePngBuffers(
     pngBufferFromDataUrl(textMarkerParityProbe.canvas2d),

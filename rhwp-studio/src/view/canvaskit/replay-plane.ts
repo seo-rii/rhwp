@@ -24,5 +24,13 @@ export function layerPaintOpReplayPlane(op: LayerPaintOp): LayerReplayPlane {
       return 'inFrontOfText';
     }
   }
+  if (op.type === 'textControlMark') {
+    if (op.wrap === 'behindText') {
+      return 'behindText';
+    }
+    if (op.wrap === 'inFrontOfText') {
+      return 'inFrontOfText';
+    }
+  }
   return 'flow';
 }

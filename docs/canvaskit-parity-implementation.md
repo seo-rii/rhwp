@@ -71,6 +71,14 @@ the cached subtree and to the current replay plane; unrelated sidecars do not
 discard otherwise reusable pictures. CanvasKit static picture cache keys also
 include replay `outputOptions`, because `clipEnabled`, paragraph marks, and
 control-code visibility change direct replay without changing node identity.
+Visible structure/object labels (`[표]`, `[그림]`, `[글상자]`, `[수식]`,
+`[머리말]`, `[꼬리말]`, and `[각주]`) are backend-neutral
+`TextControlMark` ops rather than renderer-generated overlays. They are emitted
+once inside the owner subtree, text-box labels remain inside the owner clip,
+and picture labels copy the image `wrap` value so every replay backend places
+the label on the same replay plane as the image. Canvas2D, CanvasKit, SVG, and
+native Skia therefore consume the same op and must not synthesize a second
+semantic/image/equation label.
 Rust `PageLayerTree` replay-plane subtree detection is now centralized in
 `paint/replay_order.rs` as well: native Skia and layer SVG both use the same
 helper to skip planes that have no root or sidecar paint for the current
@@ -474,11 +482,12 @@ SVG, and portable font data. Canvas2D and CanvasKit document caches reset in
 the same step; visible pages then repopulate the new table. Compaction is not
 performed during page traversal, so an unseen page can never lose a resource id
 while an older tree remains cached.
-The v1 compatibility export advertises additive schema revision `1.20` and
+The v1 compatibility export advertises additive schema revision `1.21` and
 resource-table revision `1.5`. Those revisions cover the implemented advanced
 glyph payload gates, split output/build/debug options, externalized bounded text
-visuals, and image, static-SVG, and portable-font resources. Schema v2 keeps its
-own `2.0` envelope while reusing the same `1.5` resource-table contract.
+visuals, explicit structure control-mark ops, and image, static-SVG, and
+portable-font resources. Schema v2 keeps its own `2.0` envelope while reusing
+the same `1.5` resource-table contract.
 CanvasKit fallback-font initialization deduplicates bundled Noto/D2/math URLs
 and prefetches the remaining unique catalog files in parallel; registration
 order and family/style matching remain deterministic.

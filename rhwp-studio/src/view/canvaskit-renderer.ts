@@ -106,6 +106,7 @@ import {
   decodePuaOverlapNumber,
   estimateDisplayTextPositions,
   isHalfwidthScaledCluster,
+  isStructureControlMark,
   mapPuaDisplayText,
   puaToDisplayText,
   splitIntoClusters,
@@ -1400,7 +1401,7 @@ export class CanvasKitLayerRenderer {
             mark.fontSize,
             false,
             false,
-            '#4A90D9',
+            isStructureControlMark(mark.kind) ? '#CC3333' : '#4A90D9',
           );
           canvas.drawText(mark.text, originX + mark.x, originY + mark.y, markObjects.paint, markObjects.font);
           markObjects.paint.delete();
@@ -2423,7 +2424,7 @@ export class CanvasKitLayerRenderer {
       op.mark.fontSize,
       false,
       false,
-      '#4A90D9',
+      isStructureControlMark(op.mark.kind) ? '#CC3333' : '#4A90D9',
     );
     canvas.drawText(
       op.mark.text,

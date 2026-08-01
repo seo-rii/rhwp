@@ -40,6 +40,11 @@ pub fn paint_op_replay_plane(op: &PaintOp) -> PaintReplayPlane {
             Some(TextWrap::InFrontOfText) => PaintReplayPlane::InFrontOfText,
             _ => PaintReplayPlane::Flow,
         },
+        PaintOp::TextControlMark { mark, .. } => match mark.text_wrap {
+            Some(TextWrap::BehindText) => PaintReplayPlane::BehindText,
+            Some(TextWrap::InFrontOfText) => PaintReplayPlane::InFrontOfText,
+            _ => PaintReplayPlane::Flow,
+        },
         _ => PaintReplayPlane::Flow,
     }
 }
@@ -80,7 +85,7 @@ mod tests {
     use crate::model::image::ImageEffect;
     use crate::paint::{
         CacheHint, LayerImagePaint, LayerNode, LayerPageBackgroundPaint, LayerRectanglePaint,
-        LayerSemantic,
+        LayerSemantic, LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
     };
     use crate::renderer::render_tree::{BoundingBox, ShapeTransform};
     use crate::renderer::ShapeStyle;
@@ -104,6 +109,22 @@ mod tests {
                 contrast: 0,
                 effect: ImageEffect::RealPic,
                 transform: ShapeTransform::default(),
+            },
+        }
+    }
+
+    fn control_mark_with_wrap(wrap: Option<TextWrap>) -> PaintOp {
+        PaintOp::TextControlMark {
+            bbox: bbox(),
+            mark: LayerTextControlMarkPaint {
+                source: None,
+                text_wrap: wrap,
+                mark: LayerTextControlMark {
+                    kind: LayerTextControlMarkKind::Picture,
+                    x: 0.0,
+                    y: 10.0,
+                    font_size: 10.0,
+                },
             },
         }
     }
@@ -144,6 +165,30 @@ mod tests {
         let op = image_with_wrap(Some(TextWrap::InFrontOfText));
 
         assert_eq!(paint_op_replay_plane(&op), PaintReplayPlane::InFrontOfText);
+    }
+
+    #[test]
+    fn structure_control_mark_follows_owner_replay_plane() {
+        assert_eq!(
+            paint_op_replay_plane(&control_mark_with_wrap(Some(TextWrap::BehindText))),
+            PaintReplayPlane::BehindText
+        );
+        assert_eq!(
+            paint_op_replay_plane(&control_mark_with_wrap(Some(TextWrap::InFrontOfText))),
+            PaintReplayPlane::InFrontOfText
+        );
+    }
+
+    #[test]
+    fn non_layered_control_mark_replays_on_flow_plane() {
+        assert_eq!(
+            paint_op_replay_plane(&control_mark_with_wrap(None)),
+            PaintReplayPlane::Flow
+        );
+        assert_eq!(
+            paint_op_replay_plane(&control_mark_with_wrap(Some(TextWrap::TopAndBottom))),
+            PaintReplayPlane::Flow
+        );
     }
 
     #[test]

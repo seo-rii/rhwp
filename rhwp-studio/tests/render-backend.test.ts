@@ -74,6 +74,23 @@ test('CanvasKit replay plane helper classifies PageLayerTree ops by wrap', () =>
     [{ type: 'image', bbox, wrap: 'inFrontOfText' }, 'inFrontOfText'],
     [{ type: 'image', bbox, wrap: 'topAndBottom' }, 'flow'],
     [{ type: 'image', bbox }, 'flow'],
+    [{
+      type: 'textControlMark',
+      bbox,
+      wrap: 'behindText',
+      mark: { kind: 'picture', text: '[그림]', x: 0, y: 10, fontSize: 10 },
+    }, 'behindText'],
+    [{
+      type: 'textControlMark',
+      bbox,
+      wrap: 'inFrontOfText',
+      mark: { kind: 'picture', text: '[그림]', x: 0, y: 10, fontSize: 10 },
+    }, 'inFrontOfText'],
+    [{
+      type: 'textControlMark',
+      bbox,
+      mark: { kind: 'table', text: '[표]', x: 0, y: 10, fontSize: 10 },
+    }, 'flow'],
     [{ type: 'textRun', bbox, text: 'flow' }, 'flow'],
     [{ type: 'rectangle', bbox, style: { fillColor: '#ff0000' } }, 'flow'],
   ];

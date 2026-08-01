@@ -823,15 +823,9 @@ impl SvgRenderer {
             }
             PaintOp::Image { bbox, image } => {
                 self.render_layer_image(*bbox, image, resources);
-                if self.show_control_codes {
-                    self.emit_control_code_marker("[그림]", *bbox);
-                }
             }
             PaintOp::Equation { bbox, equation } => {
                 self.render_layer_equation(*bbox, equation, resources);
-                if self.show_control_codes {
-                    self.emit_control_code_marker("[수식]", *bbox);
-                }
             }
             PaintOp::FormObject { bbox, form } => {
                 self.render_layer_form_object(form, bbox);
@@ -929,7 +923,7 @@ impl SvgRenderer {
         }
     }
 
-    fn leave_layer_group(&mut self, bounds: BoundingBox, semantic: &LayerSemantic) {
+    fn leave_layer_group(&mut self, _bounds: BoundingBox, semantic: &LayerSemantic) {
         if self.debug_overlay {
             match semantic.role {
                 LayerSemanticRole::Table
@@ -943,22 +937,6 @@ impl SvgRenderer {
                 }
                 _ => {}
             }
-        }
-
-        if !self.show_control_codes {
-            return;
-        }
-
-        let label = match semantic.role {
-            LayerSemanticRole::Table => Some("[표]"),
-            LayerSemanticRole::TextBox => Some("[글상자]"),
-            LayerSemanticRole::Header => Some("[머리말]"),
-            LayerSemanticRole::Footer => Some("[꼬리말]"),
-            LayerSemanticRole::FootnoteArea => Some("[각주]"),
-            _ => None,
-        };
-        if let Some(label) = label {
-            self.emit_control_code_marker(label, bounds);
         }
     }
 
@@ -1229,17 +1207,6 @@ impl SvgRenderer {
                 }
             }
         }
-    }
-
-    fn emit_control_code_marker(&mut self, label: &str, bbox: BoundingBox) {
-        let fs = 10.0;
-        self.output.push_str(&format!(
-            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#CC3333\">{}</text>\n",
-            bbox.x,
-            bbox.y + fs,
-            fs,
-            label,
-        ));
     }
 
     fn close_layer_op_transform(&mut self, op: &PaintOp) {
@@ -1940,10 +1907,15 @@ impl SvgRenderer {
             return;
         }
         self.output.push_str(&format!(
-            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"#4A90D9\">{}</text>\n",
+            "<text x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"{}\">{}</text>\n",
             bbox.x + mark.x,
             bbox.y + baseline + mark.y,
             mark.font_size,
+            if mark.kind.is_structure() {
+                "#CC3333"
+            } else {
+                "#4A90D9"
+            },
             mark.kind.glyph(),
         ));
     }

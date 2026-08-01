@@ -37,7 +37,7 @@ use crate::renderer::layer_renderer::{
 };
 use crate::renderer::render_tree::{
     BoundingBox, EllipseNode, LineNode, PageNode, PathNode, RectangleNode, RenderNode,
-    RenderNodeType, ShapeTransform, TextRunNode,
+    RenderNodeType, ShapeTransform, TableNode, TextRunNode,
 };
 use crate::renderer::skia::cache::StaticPictureCache;
 use crate::renderer::skia::cache::StaticPictureCacheKey;
@@ -7369,6 +7369,54 @@ fn output_options_enable_text_control_marks() {
     };
 
     assert!(count_ink(&marked) > count_ink(&base));
+}
+
+#[test]
+fn output_options_replay_structure_control_marks_through_native_skia() {
+    let mut tree = crate::renderer::render_tree::PageRenderTree::new(0, 120.0, 60.0);
+    tree.root.children.push(RenderNode::new(
+        1,
+        RenderNodeType::Table(TableNode {
+            row_count: 1,
+            col_count: 1,
+            border_fill_id: 0,
+            section_index: None,
+            para_index: None,
+            control_index: None,
+        }),
+        BoundingBox::new(10.0, 12.0, 70.0, 32.0),
+    ));
+
+    let mut base_builder = LayerBuilder::new(RenderProfile::Screen);
+    let base_tree = base_builder.build(&tree);
+    let mut marked_builder =
+        LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+            show_control_codes: true,
+            ..Default::default()
+        });
+    let marked_tree = marked_builder.build(&tree);
+    let renderer = SkiaLayerRenderer::new();
+    let base =
+        tiny_skia::Pixmap::decode_png(&renderer.render_png(&base_tree).expect("base skia render"))
+            .expect("base decode");
+    let marked = tiny_skia::Pixmap::decode_png(
+        &renderer
+            .render_png(&marked_tree)
+            .expect("marked skia render"),
+    )
+    .expect("marked decode");
+    let structure_red_pixels = count_pixels_matching(&marked, |pixel| {
+        pixel.alpha() > 32
+            && pixel.red() > 120
+            && pixel.red() > pixel.green().saturating_mul(2)
+            && pixel.red() > pixel.blue().saturating_mul(2)
+    });
+
+    assert_eq!(count_pixels_matching(&base, |pixel| pixel.alpha() > 0), 0);
+    assert!(
+        structure_red_pixels > 0,
+        "native Skia must replay the explicit structure control mark"
+    );
 }
 
 #[test]

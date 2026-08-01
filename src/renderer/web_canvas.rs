@@ -310,12 +310,6 @@ impl WebCanvasRenderer {
                             if image.transform.has_transform() {
                                 self.ctx.restore();
                             }
-                            if self.show_control_codes {
-                                let fs = 10.0;
-                                self.ctx.set_fill_style_str("#CC3333");
-                                self.ctx.set_font(&format!("{:.3}px sans-serif", fs));
-                                let _ = self.ctx.fill_text("[그림]", bbox.x, bbox.y + fs);
-                            }
                             continue;
                         }
                         PaintOp::Line { bbox, line } => {
@@ -485,12 +479,6 @@ impl WebCanvasRenderer {
                                 equation.font_size,
                             );
                             self.ctx.restore();
-                            if self.show_control_codes {
-                                let fs = 10.0;
-                                self.ctx.set_fill_style_str("#CC3333");
-                                self.ctx.set_font(&format!("{:.3}px sans-serif", fs));
-                                let _ = self.ctx.fill_text("[수식]", bbox.x, bbox.y + fs);
-                            }
                             continue;
                         }
                         PaintOp::FormObject { bbox, form } => {
@@ -531,7 +519,6 @@ impl WebCanvasRenderer {
             let _ = self.ctx.translate(-cx, -cy);
         }
 
-        self.ctx.set_fill_style_str("#4A90D9");
         for mark in &run.control_marks {
             self.draw_layer_text_control_mark(bbox, mark, 0.0, run.baseline);
         }
@@ -556,7 +543,11 @@ impl WebCanvasRenderer {
         if !output_options.allows_text_control_mark(mark.kind) {
             return;
         }
-        self.ctx.set_fill_style_str("#4A90D9");
+        self.ctx.set_fill_style_str(if mark.kind.is_structure() {
+            "#CC3333"
+        } else {
+            "#4A90D9"
+        });
         self.ctx
             .set_font(&format!("{:.3}px sans-serif", mark.font_size));
         let _ = self.ctx.fill_text(

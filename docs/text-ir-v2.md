@@ -142,6 +142,16 @@ old consumers.
 - Visible control marks are emitted as explicit `textControlMark` PaintOps when
   paragraph/control-code output options produce visible marks. The paired
   `TextRun.controlMarks` payload is a legacy mirror for old consumers.
+- Structure/object control labels are also explicit `textControlMark` PaintOps:
+  `table`, `picture`, `textBox`, `equation`, `header`, `footer`, and
+  `footnoteArea` map to `[표]`, `[그림]`, `[글상자]`, `[수식]`, `[머리말]`,
+  `[꼬리말]`, and `[각주]`. They are emitted only when `showControlCodes` is
+  enabled and are advertised through `text.structureControlMarkOp`.
+  The op is appended inside its owner subtree, so clipped text-box labels remain
+  clipped. A picture label copies the owner's optional `wrap`; `behindText` and
+  `inFrontOfText` select the corresponding replay plane, while all other labels
+  remain on the flow plane. Renderers must consume this op exactly once and must
+  not regenerate labels from image/equation ops or semantic group metadata.
 - Tab leaders are emitted as explicit `tabLeader` PaintOps when present in a
   lowered text style. The paired `TextRun.tabLeaders` payload is a legacy
   mirror for old consumers.
@@ -1236,7 +1246,7 @@ Schema v1 should close as a compatibility-safe text replay schema:
   range, explicit positions, and effect-specific eligibility.
 - shaped measurement remains report-only telemetry outside the replay schema.
 
-Schema v1 minor 10 exports advertise the v2 direction without changing replay
+Schema v1 minor 21 exports advertise the v2 direction without changing replay
 semantics. They keep `schemaVersion=1`, add only producer-known v2 feature names
 to `knownFeatures`, and include `textV2` metadata with
 `profile="compatibility"`, `canonicalOp="text"`, `fallbackPolicy="required"`,

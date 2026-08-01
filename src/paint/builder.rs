@@ -356,7 +356,7 @@ impl LayerBuilder {
             return None;
         }
 
-        match &node.node_type {
+        let mut layer = match &node.node_type {
             RenderNodeType::PageBackground(background) => {
                 let background = self.build_page_background_paint(background);
                 Some(self.build_paint_node(
@@ -455,7 +455,11 @@ impl LayerBuilder {
                     mark.y += run.baseline;
                     ops.push(PaintOp::TextControlMark {
                         bbox: node.bbox,
-                        mark: LayerTextControlMarkPaint { source: None, mark },
+                        mark: LayerTextControlMarkPaint {
+                            source: None,
+                            text_wrap: None,
+                            mark,
+                        },
                     });
                 }
                 for leader in &run.style.tab_leaders {
@@ -836,7 +840,103 @@ impl LayerBuilder {
                 self.cache_hint_for(&node.node_type),
                 self.semantic_for(&node.node_type),
             )),
+        }?;
+
+        if !self.output_options.show_control_codes {
+            return Some(layer);
         }
+
+        let (kind, text_wrap) = match &node.node_type {
+            RenderNodeType::Table(_) => (LayerTextControlMarkKind::Table, None),
+            RenderNodeType::Image(image) => (LayerTextControlMarkKind::Picture, image.text_wrap),
+            RenderNodeType::TextBox => (LayerTextControlMarkKind::TextBox, None),
+            RenderNodeType::Equation(_) => (LayerTextControlMarkKind::Equation, None),
+            RenderNodeType::Header => (LayerTextControlMarkKind::Header, None),
+            RenderNodeType::Footer => (LayerTextControlMarkKind::Footer, None),
+            RenderNodeType::FootnoteArea => (LayerTextControlMarkKind::FootnoteArea, None),
+            _ => return Some(layer),
+        };
+        let marker_op = PaintOp::TextControlMark {
+            bbox: node.bbox,
+            mark: LayerTextControlMarkPaint {
+                source: None,
+                text_wrap,
+                mark: LayerTextControlMark {
+                    kind,
+                    x: 0.0,
+                    y: 10.0,
+                    font_size: 10.0,
+                },
+            },
+        };
+        let marker_bounds = marker_op.visual_bounds();
+        let left = layer.bounds.x.min(marker_bounds.x);
+        let top = layer.bounds.y.min(marker_bounds.y);
+        let right =
+            (layer.bounds.x + layer.bounds.width).max(marker_bounds.x + marker_bounds.width);
+        let bottom =
+            (layer.bounds.y + layer.bounds.height).max(marker_bounds.y + marker_bounds.height);
+        layer.bounds = BoundingBox::new(left, top, right - left, bottom - top);
+        let marker_leaf = LayerNode::leaf(marker_bounds, Some(node.id), vec![marker_op]);
+        match &mut layer.kind {
+            LayerNodeKind::Group { children, .. } => children.push(marker_leaf),
+            LayerNodeKind::ClipRect { child, .. } => {
+                let child_left = child.bounds.x.min(marker_bounds.x);
+                let child_top = child.bounds.y.min(marker_bounds.y);
+                let child_right = (child.bounds.x + child.bounds.width)
+                    .max(marker_bounds.x + marker_bounds.width);
+                let child_bottom = (child.bounds.y + child.bounds.height)
+                    .max(marker_bounds.y + marker_bounds.height);
+                child.bounds = BoundingBox::new(
+                    child_left,
+                    child_top,
+                    child_right - child_left,
+                    child_bottom - child_top,
+                );
+                match &mut child.kind {
+                    LayerNodeKind::Group { children, .. } => children.push(marker_leaf),
+                    LayerNodeKind::Leaf { ops, .. } => {
+                        let LayerNodeKind::Leaf {
+                            ops: marker_ops, ..
+                        } = marker_leaf.kind
+                        else {
+                            unreachable!()
+                        };
+                        ops.extend(marker_ops);
+                    }
+                    LayerNodeKind::ClipRect { .. } => {
+                        let child_bounds = child.bounds;
+                        let previous_child = std::mem::replace(
+                            child,
+                            Box::new(LayerNode::group(
+                                marker_bounds,
+                                None,
+                                Vec::new(),
+                                CacheHint::None,
+                                LayerSemantic::default(),
+                            )),
+                        );
+                        *child = Box::new(LayerNode::group(
+                            child_bounds,
+                            None,
+                            vec![*previous_child, marker_leaf],
+                            CacheHint::None,
+                            LayerSemantic::default(),
+                        ));
+                    }
+                }
+            }
+            LayerNodeKind::Leaf { ops, .. } => {
+                let LayerNodeKind::Leaf {
+                    ops: marker_ops, ..
+                } = marker_leaf.kind
+                else {
+                    unreachable!()
+                };
+                ops.extend(marker_ops);
+            }
+        }
+        Some(layer)
     }
 
     fn should_emit_node(&self, node: &RenderNode) -> bool {
@@ -2109,6 +2209,153 @@ mod tests {
                 other => panic!("expected text leaf, got {other:?}"),
             },
             other => panic!("expected root group, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_structure_control_marks_once_with_owner_scope_and_replay_plane() {
+        let mut tree = PageRenderTree::new(0, 500.0, 300.0);
+        tree.root.children.push(RenderNode::new(
+            1,
+            RenderNodeType::Table(TableNode {
+                row_count: 1,
+                col_count: 1,
+                border_fill_id: 0,
+                section_index: None,
+                para_index: None,
+                control_index: None,
+            }),
+            BoundingBox::new(10.0, 10.0, 80.0, 40.0),
+        ));
+        let mut image = ImageNode::new(1, None);
+        image.text_wrap = Some(crate::model::shape::TextWrap::InFrontOfText);
+        tree.root.children.push(RenderNode::new(
+            2,
+            RenderNodeType::Image(image),
+            BoundingBox::new(100.0, 10.0, 80.0, 40.0),
+        ));
+        tree.root.children.push(RenderNode::new(
+            3,
+            RenderNodeType::TextBox,
+            BoundingBox::new(190.0, 10.0, 80.0, 40.0),
+        ));
+        tree.root.children.push(RenderNode::new(
+            4,
+            RenderNodeType::Equation(EquationNode {
+                svg_content: String::new(),
+                layout_box: crate::renderer::equation::layout::LayoutBox {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1.0,
+                    height: 1.0,
+                    baseline: 0.0,
+                    kind: crate::renderer::equation::layout::LayoutKind::Empty,
+                },
+                color_str: "#000000".to_string(),
+                color: 0,
+                font_size: 12.0,
+                section_index: None,
+                para_index: None,
+                control_index: None,
+                cell_index: None,
+                cell_para_index: None,
+            }),
+            BoundingBox::new(280.0, 10.0, 80.0, 40.0),
+        ));
+        for (id, node_type, y) in [
+            (5, RenderNodeType::Header, 60.0),
+            (6, RenderNodeType::Footer, 110.0),
+            (7, RenderNodeType::FootnoteArea, 160.0),
+        ] {
+            tree.root.children.push(RenderNode::new(
+                id,
+                node_type,
+                BoundingBox::new(10.0, y, 120.0, 40.0),
+            ));
+        }
+
+        let mut builder =
+            LayerBuilder::new(RenderProfile::Screen).with_output_options(LayerOutputOptions {
+                show_control_codes: true,
+                ..Default::default()
+            });
+        let layer_tree = builder.build(&tree);
+        let mut marks = Vec::new();
+        let mut stack = vec![&layer_tree.root];
+        while let Some(node) = stack.pop() {
+            match &node.kind {
+                LayerNodeKind::Group { children, .. } => stack.extend(children.iter()),
+                LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+                LayerNodeKind::Leaf { ops, .. } => {
+                    marks.extend(ops.iter().filter_map(|op| match op {
+                        PaintOp::TextControlMark { mark, .. } if mark.mark.kind.is_structure() => {
+                            Some((mark.mark.kind, mark.text_wrap))
+                        }
+                        _ => None,
+                    }));
+                }
+            }
+        }
+        let expected = [
+            LayerTextControlMarkKind::Table,
+            LayerTextControlMarkKind::Picture,
+            LayerTextControlMarkKind::TextBox,
+            LayerTextControlMarkKind::Equation,
+            LayerTextControlMarkKind::Header,
+            LayerTextControlMarkKind::Footer,
+            LayerTextControlMarkKind::FootnoteArea,
+        ];
+        for kind in expected {
+            assert_eq!(
+                marks
+                    .iter()
+                    .filter(|(candidate, _)| *candidate == kind)
+                    .count(),
+                1,
+                "{kind:?} must be emitted exactly once"
+            );
+        }
+        assert_eq!(marks.len(), expected.len());
+        assert!(marks.contains(&(
+            LayerTextControlMarkKind::Picture,
+            Some(crate::model::shape::TextWrap::InFrontOfText),
+        )));
+
+        let LayerNodeKind::Group { children, .. } = &layer_tree.root.kind else {
+            panic!("expected root group");
+        };
+        let LayerNodeKind::ClipRect { child, .. } = &children[2].kind else {
+            panic!("text box structure mark must remain inside its clip");
+        };
+        let LayerNodeKind::Group { children, .. } = &child.kind else {
+            panic!("expected clipped text box group");
+        };
+        assert!(children.iter().any(|child| match &child.kind {
+            LayerNodeKind::Leaf { ops, .. } => ops.iter().any(|op| matches!(
+                op,
+                PaintOp::TextControlMark { mark, .. }
+                    if mark.mark.kind == LayerTextControlMarkKind::TextBox
+            )),
+            _ => false,
+        }));
+
+        let json = layer_tree.to_json();
+        assert!(json.contains("\"schemaMinorVersion\":21"));
+        assert!(json.contains("\"text.structureControlMarkOp\""));
+        assert!(json.contains("\"wrap\":\"inFrontOfText\""));
+
+        let mut default_builder = LayerBuilder::new(RenderProfile::Screen);
+        let default_tree = default_builder.build(&tree);
+        let mut stack = vec![&default_tree.root];
+        while let Some(node) = stack.pop() {
+            match &node.kind {
+                LayerNodeKind::Group { children, .. } => stack.extend(children.iter()),
+                LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+                LayerNodeKind::Leaf { ops, .. } => assert!(!ops.iter().any(|op| matches!(
+                    op,
+                    PaintOp::TextControlMark { mark, .. } if mark.mark.kind.is_structure()
+                ))),
+            }
         }
     }
 

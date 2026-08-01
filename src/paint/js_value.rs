@@ -192,6 +192,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         font_resources_to_value(tree.resources.font_resources()),
     );
     let externalized_visuals = externalized_text_visuals(&tree.root);
+    let has_structure_control_marks = has_structure_control_marks(&tree.root);
     let has_variant_groups =
         has_text_variant_groups(&tree.root) || has_text_variant_ops(&tree.variant_ops);
     let has_sidecar_variants = !tree.variant_ops.is_empty();
@@ -235,6 +236,9 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
         .any(|visual| *visual == "controlMarks")
     {
         used_features.push("text.controlMarkOp");
+    }
+    if has_structure_control_marks {
+        used_features.push("text.structureControlMarkOp");
     }
     if externalized_visuals
         .iter()
@@ -291,6 +295,7 @@ pub fn page_layer_tree_to_js_value_with_resource_hints(
             "text.specialVisualOps",
             "text.charOverlapOp",
             "text.controlMarkOp",
+            "text.structureControlMarkOp",
             "text.tabLeaderOp",
             "text.decorationOp",
             "text.displayText",
@@ -592,6 +597,7 @@ fn string_set_from_js_value(value: &JsValue) -> HashSet<String> {
 
 fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[PaintOp]) {
     let externalized_visuals = externalized_text_visuals(root);
+    let has_structure_control_marks = has_structure_control_marks(root);
     let has_variant_groups = has_text_variant_groups(root) || has_text_variant_ops(variant_ops);
     let has_glyph_runs = has_glyph_runs(root) || ops_have_glyph_runs(variant_ops);
     let has_glyph_outlines = has_glyph_outlines(root) || ops_have_glyph_outlines(variant_ops);
@@ -632,6 +638,9 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[
     {
         used_features.push("text.controlMarkOp");
     }
+    if has_structure_control_marks {
+        used_features.push("text.structureControlMarkOp");
+    }
     if externalized_visuals
         .iter()
         .any(|visual| *visual == "tabLeaders")
@@ -662,6 +671,7 @@ fn set_text_v2_compat_metadata(value: &Object, root: &LayerNode, variant_ops: &[
 
 fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
+    let has_structure_control_marks = has_structure_control_marks(root);
     let has_outline_stroke = has_supported_strict_glyph_outline_stroke(root);
     let has_colrv0_color_layers = has_supported_strict_glyph_outline_colrv0(root);
     let has_colrv1_color_layers = has_supported_strict_glyph_outline_colrv1(root);
@@ -710,6 +720,9 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
         .any(|visual| *visual == "controlMarks")
     {
         used_features.push("text.controlMarkOp");
+    }
+    if has_structure_control_marks {
+        used_features.push("text.structureControlMarkOp");
     }
     if externalized_visuals
         .iter()
@@ -788,6 +801,7 @@ fn set_text_v2_strict_glyph_outline_metadata(value: &Object, root: &LayerNode) {
 
 fn set_text_v2_strict_glyph_run_metadata(value: &Object, root: &LayerNode) {
     let externalized_visuals = externalized_text_visuals(root);
+    let has_structure_control_marks = has_structure_control_marks(root);
     let mut used_features = vec![
         "text.paintStyle",
         "text.sourceTable",
@@ -813,6 +827,9 @@ fn set_text_v2_strict_glyph_run_metadata(value: &Object, root: &LayerNode) {
         .any(|visual| *visual == "controlMarks")
     {
         used_features.push("text.controlMarkOp");
+    }
+    if has_structure_control_marks {
+        used_features.push("text.structureControlMarkOp");
     }
     if externalized_visuals
         .iter()
@@ -1864,6 +1881,9 @@ fn paint_op_to_value(op: &PaintOp, text_sources: &mut TextSourceExportState) -> 
             set_value(&value, "bbox", bbox_to_value(*bbox));
             if let Some(source) = &mark.source {
                 set_value(&value, "source", text_source_span_to_value(source));
+            }
+            if let Some(text_wrap) = mark.text_wrap {
+                set_string(&value, "wrap", text_wrap_str(text_wrap));
             }
             set_value(&value, "mark", text_control_mark_to_value(&mark.mark));
         }
@@ -3067,6 +3087,27 @@ fn externalized_text_visuals(root: &LayerNode) -> Vec<&'static str> {
         visuals.push("decorations");
     }
     visuals
+}
+
+fn has_structure_control_marks(root: &LayerNode) -> bool {
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match &node.kind {
+            LayerNodeKind::Group { children, .. } => stack.extend(children),
+            LayerNodeKind::ClipRect { child, .. } => stack.push(child),
+            LayerNodeKind::Leaf { ops, .. } => {
+                if ops.iter().any(|op| {
+                    matches!(
+                        op,
+                        PaintOp::TextControlMark { mark, .. } if mark.mark.kind.is_structure()
+                    )
+                }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn paint_variant_meta_to_value(variant: &PaintVariantMeta) -> JsValue {

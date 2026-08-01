@@ -703,7 +703,11 @@ impl SkiaLayerRenderer {
         }
         let mut marker_paint = Paint::default();
         marker_paint.set_anti_alias(true);
-        marker_paint.set_color(Color::from_argb(255, 0x4A, 0x90, 0xD9));
+        marker_paint.set_color(if mark.kind.is_structure() {
+            Color::from_argb(255, 0xCC, 0x33, 0x33)
+        } else {
+            Color::from_argb(255, 0x4A, 0x90, 0xD9)
+        });
         let marker_style = crate::renderer::TextStyle {
             font_family: "sans-serif".to_string(),
             font_size: mark.font_size,

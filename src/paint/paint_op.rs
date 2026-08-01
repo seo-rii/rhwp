@@ -1373,6 +1373,10 @@ pub struct LayerCharOverlapPaint {
 #[derive(Debug, Clone)]
 pub struct LayerTextControlMarkPaint {
     pub source: Option<TextSourceSpan>,
+    /// Owner text-wrap hint for standalone structure/object marks.
+    ///
+    /// Inline text marks omit this field and remain on the flow plane.
+    pub text_wrap: Option<TextWrap>,
     pub mark: LayerTextControlMark,
 }
 
@@ -1849,6 +1853,13 @@ pub enum LayerTextControlMarkKind {
     Tab,
     ParagraphEnd,
     LineBreakEnd,
+    Table,
+    Picture,
+    TextBox,
+    Equation,
+    Header,
+    Footer,
+    FootnoteArea,
 }
 
 impl LayerTextControlMarkKind {
@@ -1858,6 +1869,13 @@ impl LayerTextControlMarkKind {
             Self::Tab => "tab",
             Self::ParagraphEnd => "paragraphEnd",
             Self::LineBreakEnd => "lineBreakEnd",
+            Self::Table => "table",
+            Self::Picture => "picture",
+            Self::TextBox => "textBox",
+            Self::Equation => "equation",
+            Self::Header => "header",
+            Self::Footer => "footer",
+            Self::FootnoteArea => "footnoteArea",
         }
     }
 
@@ -1867,7 +1885,27 @@ impl LayerTextControlMarkKind {
             Self::Tab => "\u{2192}",
             Self::ParagraphEnd => "\u{21B5}",
             Self::LineBreakEnd => "\u{2193}",
+            Self::Table => "[표]",
+            Self::Picture => "[그림]",
+            Self::TextBox => "[글상자]",
+            Self::Equation => "[수식]",
+            Self::Header => "[머리말]",
+            Self::Footer => "[꼬리말]",
+            Self::FootnoteArea => "[각주]",
         }
+    }
+
+    pub fn is_structure(self) -> bool {
+        matches!(
+            self,
+            Self::Table
+                | Self::Picture
+                | Self::TextBox
+                | Self::Equation
+                | Self::Header
+                | Self::Footer
+                | Self::FootnoteArea
+        )
     }
 }
 
@@ -2109,7 +2147,7 @@ impl PaintOp {
                 BoundingBox::new(
                     bbox.x + mark.mark.x,
                     bbox.y + mark.mark.y - mark.mark.font_size,
-                    mark.mark.font_size,
+                    mark.mark.kind.glyph().chars().count() as f64 * mark.mark.font_size,
                     mark.mark.font_size * 1.2,
                 ),
             ),

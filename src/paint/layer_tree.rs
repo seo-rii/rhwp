@@ -454,7 +454,14 @@ impl LayerOutputOptions {
             LayerTextControlMarkKind::ParagraphEnd => self.show_paragraph_marks,
             LayerTextControlMarkKind::Space
             | LayerTextControlMarkKind::Tab
-            | LayerTextControlMarkKind::LineBreakEnd => self.show_control_codes,
+            | LayerTextControlMarkKind::LineBreakEnd
+            | LayerTextControlMarkKind::Table
+            | LayerTextControlMarkKind::Picture
+            | LayerTextControlMarkKind::TextBox
+            | LayerTextControlMarkKind::Equation
+            | LayerTextControlMarkKind::Header
+            | LayerTextControlMarkKind::Footer
+            | LayerTextControlMarkKind::FootnoteArea => self.show_control_codes,
         }
     }
 }

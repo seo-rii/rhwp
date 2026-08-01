@@ -10,11 +10,11 @@ use crate::paint::{
     GlyphOutlineStrokeStyle, GlyphRange, GlyphRunDiagnostics, GlyphRunReplayEligibility,
     LayerAffineTransform, LayerGlyphOutlinePaint, LayerGlyphOutlinePath, LayerOutputOptions,
     LayerPageBackgroundImagePaint, LayerPageBackgroundPaint, LayerRectanglePaint,
-    LayerTextControlMark, LayerTextControlMarkKind, LayerTextOrientation, PaintTextStyle,
-    PaintVariantMeta, PaletteRef, ResolvedColor, ResourceArena, SvgGlyphIntrinsicSize,
-    SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox, TextRunPlacement, TextSourceEntry,
-    TextSourceId, TextSourceRange, TextSourceSpan, TextSourceTable, TextVariantKind,
-    TextVariantQuality,
+    LayerTextControlMark, LayerTextControlMarkKind, LayerTextControlMarkPaint,
+    LayerTextOrientation, PaintTextStyle, PaintVariantMeta, PaletteRef, ResolvedColor,
+    ResourceArena, SvgGlyphIntrinsicSize, SvgGlyphPayload, SvgGlyphSecurityMode, SvgGlyphViewBox,
+    TextRunPlacement, TextSourceEntry, TextSourceId, TextSourceRange, TextSourceSpan,
+    TextSourceTable, TextVariantKind, TextVariantQuality,
 };
 use crate::renderer::layer_renderer::{
     VariantRejectReason, VariantSelectedReason, VariantSelectionBackend,
@@ -2415,6 +2415,55 @@ fn test_layer_svg_output_options_enable_marks_without_renderer_config() {
         output.contains("\u{21B5}"),
         "layer outputOptions should enable paragraph end marks:\n{output}"
     );
+}
+
+#[test]
+fn test_layer_svg_replays_structure_control_mark_ops_once_in_structure_color() {
+    let kinds = [
+        LayerTextControlMarkKind::Table,
+        LayerTextControlMarkKind::Picture,
+        LayerTextControlMarkKind::TextBox,
+        LayerTextControlMarkKind::Equation,
+        LayerTextControlMarkKind::Header,
+        LayerTextControlMarkKind::Footer,
+        LayerTextControlMarkKind::FootnoteArea,
+    ];
+    let ops = kinds
+        .iter()
+        .enumerate()
+        .map(|(index, kind)| PaintOp::TextControlMark {
+            bbox: BoundingBox::new(5.0, index as f64 * 14.0, 60.0, 12.0),
+            mark: LayerTextControlMarkPaint {
+                source: None,
+                text_wrap: None,
+                mark: LayerTextControlMark {
+                    kind: *kind,
+                    x: 0.0,
+                    y: 10.0,
+                    font_size: 10.0,
+                },
+            },
+        })
+        .collect();
+    let root = LayerNode::leaf(BoundingBox::new(0.0, 0.0, 80.0, 120.0), None, ops);
+    let tree = PageLayerTree::new(80.0, 120.0, root).with_output_options(LayerOutputOptions {
+        show_control_codes: true,
+        ..Default::default()
+    });
+    let mut renderer = SvgRenderer::new();
+
+    renderer.render_layer_tree(&tree);
+
+    let output = renderer.output();
+    for kind in kinds {
+        assert_eq!(
+            output.matches(kind.glyph()).count(),
+            1,
+            "{:?} must render exactly once:\n{output}",
+            kind
+        );
+    }
+    assert_eq!(output.matches("fill=\"#CC3333\"").count(), kinds.len());
 }
 
 #[test]

@@ -345,7 +345,25 @@ impl StaticSubtreeCacheKey {
                     crate::paint::LayerTextControlMarkKind::Tab => 1,
                     crate::paint::LayerTextControlMarkKind::ParagraphEnd => 2,
                     crate::paint::LayerTextControlMarkKind::LineBreakEnd => 3,
+                    crate::paint::LayerTextControlMarkKind::Table => 4,
+                    crate::paint::LayerTextControlMarkKind::Picture => 5,
+                    crate::paint::LayerTextControlMarkKind::TextBox => 6,
+                    crate::paint::LayerTextControlMarkKind::Equation => 7,
+                    crate::paint::LayerTextControlMarkKind::Header => 8,
+                    crate::paint::LayerTextControlMarkKind::Footer => 9,
+                    crate::paint::LayerTextControlMarkKind::FootnoteArea => 10,
                 });
+                self.mix_bool(mark.text_wrap.is_some());
+                if let Some(text_wrap) = mark.text_wrap {
+                    self.mix_u8(match text_wrap {
+                        crate::model::shape::TextWrap::Square => 0,
+                        crate::model::shape::TextWrap::Tight => 1,
+                        crate::model::shape::TextWrap::Through => 2,
+                        crate::model::shape::TextWrap::TopAndBottom => 3,
+                        crate::model::shape::TextWrap::BehindText => 4,
+                        crate::model::shape::TextWrap::InFrontOfText => 5,
+                    });
+                }
                 self.mix_f64(mark.mark.x);
                 self.mix_f64(mark.mark.y);
                 self.mix_f64(mark.mark.font_size);
@@ -1486,6 +1504,13 @@ impl StaticSubtreeCacheKey {
             LayerTextControlMarkKind::Tab => 1,
             LayerTextControlMarkKind::ParagraphEnd => 2,
             LayerTextControlMarkKind::LineBreakEnd => 3,
+            LayerTextControlMarkKind::Table => 4,
+            LayerTextControlMarkKind::Picture => 5,
+            LayerTextControlMarkKind::TextBox => 6,
+            LayerTextControlMarkKind::Equation => 7,
+            LayerTextControlMarkKind::Header => 8,
+            LayerTextControlMarkKind::Footer => 9,
+            LayerTextControlMarkKind::FootnoteArea => 10,
         });
     }
 

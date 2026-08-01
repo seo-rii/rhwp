@@ -2,13 +2,38 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  allowsTextControlMark,
   containsOldHangulJamo,
+  isStructureControlMark,
   mapPuaBulletChar,
   mapPuaDisplayText,
   puaToDisplayText,
   splitIntoClusters,
   verticalPresentationBaseText,
 } from '../src/view/text-replay-utils.ts';
+
+test('structure control marks share the control-code visibility gate', () => {
+  const structureKinds = [
+    'table',
+    'picture',
+    'textBox',
+    'equation',
+    'header',
+    'footer',
+    'footnoteArea',
+  ] as const;
+
+  for (const kind of structureKinds) {
+    assert.equal(allowsTextControlMark(false, false, kind), false);
+    assert.equal(allowsTextControlMark(false, true, kind), true);
+    assert.equal(isStructureControlMark(kind), true);
+  }
+  for (const kind of ['space', 'tab', 'paragraphEnd', 'lineBreakEnd'] as const) {
+    assert.equal(isStructureControlMark(kind), false);
+  }
+  assert.equal(allowsTextControlMark(true, false, 'paragraphEnd'), true);
+  assert.equal(allowsTextControlMark(false, true, 'paragraphEnd'), false);
+});
 
 test('old-Hangul detection covers modern and extended jamo anywhere in a cluster', () => {
   assert.equal(containsOldHangulJamo('ᄒᆞᆫ'), true);

@@ -92,6 +92,7 @@ import {
 import {
   TEXT_CONTROL_MARK_FONT_FAMILY,
   containsOldHangulJamo,
+  isStructureControlMark,
   tabLeaderLineSegments,
   textDecorationEmphasisGeometry,
   textDecorationEmphasisSize,
@@ -930,7 +931,6 @@ export class Canvas2DLayerRenderer {
           return;
         }
         ctx.save();
-        ctx.fillStyle = '#4A90D9';
         for (const mark of op.controlMarks) {
           if (!allowsTextControlMark(
             this.currentShowParagraphMarks,
@@ -939,6 +939,7 @@ export class Canvas2DLayerRenderer {
           )) {
             continue;
           }
+          ctx.fillStyle = isStructureControlMark(mark.kind) ? '#CC3333' : '#4A90D9';
           this.setCanvasTextFont(ctx, TEXT_CONTROL_MARK_FONT_FAMILY, mark.fontSize, false, false);
           ctx.fillText(mark.text, originX + mark.x, originY + mark.y);
         }
@@ -1121,7 +1122,7 @@ export class Canvas2DLayerRenderer {
       return;
     }
     ctx.save();
-    ctx.fillStyle = '#4A90D9';
+    ctx.fillStyle = isStructureControlMark(op.mark.kind) ? '#CC3333' : '#4A90D9';
     this.setCanvasTextFont(ctx, TEXT_CONTROL_MARK_FONT_FAMILY, op.mark.fontSize, false, false);
     ctx.fillText(op.mark.text, op.bbox.x + op.mark.x, op.bbox.y + op.mark.y);
     ctx.restore();

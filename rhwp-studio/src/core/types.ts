@@ -189,6 +189,7 @@ export type LayerTreeFeature =
   | 'text.specialVisualOps'
   | 'text.charOverlapOp'
   | 'text.controlMarkOp'
+  | 'text.structureControlMarkOp'
   | 'text.tabLeaderOp'
   | 'text.decorationOp'
   | 'text.layout.shapedModern'
@@ -467,7 +468,18 @@ export interface LayerTabLeader {
 }
 
 export interface LayerTextControlMark {
-  kind: 'space' | 'tab' | 'paragraphEnd' | 'lineBreakEnd';
+  kind:
+    | 'space'
+    | 'tab'
+    | 'paragraphEnd'
+    | 'lineBreakEnd'
+    | 'table'
+    | 'picture'
+    | 'textBox'
+    | 'equation'
+    | 'header'
+    | 'footer'
+    | 'footnoteArea';
   text: string;
   x: number;
   y: number;
@@ -1195,6 +1207,7 @@ export interface LayerTextControlMarkOp {
   type: 'textControlMark';
   bbox: LayerBounds;
   source?: LayerTextSourceSpan;
+  wrap?: LayerTextWrap;
   mark: LayerTextControlMark;
 }
 
@@ -1283,6 +1296,14 @@ export interface LayerPathOp {
   transform: LayerTransform;
 }
 
+export type LayerTextWrap =
+  | 'square'
+  | 'tight'
+  | 'through'
+  | 'topAndBottom'
+  | 'behindText'
+  | 'inFrontOfText';
+
 export interface LayerImageOp {
   type: 'image';
   bbox: LayerBounds;
@@ -1290,7 +1311,7 @@ export interface LayerImageOp {
   base64?: string;
   /** Original linked-image path emitted for diagnostics before injected bytes are available. */
   externalPath?: string;
-  wrap?: 'square' | 'tight' | 'through' | 'topAndBottom' | 'behindText' | 'inFrontOfText';
+  wrap?: LayerTextWrap;
   fillMode?: string;
   effect?: 'realPic' | 'grayScale' | 'blackWhite' | 'pattern8x8';
   brightness?: number;
