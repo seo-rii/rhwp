@@ -17,6 +17,7 @@ use super::{
     TextStyle,
 };
 use crate::model::control::FormType;
+use crate::model::image::ImageEffect;
 use crate::model::shape::TextWrap;
 use crate::model::style::{ImageFillMode, UnderlineType};
 use crate::paint::{
@@ -1701,10 +1702,17 @@ impl SvgRenderer {
         }
         if let Some(image) = &background.image {
             if let Some(bytes) = resources.image_bytes(image.resource_id) {
-                let data_uri = svg_image_data_uri(bytes);
+                let (render_data, render_mime, render_effect, binary_preprocessed) =
+                    prepare_svg_image_effect_data(bytes, image.effect);
+                let data_uri = svg_image_data_uri_from_prepared(&render_data, render_mime);
+                let image_rendering_attr = if binary_preprocessed {
+                    " style=\"image-rendering:pixelated\""
+                } else {
+                    ""
+                };
                 let tone_filter_id =
                     self.ensure_brightness_contrast_filter(image.brightness, image.contrast);
-                let effect_filter_id = self.ensure_image_effect_filter(image.effect);
+                let effect_filter_id = self.ensure_image_effect_filter(render_effect);
                 let image_opacity = if image.opacity.is_finite() {
                     image.opacity.clamp(0.0, 1.0)
                 } else {
@@ -1725,27 +1733,55 @@ impl SvgRenderer {
                 match image.fill_mode {
                     ImageFillMode::FitToSize | ImageFillMode::Total | ImageFillMode::None => {
                         self.output.push_str(&format!(
-                            "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
+                            "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/>\n",
                             bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
                         ));
                     }
                     ImageFillMode::TileAll => {
-                        self.render_tiled_image(bytes, &data_uri, &bbox, true, true, None, None);
+                        self.render_tiled_image(
+                            &render_data,
+                            &data_uri,
+                            &bbox,
+                            true,
+                            true,
+                            None,
+                            None,
+                            image_rendering_attr,
+                        );
                     }
                     ImageFillMode::TileHorzTop | ImageFillMode::TileHorzBottom => {
-                        self.render_tiled_image(bytes, &data_uri, &bbox, true, false, None, None);
+                        self.render_tiled_image(
+                            &render_data,
+                            &data_uri,
+                            &bbox,
+                            true,
+                            false,
+                            None,
+                            None,
+                            image_rendering_attr,
+                        );
                     }
                     ImageFillMode::TileVertLeft | ImageFillMode::TileVertRight => {
-                        self.render_tiled_image(bytes, &data_uri, &bbox, false, true, None, None);
+                        self.render_tiled_image(
+                            &render_data,
+                            &data_uri,
+                            &bbox,
+                            false,
+                            true,
+                            None,
+                            None,
+                            image_rendering_attr,
+                        );
                     }
                     _ => {
                         self.render_positioned_image(
-                            bytes,
+                            &render_data,
                             &data_uri,
                             &bbox,
                             image.fill_mode,
                             None,
                             None,
+                            image_rendering_attr,
                         );
                     }
                 }
@@ -3064,8 +3100,15 @@ impl SvgRenderer {
             }
         };
 
+        let (render_data, render_mime, render_effect, binary_preprocessed) =
+            prepare_svg_image_effect_data(data, img.effect);
+        let image_rendering_attr = if binary_preprocessed {
+            " style=\"image-rendering:pixelated\""
+        } else {
+            ""
+        };
         let tone_filter_id = self.ensure_brightness_contrast_filter(img.brightness, img.contrast);
-        let effect_filter_id = self.ensure_image_effect_filter(img.effect);
+        let effect_filter_id = self.ensure_image_effect_filter(render_effect);
         if let Some(ref fid) = tone_filter_id {
             self.output
                 .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
@@ -3075,10 +3118,7 @@ impl SvgRenderer {
                 .push_str(&format!("<g filter=\"url(#{})\">\n", fid));
         }
 
-        let (render_data, render_mime) = prepare_svg_image_data(data);
-
-        let base64_data = base64::engine::general_purpose::STANDARD.encode(&*render_data);
-        let data_uri = format!("data:{};base64,{}", render_mime, base64_data);
+        let data_uri = svg_image_data_uri_from_prepared(&render_data, render_mime);
 
         let fill_mode = img.fill_mode.unwrap_or(ImageFillMode::FitToSize);
         let crop_viewbox = img.crop.and_then(|(cl, ct, cr, cb)| {
@@ -3101,6 +3141,24 @@ impl SvgRenderer {
                 None
             }
         });
+        let crop_viewbox = if binary_preprocessed {
+            crop_viewbox.and_then(|(src_x, src_y, src_w, src_h, img_w, img_h)| {
+                let left = src_x.floor().max(0.0);
+                let top = src_y.floor().max(0.0);
+                let right = (src_x + src_w).ceil().min(img_w);
+                let bottom = (src_y + src_h).ceil().min(img_h);
+                (right > left && bottom > top).then_some((
+                    left,
+                    top,
+                    right - left,
+                    bottom - top,
+                    img_w,
+                    img_h,
+                ))
+            })
+        } else {
+            crop_viewbox
+        };
 
         match fill_mode {
             ImageFillMode::FitToSize | ImageFillMode::Total => {
@@ -3109,14 +3167,14 @@ impl SvgRenderer {
                     // SVG: 중첩 svg + viewBox로 crop 영역만 표시
                     self.output.push_str(&format!(
                         "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\">\
-                        <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></svg>\n",
+                        <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/></svg>\n",
                         bbox.x, bbox.y, bbox.width, bbox.height,
                         src_x, src_y, src_w, src_h,
                         img_w, img_h, data_uri,
                     ));
                 } else {
                     self.output.push_str(&format!(
-                        "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
+                        "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/>\n",
                         bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
                     ));
                 }
@@ -3131,6 +3189,7 @@ impl SvgRenderer {
                     true,
                     img.original_size,
                     crop_viewbox,
+                    image_rendering_attr,
                 );
             }
             ImageFillMode::TileHorzTop | ImageFillMode::TileHorzBottom => {
@@ -3143,6 +3202,7 @@ impl SvgRenderer {
                     false,
                     img.original_size,
                     crop_viewbox,
+                    image_rendering_attr,
                 );
             }
             ImageFillMode::TileVertLeft | ImageFillMode::TileVertRight => {
@@ -3155,6 +3215,7 @@ impl SvgRenderer {
                     true,
                     img.original_size,
                     crop_viewbox,
+                    image_rendering_attr,
                 );
             }
             _ => {
@@ -3166,6 +3227,7 @@ impl SvgRenderer {
                     fill_mode,
                     img.original_size,
                     crop_viewbox,
+                    image_rendering_attr,
                 );
             }
         }
@@ -3262,6 +3324,7 @@ impl SvgRenderer {
         fill_mode: ImageFillMode,
         original_size: Option<(f64, f64)>,
         crop_viewbox: Option<(f64, f64, f64, f64, f64, f64)>,
+        image_rendering_attr: &str,
     ) {
         // 원본 크기: HWP shape_attr 기반(우선) 또는 이미지 픽셀 크기(폴백)
         let (img_width, img_height) = if let Some((ow, oh)) = original_size {
@@ -3284,7 +3347,7 @@ impl SvgRenderer {
                         _ => "xMidYMid meet",
                     };
                     self.output.push_str(&format!(
-                        "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"{}\" href=\"{}\"/>\n",
+                        "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"{}\"{image_rendering_attr} href=\"{}\"/>\n",
                         bbox.x, bbox.y, bbox.width, bbox.height, par, data_uri,
                     ));
                     return;
@@ -3327,12 +3390,12 @@ impl SvgRenderer {
         if let Some((src_x, src_y, src_w, src_h, natural_w, natural_h)) = crop_viewbox {
             self.output.push_str(&format!(
                 "<g clip-path=\"url(#{})\"><svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\">\
-                 <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></svg></g>\n",
+                 <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/></svg></g>\n",
                 clip_id, ix, iy, img_width, img_height, src_x, src_y, src_w, src_h, natural_w, natural_h, data_uri,
             ));
         } else {
             self.output.push_str(&format!(
-                "<g clip-path=\"url(#{})\"><image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></g>\n",
+                "<g clip-path=\"url(#{})\"><image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/></g>\n",
                 clip_id, ix, iy, img_width, img_height, data_uri,
             ));
         }
@@ -3348,6 +3411,7 @@ impl SvgRenderer {
         tile_v: bool,
         original_size: Option<(f64, f64)>,
         crop_viewbox: Option<(f64, f64, f64, f64, f64, f64)>,
+        image_rendering_attr: &str,
     ) {
         // 원본 크기: HWP shape_attr 기반(우선) 또는 이미지 픽셀 크기(폴백)
         let (img_width, img_height) = if let Some((ow, oh)) = original_size {
@@ -3358,7 +3422,7 @@ impl SvgRenderer {
                 None => {
                     // 크기 파싱 실패 시 전체 채우기로 폴백
                     self.output.push_str(&format!(
-                        "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>\n",
+                        "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/>\n",
                         bbox.x, bbox.y, bbox.width, bbox.height, data_uri,
                     ));
                     return;
@@ -3375,12 +3439,12 @@ impl SvgRenderer {
         {
             format!(
                 "<svg width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\" preserveAspectRatio=\"none\">\
-                 <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/></svg>",
+                 <image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/></svg>",
                 img_width, img_height, src_x, src_y, src_w, src_h, natural_w, natural_h, data_uri,
             )
         } else {
             format!(
-                "<image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\"/>",
+                "<image width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\"{image_rendering_attr} href=\"{}\"/>",
                 img_width, img_height, data_uri,
             )
         };
@@ -4479,10 +4543,35 @@ fn prepare_svg_image_data(data: &[u8]) -> (std::borrow::Cow<'_, [u8]>, &'static 
     (std::borrow::Cow::Borrowed(data), mime_type)
 }
 
+fn prepare_svg_image_effect_data(
+    data: &[u8],
+    effect: ImageEffect,
+) -> (std::borrow::Cow<'_, [u8]>, &'static str, ImageEffect, bool) {
+    let (render_data, render_mime) = prepare_svg_image_data(data);
+    if matches!(effect, ImageEffect::BlackWhite | ImageEffect::Pattern8x8) {
+        if let Some(png) = crate::renderer::image_effect::preprocess_binary_image_effect_bytes(
+            &render_data,
+            effect,
+        ) {
+            return (
+                std::borrow::Cow::Owned(png),
+                "image/png",
+                ImageEffect::RealPic,
+                true,
+            );
+        }
+    }
+    (render_data, render_mime, effect, false)
+}
+
+fn svg_image_data_uri_from_prepared(data: &[u8], mime_type: &str) -> String {
+    let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
+    format!("data:{mime_type};base64,{base64_data}")
+}
+
 fn svg_image_data_uri(data: &[u8]) -> String {
     let (render_data, render_mime) = prepare_svg_image_data(data);
-    let base64_data = base64::engine::general_purpose::STANDARD.encode(&*render_data);
-    format!("data:{};base64,{}", render_mime, base64_data)
+    svg_image_data_uri_from_prepared(&render_data, render_mime)
 }
 
 /// 이미지 데이터에서 MIME 타입 감지

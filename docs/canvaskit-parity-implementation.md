@@ -42,7 +42,7 @@ the broad Canvas2D utility module:
 
 | Shared concern | Native-ready module | CanvasKit use |
 | --- | --- | --- |
-| image effect pixels and crop preprocessing | `rhwp-studio/src/view/image-effect-pixels.ts` | resource cache and cropped effect replay |
+| image effect pixels and crop preprocessing | `rhwp-studio/src/view/image-effect-pixels.ts`; `src/renderer/image_effect.rs` | resource cache, native Skia, and SVG replay use one threshold/dither contract |
 | base64 payload decode | `rhwp-studio/src/core/base64.ts` | image resources and portable font-blob registration |
 | HWP text replay helpers and PUA projection helpers | `rhwp-studio/src/view/text-replay-utils.ts` | root `TextRun`, special text ops, control marks, overlap text |
 | fallback family chains and face-weight hints | `rhwp-studio/src/core/font-family-fallback.ts` | Canvas2D CSS font shorthand and CanvasKit family/style matching |
@@ -546,6 +546,17 @@ explicit unsupported diagnostic, and a targeted lifecycle/parity fixture.
 | text visual ops | CanvasKit text/path primitives using HWP-compatible positions | no CanvasKit text measurement authority in `hwpCompat` |
 | `GlyphRun` variants | exact font/face/instance replay only | selected/rejected diagnostics exact |
 | `GlyphOutline` payloads | feature-gated strict replay | shared payload family validator and unsupported fixture |
+
+`BlackWhite` and `Pattern8x8` are pixel contracts rather than approximate
+color filters. Canvas2D and the shared Rust helper use the same rounded luma,
+128 black/white threshold, ordered 8x8 Bayer matrix, source-image phase, and
+alpha preservation. Native Skia and layered SVG preprocess supported raster
+resources to PNG and replay the binary result with nearest-neighbor sampling.
+Binary crop replay uses the strict decoded-pixel subset covering the authored
+source rectangle (`floor(left/top)` through `ceil(right/bottom)`) so Bayer phase
+and nearest sampling stay aligned across CanvasKit, native Skia, and SVG.
+An encoded resource that cannot be decoded still follows the existing explicit
+filter/fallback path; that fallback is not treated as binary-effect parity.
 
 P2 does not require every unsupported branch to be fully replayed immediately.
 It does require every branch to be visible in diagnostics, with a deterministic

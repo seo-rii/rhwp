@@ -19,6 +19,7 @@ pub(crate) mod hancom_pua;
 pub mod height_measurer;
 pub mod html;
 pub(crate) mod image_crop;
+pub(crate) mod image_effect;
 pub(crate) mod image_header;
 pub(crate) mod image_resource;
 pub mod layer_renderer;

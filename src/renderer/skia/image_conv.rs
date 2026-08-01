@@ -54,12 +54,6 @@ pub struct ImageDrawDiagnostics {
     pub image_effect_preprocessed_bytes: usize,
 }
 
-const ORDERED_DITHER_8X8: [u8; 64] = [
-    0, 48, 12, 60, 3, 51, 15, 63, 32, 16, 44, 28, 35, 19, 47, 31, 8, 56, 4, 52, 11, 59, 7, 55, 40,
-    24, 36, 20, 43, 27, 39, 23, 2, 50, 14, 62, 1, 49, 13, 61, 34, 18, 46, 30, 33, 17, 45, 29, 10,
-    58, 6, 54, 9, 57, 5, 53, 42, 26, 38, 22, 41, 25, 37, 21,
-];
-
 #[cfg(test)]
 thread_local! {
     static FORCE_MANUAL_TILE_FALLBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -605,63 +599,11 @@ fn image_effect_filter(
 }
 
 pub(crate) fn preprocess_binary_image_effect(image: &Image, effect: ImageEffect) -> Option<Image> {
-    match effect {
-        ImageEffect::BlackWhite => blackwhite_threshold_image(image),
-        ImageEffect::Pattern8x8 => pattern8x8_dither_image(image),
-        _ => None,
-    }
-}
-
-fn ordered_dither_8x8_threshold(x: usize, y: usize) -> u8 {
-    let matrix = ORDERED_DITHER_8X8[(y & 7) * 8 + (x & 7)] as u16;
-    (((matrix * 2 + 1) * 255) / 128) as u8
-}
-
-fn luma_u8(red: u8, green: u8, blue: u8) -> u8 {
-    (red as f32 * 0.299 + green as f32 * 0.587 + blue as f32 * 0.114).round() as u8
-}
-
-fn premultiply_binary_channel(value: u8, alpha: u8) -> u8 {
-    ((u16::from(value) * u16::from(alpha) + 127) / 255) as u8
-}
-
-fn pattern8x8_dither_image(image: &Image) -> Option<Image> {
-    luma_preprocessed_image(image, |x, y, luma| {
-        if luma > ordered_dither_8x8_threshold(x, y) {
-            255
-        } else {
-            0
-        }
-    })
-}
-
-fn blackwhite_threshold_image(image: &Image) -> Option<Image> {
-    luma_preprocessed_image(image, |_, _, luma| if luma >= 128 { 255 } else { 0 })
-}
-
-fn luma_preprocessed_image(
-    image: &Image,
-    mut map_luma: impl FnMut(usize, usize, u8) -> u8,
-) -> Option<Image> {
     let encoded = image.encode(None, EncodedImageFormat::PNG, None)?;
-    let mut pixmap = tiny_skia::Pixmap::decode_png(encoded.as_bytes()).ok()?;
-    let width = pixmap.width() as usize;
-    for y in 0..pixmap.height() as usize {
-        for x in 0..width {
-            let index = y * width + x;
-            let pixel = pixmap.pixels()[index];
-            let luma = luma_u8(pixel.red(), pixel.green(), pixel.blue());
-            let value = map_luma(x, y, luma);
-            let premultiplied = premultiply_binary_channel(value, pixel.alpha());
-            pixmap.pixels_mut()[index] = tiny_skia::PremultipliedColorU8::from_rgba(
-                premultiplied,
-                premultiplied,
-                premultiplied,
-                pixel.alpha(),
-            )?;
-        }
-    }
-    let png = pixmap.encode_png().ok()?;
+    let png = crate::renderer::image_effect::preprocess_binary_image_effect_bytes(
+        encoded.as_bytes(),
+        effect,
+    )?;
     Image::from_encoded(Data::new_copy(&png))
 }
 
@@ -1375,7 +1317,7 @@ mod tests {
 
     #[test]
     fn pattern8x8_effect_preserves_full_image_phase_for_crop_offsets() {
-        let (fixture_luma, _) = pattern8x8_reference_fixture();
+        let (fixture_luma, expected) = pattern8x8_reference_fixture();
         let mut source = tiny_skia::Pixmap::new(16, 16).expect("source pixmap");
         for pixel in source.pixels_mut() {
             *pixel = tiny_skia::PremultipliedColorU8::from_rgba(
@@ -1388,7 +1330,8 @@ mod tests {
         }
         let png = source.encode_png().expect("source png");
         let image = decode_image_bytes(&png).expect("decode image");
-        let dithered = pattern8x8_dither_image(&image).expect("dithered image");
+        let dithered = preprocess_binary_image_effect(&image, ImageEffect::Pattern8x8)
+            .expect("dithered image");
         let encoded = dithered
             .encode(None, EncodedImageFormat::PNG, None)
             .expect("render png");
@@ -1399,12 +1342,7 @@ mod tests {
                 for x in 0..8usize {
                     let source_x = x + phase_x;
                     let source_y = y + phase_y;
-                    let expected =
-                        if fixture_luma > ordered_dither_8x8_threshold(source_x, source_y) {
-                            255
-                        } else {
-                            0
-                        };
+                    let expected = expected[source_y & 7][source_x & 7];
                     let pixel = pixmap.pixels()[source_y * 16 + source_x];
                     if expected == 0 {
                         assert!(
@@ -1671,10 +1609,10 @@ mod tests {
     #[test]
     fn blackwhite_effect_preserves_transparent_edge_alpha() {
         let mut source = tiny_skia::Pixmap::new(2, 1).expect("source pixmap");
-        source.pixels_mut()[0] =
-            tiny_skia::PremultipliedColorU8::from_rgba(32, 32, 32, 64).unwrap();
+        // Encode unpremultiplied luma 32 and 192 in tiny-skia's premultiplied storage.
+        source.pixels_mut()[0] = tiny_skia::PremultipliedColorU8::from_rgba(8, 8, 8, 64).unwrap();
         source.pixels_mut()[1] =
-            tiny_skia::PremultipliedColorU8::from_rgba(192, 192, 192, 192).unwrap();
+            tiny_skia::PremultipliedColorU8::from_rgba(145, 145, 145, 192).unwrap();
         let png = source.encode_png().expect("source png");
 
         let mut surface = surfaces::raster_n32_premul((2, 1)).expect("surface");

@@ -409,6 +409,51 @@ fn test_svg_layer_page_background_image_uses_fill_mode_and_effect() {
 }
 
 #[test]
+fn test_svg_layer_page_background_pattern8x8_embeds_preprocessed_png() {
+    let (prepared, mime, effect, binary_preprocessed) =
+        prepare_svg_image_effect_data(FIXTURE_PNG_1X1, ImageEffect::Pattern8x8);
+    assert_eq!(mime, "image/png");
+    assert_eq!(effect, ImageEffect::RealPic);
+    assert!(binary_preprocessed);
+    assert_ne!(&*prepared, FIXTURE_PNG_1X1);
+
+    let mut resources = ResourceArena::default();
+    let resource_id = resources.intern_image_bytes(FIXTURE_PNG_1X1);
+    let root = LayerNode::leaf(
+        BoundingBox::new(0.0, 0.0, 80.0, 60.0),
+        None,
+        vec![PaintOp::PageBackground {
+            bbox: BoundingBox::new(0.0, 0.0, 80.0, 60.0),
+            background: LayerPageBackgroundPaint {
+                background_color: None,
+                border_color: None,
+                border_width: 0.0,
+                gradient: None,
+                image: Some(LayerPageBackgroundImagePaint {
+                    resource_id,
+                    fill_mode: ImageFillMode::FitToSize,
+                    brightness: 0,
+                    contrast: 0,
+                    effect: ImageEffect::Pattern8x8,
+                    opacity: 1.0,
+                }),
+            },
+        }],
+    );
+    let tree = PageLayerTree::with_resources(80.0, 60.0, root, resources);
+    let mut renderer = SvgRenderer::new();
+    renderer.render_layer_tree(&tree);
+
+    let output = renderer.output();
+    assert!(output.contains("data:image/png;base64,"), "{output}");
+    assert!(
+        output.contains("style=\"image-rendering:pixelated\""),
+        "{output}"
+    );
+    assert!(!output.contains("rhwp-img-grayscale"), "{output}");
+}
+
+#[test]
 fn test_layer_svg_strict_glyph_outline_replaces_text_fallback() {
     let text_style = TextStyle {
         font_size: 12.0,
