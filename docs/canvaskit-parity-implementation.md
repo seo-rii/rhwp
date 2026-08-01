@@ -1560,8 +1560,8 @@ Fixture-ready lanes:
    payload fixtures that exercise lowering paths beyond those hand-authored
    contracts, one payload family at a time. `samples/hwpspec.hwp` now keeps the
    whole-page 16 by 13 BMP enlargement in the checked-in representative
-   manifest. Its image geometry and solid-ink mask match, while the remaining
-   Canvas2D/CanvasKit sampler delta is bounded to nine channel levels.
+   manifest. Its image geometry and flat-fill solid-ink metric match, while the
+   remaining Canvas2D/CanvasKit sampler delta is bounded to nine channel levels.
    CanvasKit `FilterMode.Linear` remains the closest native-ready sampler;
    `FilterMode.Nearest`, mipmaps, and tested cubic resamplers all increased the
    isolated image diff. This remains rasterizer classification, not evidence of
@@ -1956,7 +1956,11 @@ rasterization, such as the `pic-crop-01` crop-sampling budget. Text-heavy
 samples may set `maxDiffRatio: null` and rely on ink-mask / solid-ink raster
 budgets instead, matching the native-text sweep behavior where geometry and
 non-ink drift are the failure signals and glyph anti-aliasing deltas are
-classified separately. Samples with tiny Canvas2D replay baselines and stable
+classified separately. A solid-ink pixel must be inside both ink masks and have
+a locally flat 3 by 3 RGBA neighborhood in both captures. This still catches a
+wrong flat fill color, while text or stroke anti-aliasing over a colored shape
+does not become a false fill mismatch merely because the shape makes every
+nearby pixel non-white. Samples with tiny Canvas2D replay baselines and stable
 native dispatch/pixel parity may also carry scoped replay-performance budgets
 instead of loosening the global CanvasKit guard. `hwpspec.hwp` is now a
 checked-in example: a focused layer-tree probe found one 886 byte BMP decoded
