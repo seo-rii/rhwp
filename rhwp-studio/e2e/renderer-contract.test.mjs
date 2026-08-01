@@ -37,6 +37,7 @@ const layerTypesPath = path.join(studioRoot, 'src/core/types.ts');
 const layerCanvasUtilsPath = path.join(studioRoot, 'src/view/layer-canvas-utils.ts');
 const canvaskitParityPlanDocPath = path.join(repoRoot, 'docs/canvaskit-parity-implementation.md');
 const textIrV2DocPath = path.join(repoRoot, 'docs/text-ir-v2.md');
+const canvaskitRenderTestPath = path.join(studioRoot, 'e2e/canvaskit-render.test.mjs');
 const rendererBaselinePath = path.join(studioRoot, 'e2e/renderer-baseline.mjs');
 const rendererBaselineShardingPath = path.join(
   studioRoot,
@@ -76,6 +77,7 @@ const layerTypesSource = fs.readFileSync(layerTypesPath, 'utf8');
 const layerCanvasUtilsSource = fs.readFileSync(layerCanvasUtilsPath, 'utf8');
 const textIrV2DocSource = fs.readFileSync(textIrV2DocPath, 'utf8');
 const normalizedTextIrV2DocSource = textIrV2DocSource.replace(/\s+/g, ' ');
+const canvaskitRenderTestSource = fs.readFileSync(canvaskitRenderTestPath, 'utf8');
 const rendererBaselineSource = fs.readFileSync(rendererBaselinePath, 'utf8');
 const rendererBaselineShardingSource = fs.readFileSync(rendererBaselineShardingPath, 'utf8');
 const rendererBaselineNativeDiffSource = fs.readFileSync(rendererBaselineNativeDiffPath, 'utf8');
@@ -390,6 +392,26 @@ assertTokensInOrder(
   ],
   'studio e2e CI runner must report suite timeout after stopping the child process tree',
 );
+for (const requiredToken of [
+  'CanvasKit page-scoped diagnostic replay=',
+  'renderer.resetImageEffectDiagnostics?.()',
+  'pageRenderer.renderPage(0, pageInfo, canvas',
+  'getCanvasKitReplayPlanWithProfile?.(',
+  'replaySummary?.hiddenOverlayViolations',
+  'replaySummary?.directRequiredItems',
+  'replaySummary?.unsupportedItems',
+  'classifyCanvasKitPageRuntimeConditions(replayPlan',
+  'classifyCanvasKitVariantAlignment(',
+  'runtimeDiagnostics.images?.failures',
+  'runtimeDiagnostics.textReplay?.failures',
+  'runtimeDiagnostics.textV2Validation',
+]) {
+  assert.equal(
+    canvaskitRenderTestSource.includes(requiredToken),
+    true,
+    `CanvasKit corpus sweep must hard-gate replay plan/runtime alignment: ${requiredToken}`,
+  );
+}
 
 compareCaseContract('renderNode', 'LayerNode dispatch');
 compareCaseContract('renderOp', 'LayerPaintOp dispatch');

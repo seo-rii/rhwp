@@ -1904,7 +1904,12 @@ is the strongest local software-surface parity check. The E2E runner reserves
 suite at 30 minutes; `RHWP_E2E_CI_TIMEOUT_MS` remains the explicit override for
 either scope. The full timeout covers both CanvasKit modes and the lifecycle
 suite rather than terminating the development server midway through the second
-half of the corpus. This check still does not
+half of the corpus. Every CanvasKit corpus capture resets replay diagnostics,
+renders page zero explicitly, and then reads the profile-aware Rust replay plan
+and browser renderer diagnostics for that same page. The sweep rejects hidden
+overlay, direct-required, unsupported, runtime image/image-effect/text/pattern,
+text-v2 validation, undeclared runtime-condition, and text-variant alignment
+failures before accepting pixel parity. This check still does not
 prove a real WebGL or WebGPU surface when the local browser/CanvasKit build
 falls back to software. The manual `Full Renderer Sweep`
 workflow captures the representative multi-profile baseline, then captures

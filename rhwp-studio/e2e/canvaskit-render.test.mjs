@@ -19,6 +19,11 @@ import {
   screenshotCanvas,
   setTestCase,
 } from './helpers.mjs';
+import {
+  classifyCanvasKitPageRuntimeConditions,
+  classifyCanvasKitVariantAlignment,
+  textVariantReportKey,
+} from './runtime-condition-alignment.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RHWP_ROOT = path.resolve(__dirname, '..', '..');
@@ -355,7 +360,44 @@ async function renderScenario(page, backend, caseInfo) {
   const activeBackend = await page.evaluate(() => window.__renderBackend ?? window.__canvasView?.getRenderBackend?.());
   assert(activeBackend === backend || (backend === 'canvas2d' && activeBackend === 'canvas'), `${caseInfo.name} backend=${backend}`);
 
-  const layerSummary = await page.evaluate(() => {
+  if (backend === 'canvaskit') {
+    const diagnosticReplay = await page.evaluate(async () => {
+      const canvasView = window.__canvasView;
+      const pageRenderer = canvasView?.pageRenderer;
+      const renderer = pageRenderer?.canvaskitRenderer;
+      const wasm = window.__wasm;
+      const canvas = document.querySelector('#scroll-container canvas') ?? document.querySelector('canvas');
+      if (!pageRenderer || typeof pageRenderer.renderPage !== 'function') {
+        return { error: 'page renderer is not exposed' };
+      }
+      if (!renderer) {
+        return { error: 'CanvasKit renderer is not exposed' };
+      }
+      if (!canvas) {
+        return { error: 'page canvas is not mounted' };
+      }
+      const pageInfo = wasm?.getPageInfo?.(0) ?? null;
+      if (!pageInfo || !pageInfo.width || !pageInfo.height) {
+        return { error: 'page info is unavailable' };
+      }
+
+      renderer.resetImageEffectDiagnostics?.();
+      renderer.resetImageDiagnostics?.();
+      renderer.resetTextReplayDiagnostics?.();
+      renderer.resetEquationReplayDiagnostics?.();
+      renderer.resetPatternDiagnostics?.();
+      pageRenderer.cancelAll?.();
+      pageRenderer.renderPage(0, pageInfo, canvas, canvas.width / pageInfo.width);
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      return { pageIndex: 0 };
+    });
+    assert(
+      diagnosticReplay?.error == null,
+      `${caseInfo.name} CanvasKit page-scoped diagnostic replay=${JSON.stringify(diagnosticReplay)}`,
+    );
+  }
+
+  const layerSummary = await page.evaluate(({ captureBackend, captureMode, captureProfile }) => {
     const profile = window.__renderProfile ?? 'screen';
     const statsBefore = window.__wasm?.getLayerResourceStats?.() ?? null;
     const tree = window.__wasm?.getPageLayerTree?.(0, profile);
@@ -374,6 +416,32 @@ async function renderScenario(page, backend, caseInfo) {
     const layerTreeExportStats = window.__wasm?.getLayerTreeExportStatsSnapshot?.() ?? null;
     const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
     const surfaceDiagnostics = renderer?.getSurfaceDiagnostics?.() ?? null;
+    let replayPlan = null;
+    let replayPlanError = null;
+    let runtimeDiagnostics = null;
+    if (captureBackend === 'canvaskit') {
+      try {
+        const rawPlan = window.__wasm?.getCanvasKitReplayPlanWithProfile?.(
+          0,
+          captureMode,
+          captureProfile,
+        );
+        if (rawPlan == null) {
+          throw new Error('profile-aware CanvasKit replay plan API is unavailable');
+        }
+        replayPlan = typeof rawPlan === 'string' ? JSON.parse(rawPlan) : rawPlan;
+      } catch (error) {
+        replayPlanError = error instanceof Error ? error.message : String(error);
+      }
+      runtimeDiagnostics = {
+        imageEffects: renderer?.getImageEffectDiagnostics?.() ?? null,
+        images: renderer?.getImageDiagnostics?.() ?? null,
+        textReplay: renderer?.getTextReplayDiagnostics?.() ?? null,
+        patterns: renderer?.getPatternDiagnostics?.() ?? null,
+        textVariants: renderer?.getTextVariantSelectionDiagnostics?.() ?? [],
+        textV2Validation: renderer?.getTextV2ValidationDiagnostics?.() ?? [],
+      };
+    }
     let opCount = 0;
     let nativeTextRunCount = 0;
     let nativeImageCount = 0;
@@ -460,6 +528,9 @@ async function renderScenario(page, backend, caseInfo) {
       nativeEquationCount,
       nativeFormObjectCount,
       surfaceDiagnostics,
+      replayPlan,
+      replayPlanError,
+      runtimeDiagnostics,
       layerTreeExportStats,
       layerResourceStats: statsAfterSecond,
       firstTreeImagePayloadsImported: statsBefore && statsAfterFirst
@@ -481,6 +552,10 @@ async function renderScenario(page, backend, caseInfo) {
         ? statsAfterSecond.svgPayloadsOmitted - statsAfterFirst.svgPayloadsOmitted
         : null,
     };
+  }, {
+    captureBackend: backend,
+    captureMode: CANVASKIT_MODE,
+    captureProfile: RENDER_PROFILE,
   });
   const layerTreeExported = !!layerSummary && !layerSummary.error && layerSummary.opCount > 0;
   assert(
@@ -580,6 +655,118 @@ async function renderScenario(page, backend, caseInfo) {
         `${caseInfo.name} CanvasKit WebGPU fallback records failure=${JSON.stringify(surfaceDiagnostics)}`,
       );
     }
+
+    const replayPlan = layerSummary?.replayPlan;
+    const replaySummary = replayPlan?.summary;
+    const runtimeDiagnostics = layerSummary?.runtimeDiagnostics ?? {};
+    assert(
+      layerSummary?.replayPlanError === null,
+      `${caseInfo.name} CanvasKit replay plan available=${layerSummary?.replayPlanError ?? 'ok'}`,
+    );
+    assert(
+      (replaySummary?.totalItems ?? 0) > 0,
+      `${caseInfo.name} CanvasKit replay plan non-empty=${JSON.stringify(replaySummary)}`,
+    );
+    assert(
+      replayPlan?.renderProfile === RENDER_PROFILE,
+      `${caseInfo.name} CanvasKit replay plan profile=${replayPlan?.renderProfile}`,
+    );
+    assert(
+      replayPlan?.hiddenCanvas2dOverlayAllowed === false
+        && replayPlan?.directReplayRequired === true,
+      `${caseInfo.name} CanvasKit direct replay contract=${JSON.stringify({
+        hiddenCanvas2dOverlayAllowed: replayPlan?.hiddenCanvas2dOverlayAllowed,
+        directReplayRequired: replayPlan?.directReplayRequired,
+      })}`,
+    );
+    assert(
+      (replaySummary?.hiddenOverlayViolations ?? 0) === 0
+        && (replaySummary?.compatOverlayItems ?? 0) === 0
+        && (replaySummary?.directRequiredItems ?? 0) === 0
+        && (replaySummary?.unsupportedItems ?? 0) === 0,
+      `${caseInfo.name} CanvasKit replay plan has no unresolved items=${JSON.stringify(replaySummary)}`,
+    );
+    assert(
+      (runtimeDiagnostics.images?.failures?.length ?? 0) === 0,
+      `${caseInfo.name} CanvasKit image replay failures=${JSON.stringify(runtimeDiagnostics.images?.failures ?? [])}`,
+    );
+    assert(
+      (runtimeDiagnostics.imageEffects?.preprocessFailures ?? 0) === 0
+        && (runtimeDiagnostics.imageEffects?.fallbackToOriginal ?? 0) === 0,
+      `${caseInfo.name} CanvasKit image-effect replay diagnostics=${JSON.stringify(runtimeDiagnostics.imageEffects)}`,
+    );
+    assert(
+      (runtimeDiagnostics.textReplay?.failures?.length ?? 0) === 0,
+      `${caseInfo.name} CanvasKit text replay failures=${JSON.stringify(runtimeDiagnostics.textReplay?.failures ?? [])}`,
+    );
+    assert(
+      (runtimeDiagnostics.patterns?.surfaceFailures ?? 0) === 0,
+      `${caseInfo.name} CanvasKit pattern replay diagnostics=${JSON.stringify(runtimeDiagnostics.patterns)}`,
+    );
+    assert(
+      (runtimeDiagnostics.textV2Validation?.length ?? 0) === 0,
+      `${caseInfo.name} CanvasKit text v2 validation=${JSON.stringify(runtimeDiagnostics.textV2Validation ?? [])}`,
+    );
+
+    const pageRuntimeConditions = classifyCanvasKitPageRuntimeConditions(replayPlan, {
+      imageEffects: { canvaskit: runtimeDiagnostics.imageEffects },
+      patternDiagnostics: runtimeDiagnostics.patterns,
+    });
+    const undeclaredRuntimeConditions = pageRuntimeConditions.filter(
+      (alignment) => alignment.status === 'undeclared',
+    );
+    assert(
+      undeclaredRuntimeConditions.length === 0,
+      `${caseInfo.name} CanvasKit runtime conditions declared=${JSON.stringify(undeclaredRuntimeConditions)}`,
+    );
+
+    const runtimeVariantReports = Array.isArray(runtimeDiagnostics.textVariants)
+      ? runtimeDiagnostics.textVariants
+      : [];
+    const runtimeSelections = new Map();
+    const runtimeVariantConflicts = [];
+    for (const report of runtimeVariantReports) {
+      const reportKey = textVariantReportKey(report);
+      const existing = runtimeSelections.get(reportKey);
+      if (!existing) {
+        runtimeSelections.set(reportKey, report);
+      } else if (JSON.stringify(existing) !== JSON.stringify(report)) {
+        runtimeVariantConflicts.push({ reportKey, first: existing, repeated: report });
+      }
+    }
+    assert(
+      runtimeVariantConflicts.length === 0,
+      `${caseInfo.name} CanvasKit runtime variant reports consistent=${JSON.stringify(runtimeVariantConflicts)}`,
+    );
+
+    const planVariantReports = Array.isArray(replayPlan?.textVariants)
+      ? replayPlan.textVariants
+      : [];
+    const planSelections = new Map(
+      planVariantReports.map((report) => [textVariantReportKey(report), report]),
+    );
+    assert(
+      planSelections.size === planVariantReports.length,
+      `${caseInfo.name} CanvasKit replay plan variant groups unique`,
+    );
+    const variantMismatches = [];
+    for (const reportKey of new Set([...planSelections.keys(), ...runtimeSelections.keys()])) {
+      const alignment = classifyCanvasKitVariantAlignment(
+        planSelections.get(reportKey),
+        runtimeSelections.get(reportKey),
+      );
+      if (!alignment.aligned) {
+        variantMismatches.push({ reportKey, ...alignment });
+      }
+    }
+    assert(
+      variantMismatches.length === 0,
+      `${caseInfo.name} CanvasKit plan/runtime variants aligned=${JSON.stringify(variantMismatches)}`,
+    );
+    assert(
+      true,
+      `${caseInfo.name} CanvasKit replay inventory direct=${replaySummary?.directItems ?? 0}, textFallback=${replaySummary?.textFallbackItems ?? 0}, runtimeConditions=${pageRuntimeConditions.length}, variants=${planSelections.size}`,
+    );
   }
 
   const screenshotName = backend === 'canvaskit'
