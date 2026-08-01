@@ -12,7 +12,7 @@ use crate::paint::paint_op::{
     TextLegacyVisualState, TextLegacyVisuals, TextProjectionKind,
 };
 use crate::paint::profile::RenderProfile;
-use crate::paint::resources::ResourceArena;
+use crate::paint::resources::{ImageResourceId, ResourceArena};
 use crate::paint::{lower_font_native_glyph_sidecars, EmbeddedFontFace, TextFontSlot};
 use crate::renderer::layout::{compute_char_positions, compute_source_aligned_display_positions};
 use crate::renderer::render_tree::{
@@ -725,7 +725,7 @@ impl LayerBuilder {
                     if let Some((_mime, bytes)) =
                         crate::renderer::svg_fragment::decode_base64_data_url(data_url)
                     {
-                        let resource_id = self.resources.intern_image_bytes(&bytes);
+                        let resource_id = self.intern_replay_image_bytes(&bytes);
                         return Some(self.build_paint_node(
                             node,
                             PaintOp::Image {
@@ -1003,7 +1003,7 @@ impl LayerBuilder {
             image: background.image.as_ref().map(|image| {
                 let (brightness, contrast) = image.display_brightness_contrast();
                 LayerPageBackgroundImagePaint {
-                    resource_id: self.resources.intern_image_bytes(&image.data),
+                    resource_id: self.intern_replay_image_bytes(&image.data),
                     fill_mode: image.fill_mode,
                     brightness,
                     contrast,
@@ -1079,7 +1079,7 @@ impl LayerBuilder {
             resource_id: image
                 .data
                 .as_deref()
-                .map(|bytes| self.resources.intern_image_bytes(bytes)),
+                .map(|bytes| self.intern_replay_image_bytes(bytes)),
             external_path: image.external_path.clone(),
             text_wrap: image.text_wrap,
             fill_mode: image.fill_mode,
@@ -1091,6 +1091,11 @@ impl LayerBuilder {
             effect: image.effect,
             transform: image.transform,
         }
+    }
+
+    fn intern_replay_image_bytes(&mut self, bytes: &[u8]) -> ImageResourceId {
+        let normalized = crate::renderer::image_resource::normalize_replay_image_bytes(bytes);
+        self.resources.intern_image_bytes(&normalized)
     }
 
     fn build_form_object_paint(
@@ -3388,6 +3393,42 @@ mod tests {
             },
             other => panic!("expected root group, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn normalizes_pcx_picture_resources_before_interning() {
+        let mut pcx = vec![0_u8; 128];
+        pcx[0] = 0x0a;
+        pcx[1] = 5;
+        pcx[2] = 1;
+        pcx[3] = 1;
+        pcx[8..10].copy_from_slice(&7_u16.to_le_bytes());
+        pcx[16..19].copy_from_slice(&[0, 0, 0]);
+        pcx[19..22].copy_from_slice(&[255, 255, 255]);
+        pcx[65] = 1;
+        pcx[66..68].copy_from_slice(&2_u16.to_le_bytes());
+        pcx.extend_from_slice(&[0xaa, 0]);
+
+        let mut image = ImageNode::new(1, None);
+        image.data = Some(pcx);
+        let mut tree = PageRenderTree::new(0, 100.0, 100.0);
+        tree.root.children.push(RenderNode::new(
+            30,
+            RenderNodeType::Image(image),
+            BoundingBox::new(0.0, 0.0, 8.0, 1.0),
+        ));
+
+        let mut builder = LayerBuilder::new(RenderProfile::Screen);
+        let layer_tree = builder.build(&tree);
+        let (_, bytes) = layer_tree
+            .resources
+            .image_resources()
+            .next()
+            .expect("normalized image resource");
+        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+        let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+            .expect("normalized PNG");
+        assert_eq!((decoded.width(), decoded.height()), (8, 1));
     }
 
     #[test]

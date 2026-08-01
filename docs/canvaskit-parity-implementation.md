@@ -1976,3 +1976,12 @@ construction proof, TTC/OTC corpus widening beyond the checked-in exact-face
 fixture, and explicitly gated shapedModern, cross-scope, or `MixedPerGlyph`
 changes. None requires a hidden Canvas2D overlay or a new direct paint-operation
 fallback.
+
+Embedded PCX picture data is normalized by the layer-tree producer into a PNG
+resource before resource interning. The decoder bounds dimensions and decoded
+bytes, validates PCX RLE scanlines and indexed/true-color layouts, and leaves
+malformed or unsupported input unmodified so normal replay admission still
+fails closed. This is a producer boundary rather than a CanvasKit-only browser
+recovery: Canvas2D, CanvasKit, SVG/native consumers, cache keys, crops, and image
+effects all see the same portable bytes and decoded dimensions while the source
+document retains its original BinData for round trip.

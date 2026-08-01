@@ -20,6 +20,7 @@ pub mod height_measurer;
 pub mod html;
 pub(crate) mod image_crop;
 pub(crate) mod image_header;
+pub(crate) mod image_resource;
 pub mod layer_renderer;
 pub mod layout;
 pub mod page_layout;
