@@ -3786,8 +3786,15 @@ mod tests {
         );
         let json_known_features = Array::from(&prop(&json_value, "knownFeatures"));
         let js_known_features = Array::from(&prop(&js_value, "knownFeatures"));
-        assert_eq!(json_known_features.length(), 26);
+        assert_eq!(json_known_features.length(), 27);
         assert_eq!(json_known_features.length(), js_known_features.length());
+        for index in 0..json_known_features.length() {
+            assert_eq!(
+                string_value(&json_known_features.get(index)),
+                string_value(&js_known_features.get(index)),
+                "knownFeatures[{index}]"
+            );
+        }
         let json_required_features = Array::from(&prop(&json_value, "requiredFeatures"));
         let js_required_features = Array::from(&prop(&js_value, "requiredFeatures"));
         assert_eq!(json_required_features.length(), 0);
