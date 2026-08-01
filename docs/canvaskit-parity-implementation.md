@@ -1904,7 +1904,15 @@ is the strongest local software-surface parity check. The E2E runner reserves
 suite at 30 minutes; `RHWP_E2E_CI_TIMEOUT_MS` remains the explicit override for
 either scope. The full timeout covers both CanvasKit modes and the lifecycle
 suite rather than terminating the development server midway through the second
-half of the corpus. Every CanvasKit corpus capture resets replay diagnostics,
+half of the corpus. The per-case performance guard keeps its existing global
+and sample-scoped budgets, but treats a first failure as an outlier candidate.
+The runner restarts Chromium and independently remeasures the Canvas2D and
+CanvasKit pair once; only the fresh measurement is used for the final assertion
+and aggregate row. Both the rejected attempt and the accepted or failing retry
+remain structured metrics. This requires a reproducible second failure without
+weakening a budget after a long software-surface sweep. Set
+`RHWP_CANVASKIT_PERFORMANCE_GUARD_RETRIES=0` to disable the retry when auditing
+raw performance noise. Every CanvasKit corpus capture resets replay diagnostics,
 renders page zero explicitly, and then reads the profile-aware Rust replay plan
 and browser renderer diagnostics for that same page. The sweep rejects hidden
 overlay, direct-required, unsupported, runtime image/image-effect/text/pattern,
@@ -1950,16 +1958,19 @@ mirrors target-backend/profile summaries, applied per-comparison thresholds, and
 the worst browser comparisons so large sweeps do not require scanning every
 screenshot row first.
 
-The latest local closure pass completed `1392` Rust library tests with no
+The latest local closure pass completed `1419` Rust library tests with no
 failures and one ignored test, rebuilt the web WASM package and Studio, and
-passed the renderer contract guard. A one-iteration representative browser
-sweep covered eleven full-page and two feature cases in both CanvasKit modes:
-all direct-dispatch probes passed, no hidden overlay was present, and no
-direct-required or unsupported replay item remained. Its report-only aggregate
-average was `62.277 ms` for CanvasKit and `73.354 ms` for Canvas2D
-(`0.849` ratio); one iteration is intentionally not a performance gate. After
-the mixed-axis master-page port, the focused `2010-01-06` browser sweep also
-passed, reporting `88.2 ms` for CanvasKit and `233.1 ms` for Canvas2D.
+passed the renderer contract guard. The full browser corpus covered 139 HWP
+pages plus two feature cases. CanvasKit `compat` and `default` each reported 141
+aligned replay-plan/runtime selections, no hidden overlay, no direct-required
+or unsupported item, and no runtime image, image-effect, text, pattern, or
+text-v2 validation failure. The completed `default` sweep averaged `29.079 ms`
+for CanvasKit and `46.096 ms` for Canvas2D (`0.631` ratio) across all 141 rows;
+capture averages were `114.629 ms` and `115.229 ms`, respectively. The latest
+`compat` sweep reached the same functional closure and averaged `26.348 ms`
+for CanvasKit versus `42.099 ms` for Canvas2D (`0.626` ratio), while two
+non-reproducing software-surface performance outliers motivated the independent
+retry policy above rather than wider corpus budgets.
 
 Viewport layout recalculation also reapplies the current virtual-scroll
 coordinates to every active page canvas. This positioning contract is shared

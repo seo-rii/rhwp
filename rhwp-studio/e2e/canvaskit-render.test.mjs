@@ -24,6 +24,10 @@ import {
   classifyCanvasKitVariantAlignment,
   textVariantReportKey,
 } from './runtime-condition-alignment.mjs';
+import {
+  evaluateReplayPerformanceGuard,
+  performanceGuardMessage,
+} from './performance-guard.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RHWP_ROOT = path.resolve(__dirname, '..', '..');
@@ -150,6 +154,13 @@ const PERFORMANCE_GUARD = {
   ),
 };
 const STRICT_PERFORMANCE_GUARD_ENABLED = PERFORMANCE_ITERATIONS >= 2;
+const PERFORMANCE_GUARD_RETRIES_RAW = Number.parseInt(
+  process.env.RHWP_CANVASKIT_PERFORMANCE_GUARD_RETRIES ?? '1',
+  10,
+);
+const PERFORMANCE_GUARD_RETRIES = Number.isFinite(PERFORMANCE_GUARD_RETRIES_RAW)
+  ? Math.max(0, PERFORMANCE_GUARD_RETRIES_RAW)
+  : 1;
 const FULL_SWEEP_BROWSER_RECYCLE_INTERVAL_RAW = Number.parseInt(
   process.env.RHWP_CANVASKIT_SWEEP_BROWSER_RECYCLE_INTERVAL ?? '30',
   10,
@@ -311,39 +322,11 @@ function buildPerformanceComparison(scope, caseInfo, baseline, canvaskit) {
   };
 }
 
-function performanceGuardMessage(label, value, maxValue, guard, details) {
-  if (guard !== 'checked') {
-    return `${label} guard skipped (${guard}, value=${value}, budget=${maxValue}, ${details})`;
-  }
-  return `${label}=${value} <= ${maxValue} (${details})`;
-}
-
 function assertPerformanceGuard(row) {
-  const maxReplayRatio = row.maxCanvaskitReplayRatio ?? PERFORMANCE_GUARD.maxReplayRatio;
-  const maxReplayAvgMs = row.maxCanvaskitReplayAvgMs ?? PERFORMANCE_GUARD.maxReplayAvgMs;
-  assert(
-    row.replayRatio === null
-      || row.replayRatioGuard === 'skipped-single-iteration'
-      || row.replayRatioGuard === 'skipped-small-baseline'
-      || row.replayRatio <= maxReplayRatio,
-    performanceGuardMessage(
-      `${row.case} CanvasKit replay ratio`,
-      row.replayRatio,
-      maxReplayRatio,
-      row.replayRatioGuard,
-      `canvas2dBaseline=${row.canvas2dReplayAvgMs}ms, minBaseline=${PERFORMANCE_GUARD.minReplayRatioBaselineMs}ms`,
-    ),
-  );
-  assert(
-    row.replayRatioGuard === 'skipped-single-iteration' || row.canvaskitReplayAvgMs <= maxReplayAvgMs,
-    performanceGuardMessage(
-      `${row.case} CanvasKit replay avg`,
-      `${row.canvaskitReplayAvgMs}ms`,
-      `${maxReplayAvgMs}ms`,
-      row.replayRatioGuard,
-      'absolute replay guard',
-    ),
-  );
+  const evaluation = evaluateReplayPerformanceGuard(row, PERFORMANCE_GUARD);
+  for (const check of evaluation.checks) {
+    assert(check.passed, check.message);
+  }
 }
 
 async function renderScenario(page, backend, caseInfo) {
@@ -902,6 +885,44 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
     }
   }
 
+  async function resolvePerformanceComparison(scope, caseInfo, initialBaseline, initialCanvaskit) {
+    let baseline = initialBaseline;
+    let canvaskit = initialCanvaskit;
+    let comparison = buildPerformanceComparison(scope, caseInfo, baseline, canvaskit);
+    let evaluation = evaluateReplayPerformanceGuard(comparison, PERFORMANCE_GUARD);
+    const initialFailures = evaluation.checks
+      .filter((check) => !check.passed)
+      .map((check) => check.kind);
+    let attempt = 1;
+
+    while (!evaluation.passed && attempt <= PERFORMANCE_GUARD_RETRIES) {
+      recordMetric(`${caseInfo.name} renderer performance rejected attempt`, {
+        ...comparison,
+        performanceGuardAttempt: attempt,
+        performanceGuardFailures: evaluation.checks
+          .filter((check) => !check.passed)
+          .map((check) => check.kind),
+      });
+      await recreatePage(
+        caseInfo.name,
+        `performance guard outlier on attempt ${attempt}; independent retry`,
+        { restartBrowser: true },
+      );
+      baseline = await renderScenario(page, 'canvas2d', caseInfo);
+      canvaskit = await renderScenario(page, 'canvaskit', caseInfo);
+      comparison = buildPerformanceComparison(scope, caseInfo, baseline, canvaskit);
+      evaluation = evaluateReplayPerformanceGuard(comparison, PERFORMANCE_GUARD);
+      attempt += 1;
+    }
+
+    return {
+      ...comparison,
+      performanceGuardAttempts: attempt,
+      performanceGuardRetried: attempt > 1,
+      performanceGuardInitialFailures: initialFailures,
+    };
+  }
+
   try {
   console.log(`[scope=${SAMPLE_SCOPE}] full-page cases=${FULL_PAGE_CASES.length}, feature cases=${FILTERED_FEATURE_CASES.length}, mode=${CANVASKIT_MODE}, profile=${RENDER_PROFILE}, filter=${SAMPLE_FILTER_PATTERN || 'none'}`);
   const performanceRows = [];
@@ -980,7 +1001,12 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
         diff.passed,
         `${caseInfo.name} screenshot exact=${diff.exactDiffPixels} (${diff.exactDiffRatio.toFixed(4)}), tolerant=${diff.rawTolerantDiffPixels} (${diff.rawTolerantDiffRatio.toFixed(4)}), ink_mask=${diff.rawInkMaskDiffPixels} (${diff.rawInkMaskDiffRatio.toFixed(4)}), non_ink=${diff.rawNonInkDiffPixels} (${diff.rawNonInkDiffRatio.toFixed(4)}), solid_ink=${diff.rawSolidInkDiffPixels} (${diff.rawSolidInkDiffRatio.toFixed(4)}), pass_metric=${diff.passMetric}, tolerant_budget=${diff.tolerantBudgetPassed}, ink_mask_budget=${diff.inkMaskBudgetPassed}, non_ink_budget=${diff.nonInkBudgetPassed}, solid_ink_budget=${diff.solidInkBudgetPassed}, raster_only_budget=${diff.rasterOnlyBudgetPassed}, ignored_channel_delta<=${diff.ignoreChannelDelta}, max_channel_delta=${diff.maxChannelDelta}`,
       );
-      const performanceComparison = buildPerformanceComparison('full-page', caseInfo, baseline, canvaskit);
+      const performanceComparison = await resolvePerformanceComparison(
+        'full-page',
+        caseInfo,
+        baseline,
+        canvaskit,
+      );
       performanceRows.push(performanceComparison);
       recordMetric(`${caseInfo.name} renderer performance`, performanceComparison);
       assertPerformanceGuard(performanceComparison);
@@ -1003,7 +1029,12 @@ runTest('CanvasKit 렌더 비교', async ({ page: initialPage, browser }) => {
       console.log(`[${caseInfo.name}] CanvasKit 기능 렌더...`);
       const canvaskit = await renderScenario(page, 'canvaskit', caseInfo);
       const nativeTextActive = (canvaskit.layerSummary?.nativeTextRunCount ?? 0) > 0;
-      const performanceComparison = buildPerformanceComparison('feature', caseInfo, baseline, canvaskit);
+      const performanceComparison = await resolvePerformanceComparison(
+        'feature',
+        caseInfo,
+        baseline,
+        canvaskit,
+      );
       performanceRows.push(performanceComparison);
       recordMetric(`${caseInfo.name} feature renderer performance`, performanceComparison);
       assertPerformanceGuard(performanceComparison);
