@@ -365,7 +365,9 @@ function assertRustPlanAndCanvaskitRuntimeContract({
 
 for (const requiredToken of [
   'RHWP_E2E_CI_TIMEOUT_MS',
-  'defaultSuiteTimeoutMs = 30 * 60 * 1000',
+  "defaultSuiteTimeoutMs = process.env.RHWP_RENDER_SAMPLE_SCOPE === 'full'",
+  '? 120 * 60 * 1000',
+  ': 30 * 60 * 1000',
   'detached: process.platform !== \'win32\'',
   'process.kill(-child.pid, signal)',
   'SIGKILL',

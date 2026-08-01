@@ -1899,7 +1899,12 @@ That command exercises the checked-in browser corpus in both CanvasKit
 uses the three-iteration replay performance guard from
 `canvaskit-render.test.mjs`; local one-iteration full sweeps are still useful as
 report-first triage, but they do not exercise the same CI performance guard. It
-is the strongest local software-surface parity check, but it still does not
+is the strongest local software-surface parity check. The E2E runner reserves
+120 minutes for `RHWP_RENDER_SAMPLE_SCOPE=full` and keeps the representative
+suite at 30 minutes; `RHWP_E2E_CI_TIMEOUT_MS` remains the explicit override for
+either scope. The full timeout covers both CanvasKit modes and the lifecycle
+suite rather than terminating the development server midway through the second
+half of the corpus. This check still does not
 prove a real WebGL or WebGPU surface when the local browser/CanvasKit build
 falls back to software. The manual `Full Renderer Sweep`
 workflow captures the representative multi-profile baseline, then captures

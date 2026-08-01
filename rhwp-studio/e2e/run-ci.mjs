@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 const studioRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const preferredPort = Number(process.env.VITE_PORT || '7700');
-const defaultSuiteTimeoutMs = 30 * 60 * 1000;
+const defaultSuiteTimeoutMs = process.env.RHWP_RENDER_SAMPLE_SCOPE === 'full'
+  ? 120 * 60 * 1000
+  : 30 * 60 * 1000;
 const suiteTimeoutMs = (() => {
   const parsed = Number.parseInt(process.env.RHWP_E2E_CI_TIMEOUT_MS ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultSuiteTimeoutMs;
