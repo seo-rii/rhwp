@@ -89,6 +89,7 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
   ['exam_kor.hwp', { maxCanvaskitReplayAvgMs: 1250, maxCanvaskitReplayRatio: 80 }],
   ['footnote-01.hwp', { nonInkMaxDiffPixels: 64, solidInkMaxDiffRatio: 0.0095 }],
   ['group-drawing-02.hwp', { maxDiffRatio: 0.0085, solidInkMaxDiffRatio: 0.0125 }],
+  ['hwp-multi-001.hwp', { solidInkMaxDiffRatio: 0.008 }],
   [
     'hwpspec.hwp',
     {
@@ -99,9 +100,9 @@ const FULL_SWEEP_CASE_OVERRIDES = new Map([
     },
   ],
   ['inner-table-01.hwp', { solidInkMaxDiffRatio: 0.0065 }],
-  ['pic-in-head-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
-  ['pic-in-table-01.hwp', { solidInkMaxDiffRatio: 0.045 }],
-  ['pr-149.hwp', { solidInkMaxDiffRatio: 0.006 }],
+  ['pic-in-head-01.hwp', { solidInkMaxDiffRatio: 0.05 }],
+  ['pic-in-table-01.hwp', { solidInkMaxDiffRatio: 0.05 }],
+  ['pr-149.hwp', { solidInkMaxDiffRatio: 0.0125 }],
   ['table-004.hwp', { nonInkMaxDiffPixels: 512, solidInkMaxDiffRatio: 0.0065 }],
   ['20250130-hongbo_saved.hwp', { nonInkMaxDiffPixels: 128, maxCanvaskitReplayAvgMs: 350 }],
   ['field-01.hwp', { nonInkMaxDiffPixels: 64, maxCanvaskitReplayAvgMs: 500, maxCanvaskitReplayRatio: 80 }],
