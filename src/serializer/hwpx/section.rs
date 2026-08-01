@@ -74,9 +74,9 @@ pub fn write_section(
         // 템플릿에서 TEXT_SLOT 이 있던 자리 바로 앞의 <hp:run charPrIDRef="0"> 패턴.
         let first_run_cs = first_run_char_shape_id(p);
         let new_run = format!(r#"<hp:run charPrIDRef="{}">"#, first_run_cs);
-        let replacement = format!("{}{}", new_run, &first_t);
+        let replacement = format!("{}{}", new_run, first_t);
         // 이미 first_t 는 out 에 들어갔으므로 그 직전의 <hp:run charPrIDRef="0"> 만 변경
-        let anchor = format!("{}{}", r#"<hp:run charPrIDRef="0">"#, &first_t);
+        let anchor = format!("{}{}", r#"<hp:run charPrIDRef="0">"#, first_t);
         if out.contains(&anchor) {
             out = out.replacen(&anchor, &replacement, 1);
         }

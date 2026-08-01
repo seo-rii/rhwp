@@ -1530,7 +1530,7 @@ fn dump_controls(args: &[String]) {
                 if ps.head_type != rhwp::model::style::HeadType::None {
                     println!("       head={:?} level={} num_id={} attr1=0x{:08X} attr2=0x{:08X} raw_extra={:?}",
                         ps.head_type, ps.para_level, ps.numbering_id, ps.attr1, ps.attr2,
-                        &para.raw_header_extra);
+                        para.raw_header_extra);
                 }
                 {
                     let td_id = ps.tab_def_id;
