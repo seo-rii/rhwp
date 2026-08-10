@@ -321,6 +321,20 @@ branch already carries CanvasKit/native Skia parity work that is ahead of
 work. Import only small, contract-relevant commits when they close a current
 CanvasKit parity gap or provide a fixture needed by one of the gates below.
 
+The 2026-08-10 follow-up audit checked `upstream/main` at `2dced7bfe` and
+`origin/render-p42` at `9138cf3a0`. The P42 fail-closed change `c80b6b6eb`
+rejects synthetic styles, bidi metadata, and non-horizontal writing modes
+because that narrower branch does not yet prove them. It is intentionally not
+cherry-picked wholesale: this branch already has native and browser pixel
+proof for bidi-split, vertical-upright, and vertical-sideways strict
+`GlyphRun` replay. Instead, the uncovered font-instance mismatch is fixed at
+the shared contract boundary. `FontInstanceKey.sizePx` is authoritative in
+both native Skia and CanvasKit, and `syntheticBold`/`syntheticItalic` are
+materialized through Skia font embolden/skew state in both backends. Native
+font-state assertions and CanvasKit raster/fallback-suppression fixtures pin
+that behavior. `MixedPerGlyph` and public glyph-transform emission remain
+feature-gated until their separate cluster-transform proof exists.
+
 The latest contract audit used `upstream/devel` at `2f281d67f`. Its page-extent
 rounding, old-Hangul shaping, page-background tone/opacity, PUA/font-metric, and
 resource-prefetch identity changes are already represented here by equivalent
