@@ -3458,6 +3458,27 @@ runTest('Renderer lifecycle', async ({ page }) => {
     const selectionDiagnostics = renderResult.textVariantSelectionDiagnostics;
     const renderedStatus = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(tree.root.ops[2], tree.fontResources);
 
+    const syntheticStyleReports = {};
+    for (const [name, field] of [
+      ['bold', 'syntheticBold'],
+      ['italic', 'syntheticItalic'],
+    ]) {
+      const syntheticTree = structuredClone(tree);
+      const syntheticOp = glyphOp(syntheticTree);
+      syntheticOp.variant.equivalenceGroup = `glyph-fixture-synthetic-${name}`;
+      syntheticTree.root.ops[1].variant.equivalenceGroup = `glyph-fixture-synthetic-${name}`;
+      syntheticOp.shapeKey.fontInstance[field] = true;
+      const syntheticRenderResult = renderTreeWithDiagnostics(syntheticTree);
+      syntheticStyleReports[name] = {
+        status: canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+          syntheticOp,
+          syntheticTree.fontResources,
+        ),
+        png: syntheticRenderResult.png,
+        selectionDiagnostics: syntheticRenderResult.textVariantSelectionDiagnostics,
+      };
+    }
+
     const unsupportedEffectTree = structuredClone(tree);
     unsupportedEffectTree.root.ops[2].paintStyle = {
       ...unsupportedEffectTree.root.ops[2].paintStyle,
@@ -3839,6 +3860,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       status,
       renderedStatus,
       png,
+      syntheticStyleReports,
       unsupportedStatus,
       unsupportedEffectReasons,
       defaultRatioStatus,
@@ -3936,6 +3958,28 @@ runTest('Renderer lifecycle', async ({ page }) => {
       && selectedReport?.fontVerification?.effectSupported === true,
     `CanvasKit records selected GlyphRun variant=${JSON.stringify(selectedReport)}`,
   );
+  for (const name of ['bold', 'italic']) {
+    const syntheticReport = portableGlyphRunProbe.syntheticStyleReports?.[name];
+    const syntheticSelected = syntheticReport?.selectionDiagnostics?.find(
+      (report) => report.equivalenceGroup === `glyph-fixture-synthetic-${name}`,
+    );
+    const fallbackPixels = syntheticReport?.png
+      ? countPixels(
+          syntheticReport.png,
+          (pixel) => pixel.alpha > 32 && pixel.red > 160 && pixel.green < 120 && pixel.blue < 120,
+        )
+      : Number.POSITIVE_INFINITY;
+    assert(
+      syntheticReport?.status?.replayable === true
+        && syntheticSelected?.selectedVariantId === 'glyphRun'
+        && syntheticSelected?.selectedReason === 'glyphRunStrictEligible',
+      `CanvasKit synthetic ${name} GlyphRun remains strict replayable=${JSON.stringify(syntheticReport)}`,
+    );
+    assert(
+      syntheticReport?.png !== portableGlyphRunProbe.png && fallbackPixels < 5,
+      `CanvasKit synthetic ${name} changes glyph ink and suppresses TextRun fallback pixels=${fallbackPixels}`,
+    );
+  }
   const colorGlyphReport = portableGlyphRunProbe.colorGlyphReport;
   const colorGlyphRedPixels = colorGlyphReport?.png
     ? countPixels(

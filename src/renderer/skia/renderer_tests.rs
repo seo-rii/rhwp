@@ -1,6 +1,6 @@
 use super::{
-    make_font, raster_dimension, SkiaLayerRenderer, MAX_STATIC_PICTURE_CACHE_BYTES,
-    MAX_STATIC_PICTURE_CACHE_ENTRIES,
+    make_font, native_skia_glyph_run_font, raster_dimension, SkiaLayerRenderer,
+    MAX_STATIC_PICTURE_CACHE_BYTES, MAX_STATIC_PICTURE_CACHE_ENTRIES,
 };
 use crate::model::image::ImageEffect;
 use crate::model::style::UnderlineType;
@@ -6951,6 +6951,53 @@ fn native_skia_replays_all_parts_of_selected_glyph_variant_set() {
     assert!(
         bounds.max_x > 70 && bounds.max_x < 110,
         "native Skia should draw all selected GlyphRun parts and suppress the right-side TextRun fallback, got {bounds:?}"
+    );
+}
+
+#[test]
+fn native_skia_applies_strict_glyph_run_font_instance() {
+    let renderer = SkiaLayerRenderer::new();
+    let style = TextStyle {
+        font_family: "sans-serif".to_string(),
+        font_size: 32.0,
+        ..Default::default()
+    };
+    let glyph_id = make_font(&style, &renderer.font_mgr, "A")
+        .text_to_glyphs_vec("A")
+        .into_iter()
+        .next()
+        .expect("test font should map A to a glyph");
+    let mut tree = glyph_variant_test_tree(&[glyph_id], GlyphRunReplayEligibility::Portable);
+    let run = if let LayerNodeKind::Leaf { ops, .. } = &mut tree.root.kind {
+        ops.iter_mut()
+            .find_map(|op| match op {
+                PaintOp::GlyphRun { run, .. } => {
+                    run.shape_key.font_instance.size_px = 27.0;
+                    run.shape_key.font_instance.synthetic_bold = true;
+                    run.shape_key.font_instance.synthetic_italic = true;
+                    Some(run.clone())
+                }
+                _ => None,
+            })
+            .expect("glyph variant test tree should contain a GlyphRun")
+    } else {
+        panic!("glyph variant test tree should use a leaf root")
+    };
+
+    let font = native_skia_glyph_run_font(&run, &tree.resources, &renderer.font_mgr)
+        .expect("strict GlyphRun font instance should resolve");
+    assert_eq!(font.size(), 27.0);
+    assert!(font.is_embolden());
+    assert!((font.skew_x() + 0.25).abs() < f32::EPSILON);
+
+    let png = renderer
+        .render_png(&tree)
+        .expect("synthetic strict GlyphRun render");
+    let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("png decode");
+    let bounds = alpha_bounds(&pixmap).expect("synthetic strict GlyphRun ink");
+    assert!(
+        bounds.max_x < 100,
+        "native Skia should select the synthetic strict GlyphRun and suppress its TextRun fallback, got {bounds:?}"
     );
 }
 

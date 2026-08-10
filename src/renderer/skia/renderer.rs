@@ -561,16 +561,24 @@ fn native_skia_glyph_run_font(
     resources: &ResourceArena,
     font_mgr: &FontMgr,
 ) -> Option<Font> {
+    let instance = &run.shape_key.font_instance;
+    let font_size = if instance.size_px.is_finite() && instance.size_px > 0.0 {
+        instance.size_px as f32
+    } else if run.paint_style.font_size.is_finite() && run.paint_style.font_size > 0.0 {
+        run.paint_style.font_size as f32
+    } else {
+        12.0
+    };
     let font_resources = resources.font_resources();
     let face = font_resources
         .faces
         .iter()
-        .find(|face| face.id == run.shape_key.font_instance.face_key)?;
+        .find(|face| face.id == instance.face_key)?;
     let blob = font_resources
         .blobs
         .iter()
         .find(|blob| blob.id == face.blob_key);
-    if face.face_index == 0 && run.shape_key.font_instance.variations.is_empty() {
+    let mut font = if face.face_index == 0 && instance.variations.is_empty() {
         if let Some(blob) = blob {
             if matches!(
                 native_skia_font_blob_bytes(resources, blob),
@@ -579,34 +587,42 @@ fn native_skia_glyph_run_font(
                 let (typeface, _) =
                     native_skia_exact_typeface_for_glyph_run(run, resources, font_mgr, face, blob)
                         .ok()?;
-                let font_size = if run.paint_style.font_size > 0.0 {
-                    run.paint_style.font_size as f32
-                } else {
-                    12.0
+                Font::from_typeface(typeface, Some(font_size))
+            } else {
+                let font_style = crate::renderer::TextStyle {
+                    font_family: run.paint_style.font_family.clone(),
+                    font_size: f64::from(font_size),
+                    color: run.paint_style.color,
+                    bold: run.paint_style.bold,
+                    italic: run.paint_style.italic,
+                    ..Default::default()
                 };
-                return Some(Font::from_typeface(typeface, Some(font_size)));
+                make_font(&font_style, font_mgr, "A")
             }
+        } else {
+            let font_style = crate::renderer::TextStyle {
+                font_family: run.paint_style.font_family.clone(),
+                font_size: f64::from(font_size),
+                color: run.paint_style.color,
+                bold: run.paint_style.bold,
+                italic: run.paint_style.italic,
+                ..Default::default()
+            };
+            make_font(&font_style, font_mgr, "A")
         }
-        let font_style = crate::renderer::TextStyle {
-            font_family: run.paint_style.font_family.clone(),
-            font_size: run.paint_style.font_size,
-            color: run.paint_style.color,
-            bold: run.paint_style.bold,
-            italic: run.paint_style.italic,
-            ..Default::default()
-        };
-        return Some(make_font(&font_style, font_mgr, "A"));
-    }
-
-    let blob = blob?;
-    let (typeface, _) =
-        native_skia_exact_typeface_for_glyph_run(run, resources, font_mgr, face, blob).ok()?;
-    let font_size = if run.paint_style.font_size > 0.0 {
-        run.paint_style.font_size as f32
     } else {
-        12.0
+        let blob = blob?;
+        let (typeface, _) =
+            native_skia_exact_typeface_for_glyph_run(run, resources, font_mgr, face, blob).ok()?;
+        Font::from_typeface(typeface, Some(font_size))
     };
-    Some(Font::from_typeface(typeface, Some(font_size)))
+    font.set_embolden(instance.synthetic_bold);
+    font.set_skew_x(if instance.synthetic_italic {
+        -0.25
+    } else {
+        0.0
+    });
+    Some(font)
 }
 
 fn affine_is_finite(transform: &LayerAffineTransform) -> bool {
