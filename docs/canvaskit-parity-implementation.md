@@ -776,11 +776,25 @@ The working order is:
    proof. `ResourceArena` font blobs, glyph ids, sidecar selection diagnostics,
    bitmap/SVG/color glyph payloads, and fallback-free profiles must not be
    widened until the corresponding proof fixtures exist.
-   Finite baseline placement and paint-style eligibility are identical in the
-   Rust replay plan and browser runtime. The shared paint projection carries
-   tab leaders explicitly so strict glyph variants cannot silently omit them;
-   superscript and subscript remain ineligible for fill-only outlines until
-   their transformed geometry is canonical.
+   Strict `GlyphRun` admission is shared by producer lowering, the v2 strict
+   writer, Rust replay planning, native Skia, and the CanvasKit browser runtime.
+   Runs fail closed before font resolution when they are empty, exceed 4,096
+   glyphs/positions/advances/clusters, have mismatched glyph geometry counts,
+   contain values outside the finite f32 range, use a non-positive or greater
+   than 4,096 px font instance, or disagree with the shape key's direction or
+   writing mode. These cases use the same deterministic diagnostics across
+   backends: `emptyGlyphRun`, `glyphRunTooLarge`,
+   `glyphPositionCountMismatch`, `glyphAdvanceCountMismatch`,
+   `positionNotFinite`, `advanceNotFinite`, `placementNotFinite`,
+   `fontInstanceInvalid`, and `glyphRunMetadataMismatch`. Synthetic style,
+   proved bidi splits, and proved upright/sideways vertical runs remain eligible
+   when their payload metadata agrees; the bounded contract does not close
+   those previously verified paths.
+   Paint-style eligibility is likewise identical in the Rust replay plan and
+   browser runtime. The shared paint projection carries tab leaders explicitly
+   so strict glyph variants cannot silently omit them; superscript and
+   subscript remain ineligible for fill-only outlines until their transformed
+   geometry is canonical.
    The proved single-face CanvasKit `GlyphRun` subset includes fill, finite
    offset shadow, the current binary outline pass, and emboss/engrave relief
    passes. Rust lowering, replay planning, the browser font registry, and
