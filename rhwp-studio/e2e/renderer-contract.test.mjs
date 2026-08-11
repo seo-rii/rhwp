@@ -2410,10 +2410,30 @@ assertTokensInOrder(
   ],
   'CanvasKit GlyphRun replay must keep range and variation gates while admitting only extractable collection faces',
 );
+for (const requiredToken of [
+  'run.glyphIds.length > MAX_STRICT_GLYPHS_PER_RUN',
+  "this.glyphRunReplayFailure(run, 'glyphRunTooLarge')",
+  "this.glyphRunReplayFailure(run, 'glyphPositionCountMismatch')",
+  "this.glyphRunReplayFailure(run, 'glyphAdvanceCountMismatch')",
+  'Math.abs(point.x) > MAX_FLOAT32',
+  "this.glyphRunReplayFailure(run, 'positionNotFinite')",
+  "this.glyphRunReplayFailure(run, 'advanceNotFinite')",
+  'run.placement.baselineY',
+  "this.glyphRunReplayFailure(run, 'placementNotFinite')",
+  'instance.sizePx > MAX_STRICT_GLYPH_FONT_SIZE_PX',
+  "this.glyphRunReplayFailure(run, 'fontInstanceInvalid')",
+  'run.direction !== run.shapeKey.direction',
+  'run.writingMode !== run.shapeKey.writingMode',
+  "this.glyphRunReplayFailure(run, 'glyphRunMetadataMismatch')",
+]) {
+  assert(
+    canvaskitGlyphRunReplayStatusBlock.includes(requiredToken),
+    `CanvasKit GlyphRun eligibility must preserve the bounded Rust payload contract: ${requiredToken}`,
+  );
+}
 assert(
-  canvaskitGlyphRunReplayStatusBlock.includes('Number.isFinite(run.placement.baselineY)')
-    && canvaskitUnsupportedGlyphRunPaintBlock.includes('style.tabLeaders?.length'),
-  'CanvasKit GlyphRun eligibility must match Rust finite-baseline and tab-leader gates',
+  canvaskitUnsupportedGlyphRunPaintBlock.includes('style.tabLeaders?.length'),
+  'CanvasKit GlyphRun eligibility must preserve the Rust tab-leader paint gate',
 );
 assertTokensInOrder(
   canvaskitUnsupportedGlyphRunPaintBlock,
