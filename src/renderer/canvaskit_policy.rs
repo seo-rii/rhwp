@@ -2037,15 +2037,10 @@ fn canvaskit_glyph_run_replay_status(
     run: &LayerGlyphRunPaint,
     resources: &ResourceArena,
 ) -> VariantReplayStatus {
-    if run.glyph_ids.is_empty()
-        || run.glyph_ids.len() != run.positions.len()
-        || run
-            .advances
-            .as_ref()
-            .is_some_and(|advances| advances.len() != run.glyph_ids.len())
-        || run.glyph_transforms.is_some()
-        || run.orientation == GlyphRunOrientation::MixedPerGlyph
-    {
+    if let Some(error) = run.strict_payload_contract_error() {
+        return VariantReplayStatus::rejected(error.into());
+    }
+    if run.glyph_transforms.is_some() || run.orientation == GlyphRunOrientation::MixedPerGlyph {
         return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
     }
     match run.diagnostics.replay_eligibility {
@@ -2080,7 +2075,7 @@ fn canvaskit_glyph_run_replay_status(
         return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
     }
     if run.diagnostics.quality == TextVariantQuality::PositionAdjusted {
-        let tolerance = 0.5_f64.min(0.25_f64.max(run.paint_style.font_size * 0.005));
+        let tolerance = 0.5_f64.min(0.25_f64.max(run.shape_key.font_instance.size_px * 0.005));
         if !run.diagnostics.max_residual_after_adjustment_px.is_finite()
             || run.diagnostics.max_residual_after_adjustment_px > tolerance
         {
@@ -2117,25 +2112,6 @@ fn canvaskit_glyph_run_replay_status(
     };
     if !blob.portability.is_self_contained_replayable() {
         return VariantReplayStatus::rejected(VariantRejectReason::FontNotPortable);
-    }
-    let transform = run.placement.run_to_page;
-    if ![
-        transform.a,
-        transform.b,
-        transform.c,
-        transform.d,
-        transform.e,
-        transform.f,
-        run.placement.baseline_y,
-    ]
-    .into_iter()
-    .all(f64::is_finite)
-        || !run
-            .positions
-            .iter()
-            .all(|position| position.x.is_finite() && position.y.is_finite())
-    {
-        return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
     }
     if run
         .glyph_ids
@@ -4920,23 +4896,94 @@ mod tests {
         nonfinite_baseline.placement.baseline_y = f64::INFINITY;
         let mut nonfinite_position = glyph_run(face_key, Vec::new());
         nonfinite_position.positions[0].x = f64::NEG_INFINITY;
+        let mut float32_overflow_position = nonfinite_position.clone();
+        float32_overflow_position.positions[0].x = f32::MAX as f64 * 2.0;
+        let mut nonfinite_advance = nonfinite_position.clone();
+        nonfinite_advance.positions[0].x = 0.0;
+        nonfinite_advance.advances = Some(vec![LayerVector {
+            dx: f64::NAN,
+            dy: 0.0,
+        }]);
+        let mut invalid_font_instance = nonfinite_advance.clone();
+        invalid_font_instance.advances = None;
+        invalid_font_instance.shape_key.font_instance.size_px = 0.0;
+        let mut direction_mismatch = invalid_font_instance.clone();
+        direction_mismatch.shape_key.font_instance.size_px = 12.0;
+        direction_mismatch.direction = TextDirection::Rtl;
+        let mut writing_mode_mismatch = direction_mismatch.clone();
+        writing_mode_mismatch.direction = TextDirection::Ltr;
+        writing_mode_mismatch.writing_mode = WritingMode::VerticalRl;
+        let mut oversized = writing_mode_mismatch.clone();
+        oversized.writing_mode = WritingMode::HorizontalTb;
+        oversized.glyph_ids = vec![1; 4097];
+        oversized.positions = vec![LayerPoint { x: 0.0, y: 0.0 }; 4097];
 
-        for (case_name, run) in [
-            ("empty-glyphs", empty_glyphs),
-            ("mismatched-positions", mismatched_positions),
-            ("mismatched-advances", mismatched_advances),
-            ("nonfinite-transform", nonfinite_transform),
-            ("nonfinite-baseline", nonfinite_baseline),
-            ("nonfinite-position", nonfinite_position),
+        for (case_name, run, expected_reason) in [
+            (
+                "empty-glyphs",
+                empty_glyphs,
+                VariantRejectReason::EmptyGlyphRun,
+            ),
+            (
+                "mismatched-positions",
+                mismatched_positions,
+                VariantRejectReason::GlyphPositionCountMismatch,
+            ),
+            (
+                "mismatched-advances",
+                mismatched_advances,
+                VariantRejectReason::GlyphAdvanceCountMismatch,
+            ),
+            (
+                "nonfinite-transform",
+                nonfinite_transform,
+                VariantRejectReason::PlacementNotFinite,
+            ),
+            (
+                "nonfinite-baseline",
+                nonfinite_baseline,
+                VariantRejectReason::PlacementNotFinite,
+            ),
+            (
+                "nonfinite-position",
+                nonfinite_position,
+                VariantRejectReason::PositionNotFinite,
+            ),
+            (
+                "float32-overflow-position",
+                float32_overflow_position,
+                VariantRejectReason::PositionNotFinite,
+            ),
+            (
+                "nonfinite-advance",
+                nonfinite_advance,
+                VariantRejectReason::AdvanceNotFinite,
+            ),
+            (
+                "invalid-font-instance",
+                invalid_font_instance,
+                VariantRejectReason::FontInstanceInvalid,
+            ),
+            (
+                "direction-mismatch",
+                direction_mismatch,
+                VariantRejectReason::GlyphRunMetadataMismatch,
+            ),
+            (
+                "writing-mode-mismatch",
+                writing_mode_mismatch,
+                VariantRejectReason::GlyphRunMetadataMismatch,
+            ),
+            (
+                "oversized",
+                oversized,
+                VariantRejectReason::GlyphRunTooLarge,
+            ),
         ] {
             let status = canvaskit_glyph_run_replay_status(&run, &resources);
 
             assert!(!status.replayable, "{case_name}");
-            assert_eq!(
-                status.reason,
-                Some(VariantRejectReason::VariantUnsupported),
-                "{case_name}"
-            );
+            assert_eq!(status.reason, Some(expected_reason), "{case_name}");
             assert!(
                 status.font_verification.is_none(),
                 "malformed geometry should not look like a font verification failure for {case_name}"

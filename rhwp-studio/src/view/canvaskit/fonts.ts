@@ -63,6 +63,9 @@ const MEASURED_HFT_LAYER_FAMILIES = new Set([
   '한양견고딕',
   '휴먼명조',
 ]);
+const MAX_STRICT_GLYPHS_PER_RUN = 4096;
+const MAX_STRICT_GLYPH_FONT_SIZE_PX = 4096;
+const MAX_FLOAT32 = 3.4028234663852886e38;
 
 const SANS_ALIASES = [
   'Noto Sans KR',
@@ -396,6 +399,57 @@ export class CanvasKitFontRegistry {
     run: LayerGlyphRunOp,
     fontResources: LayerFontResources | undefined,
   ): CanvasKitGlyphRunReplayStatus {
+    if (!run.glyphIds.length) {
+      return this.glyphRunReplayFailure(run, 'emptyGlyphRun');
+    }
+    if (run.glyphIds.length > MAX_STRICT_GLYPHS_PER_RUN
+      || run.positions.length > MAX_STRICT_GLYPHS_PER_RUN
+      || (run.advances?.length ?? 0) > MAX_STRICT_GLYPHS_PER_RUN
+      || run.clusters.length > MAX_STRICT_GLYPHS_PER_RUN) {
+      return this.glyphRunReplayFailure(run, 'glyphRunTooLarge');
+    }
+    if (run.glyphIds.length !== run.positions.length) {
+      return this.glyphRunReplayFailure(run, 'glyphPositionCountMismatch');
+    }
+    if (run.advances && run.advances.length !== run.glyphIds.length) {
+      return this.glyphRunReplayFailure(run, 'glyphAdvanceCountMismatch');
+    }
+    for (const point of run.positions) {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)
+        || Math.abs(point.x) > MAX_FLOAT32 || Math.abs(point.y) > MAX_FLOAT32) {
+        return this.glyphRunReplayFailure(run, 'positionNotFinite');
+      }
+    }
+    for (const advance of run.advances ?? []) {
+      if (!Number.isFinite(advance.dx) || !Number.isFinite(advance.dy)
+        || Math.abs(advance.dx) > MAX_FLOAT32 || Math.abs(advance.dy) > MAX_FLOAT32) {
+        return this.glyphRunReplayFailure(run, 'advanceNotFinite');
+      }
+    }
+    const transform = run.placement.runToPage;
+    if (![
+      transform.a,
+      transform.b,
+      transform.c,
+      transform.d,
+      transform.e,
+      transform.f,
+      run.placement.baselineY,
+    ].every((value) => typeof value === 'number'
+      && Number.isFinite(value)
+      && Math.abs(value) <= MAX_FLOAT32)) {
+      return this.glyphRunReplayFailure(run, 'placementNotFinite');
+    }
+    const instance = run.shapeKey.fontInstance;
+    if (!Number.isFinite(instance.sizePx)
+      || instance.sizePx <= 0
+      || instance.sizePx > MAX_STRICT_GLYPH_FONT_SIZE_PX) {
+      return this.glyphRunReplayFailure(run, 'fontInstanceInvalid');
+    }
+    if (run.direction !== run.shapeKey.direction
+      || run.writingMode !== run.shapeKey.writingMode) {
+      return this.glyphRunReplayFailure(run, 'glyphRunMetadataMismatch');
+    }
     if (run.diagnostics.replayEligibility !== 'portable'
       && run.diagnostics.replayEligibility !== 'conditionalExternalFont') {
       return this.glyphRunReplayFailure(run, 'nonPortableGlyphRun');
@@ -405,8 +459,7 @@ export class CanvasKitFontRegistry {
       return this.glyphRunReplayFailure(run, 'qualityNotStrictEligible');
     }
     if (run.diagnostics.quality === 'positionAdjusted') {
-      const fontSize = Number.isFinite(run.paintStyle.fontSize) ? run.paintStyle.fontSize : 0;
-      const tolerance = Math.min(0.5, Math.max(0.25, fontSize * 0.005));
+      const tolerance = Math.min(0.5, Math.max(0.25, instance.sizePx * 0.005));
       if (!Number.isFinite(run.diagnostics.maxResidualAfterAdjustmentPx)
         || run.diagnostics.maxResidualAfterAdjustmentPx > tolerance) {
         return this.glyphRunReplayFailure(run, 'positionAdjustedResidualTooHigh');
@@ -424,35 +477,10 @@ export class CanvasKitFontRegistry {
     if (run.orientation === 'mixedPerGlyph' || run.glyphTransforms?.length) {
       return this.glyphRunReplayFailure(run, 'mixedGlyphTransformsUnsupported');
     }
-    if (!run.glyphIds.length || run.glyphIds.length !== run.positions.length) {
-      return this.glyphRunReplayFailure(run, 'glyphPositionLengthMismatch');
-    }
-    if (run.advances && run.advances.length !== run.glyphIds.length) {
-      return this.glyphRunReplayFailure(run, 'glyphAdvanceLengthMismatch');
-    }
     for (const glyphId of run.glyphIds) {
       if (!Number.isInteger(glyphId) || glyphId <= 0 || glyphId > 0xffff) {
         return this.glyphRunReplayFailure(run, 'glyphIdOutOfRange');
       }
-    }
-    for (const point of run.positions) {
-      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-        return this.glyphRunReplayFailure(run, 'nonFiniteGlyphPosition');
-      }
-    }
-    if (!Number.isFinite(run.placement.baselineY)) {
-      return this.glyphRunReplayFailure(run, 'nonFiniteGlyphBaseline');
-    }
-    const transform = run.placement.runToPage;
-    if (
-      !Number.isFinite(transform.a)
-      || !Number.isFinite(transform.b)
-      || !Number.isFinite(transform.c)
-      || !Number.isFinite(transform.d)
-      || !Number.isFinite(transform.e)
-      || !Number.isFinite(transform.f)
-    ) {
-      return this.glyphRunReplayFailure(run, 'nonFiniteGlyphTransform');
     }
     const unsupportedPaintReason = this.unsupportedGlyphRunPaintReason(run);
     if (unsupportedPaintReason) {

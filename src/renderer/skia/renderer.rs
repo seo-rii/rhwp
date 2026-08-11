@@ -103,15 +103,10 @@ fn native_skia_glyph_run_replay_status(
     resources: &ResourceArena,
     font_mgr: &FontMgr,
 ) -> VariantReplayStatus {
-    if run.glyph_ids.is_empty()
-        || run.glyph_ids.len() != run.positions.len()
-        || run
-            .advances
-            .as_ref()
-            .is_some_and(|advances| advances.len() != run.glyph_ids.len())
-        || run.glyph_transforms.is_some()
-        || run.orientation == GlyphRunOrientation::MixedPerGlyph
-    {
+    if let Some(error) = run.strict_payload_contract_error() {
+        return VariantReplayStatus::rejected(error.into());
+    }
+    if run.glyph_transforms.is_some() || run.orientation == GlyphRunOrientation::MixedPerGlyph {
         return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
     }
     if run.diagnostics.replay_eligibility != GlyphRunReplayEligibility::Portable {
@@ -133,7 +128,7 @@ fn native_skia_glyph_run_replay_status(
         return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
     }
     if run.diagnostics.quality == TextVariantQuality::PositionAdjusted {
-        let tolerance = 0.5_f64.min(0.25_f64.max(run.paint_style.font_size * 0.005));
+        let tolerance = 0.5_f64.min(0.25_f64.max(run.shape_key.font_instance.size_px * 0.005));
         if !run.diagnostics.max_residual_after_adjustment_px.is_finite()
             || run.diagnostics.max_residual_after_adjustment_px > tolerance
         {
@@ -158,29 +153,10 @@ fn native_skia_glyph_run_replay_status(
     {
         return VariantReplayStatus::rejected(VariantRejectReason::UnsupportedPaintEffect);
     }
-    let transform = run.placement.run_to_page;
-    if ![
-        transform.a,
-        transform.b,
-        transform.c,
-        transform.d,
-        transform.e,
-        transform.f,
-        run.placement.baseline_y,
-    ]
-    .into_iter()
-    .all(f64::is_finite)
-        || !run
-            .positions
-            .iter()
-            .all(|position| position.x.is_finite() && position.y.is_finite())
-    {
-        return VariantReplayStatus::rejected(VariantRejectReason::VariantUnsupported);
-    }
     if run
         .glyph_ids
         .iter()
-        .any(|glyph_id| *glyph_id > u16::MAX as u32)
+        .any(|glyph_id| *glyph_id == 0 || *glyph_id > u16::MAX as u32)
     {
         return VariantReplayStatus::rejected(VariantRejectReason::GlyphIdOutOfRange);
     }

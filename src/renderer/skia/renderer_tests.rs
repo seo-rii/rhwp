@@ -1,6 +1,6 @@
 use super::{
-    make_font, native_skia_glyph_run_font, raster_dimension, SkiaLayerRenderer,
-    MAX_STATIC_PICTURE_CACHE_BYTES, MAX_STATIC_PICTURE_CACHE_ENTRIES,
+    make_font, native_skia_glyph_run_font, native_skia_glyph_run_replay_status, raster_dimension,
+    SkiaLayerRenderer, MAX_STATIC_PICTURE_CACHE_BYTES, MAX_STATIC_PICTURE_CACHE_ENTRIES,
 };
 use crate::model::image::ImageEffect;
 use crate::model::style::UnderlineType;
@@ -5523,6 +5523,61 @@ fn native_skia_keeps_text_fallback_for_out_of_range_glyph_id() {
         bounds.min_x > 95,
         "native Skia must keep TextRun fallback when GlyphRun has a backend-incompatible glyph id, got {bounds:?}"
     );
+}
+
+#[test]
+fn native_skia_rejects_malformed_glyph_run_before_font_resolution() {
+    let renderer = SkiaLayerRenderer::new();
+    let tree = glyph_variant_test_tree(&[1], GlyphRunReplayEligibility::Portable);
+    let LayerNodeKind::Leaf { ops, .. } = &tree.root.kind else {
+        panic!("expected glyph variant leaf");
+    };
+    let base = ops
+        .iter()
+        .find_map(|op| match op {
+            PaintOp::GlyphRun { run, .. } => Some(run.clone()),
+            _ => None,
+        })
+        .expect("glyph run variant");
+    let mut zero_glyph = base.clone();
+    zero_glyph.glyph_ids[0] = 0;
+    let mut invalid_placement = base.clone();
+    invalid_placement.placement.run_to_page.e = f32::MAX as f64 * 2.0;
+    let mut invalid_advance = base.clone();
+    invalid_advance.advances = Some(vec![crate::paint::LayerVector {
+        dx: f64::INFINITY,
+        dy: 0.0,
+    }]);
+    let mut metadata_mismatch = base;
+    metadata_mismatch.shape_key.direction = TextDirection::Rtl;
+
+    for (case_name, run, expected_reason) in [
+        (
+            "zero-glyph",
+            zero_glyph,
+            VariantRejectReason::GlyphIdOutOfRange,
+        ),
+        (
+            "invalid-placement",
+            invalid_placement,
+            VariantRejectReason::PlacementNotFinite,
+        ),
+        (
+            "invalid-advance",
+            invalid_advance,
+            VariantRejectReason::AdvanceNotFinite,
+        ),
+        (
+            "metadata-mismatch",
+            metadata_mismatch,
+            VariantRejectReason::GlyphRunMetadataMismatch,
+        ),
+    ] {
+        let status = native_skia_glyph_run_replay_status(&run, &tree.resources, &renderer.font_mgr);
+        assert!(!status.replayable, "{case_name}");
+        assert_eq!(status.reason, Some(expected_reason), "{case_name}");
+        assert!(status.font_verification.is_none(), "{case_name}");
+    }
 }
 
 fn adjust_sfnt_table_offsets_for_ttc(font_data: &[u8], base_offset: usize) -> Vec<u8> {

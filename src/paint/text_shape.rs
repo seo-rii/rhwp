@@ -1,3 +1,4 @@
+use crate::paint::paint_op::strict_glyph_run_geometry_contract_error;
 use crate::paint::{
     FontPortabilityKind, GlyphCluster, GlyphRunDiagnostics, GlyphRunOrientation,
     GlyphRunReplayEligibility, LayerAffineTransform, LayerGlyphRunPaint, LayerNode, LayerNodeKind,
@@ -1280,12 +1281,14 @@ fn fallback_placement(bbox: BoundingBox, run: &LayerTextRunPaint) -> TextRunPlac
 }
 
 fn glyph_run_is_exportable(shaped: &ResolvedGlyphRun) -> bool {
-    !shaped.glyph_ids.is_empty()
-        && shaped.glyph_ids.len() == shaped.positions.len()
-        && shaped
-            .advances
-            .as_ref()
-            .map_or(true, |advances| advances.len() == shaped.glyph_ids.len())
+    strict_glyph_run_geometry_contract_error(
+        &shaped.glyph_ids,
+        &shaped.positions,
+        shaped.advances.as_deref(),
+        shaped.clusters.len(),
+        shaped.shape_key.font_instance.size_px,
+    )
+    .is_none()
         && !shaped.clusters.is_empty()
         && matches!(
             shaped.diagnostics.replay_eligibility,
@@ -1954,6 +1957,27 @@ mod tests {
             };
             assert!(run.paint_style.is_simple_glyph_run_replay(), "{case_name}");
             assert!(!run.paint_style.is_fill_only_glyph_replay(), "{case_name}");
+        }
+    }
+
+    #[test]
+    fn lowerer_excludes_glyph_runs_outside_the_bounded_geometry_contract() {
+        let text_run = sourced_text_run("A");
+        let request = FontRequest::from(&text_run);
+        let resolved = EmittingResolver.resolve_font(&request);
+        let base = EmittingResolver
+            .shape_glyph_run(&request, &text_run, &resolved)
+            .expect("fixture glyph run");
+        let mut oversized = base.clone();
+        oversized.glyph_ids = vec![42; 4097];
+        oversized.positions = vec![LayerPoint { x: 0.0, y: 0.0 }; 4097];
+        let mut float32_overflow = base.clone();
+        float32_overflow.positions[0].x = f32::MAX as f64 * 2.0;
+        let mut invalid_font_instance = base;
+        invalid_font_instance.shape_key.font_instance.size_px = 0.0;
+
+        for shaped in [oversized, float32_overflow, invalid_font_instance] {
+            assert!(!glyph_run_is_exportable(&shaped));
         }
     }
 

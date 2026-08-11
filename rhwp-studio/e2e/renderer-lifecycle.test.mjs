@@ -3561,6 +3561,29 @@ runTest('Renderer lifecycle', async ({ page }) => {
       glyphOp(nonFiniteBaselineTree),
       nonFiniteBaselineTree.fontResources,
     );
+    const boundedContractStatuses = {};
+    for (const [name, mutate] of [
+      ['emptyGlyphRun', (op) => { op.glyphIds = []; }],
+      ['glyphPositionCountMismatch', (op) => { op.positions = []; }],
+      ['glyphAdvanceCountMismatch', (op) => { op.advances = []; }],
+      ['positionNotFinite', (op) => { op.positions[0].x = 1e308; }],
+      ['advanceNotFinite', (op) => { op.advances = [{ dx: Number.NaN, dy: 0 }]; }],
+      ['placementNotFinite', (op) => { op.placement.baselineY = Number.NaN; }],
+      ['fontInstanceInvalid', (op) => { op.shapeKey.fontInstance.sizePx = 0; }],
+      ['glyphRunMetadataMismatchDirection', (op) => { op.direction = 'rtl'; }],
+      ['glyphRunMetadataMismatchWritingMode', (op) => { op.writingMode = 'vertical-rl'; }],
+      ['glyphRunTooLarge', (op) => {
+        op.glyphIds = Array.from({ length: 4097 }, () => 1);
+        op.positions = Array.from({ length: 4097 }, () => ({ x: 0, y: 0 }));
+      }],
+    ]) {
+      const candidate = structuredClone(tree);
+      mutate(glyphOp(candidate));
+      boundedContractStatuses[name] = canvaskitRenderer.fontRegistry.glyphRunReplayStatus(
+        glyphOp(candidate),
+        candidate.fontResources,
+      );
+    }
 
     const variationTree = structuredClone(tree);
     assignFontIdentity(variationTree, 'variation', 'fixture-font-digest-variation');
@@ -3873,6 +3896,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
       outOfRangeStatus,
       outOfRangePng,
       nonFiniteBaselineStatus,
+      boundedContractStatuses,
       variationStatus,
       variationNegativeStatuses,
       variationSelectionDiagnostics,
@@ -4114,9 +4138,30 @@ runTest('Renderer lifecycle', async ({ page }) => {
   );
   assert(
     portableGlyphRunProbe.nonFiniteBaselineStatus?.replayable === false
-      && portableGlyphRunProbe.nonFiniteBaselineStatus?.reason === 'nonFiniteGlyphBaseline',
+      && portableGlyphRunProbe.nonFiniteBaselineStatus?.reason === 'placementNotFinite',
     `CanvasKit GlyphRun rejects non-finite baseline placement=${JSON.stringify(
       portableGlyphRunProbe.nonFiniteBaselineStatus,
+    )}`,
+  );
+  const boundedContractReasons = {
+    emptyGlyphRun: 'emptyGlyphRun',
+    glyphPositionCountMismatch: 'glyphPositionCountMismatch',
+    glyphAdvanceCountMismatch: 'glyphAdvanceCountMismatch',
+    positionNotFinite: 'positionNotFinite',
+    advanceNotFinite: 'advanceNotFinite',
+    placementNotFinite: 'placementNotFinite',
+    fontInstanceInvalid: 'fontInstanceInvalid',
+    glyphRunMetadataMismatchDirection: 'glyphRunMetadataMismatch',
+    glyphRunMetadataMismatchWritingMode: 'glyphRunMetadataMismatch',
+    glyphRunTooLarge: 'glyphRunTooLarge',
+  };
+  assert(
+    Object.entries(boundedContractReasons).every(([name, reason]) => {
+      const status = portableGlyphRunProbe.boundedContractStatuses?.[name];
+      return status?.replayable === false && status?.reason === reason;
+    }),
+    `CanvasKit GlyphRun applies the bounded strict payload contract=${JSON.stringify(
+      portableGlyphRunProbe.boundedContractStatuses,
     )}`,
   );
   const defaultRatioSelectionReport = portableGlyphRunProbe.defaultRatioSelectionDiagnostics?.find(

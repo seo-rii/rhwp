@@ -590,7 +590,8 @@ fn strict_glyph_run_part_eligible(part: &LayerTextVariantPart) -> bool {
 }
 
 fn strict_glyph_run_paint_eligible(run: &LayerGlyphRunPaint) -> bool {
-    run.orientation != GlyphRunOrientation::MixedPerGlyph
+    run.strict_payload_contract_error().is_none()
+        && run.orientation != GlyphRunOrientation::MixedPerGlyph
         && run.paint_style.is_fill_only_glyph_replay()
         && run.diagnostics.strict_visual_eligible
 }
@@ -2195,6 +2196,46 @@ mod tests {
             .collect();
 
         assert!(issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing));
+    }
+
+    #[test]
+    fn rejects_strict_glyph_run_slot_with_invalid_payload_contract() {
+        for mutate in [
+            (|run: &mut LayerGlyphRunPaint| run.positions.clear()) as fn(&mut LayerGlyphRunPaint),
+            |run| run.placement.baseline_y = f64::NAN,
+            |run| run.shape_key.font_instance.size_px = 0.0,
+            |run| run.direction = TextDirection::Rtl,
+        ] {
+            let group = "text-4-glyph-run-invalid-payload";
+            let text = text_op(PaintVariantMeta::text_run_default(group));
+            let mut glyph_run = glyph_run_op(
+                PaintVariantMeta {
+                    equivalence_group: group.to_string(),
+                    variant_id: "glyphRun".to_string(),
+                    variant_kind: TextVariantKind::GlyphRun,
+                    part_index: 0,
+                    part_count: 1,
+                    is_default_fallback: false,
+                    requires: vec!["fontResources".to_string(), "text.glyphRun".to_string()],
+                    quality: Some(TextVariantQuality::Exact),
+                    anchor_op_id: None,
+                    local_paint_order: Some(0),
+                },
+                GlyphRunOrientation::Horizontal,
+            );
+            let PaintOp::GlyphRun { run, .. } = &mut glyph_run else {
+                panic!("expected glyph run");
+            };
+            mutate(run);
+            let text_ops = lower_v1_leaf_text_variants_to_v2(&[text, glyph_run]);
+
+            let issue_codes: Vec<_> = strict_glyph_run_text_v2_slots(&text_ops)
+                .expect_err("invalid strict glyph payload must fail closed")
+                .into_iter()
+                .map(|issue| issue.code)
+                .collect();
+            assert!(issue_codes.contains(&TextV2ValidationIssueCode::StrictVisualVariantMissing));
+        }
     }
 
     #[test]

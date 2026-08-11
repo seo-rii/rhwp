@@ -159,6 +159,104 @@ pub struct LayerGlyphRunPaint {
     pub diagnostics: GlyphRunDiagnostics,
 }
 
+pub(crate) const MAX_STRICT_GLYPHS_PER_RUN: usize = 4096;
+pub(crate) const MAX_STRICT_GLYPH_FONT_SIZE_PX: f64 = 4096.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StrictGlyphRunPayloadError {
+    EmptyGlyphRun,
+    GlyphRunTooLarge,
+    GlyphPositionCountMismatch,
+    GlyphAdvanceCountMismatch,
+    PositionNotFinite,
+    AdvanceNotFinite,
+    PlacementNotFinite,
+    FontInstanceInvalid,
+    GlyphRunMetadataMismatch,
+}
+
+pub(crate) fn strict_glyph_run_geometry_contract_error(
+    glyph_ids: &[u32],
+    positions: &[LayerPoint],
+    advances: Option<&[LayerVector]>,
+    cluster_count: usize,
+    font_size_px: f64,
+) -> Option<StrictGlyphRunPayloadError> {
+    if glyph_ids.is_empty() {
+        return Some(StrictGlyphRunPayloadError::EmptyGlyphRun);
+    }
+    if glyph_ids.len() > MAX_STRICT_GLYPHS_PER_RUN
+        || positions.len() > MAX_STRICT_GLYPHS_PER_RUN
+        || advances.is_some_and(|values| values.len() > MAX_STRICT_GLYPHS_PER_RUN)
+        || cluster_count > MAX_STRICT_GLYPHS_PER_RUN
+    {
+        return Some(StrictGlyphRunPayloadError::GlyphRunTooLarge);
+    }
+    if glyph_ids.len() != positions.len() {
+        return Some(StrictGlyphRunPayloadError::GlyphPositionCountMismatch);
+    }
+    if advances.is_some_and(|values| values.len() != glyph_ids.len()) {
+        return Some(StrictGlyphRunPayloadError::GlyphAdvanceCountMismatch);
+    }
+    let float32_compatible = |value: f64| value.is_finite() && value.abs() <= f32::MAX as f64;
+    if positions
+        .iter()
+        .any(|point| !float32_compatible(point.x) || !float32_compatible(point.y))
+    {
+        return Some(StrictGlyphRunPayloadError::PositionNotFinite);
+    }
+    if advances.is_some_and(|values| {
+        values
+            .iter()
+            .any(|value| !float32_compatible(value.dx) || !float32_compatible(value.dy))
+    }) {
+        return Some(StrictGlyphRunPayloadError::AdvanceNotFinite);
+    }
+    if !font_size_px.is_finite()
+        || font_size_px <= 0.0
+        || font_size_px > MAX_STRICT_GLYPH_FONT_SIZE_PX
+    {
+        return Some(StrictGlyphRunPayloadError::FontInstanceInvalid);
+    }
+    None
+}
+
+impl LayerGlyphRunPaint {
+    pub(crate) fn strict_payload_contract_error(&self) -> Option<StrictGlyphRunPayloadError> {
+        if let Some(error) = strict_glyph_run_geometry_contract_error(
+            &self.glyph_ids,
+            &self.positions,
+            self.advances.as_deref(),
+            self.clusters.len(),
+            self.shape_key.font_instance.size_px,
+        ) {
+            return Some(error);
+        }
+        let transform = self.placement.run_to_page;
+        let float32_compatible = |value: f64| value.is_finite() && value.abs() <= f32::MAX as f64;
+        if ![
+            transform.a,
+            transform.b,
+            transform.c,
+            transform.d,
+            transform.e,
+            transform.f,
+            self.placement.baseline_y,
+        ]
+        .into_iter()
+        .all(float32_compatible)
+        {
+            return Some(StrictGlyphRunPayloadError::PlacementNotFinite);
+        }
+        if self.direction != self.shape_key.direction
+            || self.writing_mode != self.shape_key.writing_mode
+        {
+            return Some(StrictGlyphRunPayloadError::GlyphRunMetadataMismatch);
+        }
+        None
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LayerGlyphOutlinePaint {
     pub source: TextSourceSpan,

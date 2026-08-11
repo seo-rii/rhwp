@@ -1,4 +1,5 @@
 use crate::model::ColorRef;
+use crate::paint::paint_op::StrictGlyphRunPayloadError;
 use crate::paint::{
     LineBreakShadowReport, PageLayerTree, PaintOp, ShapedMeasurementLineReport,
     ShapedMeasurementPageSummary, ShapedMeasurementParagraphSummary, ShapedMeasurementRunReport,
@@ -183,6 +184,15 @@ pub enum VariantRejectReason {
     FaceIndexUnsupported,
     VariationUnsupported,
     GlyphIdOutOfRange,
+    EmptyGlyphRun,
+    GlyphRunTooLarge,
+    GlyphPositionCountMismatch,
+    GlyphAdvanceCountMismatch,
+    PositionNotFinite,
+    AdvanceNotFinite,
+    PlacementNotFinite,
+    FontInstanceInvalid,
+    GlyphRunMetadataMismatch,
     MissingGlyph,
     ClusterMismatch,
     DiagnosticsNotClean,
@@ -216,6 +226,15 @@ impl VariantRejectReason {
             Self::FaceIndexUnsupported => "faceIndexUnsupported",
             Self::VariationUnsupported => "variationUnsupported",
             Self::GlyphIdOutOfRange => "glyphIdOutOfRange",
+            Self::EmptyGlyphRun => "emptyGlyphRun",
+            Self::GlyphRunTooLarge => "glyphRunTooLarge",
+            Self::GlyphPositionCountMismatch => "glyphPositionCountMismatch",
+            Self::GlyphAdvanceCountMismatch => "glyphAdvanceCountMismatch",
+            Self::PositionNotFinite => "positionNotFinite",
+            Self::AdvanceNotFinite => "advanceNotFinite",
+            Self::PlacementNotFinite => "placementNotFinite",
+            Self::FontInstanceInvalid => "fontInstanceInvalid",
+            Self::GlyphRunMetadataMismatch => "glyphRunMetadataMismatch",
             Self::MissingGlyph => "missingGlyph",
             Self::ClusterMismatch => "clusterMismatch",
             Self::DiagnosticsNotClean => "diagnosticsNotClean",
@@ -236,6 +255,26 @@ impl VariantRejectReason {
             Self::VariantPartsIncomplete => "variantPartsIncomplete",
             Self::DefaultFallbackNotSelected => "defaultFallbackNotSelected",
             Self::GlyphOutlineUnsupported => "glyphOutlineUnsupported",
+        }
+    }
+}
+
+impl From<StrictGlyphRunPayloadError> for VariantRejectReason {
+    fn from(error: StrictGlyphRunPayloadError) -> Self {
+        match error {
+            StrictGlyphRunPayloadError::EmptyGlyphRun => Self::EmptyGlyphRun,
+            StrictGlyphRunPayloadError::GlyphRunTooLarge => Self::GlyphRunTooLarge,
+            StrictGlyphRunPayloadError::GlyphPositionCountMismatch => {
+                Self::GlyphPositionCountMismatch
+            }
+            StrictGlyphRunPayloadError::GlyphAdvanceCountMismatch => {
+                Self::GlyphAdvanceCountMismatch
+            }
+            StrictGlyphRunPayloadError::PositionNotFinite => Self::PositionNotFinite,
+            StrictGlyphRunPayloadError::AdvanceNotFinite => Self::AdvanceNotFinite,
+            StrictGlyphRunPayloadError::PlacementNotFinite => Self::PlacementNotFinite,
+            StrictGlyphRunPayloadError::FontInstanceInvalid => Self::FontInstanceInvalid,
+            StrictGlyphRunPayloadError::GlyphRunMetadataMismatch => Self::GlyphRunMetadataMismatch,
         }
     }
 }
