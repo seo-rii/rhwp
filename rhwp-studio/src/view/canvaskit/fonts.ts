@@ -180,6 +180,23 @@ type CanvasKitLocalProviderFace = {
   italic: boolean;
 };
 
+type CanvasKitPreparedLocalProviderFace = {
+  face: CanvasKitLocalProviderFace;
+  recordSignature: string;
+  bytesDigest: string | null;
+};
+
+export interface CanvasKitLocalFontPreparationOptions {
+  /** 승인된 Local Font Access snapshot으로 현재 local face index를 교체한다. */
+  refresh?: boolean;
+}
+
+export interface CanvasKitLocalFontPreparationResult {
+  registered: number;
+  removed: number;
+  changed: boolean;
+}
+
 export type CanvasKitProviderFaceResolution = {
   providerFamily: string;
   physicalWeight: RenderFontWeight;
@@ -192,6 +209,26 @@ function localFontAliasKey(value: string): string {
   return value.normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('en-US');
 }
 
+function localFontRecordSignature(record: LocalFontRecord): string {
+  return [
+    record.family,
+    record.fullName,
+    record.postscriptName,
+    record.style,
+    ...record.aliases,
+  ].map(localFontAliasKey).join('\u0000');
+}
+
+async function localFontBytesDigest(bytes: Uint8Array): Promise<string | null> {
+  try {
+    const digest = await globalThis.crypto?.subtle.digest('SHA-256', bytes.slice().buffer);
+    if (!digest) return null;
+    return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
+
 export class CanvasKitFontRegistry {
   readonly aliases = new Set<string>();
   private readonly verifiedFontBlobs = new Map<string, ArrayBuffer>();
@@ -202,7 +239,9 @@ export class CanvasKitFontRegistry {
   private readonly localProviderFamilies = new Map<string, CanvasKitLocalProviderFace[]>();
   private readonly localAliasFamilies = new Map<string, string>();
   private readonly localAliasProviderFaces = new Map<string, CanvasKitLocalProviderFace[]>();
-  private readonly preparedLocalFaceKeys = new Set<string>();
+  private readonly localAliases = new Set<string>();
+  private readonly preparedLocalFaces = new Map<string, CanvasKitPreparedLocalProviderFace>();
+  private localFontPreparationEpoch = 0;
   private nextProviderFamilyId = 0;
 
   constructor(
@@ -300,33 +339,110 @@ export class CanvasKitFontRegistry {
   }
 
   /** 현재 문서가 요구하는 exact local face만 원본 SFNT bytes로 등록한다. */
-  async prepareLocalFonts(fontNames: readonly string[]): Promise<number> {
+  async prepareLocalFonts(
+    fontNames: readonly string[],
+    options: CanvasKitLocalFontPreparationOptions = {},
+  ): Promise<CanvasKitLocalFontPreparationResult> {
+    const epoch = ++this.localFontPreparationEpoch;
     const requestedAliases = new Set(fontNames.map(localFontAliasKey).filter(Boolean));
-    if (requestedAliases.size === 0) return 0;
+    if (requestedAliases.size === 0 && !options.refresh) {
+      return { registered: 0, removed: 0, changed: false };
+    }
 
     const records = getLocalFontRecords({ includeRegistered: true }).filter(record =>
       record.aliases.some(alias => requestedAliases.has(localFontAliasKey(alias))),
     );
-    const pendingRecords = records.filter(record => !this.preparedLocalFaceKeys.has(localFontFaceKey(record)));
-    if (pendingRecords.length === 0) return 0;
+    const pendingRecords = options.refresh
+      ? records
+      : records.filter(record => !this.preparedLocalFaces.has(localFontFaceKey(record)));
+    if (pendingRecords.length === 0 && !options.refresh) {
+      return { registered: 0, removed: 0, changed: false };
+    }
 
     const bytesByFace = await loadLocalFontBytesFor(
       pendingRecords.map(record => record.postscriptName || record.fullName),
     );
+    const preparedRecords = await Promise.all(pendingRecords.map(async record => {
+      const buffer = bytesByFace.get(localFontFaceKey(record));
+      const bytes = buffer ? new Uint8Array(buffer) : null;
+      return {
+        record,
+        bytes,
+        bytesDigest: bytes ? await localFontBytesDigest(bytes) : null,
+      };
+    }));
+    if (epoch !== this.localFontPreparationEpoch) {
+      return { registered: 0, removed: 0, changed: false };
+    }
+
+    if (options.refresh) {
+      const previousFaces = new Map(this.preparedLocalFaces);
+      const nextFaces = new Map<string, CanvasKitPreparedLocalProviderFace>();
+      let registered = 0;
+      let metadataChanged = false;
+      for (const prepared of preparedRecords) {
+        const faceKey = localFontFaceKey(prepared.record);
+        const previous = previousFaces.get(faceKey);
+        const recordSignature = localFontRecordSignature(prepared.record);
+        let face: CanvasKitLocalProviderFace | null = null;
+        if (previous && (!prepared.bytes || (
+          prepared.bytesDigest !== null
+          && prepared.bytesDigest === previous.bytesDigest
+        ))) {
+          face = this.localProviderFace(prepared.record, previous.face.providerFamily);
+        } else if (prepared.bytes) {
+          try {
+            face = this.registerLocalProviderFace(prepared.record, prepared.bytes);
+            registered += 1;
+          } catch (error) {
+            console.warn(`[CanvasKitFontRegistry] ${prepared.record.displayName} local face 갱신 실패:`, error);
+          }
+        }
+        if (!face) continue;
+        if (previous?.recordSignature !== recordSignature) metadataChanged = true;
+        nextFaces.set(faceKey, {
+          face,
+          recordSignature,
+          bytesDigest: prepared.bytesDigest ?? previous?.bytesDigest ?? null,
+        });
+      }
+
+      const removed = Array.from(previousFaces.keys())
+        .filter(faceKey => !nextFaces.has(faceKey)).length;
+      this.clearLocalProviderIndexes();
+      this.preparedLocalFaces.clear();
+      for (const prepared of preparedRecords) {
+        const faceKey = localFontFaceKey(prepared.record);
+        const entry = nextFaces.get(faceKey);
+        if (!entry) continue;
+        this.preparedLocalFaces.set(faceKey, entry);
+        this.indexLocalProviderFace(prepared.record, entry.face);
+      }
+      return {
+        registered,
+        removed,
+        changed: registered > 0 || removed > 0 || metadataChanged,
+      };
+    }
+
     let registered = 0;
-    for (const record of pendingRecords) {
-      const faceKey = localFontFaceKey(record);
-      const bytes = bytesByFace.get(faceKey);
-      if (!bytes) continue;
+    for (const prepared of preparedRecords) {
+      const faceKey = localFontFaceKey(prepared.record);
+      if (!prepared.bytes) continue;
       try {
-        this.registerLocalProviderFace(record, new Uint8Array(bytes));
-        this.preparedLocalFaceKeys.add(faceKey);
+        const face = this.registerLocalProviderFace(prepared.record, prepared.bytes);
+        this.preparedLocalFaces.set(faceKey, {
+          face,
+          recordSignature: localFontRecordSignature(prepared.record),
+          bytesDigest: prepared.bytesDigest,
+        });
+        this.indexLocalProviderFace(prepared.record, face);
         registered += 1;
       } catch (error) {
-        console.warn(`[CanvasKitFontRegistry] ${record.displayName} local face 등록 실패:`, error);
+        console.warn(`[CanvasKitFontRegistry] ${prepared.record.displayName} local face 등록 실패:`, error);
       }
     }
-    return registered;
+    return { registered, removed: 0, changed: registered > 0 };
   }
 
   resolveFamilyWithStatus(fontFamily: string): CanvasKitFontResolution {
@@ -753,10 +869,9 @@ export class CanvasKitFontRegistry {
   clear(): void {
     this.aliases.clear();
     this.providerFamilies.clear();
-    this.localProviderFamilies.clear();
-    this.localAliasFamilies.clear();
-    this.localAliasProviderFaces.clear();
-    this.preparedLocalFaceKeys.clear();
+    this.clearLocalProviderIndexes();
+    this.preparedLocalFaces.clear();
+    this.localFontPreparationEpoch += 1;
     this.familiesWithBoldFace.clear();
     this.nextProviderFamilyId = 0;
     this.clearDocumentResources();
@@ -777,8 +892,23 @@ export class CanvasKitFontRegistry {
     }
   }
 
-  private registerLocalProviderFace(record: LocalFontRecord, bytes: Uint8Array): void {
-    const family = record.family || record.fullName || record.postscriptName;
+  private registerLocalProviderFace(
+    record: LocalFontRecord,
+    bytes: Uint8Array,
+  ): CanvasKitLocalProviderFace {
+    const style = this.localProviderFaceStyle(record);
+    const providerFamily = this.registerProviderFont(
+      bytes,
+      'local_font',
+      `${style.weight}_${style.italic ? 'italic' : 'upright'}`,
+    );
+    return { providerFamily, ...style };
+  }
+
+  private localProviderFaceStyle(record: LocalFontRecord): {
+    weight: RenderFontWeight;
+    italic: boolean;
+  } {
     const descriptor = `${record.fullName} ${record.postscriptName} ${record.style}`;
     const lowerDescriptor = descriptor.toLocaleLowerCase('en-US');
     const weight: RenderFontWeight = /(?:extra|ultra|semi|demi)?(?:bold)|black|heavy|볼드/.test(lowerDescriptor)
@@ -789,15 +919,18 @@ export class CanvasKitFontRegistry {
           ? 500
           : resolveRenderFontWeight(descriptor, false);
     const italic = /italic|oblique|slanted|kursiv|이탤릭/.test(lowerDescriptor);
-    const face: CanvasKitLocalProviderFace = {
-      providerFamily: this.registerProviderFont(
-        bytes,
-        'local_font',
-        `${weight}_${italic ? 'italic' : 'upright'}`,
-      ),
-      weight,
-      italic,
-    };
+    return { weight, italic };
+  }
+
+  private localProviderFace(
+    record: LocalFontRecord,
+    providerFamily: string,
+  ): CanvasKitLocalProviderFace {
+    return { providerFamily, ...this.localProviderFaceStyle(record) };
+  }
+
+  private indexLocalProviderFace(record: LocalFontRecord, face: CanvasKitLocalProviderFace): void {
+    const family = record.family || record.fullName || record.postscriptName;
     const familyFaces = this.localProviderFamilies.get(family) ?? [];
     familyFaces.push(face);
     this.localProviderFamilies.set(family, familyFaces);
@@ -814,8 +947,19 @@ export class CanvasKitFontRegistry {
       const aliasFaces = this.localAliasProviderFaces.get(key) ?? [];
       aliasFaces.push(face);
       this.localAliasProviderFaces.set(key, aliasFaces);
+      this.localAliases.add(alias);
       this.aliases.add(alias);
     }
+  }
+
+  private clearLocalProviderIndexes(): void {
+    for (const alias of this.localAliases) {
+      if (!this.providerFamilies.has(alias)) this.aliases.delete(alias);
+    }
+    this.localAliases.clear();
+    this.localProviderFamilies.clear();
+    this.localAliasFamilies.clear();
+    this.localAliasProviderFaces.clear();
   }
 
   private registerProviderFont(

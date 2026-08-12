@@ -2489,7 +2489,7 @@ runTest('Renderer lifecycle', async ({ page }) => {
 
     let deletedBlobs = 0;
     const originalPrepareLocalFonts = registry.prepareLocalFonts.bind(registry);
-    registry.prepareLocalFonts = async () => 1;
+    registry.prepareLocalFonts = async () => ({ registered: 0, removed: 1, changed: true });
     renderer.textBlobCache.set('bundled-alias|fixture', {
       delete() {
         deletedBlobs += 1;
@@ -2499,9 +2499,9 @@ runTest('Renderer lifecycle', async ({ page }) => {
     renderer.textFallbackFamilyCache.set('bundled-alias|fixture', 'Bundled Family');
 
     try {
-      const registered = await renderer.prepareLocalFonts(['Bundled Family']);
+      const result = await renderer.prepareLocalFonts(['Bundled Family'], { refresh: true });
       return {
-        registered,
+        result,
         deletedBlobs,
         textBlobCacheSize: renderer.textBlobCache.size,
         failedTextBlobCacheSize: renderer.failedTextBlobCacheKeys.size,
@@ -2517,13 +2517,15 @@ runTest('Renderer lifecycle', async ({ page }) => {
     localFontCacheInvalidationProbe.error || 'CanvasKit local font cache invalidation probe available',
   );
   assert(
-    localFontCacheInvalidationProbe.registered === 1
+    localFontCacheInvalidationProbe.result?.registered === 0
+      && localFontCacheInvalidationProbe.result?.removed === 1
+      && localFontCacheInvalidationProbe.result?.changed === true
       && localFontCacheInvalidationProbe.deletedBlobs === 1
       && localFontCacheInvalidationProbe.textBlobCacheSize === 0
       && localFontCacheInvalidationProbe.failedTextBlobCacheSize === 0
       && localFontCacheInvalidationProbe.textFallbackFamilyCacheSize === 0
       && localFontCacheInvalidationProbe.staticPictureCacheSize === 0,
-    `exact local face registration invalidates provider-dependent caches=${JSON.stringify(localFontCacheInvalidationProbe)}`,
+    `changed local face selection invalidates provider-dependent caches=${JSON.stringify(localFontCacheInvalidationProbe)}`,
   );
 
   setTestCase('canvaskit-local-font-face-matrix');

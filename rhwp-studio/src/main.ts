@@ -456,10 +456,17 @@ function setupEventListeners(): void {
 
 async function prepareCanvasKitDocumentFonts(
   docInfo: DocumentInfo,
-  loadStoredSnapshot = true,
-): Promise<number> {
+  options: {
+    loadStoredSnapshot?: boolean;
+    refreshLocalFaces?: boolean;
+  } = {},
+) {
   const renderer = canvaskitRenderer;
-  if (!renderer) return 0;
+  if (!renderer) return { registered: 0, removed: 0, changed: false };
+  const {
+    loadStoredSnapshot = true,
+    refreshLocalFaces = false,
+  } = options;
 
   let requiredFontFamilies = (docInfo.fontsUsed ?? []).slice(0, 128);
   try {
@@ -474,14 +481,19 @@ async function prepareCanvasKitDocumentFonts(
 
   try {
     if (loadStoredSnapshot) await loadStoredLocalFonts();
-    const registered = await renderer.prepareLocalFonts(requiredFontFamilies);
-    if (registered > 0) {
-      console.info(`[CanvasKit] first replay 전에 exact local face ${registered}개를 준비했습니다.`);
+    const result = await renderer.prepareLocalFonts(requiredFontFamilies, {
+      refresh: refreshLocalFaces,
+    });
+    if (result.registered > 0) {
+      console.info(`[CanvasKit] exact local face ${result.registered}개를 준비했습니다.`);
     }
-    return registered;
+    if (result.removed > 0) {
+      console.info(`[CanvasKit] 더 이상 승인되지 않은 local face ${result.removed}개를 selection에서 제거했습니다.`);
+    }
+    return result;
   } catch (error) {
     console.warn('[CanvasKit] exact local face 준비 실패, bundled fallback으로 계속합니다:', error);
-    return 0;
+    return { registered: 0, removed: 0, changed: false };
   }
 }
 
@@ -489,9 +501,12 @@ async function refreshCanvasKitLocalFonts(): Promise<void> {
   const docInfo = activeDocumentInfo;
   if (!docInfo || !canvaskitRenderer || wasm.pageCount === 0) return;
 
-  const registered = await prepareCanvasKitDocumentFonts(docInfo, false);
-  if (registered === 0 || activeDocumentInfo !== docInfo) return;
-  console.info(`[CanvasKit] 새로 승인된 exact local face ${registered}개로 현재 문서를 다시 렌더합니다.`);
+  const result = await prepareCanvasKitDocumentFonts(docInfo, {
+    loadStoredSnapshot: false,
+    refreshLocalFaces: true,
+  });
+  if (!result.changed || activeDocumentInfo !== docInfo) return;
+  console.info('[CanvasKit] 승인된 exact local face 집합 변경을 현재 문서에 반영합니다.');
   canvasView?.loadDocument();
 }
 

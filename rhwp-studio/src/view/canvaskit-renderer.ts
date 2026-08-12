@@ -124,6 +124,8 @@ import {
   CanvasKitFontRegistry,
   HAMCHOROM_BATANG_FAMILY,
   type CanvasKitFontResolutionSource,
+  type CanvasKitLocalFontPreparationOptions,
+  type CanvasKitLocalFontPreparationResult,
 } from './canvaskit/fonts';
 import { canvaskitClipRightPad } from './canvaskit/policy';
 import { parseCanvasKitCssColor } from './canvaskit/css-color';
@@ -366,11 +368,14 @@ export class CanvasKitLayerRenderer {
     return renderer;
   }
 
-  async prepareLocalFonts(fontNames: readonly string[]): Promise<number> {
-    if (this.disposed) return 0;
-    const registered = await this.fontRegistry.prepareLocalFonts(fontNames);
-    if (registered > 0) this.invalidateTextFontCaches();
-    return registered;
+  async prepareLocalFonts(
+    fontNames: readonly string[],
+    options: CanvasKitLocalFontPreparationOptions = {},
+  ): Promise<CanvasKitLocalFontPreparationResult> {
+    if (this.disposed) return { registered: 0, removed: 0, changed: false };
+    const result = await this.fontRegistry.prepareLocalFonts(fontNames, options);
+    if (result.changed) this.invalidateTextFontCaches();
+    return result;
   }
 
   renderPage(

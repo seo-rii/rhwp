@@ -16,7 +16,7 @@ test('CanvasKit prepares preflight local faces before the first document replay'
   const preflightIndex = prepareDocument.indexOf('wasm.getCanvasKitDocumentPreflight(');
   const storedIndex = prepareDocument.indexOf('await loadStoredLocalFonts();');
   const localIndex = prepareDocument.indexOf(
-    'await renderer.prepareLocalFonts(requiredFontFamilies)',
+    'await renderer.prepareLocalFonts(requiredFontFamilies, {',
   );
   assert.ok(preflightIndex >= 0, 'document preflight must bound the requested family set');
   assert.ok(storedIndex > preflightIndex, 'stored metadata must load without prompting');
@@ -39,7 +39,7 @@ test('CanvasKit font resolution gives prepared local faces precedence over bundl
     /this\.localProviderFamilies\.get\(family\)[\s\S]*?this\.providerFamilies\.get\(family\)/,
   );
   assert.match(registry, /loadLocalFontBytesFor\(/);
-  assert.match(renderer, /async prepareLocalFonts\(fontNames: readonly string\[\]\)/);
+  assert.match(renderer, /async prepareLocalFonts\([\s\S]*?CanvasKitLocalFontPreparationOptions/);
 });
 
 test('newly approved local faces refresh only the still-active CanvasKit document', () => {
@@ -50,7 +50,7 @@ test('newly approved local faces refresh only the still-active CanvasKit documen
   assert.match(main, /subscribeLocalFontDetection\(\(\) => \{[\s\S]*?refreshCanvasKitLocalFonts\(\)/);
   assert.match(
     main,
-    /const registered = await prepareCanvasKitDocumentFonts\(docInfo, false\);[\s\S]*?registered === 0 \|\| activeDocumentInfo !== docInfo/,
+    /refreshLocalFaces: true,[\s\S]*?!result\.changed \|\| activeDocumentInfo !== docInfo/,
   );
   assert.match(main, /canvasView\?\.loadDocument\(\);/);
 });
@@ -64,7 +64,7 @@ test('registering an exact local face invalidates every provider-dependent text 
   const disposeStart = renderer.indexOf('\n  dispose(): void', invalidateStart);
   const invalidate = renderer.slice(invalidateStart, disposeStart);
 
-  assert.match(prepare, /if \(registered > 0\) this\.invalidateTextFontCaches\(\)/);
+  assert.match(prepare, /if \(result\.changed\) this\.invalidateTextFontCaches\(\)/);
   assert.match(invalidate, /for \(const blob of this\.textBlobCache\.values\(\)\) blob\.delete\(\)/);
   assert.match(invalidate, /this\.textBlobCache\.clear\(\)/);
   assert.match(invalidate, /this\.textFallbackFamilyCache\.clear\(\)/);
@@ -87,4 +87,15 @@ test('CanvasKit local provider selection preserves physical weight and slant', (
   assert.match(registry, /synthesizeItalic: italic && !face\.italic/);
   assert.match(renderer, /font\.setEmbolden\(providerFace\.synthesizeBold\)/);
   assert.match(renderer, /font\.setSkewX\(providerFace\.synthesizeItalic \? -0\.25 : 0\)/);
+});
+
+test('approved local font refresh reconciles changed and removed provider faces', () => {
+  const registry = source('../src/view/canvaskit/fonts.ts');
+
+  assert.match(registry, /preparedLocalFaces = new Map<string, CanvasKitPreparedLocalProviderFace>/);
+  assert.match(registry, /localFontBytesDigest\(/);
+  assert.match(registry, /previous\.bytesDigest/);
+  assert.match(registry, /this\.clearLocalProviderIndexes\(\)/);
+  assert.match(registry, /removed,[\s\S]*?changed: registered > 0 \|\| removed > 0 \|\| metadataChanged/);
+  assert.match(registry, /epoch !== this\.localFontPreparationEpoch/);
 });
