@@ -881,6 +881,21 @@ only newly required exact faces and resets the current CanvasKit document for a
 fresh replay. The refresh is skipped when no new face was registered or when a
 different document became active while bytes were loading. Listener failures
 are isolated from detection success, and Canvas2D remains unaffected.
+Registering a new provider face invalidates every provider-dependent CanvasKit
+cache before that replay: cached `TextBlob` objects are deleted, failed-blob
+and fallback-family decisions are cleared, and static pictures are discarded.
+This prevents a bundled glyph blob from surviving after a local face takes
+precedence under the same authored alias.
+
+Local provider registration preserves a physical face matrix instead of
+collapsing every face into regular/bold. Light, regular, medium, and bold map to
+300/400/500/700, while italic/oblique faces retain their physical slant.
+Full-name and PostScript aliases that identify one exact face take precedence;
+family aliases choose the matching slant and then the CSS-compatible nearest
+weight order. CanvasKit applies synthetic emboldening or skew only when the
+selected physical face lacks the requested bold or italic style. Provider face
+identity is part of the `TextBlob` cache key, so two exact faces in one family
+cannot share stale shaped glyph data.
 
 The shared font matrix also maps the Dotum/Gulim family aliases (`돋움`,
 `돋움체`, `굴림`, `새굴림`, and `Haansoft Dotum`) to the independent
