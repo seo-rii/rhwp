@@ -29,6 +29,10 @@ export interface LocalFontRecord {
   fullName: string;
   postscriptName: string;
   style: string;
+  /** SFNT OS/2.usWeightClass 또는 head.macStyle에서 확인한 실제 face 굵기다. */
+  weightClass?: number;
+  /** SFNT OS/2.fsSelection 또는 head.macStyle에서 확인한 실제 face 기울기다. */
+  italic?: boolean;
   displayName: string;
   aliases: string[];
 }
@@ -200,7 +204,12 @@ interface SfntFontNames {
   styles: string[];
 }
 
-function emptySfntFontNames(): SfntFontNames {
+interface SfntFontMetadata extends SfntFontNames {
+  weightClass?: number;
+  italic?: boolean;
+}
+
+function emptySfntFontMetadata(): SfntFontMetadata {
   return { families: [], fullNames: [], postscriptNames: [], styles: [] };
 }
 
@@ -246,13 +255,13 @@ function decodeSfntName(bytes: Uint8Array, platformId: number): string {
 
 function parseSfntNameTable(buffer: ArrayBuffer): SfntFontNames {
   const view = new DataView(buffer);
-  if (!byteRangeAvailable(view, 0, 6)) return emptySfntFontNames();
+  if (!byteRangeAvailable(view, 0, 6)) return emptySfntFontMetadata();
 
   const count = view.getUint16(2, false);
   const stringOffset = view.getUint16(4, false);
   const recordsEnd = 6 + count * 12;
   if (!byteRangeAvailable(view, 6, count * 12) || stringOffset > view.byteLength || recordsEnd > view.byteLength) {
-    return emptySfntFontNames();
+    return emptySfntFontMetadata();
   }
 
   const families: string[] = [];
@@ -292,28 +301,63 @@ function parseSfntNameTable(buffer: ArrayBuffer): SfntFontNames {
   };
 }
 
-async function readSfntFontNames(fontData: FontData): Promise<SfntFontNames> {
-  if (!fontData.blob) return emptySfntFontNames();
+async function readSfntFontMetadata(fontData: FontData): Promise<SfntFontMetadata> {
+  if (!fontData.blob) return emptySfntFontMetadata();
   try {
     const blob = await fontData.blob();
-    if (blob.size < 12) return emptySfntFontNames();
+    if (blob.size < 12) return emptySfntFontMetadata();
     const header = new DataView(await blob.slice(0, 12).arrayBuffer());
     const tableCount = header.getUint16(4, false);
     const directoryLength = 12 + tableCount * 16;
-    if (blob.size < directoryLength) return emptySfntFontNames();
+    if (blob.size < directoryLength) return emptySfntFontMetadata();
     const directory = new DataView(await blob.slice(0, directoryLength).arrayBuffer());
+    const tables = new Map<string, { offset: number; length: number }>();
     for (let index = 0; index < tableCount; index += 1) {
       const recordOffset = 12 + index * 16;
-      if (sfntTag(directory, recordOffset) !== 'name') continue;
+      const tag = sfntTag(directory, recordOffset);
+      if (tag !== 'name' && tag !== 'OS/2' && tag !== 'head') continue;
       const offset = directory.getUint32(recordOffset + 8, false);
       const length = directory.getUint32(recordOffset + 12, false);
-      if (offset > blob.size || length > blob.size - offset) return emptySfntFontNames();
-      return parseSfntNameTable(await blob.slice(offset, offset + length).arrayBuffer());
+      if (offset > blob.size || length > blob.size - offset) continue;
+      tables.set(tag, { offset, length });
     }
+
+    const nameTable = tables.get('name');
+    const os2Table = tables.get('OS/2');
+    const headTable = tables.get('head');
+    const [nameBuffer, os2Buffer, headBuffer] = await Promise.all([
+      nameTable
+        ? blob.slice(nameTable.offset, nameTable.offset + nameTable.length).arrayBuffer()
+        : null,
+      os2Table && os2Table.length >= 6
+        ? blob.slice(os2Table.offset, os2Table.offset + Math.min(os2Table.length, 64)).arrayBuffer()
+        : null,
+      headTable && headTable.length >= 46
+        ? blob.slice(headTable.offset, headTable.offset + 46).arrayBuffer()
+        : null,
+    ]);
+    const metadata: SfntFontMetadata = nameBuffer
+      ? parseSfntNameTable(nameBuffer)
+      : emptySfntFontMetadata();
+    if (os2Buffer) {
+      const os2 = new DataView(os2Buffer);
+      const weightClass = os2.getUint16(4, false);
+      if (weightClass >= 1 && weightClass <= 1000) metadata.weightClass = weightClass;
+      if (os2.byteLength >= 64) {
+        const fsSelection = os2.getUint16(62, false);
+        metadata.italic = (fsSelection & 0x0201) !== 0;
+      }
+    }
+    if (headBuffer) {
+      const macStyle = new DataView(headBuffer).getUint16(44, false);
+      if (metadata.weightClass === undefined) metadata.weightClass = (macStyle & 0x0001) !== 0 ? 700 : 400;
+      if (metadata.italic === undefined) metadata.italic = (macStyle & 0x0002) !== 0;
+    }
+    return metadata;
   } catch {
     // 메타데이터 보강 실패는 감지 자체를 실패시키지 않고 API 기본 이름만 사용한다.
   }
-  return emptySfntFontNames();
+  return emptySfntFontMetadata();
 }
 
 function preferredLocalFontDisplayName(fullNames: readonly string[], families: readonly string[]): string {
@@ -324,11 +368,11 @@ function preferredLocalFontDisplayName(fullNames: readonly string[], families: r
     ?? '';
 }
 
-function makeLocalFontRecord(fontData: Pick<FontData, 'family' | 'fullName' | 'postscriptName' | 'style'>, sfntNames: SfntFontNames = emptySfntFontNames()): LocalFontRecord | null {
-  const families = normalizeFontNames([fontData.family, ...sfntNames.families]);
-  const fullNames = normalizeFontNames([fontData.fullName, ...sfntNames.fullNames]);
-  const postscriptNames = normalizeFontNames([fontData.postscriptName, ...sfntNames.postscriptNames]);
-  const styles = normalizeFontNames([fontData.style, ...sfntNames.styles]);
+function makeLocalFontRecord(fontData: Pick<FontData, 'family' | 'fullName' | 'postscriptName' | 'style'>, sfntMetadata: SfntFontMetadata = emptySfntFontMetadata()): LocalFontRecord | null {
+  const families = normalizeFontNames([fontData.family, ...sfntMetadata.families]);
+  const fullNames = normalizeFontNames([fontData.fullName, ...sfntMetadata.fullNames]);
+  const postscriptNames = normalizeFontNames([fontData.postscriptName, ...sfntMetadata.postscriptNames]);
+  const styles = normalizeFontNames([fontData.style, ...sfntMetadata.styles]);
   const family = normalizeFontNames([fontData.family])[0] ?? families[0] ?? fullNames[0] ?? postscriptNames[0];
   if (!family) return null;
 
@@ -343,6 +387,8 @@ function makeLocalFontRecord(fontData: Pick<FontData, 'family' | 'fullName' | 'p
     fullName: fullNames[0] ?? family,
     postscriptName: postscriptNames[0] ?? '',
     style: styles[0] ?? '',
+    weightClass: sfntMetadata.weightClass,
+    italic: sfntMetadata.italic,
     displayName: preferredLocalFontDisplayName(fullNames, families) || family,
     aliases,
   };
@@ -364,6 +410,12 @@ function normalizeLocalFontRecords(value: unknown): LocalFontRecord[] {
       fullNames: [],
       postscriptNames: [],
       styles: [],
+      weightClass: Number.isInteger(data.weightClass)
+        && (data.weightClass ?? 0) >= 1
+        && (data.weightClass ?? 0) <= 1000
+        ? data.weightClass
+        : undefined,
+      italic: typeof data.italic === 'boolean' ? data.italic : undefined,
     });
     if (!record) continue;
     const aliases = normalizeFontNames([...record.aliases, ...(Array.isArray(data.aliases) ? data.aliases : [])]);
@@ -395,7 +447,7 @@ async function collectLocalFontRecords(fontDataList: readonly FontData[]): Promi
       const index = nextIndex;
       nextIndex += 1;
       const fontData = fontDataList[index];
-      records[index] = makeLocalFontRecord(fontData, await readSfntFontNames(fontData));
+      records[index] = makeLocalFontRecord(fontData, await readSfntFontMetadata(fontData));
     }
   };
   await Promise.all(Array.from(

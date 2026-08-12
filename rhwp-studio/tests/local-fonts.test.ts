@@ -143,34 +143,61 @@ function utf16Be(value: string): Uint8Array {
   return bytes;
 }
 
-function createSfntWithNameRecords(entries: ReadonlyArray<{ nameId: number; value: string }>): Uint8Array {
+function createSfntWithNameRecords(
+  entries: ReadonlyArray<{ nameId: number; value: string }>,
+  faceStyle?: { weightClass: number; fsSelection: number; macStyle: number },
+): Uint8Array {
   const encoded = entries.map(entry => ({ ...entry, bytes: utf16Be(entry.value) }));
-  const nameTableOffset = 12 + 16;
   const stringsOffset = 6 + encoded.length * 12;
   const nameTableLength = stringsOffset + encoded.reduce((sum, entry) => sum + entry.bytes.length, 0);
-  const bytes = new Uint8Array(nameTableOffset + nameTableLength);
-  const view = new DataView(bytes.buffer);
-
-  view.setUint32(0, 0x00010000, false);
-  view.setUint16(4, 1, false);
-  bytes.set([0x6e, 0x61, 0x6d, 0x65], 12);
-  view.setUint32(20, nameTableOffset, false);
-  view.setUint32(24, nameTableLength, false);
-
-  view.setUint16(nameTableOffset, 0, false);
-  view.setUint16(nameTableOffset + 2, encoded.length, false);
-  view.setUint16(nameTableOffset + 4, stringsOffset, false);
+  const nameTable = new Uint8Array(nameTableLength);
+  const nameView = new DataView(nameTable.buffer);
+  nameView.setUint16(0, 0, false);
+  nameView.setUint16(2, encoded.length, false);
+  nameView.setUint16(4, stringsOffset, false);
   let stringCursor = 0;
   encoded.forEach((entry, index) => {
-    const recordOffset = nameTableOffset + 6 + index * 12;
-    view.setUint16(recordOffset, 3, false);
-    view.setUint16(recordOffset + 2, 1, false);
-    view.setUint16(recordOffset + 4, 0x0412, false);
-    view.setUint16(recordOffset + 6, entry.nameId, false);
-    view.setUint16(recordOffset + 8, entry.bytes.length, false);
-    view.setUint16(recordOffset + 10, stringCursor, false);
-    bytes.set(entry.bytes, nameTableOffset + stringsOffset + stringCursor);
+    const recordOffset = 6 + index * 12;
+    nameView.setUint16(recordOffset, 3, false);
+    nameView.setUint16(recordOffset + 2, 1, false);
+    nameView.setUint16(recordOffset + 4, 0x0412, false);
+    nameView.setUint16(recordOffset + 6, entry.nameId, false);
+    nameView.setUint16(recordOffset + 8, entry.bytes.length, false);
+    nameView.setUint16(recordOffset + 10, stringCursor, false);
+    nameTable.set(entry.bytes, stringsOffset + stringCursor);
     stringCursor += entry.bytes.length;
+  });
+
+  const tables: Array<{ tag: string; bytes: Uint8Array }> = [{ tag: 'name', bytes: nameTable }];
+  if (faceStyle) {
+    const os2 = new Uint8Array(64);
+    const os2View = new DataView(os2.buffer);
+    os2View.setUint16(0, 4, false);
+    os2View.setUint16(4, faceStyle.weightClass, false);
+    os2View.setUint16(62, faceStyle.fsSelection, false);
+    const head = new Uint8Array(54);
+    new DataView(head.buffer).setUint16(44, faceStyle.macStyle, false);
+    tables.push({ tag: 'OS/2', bytes: os2 }, { tag: 'head', bytes: head });
+  }
+
+  const directoryLength = 12 + tables.length * 16;
+  let totalLength = directoryLength;
+  for (const table of tables) totalLength = Math.ceil(totalLength / 4) * 4 + table.bytes.length;
+  const bytes = new Uint8Array(totalLength);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x00010000, false);
+  view.setUint16(4, tables.length, false);
+  let tableOffset = directoryLength;
+  tables.forEach((table, index) => {
+    tableOffset = Math.ceil(tableOffset / 4) * 4;
+    const recordOffset = 12 + index * 16;
+    for (let tagIndex = 0; tagIndex < 4; tagIndex += 1) {
+      bytes[recordOffset + tagIndex] = table.tag.charCodeAt(tagIndex);
+    }
+    view.setUint32(recordOffset + 8, tableOffset, false);
+    view.setUint32(recordOffset + 12, table.bytes.length, false);
+    bytes.set(table.bytes, tableOffset);
+    tableOffset += table.bytes.length;
   });
   return bytes;
 }
@@ -481,6 +508,54 @@ test('SFNT 지역화 이름을 보존해 HWP 한글 full name을 영문 family�
     assert.deepEqual(getLocalFontRecords().map(item => item.displayName), ['08서울한강체 M']);
     assert.equal(stored.version, 2);
     assert.equal('blob' in (stored.fontRecords?.[0] ?? {}), false);
+  } finally {
+    await clearStoredLocalFonts();
+    resetLocalFontsForTests();
+    restoreGlobals(originals);
+  }
+});
+
+test('SFNT 물리 weight와 italic metadata를 이름 추정 없이 snapshot에 보존한다', async () => {
+  const g = globalThis as TestGlobals;
+  const originals = {
+    browser: g.browser,
+    chrome: g.chrome,
+    document: g.document,
+    localStorage: g.localStorage,
+    queryLocalFonts: g.queryLocalFonts,
+  };
+  const storage = createStorage();
+
+  resetLocalFontsForTests();
+  g.browser = undefined;
+  g.chrome = undefined;
+  g.localStorage = storage;
+  g.queryLocalFonts = async () => [{
+    family: 'Physical Face',
+    fullName: 'Physical Face Display',
+    postscriptName: 'PhysicalFace-Display',
+    style: 'Display',
+    blob: async () => new Blob([createSfntWithNameRecords([
+      { nameId: 1, value: 'Physical Face' },
+      { nameId: 2, value: 'Display' },
+      { nameId: 4, value: 'Physical Face Display' },
+      { nameId: 6, value: 'PhysicalFace-Display' },
+    ], {
+      weightClass: 600,
+      fsSelection: 0x0200,
+      macStyle: 0,
+    })]),
+  }];
+
+  try {
+    await detectLocalFonts({ force: true, includeRegistered: true });
+    const record = resolveLocalFont('PhysicalFace-Display');
+    const stored = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as LocalFontSnapshot;
+
+    assert.equal(record?.weightClass, 600);
+    assert.equal(record?.italic, true);
+    assert.equal(stored.fontRecords?.[0]?.weightClass, 600);
+    assert.equal(stored.fontRecords?.[0]?.italic, true);
   } finally {
     await clearStoredLocalFonts();
     resetLocalFontsForTests();

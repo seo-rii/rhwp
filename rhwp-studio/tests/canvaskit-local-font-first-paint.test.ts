@@ -77,6 +77,8 @@ test('CanvasKit local provider selection preserves physical weight and slant', (
   const registry = source('../src/view/canvaskit/fonts.ts');
   const renderer = source('../src/view/canvaskit-renderer.ts');
 
+  assert.match(registry, /record\.weightClass !== undefined/);
+  assert.match(registry, /const italic = record\.italic[\s\S]*?\?\? \/italic\|oblique/);
   assert.match(registry, /localProviderFamilies = new Map<string, CanvasKitLocalProviderFace\[\]>/);
   assert.match(registry, /localAliasProviderFaces = new Map<string, CanvasKitLocalProviderFace\[\]>/);
   assert.match(registry, /\? \[300, 400, 500, 700\]/);

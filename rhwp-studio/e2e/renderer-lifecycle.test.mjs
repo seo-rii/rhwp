@@ -2561,6 +2561,16 @@ runTest('Renderer lifecycle', async ({ page }) => {
         italic: registry.resolveProviderFace(family, 400, true),
         boldItalic: registry.resolveProviderFace(family, 700, true),
         exactMedium: registry.resolveProviderFace(`${family} Medium Exact`, 400, false),
+        sfntMetadata: registry.localProviderFaceStyle({
+          family: 'Ambiguous Face',
+          fullName: 'Ambiguous Face Display',
+          postscriptName: 'AmbiguousFace-Display',
+          style: 'Display',
+          weightClass: 600,
+          italic: true,
+          displayName: 'Ambiguous Face Display',
+          aliases: ['Ambiguous Face Display'],
+        }),
       };
       registry.localProviderFamilies.set(family, faces.slice(0, 3));
       registry.localAliasProviderFaces.set(familyKey, faces.slice(0, 3));
@@ -2591,6 +2601,11 @@ runTest('Renderer lifecycle', async ({ page }) => {
     localFontFaceMatrixProbe.exactMedium.providerFamily === 'fixture-medium-upright'
       && localFontFaceMatrixProbe.exactMedium.physicalWeight === 500,
     `exact local face alias wins over requested weight approximation=${JSON.stringify(localFontFaceMatrixProbe)}`,
+  );
+  assert(
+    localFontFaceMatrixProbe.sfntMetadata.weight === 700
+      && localFontFaceMatrixProbe.sfntMetadata.italic === true,
+    `SFNT metadata wins over ambiguous local face names=${JSON.stringify(localFontFaceMatrixProbe)}`,
   );
   assert(
     localFontFaceMatrixProbe.synthetic.providerFamily === 'fixture-medium-upright'

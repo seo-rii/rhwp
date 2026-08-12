@@ -215,6 +215,8 @@ function localFontRecordSignature(record: LocalFontRecord): string {
     record.fullName,
     record.postscriptName,
     record.style,
+    record.weightClass?.toString() ?? '',
+    record.italic === undefined ? '' : record.italic ? 'italic' : 'upright',
     ...record.aliases,
   ].map(localFontAliasKey).join('\u0000');
 }
@@ -911,14 +913,23 @@ export class CanvasKitFontRegistry {
   } {
     const descriptor = `${record.fullName} ${record.postscriptName} ${record.style}`;
     const lowerDescriptor = descriptor.toLocaleLowerCase('en-US');
-    const weight: RenderFontWeight = /(?:extra|ultra|semi|demi)?(?:bold)|black|heavy|볼드/.test(lowerDescriptor)
-      ? 700
-      : /(?:extra|ultra)?light|thin/.test(lowerDescriptor)
+    const weight: RenderFontWeight = record.weightClass !== undefined
+      ? record.weightClass <= 350
         ? 300
-        : /medium|메디움/.test(lowerDescriptor)
-          ? 500
-          : resolveRenderFontWeight(descriptor, false);
-    const italic = /italic|oblique|slanted|kursiv|이탤릭/.test(lowerDescriptor);
+        : record.weightClass <= 450
+          ? 400
+          : record.weightClass < 600
+            ? 500
+            : 700
+      : /(?:extra|ultra|semi|demi)?(?:bold)|black|heavy|볼드/.test(lowerDescriptor)
+        ? 700
+        : /(?:extra|ultra)?light|thin/.test(lowerDescriptor)
+          ? 300
+          : /medium|메디움/.test(lowerDescriptor)
+            ? 500
+            : resolveRenderFontWeight(descriptor, false);
+    const italic = record.italic
+      ?? /italic|oblique|slanted|kursiv|이탤릭/.test(lowerDescriptor);
     return { weight, italic };
   }
 
