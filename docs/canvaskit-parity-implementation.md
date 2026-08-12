@@ -864,6 +864,20 @@ raster diff zero in both CanvasKit modes. The larger repeated-header page keeps
 its residual text-position/raster difference report-only rather than hiding it
 through a looser font substitution.
 
+User-approved local fonts take precedence over those bundled aliases without
+introducing a Canvas2D overlay. Studio persists only normalized face metadata;
+it never stores local SFNT bytes. Before the first CanvasKit replay of each
+document, the bounded document preflight supplies the required family set,
+Studio reloads the stored metadata without prompting, and Local Font Access
+queries the exact matching PostScript faces in one batch. The returned bytes
+live only long enough to register the matching regular/bold provider faces and
+are shared only by concurrent in-flight requests. Family, full-name,
+PostScript-name, and localized aliases all resolve to the local provider before
+the bundled catalog. A denied permission, missing face, invalid blob, or
+registration failure remains non-fatal and deterministically uses the bundled
+fallback. Newly approved faces are applied on the next document initialization;
+live replacement of an already rendered document is a separate lifecycle step.
+
 The shared font matrix also maps the Dotum/Gulim family aliases (`돋움`,
 `돋움체`, `굴림`, `새굴림`, and `Haansoft Dotum`) to the independent
 `Noto Sans KR ExtraLight` family. Browser renderers use the checked-in WOFF2
