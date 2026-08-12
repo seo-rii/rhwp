@@ -877,15 +877,24 @@ the bundled catalog. A denied permission, missing face, invalid blob, or
 registration failure remains non-fatal and deterministically uses the bundled
 fallback. An explicit detection action always refreshes Local Font Access
 metadata when that API is available. After a successful approval, Studio loads
-only newly required exact faces and resets the current CanvasKit document for a
-fresh replay. The refresh is skipped when no new face was registered or when a
-different document became active while bytes were loading. Listener failures
-are isolated from detection success, and Canvas2D remains unaffected.
-Registering a new provider face invalidates every provider-dependent CanvasKit
+the exact faces currently required by the active document and reconciles that
+set against the newly approved snapshot. An unchanged face reuses its provider
+when its SHA-256 byte digest and normalized metadata are unchanged; changed
+bytes register a replacement provider, changed aliases rebuild the local
+selection index, and removed faces stop shadowing the bundled fallback. An
+operation epoch discards stale preparation results when another document or a
+newer approval supersedes an in-flight byte read. Studio resets the current
+CanvasKit document only when provider selection actually changed and only while
+that document is still active. Listener failures are isolated from detection
+success, and Canvas2D remains unaffected.
+
+Any provider-selection change invalidates every provider-dependent CanvasKit
 cache before that replay: cached `TextBlob` objects are deleted, failed-blob
 and fallback-family decisions are cleared, and static pictures are discarded.
-This prevents a bundled glyph blob from surviving after a local face takes
-precedence under the same authored alias.
+This prevents either a bundled glyph blob or a removed local face from
+surviving under the same authored alias. CanvasKit's font provider does not
+expose per-face removal, so superseded provider bytes remain unreachable until
+the renderer is disposed; the alias and face indexes are replaced immediately.
 
 Local provider registration preserves a physical face matrix instead of
 collapsing every face into regular/bold. Light, regular, medium, and bold map to
