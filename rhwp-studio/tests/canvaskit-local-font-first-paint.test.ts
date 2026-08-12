@@ -72,3 +72,19 @@ test('registering an exact local face invalidates every provider-dependent text 
   assert.match(invalidate, /this\.clearStaticPictureCache\(\)/);
   assert.match(renderer.slice(disposeStart), /this\.invalidateTextFontCaches\(\)/);
 });
+
+test('CanvasKit local provider selection preserves physical weight and slant', () => {
+  const registry = source('../src/view/canvaskit/fonts.ts');
+  const renderer = source('../src/view/canvaskit-renderer.ts');
+
+  assert.match(registry, /localProviderFamilies = new Map<string, CanvasKitLocalProviderFace\[\]>/);
+  assert.match(registry, /localAliasProviderFaces = new Map<string, CanvasKitLocalProviderFace\[\]>/);
+  assert.match(registry, /\? \[300, 400, 500, 700\]/);
+  assert.match(registry, /\? \[400, 500, 300, 700\]/);
+  assert.match(registry, /\? \[500, 400, 300, 700\]/);
+  assert.match(registry, /: \[700, 500, 400, 300\]/);
+  assert.match(registry, /synthesizeBold: weight === 700 && face\.weight !== 700/);
+  assert.match(registry, /synthesizeItalic: italic && !face\.italic/);
+  assert.match(renderer, /font\.setEmbolden\(providerFace\.synthesizeBold\)/);
+  assert.match(renderer, /font\.setSkewX\(providerFace\.synthesizeItalic \? -0\.25 : 0\)/);
+});

@@ -2526,6 +2526,77 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `exact local face registration invalidates provider-dependent caches=${JSON.stringify(localFontCacheInvalidationProbe)}`,
   );
 
+  setTestCase('canvaskit-local-font-face-matrix');
+  const localFontFaceMatrixProbe = await page.evaluate(() => {
+    const registry = window.__canvasView?.pageRenderer?.canvaskitRenderer?.fontRegistry;
+    if (!registry?.resolveProviderFace) {
+      return { error: 'CanvasKit provider face resolution unavailable' };
+    }
+
+    const family = 'RHWP Local Matrix Fixture';
+    const familyKey = family.toLocaleLowerCase('en-US');
+    const exactMediumKey = `${familyKey} medium exact`;
+    const faces = [
+      { providerFamily: 'fixture-light-upright', weight: 300, italic: false },
+      { providerFamily: 'fixture-regular-upright', weight: 400, italic: false },
+      { providerFamily: 'fixture-medium-upright', weight: 500, italic: false },
+      { providerFamily: 'fixture-bold-upright', weight: 700, italic: false },
+      { providerFamily: 'fixture-regular-italic', weight: 400, italic: true },
+      { providerFamily: 'fixture-bold-italic', weight: 700, italic: true },
+    ];
+    registry.localProviderFamilies.set(family, faces);
+    registry.localAliasFamilies.set(familyKey, family);
+    registry.localAliasProviderFaces.set(familyKey, faces);
+    registry.localAliasFamilies.set(exactMediumKey, family);
+    registry.localAliasProviderFaces.set(exactMediumKey, [faces[2]]);
+
+    try {
+      const resolved = {
+        light: registry.resolveProviderFace(family, 300, false),
+        regular: registry.resolveProviderFace(family, 400, false),
+        medium: registry.resolveProviderFace(family, 500, false),
+        bold: registry.resolveProviderFace(family, 700, false),
+        italic: registry.resolveProviderFace(family, 400, true),
+        boldItalic: registry.resolveProviderFace(family, 700, true),
+        exactMedium: registry.resolveProviderFace(`${family} Medium Exact`, 400, false),
+      };
+      registry.localProviderFamilies.set(family, faces.slice(0, 3));
+      registry.localAliasProviderFaces.set(familyKey, faces.slice(0, 3));
+      resolved.synthetic = registry.resolveProviderFace(family, 700, true);
+      return resolved;
+    } finally {
+      registry.localProviderFamilies.delete(family);
+      registry.localAliasFamilies.delete(familyKey);
+      registry.localAliasProviderFaces.delete(familyKey);
+      registry.localAliasFamilies.delete(exactMediumKey);
+      registry.localAliasProviderFaces.delete(exactMediumKey);
+    }
+  });
+  assert(
+    !localFontFaceMatrixProbe.error,
+    localFontFaceMatrixProbe.error || 'CanvasKit local font face matrix probe available',
+  );
+  assert(
+    localFontFaceMatrixProbe.light.providerFamily === 'fixture-light-upright'
+      && localFontFaceMatrixProbe.regular.providerFamily === 'fixture-regular-upright'
+      && localFontFaceMatrixProbe.medium.providerFamily === 'fixture-medium-upright'
+      && localFontFaceMatrixProbe.bold.providerFamily === 'fixture-bold-upright'
+      && localFontFaceMatrixProbe.italic.providerFamily === 'fixture-regular-italic'
+      && localFontFaceMatrixProbe.boldItalic.providerFamily === 'fixture-bold-italic',
+    `local provider selects exact weight/slant faces=${JSON.stringify(localFontFaceMatrixProbe)}`,
+  );
+  assert(
+    localFontFaceMatrixProbe.exactMedium.providerFamily === 'fixture-medium-upright'
+      && localFontFaceMatrixProbe.exactMedium.physicalWeight === 500,
+    `exact local face alias wins over requested weight approximation=${JSON.stringify(localFontFaceMatrixProbe)}`,
+  );
+  assert(
+    localFontFaceMatrixProbe.synthetic.providerFamily === 'fixture-medium-upright'
+      && localFontFaceMatrixProbe.synthetic.synthesizeBold === true
+      && localFontFaceMatrixProbe.synthetic.synthesizeItalic === true,
+    `missing local styles use nearest weight before synthetic bold/italic=${JSON.stringify(localFontFaceMatrixProbe)}`,
+  );
+
   setTestCase('layer-resource-cache-document-reset');
   await loadHwpFile(page, 'pic-crop-01.hwp');
   const resourceResetProbe = await page.evaluate(() => {

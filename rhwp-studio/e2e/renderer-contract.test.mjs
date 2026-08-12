@@ -1552,7 +1552,7 @@ const canvaskitShapedSingleLineBlock =
 assertTokensInOrder(
   canvaskitShapedSingleLineBlock,
   [
-    'this.fontRegistry.resolveProviderFamily(family, fontWeight)',
+    'this.fontRegistry.resolveProviderFamily(family, fontWeight, italic)',
     'this.canvasKit.ParagraphBuilder.MakeFromFontProvider(',
     'this.fontProvider',
     'builder.addText(text)',
@@ -2233,8 +2233,9 @@ assert(
     && canvaskitFontsSource.includes('SourceHanSerifK-OldHangul-subset.woff2')
     && canvaskitFontsSource.includes('registerCatalogAliases(OLD_HANGUL_ALIASES)')
     && canvaskitFontsSource.includes("'Palatino Linotype'")
-    && canvaskitSource.includes('weight === 700 && this.fontRegistry.shouldSynthesizeBold(family)'),
-  'CanvasKit TextRun fallback must mirror Canvas2D font-face registrations and synthesize bold only when no 700 face exists',
+    && canvaskitSource.includes('font.setEmbolden(providerFace.synthesizeBold)')
+    && canvaskitSource.includes('font.setSkewX(providerFace.synthesizeItalic ? -0.25 : 0)'),
+  'CanvasKit TextRun fallback must mirror Canvas2D font faces and synthesize only missing physical styles',
 );
 const canvaskitTextRunBlock = extractMethodBody(canvaskitSource, 'renderTextRun');
 const canvas2dTextRunBlock = extractMethodBody(canvas2dSource, 'renderTextRun');
@@ -2775,7 +2776,10 @@ assertTokensInOrder(
     '|| requiresComplexClusterShaping',
     'if (canUseClusterParagraph)',
     'const fontFamilies = [...clusterFontFamilies, ...fallbackFamilies]',
-    'this.fontRegistry.resolveProviderFamily(family, renderFontWeight)',
+    'this.fontRegistry.resolveProviderFamily(',
+    'family,',
+    'renderFontWeight,',
+    'op.style.italic,',
     'for (const cluster of clusters)',
     'const x = positions[cluster.start]',
     'this.canvasKit.ParagraphBuilder.MakeFromFontProvider(',

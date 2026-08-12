@@ -1351,7 +1351,11 @@ export class CanvasKitLayerRenderer {
         }
       }
       const clusterFontKey = [
-        this.fontRegistry.resolveFamily(selectedFontFamily),
+        this.fontRegistry.resolveProviderFamily(
+          selectedFontFamily,
+          renderFontWeight,
+          op.style.italic,
+        ),
         fontSize.toFixed(3),
         renderFontWeight,
         op.style.italic ? 'italic' : 'upright',
@@ -1585,7 +1589,11 @@ export class CanvasKitLayerRenderer {
         try {
           const renderFontWeight = resolveRenderFontWeight(op.style.fontFamily, op.style.bold);
           const fontFamilies = [...clusterFontFamilies, ...fallbackFamilies]
-            .map((family) => this.fontRegistry.resolveProviderFamily(family, renderFontWeight))
+            .map((family) => this.fontRegistry.resolveProviderFamily(
+              family,
+              renderFontWeight,
+              op.style.italic,
+            ))
             .filter((family, index, all) => all.indexOf(family) === index);
           const textStyle = new this.canvasKit.TextStyle({
             color: parseCanvasKitCssColor(this.canvasKit, op.style.color),
@@ -3341,7 +3349,7 @@ export class CanvasKitLayerRenderer {
     let paragraph: Paragraph | null = null;
     try {
       const fontFamilies = fallbackFamilies
-        .map((family) => this.fontRegistry.resolveProviderFamily(family, fontWeight))
+        .map((family) => this.fontRegistry.resolveProviderFamily(family, fontWeight, italic))
         .filter((family, index, all) => all.indexOf(family) === index);
       const textStyle = new this.canvasKit.TextStyle({
         color: parseCanvasKitCssColor(this.canvasKit, color, opacity),
@@ -4459,23 +4467,24 @@ export class CanvasKitLayerRenderer {
     scaleX = 1,
     weightOverride?: RenderFontWeight,
   ): { typeface: Typeface; font: Font; paint: Paint } {
-    const family = this.fontRegistry.resolveFamily(fontFamily);
     const weight = weightOverride ?? resolveRenderFontWeight(fontFamily, bold);
-    const providerFamily = this.fontRegistry.resolveProviderFamily(family, weight);
-    const typeface = this.fontProvider.matchFamilyStyle(providerFamily, {
-      weight: weight === 300
+    const providerFace = this.fontRegistry.resolveProviderFace(fontFamily, weight, italic);
+    const typeface = this.fontProvider.matchFamilyStyle(providerFace.providerFamily, {
+      weight: providerFace.physicalWeight === 300
         ? this.canvasKit.FontWeight.Light
-        : weight === 500
+        : providerFace.physicalWeight === 500
           ? this.canvasKit.FontWeight.Medium
-          : weight === 700
+          : providerFace.physicalWeight === 700
             ? this.canvasKit.FontWeight.Bold
             : this.canvasKit.FontWeight.Normal,
-      slant: italic ? this.canvasKit.FontSlant.Italic : this.canvasKit.FontSlant.Upright,
+      slant: providerFace.physicalItalic
+        ? this.canvasKit.FontSlant.Italic
+        : this.canvasKit.FontSlant.Upright,
     });
     const font = new this.canvasKit.Font(typeface, fontSize || 12);
-    font.setEmbolden(weight === 700 && this.fontRegistry.shouldSynthesizeBold(family));
+    font.setEmbolden(providerFace.synthesizeBold);
     font.setScaleX(scaleX > 0 ? scaleX : 1);
-    font.setSkewX(italic ? -0.25 : 0);
+    font.setSkewX(providerFace.synthesizeItalic ? -0.25 : 0);
     font.setSubpixel(true);
     if (fontSize >= 48 && bold && !italic) {
       font.setEdging(this.canvasKit.FontEdging.SubpixelAntiAlias);

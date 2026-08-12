@@ -174,6 +174,19 @@ export type CanvasKitGlyphRunReplayStatus =
   };
 
 type CanvasKitProviderFaces = { regular?: string; bold?: string };
+type CanvasKitLocalProviderFace = {
+  providerFamily: string;
+  weight: RenderFontWeight;
+  italic: boolean;
+};
+
+export type CanvasKitProviderFaceResolution = {
+  providerFamily: string;
+  physicalWeight: RenderFontWeight;
+  physicalItalic: boolean;
+  synthesizeBold: boolean;
+  synthesizeItalic: boolean;
+};
 
 function localFontAliasKey(value: string): string {
   return value.normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('en-US');
@@ -186,8 +199,9 @@ export class CanvasKitFontRegistry {
   private readonly glyphRunFonts = new Map<string, Font>();
   private readonly familiesWithBoldFace = new Set<string>();
   private readonly providerFamilies = new Map<string, CanvasKitProviderFaces>();
-  private readonly localProviderFamilies = new Map<string, CanvasKitProviderFaces>();
+  private readonly localProviderFamilies = new Map<string, CanvasKitLocalProviderFace[]>();
   private readonly localAliasFamilies = new Map<string, string>();
+  private readonly localAliasProviderFaces = new Map<string, CanvasKitLocalProviderFace[]>();
   private readonly preparedLocalFaceKeys = new Set<string>();
   private nextProviderFamilyId = 0;
 
@@ -389,23 +403,62 @@ export class CanvasKitFontRegistry {
     return this.resolveFamilyWithStatus(fontFamily).resolvedFamily;
   }
 
-  shouldSynthesizeBold(fontFamily: string): boolean {
+  resolveProviderFace(
+    fontFamily: string,
+    weight: RenderFontWeight,
+    italic: boolean,
+  ): CanvasKitProviderFaceResolution {
+    const requestedAlias = localFontAliasKey(fontFamily);
     const family = this.resolveFamily(fontFamily);
-    const localFaces = this.localProviderFamilies.get(family);
-    return localFaces ? !localFaces.bold : !this.familiesWithBoldFace.has(family);
+    const aliasFaces = this.localAliasProviderFaces.get(requestedAlias);
+    const localFaces = aliasFaces?.length
+      ? aliasFaces
+      : this.localProviderFamilies.get(family);
+    if (localFaces?.length) {
+      const matchingSlant = localFaces.filter(face => face.italic === italic);
+      const candidates = matchingSlant.length > 0 ? matchingSlant : localFaces;
+      const weightOrder: RenderFontWeight[] = weight === 300
+        ? [300, 400, 500, 700]
+        : weight === 400
+          ? [400, 500, 300, 700]
+          : weight === 500
+            ? [500, 400, 300, 700]
+            : [700, 500, 400, 300];
+      const face = weightOrder
+        .map(candidateWeight => candidates.find(candidate => candidate.weight === candidateWeight))
+        .find((candidate): candidate is CanvasKitLocalProviderFace => candidate !== undefined)
+        ?? candidates[0];
+      return {
+        providerFamily: face.providerFamily,
+        physicalWeight: face.weight,
+        physicalItalic: face.italic,
+        synthesizeBold: weight === 700 && face.weight !== 700,
+        synthesizeItalic: italic && !face.italic,
+      };
+    }
+
+    const providerFaces = this.providerFamilies.get(family);
+    const providerFamily = weight === 700 && providerFaces?.bold
+      ? providerFaces.bold
+      : providerFaces?.regular ?? providerFaces?.bold ?? family;
+    const physicalWeight: RenderFontWeight = providerFamily === providerFaces?.bold ? 700 : 400;
+    return {
+      providerFamily,
+      physicalWeight,
+      physicalItalic: false,
+      synthesizeBold: weight === 700
+        && physicalWeight !== 700
+        && !this.familiesWithBoldFace.has(family),
+      synthesizeItalic: italic,
+    };
   }
 
-  resolveProviderFamily(fontFamily: string, weight: RenderFontWeight): string {
-    const family = this.resolveFamily(fontFamily);
-    const providerFaces = this.localProviderFamilies.get(family)
-      ?? this.providerFamilies.get(family);
-    if (!providerFaces) {
-      return family;
-    }
-    if (weight === 700 && providerFaces.bold) {
-      return providerFaces.bold;
-    }
-    return providerFaces.regular ?? providerFaces.bold ?? family;
+  resolveProviderFamily(
+    fontFamily: string,
+    weight: RenderFontWeight,
+    italic = false,
+  ): string {
+    return this.resolveProviderFace(fontFamily, weight, italic).providerFamily;
   }
 
   registerVerifiedFontBlob(blobId: string, digestValue: string, bytes: ArrayBuffer | Uint8Array): void {
@@ -702,6 +755,7 @@ export class CanvasKitFontRegistry {
     this.providerFamilies.clear();
     this.localProviderFamilies.clear();
     this.localAliasFamilies.clear();
+    this.localAliasProviderFaces.clear();
     this.preparedLocalFaceKeys.clear();
     this.familiesWithBoldFace.clear();
     this.nextProviderFamilyId = 0;
@@ -725,13 +779,28 @@ export class CanvasKitFontRegistry {
 
   private registerLocalProviderFace(record: LocalFontRecord, bytes: Uint8Array): void {
     const family = record.family || record.fullName || record.postscriptName;
-    const bold = resolveRenderFontWeight(`${record.fullName} ${record.style}`, false) === 700;
-    const faceKind = bold ? 'bold' : 'regular';
-    const providerFaces = this.localProviderFamilies.get(family) ?? {};
-    if (!providerFaces[faceKind]) {
-      providerFaces[faceKind] = this.registerProviderFont(bytes, 'local_font', faceKind);
-      this.localProviderFamilies.set(family, providerFaces);
-    }
+    const descriptor = `${record.fullName} ${record.postscriptName} ${record.style}`;
+    const lowerDescriptor = descriptor.toLocaleLowerCase('en-US');
+    const weight: RenderFontWeight = /(?:extra|ultra|semi|demi)?(?:bold)|black|heavy|볼드/.test(lowerDescriptor)
+      ? 700
+      : /(?:extra|ultra)?light|thin/.test(lowerDescriptor)
+        ? 300
+        : /medium|메디움/.test(lowerDescriptor)
+          ? 500
+          : resolveRenderFontWeight(descriptor, false);
+    const italic = /italic|oblique|slanted|kursiv|이탤릭/.test(lowerDescriptor);
+    const face: CanvasKitLocalProviderFace = {
+      providerFamily: this.registerProviderFont(
+        bytes,
+        'local_font',
+        `${weight}_${italic ? 'italic' : 'upright'}`,
+      ),
+      weight,
+      italic,
+    };
+    const familyFaces = this.localProviderFamilies.get(family) ?? [];
+    familyFaces.push(face);
+    this.localProviderFamilies.set(family, familyFaces);
     for (const alias of new Set([
       family,
       record.family,
@@ -742,6 +811,9 @@ export class CanvasKitFontRegistry {
       const key = localFontAliasKey(alias);
       if (!key) continue;
       this.localAliasFamilies.set(key, family);
+      const aliasFaces = this.localAliasProviderFaces.get(key) ?? [];
+      aliasFaces.push(face);
+      this.localAliasProviderFaces.set(key, aliasFaces);
       this.aliases.add(alias);
     }
   }
@@ -749,7 +821,7 @@ export class CanvasKitFontRegistry {
   private registerProviderFont(
     bytes: Uint8Array,
     source: 'font' | 'local_font',
-    faceKind: 'regular' | 'bold',
+    faceKind: string,
   ): string {
     const providerFamily = `__rhwp_canvas_${source}_${this.nextProviderFamilyId}_${faceKind}`;
     this.nextProviderFamilyId += 1;
