@@ -899,6 +899,20 @@ the renderer is disposed; the alias and face indexes are replaced immediately.
 Local provider registration preserves a physical face matrix instead of
 collapsing every face into regular/bold. Light, regular, medium, and bold map to
 300/400/500/700, while italic/oblique faces retain their physical slant.
+
+Local Font Access discovery reads only bounded `name`, `OS/2`, and `head` table
+slices from each approved SFNT blob. The v2 metadata snapshot keeps optional
+`OS/2.usWeightClass` and italic/oblique state; it still never persists font
+bytes. CanvasKit uses that physical metadata before localized style-name
+heuristics. Weight classes 1-350, 351-450, 451-599, and 600-1000 map to the
+300/400/500/700 replay matrix respectively. `OS/2.fsSelection` italic or
+oblique bits are authoritative when present, with `head.macStyle` as the
+fallback for fonts without usable OS/2 style fields. Older snapshots without
+these optional fields retain the name-based fallback. A physical-style change
+is part of the normalized face signature, so approved refresh reconciliation
+invalidates provider-dependent text and picture caches even when aliases and
+font bytes are otherwise unchanged.
+
 Full-name and PostScript aliases that identify one exact face take precedence;
 family aliases choose the matching slant and then the CSS-compatible nearest
 weight order. CanvasKit applies synthetic emboldening or skew only when the
