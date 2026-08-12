@@ -8,6 +8,9 @@ import {
   getLocalFontRecords,
   getLocalFontState,
   getLocalFonts,
+  localFontFaceKey,
+  loadLocalFontBytes,
+  loadLocalFontBytesFor,
   loadStoredLocalFonts,
   resetLocalFontsForTests,
   resolveLocalFont,
@@ -431,6 +434,81 @@ test('SFNT 지역화 이름을 보존해 HWP 한글 full name을 영문 family�
     assert.deepEqual(getLocalFontRecords().map(item => item.displayName), ['08서울한강체 M']);
     assert.equal(stored.version, 2);
     assert.equal('blob' in (stored.fontRecords?.[0] ?? {}), false);
+  } finally {
+    await clearStoredLocalFonts();
+    resetLocalFontsForTests();
+    restoreGlobals(originals);
+  }
+});
+
+test('CanvasKit SFNT 조회는 exact face를 일괄 선택하고 동시 요청만 공유한다', async () => {
+  const g = globalThis as TestGlobals;
+  const originals = {
+    browser: g.browser,
+    chrome: g.chrome,
+    document: g.document,
+    localStorage: g.localStorage,
+    queryLocalFonts: g.queryLocalFonts,
+  };
+  const storage = createStorage();
+  const regularNameBytes = createSfntWithNameRecords([
+    { nameId: 1, value: '테스트글꼴' },
+    { nameId: 2, value: 'Regular' },
+    { nameId: 4, value: '테스트글꼴 Regular' },
+    { nameId: 6, value: 'TestFace-Regular' },
+  ]);
+  const boldNameBytes = createSfntWithNameRecords([
+    { nameId: 1, value: '테스트글꼴' },
+    { nameId: 2, value: 'Bold' },
+    { nameId: 4, value: '테스트글꼴 Bold' },
+    { nameId: 6, value: 'TestFace-Bold' },
+  ]);
+  const regularBytes = new Uint8Array([...regularNameBytes, 0xde, 0xad]);
+  const boldBytes = new Uint8Array([...boldNameBytes, 0xbe, 0xef]);
+  const queryCalls: Array<string[] | undefined> = [];
+
+  resetLocalFontsForTests();
+  g.browser = undefined;
+  g.chrome = undefined;
+  g.localStorage = storage;
+  g.queryLocalFonts = async (options?: { postscriptNames?: string[] }) => {
+    queryCalls.push(options?.postscriptNames);
+    return [
+      {
+        family: 'Test Face',
+        fullName: 'Test Face Regular',
+        postscriptName: 'TestFace-Regular',
+        style: 'Regular',
+        blob: async () => new Blob([options ? regularBytes : regularNameBytes]),
+      },
+      {
+        family: 'Test Face',
+        fullName: 'Test Face Bold',
+        postscriptName: 'TestFace-Bold',
+        style: 'Bold',
+        blob: async () => new Blob([options ? boldBytes : boldNameBytes]),
+      },
+    ];
+  };
+
+  try {
+    await detectLocalFonts({ force: true, includeRegistered: true });
+    const regular = resolveLocalFont('테스트글꼴 Regular');
+    const bold = resolveLocalFont('테스트글꼴 Bold');
+    const [all, one] = await Promise.all([
+      loadLocalFontBytesFor(['테스트글꼴 Regular', '테스트글꼴 Bold']),
+      loadLocalFontBytes('테스트글꼴 Regular'),
+    ]);
+
+    assert.ok(regular);
+    assert.ok(bold);
+    assert.equal(resolveLocalFont('Test Face'), null);
+    assert.deepEqual(new Uint8Array(all.get(localFontFaceKey(regular)) ?? new ArrayBuffer(0)), regularBytes);
+    assert.deepEqual(new Uint8Array(all.get(localFontFaceKey(bold)) ?? new ArrayBuffer(0)), boldBytes);
+    assert.deepEqual(new Uint8Array(one ?? new ArrayBuffer(0)), regularBytes);
+    assert.equal(queryCalls.length, 2);
+    assert.equal(queryCalls[0], undefined);
+    assert.deepEqual(new Set(queryCalls[1]), new Set(['TestFace-Regular', 'TestFace-Bold']));
   } finally {
     await clearStoredLocalFonts();
     resetLocalFontsForTests();
