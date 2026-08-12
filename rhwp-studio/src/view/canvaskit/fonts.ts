@@ -2,9 +2,16 @@ import type { CanvasKit, Font, Typeface, TypefaceFontProvider } from 'canvaskit-
 
 import { FONT_LIST, OLD_HANGUL_FONT_FAMILY } from '@/core/font-loader';
 import {
+  getLocalFontRecords,
+  loadLocalFontBytesFor,
+  localFontFaceKey,
+  type LocalFontRecord,
+} from '@/core/local-fonts';
+import {
   baseFamilyWithoutWeightSuffix,
   canvasFontFamilyFallbackCandidates,
   resolveFont,
+  resolveRenderFontWeight,
   type RenderFontWeight,
 } from '@/core/font-substitution';
 import type {
@@ -166,13 +173,22 @@ export type CanvasKitGlyphRunReplayStatus =
     report: CanvasKitGlyphRunReplayReport;
   };
 
+type CanvasKitProviderFaces = { regular?: string; bold?: string };
+
+function localFontAliasKey(value: string): string {
+  return value.normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('en-US');
+}
+
 export class CanvasKitFontRegistry {
   readonly aliases = new Set<string>();
   private readonly verifiedFontBlobs = new Map<string, ArrayBuffer>();
   private readonly glyphRunTypefaces = new Map<string, Typeface>();
   private readonly glyphRunFonts = new Map<string, Font>();
   private readonly familiesWithBoldFace = new Set<string>();
-  private readonly providerFamilies = new Map<string, { regular?: string; bold?: string }>();
+  private readonly providerFamilies = new Map<string, CanvasKitProviderFaces>();
+  private readonly localProviderFamilies = new Map<string, CanvasKitProviderFaces>();
+  private readonly localAliasFamilies = new Map<string, string>();
+  private readonly preparedLocalFaceKeys = new Set<string>();
   private nextProviderFamilyId = 0;
 
   constructor(
@@ -269,7 +285,45 @@ export class CanvasKitFontRegistry {
     );
   }
 
+  /** 현재 문서가 요구하는 exact local face만 원본 SFNT bytes로 등록한다. */
+  async prepareLocalFonts(fontNames: readonly string[]): Promise<number> {
+    const requestedAliases = new Set(fontNames.map(localFontAliasKey).filter(Boolean));
+    if (requestedAliases.size === 0) return 0;
+
+    const records = getLocalFontRecords({ includeRegistered: true }).filter(record =>
+      record.aliases.some(alias => requestedAliases.has(localFontAliasKey(alias))),
+    );
+    const pendingRecords = records.filter(record => !this.preparedLocalFaceKeys.has(localFontFaceKey(record)));
+    if (pendingRecords.length === 0) return 0;
+
+    const bytesByFace = await loadLocalFontBytesFor(
+      pendingRecords.map(record => record.postscriptName || record.fullName),
+    );
+    let registered = 0;
+    for (const record of pendingRecords) {
+      const faceKey = localFontFaceKey(record);
+      const bytes = bytesByFace.get(faceKey);
+      if (!bytes) continue;
+      try {
+        this.registerLocalProviderFace(record, new Uint8Array(bytes));
+        this.preparedLocalFaceKeys.add(faceKey);
+        registered += 1;
+      } catch (error) {
+        console.warn(`[CanvasKitFontRegistry] ${record.displayName} local face 등록 실패:`, error);
+      }
+    }
+    return registered;
+  }
+
   resolveFamilyWithStatus(fontFamily: string): CanvasKitFontResolution {
+    const localFamily = this.localAliasFamilies.get(localFontAliasKey(fontFamily));
+    if (localFamily) {
+      return {
+        requestedFamily: fontFamily,
+        resolvedFamily: localFamily,
+        source: 'requestedAlias',
+      };
+    }
     // PageLayerTree families have already passed through the Rust style
     // resolver. Preserve measured HFT identities instead of feeding them
     // through the raw-document substitution table a second time.
@@ -336,12 +390,15 @@ export class CanvasKitFontRegistry {
   }
 
   shouldSynthesizeBold(fontFamily: string): boolean {
-    return !this.familiesWithBoldFace.has(this.resolveFamily(fontFamily));
+    const family = this.resolveFamily(fontFamily);
+    const localFaces = this.localProviderFamilies.get(family);
+    return localFaces ? !localFaces.bold : !this.familiesWithBoldFace.has(family);
   }
 
   resolveProviderFamily(fontFamily: string, weight: RenderFontWeight): string {
     const family = this.resolveFamily(fontFamily);
-    const providerFaces = this.providerFamilies.get(family);
+    const providerFaces = this.localProviderFamilies.get(family)
+      ?? this.providerFamilies.get(family);
     if (!providerFaces) {
       return family;
     }
@@ -643,6 +700,9 @@ export class CanvasKitFontRegistry {
   clear(): void {
     this.aliases.clear();
     this.providerFamilies.clear();
+    this.localProviderFamilies.clear();
+    this.localAliasFamilies.clear();
+    this.preparedLocalFaceKeys.clear();
     this.familiesWithBoldFace.clear();
     this.nextProviderFamilyId = 0;
     this.clearDocumentResources();
@@ -654,15 +714,47 @@ export class CanvasKitFontRegistry {
     if (providerFaces[faceKind]) {
       return;
     }
-    const providerFamily = `__rhwp_canvas_font_${this.nextProviderFamilyId}_${faceKind}`;
-    this.nextProviderFamilyId += 1;
-    this.fontProvider.registerFont(bytes, providerFamily);
+    const providerFamily = this.registerProviderFont(bytes, 'font', faceKind);
     providerFaces[faceKind] = providerFamily;
     this.providerFamilies.set(alias, providerFaces);
     this.aliases.add(alias);
     if (bold) {
       this.familiesWithBoldFace.add(alias);
     }
+  }
+
+  private registerLocalProviderFace(record: LocalFontRecord, bytes: Uint8Array): void {
+    const family = record.family || record.fullName || record.postscriptName;
+    const bold = resolveRenderFontWeight(`${record.fullName} ${record.style}`, false) === 700;
+    const faceKind = bold ? 'bold' : 'regular';
+    const providerFaces = this.localProviderFamilies.get(family) ?? {};
+    if (!providerFaces[faceKind]) {
+      providerFaces[faceKind] = this.registerProviderFont(bytes, 'local_font', faceKind);
+      this.localProviderFamilies.set(family, providerFaces);
+    }
+    for (const alias of new Set([
+      family,
+      record.family,
+      record.fullName,
+      record.postscriptName,
+      ...record.aliases,
+    ])) {
+      const key = localFontAliasKey(alias);
+      if (!key) continue;
+      this.localAliasFamilies.set(key, family);
+      this.aliases.add(alias);
+    }
+  }
+
+  private registerProviderFont(
+    bytes: Uint8Array,
+    source: 'font' | 'local_font',
+    faceKind: 'regular' | 'bold',
+  ): string {
+    const providerFamily = `__rhwp_canvas_${source}_${this.nextProviderFamilyId}_${faceKind}`;
+    this.nextProviderFamilyId += 1;
+    this.fontProvider.registerFont(bytes, providerFamily);
+    return providerFamily;
   }
 
   private typefaceForGlyphRun(face: LayerFontFaceResource, blob: LayerFontBlobResource): Typeface | null {

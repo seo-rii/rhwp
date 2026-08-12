@@ -5,7 +5,7 @@
  * 글꼴 목록을 조회한다. 저장된 감지 결과는 재사용하되, 새 목록 조회는
  * 사용자 승인 흐름에서만 호출하도록 API를 분리한다.
  */
-import { REGISTERED_FONTS } from './font-loader';
+import { REGISTERED_FONTS } from './font-loader.ts';
 
 /** queryLocalFonts 반환 타입 (DOM 표준 미포함) */
 interface FontData {

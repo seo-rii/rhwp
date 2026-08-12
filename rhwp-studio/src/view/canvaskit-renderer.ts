@@ -366,6 +366,11 @@ export class CanvasKitLayerRenderer {
     return renderer;
   }
 
+  async prepareLocalFonts(fontNames: readonly string[]): Promise<number> {
+    if (this.disposed) return 0;
+    return this.fontRegistry.prepareLocalFonts(fontNames);
+  }
+
   renderPage(
     tree: PageLayerTree,
     targetCanvas: HTMLCanvasElement,

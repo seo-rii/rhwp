@@ -6,6 +6,7 @@ import { InputHandler } from '@/engine/input-handler';
 import { Toolbar } from '@/ui/toolbar';
 import { MenuBar } from '@/ui/menu-bar';
 import { loadWebFonts } from '@/core/font-loader';
+import { loadStoredLocalFonts } from '@/core/local-fonts';
 import { CommandRegistry } from '@/command/registry';
 import { CommandDispatcher } from '@/command/dispatcher';
 import type { EditorContext, CommandServices } from '@/command/types';
@@ -48,6 +49,9 @@ let canvasView: CanvasView | null = null;
 let inputHandler: InputHandler | null = null;
 let toolbar: Toolbar | null = null;
 let ruler: Ruler | null = null;
+let canvaskitRenderer: CanvasKitLayerRenderer | null = null;
+let activeCanvasKitMode: ReturnType<typeof resolveCanvasKitRenderMode> = 'default';
+let activeRenderProfile: ReturnType<typeof resolveRenderProfile> = 'screen';
 
 
 // ─── 커맨드 시스템 ─────────────────────────────
@@ -110,8 +114,9 @@ async function initialize(): Promise<void> {
     const canvaskitSurfaceRequest = resolveCanvasKitSurfaceRequest(window.location.search);
     const canvaskitSurfacePreference = canvaskitSurfaceRequest.preference;
     const renderProfile = resolveRenderProfile(window.location.search);
+    activeCanvasKitMode = canvaskitMode;
+    activeRenderProfile = renderProfile;
     let renderBackend = requestedBackend;
-    let canvaskitRenderer: CanvasKitLayerRenderer | null = null;
 
     if (renderBackend === 'canvaskit') {
       msg.textContent = 'CanvasKit 로딩 중...';
@@ -444,6 +449,32 @@ function setupEventListeners(): void {
   });
 }
 
+async function prepareCanvasKitDocumentFonts(docInfo: DocumentInfo): Promise<void> {
+  const renderer = canvaskitRenderer;
+  if (!renderer) return;
+
+  let requiredFontFamilies = (docInfo.fontsUsed ?? []).slice(0, 128);
+  try {
+    const preflight = wasm.getCanvasKitDocumentPreflight(
+      activeCanvasKitMode,
+      activeRenderProfile,
+    );
+    requiredFontFamilies = preflight.requiredFontFamilies;
+  } catch (error) {
+    console.warn('[CanvasKit] document font preflight 실패, bounded document 목록을 사용합니다:', error);
+  }
+
+  try {
+    await loadStoredLocalFonts();
+    const registered = await renderer.prepareLocalFonts(requiredFontFamilies);
+    if (registered > 0) {
+      console.info(`[CanvasKit] first replay 전에 exact local face ${registered}개를 준비했습니다.`);
+    }
+  } catch (error) {
+    console.warn('[CanvasKit] exact local face 준비 실패, bundled fallback으로 계속합니다:', error);
+  }
+}
+
 /** 문서 초기화 공통 시퀀스 (loadFile, createNewDocument 양쪽에서 사용) */
 async function initializeDocument(docInfo: DocumentInfo, displayName: string): Promise<void> {
   const msg = sbMessage();
@@ -461,6 +492,7 @@ async function initializeDocument(docInfo: DocumentInfo, displayName: string): P
     sbSection().textContent = `구역: 1 / ${totalSections}`;
     console.log('[initDoc] 3. inputHandler deactivate');
     inputHandler?.deactivate();
+    await prepareCanvasKitDocumentFonts(docInfo);
     console.log('[initDoc] 4. canvasView loadDocument');
     canvasView?.loadDocument();
     console.log('[initDoc] 5. toolbar setEnabled');
