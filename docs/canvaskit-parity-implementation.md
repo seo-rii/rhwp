@@ -875,8 +875,12 @@ are shared only by concurrent in-flight requests. Family, full-name,
 PostScript-name, and localized aliases all resolve to the local provider before
 the bundled catalog. A denied permission, missing face, invalid blob, or
 registration failure remains non-fatal and deterministically uses the bundled
-fallback. Newly approved faces are applied on the next document initialization;
-live replacement of an already rendered document is a separate lifecycle step.
+fallback. An explicit detection action always refreshes Local Font Access
+metadata when that API is available. After a successful approval, Studio loads
+only newly required exact faces and resets the current CanvasKit document for a
+fresh replay. The refresh is skipped when no new face was registered or when a
+different document became active while bytes were loading. Listener failures
+are isolated from detection success, and Canvas2D remains unaffected.
 
 The shared font matrix also maps the Dotum/Gulim family aliases (`돋움`,
 `돋움체`, `굴림`, `새굴림`, and `Haansoft Dotum`) to the independent
