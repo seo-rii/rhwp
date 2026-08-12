@@ -13,14 +13,33 @@ interface FontData {
   fullName: string;
   postscriptName: string;
   style: string;
+  blob?: () => Promise<Blob>;
 }
 
 export type LocalFontDetectionSource = 'local-font-access' | 'font-presence-probe';
 
+/**
+ * 하나의 설치 글꼴 face를 나타내는 로컬 메타데이터다.
+ *
+ * `family`는 브라우저 CSS에서 사용할 canonical 이름이고, `aliases`에는 HWP가 저장한
+ * 한글/영문 family, full name, PostScript name을 함께 둔다. 원본 SFNT 바이트는 저장하지 않는다.
+ */
+export interface LocalFontRecord {
+  family: string;
+  fullName: string;
+  postscriptName: string;
+  style: string;
+  displayName: string;
+  aliases: string[];
+}
+
 export interface LocalFontSnapshot {
-  version: 1;
+  /** v1은 family 문자열만 저장한 이전 형식이며 로드 시 v2 레코드로 승격한다. */
+  version: 1 | 2;
   detectedAt: string;
   families: string[];
+  /** v2에서만 저장되는 설치 글꼴 face 메타데이터. */
+  fontRecords?: LocalFontRecord[];
   source: LocalFontDetectionSource;
   /** font-presence-probe는 전체 목록이 아니라 문서 후보만 확인한다. */
   checkedFamilies?: string[];
@@ -61,7 +80,7 @@ export interface GetLocalFontsOptions {
 }
 
 type LocalFontGlobal = typeof globalThis & {
-  queryLocalFonts?: () => Promise<FontData[]>;
+  queryLocalFonts?: (options?: { postscriptNames?: string[] }) => Promise<FontData[]>;
   document?: {
     createElement?: (tagName: string) => unknown;
   };
@@ -99,6 +118,8 @@ const PROBE_TEXTS = [
   '가나다라마바사아자차카타파하',
   '한글과 English 12345',
 ];
+const LOCAL_FONT_NAME_READ_CONCURRENCY = 4;
+const HANGUL_RE = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/;
 
 /** 캐시된 로컬 글꼴 snapshot (감지/저장소 로드 전 null) */
 let cachedSnapshot: LocalFontSnapshot | null = null;
@@ -146,33 +167,268 @@ function normalizeFamilies(families: unknown): string[] {
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
 }
 
-function normalizeSnapshot(value: unknown): LocalFontSnapshot | null {
-  if (!value || typeof value !== 'object') return null;
-  const data = value as Partial<LocalFontSnapshot>;
-  if (data.version !== 1) return null;
-  if (data.source !== 'local-font-access' && data.source !== 'font-presence-probe') return null;
-  if (typeof data.detectedAt !== 'string' || !data.detectedAt) return null;
-  const families = normalizeFamilies(data.families);
+function normalizeFontAlias(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/\u0000/g, '')
+    .normalize('NFC')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('en-US');
+}
+
+function normalizeFontNames(values: readonly unknown[]): string[] {
+  const byAlias = new Map<string, string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const name = value.replace(/\u0000/g, '').normalize('NFC').replace(/\s+/g, ' ').trim();
+    const alias = normalizeFontAlias(name);
+    if (alias && !byAlias.has(alias)) byAlias.set(alias, name);
+  }
+  return Array.from(byAlias.values()).sort((a, b) => a.localeCompare(b, 'ko'));
+}
+
+interface SfntFontNames {
+  families: string[];
+  fullNames: string[];
+  postscriptNames: string[];
+  styles: string[];
+}
+
+function emptySfntFontNames(): SfntFontNames {
+  return { families: [], fullNames: [], postscriptNames: [], styles: [] };
+}
+
+function byteRangeAvailable(view: DataView, offset: number, length: number): boolean {
+  return Number.isSafeInteger(offset)
+    && Number.isSafeInteger(length)
+    && offset >= 0
+    && length >= 0
+    && offset <= view.byteLength
+    && length <= view.byteLength - offset;
+}
+
+function sfntTag(view: DataView, offset: number): string {
+  if (!byteRangeAvailable(view, offset, 4)) return '';
+  return String.fromCharCode(
+    view.getUint8(offset),
+    view.getUint8(offset + 1),
+    view.getUint8(offset + 2),
+    view.getUint8(offset + 3),
+  );
+}
+
+function decodeUtf16Be(bytes: Uint8Array): string {
+  const codeUnits: number[] = [];
+  for (let index = 0; index + 1 < bytes.length; index += 2) {
+    codeUnits.push((bytes[index] << 8) | bytes[index + 1]);
+  }
+  let text = '';
+  for (let index = 0; index < codeUnits.length; index += 4096) {
+    text += String.fromCharCode(...codeUnits.slice(index, index + 4096));
+  }
+  return text;
+}
+
+function decodeSfntName(bytes: Uint8Array, platformId: number): string {
+  if (platformId === 0 || platformId === 3) return decodeUtf16Be(bytes);
+  let text = '';
+  for (let index = 0; index < bytes.length; index += 4096) {
+    text += String.fromCharCode(...bytes.slice(index, index + 4096));
+  }
+  return text;
+}
+
+function parseSfntNameTable(buffer: ArrayBuffer): SfntFontNames {
+  const view = new DataView(buffer);
+  if (!byteRangeAvailable(view, 0, 6)) return emptySfntFontNames();
+
+  const count = view.getUint16(2, false);
+  const stringOffset = view.getUint16(4, false);
+  const recordsEnd = 6 + count * 12;
+  if (!byteRangeAvailable(view, 6, count * 12) || stringOffset > view.byteLength || recordsEnd > view.byteLength) {
+    return emptySfntFontNames();
+  }
+
+  const families: string[] = [];
+  const fullNames: string[] = [];
+  const postscriptNames: string[] = [];
+  const styles: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const recordOffset = 6 + index * 12;
+    const platformId = view.getUint16(recordOffset, false);
+    const nameId = view.getUint16(recordOffset + 6, false);
+    const length = view.getUint16(recordOffset + 8, false);
+    const relativeOffset = view.getUint16(recordOffset + 10, false);
+    const valueOffset = stringOffset + relativeOffset;
+    if (!byteRangeAvailable(view, valueOffset, length)) continue;
+
+    const name = decodeSfntName(
+      new Uint8Array(buffer, valueOffset, length),
+      platformId,
+    ).replace(/\u0000/g, '').trim();
+    if (!name) continue;
+    if (nameId === 1 || nameId === 16) {
+      families.push(name);
+    } else if (nameId === 2 || nameId === 17) {
+      styles.push(name);
+    } else if (nameId === 4) {
+      fullNames.push(name);
+    } else if (nameId === 6) {
+      postscriptNames.push(name);
+    }
+  }
+
   return {
-    version: 1,
-    detectedAt: data.detectedAt,
-    families,
-    source: data.source,
-    checkedFamilies: data.source === 'font-presence-probe'
-      ? normalizeFamilies(data.checkedFamilies)
-      : undefined,
+    families: normalizeFontNames(families),
+    fullNames: normalizeFontNames(fullNames),
+    postscriptNames: normalizeFontNames(postscriptNames),
+    styles: normalizeFontNames(styles),
   };
 }
 
+async function readSfntFontNames(fontData: FontData): Promise<SfntFontNames> {
+  if (!fontData.blob) return emptySfntFontNames();
+  try {
+    const blob = await fontData.blob();
+    if (blob.size < 12) return emptySfntFontNames();
+    const header = new DataView(await blob.slice(0, 12).arrayBuffer());
+    const tableCount = header.getUint16(4, false);
+    const directoryLength = 12 + tableCount * 16;
+    if (blob.size < directoryLength) return emptySfntFontNames();
+    const directory = new DataView(await blob.slice(0, directoryLength).arrayBuffer());
+    for (let index = 0; index < tableCount; index += 1) {
+      const recordOffset = 12 + index * 16;
+      if (sfntTag(directory, recordOffset) !== 'name') continue;
+      const offset = directory.getUint32(recordOffset + 8, false);
+      const length = directory.getUint32(recordOffset + 12, false);
+      if (offset > blob.size || length > blob.size - offset) return emptySfntFontNames();
+      return parseSfntNameTable(await blob.slice(offset, offset + length).arrayBuffer());
+    }
+  } catch {
+    // 메타데이터 보강 실패는 감지 자체를 실패시키지 않고 API 기본 이름만 사용한다.
+  }
+  return emptySfntFontNames();
+}
+
+function preferredLocalFontDisplayName(fullNames: readonly string[], families: readonly string[]): string {
+  return fullNames.find(name => HANGUL_RE.test(name))
+    ?? families.find(name => HANGUL_RE.test(name))
+    ?? fullNames[0]
+    ?? families[0]
+    ?? '';
+}
+
+function makeLocalFontRecord(fontData: Pick<FontData, 'family' | 'fullName' | 'postscriptName' | 'style'>, sfntNames: SfntFontNames = emptySfntFontNames()): LocalFontRecord | null {
+  const families = normalizeFontNames([fontData.family, ...sfntNames.families]);
+  const fullNames = normalizeFontNames([fontData.fullName, ...sfntNames.fullNames]);
+  const postscriptNames = normalizeFontNames([fontData.postscriptName, ...sfntNames.postscriptNames]);
+  const styles = normalizeFontNames([fontData.style, ...sfntNames.styles]);
+  const family = normalizeFontNames([fontData.family])[0] ?? families[0] ?? fullNames[0] ?? postscriptNames[0];
+  if (!family) return null;
+
+  const aliases = normalizeFontNames([
+    ...families,
+    ...fullNames,
+    ...postscriptNames,
+    ...families.flatMap(familyName => styles.map(style => `${familyName} ${style}`)),
+  ]);
+  return {
+    family,
+    fullName: fullNames[0] ?? family,
+    postscriptName: postscriptNames[0] ?? '',
+    style: styles[0] ?? '',
+    displayName: preferredLocalFontDisplayName(fullNames, families) || family,
+    aliases,
+  };
+}
+
+function normalizeLocalFontRecords(value: unknown): LocalFontRecord[] {
+  if (!Array.isArray(value)) return [];
+  const records = new Map<string, LocalFontRecord>();
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const data = candidate as Partial<LocalFontRecord>;
+    const record = makeLocalFontRecord({
+      family: typeof data.family === 'string' ? data.family : '',
+      fullName: typeof data.fullName === 'string' ? data.fullName : '',
+      postscriptName: typeof data.postscriptName === 'string' ? data.postscriptName : '',
+      style: typeof data.style === 'string' ? data.style : '',
+    }, {
+      families: [],
+      fullNames: [],
+      postscriptNames: [],
+      styles: [],
+    });
+    if (!record) continue;
+    const aliases = normalizeFontNames([...record.aliases, ...(Array.isArray(data.aliases) ? data.aliases : [])]);
+    const displayName = typeof data.displayName === 'string' && data.displayName.trim()
+      ? data.displayName.trim()
+      : preferredLocalFontDisplayName(aliases.filter(name => HANGUL_RE.test(name)), [record.fullName, record.family]) || record.displayName;
+    const normalized = { ...record, displayName, aliases };
+    const key = normalizeFontAlias(normalized.postscriptName || normalized.fullName || normalized.family);
+    if (key && !records.has(key)) records.set(key, normalized);
+  }
+  return Array.from(records.values()).sort((a, b) => a.displayName.localeCompare(b.displayName, 'ko'));
+}
+
+function recordsFromFamilies(families: readonly string[]): LocalFontRecord[] {
+  return normalizeLocalFontRecords(families.map(family => ({ family, fullName: family, postscriptName: '', style: '' })));
+}
+
+function snapshotRecords(snapshot: LocalFontSnapshot | null): LocalFontRecord[] {
+  if (!snapshot) return [];
+  const records = normalizeLocalFontRecords(snapshot.fontRecords);
+  return records.length > 0 ? records : recordsFromFamilies(snapshot.families);
+}
+
+async function collectLocalFontRecords(fontDataList: readonly FontData[]): Promise<LocalFontRecord[]> {
+  const records: Array<LocalFontRecord | null> = new Array(fontDataList.length).fill(null);
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (nextIndex < fontDataList.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const fontData = fontDataList[index];
+      records[index] = makeLocalFontRecord(fontData, await readSfntFontNames(fontData));
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(LOCAL_FONT_NAME_READ_CONCURRENCY, fontDataList.length) },
+    () => worker(),
+  ));
+  return normalizeLocalFontRecords(records.filter((record): record is LocalFontRecord => record !== null));
+}
+
+function normalizeSnapshot(value: unknown): LocalFontSnapshot | null {
+  if (!value || typeof value !== 'object') return null;
+  const data = value as Partial<LocalFontSnapshot>;
+  if (data.source !== 'local-font-access' && data.source !== 'font-presence-probe') return null;
+  if (typeof data.detectedAt !== 'string' || !data.detectedAt) return null;
+  if (data.version !== 1 && data.version !== 2) return null;
+  const records = data.version === 2
+    ? normalizeLocalFontRecords(data.fontRecords)
+    : [];
+  return makeSnapshot(
+    records.length > 0 ? records : recordsFromFamilies(normalizeFamilies(data.families)),
+    data.source,
+    data.checkedFamilies,
+    data.detectedAt,
+  );
+}
+
 function makeSnapshot(
-  families: string[],
+  records: readonly LocalFontRecord[],
   source: LocalFontDetectionSource,
   checkedFamilies?: readonly string[],
+  detectedAt = new Date().toISOString(),
 ): LocalFontSnapshot {
+  const fontRecords = normalizeLocalFontRecords(records);
   return {
-    version: 1,
-    detectedAt: new Date().toISOString(),
-    families: normalizeFamilies(families),
+    version: 2,
+    detectedAt,
+    families: normalizeFamilies(fontRecords.map(record => record.family)),
+    fontRecords,
     source,
     checkedFamilies: source === 'font-presence-probe'
       ? normalizeFamilies(checkedFamilies)
@@ -477,12 +733,11 @@ export async function detectLocalFonts(options: DetectLocalFontsOptions = {}): P
   if (isLocalFontAccessSupported()) {
     const queryLocalFonts = (globalThis as LocalFontGlobal).queryLocalFonts!;
     const fontDataList = await queryLocalFonts();
-    const families = normalizeFamilies(fontDataList.map(fd => fd.family));
-    snapshot = makeSnapshot(families, 'local-font-access');
+    snapshot = makeSnapshot(await collectLocalFontRecords(fontDataList), 'local-font-access');
   } else if (isFontPresenceProbeSupported() && options.candidateFamilies?.length) {
     const checkedFamilies = normalizeFamilies(options.candidateFamilies);
     const families = probeCandidateFamilies(checkedFamilies);
-    snapshot = makeSnapshot(families, 'font-presence-probe', checkedFamilies);
+    snapshot = makeSnapshot(recordsFromFamilies(families), 'font-presence-probe', checkedFamilies);
   }
 
   if (!snapshot) return [];
@@ -490,20 +745,38 @@ export async function detectLocalFonts(options: DetectLocalFontsOptions = {}): P
   cachedSnapshot = snapshot;
   storageLoaded = true;
   await writeStoredSnapshot(snapshot);
-  console.log(`[LocalFonts] ${snapshot.families.length}개 로컬 글꼴 감지됨 (${snapshot.source})`);
+  console.log(`[LocalFonts] ${snapshotRecords(snapshot).length}개 로컬 글꼴 감지됨 (${snapshot.source})`);
   return getLocalFonts({ includeRegistered: options.includeRegistered });
+}
+
+/** 캐시된 로컬 글꼴 face 레코드를 반환한다. */
+export function getLocalFontRecords(options: GetLocalFontsOptions = {}): LocalFontRecord[] {
+  const records = snapshotRecords(cachedSnapshot);
+  if (options.includeRegistered) return records;
+  return records.filter(record => !record.aliases.some(name => REGISTERED_FONTS.has(name)));
 }
 
 /** 캐시된 로컬 글꼴 목록을 동기적으로 반환 (감지 전이면 빈 배열) */
 export function getLocalFonts(options: GetLocalFontsOptions = {}): string[] {
-  const families = cachedSnapshot?.families ?? [];
-  if (options.includeRegistered) return [...families];
-  return families.filter(name => !REGISTERED_FONTS.has(name));
+  return normalizeFamilies(getLocalFontRecords(options).map(record => record.displayName));
 }
 
 /** 캐시된 전체 로컬 글꼴 목록을 반환한다. */
 export function getDetectedLocalFonts(): string[] {
-  return getLocalFonts({ includeRegistered: true });
+  return normalizeFamilies(getLocalFontRecords({ includeRegistered: true }).map(record => record.family));
+}
+
+/** HWP/CSS 글꼴명에서 동일한 설치 글꼴 face를 찾는다. */
+export function resolveLocalFont(fontName: string): LocalFontRecord | null {
+  const target = normalizeFontAlias(fontName);
+  if (!target) return null;
+  const matches = getLocalFontRecords({ includeRegistered: true })
+    .filter(record => record.aliases.some(alias => normalizeFontAlias(alias) === target));
+  if (matches.length === 0) return null;
+  return matches.find(record => normalizeFontAlias(record.family) === target)
+    ?? matches.find(record => normalizeFontAlias(record.fullName) === target)
+    ?? matches.find(record => normalizeFontAlias(record.postscriptName) === target)
+    ?? (matches.length === 1 ? matches[0] : null);
 }
 
 /** 현재 로컬 글꼴 감지/저장 상태를 반환한다. */

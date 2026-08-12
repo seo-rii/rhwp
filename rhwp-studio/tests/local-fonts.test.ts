@@ -5,10 +5,12 @@ import {
   clearStoredLocalFonts,
   detectLocalFonts,
   getDetectedLocalFonts,
+  getLocalFontRecords,
   getLocalFontState,
   getLocalFonts,
   loadStoredLocalFonts,
   resetLocalFontsForTests,
+  resolveLocalFont,
   type LocalFontSnapshot,
 } from '../src/core/local-fonts.ts';
 
@@ -125,6 +127,48 @@ function createProbeDocument(installedFamilies: readonly string[]): unknown {
       };
     },
   };
+}
+
+function utf16Be(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length * 2);
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    bytes[index * 2] = codeUnit >> 8;
+    bytes[index * 2 + 1] = codeUnit & 0xff;
+  }
+  return bytes;
+}
+
+function createSfntWithNameRecords(entries: ReadonlyArray<{ nameId: number; value: string }>): Uint8Array {
+  const encoded = entries.map(entry => ({ ...entry, bytes: utf16Be(entry.value) }));
+  const nameTableOffset = 12 + 16;
+  const stringsOffset = 6 + encoded.length * 12;
+  const nameTableLength = stringsOffset + encoded.reduce((sum, entry) => sum + entry.bytes.length, 0);
+  const bytes = new Uint8Array(nameTableOffset + nameTableLength);
+  const view = new DataView(bytes.buffer);
+
+  view.setUint32(0, 0x00010000, false);
+  view.setUint16(4, 1, false);
+  bytes.set([0x6e, 0x61, 0x6d, 0x65], 12);
+  view.setUint32(20, nameTableOffset, false);
+  view.setUint32(24, nameTableLength, false);
+
+  view.setUint16(nameTableOffset, 0, false);
+  view.setUint16(nameTableOffset + 2, encoded.length, false);
+  view.setUint16(nameTableOffset + 4, stringsOffset, false);
+  let stringCursor = 0;
+  encoded.forEach((entry, index) => {
+    const recordOffset = nameTableOffset + 6 + index * 12;
+    view.setUint16(recordOffset, 3, false);
+    view.setUint16(recordOffset + 2, 1, false);
+    view.setUint16(recordOffset + 4, 0x0412, false);
+    view.setUint16(recordOffset + 6, entry.nameId, false);
+    view.setUint16(recordOffset + 8, entry.bytes.length, false);
+    view.setUint16(recordOffset + 10, stringCursor, false);
+    bytes.set(entry.bytes, nameTableOffset + stringsOffset + stringCursor);
+    stringCursor += entry.bytes.length;
+  });
+  return bytes;
 }
 
 test('저장된 localStorage snapshot 로드는 queryLocalFonts를 호출하지 않는다', async () => {
@@ -340,6 +384,53 @@ test('detectLocalFonts는 전체 snapshot을 저장하고 기본 반환은 웹 �
     assert.deepEqual(storedSnapshot?.families, sortedKo(['내 로컬', '함초롬바탕']));
     assert.equal(storedSnapshot?.source, 'local-font-access');
     assert.equal(storedSnapshot?.checkedFamilies, undefined);
+  } finally {
+    await clearStoredLocalFonts();
+    resetLocalFontsForTests();
+    restoreGlobals(originals);
+  }
+});
+
+test('SFNT 지역화 이름을 보존해 HWP 한글 full name을 영문 family로 해석한다', async () => {
+  const g = globalThis as TestGlobals;
+  const originals = {
+    browser: g.browser,
+    chrome: g.chrome,
+    document: g.document,
+    localStorage: g.localStorage,
+    queryLocalFonts: g.queryLocalFonts,
+  };
+  const storage = createStorage();
+
+  resetLocalFontsForTests();
+  g.browser = undefined;
+  g.chrome = undefined;
+  g.localStorage = storage;
+  g.queryLocalFonts = async () => [{
+    family: '08SeoulHangang',
+    fullName: '08SeoulHangang M',
+    postscriptName: 'SeoulHangangM',
+    style: 'M',
+    blob: async () => new Blob([createSfntWithNameRecords([
+      { nameId: 1, value: '08서울한강체' },
+      { nameId: 2, value: 'M' },
+      { nameId: 4, value: '08서울한강체 M' },
+      { nameId: 6, value: 'SeoulHangangM' },
+    ])]),
+  }];
+
+  try {
+    const fonts = await detectLocalFonts({ force: true, includeRegistered: true });
+    const record = resolveLocalFont('08서울한강체 M');
+    const stored = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}') as LocalFontSnapshot;
+
+    assert.deepEqual(fonts, ['08서울한강체 M']);
+    assert.equal(record?.family, '08SeoulHangang');
+    assert.equal(record?.postscriptName, 'SeoulHangangM');
+    assert.ok(record?.aliases.includes('08서울한강체 M'));
+    assert.deepEqual(getLocalFontRecords().map(item => item.displayName), ['08서울한강체 M']);
+    assert.equal(stored.version, 2);
+    assert.equal('blob' in (stored.fontRecords?.[0] ?? {}), false);
   } finally {
     await clearStoredLocalFonts();
     resetLocalFontsForTests();
