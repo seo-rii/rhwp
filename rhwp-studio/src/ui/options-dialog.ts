@@ -6,7 +6,12 @@
 import { ModalDialog } from './dialog';
 import { userSettings } from '@/core/user-settings';
 import { FontSetDialog } from './font-set-dialog';
-import { isLocalFontSupported, detectLocalFonts, getLocalFonts } from '@/core/local-fonts';
+import {
+  detectLocalFonts,
+  getLocalFonts,
+  isLocalFontAccessSupported,
+  isLocalFontSupported,
+} from '@/core/local-fonts';
 
 export class OptionsDialog extends ModalDialog {
   private showRecentCheck!: HTMLInputElement;
@@ -161,7 +166,7 @@ export class OptionsDialog extends ModalDialog {
       localBtn.disabled = true;
       localStatus.textContent = '감지 중...';
       try {
-        const fonts = await detectLocalFonts();
+        const fonts = await detectLocalFonts({ force: isLocalFontAccessSupported() });
         localStatus.textContent = `${fonts.length}개 로컬 글꼴 감지됨`;
       } catch {
         localStatus.textContent = '글꼴 감지에 실패했습니다.';

@@ -79,6 +79,8 @@ export interface GetLocalFontsOptions {
   includeRegistered?: boolean;
 }
 
+export type LocalFontDetectionListener = (snapshot: Readonly<LocalFontSnapshot>) => void;
+
 type LocalFontGlobal = typeof globalThis & {
   queryLocalFonts?: (options?: { postscriptNames?: string[] }) => Promise<FontData[]>;
   document?: {
@@ -127,6 +129,7 @@ let storageLoaded = false;
 let lastStorageError: string | null = null;
 /** 동시에 들어온 CanvasKit SFNT 바이트 조회만 합치는 in-flight cache. */
 const localFontBytesByPostscriptName = new Map<string, Promise<ArrayBuffer | null>>();
+const localFontDetectionListeners = new Set<LocalFontDetectionListener>();
 
 /** Local Font Access API 지원 여부 */
 export function isLocalFontAccessSupported(): boolean {
@@ -716,6 +719,12 @@ export async function clearStoredLocalFonts(): Promise<void> {
   await removeStoredSnapshot();
 }
 
+/** 성공적인 사용자 승인/감지 뒤 현재 renderer가 exact face를 준비할 수 있게 알린다. */
+export function subscribeLocalFontDetection(listener: LocalFontDetectionListener): () => void {
+  localFontDetectionListeners.add(listener);
+  return () => localFontDetectionListeners.delete(listener);
+}
+
 /**
  * 로컬 글꼴을 감지하여 family 목록을 반환한다.
  * - 중복 제거, 한국어 로케일 정렬
@@ -749,6 +758,13 @@ export async function detectLocalFonts(options: DetectLocalFontsOptions = {}): P
   cachedSnapshot = snapshot;
   storageLoaded = true;
   await writeStoredSnapshot(snapshot);
+  for (const listener of localFontDetectionListeners) {
+    try {
+      listener(snapshot);
+    } catch (error) {
+      console.warn('[LocalFonts] 감지 완료 listener 실패:', error);
+    }
+  }
   console.log(`[LocalFonts] ${snapshotRecords(snapshot).length}개 로컬 글꼴 감지됨 (${snapshot.source})`);
   return getLocalFonts({ includeRegistered: options.includeRegistered });
 }
@@ -915,4 +931,5 @@ export function resetLocalFontsForTests(): void {
   storageLoaded = false;
   lastStorageError = null;
   localFontBytesByPostscriptName.clear();
+  localFontDetectionListeners.clear();
 }

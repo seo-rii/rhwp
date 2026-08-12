@@ -6,7 +6,7 @@ import { InputHandler } from '@/engine/input-handler';
 import { Toolbar } from '@/ui/toolbar';
 import { MenuBar } from '@/ui/menu-bar';
 import { loadWebFonts } from '@/core/font-loader';
-import { loadStoredLocalFonts } from '@/core/local-fonts';
+import { loadStoredLocalFonts, subscribeLocalFontDetection } from '@/core/local-fonts';
 import { CommandRegistry } from '@/command/registry';
 import { CommandDispatcher } from '@/command/dispatcher';
 import type { EditorContext, CommandServices } from '@/command/types';
@@ -52,6 +52,8 @@ let ruler: Ruler | null = null;
 let canvaskitRenderer: CanvasKitLayerRenderer | null = null;
 let activeCanvasKitMode: ReturnType<typeof resolveCanvasKitRenderMode> = 'default';
 let activeRenderProfile: ReturnType<typeof resolveRenderProfile> = 'screen';
+let activeDocumentInfo: DocumentInfo | null = null;
+let unsubscribeLocalFontDetection: (() => void) | null = null;
 
 
 // ─── 커맨드 시스템 ─────────────────────────────
@@ -221,6 +223,9 @@ async function initialize(): Promise<void> {
     setupFileInput();
     setupZoomControls();
     setupEventListeners();
+    unsubscribeLocalFontDetection = subscribeLocalFontDetection(() => {
+      void refreshCanvasKitLocalFonts();
+    });
     setupGlobalShortcuts();
     loadFromUrlParam();
 
@@ -449,9 +454,12 @@ function setupEventListeners(): void {
   });
 }
 
-async function prepareCanvasKitDocumentFonts(docInfo: DocumentInfo): Promise<void> {
+async function prepareCanvasKitDocumentFonts(
+  docInfo: DocumentInfo,
+  loadStoredSnapshot = true,
+): Promise<number> {
   const renderer = canvaskitRenderer;
-  if (!renderer) return;
+  if (!renderer) return 0;
 
   let requiredFontFamilies = (docInfo.fontsUsed ?? []).slice(0, 128);
   try {
@@ -465,20 +473,33 @@ async function prepareCanvasKitDocumentFonts(docInfo: DocumentInfo): Promise<voi
   }
 
   try {
-    await loadStoredLocalFonts();
+    if (loadStoredSnapshot) await loadStoredLocalFonts();
     const registered = await renderer.prepareLocalFonts(requiredFontFamilies);
     if (registered > 0) {
       console.info(`[CanvasKit] first replay 전에 exact local face ${registered}개를 준비했습니다.`);
     }
+    return registered;
   } catch (error) {
     console.warn('[CanvasKit] exact local face 준비 실패, bundled fallback으로 계속합니다:', error);
+    return 0;
   }
+}
+
+async function refreshCanvasKitLocalFonts(): Promise<void> {
+  const docInfo = activeDocumentInfo;
+  if (!docInfo || !canvaskitRenderer || wasm.pageCount === 0) return;
+
+  const registered = await prepareCanvasKitDocumentFonts(docInfo, false);
+  if (registered === 0 || activeDocumentInfo !== docInfo) return;
+  console.info(`[CanvasKit] 새로 승인된 exact local face ${registered}개로 현재 문서를 다시 렌더합니다.`);
+  canvasView?.loadDocument();
 }
 
 /** 문서 초기화 공통 시퀀스 (loadFile, createNewDocument 양쪽에서 사용) */
 async function initializeDocument(docInfo: DocumentInfo, displayName: string): Promise<void> {
   const msg = sbMessage();
   try {
+    activeDocumentInfo = docInfo;
     console.log('[initDoc] 1. 폰트 로딩 시작');
     const includeDirectRendererFallbacks = true;
     if (docInfo.fontsUsed?.length || includeDirectRendererFallbacks) {
@@ -662,6 +683,8 @@ async function loadFromUrlParam(): Promise<void> {
 initialize();
 
 window.addEventListener('pagehide', () => {
+  unsubscribeLocalFontDetection?.();
+  unsubscribeLocalFontDetection = null;
   try {
     canvasView?.dispose();
   } catch (error) {

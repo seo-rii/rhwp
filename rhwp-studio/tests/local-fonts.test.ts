@@ -14,6 +14,7 @@ import {
   loadStoredLocalFonts,
   resetLocalFontsForTests,
   resolveLocalFont,
+  subscribeLocalFontDetection,
   type LocalFontSnapshot,
 } from '../src/core/local-fonts.ts';
 
@@ -388,6 +389,52 @@ test('detectLocalFonts는 전체 snapshot을 저장하고 기본 반환은 웹 �
     assert.equal(storedSnapshot?.source, 'local-font-access');
     assert.equal(storedSnapshot?.checkedFamilies, undefined);
   } finally {
+    await clearStoredLocalFonts();
+    resetLocalFontsForTests();
+    restoreGlobals(originals);
+  }
+});
+
+test('성공적인 사용자 로컬 글꼴 감지는 저장 완료 뒤 구독자에게 알린다', async () => {
+  const g = globalThis as TestGlobals;
+  const originals = {
+    browser: g.browser,
+    chrome: g.chrome,
+    document: g.document,
+    localStorage: g.localStorage,
+    queryLocalFonts: g.queryLocalFonts,
+  };
+  const storage = createStorage();
+  const observed: LocalFontSnapshot[] = [];
+
+  resetLocalFontsForTests();
+  g.browser = undefined;
+  g.chrome = undefined;
+  g.localStorage = storage;
+  g.queryLocalFonts = async () => [{
+    family: '승인 로컬',
+    fullName: '승인 로컬 Regular',
+    postscriptName: 'ApprovedLocal-Regular',
+    style: 'Regular',
+  }];
+  const unsubscribeFailing = subscribeLocalFontDetection(() => {
+    throw new Error('listener failure must be isolated');
+  });
+  const unsubscribe = subscribeLocalFontDetection(snapshot => {
+    assert.ok(storage.getItem(STORAGE_KEY), 'listener must run after persistence');
+    observed.push(snapshot as LocalFontSnapshot);
+  });
+
+  try {
+    await detectLocalFonts({ force: true, includeRegistered: true });
+    unsubscribe();
+    await detectLocalFonts({ force: true, includeRegistered: true });
+
+    assert.equal(observed.length, 1);
+    assert.deepEqual(observed[0].families, ['승인 로컬']);
+  } finally {
+    unsubscribeFailing();
+    unsubscribe();
     await clearStoredLocalFonts();
     resetLocalFontsForTests();
     restoreGlobals(originals);

@@ -41,3 +41,16 @@ test('CanvasKit font resolution gives prepared local faces precedence over bundl
   assert.match(registry, /loadLocalFontBytesFor\(/);
   assert.match(renderer, /async prepareLocalFonts\(fontNames: readonly string\[\]\)/);
 });
+
+test('newly approved local faces refresh only the still-active CanvasKit document', () => {
+  const main = source('../src/main.ts');
+  const options = source('../src/ui/options-dialog.ts');
+
+  assert.match(options, /detectLocalFonts\(\{ force: isLocalFontAccessSupported\(\) \}\)/);
+  assert.match(main, /subscribeLocalFontDetection\(\(\) => \{[\s\S]*?refreshCanvasKitLocalFonts\(\)/);
+  assert.match(
+    main,
+    /const registered = await prepareCanvasKitDocumentFonts\(docInfo, false\);[\s\S]*?registered === 0 \|\| activeDocumentInfo !== docInfo/,
+  );
+  assert.match(main, /canvasView\?\.loadDocument\(\);/);
+});
