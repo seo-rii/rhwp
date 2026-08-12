@@ -2479,6 +2479,53 @@ runTest('Renderer lifecycle', async ({ page }) => {
     `true document reset detaches the previous CanvasKit document=${JSON.stringify(immediateResourceResetProbe)}`,
   );
 
+  setTestCase('canvaskit-local-font-cache-invalidation');
+  const localFontCacheInvalidationProbe = await page.evaluate(async () => {
+    const renderer = window.__canvasView?.pageRenderer?.canvaskitRenderer;
+    const registry = renderer?.fontRegistry;
+    if (!renderer?.prepareLocalFonts || !registry?.prepareLocalFonts) {
+      return { error: 'CanvasKit local font preparation unavailable' };
+    }
+
+    let deletedBlobs = 0;
+    const originalPrepareLocalFonts = registry.prepareLocalFonts.bind(registry);
+    registry.prepareLocalFonts = async () => 1;
+    renderer.textBlobCache.set('bundled-alias|fixture', {
+      delete() {
+        deletedBlobs += 1;
+      },
+    });
+    renderer.failedTextBlobCacheKeys.add('bundled-alias|failed');
+    renderer.textFallbackFamilyCache.set('bundled-alias|fixture', 'Bundled Family');
+
+    try {
+      const registered = await renderer.prepareLocalFonts(['Bundled Family']);
+      return {
+        registered,
+        deletedBlobs,
+        textBlobCacheSize: renderer.textBlobCache.size,
+        failedTextBlobCacheSize: renderer.failedTextBlobCacheKeys.size,
+        textFallbackFamilyCacheSize: renderer.textFallbackFamilyCache.size,
+        staticPictureCacheSize: renderer.staticPictureCache.size,
+      };
+    } finally {
+      registry.prepareLocalFonts = originalPrepareLocalFonts;
+    }
+  });
+  assert(
+    !localFontCacheInvalidationProbe.error,
+    localFontCacheInvalidationProbe.error || 'CanvasKit local font cache invalidation probe available',
+  );
+  assert(
+    localFontCacheInvalidationProbe.registered === 1
+      && localFontCacheInvalidationProbe.deletedBlobs === 1
+      && localFontCacheInvalidationProbe.textBlobCacheSize === 0
+      && localFontCacheInvalidationProbe.failedTextBlobCacheSize === 0
+      && localFontCacheInvalidationProbe.textFallbackFamilyCacheSize === 0
+      && localFontCacheInvalidationProbe.staticPictureCacheSize === 0,
+    `exact local face registration invalidates provider-dependent caches=${JSON.stringify(localFontCacheInvalidationProbe)}`,
+  );
+
   setTestCase('layer-resource-cache-document-reset');
   await loadHwpFile(page, 'pic-crop-01.hwp');
   const resourceResetProbe = await page.evaluate(() => {

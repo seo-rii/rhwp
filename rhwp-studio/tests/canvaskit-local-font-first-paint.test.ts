@@ -54,3 +54,21 @@ test('newly approved local faces refresh only the still-active CanvasKit documen
   );
   assert.match(main, /canvasView\?\.loadDocument\(\);/);
 });
+
+test('registering an exact local face invalidates every provider-dependent text cache', () => {
+  const renderer = source('../src/view/canvaskit-renderer.ts');
+  const prepareStart = renderer.indexOf('async prepareLocalFonts');
+  const renderStart = renderer.indexOf('\n  renderPage(', prepareStart);
+  const prepare = renderer.slice(prepareStart, renderStart);
+  const invalidateStart = renderer.indexOf('private invalidateTextFontCaches');
+  const disposeStart = renderer.indexOf('\n  dispose(): void', invalidateStart);
+  const invalidate = renderer.slice(invalidateStart, disposeStart);
+
+  assert.match(prepare, /if \(registered > 0\) this\.invalidateTextFontCaches\(\)/);
+  assert.match(invalidate, /for \(const blob of this\.textBlobCache\.values\(\)\) blob\.delete\(\)/);
+  assert.match(invalidate, /this\.textBlobCache\.clear\(\)/);
+  assert.match(invalidate, /this\.textFallbackFamilyCache\.clear\(\)/);
+  assert.match(invalidate, /this\.resetTextReplayDiagnostics\(\)/);
+  assert.match(invalidate, /this\.clearStaticPictureCache\(\)/);
+  assert.match(renderer.slice(disposeStart), /this\.invalidateTextFontCaches\(\)/);
+});

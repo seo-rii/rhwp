@@ -368,7 +368,9 @@ export class CanvasKitLayerRenderer {
 
   async prepareLocalFonts(fontNames: readonly string[]): Promise<number> {
     if (this.disposed) return 0;
-    return this.fontRegistry.prepareLocalFonts(fontNames);
+    const registered = await this.fontRegistry.prepareLocalFonts(fontNames);
+    if (registered > 0) this.invalidateTextFontCaches();
+    return registered;
   }
 
   renderPage(
@@ -4687,6 +4689,18 @@ export class CanvasKitLayerRenderer {
     this.staticPictureCache.clear();
   }
 
+  private invalidateTextFontCaches(): void {
+    for (const blob of this.textBlobCache.values()) blob.delete();
+    this.textBlobCache.clear();
+    this.textBlobCacheHits = 0;
+    this.textBlobCacheMisses = 0;
+    this.textFallbackFamilyCache.clear();
+    this.textFallbackFamilyCacheHits = 0;
+    this.textFallbackFamilyCacheMisses = 0;
+    this.resetTextReplayDiagnostics();
+    this.clearStaticPictureCache();
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -4703,19 +4717,9 @@ export class CanvasKitLayerRenderer {
     this.currentClipEnabled = true;
     this.clearPreparedSvgGlyphPaths();
 
-    for (const blob of this.textBlobCache.values()) {
-      blob.delete();
-    }
-    this.textBlobCache.clear();
-    this.textBlobCacheHits = 0;
-    this.textBlobCacheMisses = 0;
-    this.resetTextReplayDiagnostics();
+    this.invalidateTextFontCaches();
     this.resetEquationReplayDiagnostics();
-    this.textFallbackFamilyCache.clear();
-    this.textFallbackFamilyCacheHits = 0;
-    this.textFallbackFamilyCacheMisses = 0;
 
-    this.clearStaticPictureCache();
     this.surfaceCache.dispose();
     this.resourceCache.dispose();
     this.fontRegistry.clear();
