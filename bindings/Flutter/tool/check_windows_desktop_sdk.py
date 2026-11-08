@@ -79,6 +79,23 @@ def main():
                FLUTTER_SUPPRESS_ANALYTICS='true', DART_SUPPRESS_ANALYTICS='true')
     try:
         record()
+        # Compile every real SDK-facing plugin unit before the expensive Rust
+        # build. This uses the pinned public/client headers, never a fake SDK.
+        engine = sdk / 'bin/cache/artifacts/engine/windows-x64'
+        client = engine / 'cpp_client_wrapper/include'
+        if not (client / 'flutter/plugin_registrar_windows.h').is_file():
+            raise ValueError('precache the pinned Windows C++ client wrapper before qualification')
+        objects = output / 'plugin-sdk-objects'
+        objects.mkdir()
+        for filename in ['rhwp_d3d_plugin.cpp', 'Producer.cpp', 'NativeApi.cpp']:
+            run_step(['cl', '/nologo', '/c', '/std:c++17', '/EHsc', '/W4', '/WX',
+                      '/DRHWP_NATIVE_REFERENCE_PLUGIN_IMPL', '/DNOMINMAX', '/DWIN32_LEAN_AND_MEAN',
+                      '/I' + str(engine), '/I' + str(client),
+                      '/I' + str(repo / 'bindings/Flutter/windows/include'),
+                      '/I' + str(repo / 'bindings/swift/Sources/CRhwpNative'),
+                      str(repo / 'bindings/Flutter/windows' / filename),
+                      '/Fo' + str(objects / (filename + '.obj'))],
+                     cwd=repo, env=env, output=output, receipt=state, record=record, timeout=120)
         command = ['rustup', 'run', '1.93.1', 'cargo', 'build', '--locked', '--release',
                    '-p', 'rhwp-native-ffi', '--features', 'native-skia-d3d',
                    '--target', 'x86_64-pc-windows-msvc']
