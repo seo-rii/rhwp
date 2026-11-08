@@ -119,6 +119,12 @@ jobs:
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.json
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.log
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-32.rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-reference-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-reference-32.rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/compositor-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/compositor-32.rgba
             ${{ runner.temp }}/rhwp-windows-qualification/native-target/x86_64-pc-windows-msvc/release/rhwp_native_ffi.dll
             ${{ github.workspace }}/LICENSE
             ${{ github.workspace }}/THIRD_PARTY.md
@@ -216,6 +222,12 @@ jobs:
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.json
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.log
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-[123].rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-32.rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-reference-[123].rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-reference-32.rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-[123].rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-32.rgba
             ${{ runner.temp }}/rhwp-macos-qualification/native-target/aarch64-apple-darwin/release/librhwp_native_ffi.dylib
             ${{ github.workspace }}/LICENSE
             ${{ github.workspace }}/THIRD_PARTY.md
