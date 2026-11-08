@@ -124,6 +124,23 @@ jobs:
           $nativeArtifact = Join-Path $env:RUNNER_TEMP 'qualified-windows-native'
           python -B bindings/Flutter/tool/check_windows_desktop_sdk.py --flutter-sdk $env:FLUTTER_ROOT --output $output --native-artifact-root $nativeArtifact --native-source-head 9452099dc796ca5626f1c4b52396a9ca07dc445e
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Qualify the corrected P106 head independently
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:RUNNER_TEMP 'rhwp-p106-source'
+          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p106-windows-consumer-probe https://github.com/seo-rii/rhwp.git $source
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $source sparse-checkout init --cone
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $source sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $source checkout --detach ff7491f6ebd3769e23bcf4c4e1fa00ef430736ee
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $sdkReceipt = Get-Content -Raw (Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification/windows-sdk-receipt.json') | ConvertFrom-Json
+          $seed = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'qualified-windows-native') -Recurse -Filter native-build-receipt.json)
+          if ($seed.Count -ne 1) { throw 'Exactly one original Native build receipt is required' }
+          python -B bindings/Flutter/tool/review_p106_windows.py --repository $source --expected-head ff7491f6ebd3769e23bcf4c4e1fa00ef430736ee --flutter-sdk $env:FLUTTER_ROOT --native $sdkReceipt.native --native-receipt ($seed[0].FullName) --output (Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification/p106-exact-review')
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Preserve completed receipts and logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -133,6 +150,7 @@ jobs:
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.json
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.log
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-windows-qualification/p106-exact-review/desktop-capture/*.rgba
             ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/cpu-[123].rgba
             ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/cpu-reference-[123].rgba
             ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/compositor-[123].rgba
@@ -246,6 +264,22 @@ jobs:
           python3 -B bindings/Flutter/macos/tests/qualify_native_view.py capture \
             --build-receipt "$RUNNER_TEMP/rhwp-macos-qualification/desktop-build/macos-view-build.json" \
             --frames 32 --timeout 600 --output "$RUNNER_TEMP/rhwp-macos-qualification/desktop-capture"
+      - name: Qualify the corrected P107 head independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/rhwp-p107-source"
+          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p107-macos-sdk-probe https://github.com/seo-rii/rhwp.git "$source"
+          git -C "$source" sparse-checkout init --cone
+          git -C "$source" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests
+          git -C "$source" checkout --detach b4762d3c267edd7efc4627027db456e98c1f4bde
+          receipt="$RUNNER_TEMP/rhwp-macos-qualification/macos-sdk-receipt.json"
+          native=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["native"]["path"])' "$receipt")
+          python3 -B bindings/Flutter/tool/review_p107_macos.py \
+            --repository "$source" --expected-head b4762d3c267edd7efc4627027db456e98c1f4bde \
+            --framework "$FLUTTER_MACOS_FRAMEWORK" --native "$native" \
+            --native-source-head 4f738e766ccbba8faf938f2421ca6b516e939019 \
+            --output "$RUNNER_TEMP/rhwp-macos-qualification/p107-exact-review"
       - name: Preserve completed receipts and logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
