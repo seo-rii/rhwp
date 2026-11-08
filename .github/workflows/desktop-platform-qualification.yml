@@ -10,13 +10,41 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: desktop-qualification-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  windows:
+  changes:
     if: github.repository == 'seo-rii/rhwp' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      windows: ${{ steps.impact.outputs.windows }}
+      macos: ${{ steps.impact.outputs.macos }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /bindings/Flutter/tool/platform_qualification_paths.py
+      - name: Select exact affected target inputs
+        id: impact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFICATION_REPOSITORY: ${{ github.repository }}
+          QUALIFICATION_BEFORE: ${{ github.event.before }}
+          QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 -B bindings/Flutter/tool/platform_qualification_paths.py
+          --repository "$QUALIFICATION_REPOSITORY"
+          --before "$QUALIFICATION_BEFORE"
+          --head "$QUALIFICATION_HEAD"
+
+  windows:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
+    concurrency:
+      group: desktop-qualification-windows-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: windows-latest
     timeout-minutes: 120
     env:
@@ -94,7 +122,11 @@ jobs:
           retention-days: 7
 
   macos:
-    if: github.repository == 'seo-rii/rhwp' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    concurrency:
+      group: desktop-qualification-macos-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: macos-15
     timeout-minutes: 120
     env:
