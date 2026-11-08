@@ -25,6 +25,13 @@ def platform_required(system):
         raise RuntimeError("actual macOS and Apple SDK are required")
 
 
+def find_apple_cxx():
+    # The clang++ symlink selects C++ driver/linker behavior. Resolving it to
+    # clang compiles .mm but omits libc++ and the C++ exception runtime at link.
+    return Path(subprocess.check_output(
+        ["xcrun", "--sdk", "macosx", "--find", "clang++"], text=True).strip()).absolute()
+
+
 def command_plan(repository, output, sdk, clang, framework, architecture, toolchain):
     if architecture not in ("arm64", "x86_64"):
         raise ValueError("unsupported macOS probe architecture")
@@ -35,18 +42,23 @@ def command_plan(repository, output, sdk, clang, framework, architecture, toolch
     native = output / "native-target" / rust_target / "debug/librhwp_native_ffi.dylib"
     plugin = output / "RhwpMetalPlugin.dylib"
     bridge = output / "rhwp_metal_sdk_probe.dylib"
+    cv_status = output / "rhwp_cv_closed_status_test"
     common = [str(clang), "-std=c++17", "-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror",
               "-isysroot", str(sdk), "-arch", architecture, "-mmacosx-version-min=12.0", "-dynamiclib"]
-    commands = [
-        ["rustup", "run", toolchain, "rustc", "--version", "--verbose"],
-        [*common, "-F", str(framework.parent), "-Wl,-rpath," + str(framework.parent),
+    flutter_links = ["-F", str(framework.parent), "-Wl,-rpath," + str(framework.parent),
          "-framework", "FlutterMacOS", "-framework", "Metal", "-framework", "CoreVideo",
          "-framework", "CoreGraphics", "-framework", "IOSurface", "-framework", "Foundation",
-         "-framework", "AppKit", "-framework", "QuartzCore",
+         "-framework", "AppKit", "-framework", "QuartzCore"]
+    commands = [
+        ["rustup", "run", toolchain, "rustc", "--version", "--verbose"],
+        [*common, *flutter_links,
          str(repository / "bindings/Flutter/macos/Classes/RhwpMetalPlugin.mm"),
          "-o", str(plugin)],
         [*common, "-I", str(header), "-framework", "Metal", "-framework", "Foundation",
          str(repository / "bindings/Flutter/macos/tests/native_metal_sdk_probe.mm"), "-o", str(bridge)],
+        [*[value for value in common if value != "-dynamiclib"], *flutter_links,
+         str(repository / "bindings/Flutter/macos/tests/cv_closed_status_sdk_test.mm"), "-o", str(cv_status)],
+        [str(cv_status)],
         ["rustup", "run", toolchain, "cargo", "build", "--locked", "--manifest-path",
          str(repository / "bindings/Native/Cargo.toml"), "--features", "native-skia-metal",
          "--lib", "--target", rust_target, "--target-dir", str(output / "native-target")],
@@ -56,7 +68,7 @@ def command_plan(repository, output, sdk, clang, framework, architecture, toolch
          "--native", str(native), "--bridge", str(bridge), "--source-head", "SOURCE_HEAD",
          "--output", str(output / "metal-producer.json")],
     ]
-    return commands, {"native": native, "plugin": plugin, "bridge": bridge}
+    return commands, {"native": native, "plugin": plugin, "bridge": bridge, "cvCloseStatus": cv_status}
 
 
 def source_hashes(repository):
@@ -165,7 +177,7 @@ def main():
     if any(not re.fullmatch(r"[0-9a-f]{40}", value) for value in [flutter_head, engine_head]):
         raise ValueError("Flutter SDK/framework must have pinned framework and engine revisions")
     sdk = Path(subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()).resolve(strict=True)
-    clang = Path(subprocess.check_output(["xcrun", "--sdk", "macosx", "--find", "clang++"], text=True).strip()).resolve(strict=True)
+    clang = find_apple_cxx()
     compiler = subprocess.check_output([str(clang), "--version"], text=True)
     if "Apple clang" not in compiler:
         raise ValueError("an Apple SDK compiler is required, not a portable stub")
@@ -210,6 +222,7 @@ def main():
         if proof.get("status") != "passed" or proof.get("source_head") != source_head:
             raise ValueError("actual Metal producer did not produce a matching successful receipt")
         state.update(build="passed", targetSdkCompileLinkVerified=True, metalProducerReadbackVerified=True,
+                     cvTerminalStatusVerified=True,
                      artifacts={key: {"path": str(path), "sha256": digest(path), "bytes": path.stat().st_size}
                                 for key, path in artifacts.items()})
     except BaseException as error:

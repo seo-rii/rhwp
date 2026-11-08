@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "tool"))
@@ -41,6 +42,18 @@ def response(*, stale=False):
 
 
 class MetalReceiptContracts(unittest.TestCase):
+    def test_cxx_driver_invocation_preserves_its_symlink_name(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            compiler = directory / "clang"
+            compiler.write_text("portable path control; never executed")
+            alias = directory / "clang++"
+            alias.symlink_to(compiler.name)
+            with mock.patch.object(builder.subprocess, "check_output", return_value=str(alias) + "\n"):
+                selected = builder.find_apple_cxx()
+            self.assertEqual(selected, alias.absolute())
+            self.assertNotEqual(selected, compiler.resolve())
+
     def test_independent_opaque_and_premultiplied_color_controls(self):
         self.assertEqual(producer.expected_bgra(0xff102030), (0x30, 0x20, 0x10, 0xff))
         self.assertEqual(producer.expected_bgra(0x80402010), (8, 16, 32, 128))
@@ -105,8 +118,12 @@ class MetalReceiptContracts(unittest.TestCase):
         self.assertEqual(cargo[cargo.index("--features") + 1], "native-skia-metal")
         self.assertEqual(artifacts["native"], Path("/private/probe/native-target/aarch64-apple-darwin/debug/librhwp_native_ffi.dylib"))
         compilers = [command for command in commands if command[0] == "/Xcode/clang++"]
-        self.assertEqual(len(compilers), 2)
+        self.assertEqual(len(compilers), 3)
         self.assertLess(max(commands.index(command) for command in compilers), commands.index(cargo))
+        cv_status = next(command for command in compilers if any(value.endswith("cv_closed_status_sdk_test.mm") for value in command))
+        self.assertNotIn("-dynamiclib", cv_status)
+        self.assertIn("-framework", cv_status)
+        self.assertLess(commands.index([str(artifacts["cvCloseStatus"])]), commands.index(cargo))
         for command in compilers:
             self.assertIn("-fobjc-arc", command)
             self.assertIn("-fblocks", command)
