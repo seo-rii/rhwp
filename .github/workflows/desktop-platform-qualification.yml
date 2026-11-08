@@ -278,7 +278,7 @@ jobs:
           source="$RUNNER_TEMP/rhwp-p107-source"
           git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p107-macos-sdk-probe https://github.com/seo-rii/rhwp.git "$source"
           git -C "$source" sparse-checkout init --cone
-          git -C "$source" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests
+          git -C "$source" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests bindings/Native/examples
           git -C "$source" checkout --detach 40e1301ddabb6290a4ed06c5791e8fd4960403f5
           receipt="$RUNNER_TEMP/rhwp-macos-qualification/macos-sdk-receipt.json"
           native=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["native"]["path"])' "$receipt")
