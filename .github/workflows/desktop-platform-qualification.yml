@@ -228,7 +228,7 @@ jobs:
             ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-reference-32.rgba
             ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-[123].rgba
             ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-32.rgba
-            ${{ runner.temp }}/rhwp-macos-qualification/native-target/aarch64-apple-darwin/release/librhwp_native_ffi.dylib
+            ${{ runner.temp }}/rhwp-macos-qualification/native-target/aarch64-apple-darwin/debug/librhwp_native_ffi.dylib
             ${{ github.workspace }}/LICENSE
             ${{ github.workspace }}/THIRD_PARTY.md
             ${{ github.workspace }}/THIRD_PARTY_LICENSES.md
