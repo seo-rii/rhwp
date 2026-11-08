@@ -4,7 +4,7 @@ name: Desktop platform qualification
 # register runners, publish packages, deploy, or access repository secrets.
 on:
   pull_request:
-    branches: [task/8701-p107-macos-sdk-probe]
+    branches: [task/8701-platform-qualification-base]
     types: [opened, reopened, synchronize]
 
 permissions:
