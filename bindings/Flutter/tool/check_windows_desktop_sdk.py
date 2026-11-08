@@ -87,14 +87,19 @@ def main():
             raise ValueError('precache the pinned Windows C++ client wrapper before qualification')
         objects = output / 'plugin-sdk-objects'
         objects.mkdir()
-        for filename in ['rhwp_d3d_plugin.cpp', 'Producer.cpp', 'NativeApi.cpp']:
+        registration = objects / 'generated-registration-contract.cpp'
+        registration.write_text(
+            '#include <rhwp_native_reference/rhwp_d3d_plugin.h>\n'
+            'void RegisterQualificationPlugin(FlutterDesktopPluginRegistrarRef registrar) {\n'
+            '  RhwpD3dPluginRegisterWithRegistrar(registrar);\n}\n', encoding='utf-8')
+        for source in [registration, *[repo / 'bindings/Flutter/windows' / filename
+                                     for filename in ['rhwp_d3d_plugin.cpp', 'Producer.cpp', 'NativeApi.cpp']]]:
             run_step(['cl', '/nologo', '/c', '/std:c++17', '/EHsc', '/W4', '/WX',
                       '/DRHWP_NATIVE_REFERENCE_PLUGIN_IMPL', '/DNOMINMAX', '/DWIN32_LEAN_AND_MEAN',
                       '/I' + str(engine), '/I' + str(client),
                       '/I' + str(repo / 'bindings/Flutter/windows/include'),
                       '/I' + str(repo / 'bindings/swift/Sources/CRhwpNative'),
-                      str(repo / 'bindings/Flutter/windows' / filename),
-                      '/Fo' + str(objects / (filename + '.obj'))],
+                      str(source), '/Fo' + str(objects / (source.name + '.obj'))],
                      cwd=repo, env=env, output=output, receipt=state, record=record, timeout=120)
         command = ['rustup', 'run', '1.93.1', 'cargo', 'build', '--locked', '--release',
                    '-p', 'rhwp-native-ffi', '--features', 'native-skia-d3d',
@@ -119,13 +124,24 @@ def main():
                   '--fixture', artifacts['fixture']['path'],
                   '--build-receipt', str(build / 'build-receipt.json'), '--output', str(capture)],
                  cwd=repo, env=env, output=output, receipt=state, record=record, timeout=300)
+        # A separate process starts with an empty plugin-owned frame budget.
+        # Legacy immutable credits intentionally cannot be refunded by close.
+        continuous = output / 'continuous-capture'
+        run_step([sys.executable, '-B', str(repo / 'bindings/Flutter/tool/qualify_windows_continuous.py'),
+                  '--runner', artifacts['runner']['path'], '--native', artifacts['native']['path'],
+                  '--dispatcher', artifacts['dispatcher']['path'],
+                  '--fixture', artifacts['fixture']['path'],
+                  '--build-receipt', str(build / 'build-receipt.json'), '--frames', '32',
+                  '--timeout', '600', '--output', str(continuous)],
+                 cwd=repo, env=env, output=output, receipt=state, record=record, timeout=630)
         if subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip() != source_head:
             raise ValueError('source head changed during qualification')
         if subprocess.check_output(['git', 'status', '--porcelain'], cwd=repo, text=True):
             raise ValueError('source checkout changed during qualification')
         state.update(build='passed', native=str(native), nativeSha256=digest(native),
                      nativeReceipt=str(native_receipt), desktopCapture=str(capture),
-                     boundedConsumerExecutionVerified=True)
+                     continuousCapture=str(continuous), boundedConsumerExecutionVerified=True,
+                     continuousConsumerExecutionVerified=True, continuousPresentationSupported=True)
     except BaseException as error:
         state.update(build='failed', error=f'{type(error).__name__}: {error}')
         raise

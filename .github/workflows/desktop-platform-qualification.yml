@@ -73,6 +73,7 @@ jobs:
             /assets/font-rules/
             /assets/logo/
             /saved/blank2010.hwp
+            /licenses/
             /mydocs/manual/
             /mydocs/tech/
             /ttfs/opensource/
@@ -118,6 +119,12 @@ jobs:
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.json
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.log
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-windows-qualification/native-target/x86_64-pc-windows-msvc/release/rhwp_native_ffi.dll
+            ${{ github.workspace }}/LICENSE
+            ${{ github.workspace }}/THIRD_PARTY.md
+            ${{ github.workspace }}/THIRD_PARTY_LICENSES.md
+            ${{ github.workspace }}/licenses/
+            ${{ github.workspace }}/assets/fonts/licenses/
           if-no-files-found: warn
           retention-days: 7
 
@@ -155,6 +162,7 @@ jobs:
             /assets/font-rules/
             /assets/logo/
             /saved/blank2010.hwp
+            /licenses/
             /mydocs/manual/
             /mydocs/tech/
             /ttfs/opensource/
@@ -186,6 +194,19 @@ jobs:
             --flutter-sdk "$FLUTTER_ROOT" --flutter-framework "$FLUTTER_MACOS_FRAMEWORK" \
             --enable-metal-experiment --toolchain 1.93.1 \
             --output "$RUNNER_TEMP/rhwp-macos-qualification"
+      - name: Actual AppKit Metal view and WindowServer qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check Pillow==13.0.0
+          receipt="$RUNNER_TEMP/rhwp-macos-qualification/macos-sdk-receipt.json"
+          native=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["native"]["path"])' "$receipt")
+          python3 -B bindings/Flutter/macos/tests/qualify_native_view.py build \
+            --flutter-sdk "$FLUTTER_ROOT" --native "$native" --native-receipt "$receipt" \
+            --output "$RUNNER_TEMP/rhwp-macos-qualification/desktop-build"
+          python3 -B bindings/Flutter/macos/tests/qualify_native_view.py capture \
+            --build-receipt "$RUNNER_TEMP/rhwp-macos-qualification/desktop-build/macos-view-build.json" \
+            --frames 32 --timeout 600 --output "$RUNNER_TEMP/rhwp-macos-qualification/desktop-capture"
       - name: Preserve completed receipts and logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -194,5 +215,12 @@ jobs:
           path: |
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.json
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.log
+            ${{ runner.temp }}/rhwp-macos-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-macos-qualification/native-target/aarch64-apple-darwin/release/librhwp_native_ffi.dylib
+            ${{ github.workspace }}/LICENSE
+            ${{ github.workspace }}/THIRD_PARTY.md
+            ${{ github.workspace }}/THIRD_PARTY_LICENSES.md
+            ${{ github.workspace }}/licenses/
+            ${{ github.workspace }}/assets/fonts/licenses/
           if-no-files-found: warn
           retention-days: 7
