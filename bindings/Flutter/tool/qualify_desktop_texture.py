@@ -9,6 +9,7 @@ import argparse
 import ctypes
 from ctypes import wintypes
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -153,7 +154,7 @@ def require_actual_windows(*, platform=None, load_library=None):
         raise RuntimeError("Wine is not an actual Windows qualification target")
 
 
-def verify_runtime_artifacts(files, receipt):
+def verify_runtime_artifacts(files, receipt, *, platform="windows"):
     """Bind the copied runner to the plugin/engine it will actually load.
 
     A relocated executable loads its adjacent runtime DLLs. Recorded artifact
@@ -161,8 +162,15 @@ def verify_runtime_artifacts(files, receipt):
     """
     verified = {key: Path(value).resolve(strict=True) for key, value in files.items()}
     directory = verified["runner"].parent
-    verified["plugin"] = (directory / "rhwp_native_reference_plugin.dll").resolve(strict=True)
-    verified["engineRuntime"] = (directory / "flutter_windows.dll").resolve(strict=True)
+    locations = {
+        "windows": ("rhwp_native_reference_plugin.dll", "flutter_windows.dll"),
+        "linux": ("lib/librhwp_native_reference_plugin.so", "lib/libflutter_linux_gtk.so"),
+    }
+    if platform not in locations:
+        raise ValueError("unsupported runtime bundle platform")
+    plugin, engine = locations[platform]
+    verified["plugin"] = (directory / plugin).resolve(strict=True)
+    verified["engineRuntime"] = (directory / engine).resolve(strict=True)
     artifacts = receipt.get("artifacts")
     if not isinstance(artifacts, dict):
         raise ValueError("build receipt has no runtime artifact identities")
@@ -179,13 +187,13 @@ def positive_integer(value, maximum):
     return value
 
 
-def validate_stage(value, *, nonce, index, pid):
+def validate_stage_identity(value, *, nonce, index, pid, platform, name):
     if value.get("protocol") != 1 or value.get("nonce") != nonce:
         raise ValueError("foreign or unsupported probe stage")
-    if value.get("stage") != STAGES[index - 1] or value.get("index") != index:
+    if value.get("stage") != name or value.get("index") != index:
         raise ValueError("out-of-order probe stage")
-    if value.get("pid") != pid or value.get("platform") != "windows":
-        raise ValueError("probe did not come from the launched Windows process")
+    if value.get("pid") != pid or value.get("platform") != platform:
+        raise ValueError("probe did not come from the launched " + platform + " process")
     width = positive_integer(value.get("width"), 4096)
     height = positive_integer(value.get("height"), 4096)
     if width * height > MAX_PIXELS:
@@ -209,6 +217,12 @@ def validate_stage(value, *, nonce, index, pid):
             raise ValueError("invalid source generation")
     if stamp.get("deviceScale") != dpr:
         raise ValueError("DPR and full source stamp disagree")
+    return width, height, tuple(offset)
+
+
+def validate_stage(value, *, nonce, index, pid):
+    width, height, offset = validate_stage_identity(
+        value, nonce=nonce, index=index, pid=pid, platform="windows", name=STAGES[index - 1])
     limits = value.get("limits")
     if not isinstance(limits, dict):
         raise ValueError("missing immutable frame budget receipt")
@@ -223,6 +237,47 @@ def validate_stage(value, *, nonce, index, pid):
     if type(limits.get("outstandingFrames")) is not int or not 0 < limits["outstandingFrames"] <= 4:
         raise ValueError("unexpected native frame credit use")
     return width, height, tuple(offset)
+
+
+def validate_source_reference(stage, width, height):
+    scale = stage.get("cpuReferenceScale")
+    if (type(scale) is not int or not 2 <= scale <= 4 or width * scale > 4096 or
+            height * scale > 4096 or width * height * scale**2 > 4 * 1024 * 1024):
+        raise ValueError("referenceUnavailable: independent CPU geometry exceeds its 16 MiB bound")
+    proof = stage.get("geometryProof")
+    if not isinstance(proof, dict):
+        raise ValueError("missing independently replayed CPU source geometry")
+    low, high = proof.get("cpu"), proof.get("reference")
+    if not isinstance(low, dict) or not isinstance(high, dict):
+        raise ValueError("missing CPU/reference source receipts")
+    snapshot = low.get("snapshot")
+    if (type(snapshot) is not int or not 0 < snapshot < 2**63 or
+            type(high.get("snapshot")) is not int or high["snapshot"] != snapshot):
+        raise ValueError("CPU references must use the same immutable snapshot")
+    for item, factor in ((low, 1), (high, scale)):
+        if item.get("stamp") != stage["stamp"] or item.get("coordinateSpace") != "viewportPixels":
+            raise ValueError("CPU reference changed its full source stamp/coordinate space")
+        if item.get("viewport") != {"width": width * factor, "height": height * factor}:
+            raise ValueError("CPU reference target geometry was not scaled independently")
+        descriptor = item.get("descriptor", {})
+        for key, expected in {"width": width * factor, "height": height * factor,
+                              "stride": width * factor * 4, "pixelFormat": "rgba8Premultiplied",
+                              "colorSpace": "srgb", "origin": "topLeft"}.items():
+            if descriptor.get(key) != expected:
+                raise ValueError("CPU reference descriptor disagrees with its source geometry")
+        placement = item.get("placement", {})
+        for key in ("scale", "originX", "originY"):
+            number = placement.get(key)
+            if type(number) not in (int, float) or not math.isfinite(number):
+                raise ValueError("CPU reference placement must be finite")
+            if ((key == "scale" and not 0 < number <= 64) or
+                    (key != "scale" and abs(number) > 16777216)):
+                raise ValueError("CPU reference placement exceeds Native geometry bounds")
+    for key in ("scale", "originX", "originY"):
+        if not math.isclose(high["placement"][key], low["placement"][key] * scale,
+                            rel_tol=1e-12, abs_tol=1e-9):
+            raise ValueError("CPU reference placement was not scaled from the same source")
+    return scale
 
 
 def validate_result(value, *, nonce, last_limits):
@@ -246,7 +301,29 @@ def validate_result(value, *, nonce, last_limits):
         raise ValueError("unregistration must not refund immutable GPU frame credits")
 
 
-def compare_pixels(expected, captured, width, height):
+_PALETTE_AXES = tuple(axis for axis in itertools.product((-1, 0, 1), repeat=3)
+                      if any(axis) and next(value for value in axis if value) > 0)
+
+
+def _source_palette_support(reference, width, height, scale, x, y, sample):
+    # A one-low-pixel geometric neighborhood of an independently replayed CPU
+    # source. Fixed RGB directions retain channel correlations, unlike a box
+    # which could admit a hue absent from the source's local color mixtures.
+    colors = {tuple(reference[(yy * width * scale + xx) * 4:
+                              (yy * width * scale + xx) * 4 + 3])
+              for yy in range(max(0, y - 1) * scale, min(height, y + 2) * scale)
+              for xx in range(max(0, x - 1) * scale, min(width, x + 2) * scale)}
+    for axis in _PALETTE_AXES:
+        projected = [sum(color[channel] * axis[channel] for channel in range(3)) for color in colors]
+        value = sum(sample[channel] * axis[channel] for channel in range(3))
+        # One unit per channel is the existing 8-bit quantization allowance.
+        margin = sum(abs(component) for component in axis)
+        if not min(projected) - margin <= value <= max(projected) + margin:
+            return False
+    return True
+
+
+def compare_pixels(expected, captured, width, height, *, source_reference=None, reference_scale=None):
     """Opaque uniform interiors <=1; differences stay in CPU AA support.
 
     The CPU oracle is a separate strict replay of the exact published snapshot,
@@ -256,6 +333,14 @@ def compare_pixels(expected, captured, width, height):
         raise ValueError("CPU/compositor pixel lengths do not match")
     if width * height > MAX_PIXELS or width <= 0 or height <= 0:
         raise ValueError("invalid comparison dimensions")
+    if source_reference is not None:
+        if (type(reference_scale) is not int or not 2 <= reference_scale <= 4 or
+                width * reference_scale > 4096 or height * reference_scale > 4096 or
+                width * height * reference_scale**2 > 4 * 1024 * 1024 or
+                len(source_reference) != width * height * 4 * reference_scale**2):
+            raise ValueError("referenceUnavailable: independent CPU source exceeds its geometry/16 MiB bound")
+        if any(alpha != 255 for alpha in source_reference[3::4]):
+            raise ValueError("independent source reference must already be composited opaque")
     colors = set()
     dark = 0
     for index in range(width * height):
@@ -270,6 +355,7 @@ def compare_pixels(expected, captured, width, height):
     uniform = 0
     edge_differences = 0
     maximum = 0
+    edges = []
     for index in range(width * height):
         x, y = index % width, index // width
         color = expected[index * 4:index * 4 + 4]
@@ -283,18 +369,42 @@ def compare_pixels(expected, captured, width, height):
             uniform += 1
             if difference > 1:
                 raise ValueError(f"compositor differs in uniform CPU interior ({x},{y})")
-        elif difference > 1:
-            edge_differences += 1
-            # Bound each sampled color to the independent local CPU color
-            # envelope as well as its 1-pixel geometric edge support.
-            if any(not min(item[channel] for item in neighbors) - 1 <= sample[channel]
-                       <= max(item[channel] for item in neighbors) + 1
-                   for channel in range(3)):
-                raise ValueError("compositor color escaped the CPU AA envelope")
+        else:
+            if source_reference is not None and 0 < x < width - 1 and 0 < y < height - 1:
+                edges.append((x, y))
+            if difference > 1:
+                edge_differences += 1
+                if source_reference is None:
+                    # Preserve the original contract for legacy three-frame
+                    # collectors which have no independent high-res source.
+                    supported = all(min(item[channel] for item in neighbors) - 1 <= sample[channel]
+                                    <= max(item[channel] for item in neighbors) + 1
+                                    for channel in range(3))
+                else:
+                    supported = _source_palette_support(source_reference, width, height,
+                                                        reference_scale, x, y, sample)
+                if not supported:
+                    raise ValueError(f"compositor color escaped the CPU AA envelope ({x},{y}): "
+                                     f"CPU {tuple(color)}, display {tuple(sample)}")
     if uniform < width * height // 4:
         raise ValueError("oracle has too few independent uniform interior controls")
-    return {"uniformInteriorPixels": uniform, "aaEdgeDifferentPixels": edge_differences,
-            "maxChannelDifference": maximum, "comparison": "opaque-interiors-1-aa-support-1px"}
+    result = {"uniformInteriorPixels": uniform, "aaEdgeDifferentPixels": edge_differences,
+              "maxChannelDifference": maximum, "comparison": "opaque-interiors-1-aa-support-1px"}
+    if source_reference is not None:
+        errors = {}
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                errors[f"{dx},{dy}"] = sum(
+                    sum(abs(expected[(y * width + x) * 4 + channel] -
+                            captured[((y + dy) * width + x + dx) * 4 + channel]) for channel in range(3))
+                    for x, y in edges)
+        current = errors["0,0"]
+        if any(value <= current for shift, value in errors.items() if shift != "0,0"):
+            raise ValueError("CPU source/compositor integer alignment is shifted or ambiguous")
+        result.update(comparison="opaque-interiors-1-source-palette13-edge1px-zero-integer-shift",
+                      sourceReferenceScale=reference_scale, sourceReferenceBytes=len(source_reference),
+                      integerAlignmentErrors=errors)
+    return result
 
 
 class WindowsCompositor:
@@ -406,6 +516,8 @@ def main():
     parser.add_argument("--build-receipt", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=120)
+    parser.add_argument("--cpu-reference", action="store_true",
+                        help="require an independent same-snapshot supersampled CPU source reference")
     args = parser.parse_args()
     try:
         require_actual_windows()
@@ -435,12 +547,16 @@ def main():
     nonce = uuid.uuid4().hex
     config = {"protocol": 1, "nonce": nonce, "output": str(output),
               **{key: str(value) for key, value in files.items()}}
+    if args.cpu_reference:
+        config["cpuReference"] = True
     write_json(output / "config.json", config)
     env = dict(os.environ, RHWP_CONSUMER_PROBE_CONFIG=str(output / "config.json"))
     state = {"platform": "windows", "qualification": "pending", "build": receipt,
              "stages": [], "consumerGpuCompletionVerified": False,
              "continuousPresentationSupported": False, "hardwareAccelerationVerified": False,
              "started": time.time()}
+    if args.cpu_reference:
+        state["cpuReferenceRequested"] = True
     process = None
     log = (output / "runner.log").open("wb")
     try:
@@ -457,6 +573,8 @@ def main():
                 if process.poll() is not None or time.monotonic() >= deadline:
                     raise TimeoutError("probe exited or timed out before " + name)
                 time.sleep(0.025)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Windows capture deadline expired before a ready stage")
             stage = read_json(stage_file)
             width, height, offset = validate_stage(stage, nonce=nonce, index=index, pid=process.pid)
             if previous_stamp is not None:
@@ -478,26 +596,58 @@ def main():
             with oracle_path.open("rb") as oracle:
                 expected = oracle.read(width * height * 4 + 1)
             captured = compositor.capture(width, height, offset)
-            comparison = compare_pixels(expected, captured, width, height)
+            # Keep failed real captures too. Reference validation and the pixel
+            # oracle must never discard the evidence they are rejecting.
+            captured_path = output / f"compositor-{index}.rgba"
+            captured_path.write_bytes(captured)
+            captured_path.chmod(0o600)
+            comparison_arguments = {}
+            source_hash = None
+            if args.cpu_reference:
+                scale = validate_source_reference(stage, width, height)
+                reference_path = output / f"cpu-reference-{index}.rgba"
+                reference_bytes = width * height * 4 * scale**2
+                if reference_path.stat().st_size != reference_bytes:
+                    raise ValueError("independent CPU source reference byte length changed")
+                with reference_path.open("rb") as reference:
+                    source_reference = reference.read(reference_bytes + 1)
+                if len(source_reference) != reference_bytes:
+                    raise ValueError("independent CPU source reference byte length changed while reading")
+                source_hash = hashlib.sha256(source_reference).hexdigest()
+                comparison_arguments = {"source_reference": source_reference, "reference_scale": scale}
+            comparison = compare_pixels(expected, captured, width, height, **comparison_arguments)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Windows capture deadline expired during CPU comparison")
             time.sleep(0.1)
             repeated = compositor.capture(width, height, offset)
             if repeated != captured:
                 raise ValueError("visible compositor pixels changed during held publication")
-            (output / f"compositor-{index}.rgba").write_bytes(captured)
-            state["stages"].append({"stage": stage, "comparison": comparison,
-                                    "cpuSha256": cpu_hash,
-                                    "compositorSha256": hashlib.sha256(captured).hexdigest()})
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Windows capture deadline expired during held publication")
+            evidence = {"stage": stage, "comparison": comparison, "cpuSha256": cpu_hash,
+                        "compositorSha256": hashlib.sha256(captured).hexdigest()}
+            if source_hash is not None:
+                evidence["sourceReferenceSha256"] = source_hash
+            state["stages"].append(evidence)
             write_json(output / "receipt.json", state)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Windows capture deadline expired before acknowledgement")
             write_json(output / f"ack-{index}.json", {"protocol": 1, "nonce": nonce, "index": index})
             previous_stamp = stage["stamp"]
-        remaining = max(0.1, deadline - time.monotonic())
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Windows capture deadline expired before close completion")
         code = process.wait(timeout=remaining)
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Windows capture deadline expired during close completion")
         result = read_json(output / "result.json")
         if code:
             raise ValueError("probe did not complete its real close/unregister checks")
         validate_result(result, nonce=nonce, last_limits=state["stages"][-1]["stage"]["limits"])
         verify_runtime_artifacts(files, receipt)
         verify_runtime_bundle(files["runner"].parent, receipt.get("runtimeBundle"))
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Windows capture deadline expired during final runtime verification")
         state.update(qualification="bounded-windows-consumer-passed", exitCode=code, result=result)
     except BaseException as error:
         state.update(qualification="failed", error=f"{type(error).__name__}: {error}")

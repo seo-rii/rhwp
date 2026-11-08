@@ -1,0 +1,328 @@
+name: Desktop platform qualification
+
+# Validation-only fork PR. This does not alter upstream/default-branch CI,
+# register runners, publish packages, deploy, or access repository secrets.
+on:
+  pull_request:
+    branches: [task/8701-platform-qualification-base]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    if: github.repository == 'seo-rii/rhwp' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      windows: ${{ steps.impact.outputs.windows }}
+      macos: ${{ steps.impact.outputs.macos }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /bindings/Flutter/tool/platform_qualification_paths.py
+      - name: Select exact affected target inputs
+        id: impact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFICATION_REPOSITORY: ${{ github.repository }}
+          QUALIFICATION_BEFORE: ${{ github.event.before }}
+          QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 -B bindings/Flutter/tool/platform_qualification_paths.py
+          --repository "$QUALIFICATION_REPOSITORY"
+          --before "$QUALIFICATION_BEFORE"
+          --head "$QUALIFICATION_HEAD"
+
+  windows:
+    needs: changes
+    permissions:
+      contents: read
+      actions: read
+    if: needs.changes.outputs.windows == 'true'
+    concurrency:
+      group: desktop-qualification-windows-${{ github.ref }}
+      cancel-in-progress: false
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+      DART_SUPPRESS_ANALYTICS: 'true'
+      FLUTTER_VERSION_PIN: c197ca5199e9ee5661e865596c9c07294dfab51c
+    steps:
+      - name: Checkout exact task head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/*/
+            /.github/
+            /.cargo/
+            /src/
+            /crates/
+            /tools/
+            /vendor/
+            /bindings/
+            /assets/fonts/
+            /assets/font-rules/
+            /assets/logo/
+            /saved/blank2010.hwp
+            /licenses/
+            /mydocs/manual/
+            /mydocs/tech/
+            /ttfs/opensource/
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.93.1
+          targets: x86_64-pc-windows-msvc
+      - name: Prepare pinned Flutter SDK
+        shell: pwsh
+        run: |
+          $sdk = Join-Path $env:RUNNER_TEMP 'rhwp-flutter-sdk'
+          git clone --filter=blob:none --no-checkout https://github.com/flutter/flutter.git $sdk
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $sdk checkout --detach $env:FLUTTER_VERSION_PIN
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & (Join-Path $sdk 'bin/flutter.bat') precache --windows --no-ios --no-android --no-linux --no-macos --no-web
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "FLUTTER_ROOT=$sdk" >> $env:GITHUB_ENV
+      - name: Read the completed fresh Native build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42449346339
+          name: windows-desktop-qualification-9452099dc796ca5626f1c4b52396a9ca07dc445e
+          path: ${{ runner.temp }}/qualified-windows-native
+      - name: Fetch the exact Native source identity
+        shell: pwsh
+        run: git -c gc.auto=0 fetch --filter=blob:none --no-tags --depth=1 origin 9452099dc796ca5626f1c4b52396a9ca07dc445e
+      - name: Actual Windows SDK, Flutter and compositor qualification
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Visual Studio C++ SDK is required' }
+          $module = Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll'
+          Import-Module $module
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          if (!(Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'VS developer compiler PATH was not initialized' }
+          $output = Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification'
+          $nativeArtifact = Join-Path $env:RUNNER_TEMP 'qualified-windows-native'
+          python -B bindings/Flutter/tool/check_windows_desktop_sdk.py --flutter-sdk $env:FLUTTER_ROOT --output $output --native-artifact-root $nativeArtifact --native-source-head 9452099dc796ca5626f1c4b52396a9ca07dc445e
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Qualify the corrected P106 head independently
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Visual Studio C++ SDK is required' }
+          Import-Module (Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          if (!(Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'P106 needs its own VS developer environment' }
+          $source = Join-Path $env:RUNNER_TEMP 'rhwp-p106-source'
+          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p106-windows-consumer-probe https://github.com/seo-rii/rhwp.git $source
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $source sparse-checkout init --cone
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $source sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $source checkout --detach 2e6268c8187ed5eda59f19ca4cb729371c1776da
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $sdkReceipt = Get-Content -Raw (Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification/windows-sdk-receipt.json') | ConvertFrom-Json
+          $seed = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'qualified-windows-native') -Recurse -Filter native-build-receipt.json)
+          if ($seed.Count -ne 1) { throw 'Exactly one original Native build receipt is required' }
+          python -B bindings/Flutter/tool/review_p106_windows.py --repository $source --expected-head 2e6268c8187ed5eda59f19ca4cb729371c1776da --flutter-sdk $env:FLUTTER_ROOT --native $sdkReceipt.native --native-receipt ($seed[0].FullName) --output (Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification/p106-exact-review')
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Preserve completed receipts and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-desktop-qualification-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/rhwp-windows-qualification/**/*.json
+            ${{ runner.temp }}/rhwp-windows-qualification/**/*.log
+            ${{ runner.temp }}/rhwp-windows-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-windows-qualification/p106-exact-review/desktop-capture/*.rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/cpu-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/cpu-reference-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/compositor-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-32.rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-reference-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-reference-32.rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/compositor-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/compositor-32.rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/native-target/x86_64-pc-windows-msvc/release/rhwp_native_ffi.dll
+            ${{ runner.temp }}/rhwp-windows-qualification/native-artifact/rhwp_native_ffi.dll
+            ${{ github.workspace }}/LICENSE
+            ${{ github.workspace }}/THIRD_PARTY.md
+            ${{ github.workspace }}/THIRD_PARTY_LICENSES.md
+            ${{ github.workspace }}/licenses/
+            ${{ github.workspace }}/assets/fonts/licenses/
+          if-no-files-found: warn
+          retention-days: 7
+
+  macos:
+    needs: changes
+    permissions:
+      contents: read
+      actions: read
+    if: needs.changes.outputs.macos == 'true'
+    concurrency:
+      group: desktop-qualification-macos-${{ github.ref }}
+      cancel-in-progress: false
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+      DART_SUPPRESS_ANALYTICS: 'true'
+      FLUTTER_VERSION_PIN: c197ca5199e9ee5661e865596c9c07294dfab51c
+    steps:
+      - name: Checkout exact task head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/*/
+            /.github/
+            /.cargo/
+            /src/
+            /crates/
+            /tools/
+            /vendor/
+            /bindings/
+            /assets/fonts/
+            /assets/font-rules/
+            /assets/logo/
+            /saved/blank2010.hwp
+            /licenses/
+            /mydocs/manual/
+            /mydocs/tech/
+            /ttfs/opensource/
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.93.1
+          targets: aarch64-apple-darwin
+      - name: Prepare pinned Flutter SDK and Apple framework
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="$RUNNER_TEMP/rhwp-flutter-sdk"
+          git clone --filter=blob:none --no-checkout https://github.com/flutter/flutter.git "$sdk"
+          git -C "$sdk" checkout --detach "$FLUTTER_VERSION_PIN"
+          "$sdk/bin/flutter" precache --macos --no-ios --no-android --no-linux --no-windows --no-web
+          echo "FLUTTER_ROOT=$sdk" >> "$GITHUB_ENV"
+          framework=$(python3 -B bindings/Flutter/tool/find_macos_framework.py "$sdk")
+          echo "FLUTTER_MACOS_FRAMEWORK=$framework" >> "$GITHUB_ENV"
+      - name: Read the completed fresh Native build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42450457328
+          name: macos-metal-qualification-4f738e766ccbba8faf938f2421ca6b516e939019
+          path: ${{ runner.temp }}/qualified-macos-native
+      - name: Fetch the exact Native source identity
+        shell: bash
+        run: git -c gc.auto=0 fetch --filter=blob:none --no-tags --depth=1 origin 4f738e766ccbba8faf938f2421ca6b516e939019
+      - name: Reproduce the old Metal animation policy with the real Apple SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$RUNNER_TEMP/rhwp-p110-animation-baseline-source"
+          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p110-macos-presentation https://github.com/seo-rii/rhwp.git "$previous"
+          git -C "$previous" sparse-checkout init --cone
+          git -C "$previous" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative
+          git -C "$previous" -c gc.auto=0 fetch --filter=blob:none --no-tags --depth=1 origin 233d82545ee3071cfd502bca9018808b8db5265a
+          git -C "$previous" checkout --detach 233d82545ee3071cfd502bca9018808b8db5265a
+          python3 -B bindings/Flutter/tool/review_macos_animation_policy.py \
+            --repository "$GITHUB_WORKSPACE" --old-repository "$previous" \
+            --framework "$FLUTTER_MACOS_FRAMEWORK" \
+            --output "$RUNNER_TEMP/rhwp-macos-animation-baseline"
+      - name: Actual Apple SDK and Metal producer qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B bindings/Flutter/tool/check_macos_metal_sdk.py \
+            --flutter-sdk "$FLUTTER_ROOT" --flutter-framework "$FLUTTER_MACOS_FRAMEWORK" \
+            --enable-metal-experiment --toolchain 1.93.1 \
+            --native-artifact-root "$RUNNER_TEMP/qualified-macos-native" \
+            --native-source-head 4f738e766ccbba8faf938f2421ca6b516e939019 \
+            --output "$RUNNER_TEMP/rhwp-macos-qualification"
+      - name: Qualify the corrected P107 head independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/rhwp-p107-source"
+          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p107-macos-sdk-probe https://github.com/seo-rii/rhwp.git "$source"
+          git -C "$source" sparse-checkout init --cone
+          git -C "$source" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests bindings/Native/examples
+          git -C "$source" checkout --detach 40e1301ddabb6290a4ed06c5791e8fd4960403f5
+          receipt="$RUNNER_TEMP/rhwp-macos-qualification/macos-sdk-receipt.json"
+          native=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["native"]["path"])' "$receipt")
+          python3 -B bindings/Flutter/tool/review_p107_macos.py \
+            --repository "$source" --expected-head 40e1301ddabb6290a4ed06c5791e8fd4960403f5 \
+            --framework "$FLUTTER_MACOS_FRAMEWORK" --native "$native" \
+            --native-source-head 4f738e766ccbba8faf938f2421ca6b516e939019 \
+            --output "$RUNNER_TEMP/rhwp-macos-qualification/p107-exact-review"
+      - name: Actual AppKit Metal view and WindowServer qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check Pillow==13.0.0
+          receipt="$RUNNER_TEMP/rhwp-macos-qualification/macos-sdk-receipt.json"
+          native=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["native"]["path"])' "$receipt")
+          python3 -B bindings/Flutter/macos/tests/qualify_native_view.py build \
+            --flutter-sdk "$FLUTTER_ROOT" --native "$native" --native-receipt "$receipt" \
+            --output "$RUNNER_TEMP/rhwp-macos-qualification/desktop-build"
+          python3 -B bindings/Flutter/macos/tests/qualify_native_view.py capture \
+            --build-receipt "$RUNNER_TEMP/rhwp-macos-qualification/desktop-build/macos-view-build.json" \
+            --frames 32 --timeout 600 --output "$RUNNER_TEMP/rhwp-macos-qualification/desktop-capture"
+      - name: Preserve completed receipts and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-metal-qualification-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/rhwp-macos-animation-baseline/**/*.json
+            ${{ runner.temp }}/rhwp-macos-animation-baseline/**/*.log
+            ${{ runner.temp }}/rhwp-macos-qualification/**/*.json
+            ${{ runner.temp }}/rhwp-macos-qualification/**/*.log
+            ${{ runner.temp }}/rhwp-macos-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-[123].rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-32.rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-reference-[123].rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/cpu-reference-32.rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-[123].rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-32.rgba
+            ${{ runner.temp }}/rhwp-macos-qualification/native-target/aarch64-apple-darwin/debug/librhwp_native_ffi.dylib
+            ${{ runner.temp }}/rhwp-macos-qualification/native-artifact/librhwp_native_ffi.dylib
+            ${{ github.workspace }}/LICENSE
+            ${{ github.workspace }}/THIRD_PARTY.md
+            ${{ github.workspace }}/THIRD_PARTY_LICENSES.md
+            ${{ github.workspace }}/licenses/
+            ${{ github.workspace }}/assets/fonts/licenses/
+          if-no-files-found: warn
+          retention-days: 7

@@ -36,6 +36,7 @@ class DesktopConsumerOracle {
   late final _RequestDart _request;
   late final _FreeDart _free;
   late final _DataDart _data;
+  Map<String, Object?>? lastGeometry;
 
   Map<String, Object?> call(Map<String, Object?> request) {
     final bytes = utf8.encode(jsonEncode(request));
@@ -73,7 +74,11 @@ class DesktopConsumerOracle {
     required int width,
     required int height,
   }) {
-    _require(width * height <= 1024 * 1024, 'oracle pixel bound');
+    lastGeometry = null;
+    _require(
+      width > 0 && height > 0 && width * height <= 4 * 1024 * 1024,
+      'oracle pixel bound',
+    );
     final frame = call({
       'op': 'renderCpuBatch',
       'stamp': stamp.toJson(),
@@ -117,7 +122,20 @@ class DesktopConsumerOracle {
         pointer != nullptr && length.value == width * height * 4,
         'invalid CPU oracle lease span',
       );
-      return Uint8List.fromList(pointer.asTypedList(length.value));
+      final copied = Uint8List.fromList(pointer.asTypedList(length.value));
+      lastGeometry = {
+        'snapshot': snapshot,
+        'stamp': stamp.toJson(),
+        'viewport': {'width': width, 'height': height},
+        'placement': {
+          'scale': viewport.zoom * dpr,
+          'originX': viewport.origin.dx * dpr,
+          'originY': viewport.origin.dy * dpr,
+        },
+        'coordinateSpace': info['coordinateSpace'],
+        'descriptor': Map<String, Object?>.from(descriptor),
+      };
+      return copied;
     } finally {
       calloc.free(length);
       try {
@@ -130,8 +148,9 @@ class DesktopConsumerOracle {
 }
 
 class _ObservedPresentation implements NativePresentation {
-  _ObservedPresentation(this.inner);
+  _ObservedPresentation(this.inner, {this.maxChecks = 1024});
   final NativePresentation inner;
+  final int maxChecks;
   int? snapshot;
   NativePresentationStamp? stamp;
   int checks = 0;
@@ -149,7 +168,7 @@ class _ObservedPresentation implements NativePresentation {
     int snapshot,
     NativePresentationStamp stamp,
   ) async {
-    _require(++checks <= 1024, 'probe metadata call bound');
+    _require(++checks <= maxChecks, 'probe metadata call bound');
     final current = await inner.snapshotCheck(snapshot, stamp);
     if (current) {
       this.snapshot = snapshot;
@@ -180,10 +199,14 @@ class _ProbeState extends State<_Probe> {
   late Timer _watchdog;
   var _physicalSize = const Size(320, 240);
   var _stage = 'setup';
+  var _frameCount = 3;
+  var _sourceReferenceEnabled = false;
+  var _continuousBackend = false;
+  var _nativeCoverProbe = false;
   @override
   void initState() {
     super.initState();
-    _watchdog = Timer(const Duration(seconds: 110), () {
+    _watchdog = Timer(Duration(seconds: Platform.isLinux ? 290 : 110), () {
       stderr.writeln('RHWP_DESKTOP_CONSUMER_PROBE watchdog at $_stage');
       exit(124);
     });
@@ -200,6 +223,10 @@ class _ProbeState extends State<_Probe> {
     await _channel
             .invokeMethod<Map<Object?, Object?>>('status', {
               'textureId': _controller!.textureId,
+              if (_metadata?.stamp != null &&
+                  (Platform.isWindows ||
+                      _controller!.platform == NativeTexturePlatform.macos))
+                'deviceGeneration': _metadata!.stamp!.deviceGeneration,
             })
             .timeout(const Duration(seconds: 5)) ??
         {},
@@ -241,7 +268,11 @@ class _ProbeState extends State<_Probe> {
     final status = await _status(), stamp = metadata.stamp!;
     _require(
       stamp.matches(status['renderedStamp'] ?? status['acceptedStamp']) &&
-          status['hasFrame'] == true &&
+          (Platform.isLinux
+              ? status['registered'] == true &&
+                    status['framesSubmitted'] is int &&
+                    (status['framesSubmitted']! as int) >= index
+              : status['hasFrame'] == true) &&
           await metadata.inner.snapshotCheck(metadata.snapshot!, stamp),
       'native publication/source changed before compositor capture',
     );
@@ -254,8 +285,53 @@ class _ProbeState extends State<_Probe> {
       width: _physicalSize.width.toInt(),
       height: _physicalSize.height.toInt(),
     );
+    final cpuGeometry = _oracle!.lastGeometry!;
     await File('${_output.path}/cpu-$index.rgba')
         .writeAsBytes(pixels, flush: true);
+    var referenceScale = 1;
+    Map<String, Object?>? referenceGeometry;
+    if (_sourceReferenceEnabled) {
+      // The same immutable snapshot and complete stamp are replayed directly.
+      // Only target/placement geometry is scaled; configure/capture is not run.
+      final view = _viewport!;
+      for (final factor in [4, 3, 2]) {
+        if (_physicalSize.width * factor <= 4096 &&
+            _physicalSize.height * factor <= 4096 &&
+            _physicalSize.width * _physicalSize.height * factor * factor <=
+                4 * 1024 * 1024 &&
+            view.zoom * dpr * factor <= 64 &&
+            (view.origin.dx * dpr * factor).abs() <= 16777216 &&
+            (view.origin.dy * dpr * factor).abs() <= 16777216) {
+          referenceScale = factor;
+          break;
+        }
+      }
+      _require(
+        referenceScale > 1,
+        'referenceUnavailable: CPU geometry/16 MiB cap',
+      );
+      final factor = referenceScale;
+      final reference = _oracle!.pixels(
+        snapshot: metadata.snapshot!,
+        stamp: stamp,
+        viewport: NativePageViewport.placed(
+          view.page,
+          view.viewport * factor.toDouble(),
+          zoom: view.zoom * factor,
+          origin: view.origin * factor.toDouble(),
+        ),
+        dpr: dpr,
+        width: _physicalSize.width.toInt() * factor,
+        height: _physicalSize.height.toInt() * factor,
+      );
+      _require(
+        await metadata.inner.snapshotCheck(metadata.snapshot!, stamp),
+        'source changed during independent CPU reference replay',
+      );
+      referenceGeometry = _oracle!.lastGeometry!;
+      await File('${_output.path}/cpu-reference-$index.rgba')
+          .writeAsBytes(reference, flush: true);
+    }
     final box = _textureKey.currentContext!.findRenderObject()! as RenderBox;
     final origin = box.localToGlobal(Offset.zero) * dpr;
     _require(
@@ -276,6 +352,11 @@ class _ProbeState extends State<_Probe> {
       'deviceScale': dpr,
       'stamp': stamp.toJson(),
       'limits': status['limits'],
+      if (_sourceReferenceEnabled) ...{
+        'cpuReferenceScale': referenceScale,
+        'geometryProof': {'cpu': cpuGeometry, 'reference': referenceGeometry},
+      },
+      'nativeStatus': status,
     });
     final ack = File('${_output.path}/ack-$index.json');
     await _until(
@@ -291,11 +372,74 @@ class _ProbeState extends State<_Probe> {
     );
   }
 
+  Future<void> _heldNativeCover() async {
+    _stage = 'held-native-cover';
+    final controller = _controller!;
+    await controller.pause();
+    for (var frame = 0; frame < 2; frame++) {
+      WidgetsBinding.instance.scheduleFrame();
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    final status = await _status();
+    _require(
+      controller.isPaused &&
+          !controller.canDisplay &&
+          status['covered'] == true &&
+          status['presentationKind'] == 'nativeView' &&
+          status['viewBound'] == true &&
+          status['layerReady'] == true,
+      'mounted native view did not acknowledge its held cover',
+    );
+    var nativeViewMounted = false;
+    var elements = 0;
+    void visit(Element element) {
+      _require(++elements <= 256, 'native view subtree bound');
+      if (element.widget is AppKitView) nativeViewMounted = true;
+      element.visitChildElements(visit);
+    }
+
+    (_textureKey.currentContext! as Element).visitChildElements(visit);
+    _require(nativeViewMounted, 'held cover unmounted the native view');
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final box = _textureKey.currentContext!.findRenderObject()! as RenderBox;
+    final origin = box.localToGlobal(Offset.zero) * dpr;
+    _require(
+      (origin.dx - origin.dx.round()).abs() < .0001 &&
+          (origin.dy - origin.dy.round()).abs() < .0001,
+      'held cover lost its physical pixel alignment',
+    );
+    await _write('cover-1.json', {
+      'protocol': 1,
+      'nonce': _nonce,
+      'pid': pid,
+      'platform': Platform.operatingSystem,
+      'width': _physicalSize.width.toInt(),
+      'height': _physicalSize.height.toInt(),
+      'physicalOffset': [origin.dx.round(), origin.dy.round()],
+      'deviceScale': dpr,
+      'clearColor': 0xff55575a,
+      'nativeCovered': status['covered'],
+      'presentationKind': status['presentationKind'],
+      'nativeViewMounted': nativeViewMounted,
+      'viewBound': status['viewBound'],
+      'layerReady': status['layerReady'],
+      'visibilitySerial': status['visibilitySerial'],
+    });
+    final ack = File('${_output.path}/cover-ack-1.json');
+    await _until(() => ack.exists(), 'held cover was not externally sampled');
+    final reply = jsonDecode(await ack.readAsString()) as Map;
+    _require(
+      reply['protocol'] == 1 && reply['nonce'] == _nonce && reply['index'] == 1,
+      'foreign held-cover acknowledgement',
+    );
+    controller.resume();
+  }
+
   Future<void> _run() async {
     var succeeded = false;
     try {
       _require(
-        Platform.isWindows || Platform.isMacOS,
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux,
         'actual desktop target is required',
       );
       final config = jsonDecode(
@@ -307,6 +451,52 @@ class _ProbeState extends State<_Probe> {
         'invalid driver config',
       );
       _nonce = config['nonce']! as String;
+      final backend = config['backend'];
+      final platform = switch (backend) {
+        null => NativeTexturePlatform.current()!,
+        'windowsImmutableTransfer' when Platform.isWindows =>
+          NativeTexturePlatform.windows,
+        'macosMetalView' when Platform.isMacOS =>
+          NativeTexturePlatform.macosMetalView,
+        _ => throw StateError('probe backend does not match the actual OS'),
+      };
+      _continuousBackend = Platform.isLinux || backend != null;
+      _nativeCoverProbe = (config['nativeCoverProbe'] as bool?) ?? false;
+      _require(
+        !_nativeCoverProbe || platform == NativeTexturePlatform.macosMetalView,
+        'native cover sampling requires the macOS native view backend',
+      );
+      final presentationKind = platform == NativeTexturePlatform.macosMetalView
+          ? 'nativeView'
+          : 'externalTexture';
+      _require(
+        config['presentationKind'] == null ||
+            config['presentationKind'] == presentationKind,
+        'probe presentation kind does not match the selected backend',
+      );
+      _sourceReferenceEnabled =
+          (config['cpuReference'] as bool?) ?? _continuousBackend;
+      _frameCount =
+          (config['frameCount'] as int?) ?? (config['frames'] as int?) ?? 3;
+      _require(
+        config['frameCount'] == null ||
+            config['frames'] == null ||
+            config['frameCount'] == config['frames'],
+        'ambiguous probe frame count',
+      );
+      _require(
+        _continuousBackend
+            ? _frameCount >= 3 && _frameCount <= 64
+            : _frameCount == 3,
+        'probe frame count exceeds its platform contract',
+      );
+      if (_continuousBackend) {
+        _watchdog.cancel();
+        _watchdog = Timer(const Duration(seconds: 590), () {
+          stderr.writeln('RHWP_DESKTOP_CONSUMER_PROBE watchdog at $_stage');
+          exit(124);
+        });
+      }
       _output = Directory(config['output']! as String);
       final native = await File(config['native']! as String)
           .resolveSymbolicLinks();
@@ -338,18 +528,19 @@ class _ProbeState extends State<_Probe> {
       });
       final metadata = _metadata = _ObservedPresentation(
         await NativePresentation.connect(nativeLibrary: native),
+        maxChecks: _frameCount > 4 ? 8192 : 1024,
       );
       _require(
         metadata.available,
         'full-stamp presentation capability is required',
       );
       _oracle = DesktopConsumerOracle(native);
-      final platform = NativeTexturePlatform.current()!;
       _channel = MethodChannel(platform.channelName);
       _controller = NativeTextureController(
         document: document,
         presentation: metadata,
         platform: platform,
+        allowImmutableOwnershipTransfer: backend == 'windowsImmutableTransfer',
         operationTimeout: const Duration(seconds: 8),
       );
       _viewport = NativePageViewport.fit(
@@ -358,6 +549,7 @@ class _ProbeState extends State<_Probe> {
       );
       setState(() {});
       await _publication(1, 'initial');
+      if (_nativeCoverProbe) await _heldNativeCover();
       await document.request('pasteText', {
         // The fixture begins with a plain empty paragraph before the picture.
         // Six blank paragraphs move its visible image without depending on a
@@ -372,15 +564,55 @@ class _ProbeState extends State<_Probe> {
       );
       setState(() {});
       await _publication(3, 'resize');
+      final baseline = _viewport!;
+      for (var index = 4; index <= _frameCount; index++) {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        _viewport = NativePageViewport.placed(
+          baseline.page,
+          baseline.viewport,
+          zoom: baseline.zoom,
+          origin: baseline.origin + Offset(index.isEven ? 4 / dpr : 0, 2 / dpr),
+        );
+        setState(() {});
+        await _publication(index, 'continuous');
+      }
       _stage = 'close';
       await _controller!.close();
       _require(
         _controller!.phase == NativeTexturePhase.closed,
         'texture retirement was not confirmed',
       );
-      final closed = await _status();
+      var closed = await _status();
+      if (backend == 'windowsImmutableTransfer' ||
+          platform == NativeTexturePlatform.macosMetalView) {
+        // The registrar may signal removal immediately before its last owned
+        // descriptor/creator pins are drained. Observe the completed status,
+        // without interpreting it as a consumer GPU completion fence.
+        await _until(() async {
+          closed = await _status();
+          if (platform == NativeTexturePlatform.macosMetalView) {
+            return closed['ownerFinished'] == true &&
+                closed['registered'] == false &&
+                closed['nativeViewLayerDetached'] == true;
+          }
+          final limits = closed['limits'] as Map?;
+          return closed['ownerFinished'] == true &&
+              (closed['unregistered'] == true ||
+                  closed['registered'] == false) &&
+              limits?['producerOwnedFrames'] == 0 &&
+              limits?['importPendingFrames'] == 0 &&
+              limits?['descriptorTickets'] == 0;
+        }, 'native registration/owned resources did not finish retiring');
+      }
       _require(
-        closed['ownerFinished'] == true,
+        Platform.isLinux
+            ? closed['cleanupComplete'] == true &&
+                  closed['liveRasterSlots'] == 0 &&
+                  closed['pendingRetireSlots'] == 0 &&
+                  closed['orphanedRasterSlots'] == 0 &&
+                  closed['abandonedTargets'] == 0 &&
+                  closed['snapshotReleaseFailures'] == 0
+            : closed['ownerFinished'] == true,
         'producer owner did not finish',
       );
       _require(
@@ -411,7 +643,15 @@ class _ProbeState extends State<_Probe> {
         'closed': closed,
         'stats': stats,
         'consumerGpuCompletionVerified': false,
-        'continuousPresentationSupported': false,
+        'continuousPresentationSupported':
+            _continuousBackend &&
+            _frameCount > 4 &&
+            (Platform.isLinux ||
+                (closed['limits']
+                        as Map?)?['continuousPresentationSupported'] ==
+                    true),
+        'presentationKind': presentationKind,
+        'publications': _frameCount,
       });
       succeeded = true;
     } catch (error, stack) {
