@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -59,7 +60,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--flutter-sdk', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--native-artifact-root', type=Path)
+    parser.add_argument('--native-source-head')
     args = parser.parse_args()
+    if bool(args.native_artifact_root) != bool(args.native_source_head):
+        parser.error('Native artifact reuse requires both its directory and exact source head')
     require_actual_windows()
     repo = Path(__file__).resolve().parents[3]
     source_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
@@ -101,15 +106,31 @@ def main():
                       '/I' + str(repo / 'bindings/swift/Sources/CRhwpNative'),
                       str(source), '/Fo' + str(objects / (source.name + '.obj'))],
                      cwd=repo, env=env, output=output, receipt=state, record=record, timeout=120)
-        command = ['rustup', 'run', '1.93.1', 'cargo', 'build', '--locked', '--release',
-                   '-p', 'rhwp-native-ffi', '--features', 'native-skia-d3d',
-                   '--target', 'x86_64-pc-windows-msvc']
-        run_step(command, cwd=repo, env=env, output=output, receipt=state, record=record,
-                 timeout=5400)
-        native = output / 'native-target/x86_64-pc-windows-msvc/release/rhwp_native_ffi.dll'
         native_receipt = output / 'native-build-receipt.json'
-        write_json(native_receipt, {'source_head': source_head, 'build': 'passed',
-                                   'artifacts': {'rhwp_native_ffi.dll': digest(native)}})
+        if args.native_artifact_root:
+            from native_artifact_provenance import load_native_artifact
+            reused = load_native_artifact(args.native_artifact_root, repo, 'windows', args.native_source_head)
+            directory = output / 'native-artifact'
+            directory.mkdir(mode=0o700)
+            native = directory / 'rhwp_native_ffi.dll'
+            shutil.copyfile(reused['native'], native)
+            shutil.copyfile(reused['nativeReceipt'], native_receipt)
+            if digest(native) != digest(reused['native']):
+                raise ValueError('Native artifact changed while copying')
+            state.update(nativeRebuilt=False, nativeSourceHead=args.native_source_head,
+                         nativeReuse=reused['proof'])
+        else:
+            command = ['rustup', 'run', '1.93.1', 'cargo', 'build', '--locked', '--release',
+                       '-p', 'rhwp-native-ffi', '--features', 'native-skia-d3d',
+                       '--target', 'x86_64-pc-windows-msvc']
+            run_step(command, cwd=repo, env=env, output=output, receipt=state, record=record,
+                     timeout=5400)
+            native = output / 'native-target/x86_64-pc-windows-msvc/release/rhwp_native_ffi.dll'
+            write_json(native_receipt, {'platform': 'windows', 'source_head': source_head, 'build': 'passed',
+                                       'target': 'x86_64-pc-windows-msvc', 'features': ['native-skia-d3d'],
+                                       'artifacts': {'rhwp_native_ffi.dll': digest(native)}})
+            state.update(nativeRebuilt=True, nativeSourceHead=source_head)
+        record()
         build = output / 'desktop-build'
         run_step([sys.executable, '-B', str(repo / 'bindings/Flutter/tool/build_desktop_probe.py'),
                   '--flutter-sdk', str(sdk), '--native', str(native),

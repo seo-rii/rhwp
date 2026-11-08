@@ -41,6 +41,9 @@ jobs:
 
   windows:
     needs: changes
+    permissions:
+      contents: read
+      actions: read
     if: needs.changes.outputs.windows == 'true'
     concurrency:
       group: desktop-qualification-windows-${{ github.ref }}
@@ -97,6 +100,16 @@ jobs:
           & (Join-Path $sdk 'bin/flutter.bat') precache --windows --no-ios --no-android --no-linux --no-macos --no-web
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           "FLUTTER_ROOT=$sdk" >> $env:GITHUB_ENV
+      - name: Read the completed fresh Native build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42449346339
+          name: windows-desktop-qualification-9452099dc796ca5626f1c4b52396a9ca07dc445e
+          path: ${{ runner.temp }}/qualified-windows-native
+      - name: Fetch the exact Native source identity
+        shell: pwsh
+        run: git -c gc.auto=0 fetch --filter=blob:none --no-tags --depth=1 origin 9452099dc796ca5626f1c4b52396a9ca07dc445e
       - name: Actual Windows SDK, Flutter and compositor qualification
         shell: pwsh
         run: |
@@ -108,7 +121,8 @@ jobs:
           Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
           if (!(Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'VS developer compiler PATH was not initialized' }
           $output = Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification'
-          python -B bindings/Flutter/tool/check_windows_desktop_sdk.py --flutter-sdk $env:FLUTTER_ROOT --output $output
+          $nativeArtifact = Join-Path $env:RUNNER_TEMP 'qualified-windows-native'
+          python -B bindings/Flutter/tool/check_windows_desktop_sdk.py --flutter-sdk $env:FLUTTER_ROOT --output $output --native-artifact-root $nativeArtifact --native-source-head 9452099dc796ca5626f1c4b52396a9ca07dc445e
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Preserve completed receipts and logs
         if: always()
@@ -126,6 +140,7 @@ jobs:
             ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/compositor-[123].rgba
             ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/compositor-32.rgba
             ${{ runner.temp }}/rhwp-windows-qualification/native-target/x86_64-pc-windows-msvc/release/rhwp_native_ffi.dll
+            ${{ runner.temp }}/rhwp-windows-qualification/native-artifact/rhwp_native_ffi.dll
             ${{ github.workspace }}/LICENSE
             ${{ github.workspace }}/THIRD_PARTY.md
             ${{ github.workspace }}/THIRD_PARTY_LICENSES.md
@@ -136,6 +151,9 @@ jobs:
 
   macos:
     needs: changes
+    permissions:
+      contents: read
+      actions: read
     if: needs.changes.outputs.macos == 'true'
     concurrency:
       group: desktop-qualification-macos-${{ github.ref }}
@@ -192,6 +210,16 @@ jobs:
           echo "FLUTTER_ROOT=$sdk" >> "$GITHUB_ENV"
           framework=$(python3 -B bindings/Flutter/tool/find_macos_framework.py "$sdk")
           echo "FLUTTER_MACOS_FRAMEWORK=$framework" >> "$GITHUB_ENV"
+      - name: Read the completed fresh Native build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42450457328
+          name: macos-metal-qualification-4f738e766ccbba8faf938f2421ca6b516e939019
+          path: ${{ runner.temp }}/qualified-macos-native
+      - name: Fetch the exact Native source identity
+        shell: bash
+        run: git -c gc.auto=0 fetch --filter=blob:none --no-tags --depth=1 origin 4f738e766ccbba8faf938f2421ca6b516e939019
       - name: Actual Apple SDK and Metal producer qualification
         shell: bash
         run: |
@@ -199,6 +227,8 @@ jobs:
           python3 -B bindings/Flutter/tool/check_macos_metal_sdk.py \
             --flutter-sdk "$FLUTTER_ROOT" --flutter-framework "$FLUTTER_MACOS_FRAMEWORK" \
             --enable-metal-experiment --toolchain 1.93.1 \
+            --native-artifact-root "$RUNNER_TEMP/qualified-macos-native" \
+            --native-source-head 4f738e766ccbba8faf938f2421ca6b516e939019 \
             --output "$RUNNER_TEMP/rhwp-macos-qualification"
       - name: Actual AppKit Metal view and WindowServer qualification
         shell: bash
@@ -229,6 +259,7 @@ jobs:
             ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-[123].rgba
             ${{ runner.temp }}/rhwp-macos-qualification/desktop-capture/compositor-32.rgba
             ${{ runner.temp }}/rhwp-macos-qualification/native-target/aarch64-apple-darwin/debug/librhwp_native_ffi.dylib
+            ${{ runner.temp }}/rhwp-macos-qualification/native-artifact/librhwp_native_ffi.dylib
             ${{ github.workspace }}/LICENSE
             ${{ github.workspace }}/THIRD_PARTY.md
             ${{ github.workspace }}/THIRD_PARTY_LICENSES.md

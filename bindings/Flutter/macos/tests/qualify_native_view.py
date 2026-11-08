@@ -287,7 +287,7 @@ def build(args):
     source_head = checked_sha(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip(), "source head")
     native = args.native.resolve(strict=True)
     native_receipt = read_json(args.native_receipt, limit=16 * 1024 * 1024)
-    native_head = checked_sha(native_receipt.get("source_head"), "Native source head")
+    native_head = checked_sha(native_receipt.get("nativeSourceHead", native_receipt.get("source_head")), "Native source head")
     native_hash = digest(native)
     if native_receipt.get("platform") != "macos" or native_receipt.get("build") != "passed" or native_receipt.get("artifacts", {}).get("native", {}).get("sha256") != native_hash:
         raise ValueError("Native library does not match its actual successful Apple SDK receipt")

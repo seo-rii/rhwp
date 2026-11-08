@@ -135,6 +135,20 @@ class MetalReceiptContracts(unittest.TestCase):
                 builder.command_plan(Path("/source"), Path("/probe"), Path("/SDK"),
                                      Path("/clang"), Path("/Flutter.framework"), architecture, toolchain)
 
+    def test_verified_native_reuse_still_compiles_plugin_and_runs_producer(self):
+        native = Path("/verified/librhwp_native_ffi.dylib")
+        commands, artifacts = builder.command_plan(
+            Path("/source"), Path("/probe"), Path("/SDK"), Path("/Xcode/clang++"),
+            Path("/FlutterMacOS.framework"), "arm64", "1.93.1", native)
+        self.assertEqual(artifacts["native"], native)
+        self.assertFalse(any("cargo" in command for command in commands))
+        self.assertEqual(sum(command[0] == "/Xcode/clang++" for command in commands), 3)
+        self.assertIn([str(artifacts["cvCloseStatus"])], commands)
+        producer = commands[-1]
+        self.assertIn(str(native), producer)
+        self.assertIn("--native-source-head", producer)
+        self.assertIn("NATIVE_SOURCE_HEAD", producer)
+
 
 class SourceAndProcessContracts(unittest.TestCase):
     def setUp(self):
