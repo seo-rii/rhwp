@@ -1,0 +1,166 @@
+name: Desktop platform qualification
+
+# Validation-only fork PR. This does not alter upstream/default-branch CI,
+# register runners, publish packages, deploy, or access repository secrets.
+on:
+  pull_request:
+    branches: [task/8701-p107-macos-sdk-probe]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-qualification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    if: github.repository == 'seo-rii/rhwp' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+      DART_SUPPRESS_ANALYTICS: 'true'
+      FLUTTER_VERSION_PIN: c197ca5199e9ee5661e865596c9c07294dfab51c
+    steps:
+      - name: Checkout exact task head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/*/
+            /.github/
+            /.cargo/
+            /src/
+            /crates/
+            /tools/
+            /vendor/
+            /bindings/
+            /assets/fonts/
+            /assets/font-rules/
+            /assets/logo/
+            /saved/blank2010.hwp
+            /mydocs/manual/
+            /mydocs/tech/
+            /ttfs/opensource/
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.93.1
+          targets: x86_64-pc-windows-msvc
+      - name: Prepare pinned Flutter SDK
+        shell: pwsh
+        run: |
+          $sdk = Join-Path $env:RUNNER_TEMP 'rhwp-flutter-sdk'
+          git clone --filter=blob:none --no-checkout https://github.com/flutter/flutter.git $sdk
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git -C $sdk checkout --detach $env:FLUTTER_VERSION_PIN
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & (Join-Path $sdk 'bin/flutter.bat') precache --windows --no-ios --no-android --no-linux --no-macos --no-web
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "FLUTTER_ROOT=$sdk" >> $env:GITHUB_ENV
+      - name: Actual Windows SDK, Flutter and compositor qualification
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Visual Studio C++ SDK is required' }
+          $module = Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll'
+          Import-Module $module
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          if (!(Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'VS developer compiler PATH was not initialized' }
+          $output = Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification'
+          python -B bindings/Flutter/tool/check_windows_desktop_sdk.py --flutter-sdk $env:FLUTTER_ROOT --output $output
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Preserve completed receipts and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-desktop-qualification-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/rhwp-windows-qualification/**/*.json
+            ${{ runner.temp }}/rhwp-windows-qualification/**/*.log
+            ${{ runner.temp }}/rhwp-windows-qualification/**/*.png
+          if-no-files-found: warn
+          retention-days: 7
+
+  macos:
+    if: github.repository == 'seo-rii/rhwp' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+      DART_SUPPRESS_ANALYTICS: 'true'
+      FLUTTER_VERSION_PIN: c197ca5199e9ee5661e865596c9c07294dfab51c
+    steps:
+      - name: Checkout exact task head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/*/
+            /.github/
+            /.cargo/
+            /src/
+            /crates/
+            /tools/
+            /vendor/
+            /bindings/
+            /assets/fonts/
+            /assets/font-rules/
+            /assets/logo/
+            /saved/blank2010.hwp
+            /mydocs/manual/
+            /mydocs/tech/
+            /ttfs/opensource/
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.93.1
+          targets: aarch64-apple-darwin
+      - name: Prepare pinned Flutter SDK and Apple framework
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="$RUNNER_TEMP/rhwp-flutter-sdk"
+          git clone --filter=blob:none --no-checkout https://github.com/flutter/flutter.git "$sdk"
+          git -C "$sdk" checkout --detach "$FLUTTER_VERSION_PIN"
+          "$sdk/bin/flutter" precache --macos --no-ios --no-android --no-linux --no-windows --no-web
+          echo "FLUTTER_ROOT=$sdk" >> "$GITHUB_ENV"
+          framework=$(python3 -B bindings/Flutter/tool/find_macos_framework.py "$sdk")
+          echo "FLUTTER_MACOS_FRAMEWORK=$framework" >> "$GITHUB_ENV"
+      - name: Actual Apple SDK and Metal producer qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B bindings/Flutter/tool/check_macos_metal_sdk.py \
+            --flutter-sdk "$FLUTTER_ROOT" --flutter-framework "$FLUTTER_MACOS_FRAMEWORK" \
+            --enable-metal-experiment --toolchain 1.93.1 \
+            --output "$RUNNER_TEMP/rhwp-macos-qualification"
+      - name: Preserve completed receipts and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-metal-qualification-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/rhwp-macos-qualification/**/*.json
+            ${{ runner.temp }}/rhwp-macos-qualification/**/*.log
+          if-no-files-found: warn
+          retention-days: 7
