@@ -133,6 +133,9 @@ jobs:
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.json
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.log
             ${{ runner.temp }}/rhwp-windows-qualification/**/*.png
+            ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/cpu-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/cpu-reference-[123].rgba
+            ${{ runner.temp }}/rhwp-windows-qualification/desktop-capture/compositor-[123].rgba
             ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-[123].rgba
             ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-32.rgba
             ${{ runner.temp }}/rhwp-windows-qualification/continuous-capture/cpu-reference-[123].rgba

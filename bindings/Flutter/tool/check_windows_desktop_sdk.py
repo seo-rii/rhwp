@@ -143,7 +143,7 @@ def main():
                   '--runner', artifacts['runner']['path'], '--native', artifacts['native']['path'],
                   '--dispatcher', artifacts['dispatcher']['path'],
                   '--fixture', artifacts['fixture']['path'],
-                  '--build-receipt', str(build / 'build-receipt.json'), '--output', str(capture)],
+                  '--build-receipt', str(build / 'build-receipt.json'), '--cpu-reference', '--output', str(capture)],
                  cwd=repo, env=env, output=output, receipt=state, record=record, timeout=300)
         # A separate process starts with an empty plugin-owned frame budget.
         # Legacy immutable credits intentionally cannot be refunded by close.
