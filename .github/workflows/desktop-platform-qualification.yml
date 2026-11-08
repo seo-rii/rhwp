@@ -127,6 +127,12 @@ jobs:
       - name: Qualify the corrected P106 head independently
         shell: pwsh
         run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Visual Studio C++ SDK is required' }
+          Import-Module (Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          if (!(Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'P106 needs its own VS developer environment' }
           $source = Join-Path $env:RUNNER_TEMP 'rhwp-p106-source'
           git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p106-windows-consumer-probe https://github.com/seo-rii/rhwp.git $source
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -134,12 +140,12 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           git -C $source sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          git -C $source checkout --detach ff7491f6ebd3769e23bcf4c4e1fa00ef430736ee
+          git -C $source checkout --detach 2e6268c8187ed5eda59f19ca4cb729371c1776da
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $sdkReceipt = Get-Content -Raw (Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification/windows-sdk-receipt.json') | ConvertFrom-Json
           $seed = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'qualified-windows-native') -Recurse -Filter native-build-receipt.json)
           if ($seed.Count -ne 1) { throw 'Exactly one original Native build receipt is required' }
-          python -B bindings/Flutter/tool/review_p106_windows.py --repository $source --expected-head ff7491f6ebd3769e23bcf4c4e1fa00ef430736ee --flutter-sdk $env:FLUTTER_ROOT --native $sdkReceipt.native --native-receipt ($seed[0].FullName) --output (Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification/p106-exact-review')
+          python -B bindings/Flutter/tool/review_p106_windows.py --repository $source --expected-head 2e6268c8187ed5eda59f19ca4cb729371c1776da --flutter-sdk $env:FLUTTER_ROOT --native $sdkReceipt.native --native-receipt ($seed[0].FullName) --output (Join-Path $env:RUNNER_TEMP 'rhwp-windows-qualification/p106-exact-review')
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Preserve completed receipts and logs
         if: always()
@@ -241,6 +247,20 @@ jobs:
       - name: Fetch the exact Native source identity
         shell: bash
         run: git -c gc.auto=0 fetch --filter=blob:none --no-tags --depth=1 origin 4f738e766ccbba8faf938f2421ca6b516e939019
+      - name: Reproduce the old Metal animation policy with the real Apple SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$RUNNER_TEMP/rhwp-p110-animation-baseline-source"
+          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p110-macos-presentation https://github.com/seo-rii/rhwp.git "$previous"
+          git -C "$previous" sparse-checkout init --cone
+          git -C "$previous" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative
+          git -C "$previous" -c gc.auto=0 fetch --filter=blob:none --no-tags --depth=1 origin 233d82545ee3071cfd502bca9018808b8db5265a
+          git -C "$previous" checkout --detach 233d82545ee3071cfd502bca9018808b8db5265a
+          python3 -B bindings/Flutter/tool/review_macos_animation_policy.py \
+            --repository "$GITHUB_WORKSPACE" --old-repository "$previous" \
+            --framework "$FLUTTER_MACOS_FRAMEWORK" \
+            --output "$RUNNER_TEMP/rhwp-macos-animation-baseline"
       - name: Actual Apple SDK and Metal producer qualification
         shell: bash
         run: |
@@ -251,6 +271,22 @@ jobs:
             --native-artifact-root "$RUNNER_TEMP/qualified-macos-native" \
             --native-source-head 4f738e766ccbba8faf938f2421ca6b516e939019 \
             --output "$RUNNER_TEMP/rhwp-macos-qualification"
+      - name: Qualify the corrected P107 head independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/rhwp-p107-source"
+          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p107-macos-sdk-probe https://github.com/seo-rii/rhwp.git "$source"
+          git -C "$source" sparse-checkout init --cone
+          git -C "$source" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests
+          git -C "$source" checkout --detach 40e1301ddabb6290a4ed06c5791e8fd4960403f5
+          receipt="$RUNNER_TEMP/rhwp-macos-qualification/macos-sdk-receipt.json"
+          native=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["native"]["path"])' "$receipt")
+          python3 -B bindings/Flutter/tool/review_p107_macos.py \
+            --repository "$source" --expected-head 40e1301ddabb6290a4ed06c5791e8fd4960403f5 \
+            --framework "$FLUTTER_MACOS_FRAMEWORK" --native "$native" \
+            --native-source-head 4f738e766ccbba8faf938f2421ca6b516e939019 \
+            --output "$RUNNER_TEMP/rhwp-macos-qualification/p107-exact-review"
       - name: Actual AppKit Metal view and WindowServer qualification
         shell: bash
         run: |
@@ -264,28 +300,14 @@ jobs:
           python3 -B bindings/Flutter/macos/tests/qualify_native_view.py capture \
             --build-receipt "$RUNNER_TEMP/rhwp-macos-qualification/desktop-build/macos-view-build.json" \
             --frames 32 --timeout 600 --output "$RUNNER_TEMP/rhwp-macos-qualification/desktop-capture"
-      - name: Qualify the corrected P107 head independently
-        shell: bash
-        run: |
-          set -euo pipefail
-          source="$RUNNER_TEMP/rhwp-p107-source"
-          git clone --filter=blob:none --no-checkout --depth=1 --branch task/8701-p107-macos-sdk-probe https://github.com/seo-rii/rhwp.git "$source"
-          git -C "$source" sparse-checkout init --cone
-          git -C "$source" sparse-checkout set bindings/Flutter bindings/swift/Sources/CRhwpNative bindings/python/tests
-          git -C "$source" checkout --detach b4762d3c267edd7efc4627027db456e98c1f4bde
-          receipt="$RUNNER_TEMP/rhwp-macos-qualification/macos-sdk-receipt.json"
-          native=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["native"]["path"])' "$receipt")
-          python3 -B bindings/Flutter/tool/review_p107_macos.py \
-            --repository "$source" --expected-head b4762d3c267edd7efc4627027db456e98c1f4bde \
-            --framework "$FLUTTER_MACOS_FRAMEWORK" --native "$native" \
-            --native-source-head 4f738e766ccbba8faf938f2421ca6b516e939019 \
-            --output "$RUNNER_TEMP/rhwp-macos-qualification/p107-exact-review"
       - name: Preserve completed receipts and logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: macos-metal-qualification-${{ github.event.pull_request.head.sha }}
           path: |
+            ${{ runner.temp }}/rhwp-macos-animation-baseline/**/*.json
+            ${{ runner.temp }}/rhwp-macos-animation-baseline/**/*.log
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.json
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.log
             ${{ runner.temp }}/rhwp-macos-qualification/**/*.png
