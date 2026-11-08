@@ -223,6 +223,10 @@ class _ProbeState extends State<_Probe> {
     await _channel
             .invokeMethod<Map<Object?, Object?>>('status', {
               'textureId': _controller!.textureId,
+              if (_metadata?.stamp != null &&
+                  (Platform.isWindows ||
+                      _controller!.platform == NativeTexturePlatform.macos))
+                'deviceGeneration': _metadata!.stamp!.deviceGeneration,
             })
             .timeout(const Duration(seconds: 5)) ??
         {},
