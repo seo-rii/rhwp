@@ -2,14 +2,17 @@
 """Portable archive/source rejection controls; never SDK or Native execution."""
 
 import copy
+from contextlib import contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -257,6 +260,56 @@ class NativeArtifactContracts(unittest.TestCase):
         os.link(self.native, alias)
         with self.assertRaises(ValueError):
             self.load()
+
+    def test_windows_direntry_fast_stat_zero_identity_does_not_reject_a_regular_file(self):
+        # Windows DirEntry.stat may leave these identity fields at zero. The
+        # authoritative path/fd metadata has a real link count and must agree.
+        real_scandir = os.scandir
+        fast_stat_calls = []
+        class FastEntry:
+            def __init__(self, entry):
+                self.entry, self.path = entry, entry.path
+            def stat(self, *, follow_symlinks=True):
+                fast_stat_calls.append(self.path)
+                info = self.entry.stat(follow_symlinks=follow_symlinks)
+                return SimpleNamespace(st_mode=info.st_mode, st_dev=0, st_ino=0, st_nlink=0,
+                                       st_size=info.st_size, st_mtime_ns=info.st_mtime_ns,
+                                       st_ctime_ns=info.st_ctime_ns,
+                                       st_file_attributes=getattr(info, "st_file_attributes", 0))
+        @contextmanager
+        def fast_scandir(directory):
+            with real_scandir(directory) as entries:
+                yield (FastEntry(entry) for entry in entries)
+        with mock.patch.object(provenance.os, "scandir", side_effect=fast_scandir):
+            result = self.load()
+        self.assertEqual(result["native"], self.native)
+        self.assertFalse(fast_stat_calls, "archive identity must use path/fd metadata")
+
+    def test_authoritative_zero_link_count_is_still_rejected_with_bounded_entry_context(self):
+        real_lstat = Path.lstat
+        def zero_link_count(path, *args, **kwargs):
+            info = real_lstat(path, *args, **kwargs)
+            if path != self.native:
+                return info
+            return SimpleNamespace(st_mode=info.st_mode, st_dev=info.st_dev, st_ino=info.st_ino,
+                                   st_nlink=0, st_size=info.st_size, st_mtime_ns=info.st_mtime_ns,
+                                   st_ctime_ns=info.st_ctime_ns,
+                                   st_file_attributes=getattr(info, "st_file_attributes", 0))
+        with mock.patch.object(Path, "lstat", zero_link_count):
+            with self.assertRaisesRegex(ValueError, 'entry="native-target/rhwp_native_ffi.dll", type=regular, nlink=0') as caught:
+                self.load()
+        self.assertNotIn(str(self.root), str(caught.exception))
+        self.assertLess(len(str(caught.exception)), 300)
+
+    def test_reparse_boundary_and_entry_diagnostic_remain_strict_and_bounded(self):
+        info = SimpleNamespace(st_mode=stat.S_IFREG, st_file_attributes=0x400, st_nlink=1)
+        with self.assertRaisesRegex(ValueError, "reparse"):
+            provenance._signature(info)
+        description = provenance._entry_description("long/" + "\x1b\n\N{HANGUL SYLLABLE GA}" * 3000, info)
+        self.assertLess(len(description), 230)
+        self.assertNotIn("\x1b", description)
+        self.assertNotIn("\n", description)
+        self.assertIn("type=reparse, nlink=1", description)
 
     def test_json_duplicate_keys_and_nonfinite_values_are_rejected(self):
         for content in ('{"source_head":"' + self.old + '","source_head":"' + self.old + '"}',

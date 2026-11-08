@@ -35,6 +35,18 @@ def _signature(info):
             info.st_mtime_ns, info.st_ctime_ns, info.st_nlink)
 
 
+def _entry_description(relative, info):
+    # Relative archive names only; never print the host path or file contents.
+    label = json.dumps(relative, ensure_ascii=True)
+    if len(label) > 160:
+        label = label[:156] + '..."'
+    kind = ("reparse" if getattr(info, "st_file_attributes", 0) & 0x400 else
+            "symlink" if stat.S_ISLNK(info.st_mode) else
+            "directory" if stat.S_ISDIR(info.st_mode) else
+            "regular" if stat.S_ISREG(info.st_mode) else "other")
+    return "entry=" + label + ", type=" + kind + ", nlink=" + str(info.st_nlink)[:20]
+
+
 def _scan(directory):
     supplied = Path(directory).absolute()
     _signature(supplied.lstat())
@@ -53,8 +65,14 @@ def _scan(directory):
                 relative = path.relative_to(root).as_posix()
                 if len(entries) >= MAX_ENTRIES or len(os.fsencode(relative)) > 8192:
                     raise ValueError("artifact entry/path bound exceeded")
-                info = child.stat(follow_symlinks=False)
-                entries[relative] = _signature(info)
+                # Windows DirEntry.stat can report st_dev/st_ino/st_nlink=0.
+                # Use the same authoritative non-following path metadata as
+                # _read(), then bind it to the opened descriptor with fstat().
+                info = path.lstat()
+                try:
+                    entries[relative] = _signature(info)
+                except ValueError as error:
+                    raise ValueError(str(error) + " (" + _entry_description(relative, info) + ")") from None
                 if stat.S_ISDIR(info.st_mode):
                     pending.append((path, depth + 1))
                 elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1:
@@ -64,7 +82,8 @@ def _scan(directory):
                     if total > MAX_ARCHIVE_BYTES:
                         raise ValueError("artifact archive exceeds its byte bound")
                 else:
-                    raise ValueError("artifact entries must be regular files/directories without hardlinks")
+                    raise ValueError("artifact entries must be regular files/directories without hardlinks (" +
+                                     _entry_description(relative, info) + ")")
     return root, entries
 
 

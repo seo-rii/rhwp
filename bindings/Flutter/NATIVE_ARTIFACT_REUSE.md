@@ -17,6 +17,10 @@
 영수증을 대조한다. root와 하위 entry의 symlink/reparse point·hardlink·비정규 파일·중복 파일,
 읽는 동안의 변경을 거절한다. archive는 8,192 entry·2 GiB, 단일 파일/Native는 512 MiB,
 영수증은 32 MiB, 깊이는 32로 제한한다. 기존 출력·영수증의 source SHA를 새 SHA로 바꾸지 않는다.
+Windows의 `DirEntry.stat()` 빠른 metadata는 identity/link 계수를 0으로 보고할 수 있으므로
+scan과 읽기는 `Path.lstat()`의 권위 있는 결과를 사용하고 열린 descriptor의 `fstat()`와 대조한다.
+권위 있는 link count도 0이면 거절하며, 실제 hardlink·symlink·reparse 경계를 완화하지 않는다.
+거절 entry는 제한된 상대 이름·형식·link count만 기록하고 host 절대 경로나 파일 내용은 출력하지 않는다.
 
 `expected_source`는 실제 Native 빌드의 소문자 40자리 Git SHA다. 현재 HEAD는 전체가 clean이어야
 하며, 두 commit의 **전체 Git mode·object ID·path manifest**를 대조한다. 제외는 아래 세 범위뿐이다.
