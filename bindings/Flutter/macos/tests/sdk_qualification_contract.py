@@ -100,11 +100,14 @@ class MetalReceiptContracts(unittest.TestCase):
         commands, artifacts = builder.command_plan(
             Path("/source"), Path("/private/probe"), Path("/SDK/MacOSX.sdk"),
             Path("/Xcode/clang++"), Path("/Flutter/FlutterMacOS.framework"), "arm64", "1.93.1")
-        cargo = commands[1]
+        cargo = next(command for command in commands if "cargo" in command)
         self.assertEqual(cargo[cargo.index("--target-dir") + 1], "/private/probe/native-target")
         self.assertEqual(cargo[cargo.index("--features") + 1], "native-skia-metal")
         self.assertEqual(artifacts["native"], Path("/private/probe/native-target/aarch64-apple-darwin/debug/librhwp_native_ffi.dylib"))
-        for command in commands[2:4]:
+        compilers = [command for command in commands if command[0] == "/Xcode/clang++"]
+        self.assertEqual(len(compilers), 2)
+        self.assertLess(max(commands.index(command) for command in compilers), commands.index(cargo))
+        for command in compilers:
             self.assertIn("-fobjc-arc", command)
             self.assertIn("-fblocks", command)
             self.assertIn("-Werror", command)
@@ -173,7 +176,7 @@ class SourceAndProcessContracts(unittest.TestCase):
             commands, artifacts = builder.command_plan(
                 self.repository, self.root, Path("/SDK"), Path("/clang"),
                 Path("/Flutter/FlutterMacOS.framework"), architecture, "1.93.1")
-            cargo = commands[1]
+            cargo = next(command for command in commands if "cargo" in command)
             self.assertEqual(cargo[cargo.index("--target") + 1], target)
             self.assertEqual(commands[2][commands[2].index("-arch") + 1], architecture)
             self.assertEqual(artifacts["native"], self.root / "native-target" / target /

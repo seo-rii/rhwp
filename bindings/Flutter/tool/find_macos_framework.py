@@ -13,7 +13,7 @@ for item in root.glob("darwin*/FlutterMacOS.xcframework/macos-*/FlutterMacOS.fra
     binary = item / "FlutterMacOS"
     if not (item / "Headers/FlutterMacOS.h").is_file() or not binary.is_file():
         continue
-    if subprocess.run(["xcrun", "lipo", "-verify_arch", arch, str(binary)],
+    if subprocess.run(["xcrun", "lipo", str(binary), "-verify_arch", arch],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
         choices.append(item)
 if not choices:
